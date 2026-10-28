@@ -1,0 +1,246 @@
+openapi: 3.1.0
+info:
+  title: Selfcloud API
+  version: 0.1.0
+  summary: The HTTP API of Selfcloud, a self-hosted drive.
+  description: |
+    The design behind this API is in docs/design.md.
+
+    **Errors.** Every error is JSON with a stable `code` (see the `ErrorCode` schema). Clients
+    act on the code, not on the HTTP status. `details` carries the numbers a client needs to
+    word its own message.
+
+    **Request IDs.** Every response carries an `X-Request-Id` header; error bodies repeat it
+    as `request_id`.
+
+    This document grows with each slice of the build. Only what it lists is implemented.
+servers:
+  - url: /
+tags:
+  - name: System
+    description: Health, readiness, metrics and server facts.
+
+paths:
+  /healthz:
+    get:
+      tags: [System]
+      operationId: getHealthz
+      summary: Liveness check
+      description: Answers while the process runs, including during shutdown.
+      responses:
+        "200":
+          description: The process is alive.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+
+  /readyz:
+    get:
+      tags: [System]
+      operationId: getReadyz
+      summary: Readiness check
+      description: |
+        Checks that the database answers, that the data directory is writable, and that free
+        disk is at least `storage.min_free`. During shutdown it answers 503 with an `Error`
+        whose code is `unavailable`.
+      responses:
+        "200":
+          description: Ready to serve.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+        "503":
+          description: Not ready, or shutting down.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Readiness"
+                  - $ref: "#/components/schemas/Error"
+
+  /metrics:
+    get:
+      tags: [System]
+      operationId: getMetrics
+      summary: Prometheus metrics
+      description: |
+        Served here only when `metrics_listen` is not set; otherwise it is served on that
+        address instead.
+      responses:
+        "200":
+          description: Metrics in the Prometheus text format.
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/v1/info:
+    get:
+      tags: [System]
+      operationId: getInfo
+      summary: Server facts and limits
+      description: Clients read the upload limits here before uploading.
+      responses:
+        "200":
+          description: Server facts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Info" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/openapi.yaml:
+    get:
+      tags: [System]
+      operationId: getOpenAPI
+      summary: This document
+      responses:
+        "200":
+          description: The OpenAPI document.
+          content:
+            application/yaml:
+              schema: { type: string }
+
+components:
+  headers:
+    X-Request-Id:
+      description: The request's ID, also logged by the server.
+      schema: { type: string, example: req_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+
+  responses:
+    Error:
+      description: An error. Act on `error.code`.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Retry-After:
+          description: Seconds to wait, on `rate_limited` and `unavailable`.
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: ok }
+
+    Readiness:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          description: One entry per check (database, data_dir, disk_free).
+          additionalProperties:
+            type: string
+            enum: [ok, failed, unknown]
+
+    Info:
+      type: object
+      required: [name, version, public_url, web_interface, limits, features]
+      properties:
+        name: { type: string, example: Selfcloud }
+        version: { type: string, example: 0.1.0 }
+        public_url:
+          type: string
+          format: uri
+          description: The address clients reach the server at.
+          example: https://drive.example.com
+        web_interface:
+          type: boolean
+          description: Whether this server also serves its web interface.
+        limits: { $ref: "#/components/schemas/Limits" }
+        features:
+          type: array
+          description: Optional features this server has enabled.
+          items: { type: string }
+
+    Limits:
+      type: object
+      required: [max_file_size, max_chunk_size]
+      properties:
+        max_file_size:
+          type: integer
+          format: int64
+          description: Largest file accepted, in bytes.
+        max_chunk_size:
+          type: integer
+          format: int64
+          description: Largest upload request body accepted, in bytes.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { $ref: "#/components/schemas/ErrorCode" }
+            message:
+              type: string
+              description: English text for logs and developers; clients translate by code.
+            details:
+              type: object
+              description: |
+                Numbers for the client's message: `limit_bytes` (too_large),
+                `max_chunk_size` (chunk_too_large), `required_bytes` and `available_bytes`
+                (quota_exceeded).
+              additionalProperties: true
+            request_id: { type: string }
+
+    ErrorCode:
+      type: string
+      description: |
+        | Code | Status | Meaning |
+        |---|---|---|
+        | invalid_request, invalid_path, invalid_name | 400 | Malformed request, path or name. |
+        | unauthenticated | 401 | No valid credential; sign in again. |
+        | token_expired | 401 | Delegated token expired; refresh it and retry. |
+        | forbidden | 403 | The caller may not do this. |
+        | account_suspended, user_not_verified, user_disabled | 403 | Account or user state blocks access. |
+        | not_found | 404 | No such resource, or the caller may not know it exists. |
+        | conflict | 409 | Name taken, duplicate external_id, or a concurrent upload. |
+        | upload_offset_mismatch | 409 | Upload-Offset differs from the server's. |
+        | locked | 409 | Locked by an office editor. |
+        | upload_expired | 410 | The upload expired; start again. |
+        | precondition_failed | 412 | Stale ETag in If-Match. |
+        | too_large | 413 | File over the size limit. |
+        | chunk_too_large | 413 | Upload request over the size limit. |
+        | range_not_satisfiable | 416 | Range outside the file. |
+        | rate_limited | 429 | Slow down; see Retry-After. |
+        | checksum_mismatch | 460 | Piece failed its Upload-Checksum. |
+        | internal | 500 | Server fault; quote request_id. |
+        | unavailable | 503 | Shutting down or in maintenance; see Retry-After. |
+        | quota_exceeded | 507 | Account quota reached. |
+        | storage_full | 507 | The server's disk is full. |
+      enum:
+        - invalid_request
+        - invalid_path
+        - invalid_name
+        - unauthenticated
+        - token_expired
+        - forbidden
+        - account_suspended
+        - user_not_verified
+        - user_disabled
+        - not_found
+        - conflict
+        - upload_offset_mismatch
+        - locked
+        - upload_expired
+        - precondition_failed
+        - too_large
+        - chunk_too_large
+        - range_not_satisfiable
+        - rate_limited
+        - checksum_mismatch
+        - internal
+        - unavailable
+        - quota_exceeded
+        - storage_full
