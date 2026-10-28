@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"path"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -94,6 +95,19 @@ type writerOnly struct{ io.Writer }
 
 // observe is the outermost middleware. It gives each request an ID and its client address,
 // turns panics into internal errors, and records the access log line and metrics.
+// logPath is the request path as the access log shows it. A signed link's token is a
+// credential, so a path with a links segment is replaced by the route label however it is
+// spelled: the mux answers a path with doubled slashes or dot segments by a redirect that matches
+// no route, and such a path would not start with linkPrefix. Routes marked secretPath are never
+// logged either.
+func logPath(info *reqInfo, p string) string {
+	clean := strings.ToLower(path.Clean("/" + p))
+	if info.secretPath || strings.Contains(clean+"/", "/links/") {
+		return info.route
+	}
+	return p
+}
+
 func (s *Server) observe(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -147,17 +161,11 @@ func (s *Server) finish(r *http.Request, sw *statusWriter, info *reqInfo, d time
 	if !s.log.Enabled(r.Context(), level) {
 		return
 	}
-	path := r.URL.Path
-	if info.secretPath || strings.HasPrefix(path, linkPrefix) {
-		// A signed link's token is a credential. It is never logged, even on a request that
-		// matched no route.
-		path = info.route
-	}
 	attrs := []slog.Attr{
 		slog.String("request_id", info.id),
 		slog.String("method", r.Method),
 		slog.String("route", info.route),
-		slog.String("path", path),
+		slog.String("path", logPath(info, r.URL.Path)),
 		slog.Int("status", status),
 		slog.Int64("bytes", sw.bytes),
 		slog.Float64("duration_ms", float64(d.Microseconds())/1000),
