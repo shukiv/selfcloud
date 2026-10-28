@@ -434,13 +434,18 @@ signature header,
 resolve to loopback, link-local or private addresses are refused unless the operator allows
 them, to prevent server-side request forgery.
 
-**Office editing (WOPI).** Selfcloud is a WOPI host for Collabora Online, OnlyOffice or any
-other WOPI client: `CheckFileInfo`, `GetFile`, `PutFile`, `Lock`, `Unlock`, `RefreshLock`,
-`GetLock` and `RenameFile`. The editor's discovery URL comes from config. Requests are checked
+**Office editing (WOPI).** The supported editor is **Collabora Online**, which runs as its own
+server (for example the `collabora/code` image) next to Selfcloud. Selfcloud is the WOPI host;
+Collabora is the WOPI client and serves the editor. Slice l is built and tested against
+Collabora. Other WOPI clients may work but are not a goal. Selfcloud implements `CheckFileInfo`,
+`GetFile`, `PutFile`, `Lock`, `Unlock`, `RefreshLock`, `GetLock` and `RenameFile`. The editor's
+discovery URL (`office.discovery_url`, Collabora's `/hosting/discovery`) comes from config; the
+discovery document tells which file types open for viewing or editing. Requests are checked
 against the editor's proof keys. Locks expire after 30 minutes, as WOPI specifies. `PutFile` is
 copy-on-write and honours the lock. The access token is a delegated token with audience `wopi`,
 bound to one file. A client calls `POST /nodes/{nod}/office` and embeds the editor URL it gets
-back.
+back. Collabora must be allowed to call Selfcloud's WOPI address (its `aliasgroup` setting), and
+the README gives a Docker Compose example of the two together.
 
 **Web interface.** Served at `/` when `ui.enabled`. Screens: sign-in, verification and password
 set-up, password reset, TOTP set-up, the file browser (upload with progress and resume,
