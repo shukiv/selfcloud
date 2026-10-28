@@ -19,10 +19,11 @@ Portuguese (`pt`, written for Portugal, not Brazil), Russian (`ru`), and Arabic 
 Hebrew (`he`), which are laid out right to left. API error messages stay English; clients
 translate them by `code` (section 9). Section 10 says how a language is chosen.
 
-**Non-goals for the first release.** Desktop sync clients, WebDAV or S3-compatible endpoints,
-several servers sharing one data set (high availability), object-store back ends, end-to-end
-encryption, and full-text search. The design leaves room for each of them, and section 15 asks
-about public share links, file versions and a trash bin.
+**Non-goals for the first release.** Native desktop sync clients, S3-compatible endpoints,
+several servers sharing one data set (high availability), object-store back ends and end-to-end
+encryption. The design leaves room for each of them. WebDAV, full-text search, public links,
+file versions and a trash bin were non-goals at first; decision 11 (section 15) brings them in,
+following `feature-parity.md`.
 
 ## 2. Architecture
 
@@ -575,11 +576,24 @@ Each slice ships with tests and leaves the server runnable.
 | g | Ranged downloads and signed links, with the download benchmark |
 | h | Quotas and usage, enforced at upload creation and while writing |
 | i | Delegated tokens and CORS |
-| j | Webhooks |
+| n | Sharing v2: roles, permissions on any node with inheritance, groups, personal "My files", team-space roles and restrictions, expiry, no-download, ownership transfer, access requests, share emails |
+| m | Trash, version history, keep forever, restore, undo |
 | k | Web interface, in the seven languages, with right-to-left layout for Arabic and Hebrew |
-| l | WOPI host |
+| o | Organisation-wide and public links (off by default), link expiry and password, drop folders |
+| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page |
+| q | Search: filters, label search, full text and OCR within size limits |
+| r | Comments, mentions, activity pane, notifications, who-viewed |
+| s | Thumbnails, document previews, conversions and export, zip download |
+| l | WOPI host for Collabora |
+| j | Webhooks |
+| t | Changes feed, file picker, WebDAV, installable web app |
+| u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits |
+| t2 | Approvals |
 
-An API client can switch over once slices a to i work; j, k and l can follow. The OpenAPI file
+Slices are listed in build order; the letters keep their first meaning. Slices m to u come from
+the Google Drive parity plan in `feature-parity.md` (approved 2026-10-28). An API client can switch
+over once slices a to i work. Slice n keeps the `/grants` routes working, mapping `read` to viewer
+and `write` to editor, so a client that switched after i keeps working. The OpenAPI file
 grows with each slice, and a test checks that every route is in it. The Go client in `client/`
 is generated from it.
 
@@ -587,10 +601,11 @@ is generated from it.
 
 Decided on approval:
 
-1. **Permission levels**: `read` and `write`. No upload-only or grant-managing level for now.
-2. **Grants** attach to whole top-level folders only.
+1. **Permission levels**: `read` and `write`. *Replaced 2026-10-28 by decision 11.*
+2. **Grants** attach to whole top-level folders only. *Replaced 2026-10-28 by decision 11.*
 3. **Verification**: an email link, or a link the client delivers. No numeric code.
-4. **Public share links, file versions, trash bin**: not in the first release.
+4. **Public share links, file versions, trash bin**: not in the first release. *Replaced
+   2026-10-28 by decision 11: all three are built (slices m and o).*
 5. **On-disk layout**: blobs by ID (section 4).
 6. **Delegated tokens**: Selfcloud mints them through the API.
 7. **PostgreSQL**: added after slice i.
@@ -600,10 +615,23 @@ Decided on approval:
 10. **Office editor** (2026-10-28): Collabora Online, through WOPI (section 10). No headless
     LibreOffice inside Selfcloud; previews and conversions, if wanted, use Collabora's
     conversion API.
+11. **Google Drive parity** (2026-10-28): every item marked *New* in `feature-parity.md` is
+    built, in slices m to u. Sharing becomes viewer, commenter, editor and manager roles on any
+    file or folder, inherited down the tree, with groups and a personal space per user.
+    Slices n and m come before the web interface (k), so it is built once.
+12. **Public links** (2026-10-28): "anyone with the link" sharing exists but is off by default.
+    An installation admin or a tenant's owner turns it on, per account. Optional password and
+    expiry.
+13. **Search** (2026-10-28): full text and OCR are both on, within limits.
+    - Full text: files up to 50 MiB (`search.fulltext_max_bytes`), with at most 1 MiB of
+      extracted text indexed per file.
+    - OCR: images up to 10 MiB and PDFs up to 20 MiB, first 50 pages (`search.ocr_max_bytes`,
+      `search.ocr_max_pages`).
+    - Indexing runs as low-priority background jobs.
 
 Still open, and not blocking slices a to i:
 
-11. **Licence.** Options: AGPL-3.0 for the server with Apache-2.0 for the Go client (hosted forks
+14. **Licence.** Options: AGPL-3.0 for the server with Apache-2.0 for the Go client (hosted forks
     must publish their changes), or Apache-2.0 or MIT for everything (widest adoption).
-12. **Public repository.** Where it lives and when it opens. Until then the Go module path is
+15. **Public repository.** Where it lives and when it opens. Until then the Go module path is
     the placeholder `selfcloud`.

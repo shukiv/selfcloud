@@ -1,6 +1,6 @@
 # Feature parity with Google Drive
 
-Status: **proposed 2026-10-28, awaiting approval.** Nothing here is built until it is approved.
+Status: **approved 2026-10-28** (design.md §15, decisions 11 to 13). Search limits: full text up to 50 MiB, OCR up to 10 MiB images and 20 MiB PDFs.
 
 The goal is to offer what Google Drive offers, matched in function, not in look: the screens
 follow Selfcloud's own design system. The inventory behind this file covers 213 Drive features
