@@ -160,7 +160,12 @@ woven into each step.
    sync the directory, then in one transaction create the file entry, turn the reservation into
    usage, and queue the `upload.completed` webhook. The conflict policy is `rename` (save as
    "name (1).ext"), `replace` or `fail`. With `fail`, a name taken after the upload began
-   leaves the completed upload waiting, until it expires, to be committed under another name.
+   leaves the completed upload waiting, until it expires, to be committed under another name:
+   the last `PATCH` answers `409 conflict` with `Selfcloud-Upload-State: awaiting_commit`, and
+   `POST /uploads/{upl}/commit` saves it.
+   Each principal may hold at most `upload.max_open_per_principal` open uploads (default 100)
+   and each account `upload.max_open_per_account` (default 1000); the free-space check counts
+   the bytes every open upload has yet to write.
 6. **Expire.** Unfinished uploads expire after `upload.expiry` (default 24 h, sent as
    `Upload-Expires`); the file is deleted and the reservation released.
 
@@ -238,7 +243,9 @@ short lifetimes and are scrubbed from logs.
 **CORS.** `cors.allowed_origins` lists the client origins. Allowed request headers:
 `Authorization`, `Content-Type`, `If-Match`, `Tus-Resumable`, `Upload-*`. Exposed response
 headers: `Location`, `Upload-Offset`, `Upload-Length`, `Upload-Expires`, `Tus-Resumable`,
-`Tus-Max-Size`, `ETag`, `Content-Range`, `Retry-After`. Cookies are never accepted on
+`Tus-Max-Size`, `Tus-Version`, `Tus-Extension`, `Tus-Checksum-Algorithm`,
+`Selfcloud-Max-Chunk-Size`, `Selfcloud-Node-ID`, `Selfcloud-Upload-State`, `ETag`,
+`Content-Range`, `Retry-After`. Cookies are never accepted on
 cross-origin requests; browsers from other origins use delegated tokens.
 
 **Web sessions** are stored server-side (hashed ID), rotated at sign-in, and protected against
@@ -341,6 +348,8 @@ Files                                      any caller, limited to what it may re
 
 Uploads (tus 1.0)
   OPTIONS /uploads   POST /uploads   HEAD|PATCH|DELETE /uploads/{upl}
+  POST /uploads/{upl}/commit               {parent | path, name, on_conflict}: save an upload that
+                                           finished under on_conflict=fail into a taken name
 
 Users                                      session
   POST /auth/login /auth/logout /auth/verify /auth/password/forgot /auth/password/reset
@@ -392,7 +401,7 @@ status:
 | `not_found` | 404 | No such resource, or the caller may not know it exists. |
 | `conflict` | 409 | Name taken, duplicate `external_id`, or a concurrent upload. |
 | `upload_offset_mismatch` | 409 | `Upload-Offset` differs from the server's. |
-| `locked` | 409 | Locked by an office editor (WOPI). |
+| `locked` | 409 | Locked by an office editor (WOPI), or another request is writing this upload. |
 | `upload_expired` | 410 | The upload expired; start again. |
 | `precondition_failed` | 412 | Stale ETag in `If-Match`. |
 | `precondition_required` | 428 | `If-Match` is required here and was not sent. |
@@ -400,6 +409,8 @@ status:
 | `chunk_too_large` | 413 | Piece over the limit. `max_chunk_size`. |
 | `range_not_satisfiable` | 416 | Requested range outside the file. |
 | `rate_limited` | 429 | Slow down; `Retry-After` says when. |
+| `too_many_uploads` | 429 | Too many open uploads; finish or delete some. `scope`: principal or account. |
+| `unsupported_media_type` | 415 | A tus request without `Content-Type: application/offset+octet-stream`. |
 | `checksum_mismatch` | 460 | Piece failed its `Upload-Checksum` (status as tus defines). |
 | `internal` | 500 | Server fault; the `request_id` finds it in the log. |
 | `unavailable` | 503 | Shutting down or in maintenance; retry after `Retry-After`. |
@@ -472,7 +483,7 @@ Vite, compiled into the binary, so Node is needed only to build it.
 | `grants` | folder_id, user_id, level, created_by, created_at |
 | `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by |
 | `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
-| `uploads` | id, account_id, target (folder, parent, name, on_conflict), length, durable_offset, hash_state, created_by, expires_at |
+| `uploads` | id, account_id, target (folder_id, parent_id or dir_path, parents, name, name_key, on_conflict, mime_type), length, durable_offset, hash_state, blob_id, created_by, created_kind, expires_at |
 | `wopi_locks` | node_id, lock_id, expires_at |
 | `webhooks`, `webhook_deliveries` | endpoint (url, secret encrypted, events); outbox (event, payload, attempts, next_attempt_at, status, last_error) |
 | `jobs` | id, account_id, kind, status, progress, error |
