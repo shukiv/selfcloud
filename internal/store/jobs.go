@@ -23,18 +23,20 @@ type Job struct {
 	Target     string
 	Status     string
 	Error      string
+	Payload    string // JSON arguments; "" when the job needs none
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	FinishedAt *time.Time
 }
 
-const jobCols = "id, account_id, kind, target, status, error, created_at, updated_at, finished_at"
+const jobCols = "id, account_id, kind, target, status, error, created_at, updated_at, finished_at, payload"
 
 func scanJob(row interface{ Scan(...any) error }) (*Job, error) {
 	var j Job
 	var created, updated int64
 	var finished sql.NullInt64
-	err := row.Scan(&j.ID, &j.AccountID, &j.Kind, &j.Target, &j.Status, &j.Error, &created, &updated, &finished)
+	err := row.Scan(&j.ID, &j.AccountID, &j.Kind, &j.Target, &j.Status, &j.Error, &created, &updated, &finished,
+		&j.Payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -61,9 +63,9 @@ func (tx *Tx) UnfinishedJob(ctx context.Context, accountID, kind, target string)
 
 // InsertJob queues j.
 func (tx *Tx) InsertJob(ctx context.Context, j *Job) error {
-	_, err := tx.q.ExecContext(ctx, "INSERT INTO jobs ("+jobCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := tx.q.ExecContext(ctx, "INSERT INTO jobs ("+jobCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		j.ID, j.AccountID, j.Kind, j.Target, j.Status, j.Error, millis(j.CreatedAt),
-		millis(j.UpdatedAt), nullMillis(j.FinishedAt))
+		millis(j.UpdatedAt), nullMillis(j.FinishedAt), j.Payload)
 	return err
 }
 

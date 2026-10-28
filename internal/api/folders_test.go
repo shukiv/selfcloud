@@ -1,8 +1,6 @@
 package api
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"selfcloud/internal/apierr"
@@ -148,40 +146,8 @@ func TestAdminsNeverReadFolders(t *testing.T) {
 	wantStatus(t, call(t, s, "GET", "/api/v1/accounts/"+acc.ID+"/folders", admin, nil), 200)
 }
 
-// probeHandler serves folderAccess for one folder. No route uses folderAccess yet, so the test
-// wraps it in a route of its own, with the same authentication as a real one.
-func probeHandler(s *Server, folderID string) http.Handler {
-	return s.observe(s.wrap(route{method: http.MethodGet, path: "/probe", auth: true,
-		handle: func(w http.ResponseWriter, r *http.Request) error {
-			_, level, err := s.folderAccess(r, folderID)
-			if err != nil {
-				return err
-			}
-			w.Header().Set("X-Level", level)
-			w.WriteHeader(http.StatusNoContent)
-			return nil
-		}}))
-}
-
-func probeWithKey(t *testing.T, s *Server, cred, folderID string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
-	req.Header.Set("Authorization", "Bearer "+cred)
-	rec := httptest.NewRecorder()
-	probeHandler(s, folderID).ServeHTTP(rec, req)
-	return rec
-}
-
-func probeWithSession(t *testing.T, s *Server, sess testSession, folderID string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
-	req.AddCookie(sess.cookie)
-	rec := httptest.NewRecorder()
-	probeHandler(s, folderID).ServeHTTP(rec, req)
-	return rec
-}
-
-// TestFolderAccessRules checks what folderAccess lets each kind of caller reach.
+// TestFolderAccessRules checks what each kind of caller reaches, through the file routes that use
+// folderAccess: a stat of a file (read) and a directory creation (write).
 func TestFolderAccessRules(t *testing.T) {
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
@@ -189,24 +155,27 @@ func TestFolderAccessRules(t *testing.T) {
 	other, otherKey := newAccount(t, s, admin, "Other")
 	f := newFolder(t, s, key, acc.ID, "Reports")
 	foreign := newFolder(t, s, otherKey, other.ID, "Theirs")
+	file := putNode(t, s, key, f.ID, "/a.txt", "x")
+	foreignFile := putNode(t, s, otherKey, foreign.ID, "/b.txt", "y")
 	ann, annSess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
 	wantStatus(t, call(t, s, "PUT", "/api/v1/accounts/"+acc.ID+"/folders/"+f.ID+"/grants/"+ann.ID, key,
 		map[string]any{"level": "read"}), 200)
 	_, adminSess := newAdminUser(t, s, admin, "root@example.com")
 
 	// The account key reaches its own folder with write, and not another account's.
-	if rec := probeWithKey(t, s, key, f.ID); rec.Code != 204 || rec.Header().Get("X-Level") != "write" {
-		t.Errorf("account key on own folder: %d %s", rec.Code, rec.Header().Get("X-Level"))
-	}
-	wantError(t, probeWithKey(t, s, key, foreign.ID), 404, apierr.NotFound)
+	wantStatus(t, call(t, s, "GET", "/api/v1/nodes/"+file.ID, key, nil), 200)
+	wantStatus(t, call(t, s, "POST", "/api/v1/folders/"+f.ID+"/directories", key, map[string]any{"path": "/d"}), 201)
+	wantError(t, call(t, s, "GET", "/api/v1/nodes/"+foreignFile.ID, key, nil), 404, apierr.NotFound)
+	wantError(t, call(t, s, "POST", "/api/v1/folders/"+foreign.ID+"/directories", key, map[string]any{"path": "/d"}),
+		404, apierr.NotFound)
 
-	// The member reaches the granted folder at the granted level, and no other.
-	if rec := probeWithSession(t, s, annSess, f.ID); rec.Code != 204 || rec.Header().Get("X-Level") != "read" {
-		t.Errorf("member on granted folder: %d %s", rec.Code, rec.Header().Get("X-Level"))
-	}
-	wantError(t, probeWithSession(t, s, annSess, foreign.ID), 404, apierr.NotFound)
+	// The member reads the granted folder, and cannot write there; other folders are not found.
+	wantStatus(t, callSession(t, s, annSess, "GET", "/api/v1/nodes/"+file.ID, nil), 200)
+	wantError(t, callSession(t, s, annSess, "POST", "/api/v1/folders/"+f.ID+"/directories",
+		map[string]any{"path": "/e"}), 403, apierr.Forbidden)
+	wantError(t, callSession(t, s, annSess, "GET", "/api/v1/nodes/"+foreignFile.ID, nil), 404, apierr.NotFound)
 
-	// Admins are forbidden on any folder, with a key or a session.
-	wantError(t, probeWithKey(t, s, admin, f.ID), 403, apierr.Forbidden)
-	wantError(t, probeWithSession(t, s, adminSess, f.ID), 403, apierr.Forbidden)
+	// Admins are forbidden on any node, with a key or a session.
+	wantError(t, call(t, s, "GET", "/api/v1/nodes/"+file.ID, admin, nil), 403, apierr.Forbidden)
+	wantError(t, callSession(t, s, adminSess, "GET", "/api/v1/nodes/"+file.ID, nil), 403, apierr.Forbidden)
 }

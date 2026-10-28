@@ -323,14 +323,21 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) err
 }
 
 // runAccountDelete removes a deleting account from the database. Safe to repeat.
+//
+// The database rows go first, in one transaction; the account's files are then removed from disk.
+// A repeat finds nothing left to delete and only removes the files.
 func (s *Server) runAccountDelete(ctx context.Context, job *store.Job) error {
-	return s.store.Write(ctx, func(tx *store.Tx) error {
+	err := s.store.Write(ctx, func(tx *store.Tx) error {
 		if err := tx.DeleteAccount(ctx, job.Target); err != nil {
 			return err
 		}
 		return tx.InsertAudit(ctx, &store.AuditEntry{Time: store.Now(), AccountID: job.Target,
 			ActorKind: "system", ActorID: job.ID, Action: "account.deleted", Target: job.Target})
 	})
+	if err != nil {
+		return err
+	}
+	return s.blobs.RemoveAccount(job.Target)
 }
 
 type usageJSON struct {

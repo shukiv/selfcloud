@@ -1,0 +1,589 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"unicode/utf8"
+
+	"selfcloud/internal/apierr"
+	"selfcloud/internal/auth"
+	"selfcloud/internal/id"
+	"selfcloud/internal/names"
+	"selfcloud/internal/store"
+)
+
+// syncCopyNodes is the largest copy made inside the request. Larger copies are queued as a job. A
+// Server holds it in copySyncNodes, so a test can lower it.
+const syncCopyNodes = 10000
+
+// jobCopyNode is the job kind of a copy too large for the request.
+const jobCopyNode = "node.copy"
+
+// maxNameBytes is the longest stored name.
+const maxNameBytes = 255
+
+// maxExtBytes is the longest extension kept when a copy is renamed; a longer one is part of the name.
+const maxExtBytes = 32
+
+// transferBody says where a move or copy goes. Folder defaults to the node's own folder. Parent (a
+// directory's ID) or Path (relative to the target folder's root) picks the directory; by default
+// it is the node's own directory, or the target folder's root when the folder changes. Name
+// renames on the way. OnConflict is "fail" (the default), "rename" (name (1).ext) or "replace"
+// (a file over a file).
+type transferBody struct {
+	Folder     string `json:"folder"`
+	Parent     string `json:"parent"`
+	Path       string `json:"path"`
+	Name       string `json:"name"`
+	OnConflict string `json:"on_conflict"`
+}
+
+// transferPlan is where a node will go, and what it displaces.
+type transferPlan struct {
+	folderID string
+	parent   *store.Node
+	name     string
+	key      string
+	replaced *store.Node // a file the transfer replaces, or nil
+}
+
+// planTransfer works out the target of a move or copy, inside tx. The caller has checked access to
+// the folders involved. A node may not go into itself or below itself.
+func planTransfer(ctx context.Context, tx *store.Tx, src *store.Node, in transferBody, excludeSelf bool) (*transferPlan, error) {
+	acc := src.AccountID
+	folderID := src.FolderID
+	if in.Folder != "" {
+		if err := validID("fld", in.Folder); err != nil {
+			return nil, err
+		}
+		folderID = in.Folder
+	}
+	if in.Parent != "" && in.Path != "" {
+		return nil, apierr.New(apierr.InvalidRequest, "give parent or path, not both")
+	}
+	var parent *store.Node
+	switch {
+	case in.Parent != "":
+		if err := validID("nod", in.Parent); err != nil {
+			return nil, err
+		}
+		p, err := tx.Node(ctx, acc, in.Parent)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && p.FolderID != folderID) {
+			return nil, notFound("parent")
+		}
+		if err != nil {
+			return nil, err
+		}
+		if p.Kind != store.KindDir {
+			return nil, apierr.New(apierr.InvalidRequest, "the parent is a file, not a directory")
+		}
+		parent = p
+	case in.Path != "":
+		segs, err := parsePath(in.Path)
+		if err != nil {
+			return nil, err
+		}
+		root, err := tx.RootNode(ctx, acc, folderID)
+		if err != nil {
+			return nil, err
+		}
+		parent, err = walkDirs(ctx, func(ctx context.Context, parentID, key string) (*store.Node, error) {
+			return tx.Child(ctx, acc, parentID, key)
+		}, root, segs)
+		if err != nil {
+			return nil, err
+		}
+		if parent == nil {
+			return nil, notFound("parent")
+		}
+	case folderID == src.FolderID && !src.IsRoot():
+		p, err := tx.Node(ctx, acc, src.ParentID)
+		if err != nil {
+			return nil, err
+		}
+		parent = p
+	default:
+		root, err := tx.RootNode(ctx, acc, folderID)
+		if err != nil {
+			return nil, err
+		}
+		parent = root
+	}
+	if src.Kind == store.KindDir {
+		within, err := tx.IsWithin(ctx, acc, parent.ID, src.ID)
+		if err != nil {
+			return nil, err
+		}
+		if within {
+			return nil, apierr.New(apierr.InvalidRequest, "a folder cannot go into itself or one of its descendants")
+		}
+	}
+
+	plan := &transferPlan{folderID: folderID, parent: parent, name: src.Name, key: src.NameKey}
+	if in.Name != "" {
+		name, key, err := names.Clean(in.Name)
+		if err != nil {
+			return nil, err
+		}
+		plan.name, plan.key = name, key
+	}
+	taken, err := nameTakenBy(tx.Child(ctx, acc, parent.ID, plan.key))
+	if err != nil {
+		return nil, err
+	}
+	if taken == nil || (excludeSelf && taken.ID == src.ID) {
+		return plan, nil
+	}
+	switch in.OnConflict {
+	case "", "fail":
+		return nil, nameConflict(taken)
+	case "rename":
+		if err := freeName(ctx, tx, plan, src.Kind); err != nil {
+			return nil, err
+		}
+		return plan, nil
+	case "replace":
+		if taken.ID == src.ID {
+			return nil, apierr.New(apierr.Conflict, "a file cannot replace itself")
+		}
+		if src.Kind != store.KindFile || taken.Kind != store.KindFile {
+			return nil, apierr.New(apierr.Conflict, "replace works only file over file; a folder is never replaced").
+				With("id", taken.ID)
+		}
+		plan.replaced = taken
+		return plan, nil
+	}
+	return nil, apierr.New(apierr.InvalidRequest, "on_conflict must be fail, rename or replace")
+}
+
+// freeName changes plan's name to the first "base (n).ext" that is free in the target directory.
+// The base is cut, on a character boundary, so the whole name fits in maxNameBytes.
+func freeName(ctx context.Context, tx *store.Tx, plan *transferPlan, kind string) error {
+	base, ext := plan.name, ""
+	if kind == store.KindFile {
+		if i := strings.LastIndex(plan.name, "."); i > 0 && len(plan.name)-i <= maxExtBytes {
+			base, ext = plan.name[:i], plan.name[i:]
+		}
+	}
+	for n := 1; n <= 1000; n++ {
+		suffix := fmt.Sprintf(" (%d)%s", n, ext)
+		cand, key, err := names.Clean(truncateBytes(base, maxNameBytes-len(suffix)) + suffix)
+		if err != nil {
+			return err
+		}
+		taken, err := nameTakenBy(tx.Child(ctx, plan.parent.AccountID, plan.parent.ID, key))
+		if err != nil {
+			return err
+		}
+		if taken == nil {
+			plan.name, plan.key = cand, key
+			return nil
+		}
+	}
+	return apierr.New(apierr.Conflict, "no free name was found for the copy")
+}
+
+// truncateBytes cuts s to at most max bytes, without splitting a character.
+func truncateBytes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
+// applyReplace removes the file a transfer displaces, inside the transaction, and returns it. Its
+// contents are left for the collector, which finds them unreferenced. It returns nil when the
+// transfer displaces nothing.
+func applyReplace(ctx context.Context, tx *store.Tx, plan *transferPlan) (*store.Node, error) {
+	if plan.replaced == nil {
+		return nil, nil
+	}
+	old := plan.replaced
+	if err := tx.DeleteNode(ctx, old.AccountID, old.ID); err != nil {
+		return nil, err
+	}
+	// slice h: quota counters move with the files, in this transaction.
+	if err := tx.AdjustUsage(ctx, old.AccountID, -old.Size, -1); err != nil {
+		return nil, err
+	}
+	return old, nil
+}
+
+// copyTree makes the copy of src's tree in the target place of plan. The copy of src gets rootID;
+// the rest get new IDs. A copy shares its files' blobs. It returns the number of nodes made and the
+// file count and bytes they add to usage.
+func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string, plan *transferPlan, by string) (
+	nodes int, files, bytes int64, err error) {
+	tree, err := tx.Subtree(ctx, src.AccountID, src.ID)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	now := store.Now()
+	newIDs := map[string]string{}
+	for i, n := range tree {
+		c := *n
+		if i == 0 {
+			c.ID = rootID
+		} else {
+			c.ID = id.New("nod")
+		}
+		newIDs[n.ID] = c.ID
+		c.FolderID = plan.folderID
+		c.CreatedAt, c.ModifiedAt = now, now
+		c.CreatedBy, c.ModifiedBy = by, by
+		if i == 0 {
+			c.ParentID, c.Name, c.NameKey = plan.parent.ID, plan.name, plan.key
+		} else {
+			c.ParentID = newIDs[n.ParentID]
+		}
+		if c.Kind == store.KindFile {
+			c.ETag = newETag()
+			bytes += c.Size
+			files++
+		}
+		if err := tx.InsertNode(ctx, &c); err != nil {
+			return 0, 0, 0, storeNameErr(err)
+		}
+	}
+	return len(tree), files, bytes, nil
+}
+
+// tooManyNodes is the refusal for a copy above copy.max_nodes.
+func (s *Server) tooManyNodes(nodes int) error {
+	return apierr.Newf(apierr.TooLarge, "a folder copy may make at most %d nodes", s.cfg.Copy.MaxNodes).
+		With("max_nodes", s.cfg.Copy.MaxNodes).With("nodes", nodes)
+}
+
+// handleMoveNode moves a file or folder to another place, possibly in another folder of the same
+// account. The caller needs write on the node's folder and on the target folder.
+func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
+	var in transferBody
+	if err := decodeJSON(w, r, &in); err != nil {
+		return err
+	}
+	src, err := s.nodeOf(r, r.PathValue("nod"), true)
+	if err != nil {
+		return err
+	}
+	if src.IsRoot() {
+		return apierr.New(apierr.InvalidRequest, "a folder's root cannot be moved")
+	}
+	if err := s.checkTargetFolder(r, src, in.Folder); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	p := principalOf(r)
+	var out *store.Node
+	s.atWrite()
+	err = s.store.Write(ctx, func(tx *store.Tx) error {
+		cur, err := tx.Node(ctx, src.AccountID, src.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nodeNotFound()
+		}
+		if err != nil {
+			return err
+		}
+		targetFolder := cur.FolderID
+		if in.Folder != "" {
+			targetFolder = in.Folder
+		}
+		if _, err := requireAccess(ctx, tx, p, cur.FolderID, true); err != nil {
+			return err
+		}
+		if _, err := requireAccess(ctx, tx, p, targetFolder, true); err != nil {
+			return err
+		}
+		plan, err := planTransfer(ctx, tx, cur, in, true)
+		if err != nil {
+			return err
+		}
+		if plan.parent.ID == cur.ParentID && plan.name == cur.Name && plan.folderID == cur.FolderID {
+			out = cur
+			return nil
+		}
+		from := map[string]any{"parent": cur.ParentID, "folder": cur.FolderID, "name": cur.Name}
+		replaced, err := applyReplace(ctx, tx, plan)
+		if err != nil {
+			return err
+		}
+		folderChanged := plan.folderID != cur.FolderID
+		cur.FolderID, cur.ParentID = plan.folderID, plan.parent.ID
+		cur.Name, cur.NameKey = plan.name, plan.key
+		cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
+		if err := tx.UpdateNode(ctx, cur); err != nil {
+			return storeNameErr(err)
+		}
+		if folderChanged && cur.Kind == store.KindDir {
+			if err := tx.SetSubtreeFolder(ctx, cur.AccountID, cur.ID, plan.folderID); err != nil {
+				return err
+			}
+		}
+		out = cur
+		if replaced != nil {
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.delete", replaced.ID,
+				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": cur.ID})); err != nil {
+				return err
+			}
+		}
+		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.move", cur.ID,
+			map[string]any{"from": from, "to": map[string]any{"parent": plan.parent.ID,
+				"folder": plan.folderID, "name": plan.name}}))
+	})
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, toNodeJSON(out))
+	return nil
+}
+
+// checkTargetFolder checks write on the folder a move goes to, when it is not src's own. A move
+// within the folder is already checked by nodeOf.
+func (s *Server) checkTargetFolder(r *http.Request, src *store.Node, target string) error {
+	if target == "" || target == src.FolderID {
+		return nil
+	}
+	if err := validID("fld", target); err != nil {
+		return err
+	}
+	_, err := s.folderFor(r, target, true)
+	return err
+}
+
+// copyPayload is what a queued copy needs. The new root's ID is fixed here, so a repeat of the job
+// can tell that the copy is done.
+type copyPayload struct {
+	Source     string       `json:"source"`
+	Root       string       `json:"root"`
+	Folder     string       `json:"folder"`
+	Parent     string       `json:"parent"`
+	Name       string       `json:"name,omitempty"`
+	OnConflict string       `json:"on_conflict,omitempty"`
+	Actor      actorPayload `json:"actor"`
+}
+
+// actorPayload is the caller a queued copy runs for. The job checks access again as this caller.
+type actorPayload struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	UserID string `json:"user_id,omitempty"`
+	Role   string `json:"role,omitempty"`
+}
+
+func actorOf(p *auth.Principal) actorPayload {
+	return actorPayload{Kind: string(p.Kind), ID: p.ID, UserID: p.UserID, Role: p.Role}
+}
+
+// handleCopyNode copies a file, or a folder with everything in it. The caller needs read on the
+// source and write on the target folder. A copy of a file shares its contents with the original,
+// so nothing is copied on disk, but the account is charged for the copy in full. Up to
+// syncCopyNodes nodes are copied in the request; a larger copy answers 202 with a job.
+func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
+	var in transferBody
+	if err := decodeJSON(w, r, &in); err != nil {
+		return err
+	}
+	src, err := s.nodeOf(r, r.PathValue("nod"), false)
+	if err != nil {
+		return err
+	}
+	if src.IsRoot() {
+		return apierr.New(apierr.InvalidRequest, "a folder's root cannot be copied; copy its contents instead")
+	}
+	target := src.FolderID
+	if in.Folder != "" {
+		if err := validID("fld", in.Folder); err != nil {
+			return err
+		}
+		target = in.Folder
+	}
+	if _, err := s.folderFor(r, target, true); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	p := principalOf(r)
+	nodes, err := s.store.SubtreeSize(ctx, src.AccountID, src.ID, s.cfg.Copy.MaxNodes+1)
+	if err != nil {
+		return err
+	}
+	if nodes > s.cfg.Copy.MaxNodes {
+		return s.tooManyNodes(nodes)
+	}
+	if nodes > s.copySyncNodes {
+		return s.queueCopy(w, r, src, in, p, target)
+	}
+
+	rootID := id.New("nod")
+	var out *store.Node
+	s.atWrite()
+	err = s.store.Write(ctx, func(tx *store.Tx) error {
+		cur, err := tx.Node(ctx, src.AccountID, src.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nodeNotFound()
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := requireAccess(ctx, tx, p, cur.FolderID, false); err != nil {
+			return err
+		}
+		if _, err := requireAccess(ctx, tx, p, target, true); err != nil {
+			return err
+		}
+		plan, err := planTransfer(ctx, tx, cur, in, false)
+		if err != nil {
+			return err
+		}
+		replaced, err := applyReplace(ctx, tx, plan)
+		if err != nil {
+			return err
+		}
+		count, files, bytes, err := copyTree(ctx, tx, cur, rootID, plan, p.ID)
+		if err != nil {
+			return err
+		}
+		// slice h: quota counters move with the copies, in this transaction.
+		if err := tx.AdjustUsage(ctx, cur.AccountID, bytes, files); err != nil {
+			return err
+		}
+		if out, err = tx.Node(ctx, cur.AccountID, rootID); err != nil {
+			return err
+		}
+		if replaced != nil {
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.delete", replaced.ID,
+				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": rootID})); err != nil {
+				return err
+			}
+		}
+		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.copy", rootID,
+			map[string]any{"source": cur.ID, "nodes": count, "bytes": bytes}))
+	})
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Location", "/api/v1/nodes/"+out.ID)
+	writeJSON(w, http.StatusCreated, toNodeJSON(out))
+	return nil
+}
+
+// queueCopy checks the copy's plan now, so a conflict is answered at once, then queues the copy as a
+// job. The job's target is the new root node.
+func (s *Server) queueCopy(w http.ResponseWriter, r *http.Request, src *store.Node, in transferBody,
+	p *auth.Principal, target string) error {
+	ctx := r.Context()
+	rootID := id.New("nod")
+	var job *store.Job
+	s.atWrite()
+	err := s.store.Write(ctx, func(tx *store.Tx) error {
+		cur, err := tx.Node(ctx, src.AccountID, src.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nodeNotFound()
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := requireAccess(ctx, tx, p, cur.FolderID, false); err != nil {
+			return err
+		}
+		if _, err := requireAccess(ctx, tx, p, target, true); err != nil {
+			return err
+		}
+		plan, err := planTransfer(ctx, tx, cur, in, false)
+		if err != nil {
+			return err
+		}
+		body, err := json.Marshal(copyPayload{Source: cur.ID, Root: rootID, Folder: plan.folderID,
+			Parent: plan.parent.ID, Name: in.Name, OnConflict: in.OnConflict, Actor: actorOf(p)})
+		if err != nil {
+			return err
+		}
+		now := store.Now()
+		job = &store.Job{ID: id.New("job"), AccountID: cur.AccountID, Kind: jobCopyNode, Target: rootID,
+			Status: store.JobQueued, Payload: string(body), CreatedAt: now, UpdatedAt: now}
+		return tx.InsertJob(ctx, job)
+	})
+	if err != nil {
+		return err
+	}
+	s.jobs.Wake()
+	w.Header().Set("Location", "/api/v1/jobs/"+job.ID)
+	writeJSON(w, http.StatusAccepted, toJobJSON(job))
+	return nil
+}
+
+// runCopyJob makes a queued copy. It is safe to repeat: when the new root already exists, the copy
+// was made, and the job does nothing. It checks access as the caller who queued it, so a grant
+// revoked since then stops the copy.
+func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
+	var pl copyPayload
+	if err := json.Unmarshal([]byte(job.Payload), &pl); err != nil {
+		return fmt.Errorf("copy job payload: %w", err)
+	}
+	p := &auth.Principal{Kind: auth.Kind(pl.Actor.Kind), ID: pl.Actor.ID, AccountID: job.AccountID,
+		UserID: pl.Actor.UserID, Role: pl.Actor.Role}
+	return s.store.Write(ctx, func(tx *store.Tx) error {
+		if _, err := tx.Node(ctx, job.AccountID, pl.Root); err == nil {
+			return nil // made by an earlier run
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		src, err := tx.Node(ctx, job.AccountID, pl.Source)
+		if errors.Is(err, store.ErrNotFound) {
+			return errors.New("the source no longer exists")
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := requireAccess(ctx, tx, p, src.FolderID, false); err != nil {
+			return err
+		}
+		if _, err := requireAccess(ctx, tx, p, pl.Folder, true); err != nil {
+			return err
+		}
+		nodes, err := tx.Subtree(ctx, job.AccountID, src.ID)
+		if err != nil {
+			return err
+		}
+		if len(nodes) > s.cfg.Copy.MaxNodes {
+			return s.tooManyNodes(len(nodes))
+		}
+		plan, err := planTransfer(ctx, tx, src, transferBody{Folder: pl.Folder, Parent: pl.Parent,
+			Name: pl.Name, OnConflict: pl.OnConflict}, false)
+		if err != nil {
+			return err
+		}
+		replaced, err := applyReplace(ctx, tx, plan)
+		if err != nil {
+			return err
+		}
+		count, files, bytes, err := copyTree(ctx, tx, src, pl.Root, plan, p.ID)
+		if err != nil {
+			return err
+		}
+		// slice h: quota counters move with the copies, in this transaction.
+		if err := tx.AdjustUsage(ctx, job.AccountID, bytes, files); err != nil {
+			return err
+		}
+		if replaced != nil {
+			if err := tx.InsertAudit(ctx, auditAs(p, job.AccountID, "node.delete", replaced.ID,
+				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": pl.Root})); err != nil {
+				return err
+			}
+		}
+		return tx.InsertAudit(ctx, auditAs(p, job.AccountID, "node.copy", pl.Root,
+			map[string]any{"source": src.ID, "nodes": count, "bytes": bytes, "job": job.ID}))
+	})
+}
+
+// auditAs describes an action by p for the audit log, for work that runs outside a request.
+func auditAs(p *auth.Principal, accountID, action, target string, details map[string]any) *store.AuditEntry {
+	return &store.AuditEntry{Time: store.Now(), AccountID: accountID, ActorKind: string(p.Kind), ActorID: p.ID,
+		Action: action, Target: target, Details: details}
+}

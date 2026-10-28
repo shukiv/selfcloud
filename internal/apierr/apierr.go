@@ -32,6 +32,7 @@ const (
 	Locked               Code = "locked"
 	UploadExpired        Code = "upload_expired"
 	PreconditionFailed   Code = "precondition_failed"
+	PreconditionRequired Code = "precondition_required"
 	TooLarge             Code = "too_large"
 	ChunkTooLarge        Code = "chunk_too_large"
 	RangeNotSatisfiable  Code = "range_not_satisfiable"
@@ -62,6 +63,7 @@ var statuses = map[Code]int{
 	Locked:               http.StatusConflict,
 	UploadExpired:        http.StatusGone,
 	PreconditionFailed:   http.StatusPreconditionFailed,
+	PreconditionRequired: http.StatusPreconditionRequired,
 	TooLarge:             http.StatusRequestEntityTooLarge,
 	ChunkTooLarge:        http.StatusRequestEntityTooLarge,
 	RangeNotSatisfiable:  http.StatusRequestedRangeNotSatisfiable,

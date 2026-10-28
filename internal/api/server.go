@@ -16,11 +16,16 @@ import (
 
 	"selfcloud/internal/apierr"
 	"selfcloud/internal/auth"
+	"selfcloud/internal/blob"
 	"selfcloud/internal/config"
 	"selfcloud/internal/jobs"
 	"selfcloud/internal/mail"
 	"selfcloud/internal/store"
+	"selfcloud/internal/sweep"
 )
+
+// sweepInterval is how often housekeeping runs: blob removal, expired sessions and tokens.
+const sweepInterval = 5 * time.Minute
 
 // shutdownGrace is how long requests get to wrap up after their contexts are cancelled at the
 // shutdown deadline, before their connections are closed.
@@ -41,6 +46,7 @@ type Server struct {
 	cfg       *config.Config
 	log       *slog.Logger
 	store     *store.Store
+	blobs     blob.Store
 	trusted   []netip.Prefix
 	metrics   *metrics
 	jobs      *jobs.Runner
@@ -57,6 +63,11 @@ type Server struct {
 	bg       sync.WaitGroup
 	draining atomic.Bool
 	handler  http.Handler
+	// copySyncNodes is the largest copy made in the request; see syncCopyNodes.
+	copySyncNodes int
+	// beforeWrite is a test hook, run before a mutating request takes the write lock. Nil in
+	// production.
+	beforeWrite func()
 }
 
 // handlerFunc is a handler that returns its error instead of writing it; the route wrapper
@@ -100,6 +111,10 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
+	blobs, err := blob.New(opts.Config.DataDir)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
 	pub, err := url.Parse(opts.Config.PublicURL)
 	if err != nil {
 		return nil, fmt.Errorf("api: public_url: %w", err)
@@ -109,6 +124,7 @@ func New(opts Options) (*Server, error) {
 		cfg:           cfg,
 		log:           log,
 		store:         opts.Store,
+		blobs:         blobs,
 		trusted:       trusted,
 		metrics:       newMetrics(),
 		jobs:          jobs.New(opts.Store, log),
@@ -136,12 +152,17 @@ func New(opts Options) (*Server, error) {
 			"mail.forgot.target":  newLimiterRate(3, time.Hour),
 			"mail.forgot.ip":      newLimiterRate(20, time.Hour),
 			"mail.forgot.account": newLimiterRate(30, time.Hour),
+			// Each address gets one reset an hour that the account cap does not count, so one
+			// caller who uses up an account's cap on repeats cannot stop its users' first resets.
+			"mail.forgot.first": newLimiterRate(1, time.Hour),
 		},
 	}
 	if pub.Scheme == "https" {
 		s.sessionCookie = "__Host-selfcloud_session"
 	}
 	s.jobs.Handle(jobAccountDelete, s.runAccountDelete)
+	s.jobs.Handle(jobCopyNode, s.runCopyJob)
+	s.copySyncNodes = syncCopyNodes
 
 	mux := http.NewServeMux()
 	for _, rt := range s.routes() {
@@ -202,6 +223,18 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/me", handle: s.handleMe, session: true},
 		{method: http.MethodPatch, path: "/api/v1/me", handle: s.handleUpdateMe, session: true},
 		{method: http.MethodPost, path: "/api/v1/me/password", handle: s.handleChangePassword, session: true},
+
+		{method: http.MethodGet, path: "/api/v1/folders/{fld}/children", handle: s.handleListPathChildren, auth: true},
+		{method: http.MethodPost, path: "/api/v1/folders/{fld}/directories", handle: s.handleMkdir, auth: true},
+		{method: http.MethodPost, path: "/api/v1/folders/{fld}/files", handle: s.handleCreateFile, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}", handle: s.handleStatNode, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}", handle: s.handleRenameNode, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}", handle: s.handleDeleteNode, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/children", handle: s.handleListNodeChildren, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/move", handle: s.handleMoveNode, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/copy", handle: s.handleCopyNode, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true},
+		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true},
 	}
 	if s.cfg.MetricsListen == "" {
 		rs = append(rs, route{method: http.MethodGet, path: "/metrics", handle: s.handleMetrics})
@@ -306,6 +339,10 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	jobsCtx, stopJobs := context.WithCancel(baseCtx)
 	jobsDone := make(chan struct{})
 	go func() { defer close(jobsDone); s.jobs.Run(jobsCtx) }()
+	sweepDone := make(chan struct{})
+	sw := sweep.New(sweep.Options{Store: s.store, Blobs: s.blobs, DeleteGrace: s.cfg.Blobs.DeleteGrace.D(),
+		Interval: sweepInterval, Logger: s.log})
+	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
 
 	var serveErr error
 	select {
@@ -314,7 +351,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	}
 	s.draining.Store(true)
 	stopJobs() // an interrupted job is run again on the next start
-	defer func() { <-jobsDone }()
+	defer func() { <-jobsDone; <-sweepDone }()
 	s.log.Info("shutting down", "timeout", s.cfg.ShutdownTimeout.String())
 
 	shCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout.D())

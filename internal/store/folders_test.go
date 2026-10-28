@@ -144,7 +144,7 @@ func TestGrantsAndUserDeletion(t *testing.T) {
 	if err := set(other.ID, LevelRead); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := s.GrantedFolders(ctx, a, ann.ID); len(n) != 2 {
+	if n, _, _ := s.GrantedFolders(ctx, a, ann.ID, Page{Limit: 50}); len(n) != 2 {
 		t.Errorf("granted folders under A = %d, want 2", len(n))
 	}
 

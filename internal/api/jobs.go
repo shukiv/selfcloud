@@ -11,6 +11,7 @@ import (
 type jobJSON struct {
 	ID         string     `json:"id"`
 	Kind       string     `json:"kind"`
+	Target     string     `json:"target"` // what the job acts on: for node.copy, the new copy's root
 	Status     string     `json:"status"`
 	Error      string     `json:"error,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -19,7 +20,7 @@ type jobJSON struct {
 }
 
 func toJobJSON(j *store.Job) jobJSON {
-	return jobJSON{ID: j.ID, Kind: j.Kind, Status: j.Status, Error: j.Error, CreatedAt: j.CreatedAt,
+	return jobJSON{ID: j.ID, Kind: j.Kind, Target: j.Target, Status: j.Status, Error: j.Error, CreatedAt: j.CreatedAt,
 		UpdatedAt: j.UpdatedAt, FinishedAt: j.FinishedAt}
 }
 

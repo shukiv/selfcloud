@@ -375,10 +375,10 @@ func (s *Server) handleListUserGrants(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-// handleMyFolders lists the folders the caller can reach. An account key or an owner session gets
-// every folder of its account with write, paged as the account's folder list is. A member session
-// gets its granted folders at the granted level; that list is not paged. Admins get forbidden,
-// the same rule folderAccess applies: they manage tenants and never read their files.
+// handleMyFolders lists the folders the caller can reach, paged the same way for everyone. An
+// account key or an owner session gets every folder of its account with write. A member session
+// gets its granted folders at the granted level. Admins get forbidden, the same rule folderAccess
+// applies: they manage tenants and never read their files.
 func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	if p.IsAdmin() {
@@ -386,20 +386,21 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	}
 	ctx := r.Context()
 	out := listResponse[folderAccessJSON]{Items: []folderAccessJSON{}}
+	page, err := pageParams(r)
+	if err != nil {
+		return err
+	}
 	if p.Kind == auth.KindUser && p.Role == auth.RoleMember {
-		granted, err := s.store.GrantedFolders(ctx, p.AccountID, p.UserID)
+		granted, next, err := s.store.GrantedFolders(ctx, p.AccountID, p.UserID, page)
 		if err != nil {
-			return err
+			return storeErr(err)
 		}
+		out.NextCursor = next
 		for _, g := range granted {
 			out.Items = append(out.Items, folderAccessJSON{folderJSON: toFolderJSON(g.Folder), Access: g.Level})
 		}
 		writeJSON(w, http.StatusOK, out)
 		return nil
-	}
-	page, err := pageParams(r)
-	if err != nil {
-		return err
 	}
 	folders, next, err := s.store.Folders(ctx, p.AccountID, store.FolderFilter{}, page)
 	if err != nil {

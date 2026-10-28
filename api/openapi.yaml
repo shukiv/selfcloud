@@ -40,6 +40,11 @@ tags:
       whether an email address is known.
   - name: Jobs
     description: Background work started by a request that answered 202.
+  - name: Files
+    description: |
+      The file tree of a folder: directories, files, their contents, and moving, copying and
+      deleting them. A caller needs `read` on a folder to look and `write` to change it. A node a
+      caller cannot reach is `not_found`; one it can reach but may not change is `forbidden`.
 
 paths:
   /healthz:
@@ -343,9 +348,9 @@ paths:
       operationId: listMyFolders
       summary: List the folders the caller can reach
       description: |
-        An account key or owner session gets every folder of its account with access `write`,
-        paged. A member session gets its granted folders at the granted level, not paged. Admins
-        get `403 forbidden`: they manage tenants and never read their files.
+        An account key or owner session gets every folder of its account with access `write`.
+        A member session gets its granted folders at the granted level. Both lists are paged the
+        same way. Admins get `403 forbidden`: they manage tenants and never read their files.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - $ref: "#/components/parameters/limit"
@@ -800,9 +805,12 @@ paths:
       description: |
         Always answers 202. If an active user has this email, a reset link is mailed in the
         background. Rate-limited per client address and per email. Past the forgot budget
-        (3 an hour per address, 20 an hour per client address, 30 an hour per account, where an
-        installation admin counts as one account) no mail is sent, and the answer is still 202.
-        Its buckets are separate from the ones invitations and resends use.
+        (3 an hour per address, 20 an hour per client address) no mail is sent, and the answer is
+        still 202. Each address gets one reset an hour that no account cap counts. Any further
+        reset for that address within the hour also counts against its account (30 an hour, where
+        an installation admin counts as one account). So a caller cannot stop a user's first
+        reset by using up the account's budget. Its buckets are separate from the ones invitations
+        and resends use.
       security: []
       requestBody:
         required: true
@@ -893,6 +901,298 @@ paths:
           description: Changed. Sessions were replaced.
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/folders/{fld}/children:
+    parameters:
+      - $ref: "#/components/parameters/fld"
+    get:
+      tags: [Files]
+      operationId: listChildrenByPath
+      summary: List a directory of a folder by its path
+      description: |
+        `path` is relative to the folder's root: `/a/b`, or empty or `/` for the root. Names are
+        checked as in `Node`; an empty segment, `.` or `..` is `invalid_path`. A missing
+        directory is `not_found`; a file on the way is `invalid_path`. Children come in name order.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: path
+          in: query
+          schema: { type: string, maxLength: 4096 }
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The children of the directory.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeList" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/folders/{fld}/directories:
+    parameters:
+      - $ref: "#/components/parameters/fld"
+    post:
+      tags: [Files]
+      operationId: createDirectory
+      summary: Make a directory, optionally with the directories above it
+      description: |
+        With `parents: true`, missing directories on the path are made, and a directory that
+        already exists is answered `200` (like `mkdir -p`). Otherwise a missing parent is
+        `not_found` and an existing name is `conflict`. A file where a directory is needed is
+        `invalid_path`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DirectoryCreate" }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        "200":
+          description: The directory already existed (only with parents).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/folders/{fld}/files:
+    parameters:
+      - $ref: "#/components/parameters/fld"
+    post:
+      tags: [Files]
+      operationId: createFile
+      summary: Write a new small file in one request
+      description: |
+        The body is the file's contents, sent as is. `Content-Type` becomes the file's media
+        type; without it, the type comes from the name's extension. `path` names the new file
+        (`/a/b.txt`); `parents=true` makes missing directories. A body over
+        `upload.max_small_file_size` is `too_large` with `details.limit_bytes`; larger files
+        use resumable uploads. A name that exists is `conflict`, or with `If-None-Match: *`,
+        `precondition_failed`.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string, maxLength: 4096 }
+        - name: parents
+          in: query
+          schema: { type: boolean, default: false }
+        - name: If-None-Match
+          in: header
+          description: "Only *: the file must not exist yet."
+          schema: { type: string, enum: ["*"] }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Files]
+      operationId: statNode
+      summary: Stat a file or directory
+      description: |
+        For a file: its size, media type, `etag` (a strong ETag that changes with every write)
+        and `sha256` of the contents. A folder's root is a directory with no `parent_id`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The node.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Files]
+      operationId: renameNode
+      summary: Rename a file or directory inside its directory
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeRename" }
+      responses:
+        "200":
+          description: The renamed node.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Files]
+      operationId: deleteNode
+      summary: Delete a file, or a directory with everything in it
+      description: |
+        The contents of the files are removed from disk later, once nothing refers to them and
+        the blob grace period (`blobs.delete_grace`) has passed. A folder's root cannot be
+        deleted; delete the folder instead.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/children:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Files]
+      operationId: listChildren
+      summary: List a directory by its ID
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The children of the directory, in name order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeList" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/move:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Files]
+      operationId: moveNode
+      summary: Move a file or directory
+      description: |
+        The target is `folder` (default: the node's own folder) and a directory in it, given by
+        `parent` (a directory ID) or `path` (relative to the target folder's root); by default the
+        node's own directory, or the target folder's root when the folder changes. `name`
+        renames it on the way. A clash with a sibling is `conflict` unless `on_conflict` is
+        `rename`, which picks `name (1).ext`, or `replace`, which deletes the sibling file (only
+        file over file; a folder on either side is `conflict`). The replaced file's contents are
+        collected later, as for any delete. A folder cannot go into itself or below itself
+        (`invalid_request`). Moving needs `write` on the node's folder and on the target folder.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Transfer" }
+      responses:
+        "200":
+          description: The node, where it now is.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/copy:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Files]
+      operationId: copyNode
+      summary: Copy a file or directory
+      description: |
+        Takes the same target as a move. A copy of a file shares its contents with the original,
+        so nothing is copied on disk, but the account is charged for the copy in full. The caller
+        needs `read` on the source and `write` on the target folder. A folder of up to 10,000
+        nodes is copied in this request. A larger one answers `202` with a job (`node.copy`); the
+        job's `target` is the new root node, and the job checks access again when it runs. A tree
+        above `copy.max_nodes` is `too_large`, with `details.max_nodes` and `details.nodes`.
+        Copy `on_conflict` works as for a move.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Transfer" }
+      responses:
+        "201":
+          description: The copy.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        "202":
+          description: Queued as a job; poll GET /api/v1/jobs/{job}. The new root is the job's target.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/content:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Files]
+      operationId: getContent
+      summary: Download a file
+      description: |
+        The whole file, sent as an attachment with `X-Content-Type-Options: nosniff` and a
+        sandboxing `Content-Security-Policy`. A matching `If-None-Match` is `304`. Ranges and
+        signed links come later.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: The contents.
+          headers:
+            ETag: { schema: { type: string } }
+            Last-Modified: { schema: { type: string } }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "304":
+          description: "Not modified: the If-None-Match ETag is current."
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Files]
+      operationId: replaceContent
+      summary: Replace a file's contents in one request
+      description: |
+        `If-Match` is required and must be the ETag the editor read; a stale one is
+        `precondition_failed`, and a missing one is `precondition_required` (428). The new contents are a new
+        blob. The size limit is `upload.max_small_file_size`, as for a create.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: The file, with its new ETag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearer:
@@ -926,6 +1226,11 @@ components:
       in: path
       required: true
       schema: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    nod:
+      name: nod
+      in: path
+      required: true
+      schema: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     limit:
       name: limit
       in: query
@@ -981,6 +1286,64 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 255 }
         external_id: { type: string, maxLength: 255, description: Empty clears it. }
+
+    Node:
+      type: object
+      description: |
+        A file or a directory. A folder's root is a directory with no `parent_id`, and its name
+        is empty. Names are NFC, 1 to 255 bytes, may not hold `/`, `\`, control or invisible
+        characters, may not start or end with a space, and may not be `.` or `..`. Within one
+        directory names are unique without regard to case.
+      required: [id, folder_id, parent_id, name, kind, size, created_at, modified_at]
+      properties:
+        id: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        folder_id: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        parent_id: { type: [string, "null"] }
+        name: { type: string }
+        kind: { type: string, enum: [dir, file] }
+        size: { type: integer, minimum: 0, description: Bytes, for a file. }
+        mime_type: { type: string, description: Files only. }
+        etag: { type: string, description: Files only. A strong ETag; changes with every write. }
+        sha256: { type: string, description: Files only. Hex SHA-256 of the contents. }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+
+    NodeList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Node" }
+        next_cursor: { type: string }
+
+    DirectoryCreate:
+      type: object
+      required: [path]
+      additionalProperties: false
+      properties:
+        path: { type: string, maxLength: 4096, description: "Relative to the folder's root, e.g. /a/b." }
+        parents: { type: boolean, default: false }
+
+    NodeRename:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+
+    Transfer:
+      type: object
+      additionalProperties: false
+      properties:
+        folder: { type: string, description: The target folder; default the node's own. }
+        parent: { type: string, description: A directory of the target folder. Not with path. }
+        path: { type: string, description: "A directory of the target folder, e.g. /a. Not with parent." }
+        name: { type: string, minLength: 1, maxLength: 255, description: A new name. }
+        on_conflict:
+          type: string
+          enum: [fail, rename, replace]
+          default: fail
 
     FolderList:
       type: object
@@ -1122,6 +1485,7 @@ components:
         | upload_offset_mismatch | 409 | Upload-Offset differs from the server's. |
         | locked | 409 | Locked by an office editor. |
         | upload_expired | 410 | The upload expired; start again. |
+        | precondition_required | 428 | A write that needs If-Match sent none. |
         | precondition_failed | 412 | Stale ETag in If-Match. |
         | too_large | 413 | File over the size limit. |
         | chunk_too_large | 413 | Upload request over the size limit. |
@@ -1148,6 +1512,7 @@ components:
         - locked
         - upload_expired
         - precondition_failed
+        - precondition_required
         - too_large
         - chunk_too_large
         - range_not_satisfiable
@@ -1342,10 +1707,11 @@ components:
 
     Job:
       type: object
-      required: [id, kind, status, created_at, updated_at, finished_at]
+      required: [id, kind, target, status, created_at, updated_at, finished_at]
       properties:
         id: { type: string, example: job_5m2k8x1v0c3d9q7r4t6w8y0z2a }
         kind: { type: string, example: account.delete }
+        target: { type: string, description: "What the job acts on: an account, or for node.copy the new root node." }
         status:
           type: string
           enum: [queued, running, succeeded, failed]

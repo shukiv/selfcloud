@@ -441,15 +441,20 @@ func (s *Server) sendResetLinks(ctx context.Context, r *http.Request, key, accou
 			}
 			// Over the mail budget, this address gets no mail. The answer is the same 202, so the
 			// limit cannot show whether the address is known.
-			// An account's users share a budget, so one caller with many addresses cannot mail every
-			// user. Admins have no account and share the "admin" key. Both are charged together.
-			accountKey := u.AccountID
-			if accountKey == "" {
-				accountKey = "admin"
-			}
-			if err := s.chargeAll(charge{"mail.forgot.target", emailKey(u.Email)},
-				charge{"mail.forgot.account", accountKey}); err != nil {
-				continue
+			// The first reset an address gets in an hour is reserved: it is charged to its own
+			// address buckets only. Repeats are also charged to the account (admins have no account
+			// and share the "admin" key), so an account's users share a cap on repeats, and one caller
+			// with many addresses cannot use the cap up and block every user's first reset.
+			if err := s.chargeAll(charge{"mail.forgot.first", emailKey(u.Email)},
+				charge{"mail.forgot.target", emailKey(u.Email)}); err != nil {
+				accountKey := u.AccountID
+				if accountKey == "" {
+					accountKey = "admin"
+				}
+				if err := s.chargeAll(charge{"mail.forgot.target", emailKey(u.Email)},
+					charge{"mail.forgot.account", accountKey}); err != nil {
+					continue
+				}
 			}
 			it, err := s.issueToken(ctx, tx, u, store.PurposeReset, now)
 			if err != nil {

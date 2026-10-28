@@ -55,6 +55,8 @@ type Config struct {
 	Log       LogConfig       `yaml:"log"`
 	Store     StoreConfig     `yaml:"store"`
 	Storage   StorageConfig   `yaml:"storage"`
+	Blobs     BlobsConfig     `yaml:"blobs"`
+	Copy      CopyConfig      `yaml:"copy"`
 	Upload    UploadConfig    `yaml:"upload"`
 	UI        UIConfig        `yaml:"ui"`
 	Users     UsersConfig     `yaml:"users"`
@@ -133,13 +135,32 @@ type StorageConfig struct {
 	MinFree ByteSize `yaml:"min_free"`
 }
 
+// CopyConfig controls copying folders.
+type CopyConfig struct {
+	// MaxNodes is the most nodes one copy may make. Larger copies are refused.
+	MaxNodes int `yaml:"max_nodes"`
+}
+
+// BlobsConfig controls the removal of file contents that nothing refers to any more.
+type BlobsConfig struct {
+	// DeleteGrace is how long an unreferenced blob is kept before its file is removed. It is the
+	// window in which a backup taken before the removal still has the file.
+	DeleteGrace Duration `yaml:"delete_grace"`
+}
+
 // UploadConfig controls uploads.
 type UploadConfig struct {
 	MaxFileSize ByteSize `yaml:"max_file_size"`
 	// MaxChunkSize caps one upload request. Behind a proxy with a 100 MB request cap, keep it at
 	// or under 90MiB.
 	MaxChunkSize ByteSize `yaml:"max_chunk_size"`
-	Expiry       Duration `yaml:"expiry"`
+	// MaxSmallFileSize caps a file written in one request (a create or an edit of a file under
+	// it). Larger files go through resumable uploads.
+	MaxSmallFileSize ByteSize `yaml:"max_small_file_size"`
+	// BodyTimeout is the time a request body may take to arrive, plus one second per MiB of the
+	// size cap, so a slow client cannot hold a write open for ever.
+	BodyTimeout Duration `yaml:"body_timeout"`
+	Expiry      Duration `yaml:"expiry"`
 }
 
 // UIConfig controls the web interface.
@@ -158,10 +179,14 @@ func Defaults() *Config {
 		Log:             LogConfig{Level: "info", Format: "json"},
 		Store:           StoreConfig{Driver: "sqlite"},
 		Storage:         StorageConfig{MinFree: 1 * GiB},
+		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
+		Copy:            CopyConfig{MaxNodes: 200000},
 		Upload: UploadConfig{
-			MaxFileSize:  100 * GiB,
-			MaxChunkSize: 64 * MiB,
-			Expiry:       Duration(24 * time.Hour),
+			MaxFileSize:      100 * GiB,
+			MaxChunkSize:     64 * MiB,
+			MaxSmallFileSize: 16 * MiB,
+			BodyTimeout:      Duration(30 * time.Second),
+			Expiry:           Duration(24 * time.Hour),
 		},
 		Users: UsersConfig{
 			VerificationTTL:   Duration(72 * time.Hour),
@@ -267,6 +292,18 @@ func (c *Config) Validate() error {
 	}
 	if c.Upload.MaxChunkSize <= 0 || c.Upload.MaxChunkSize > c.Upload.MaxFileSize {
 		bad("upload.max_chunk_size must be positive and at most upload.max_file_size")
+	}
+	if c.Upload.MaxSmallFileSize <= 0 || c.Upload.MaxSmallFileSize > c.Upload.MaxFileSize {
+		bad("upload.max_small_file_size must be positive and at most upload.max_file_size")
+	}
+	if c.Blobs.DeleteGrace < 0 {
+		bad("blobs.delete_grace is negative")
+	}
+	if c.Copy.MaxNodes <= 0 {
+		bad("copy.max_nodes must be positive")
+	}
+	if c.Upload.BodyTimeout <= 0 {
+		bad("upload.body_timeout must be positive")
 	}
 	if c.Upload.Expiry <= 0 {
 		bad("upload.expiry must be positive")

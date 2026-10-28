@@ -174,6 +174,7 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 	if err != nil {
 		return err
 	}
+	// slice h: usage is taken off here too; quota checks rely on these counters.
 	return tx.AdjustUsage(ctx, accountID, -bytes, -files)
 }
 
@@ -232,6 +233,12 @@ func (s *Store) Grant(ctx context.Context, folderID, userID string) (*Grant, err
 		"SELECT "+grantCols+" FROM grants WHERE folder_id = ? AND user_id = ?", folderID, userID))
 }
 
+// Grant returns the grant of a user on a folder, read inside the transaction.
+func (tx *Tx) Grant(ctx context.Context, folderID, userID string) (*Grant, error) {
+	return scanGrant(tx.q.QueryRowContext(ctx,
+		"SELECT "+grantCols+" FROM grants WHERE folder_id = ? AND user_id = ?", folderID, userID))
+}
+
 // GrantsOfFolder lists the grants of a folder, oldest first.
 func (s *Store) GrantsOfFolder(ctx context.Context, folderID string) ([]*Grant, error) {
 	return s.queryGrants(ctx, "SELECT "+grantCols+" FROM grants WHERE folder_id = ? ORDER BY created_at, user_id",
@@ -269,14 +276,29 @@ type FolderAccess struct {
 	Level  string
 }
 
-// GrantedFolders lists the folders of accountID that userID holds a grant on, with their levels.
-func (s *Store) GrantedFolders(ctx context.Context, accountID, userID string) ([]FolderAccess, error) {
-	rows, err := s.r.QueryContext(ctx, `SELECT f.id, f.account_id, f.external_id, f.name, f.name_key,
-		f.created_at, f.updated_at, g.level
+// GrantedFolders lists the folders of accountID that userID holds a grant on, with their levels,
+// one page at a time. The order is creation time, then ID, as for the folder list.
+func (s *Store) GrantedFolders(ctx context.Context, accountID, userID string, p Page) ([]FolderAccess, string, error) {
+	query := `SELECT f.id, f.account_id, f.external_id, f.name, f.name_key, f.created_at, f.updated_at, g.level
 		FROM grants g JOIN folders f ON f.id = g.folder_id
-		WHERE f.account_id = ? AND g.user_id = ? ORDER BY f.created_at, f.id`, accountID, userID)
+		WHERE f.account_id = ? AND g.user_id = ?`
+	args := []any{accountID, userID}
+	if p.Cursor != "" {
+		parts, err := decodeCursor(p.Cursor, 2)
+		if err != nil {
+			return nil, "", err
+		}
+		ms, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return nil, "", ErrBadCursor
+		}
+		query += " AND (f.created_at, f.id) > (?, ?)"
+		args = append(args, ms, parts[1])
+	}
+	args = append(args, p.Limit+1)
+	rows, err := s.r.QueryContext(ctx, query+" ORDER BY f.created_at, f.id LIMIT ?", args...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 	var out []FolderAccess
@@ -286,14 +308,23 @@ func (s *Store) GrantedFolders(ctx context.Context, accountID, userID string) ([
 		var created, updated int64
 		var level string
 		if err := rows.Scan(&f.ID, &f.AccountID, &ext, &f.Name, &f.NameKey, &created, &updated, &level); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		f.ExternalID = ext.String
 		f.CreatedAt = fromMillis(created)
 		f.UpdatedAt = fromMillis(updated)
 		out = append(out, FolderAccess{Folder: &f, Level: level})
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(out) > p.Limit {
+		out = out[:p.Limit]
+		last := out[len(out)-1].Folder
+		next = encodeCursor(strconv.FormatInt(millis(last.CreatedAt), 10), last.ID)
+	}
+	return out, next, nil
 }
 
 // DeleteUserGrants removes every grant the user holds and returns how many. It runs when a user

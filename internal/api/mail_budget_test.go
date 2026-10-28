@@ -68,25 +68,33 @@ func TestForgotBudgetDoesNotBlockInvitations(t *testing.T) {
 	}
 }
 
-// TestForgotAccountCap checks that one account's users cannot all be mailed by forgot requests
-// from many addresses: the account has 30 an hour, shared by its users. Another account is not
-// affected. The per-client limit is raised here, so this test isolates the account cap.
+// TestForgotAccountCap checks that the account cap limits repeat resets only. Sixteen addresses
+// in one account each get a first reset (16 mails), then two repeats each: 32 repeats, of which
+// the account's 30 an hour let through 30. Another account is not affected. The per-client limit is
+// raised here, so this test isolates the account cap.
 func TestForgotAccountCap(t *testing.T) {
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	s.limits["mail.forgot.ip"] = newLimiterRate(1000, time.Hour)
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Alpha")
-	for i := range 31 {
+	for i := range 16 {
 		verifiedUser(t, s, key, acc.ID, fmt.Sprintf("u%d@example.com", i))
 	}
-	for i := range 31 {
-		wantStatus(t, call(t, s, "POST", "/api/v1/auth/password/forgot", "",
-			map[string]any{"email": fmt.Sprintf("u%d@example.com", i)}), 202)
+	forgot := func(email string) {
+		t.Helper()
+		wantStatus(t, call(t, s, "POST", "/api/v1/auth/password/forgot", "", map[string]any{"email": email}), 202)
+	}
+	for i := range 16 {
+		forgot(fmt.Sprintf("u%d@example.com", i))
+	}
+	for i := range 16 {
+		forgot(fmt.Sprintf("u%d@example.com", i))
+		forgot(fmt.Sprintf("u%d@example.com", i))
 	}
 	s.bg.Wait()
-	if n := len(rec.Messages()); n != 30 {
-		t.Fatalf("reset mails for one account = %d, want 30", n)
+	if n := len(rec.Messages()); n != 16+30 {
+		t.Fatalf("reset mails for one account = %d, want 46 (16 first resets and 30 repeats)", n)
 	}
 
 	// The second account still invites normally.
@@ -95,5 +103,81 @@ func TestForgotAccountCap(t *testing.T) {
 		map[string]any{"email": "u0@example.com", "verification": "email"}))
 	if invited.Verification == nil || invited.Verification.Sent == nil || !*invited.Verification.Sent {
 		t.Fatalf("invitation in another account was not sent: %+v", invited.Verification)
+	}
+}
+
+// TestFirstResetSurvivesAccountCap checks that a caller who uses up an account's cap on repeats
+// cannot stop a user of that account from getting a first reset: the first reset of each address
+// in an hour is reserved.
+func TestFirstResetSurvivesAccountCap(t *testing.T) {
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	s.limits["mail.forgot.ip"] = newLimiterRate(1000, time.Hour)
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Alpha")
+	for i := range 16 {
+		verifiedUser(t, s, key, acc.ID, fmt.Sprintf("u%d@example.com", i))
+	}
+	verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	forgot := func(email string) {
+		t.Helper()
+		wantStatus(t, call(t, s, "POST", "/api/v1/auth/password/forgot", "", map[string]any{"email": email}), 202)
+	}
+	// Use up the account's 30 repeats: 16 addresses, a first reset and two repeats each.
+	for i := range 16 {
+		for range 3 {
+			forgot(fmt.Sprintf("u%d@example.com", i))
+		}
+	}
+	s.bg.Wait()
+	before := len(rec.Messages())
+	if before != 16+30 {
+		t.Fatalf("mails before ann = %d, want 46", before)
+	}
+	// Ann has never been asked for: her first reset goes out although the account cap is spent.
+	forgot("ann@example.com")
+	s.bg.Wait()
+	if n := len(rec.Messages()); n != before+1 {
+		t.Fatalf("ann's first reset: mails %d, want %d", n, before+1)
+	}
+	// Her second request in the hour is a repeat, and the account cap refuses it.
+	forgot("ann@example.com")
+	s.bg.Wait()
+	if n := len(rec.Messages()); n != before+1 {
+		t.Fatalf("ann's repeat after the cap: mails %d, want %d", n, before+1)
+	}
+}
+
+// TestFirstAdminResetSurvivesAdminRepeats checks the same for installation admins, who share the
+// "admin" bucket. The admin bucket is cut to 2 here so the test stays short.
+func TestFirstAdminResetSurvivesAdminRepeats(t *testing.T) {
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	s.limits["mail.forgot.account"] = newLimiterRate(2, time.Hour)
+	admin := adminKey(t, s)
+	newAdminUser(t, s, admin, "a1@example.com")
+	newAdminUser(t, s, admin, "a2@example.com")
+	newAdminUser(t, s, admin, "a3@example.com")
+	forgot := func(email string) {
+		t.Helper()
+		wantStatus(t, call(t, s, "POST", "/api/v1/auth/password/forgot", "",
+			map[string]any{"email": email, "account": adminChoiceID}), 202)
+	}
+	// a1: a first reset and two repeats, which use the whole admin bucket.
+	for range 3 {
+		forgot("a1@example.com")
+	}
+	// a2: the first reset goes out; its repeat is refused by the admin bucket.
+	forgot("a2@example.com")
+	forgot("a2@example.com")
+	s.bg.Wait()
+	if n := len(rec.Messages()); n != 4 {
+		t.Fatalf("mails after admin repeats = %d, want 4", n)
+	}
+	// a3 has never been asked for, so the first reset goes out.
+	forgot("a3@example.com")
+	s.bg.Wait()
+	if n := len(rec.Messages()); n != 5 {
+		t.Fatalf("a3's first reset: mails = %d, want 5", n)
 	}
 }
