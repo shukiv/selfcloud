@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package store
 
 import (
@@ -6,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/id"
 )
 
 // newUploadRow adds an unfinished upload of length bytes to folderID, into the directory dirID (or

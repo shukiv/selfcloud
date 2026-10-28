@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command selfcloud is a self-hosted drive server.
 package main
 
@@ -15,12 +17,12 @@ import (
 	"syscall"
 	"time"
 
-	"selfcloud/internal/api"
-	"selfcloud/internal/config"
-	"selfcloud/internal/fsutil"
-	"selfcloud/internal/mail"
-	"selfcloud/internal/store"
-	"selfcloud/internal/version"
+	"github.com/shukiv/selfcloud/internal/api"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/fsutil"
+	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/version"
 )
 
 const usage = `Usage: selfcloud <command> [-config FILE]

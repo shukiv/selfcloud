@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -7,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	apispec "selfcloud/api"
-	"selfcloud/internal/fsutil"
-	"selfcloud/internal/version"
+	apispec "github.com/shukiv/selfcloud/api"
+	"github.com/shukiv/selfcloud/internal/fsutil"
+	"github.com/shukiv/selfcloud/internal/version"
 )
 
 type readiness struct {

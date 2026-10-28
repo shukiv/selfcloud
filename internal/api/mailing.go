@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -8,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/auth"
-	"selfcloud/internal/id"
-	"selfcloud/internal/mail"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // Verification methods, as the API names them.

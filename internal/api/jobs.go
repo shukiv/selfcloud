@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -5,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 type jobJSON struct {

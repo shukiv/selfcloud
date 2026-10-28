@@ -89,4 +89,6 @@ TMPDIR=/path/with/space go test ./internal/api -run '^$' -bench BenchmarkUpload 
 
 ## Licence
 
-Not chosen yet.
+Selfcloud is free software under the GNU Affero General Public License, version 3 or (at your
+option) any later version. See [LICENSE](LICENSE). If you run a modified version as a network
+service, you must offer its source to the people who use it.

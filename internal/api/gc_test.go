@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -10,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/config"
-	"selfcloud/internal/mail"
-	"selfcloud/internal/store"
-	"selfcloud/internal/sweep"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/sweep"
 )
 
 // sweeper returns the housekeeping of s with the given blob grace period.

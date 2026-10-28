@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 // Signed download links (design sections 9 and 13).
@@ -27,10 +29,10 @@ import (
 	"strings"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/config"
-	"selfcloud/internal/id"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // linkPrefix is the path of a signed link. The content origin serves nothing else.

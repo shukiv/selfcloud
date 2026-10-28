@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package store keeps Selfcloud's metadata: accounts, users, folders, the file tree, uploads,
 // tokens and the audit log. File contents live on disk, managed elsewhere.
 //
@@ -24,7 +26,7 @@ import (
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 
-	"selfcloud/internal/fsutil"
+	"github.com/shukiv/selfcloud/internal/fsutil"
 )
 
 //go:embed migrations/*.sql

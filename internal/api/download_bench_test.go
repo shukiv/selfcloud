@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -9,10 +11,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"selfcloud/internal/auth"
-	"selfcloud/internal/config"
-	"selfcloud/internal/id"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // BenchmarkDownload reads a 1 GiB file over loopback HTTP, through the real handler and a real

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -9,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/config"
-	"selfcloud/internal/id"
-	"selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/mail"
 )
 
 // rawCall sends a body that is not JSON, with extra headers and an optional bearer credential.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -5,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/config"
-	"selfcloud/internal/mail"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // bigTree makes a folder with 7 nodes under dir: 3 files, a subfolder with 2 files, and dir itself.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package blob
 
 import (
@@ -12,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/id"
 )
 
 func newDir(t *testing.T) *Dir {

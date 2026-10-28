@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -10,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/config"
-	"selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/mail"
 )
 
 // alphabet is the body of the test files: byte i is 'a'+i, so a range's bytes name its offsets.

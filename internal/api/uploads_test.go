@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -19,12 +21,12 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	apispec "selfcloud/api"
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/config"
-	"selfcloud/internal/mail"
-	"selfcloud/internal/store"
-	"selfcloud/internal/sweep"
+	apispec "github.com/shukiv/selfcloud/api"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/sweep"
 )
 
 // md builds an Upload-Metadata header from key, value pairs. Values are base64, as tus requires.

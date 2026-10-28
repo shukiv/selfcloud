@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package main
 
 import (
@@ -9,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"selfcloud/internal/auth"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 func runCmd(t *testing.T, args ...string) (code int, stdout, stderr string) {

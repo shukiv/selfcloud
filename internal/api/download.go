@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 // Downloads (design sections 6, 9 and 13): the contents of a file, with single and multiple byte
@@ -17,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // maxRanges caps the ranges one request may name. More is refused, so a request cannot make the

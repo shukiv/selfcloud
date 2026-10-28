@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package mail sends Selfcloud's email: verification and password-reset links. It has an SMTP
 // sender and the templates the messages are written from.
 package mail

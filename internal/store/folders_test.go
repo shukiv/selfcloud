@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package store
 
 import (
@@ -5,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/id"
 )
 
 // newFolderRow adds a folder to accountID and returns it.

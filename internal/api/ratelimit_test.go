@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -5,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/apierr"
 )
 
 func TestLimiterBurstThenRetryAfter(t *testing.T) {

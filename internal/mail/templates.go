@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package mail
 
 import (
@@ -11,7 +13,7 @@ import (
 	"strings"
 	"text/template"
 
-	"selfcloud/internal/locale"
+	"github.com/shukiv/selfcloud/internal/locale"
 )
 
 //go:embed templates/*.txt

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -6,8 +8,8 @@ import (
 	"regexp"
 	"testing"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/mail"
 )
 
 var expiryPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC`)

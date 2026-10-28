@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package fsutil reports facts about the file system under a path.
 package fsutil
 

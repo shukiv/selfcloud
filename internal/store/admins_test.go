@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package store
 
 import (
@@ -6,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/id"
 )
 
 // newAdminRow adds an installation admin with the given email and returns it.

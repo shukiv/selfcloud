@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package names
 
 import (
@@ -5,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/apierr"
 )
 
 func TestCleanAcceptsAndKeys(t *testing.T) {

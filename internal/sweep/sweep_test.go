@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package sweep
 
 import (
@@ -9,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/blob"
-	"selfcloud/internal/id"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/blob"
+	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // TestSweepWarnsOnReservationDriftAndKeepsNumbers: a sweep that finds the reservation counter out of

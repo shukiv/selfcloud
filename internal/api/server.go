@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package api is Selfcloud's HTTP layer: routing, middleware and handlers.
 package api
 
@@ -14,15 +16,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/auth"
-	"selfcloud/internal/blob"
-	"selfcloud/internal/config"
-	"selfcloud/internal/fsutil"
-	"selfcloud/internal/jobs"
-	"selfcloud/internal/mail"
-	"selfcloud/internal/store"
-	"selfcloud/internal/sweep"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/blob"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/fsutil"
+	"github.com/shukiv/selfcloud/internal/jobs"
+	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/sweep"
 )
 
 // sweepInterval is how often housekeeping runs: blob removal, expired sessions and tokens.

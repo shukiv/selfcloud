@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package jobs runs background work queued in the store, one job at a time.
 //
 // A job is queued in the same transaction as the change that needs it, so it is never lost.
@@ -12,7 +14,7 @@ import (
 	"log/slog"
 	"time"
 
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // pollInterval is how often the queue is checked when nothing wakes the runner.

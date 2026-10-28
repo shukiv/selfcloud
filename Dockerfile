@@ -6,7 +6,7 @@ RUN go mod download
 COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath \
-      -ldflags "-s -w -X selfcloud/internal/version.Version=${VERSION}" \
+      -ldflags "-s -w -X github.com/shukiv/selfcloud/internal/version.Version=${VERSION}" \
       -o /out/selfcloud ./cmd/selfcloud \
  && mkdir -p /out/data
 

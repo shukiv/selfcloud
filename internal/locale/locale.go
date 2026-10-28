@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package locale chooses which of Selfcloud's languages to use: for the text of emails now, and
 // for the web interface later.
 //

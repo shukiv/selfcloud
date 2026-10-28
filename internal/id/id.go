@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package id makes opaque, prefixed, random identifiers such as "acc_7k2m9q...".
 //
 // IDs carry 128 random bits, so they can be made anywhere without coordination and

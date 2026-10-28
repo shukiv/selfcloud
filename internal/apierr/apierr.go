@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package apierr defines the API's stable error codes and the error type handlers return.
 //
 // Clients switch on the code, never on the HTTP status, so a code's meaning must not change

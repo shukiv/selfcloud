@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -6,7 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/apierr"
 )
 
 // errorBody is the JSON shape of every error response.

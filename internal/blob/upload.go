@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package blob
 
 import (
@@ -9,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/id"
 )
 
 // uploadPath returns the path of an upload's file under uploads/<account>. Both IDs are checked

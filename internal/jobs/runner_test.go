@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package jobs
 
 import (
@@ -7,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 func TestRunPending(t *testing.T) {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -11,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/auth"
-	"selfcloud/internal/id"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // adminKey stores a new installation admin key and returns its secret.

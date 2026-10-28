@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -5,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/mail"
 )
 
 // TestRefusedAddressSpendsNoAccountBudget checks that a message refused by the per-address limit

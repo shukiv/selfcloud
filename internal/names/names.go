@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package names checks the names of folders and files. Slice e uses the same rules for file names.
 //
 // A name is stored in Unicode NFC, so the same visible name typed in composed or decomposed form
@@ -13,7 +15,7 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 
-	"selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/apierr"
 )
 
 // maxBytes is the longest name, in bytes after normalising to NFC.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package store
 
 import (
@@ -8,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/id"
 )
 
 // Grant levels, as the grants.level column names them.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package auth makes and checks credentials and describes who is making a request.
 package auth
 

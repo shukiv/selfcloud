@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -8,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/auth"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // maxLoginCandidates is how many accounts one email may be in and still be looked up at sign-in.

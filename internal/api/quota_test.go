@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -9,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/config"
-	"selfcloud/internal/mail"
-	"selfcloud/internal/sweep"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/sweep"
 )
 
 // newQuotaAccount creates an account with the given quota (0 = unlimited) and an account key.

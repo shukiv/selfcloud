@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -8,8 +10,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	apispec "selfcloud/api"
-	"selfcloud/internal/apierr"
+	apispec "github.com/shukiv/selfcloud/api"
+	"github.com/shukiv/selfcloud/internal/apierr"
 )
 
 type specDoc struct {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -11,7 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // metrics holds the server's Prometheus collectors. Labels come from the route table, never

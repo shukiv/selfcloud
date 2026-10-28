@@ -1,4 +1,4 @@
-module selfcloud
+module github.com/shukiv/selfcloud
 
 go 1.26.0
 

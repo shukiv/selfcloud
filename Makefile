@@ -1,5 +1,5 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X selfcloud/internal/version.Version=$(VERSION)
+LDFLAGS := -s -w -X github.com/shukiv/selfcloud/internal/version.Version=$(VERSION)
 
 .PHONY: build test check docker
 

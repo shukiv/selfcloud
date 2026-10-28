@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -15,11 +17,11 @@ import (
 	"testing"
 	"time"
 
-	apispec "selfcloud/api"
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/config"
-	"selfcloud/internal/mail"
-	"selfcloud/internal/store"
+	apispec "github.com/shukiv/selfcloud/api"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 func newTestServer(t *testing.T, mutate ...func(*config.Config)) *Server {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -6,7 +8,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/apierr"
 )
 
 // limiterIdle is how long a key may go unused before its bucket is considered for removal. A

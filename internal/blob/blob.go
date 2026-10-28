@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package blob keeps file contents on local disk. Each file's contents is one immutable blob,
 // named by a random ID the server makes; no path is ever built from a name a user typed.
 //
@@ -24,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/id"
 )
 
 // ErrTooLarge is returned by Create's writer when more than the limit is written.

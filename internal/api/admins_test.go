@@ -1,13 +1,15 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
 	"context"
 	"testing"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/auth"
-	"selfcloud/internal/mail"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // newAdminUser creates an admin through the API with a link, verifies it with testPassword, and

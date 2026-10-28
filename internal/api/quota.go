@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
 	"context"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // Quotas (design section 8). An account's used bytes and its reserved bytes (the declared length of

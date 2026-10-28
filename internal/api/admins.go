@@ -1,12 +1,14 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
 	"errors"
 	"net/http"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/id"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // Installation admins are users with no account. An admin key or a signed-in admin may manage

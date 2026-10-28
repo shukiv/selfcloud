@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -13,12 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/blob"
-	"selfcloud/internal/config"
-	"selfcloud/internal/id"
-	"selfcloud/internal/names"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/blob"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/names"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // maxPathLength bounds a path before it is split.

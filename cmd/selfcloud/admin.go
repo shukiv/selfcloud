@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package main
 
 import (
@@ -14,10 +16,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"selfcloud/internal/auth"
-	"selfcloud/internal/config"
-	"selfcloud/internal/id"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 const adminUsage = `Usage: selfcloud admin <command> [-config FILE] [flags]

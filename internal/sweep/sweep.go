@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package sweep runs the server's housekeeping: it removes file contents that no node refers to
 // any more, and sessions and verification tokens that have ended.
 //
@@ -12,8 +14,8 @@ import (
 	"log/slog"
 	"time"
 
-	"selfcloud/internal/blob"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/blob"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // batchSize is how many orphans are looked at per round.

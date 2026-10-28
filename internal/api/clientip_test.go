@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -5,7 +7,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/config"
 )
 
 func TestClientIP(t *testing.T) {

@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
 	"testing"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/mail"
 )
 
 // newFolder creates a folder through the API with the given credential.

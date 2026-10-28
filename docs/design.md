@@ -628,10 +628,7 @@ Decided on approval:
     - OCR: images up to 10 MiB and PDFs up to 20 MiB, first 50 pages (`search.ocr_max_bytes`,
       `search.ocr_max_pages`).
     - Indexing runs as low-priority background jobs.
-
-Still open, and not blocking slices a to i:
-
-14. **Licence.** Options: AGPL-3.0 for the server with Apache-2.0 for the Go client (hosted forks
-    must publish their changes), or Apache-2.0 or MIT for everything (widest adoption).
-15. **Public repository.** Where it lives and when it opens. Until then the Go module path is
-    the placeholder `selfcloud`.
+14. **Licence** (2026-10-28): AGPL-3.0-or-later for the whole repository. Every Go file carries
+    an SPDX header. Anyone who runs a modified Selfcloud as a service must publish their changes.
+15. **Public repository** (2026-10-28): `github.com/shukiv/selfcloud`, public from the start. It
+    is also the Go module path.

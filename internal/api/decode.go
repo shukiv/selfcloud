@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -11,8 +13,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 const (

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -5,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/mail"
 )
 
 // TestSessionCannotUseLinkOrNone checks that a signed-in caller, owner or member, may not ask for

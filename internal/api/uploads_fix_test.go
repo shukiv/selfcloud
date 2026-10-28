@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package api
 
 import (
@@ -15,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"selfcloud/internal/apierr"
-	"selfcloud/internal/config"
-	"selfcloud/internal/store"
-	"selfcloud/internal/sweep"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/sweep"
 )
 
 // dirFiles counts the regular files under dir; a missing directory has none.

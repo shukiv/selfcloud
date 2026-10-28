@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package config loads Selfcloud's configuration from defaults, an optional YAML file and
 // environment variables, in that order of precedence (environment wins).
 //
