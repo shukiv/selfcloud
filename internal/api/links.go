@@ -303,12 +303,20 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	if !validDisposition(disp) {
 		return apierr.New(apierr.InvalidRequest, "disposition must be attachment or inline")
 	}
-	n, err := s.nodeOf(r, r.PathValue("nod"), store.RoleViewer)
+	n, role, err := s.nodeAccess(r, r.PathValue("nod"))
 	if err != nil {
 		return err
 	}
 	if n.Kind != store.KindFile {
 		return apierr.New(apierr.InvalidRequest, "a folder cannot be linked; link a file inside it")
+	}
+	// A link that downloads is a download the no-download rule forbids; an inline link is allowed.
+	restricted, err := s.downloadRestricted(r.Context(), n, role)
+	if err != nil {
+		return err
+	}
+	if restricted && !s.inlineAllowed(r, n, disp == dispInline) {
+		return errDownloadRestricted()
 	}
 	expires := time.Now().Add(ttl).Truncate(time.Second)
 	c := linkClaims{nod: n.ID, acc: n.AccountID, disp: disp, exp: expires.Unix()}

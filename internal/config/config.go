@@ -59,6 +59,7 @@ type Config struct {
 	Storage   StorageConfig   `yaml:"storage"`
 	Blobs     BlobsConfig     `yaml:"blobs"`
 	Copy      CopyConfig      `yaml:"copy"`
+	Sharing   SharingConfig   `yaml:"sharing"`
 	Upload    UploadConfig    `yaml:"upload"`
 	Links     LinksConfig     `yaml:"links"`
 	Tokens    TokensConfig    `yaml:"tokens"`
@@ -146,6 +147,13 @@ type CopyConfig struct {
 	MaxNodes int `yaml:"max_nodes"`
 }
 
+// SharingConfig controls how sharing works.
+type SharingConfig struct {
+	// MaxExpiry is the longest a permission may run from the moment it is set: a permission's
+	// expires_at may be at most this far ahead. Zero means no cap.
+	MaxExpiry Duration `yaml:"max_expiry"`
+}
+
 // BlobsConfig controls the removal of file contents that nothing refers to any more.
 type BlobsConfig struct {
 	// DeleteGrace is how long an unreferenced blob is kept before its file is removed. It is the
@@ -230,6 +238,7 @@ func Defaults() *Config {
 		Storage:         StorageConfig{MinFree: 1 * GiB},
 		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
 		Copy:            CopyConfig{MaxNodes: 200000},
+		Sharing:         SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
 		Links:           LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
 		Tokens:          TokensConfig{MaxTTL: Duration(time.Hour)},
 		Upload: UploadConfig{
@@ -361,6 +370,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Copy.MaxNodes <= 0 {
 		bad("copy.max_nodes must be positive")
+	}
+	if c.Sharing.MaxExpiry < 0 {
+		bad("sharing.max_expiry is negative; use 0 for no cap")
 	}
 	if c.Upload.BodyTimeout <= 0 {
 		bad("upload.body_timeout must be positive")

@@ -105,11 +105,16 @@ type nodeJSON struct {
 	// Role is the caller's role on the node. Listings and stat carry it; an account key gets
 	// manager, the highest role, since it reaches everything in its account.
 	Role string `json:"role,omitempty"`
+	// NoDownload and EditorsCanShare are the node's own settings. They also reach its subtree; the
+	// access rules read the ancestors.
+	NoDownload      bool `json:"no_download"`
+	EditorsCanShare bool `json:"editors_can_share"`
 }
 
 func toNodeJSON(n *store.Node) nodeJSON {
 	out := nodeJSON{ID: n.ID, FolderID: n.FolderID, Name: n.Name, Kind: n.Kind, Size: n.Size,
-		CreatedAt: n.CreatedAt, ModifiedAt: n.ModifiedAt}
+		CreatedAt: n.CreatedAt, ModifiedAt: n.ModifiedAt, NoDownload: n.NoDownload,
+		EditorsCanShare: n.EditorsCanShare}
 	if !n.IsRoot() {
 		parent := n.ParentID
 		out.ParentID = &parent
@@ -606,23 +611,37 @@ func (s *Server) discardBlob(accountID, blobID string) {
 
 // ---- editing ----
 
-// handleRenameNode changes the name of a file or folder inside its directory.
+// handleRenameNode changes a node's name and its sharing flags. The name needs editor, and so does
+// no_download; editors_can_share needs manager, since it lets editors share. Every field is optional,
+// but a request must name at least one. A folder's root has no name, so its name is refused.
 func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		Name string `json:"name"`
+		Name            *string `json:"name"`
+		NoDownload      *bool   `json:"no_download"`
+		EditorsCanShare *bool   `json:"editors_can_share"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	name, key, err := names.Clean(in.Name)
+	if in.Name == nil && in.NoDownload == nil && in.EditorsCanShare == nil {
+		return apierr.New(apierr.InvalidRequest, "give name, no_download or editors_can_share")
+	}
+	var name, key string
+	if in.Name != nil {
+		var err error
+		if name, key, err = names.Clean(*in.Name); err != nil {
+			return err
+		}
+	}
+	need := store.RoleEditor
+	if in.EditorsCanShare != nil {
+		need = store.RoleManager
+	}
+	n, err := s.nodeOf(r, r.PathValue("nod"), need)
 	if err != nil {
 		return err
 	}
-	n, err := s.nodeOf(r, r.PathValue("nod"), store.RoleEditor)
-	if err != nil {
-		return err
-	}
-	if n.IsRoot() {
+	if n.IsRoot() && in.Name != nil {
 		return apierr.New(apierr.InvalidRequest, "a folder's root has no name; rename the folder instead")
 	}
 	ctx := r.Context()
@@ -637,23 +656,44 @@ func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			return err
 		}
-		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleEditor); err != nil {
+		if _, err := requireNodeRole(ctx, tx, p, cur.ID, need); err != nil {
 			return err
 		}
-		if taken, err := nameTakenBy(tx.Child(ctx, cur.AccountID, cur.ParentID, key)); err != nil {
-			return err
-		} else if taken != nil && taken.ID != cur.ID {
-			return nameConflict(taken)
+		var renamed *string
+		if in.Name != nil {
+			if taken, err := nameTakenBy(tx.Child(ctx, cur.AccountID, cur.ParentID, key)); err != nil {
+				return err
+			} else if taken != nil && taken.ID != cur.ID {
+				return nameConflict(taken)
+			}
+			from := cur.Name
+			renamed = &from
+			cur.Name, cur.NameKey = name, key
 		}
-		from := cur.Name
-		cur.Name, cur.NameKey = name, key
+		sharing := map[string]any{}
+		if in.NoDownload != nil {
+			cur.NoDownload = *in.NoDownload
+			sharing["no_download"] = cur.NoDownload
+		}
+		if in.EditorsCanShare != nil {
+			cur.EditorsCanShare = *in.EditorsCanShare
+			sharing["editors_can_share"] = cur.EditorsCanShare
+		}
 		cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
 		if err := tx.UpdateNode(ctx, cur); err != nil {
 			return storeNameErr(err)
 		}
 		out = cur
-		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.rename", cur.ID,
-			map[string]any{"from": from, "to": name}, cur.FolderID))
+		if renamed != nil {
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.rename", cur.ID,
+				map[string]any{"from": *renamed, "to": name}, cur.FolderID)); err != nil {
+				return err
+			}
+		}
+		if len(sharing) > 0 {
+			return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.sharing", cur.ID, sharing, cur.FolderID))
+		}
+		return nil
 	})
 	if err != nil {
 		return err

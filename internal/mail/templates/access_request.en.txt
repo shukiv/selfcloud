@@ -1,0 +1,9 @@
+Subject: {{.Actor}} asked for {{.Role}} access to {{.Item}}
+
+{{.Actor}} asked for {{.Role}} access to {{.Item}}.{{if .Message}}
+
+{{.Message}}{{end}}
+
+{{.Link}}
+
+This mail is for managers. If you did not expect it, you can ignore it.

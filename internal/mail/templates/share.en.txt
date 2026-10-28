@@ -1,0 +1,9 @@
+Subject: {{.Actor}} shared {{.Item}} with you
+
+{{.Actor}} shared {{.Item}} with you as {{.Role}}.{{if .Message}}
+
+{{.Message}}{{end}}
+
+{{.Link}}
+
+If you did not expect this message, you can ignore it.

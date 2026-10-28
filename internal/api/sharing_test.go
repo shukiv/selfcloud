@@ -698,7 +698,7 @@ func TestDeleteUserConflictOmitsEntryCount(t *testing.T) {
 	if _, ok := e.Details["entries"]; ok {
 		t.Errorf("conflict details name the entry count: %v", e.Details)
 	}
-	if want := "the user's personal folder is not empty; pass delete_files=true"; e.Message != want {
+	if want := "the user's personal folder is not empty; pass delete_files=true or transfer_to"; e.Message != want {
 		t.Errorf("conflict message = %q, want %q", e.Message, want)
 	}
 }

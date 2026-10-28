@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/names"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -380,6 +382,10 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
+// handleDeleteUser removes a user with its permissions, group memberships, pending access requests and
+// personal folder. A personal folder that holds files is refused, unless the caller says what happens to
+// them: delete_files=true removes them for good, and transfer_to=usr_... moves them into a new directory
+// in the recipient's My files, named after the deleted user. Both are not allowed together.
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error {
 	acc, err := s.writableAccount(r)
 	if err != nil {
@@ -393,15 +399,41 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 			return apierr.New(apierr.InvalidRequest, "delete_files must be true or false")
 		}
 	}
+	transferTo := r.URL.Query().Get("transfer_to")
+	if transferTo != "" {
+		if err := validID("usr", transferTo); err != nil {
+			return apierr.New(apierr.InvalidRequest, "transfer_to must be the ID of a user (usr_...)")
+		}
+		if deleteFiles {
+			return apierr.New(apierr.InvalidRequest, "give transfer_to or delete_files=true, not both")
+		}
+		if transferTo == usr {
+			return apierr.New(apierr.InvalidRequest, "a user cannot take over its own files")
+		}
+	}
+	p := principalOf(r)
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		if _, err := tx.User(ctx, acc.ID, usr); errors.Is(err, store.ErrNotFound) {
+		u, err := tx.User(ctx, acc.ID, usr)
+		if errors.Is(err, store.ErrNotFound) {
 			return notFound("user")
 		} else if err != nil {
 			return err
 		}
-		// The personal folder goes with its user. Its files are not kept by default: the caller
-		// must say so, since they are gone for good. The folder goes first, through DeleteFolder, so
-		// its usage and reservations are adjusted; the foreign key refuses a user delete that skips it.
+		if transferTo != "" {
+			to, err := s.activeUser(ctx, tx, acc.ID, transferTo)
+			if err != nil {
+				return err
+			}
+			// An owner session controls the accounts it creates, so it must not be able to take a deleted
+			// user's private files for itself or for another owner. The account key is unrestricted.
+			if p.Kind == auth.KindUser && (to.ID == p.UserID || to.Role == store.RoleOwner) {
+				return apierr.New(apierr.Forbidden, "files can be transferred only to an active member, not to an owner or to the caller")
+			}
+		}
+		// The personal folder goes with its user. Its files are not kept by default: the caller must say
+		// so, since they are gone for good, or name a user to take them. The folder goes through
+		// DeleteFolder, so its usage and reservations are adjusted; the foreign key refuses a user delete
+		// that skips it.
 		pf, err := tx.PersonalFolder(ctx, acc.ID, usr)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
@@ -411,10 +443,15 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 			if err != nil {
 				return err
 			}
-			// The answer does not say how many entries: that would show an owner how large another
-			// user's My files is.
-			if entries > 0 && !deleteFiles {
-				return apierr.New(apierr.Conflict, "the user's personal folder is not empty; pass delete_files=true")
+			switch {
+			case transferTo != "" && entries > 0:
+				if err := s.moveDeletedFiles(ctx, tx, r, acc.ID, u, pf, transferTo, entries); err != nil {
+					return err
+				}
+			case entries > 0 && !deleteFiles:
+				// The answer does not say how many entries: that would show an owner how large another
+				// user's My files is.
+				return apierr.New(apierr.Conflict, "the user's personal folder is not empty; pass delete_files=true or transfer_to")
 			}
 			if err := tx.DeleteFolder(ctx, acc.ID, pf.ID); err != nil {
 				return err
@@ -425,6 +462,9 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 			}
 		}
 		if _, err := tx.DeleteSubjectPermissions(ctx, acc.ID, store.SubjectUser, usr); err != nil {
+			return err
+		}
+		if err := tx.DeleteUserAccessRequests(ctx, acc.ID, usr); err != nil {
 			return err
 		}
 		if err := tx.DeleteUser(ctx, acc.ID, usr); errors.Is(err, store.ErrNotFound) {
@@ -439,6 +479,89 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// activeUser returns the user of accountID with the given ID, which must be active. It is the check for
+// a recipient of files or of ownership.
+func (s *Server) activeUser(ctx context.Context, tx *store.Tx, accountID, userID string) (*store.User, error) {
+	u, err := tx.User(ctx, accountID, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, notFound("user")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if u.Status != store.UserActive {
+		return nil, apierr.New(apierr.InvalidRequest, "transfer_to must be an active user of the account")
+	}
+	return u, nil
+}
+
+// moveDeletedFiles moves the files of a user being deleted into a new directory in the recipient's My
+// files, inside the deletion's transaction. The directory is named after the deleted user, and renamed
+// if the recipient already has that name. The move keeps the files' contents, permissions and usage.
+func (s *Server) moveDeletedFiles(ctx context.Context, tx *store.Tx, r *http.Request, accountID string,
+	u *store.User, pf *store.Folder, to string, entries int64) error {
+	recipient, err := s.activeUser(ctx, tx, accountID, to)
+	if err != nil {
+		return err
+	}
+	dest, err := tx.PersonalFolder(ctx, accountID, recipient.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return apierr.New(apierr.Conflict, "the recipient has no My files to receive the files")
+	}
+	if err != nil {
+		return err
+	}
+	root, err := tx.RootNode(ctx, accountID, dest.ID)
+	if err != nil {
+		return err
+	}
+	name, key, err := deletedFilesName(u)
+	if err != nil {
+		return err
+	}
+	plan := &transferPlan{folderID: dest.ID, parent: root, name: name, key: key}
+	taken, err := nameTakenBy(tx.Child(ctx, accountID, root.ID, key))
+	if err != nil {
+		return err
+	}
+	if taken != nil {
+		if err := freeName(ctx, tx, plan, store.KindDir); err != nil {
+			return err
+		}
+	}
+	p := principalOf(r)
+	now := store.Now()
+	dir := &store.Node{ID: id.New("nod"), AccountID: accountID, FolderID: dest.ID, ParentID: root.ID,
+		Name: plan.name, NameKey: plan.key, Kind: store.KindDir, CreatedAt: now, ModifiedAt: now,
+		CreatedBy: p.ID, ModifiedBy: p.ID, OwnerID: recipient.ID}
+	if err := tx.InsertNode(ctx, dir); err != nil {
+		return storeNameErr(err)
+	}
+	if err := tx.MoveFolderContents(ctx, accountID, pf.ID, dest.ID, dir.ID, recipient.ID); err != nil {
+		return err
+	}
+	// The entry names no file, and it is not private to the recipient, so owners can see that a move was
+	// made. The directory's name stays out of the audit log.
+	return tx.InsertAudit(ctx, s.auditEntry(r, accountID, "user.files_moved", u.ID,
+		map[string]any{"to": recipient.ID, "folder": dest.ID, "directory": dir.ID, "entries": entries}))
+}
+
+// deletedFilesName is the name of the directory that takes a deleted user's files: the user's display
+// name, or its email, then " (files)". A name the store refuses falls back to a plain one.
+func deletedFilesName(u *store.User) (string, string, error) {
+	base := u.DisplayName
+	if base == "" {
+		base = u.Email
+	}
+	base = strings.NewReplacer("/", "-", "\r", " ", "\n", " ").Replace(base)
+	const suffix = " (files)"
+	name, key, err := names.Clean(truncateBytes(base, maxNameBytes-len(suffix)) + suffix)
+	if err != nil {
+		return names.Clean("deleted user (files)")
+	}
+	return name, key, nil
 }
 
 // pendingConflict explains why a user is not waiting for verification.

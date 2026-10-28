@@ -313,7 +313,10 @@ The hierarchy has three levels:
     user's ID, which a folder name cannot contain (names refuse `/`), so it never collides with a
     team space. The personal folder carries `owner_user_id`.
 
-The rest of this section is the sharing model, built in slice n1 (section 15, decisions 17 to 19).
+The rest of this section is the sharing model. Slice n1 built the model (section 15, decisions 17
+to 19). Slice n2 adds the controls that sit on it (decision 20): access expiry, no download, editors
+who can share, ownership transfer, team-space settings, hidden spaces, access requests and share
+emails.
 
 ### Roles and permissions
 
@@ -363,7 +366,7 @@ A move into a directory needs only contributor there, since nothing is removed f
 
 **Permissions are not copied.** A move keeps the permissions of the node it moves, since the node keeps its ID. A copy is a new node and has none.
 
-**Expiry.** A permission may carry `expires_at`. Every read filters it: an expired permission grants nothing. No API sets it yet (slice n2). **Ownership.** Each node has an `owner_id`: its creator, or the folder's user inside a personal folder. Nothing uses it until slice n2 transfers ownership.
+**Expiry.** A permission may carry `expires_at`. Every read filters it: an expired permission grants nothing. The API sets it (see Access expiry below). **Ownership.** Each node has an `owner_id`: its creator, or the folder's user inside a personal folder. Slice n2 uses it for ownership transfer (see Transferring ownership below).
 
 ### Groups
 
@@ -406,6 +409,162 @@ folder that holds any file or directory refuses the delete with `conflict` unles
 `delete_files=true`, since the files are then gone for good. The folder goes through the normal
 folder delete, so the usage counters and reservations are adjusted in the same transaction.
 
+### Access expiry
+
+A permission may end on a set date. `PUT /nodes/{nod}/permissions/{subject}` takes `expires_at`,
+an RFC 3339 time. It must lie in the future, and at most `sharing.max_expiry` from now. The default
+is 365 days, and `0` means no cap. A permission without `expires_at` never ends. Listings return the
+time, so a manager can see when access will end.
+
+Reads already filter expired permissions, so access stops at the moment it expires, before any
+cleanup. The sweep (section 12) removes an expired row once it has been expired for more than 24
+hours, and audits each removal as `permission.expired`. The grace period keeps the row long enough
+for the audit trail to show when the access ended.
+
+### No download
+
+An editor sets `no_download: true` on a node with `PATCH /nodes/{nod}`. The flag applies to the node
+and everything below it, and a flag on an ancestor applies too. On a team space,
+`no_download_for_viewers` applies the same rule to the whole space (see Team-space settings below).
+
+The rule binds only callers whose role on the node is viewer or commenter, the roles that only read.
+Contributors and above are unaffected. For the callers it binds, the API refuses:
+
+- a download of the content with attachment disposition, `HEAD` included (`download_restricted`, 403);
+- a signed link with attachment disposition;
+- a copy of the node, or of a subtree that contains a flagged node.
+
+Inline viewing still works wherever the file type allows inline display (section 9, Downloads). A copy
+keeps the flag, so copying a file does not remove the restriction from it.
+
+**This rule deters; it does not secure.** Anyone who may view a file can still see its contents in the
+browser, and can copy what they see. The rule closes the easy routes, a download button, a signed link
+and a copy. It does not stop a determined viewer. Use it to reduce casual copying. Do not rely on it to
+keep a file secret: a file that must stay secret should not be shared with a viewer at all.
+
+### Editors can share
+
+`editors_can_share` lets editors share. A manager sets it with `PATCH /nodes/{nod}`. It is stored on
+the node and inherited from its ancestors, and it is off by default, so only managers share unless a
+manager decides otherwise.
+
+When it is on, an editor may set and remove permissions on the node and below it, up to the editor
+role. An editor may not grant manager. An editor also may not change or remove a row above its own
+role, so a manager's row stays with the manager. The default is off because a share made by an editor
+is a share the manager did not choose.
+
+A team space's `sharing_managers_only` overrides this switch: when it is on, only managers share, even
+where a node says otherwise. A delegated token never sets permissions, so the switch gives no power to a
+token.
+
+### Transferring ownership
+
+`POST /nodes/{nod}/transfer-ownership` takes `{to}`, a user of the same account. The caller must be the
+item's owner (`owner_id`) or an account key, and must hold editor on the item. The recipient must be an
+active user of the same account.
+
+- In a **personal folder**, the item moves, with its subtree and its direct permissions, into the
+  recipient's My files. A name clash is resolved by renaming, as a move is. The previous owner gets
+  editor on the item, so it keeps its access.
+- In a **team space**, only `owner_id` changes, on the item and its subtree. The item stays where it is,
+  and the space's permissions do not change.
+
+Usage does not change, since both users belong to one account. An audit entry about an item in a
+personal folder is private to that folder's user, so after a transfer the recipient sees the new
+entries.
+
+### Team-space settings
+
+A manager of the space root changes these with `PATCH /folders/{fld}/settings`. Managers of a team space
+are the account's owners and an account key. A personal folder refuses the call with `invalid_request`,
+since its owner is its only manager.
+
+| Setting | Effect |
+|---|---|
+| `members_only` | A permission below the root may name only a user or group that already holds a permission on the root, directly or through a group the user is in. Anything else is `conflict` (409). |
+| `sharing_managers_only` | Only managers may set or remove permissions below the root. It overrides `editors_can_share`. |
+| `no_download_for_viewers` | The no-download rule applies to every node in the space, whatever each node's own flag says. |
+| `allow_links` | Stored only. It is meant to allow organisation and public links in the space, but it does nothing yet: slice o enforces it. Off by default. |
+
+### Hidden spaces
+
+A user may hide a team space from its own list with `PUT /folders/{fld}/hidden`, and show it again with
+`DELETE` on the same path. `GET /folders` leaves hidden spaces out. `?hidden=true` lists only the hidden
+ones. Each folder in a listing carries `hidden`. A personal folder cannot be hidden.
+
+Hiding changes nothing about access. The user keeps its role on the space, and the space still works
+through its ID. The setting is per user, so one user hiding a space does not change what another user
+sees. It only tidies one user's list.
+
+### Access requests
+
+A user who lacks a role on a node can ask for one. `POST /nodes/{nod}/access-requests` takes `{role,
+message}`: the role is `viewer`, `commenter` or `editor`, and the message is at most 500 characters.
+Only a user may ask. An account key holds every role already, and a delegated token never reaches the
+node it would ask about, so both are answered as the endpoint answers everything else: a silent `202`.
+
+The endpoint always answers `202` with no body. It gives the same answer whether the node exists or
+the caller can reach it, so it cannot be used to find out which nodes exist. A request is recorded only
+when the node exists in the caller's account, the caller is an active user, and the caller's current role
+there is below the role asked for. A user with no role at all is exactly who asks, so "no role" counts as
+below. A request on a node in another user's My files is recorded too, and mails that folder's owner.
+
+A repeat from the same user while the first is pending collapses into it and changes nothing: the role and
+message stay as first made, and no audit entry is written. To ask for more, the user waits for a decision.
+A new request within 24 hours of the user's previous one on the same node (pending or decided) is recorded
+but not mailed, so a user who asks again in a loop does not mail the managers each time. Requests are rate
+limited per user, at 20 an hour (limiter `access.request`).
+
+Access-request mail draws on its own buckets, not the verification buckets: `mail.requests.account`, 20 an
+hour per account, and `mail.requests.target`, 5 an hour per address it goes to. When a bucket is empty the
+request is still recorded and listed, and only its mail is skipped. A burst of requests therefore cannot
+use up the mail a user needs to sign in.
+
+A decision stores the role it granted, so a listing shows what was actually given. A denial mail says
+that an item was involved and does not name it.
+
+- `GET /nodes/{nod}/access-requests` lists the requests on a node. It needs manager, or editor where
+  `editors_can_share` allows sharing.
+- `GET /access-requests` lists the pending requests the caller may decide. It reads the oldest 5,000
+  pending requests in the account, so a request beyond that point is not listed until the older ones are
+  decided. The limit bounds the work of one call.
+- `POST /access-requests/{arq}/approve` takes an optional `{role}` and grants that role on the node. The
+  approver may not grant a role above its own. An approval only adds access, since the effective role is
+  always the highest one held.
+- `POST /access-requests/{arq}/deny` closes the request without a grant.
+
+A decided request cannot be decided again: the second decision is `conflict` (409). Every request and
+decision is audited. Managers are mailed about a new request: for a team space, the owners and the users
+holding manager on the space root; for a personal folder, its owner. The requester is mailed the
+decision, and an approval names the role granted.
+
+### Share emails
+
+Three mail purposes exist: `share` (something was shared with you), `access_request` (to managers) and
+`access_decision` (to the requester). Each is sent in the recipient's language, in the seven languages
+of the verification mail.
+
+`PUT /nodes/{nod}/permissions/{subject}` takes `notify` (default `true`) and `message`, a note of at most
+500 characters. The reply carries `notified` and `reason`, so the caller can tell whether mail went out
+and, if not, why:
+
+| `reason` | Meaning |
+|---|---|
+| `not_requested` | The caller sent `notify: false`. |
+| `no_recipients` | The subject is not a user of the account, or a group has no active member. |
+| `recipient_not_active` | The user is pending or disabled. Only active users get mail. |
+| `too_many_recipients` | The group has more than 50 members, so nobody is mailed. |
+| `mail_budget` | The send would exceed the mail budget. |
+| `mail_failed` | The mail server refused or failed the send. |
+| `mail_not_configured` | No mail server is configured. |
+
+A group of 50 members or fewer mails each of its active members. A larger group mails nobody, which keeps
+one share from sending a flood of mail. The person who makes the change is never mailed about it. Each
+send takes one unit from the same mail budget that verification mail uses (`mail.account` and
+`mail.target`), so share mail and verification mail draw on one limit. The `/grants` alias routes never
+send mail. Mail never includes file contents, and a
+name is stripped of line breaks before it reaches a mail header, so a name cannot add headers.
+
 ### Grants: the older routes
 
 `/accounts/{acc}/folders/{fld}/grants` and `/accounts/{acc}/users/{usr}/grants` keep their request and
@@ -418,6 +577,12 @@ permission, so existing shares keep working.
 ### Accepted limits
 
 These were reviewed in the slice n1 security review and accepted for now. They have no code of their own.
+
+- **Owners and deleted users' files (n2).** An owner session may move a deleted user's My files only to
+  an active member: never to the caller, and never to another owner. The account key is not limited
+  this way. The limit is only as strong as the owners' control of accounts: an owner who can create a
+  member account can move the files of that member's deleted account to it. Every move is audited, and
+  that entry is visible to owners; it names no file, and the directory's name stays out of the log.
 
 - **Groups (L4).** Account owners manage groups. Sharing with a group shares with whoever is in it at
   the time, the sharer included if the sharer is a member. Membership changes are audited.
@@ -447,7 +612,7 @@ Accounts                                   admin key
 Inside an account                          account key, admin key, or owner session
   GET                   /accounts/{acc}/usage
   POST|GET              /accounts/{acc}/users               verification: email | link | none; ?external_id=
-  GET|PATCH|DELETE      /accounts/{acc}/users/{usr}
+  GET|PATCH|DELETE      /accounts/{acc}/users/{usr}         DELETE: ?transfer_to=usr_ moves the user's files to another user's My files; ?delete_files=true deletes them; the two are refused together
   POST                  /accounts/{acc}/users/{usr}/verification     send again, or a new link
   POST|GET              /accounts/{acc}/folders             ?external_id=
   PATCH|DELETE          /accounts/{acc}/folders/{fld}
@@ -464,17 +629,25 @@ Inside an account                          account key, admin key, or owner sess
   PATCH|DELETE          /accounts/{acc}/webhooks/{hook}
 
 Files                                      any caller, limited to what it may reach
-  GET    /folders                          team spaces the caller reaches at the root, plus its personal folder
+  GET    /folders                          team spaces the caller reaches at the root, plus its personal folder; ?hidden=true lists only the hidden ones
+  PATCH  /folders/{fld}/settings           {members_only, sharing_managers_only, no_download_for_viewers, allow_links}: managers of the space root; refused on a personal folder
+  PUT|DELETE /folders/{fld}/hidden         hide or show a team space in the caller's own list (users only; changes no access)
   GET    /shared                           nodes shared with the caller (users only), each with its role
   GET    /folders/{fld}/children?path=/a/b list a directory by path
   GET    /nodes/{nod}                      stat: name, size, mime_type, etag, modified_at, sha256
   GET    /nodes/{nod}/children             list a directory by ID (sort, paging); each child carries the caller's role
   GET    /nodes/{nod}/permissions          the permissions on a node and above it (viewer on the node)
-  PUT|DELETE /nodes/{nod}/permissions/{subject}   {role}: a usr_ or grp_ subject; manager on the node or an account key
+  PUT|DELETE /nodes/{nod}/permissions/{subject}   {role, expires_at, notify, message}: a usr_ or grp_ subject; manager on the node, or an editor where editors_can_share allows; expires_at is in the future and within sharing.max_expiry
+  POST   /nodes/{nod}/access-requests      {role, message}: ask for a role (users only); always 202, with no body
+  GET    /nodes/{nod}/access-requests      the requests on a node (manager, or editor where editors_can_share allows)
+  GET    /access-requests                  the pending requests the caller may decide (the oldest 5,000 in the account)
+  POST   /access-requests/{arq}/approve    {role}: optional; grants the role and closes the request
+  POST   /access-requests/{arq}/deny       closes the request without a grant
+  POST   /nodes/{nod}/transfer-ownership   {to}: the item's owner or an account key, holding editor on the item
   POST   /folders/{fld}/directories        {path, parents: true}
   POST   /folders/{fld}/files?path=        small file as the raw body (If-None-Match: * refuses an existing one),
                                            or a blank document from a template
-  PATCH  /nodes/{nod}                      {name}: rename in place
+  PATCH  /nodes/{nod}                      {name, no_download, editors_can_share}: rename in place (editor); no_download (editor); editors_can_share (manager)
   POST   /nodes/{nod}/move                 {folder, parent | path, name, on_conflict: fail | rename | replace}
   POST   /nodes/{nod}/copy                 same; read on the source, write on the target; 202 and a job
                                            above 10,000 nodes, too_large above copy.max_nodes
@@ -549,6 +722,7 @@ status:
 | `unauthenticated` | 401 | No valid credential; sign in again. |
 | `token_expired` | 401 | Delegated token expired; refresh it and retry. |
 | `forbidden` | 403 | The caller may not do this. |
+| `download_restricted` | 403 | The node is marked no download and the caller may only view it. A download with attachment disposition (`HEAD` too), a signed link with attachment disposition, or a copy of the node or of a subtree containing a flagged node was refused. Inline viewing is not affected. |
 | `account_suspended`, `user_not_verified`, `user_disabled` | 403 | Account or user state blocks access. |
 | `not_found` | 404 | No such resource, or the caller may not know it exists. |
 | `conflict` | 409 | Name taken, duplicate `external_id`, or a concurrent upload. |
@@ -637,11 +811,13 @@ Vite, compiled into the binary, so Node is needed only to build it.
 | `users` | id, account_id, external_id, email, display_name, locale, role, status, password_hash, totp_secret (encrypted), verified_at |
 | `verifications` | id, user_id, purpose (verify, reset), token_hash, expires_at, used_at |
 | `sessions` | id_hash, user_id, created_at, last_seen_at, expires_at, ip, user_agent |
-| `folders` | id, account_id, external_id, name, name_key, kind (`team` or `personal`), owner_user_id (personal only; at most one personal folder per user) |
+| `folders` | id, account_id, external_id, name, name_key, kind (`team` or `personal`), owner_user_id (personal only; at most one personal folder per user), members_only, sharing_managers_only, no_download_for_viewers, allow_links (0 or 1; team spaces only, personal folders keep them 0) |
 | `groups` | id, account_id, external_id, name, name_key, created_at, updated_at |
 | `group_members` | group_id, user_id, created_at |
 | `permissions` | node_id, account_id, subject_kind (`user` or `group`), subject_id, role (viewer, commenter, contributor, editor, manager), created_at, created_by, expires_at (null: no expiry) |
-| `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id |
+| `access_requests` | id (`arq_`), account_id, node_id, user_id, role (viewer, commenter or editor), message (at most 500 characters), status (pending, approved, denied), created_at, decided_at, decided_by; at most one pending row per node and user |
+| `hidden_folders` | user_id, folder_id, created_at; primary key (user_id, folder_id). A user's own list of hidden team spaces, which changes no access |
+| `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors) |
 | `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
 | `uploads` | id, account_id, target (folder_id, parent_id or dir_path, parents, name, name_key, on_conflict, mime_type), length, durable_offset, hash_state, blob_id, created_by, created_kind, expires_at |
 | `wopi_locks` | node_id, lock_id, expires_at |
@@ -671,6 +847,12 @@ cannot leak into another's results. Tests check this for each endpoint.
   warning when they disagree; it never repairs them. `selfcloud admin recount-usage
   [-account ID]` rebuilds used and reserved bytes from the rows, one account per transaction,
   and records the before and after figures in the audit log.
+- **Access requests**: the sweep removes decided access requests older than 30 days. A pending request is
+  kept however old it is, since someone still has to decide it.
+- **Expired permissions**: the sweep removes each permission whose `expires_at` passed more than 24
+  hours ago, audits each removal as `permission.expired`, and leaves the 24 hours as a grace period so
+  the audit trail shows when access ended. Reads already ignore an expired permission, so the sweep
+  only tidies rows and never changes what a user may reach.
 - **Logs**: JSON through `log/slog`, one line per request with its request ID. Passwords, keys,
   tokens, signed-link tokens and file contents never reach the log.
 - **Client IP**: taken from `X-Forwarded-For` or a named header such as `CF-Connecting-IP` only
@@ -805,3 +987,8 @@ Decided on approval:
     the "editors can share" switch, ownership transfer, team-space restrictions and hiding, access
     requests and share emails. Nothing of n2 is in n1, except the `expires_at` and `owner_id` columns
     that n2 needs and the store reads already filter on.
+20. **Sharing controls defaults** (2026-10-28, slice n2). Editors cannot share by default:
+    editors_can_share is off, so only managers share. No-download allows inline view: it refuses
+    downloads, signed links and copies, and leaves inline viewing where the type allows it. The
+    access-request POST always answers 202, whatever the node. The team-space link setting,
+    allow_links, is off by default, and does nothing until slice o.

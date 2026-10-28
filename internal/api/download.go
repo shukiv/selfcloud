@@ -393,7 +393,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, n *store.Node
 // handleGetContent sends a file's contents to a caller who may read the file. The body is an
 // attachment unless ?disposition=inline is asked for and the policy allows it.
 func (s *Server) handleGetContent(w http.ResponseWriter, r *http.Request) error {
-	n, err := s.nodeOf(r, r.PathValue("nod"), store.RoleViewer)
+	n, role, err := s.nodeAccess(r, r.PathValue("nod"))
 	if err != nil {
 		return err
 	}
@@ -407,6 +407,15 @@ func (s *Server) handleGetContent(w http.ResponseWriter, r *http.Request) error 
 		inline = true
 	default:
 		return apierr.New(apierr.InvalidRequest, "disposition must be attachment or inline")
+	}
+	// The no-download rule refuses every response that would be a download. Inline viewing still
+	// works where the type may be shown inline.
+	restricted, err := s.downloadRestricted(r.Context(), n, role)
+	if err != nil {
+		return err
+	}
+	if restricted && !s.inlineAllowed(r, n, inline) {
+		return errDownloadRestricted()
 	}
 	return s.serveFile(w, r, n, inline, corpSameOrigin)
 }

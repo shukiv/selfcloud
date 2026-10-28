@@ -277,8 +277,11 @@ func replacedUsage(replaced *store.Node) store.UsageChange {
 // copyTree makes the copy of src's tree in the target place of plan. The copy of src gets rootID;
 // the rest get new IDs. A copy shares its files' blobs. It returns the number of nodes made and the
 // file count and bytes they add to usage.
-func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string, plan *transferPlan, by string) (
-	nodes int, files, bytes int64, err error) {
+//
+// keepSharing says whether the copies keep editors_can_share. Only a caller that manages the destination
+// may pass it on: otherwise an editor would be handed a power the caller does not hold.
+func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string, plan *transferPlan, by string,
+	keepSharing bool) (nodes int, files, bytes int64, err error) {
 	tree, err := tx.Subtree(ctx, src.AccountID, src.ID)
 	if err != nil {
 		return 0, 0, 0, err
@@ -299,6 +302,9 @@ func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string,
 		// The copy's owner is its creator, or the user of a personal folder it lands in; the source's
 		// owner does not carry over. The store applies that rule when the node is inserted.
 		c.OwnerID = ""
+		if !keepSharing {
+			c.EditorsCanShare = false
+		}
 		if i == 0 {
 			c.ParentID, c.Name, c.NameKey = plan.parent.ID, plan.name, plan.key
 		} else {
@@ -383,6 +389,9 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		folderChanged := plan.folderID != cur.FolderID
+		// A node placed in another directory takes the directory's place: a caller that does not manage
+		// the destination cannot leave editors_can_share on it or below it.
+		moved := folderChanged || cur.ParentID != plan.parent.ID
 		if folderChanged {
 			// Inside a personal folder everything belongs to the folder's user.
 			if dst, err := tx.Folder(ctx, cur.AccountID, plan.folderID); err == nil && dst.Kind == store.KindPersonal {
@@ -398,6 +407,18 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		if folderChanged && cur.Kind == store.KindDir {
 			if err := tx.SetSubtreeFolder(ctx, cur.AccountID, cur.ID, plan.folderID); err != nil {
 				return err
+			}
+		}
+		if moved {
+			keep, err := sharingKept(ctx, tx, p, plan.parent.ID)
+			if err != nil {
+				return err
+			}
+			if !keep {
+				if err := tx.ClearSubtreeEditorsCanShare(ctx, cur.AccountID, cur.ID); err != nil {
+					return err
+				}
+				cur.EditorsCanShare = false
 			}
 		}
 		out = cur
@@ -454,7 +475,7 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	src, err := s.nodeOf(r, r.PathValue("nod"), store.RoleViewer)
+	src, role, err := s.nodeAccess(r, r.PathValue("nod"))
 	if err != nil {
 		return err
 	}
@@ -468,6 +489,16 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 	}
 	ctx := r.Context()
 	p := principalOf(r)
+	if store.RoleRank(role) < store.RoleRank(store.RoleViewer) {
+		return roleTooLow(store.RoleViewer)
+	}
+	restricted, err := s.copyRestricted(ctx, s.store, src, role)
+	if err != nil {
+		return err
+	}
+	if restricted {
+		return errDownloadRestricted()
+	}
 	nodes, err := s.store.SubtreeSize(ctx, src.AccountID, src.ID, s.cfg.Copy.MaxNodes+1)
 	if err != nil {
 		return err
@@ -511,7 +542,11 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		count, files, bytes, err := copyTree(ctx, tx, cur, rootID, plan, p.ID)
+		keep, err := sharingKept(ctx, tx, p, plan.parent.ID)
+		if err != nil {
+			return err
+		}
+		count, files, bytes, err := copyTree(ctx, tx, cur, rootID, plan, p.ID, keep)
 		if err != nil {
 			return err
 		}
@@ -623,8 +658,16 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		if err != nil {
 			return err
 		}
-		if _, err := requireNodeRole(ctx, tx, p, src.ID, store.RoleViewer); err != nil {
+		_, role, err := nodeAccessWith(ctx, tx, p, src.ID)
+		if err != nil {
 			return err
+		}
+		restricted, err := s.copyRestricted(ctx, tx, src, role)
+		if err != nil {
+			return err
+		}
+		if restricted {
+			return errDownloadRestricted()
 		}
 		nodes, err := tx.Subtree(ctx, job.AccountID, src.ID)
 		if err != nil {
@@ -652,7 +695,11 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		if err != nil {
 			return err
 		}
-		count, files, bytes, err := copyTree(ctx, tx, src, pl.Root, plan, p.ID)
+		keep, err := sharingKept(ctx, tx, p, plan.parent.ID)
+		if err != nil {
+			return err
+		}
+		count, files, bytes, err := copyTree(ctx, tx, src, pl.Root, plan, p.ID, keep)
 		if err != nil {
 			return err
 		}
@@ -677,4 +724,14 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 func auditAs(p *auth.Principal, accountID, action, target string, details map[string]any, folders ...string) *store.AuditEntry {
 	return &store.AuditEntry{Time: store.Now(), AccountID: accountID, ActorKind: string(p.Kind), ActorID: p.ID,
 		Action: action, Target: target, Details: delegated(p, details), Folders: folders}
+}
+
+// sharingKept reports whether a node placed in the directory parentID keeps editors_can_share: the
+// caller must manage that directory. It reads inside the transaction, so a role revoked meanwhile counts.
+func sharingKept(ctx context.Context, tx *store.Tx, p *auth.Principal, parentID string) (bool, error) {
+	_, role, err := nodeAccessWith(ctx, tx, p, parentID)
+	if err != nil {
+		return false, err
+	}
+	return store.RoleRank(role) >= store.RoleRank(store.RoleManager), nil
 }

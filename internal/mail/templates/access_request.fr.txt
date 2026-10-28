@@ -1,0 +1,9 @@
+Subject: {{.Actor}} demande l'accès à {{.Item}} comme {{.Role}}
+
+{{.Actor}} demande l'accès à {{.Item}} comme {{.Role}}.{{if .Message}}
+
+{{.Message}}{{end}}
+
+{{.Link}}
+
+Ce message est destiné aux gestionnaires. Si vous ne l'attendiez pas, vous pouvez l'ignorer.

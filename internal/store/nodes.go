@@ -35,6 +35,11 @@ type Node struct {
 	CreatedBy  string
 	ModifiedBy string
 	OwnerID    string // the user who owns the node; a new node's owner is its creator
+	// NoDownload forbids viewers and commenters the contents of this node and of its subtree. It
+	// deters rather than secures: inline display still shows the contents. See the access code.
+	NoDownload bool
+	// EditorsCanShare lets editors set permissions on this node and its subtree, up to editor.
+	EditorsCanShare bool
 }
 
 // IsRoot reports whether n is a folder's root.
@@ -43,18 +48,20 @@ func (n *Node) IsRoot() bool { return n.ParentID == "" }
 // nodeSelect reads a node with its blob's hash. Callers add a WHERE clause.
 const nodeSelect = `SELECT n.id, n.account_id, n.folder_id, n.parent_id, n.name, n.name_key, n.kind,
 	n.size, n.mime_type, n.blob_id, COALESCE(b.sha256, ''), n.etag, n.created_at, n.modified_at,
-	n.created_by, n.modified_by, n.owner_id
+	n.created_by, n.modified_by, n.owner_id, n.no_download, n.editors_can_share
 	FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id AND b.account_id = n.account_id`
 
 const nodeCols = `id, account_id, folder_id, parent_id, name, name_key, kind, size, mime_type, blob_id,
-	etag, created_at, modified_at, created_by, modified_by, owner_id`
+	etag, created_at, modified_at, created_by, modified_by, owner_id, no_download, editors_can_share`
 
 func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	var n Node
 	var parent, blob sql.NullString
 	var created, modified int64
+	var noDownload, editorsCanShare int64
 	err := row.Scan(&n.ID, &n.AccountID, &n.FolderID, &parent, &n.Name, &n.NameKey, &n.Kind, &n.Size,
-		&n.MimeType, &blob, &n.SHA256, &n.ETag, &created, &modified, &n.CreatedBy, &n.ModifiedBy, &n.OwnerID)
+		&n.MimeType, &blob, &n.SHA256, &n.ETag, &created, &modified, &n.CreatedBy, &n.ModifiedBy, &n.OwnerID,
+		&noDownload, &editorsCanShare)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -65,6 +72,8 @@ func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	n.BlobID = blob.String
 	n.CreatedAt = fromMillis(created)
 	n.ModifiedAt = fromMillis(modified)
+	n.NoDownload = noDownload == 1
+	n.EditorsCanShare = editorsCanShare == 1
 	return &n, nil
 }
 
@@ -225,10 +234,10 @@ func (tx *Tx) InsertNode(ctx context.Context, n *Node) error {
 	}
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), ?))`,
+			COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), ?), ?, ?)`,
 		n.ID, n.AccountID, n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Kind, n.Size,
 		n.MimeType, nullString(n.BlobID), n.ETag, millis(n.CreatedAt), millis(n.ModifiedAt),
-		n.CreatedBy, n.ModifiedBy, n.FolderID, owner)
+		n.CreatedBy, n.ModifiedBy, n.FolderID, owner, boolInt(n.NoDownload), boolInt(n.EditorsCanShare))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -240,9 +249,11 @@ func (tx *Tx) InsertNode(ctx context.Context, n *Node) error {
 func (tx *Tx) UpdateNode(ctx context.Context, n *Node) error {
 	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET folder_id = ?, parent_id = ?, name = ?,
 		name_key = ?, size = ?, mime_type = ?, blob_id = ?, etag = ?, modified_at = ?, modified_by = ?,
-		owner_id = CASE WHEN ? = '' THEN owner_id ELSE ? END WHERE account_id = ? AND id = ?`,
+		owner_id = CASE WHEN ? = '' THEN owner_id ELSE ? END, no_download = ?, editors_can_share = ?
+		WHERE account_id = ? AND id = ?`,
 		n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Size, n.MimeType, nullString(n.BlobID),
-		n.ETag, millis(n.ModifiedAt), n.ModifiedBy, n.OwnerID, n.OwnerID, n.AccountID, n.ID))
+		n.ETag, millis(n.ModifiedAt), n.ModifiedBy, n.OwnerID, n.OwnerID, boolInt(n.NoDownload),
+		boolInt(n.EditorsCanShare), n.AccountID, n.ID))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}

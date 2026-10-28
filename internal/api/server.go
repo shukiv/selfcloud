@@ -205,6 +205,15 @@ func New(opts Options) (*Server, error) {
 			// Each address gets one reset an hour that the account cap does not count, so one
 			// caller who uses up an account's cap on repeats cannot stop its users' first resets.
 			"mail.forgot.first": newLimiterRate(1, time.Hour),
+			// Asking for access, per user: each request mails the managers of the item, so a flood of them
+			// is refused.
+			"access.request": newLimiterRate(20, time.Hour),
+			// Listing the pending requests, per caller: the scan reads up to 5,000 rows a call.
+			"access.list": newLimiter(60),
+			// Access-request mail has buckets of its own, so requests cannot spend the mail a user needs to
+			// sign in: per account, and per address the mail goes to.
+			"mail.requests.account": newLimiterRate(20, time.Hour),
+			"mail.requests.target":  newLimiterRate(5, time.Hour),
 			// Starting uploads, per caller: each one reserves disk, so a flood of them is refused.
 			"upload.create": newLimiter(60),
 			// Minting delegated tokens, per account key: each is a credential, so a flood is refused.
@@ -275,6 +284,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/folders/{fld}/grants/{usr}", handle: s.handleRemoveGrant, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users/{usr}/grants", handle: s.handleListUserGrants, auth: true},
 		{method: http.MethodGet, path: "/api/v1/folders", handle: s.handleMyFolders, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/folders/{fld}/settings", handle: s.handleUpdateFolderSettings, auth: true},
+		{method: http.MethodPut, path: "/api/v1/folders/{fld}/hidden", handle: s.handleHideFolder, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/folders/{fld}/hidden", handle: s.handleShowFolder, auth: true},
 
 		{method: http.MethodPost, path: "/api/v1/admins", handle: s.handleCreateAdmin, auth: true},
 		{method: http.MethodGet, path: "/api/v1/admins", handle: s.handleListAdmins, auth: true},
@@ -314,6 +326,12 @@ func (s *Server) routes() []route {
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true},
 		{method: http.MethodGet, path: "/api/v1/shared", handle: s.handleSharedWithMe, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/transfer-ownership", handle: s.handleTransferOwnership, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleCreateAccessRequest, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleListNodeAccessRequests, auth: true},
+		{method: http.MethodGet, path: "/api/v1/access-requests", handle: s.handleListPendingAccessRequests, auth: true},
+		{method: http.MethodPost, path: "/api/v1/access-requests/{arq}/approve", handle: s.handleApproveAccessRequest, auth: true},
+		{method: http.MethodPost, path: "/api/v1/access-requests/{arq}/deny", handle: s.handleDenyAccessRequest, auth: true},
 
 		// A signed link carries its own authority: no credential, and no cookie is read.
 		{method: http.MethodGet, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},

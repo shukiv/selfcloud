@@ -22,10 +22,17 @@ type folderJSON struct {
 	OwnerUserID *string   `json:"owner_user_id,omitempty"` // the user of a personal folder
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// The team-space settings (slice n2). They are always false on a personal folder.
+	MembersOnly          bool `json:"members_only"`
+	SharingManagersOnly  bool `json:"sharing_managers_only"`
+	NoDownloadForViewers bool `json:"no_download_for_viewers"`
+	AllowLinks           bool `json:"allow_links"`
 }
 
 func toFolderJSON(f *store.Folder) folderJSON {
-	out := folderJSON{ID: f.ID, Name: f.Name, Kind: f.Kind, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt}
+	out := folderJSON{ID: f.ID, Name: f.Name, Kind: f.Kind, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
+		MembersOnly: f.MembersOnly, SharingManagersOnly: f.SharingManagersOnly,
+		NoDownloadForViewers: f.NoDownloadForViewers, AllowLinks: f.AllowLinks}
 	if f.ExternalID != "" {
 		out.ExternalID = &f.ExternalID
 	}
@@ -42,6 +49,9 @@ type folderAccessJSON struct {
 	// predate roles. Role is the role itself.
 	Access string `json:"access"`
 	Role   string `json:"role"`
+	// Hidden is true when the caller has hidden this team space from its own list. Hiding changes
+	// nothing about access.
+	Hidden bool `json:"hidden"`
 }
 
 // folderAccessOf builds a folder the caller reaches, from its folder JSON and the role it holds.
@@ -469,6 +479,17 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// A user's hidden team spaces are left out unless ?hidden=true asks for only those. Tokens and
+	// keys have no list of their own to hide from, so the filter is for users only.
+	onlyHidden, err := hiddenParam(r)
+	if err != nil {
+		return err
+	}
+	if onlyHidden && (p.Token != nil || p.Kind != auth.KindUser) {
+		// Only a user hides spaces, so for a token or a key the hidden list is empty.
+		writeJSON(w, http.StatusOK, out)
+		return nil
+	}
 	if p.Token != nil {
 		// A token names at most tokenMaxFolders folders, so they are listed in one page, each at the
 		// role folderAccess gives the token.
@@ -502,9 +523,14 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
+	hide := store.HideFilter{UserID: p.UserID, Only: onlyHidden}
+	if onlyHidden {
+		// A personal folder is never hidden, so the hidden listing leaves it out.
+		own = nil
+	}
 	teams := func(tp store.Page) ([]folderAccessJSON, string, error) {
 		if p.Role == auth.RoleOwner {
-			folders, next, err := s.store.Folders(ctx, p.AccountID, store.FolderFilter{Kind: store.KindTeam}, tp)
+			folders, next, err := s.store.Folders(ctx, p.AccountID, store.FolderFilter{Kind: store.KindTeam, Hide: hide}, tp)
 			if err != nil {
 				return nil, "", storeErr(err)
 			}
@@ -514,7 +540,7 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 			}
 			return items, next, nil
 		}
-		reached, next, err := s.store.RootReachedFolders(ctx, p.AccountID, p.UserID, tp)
+		reached, next, err := s.store.RootReachedFolders(ctx, p.AccountID, p.UserID, hide, tp)
 		if err != nil {
 			return nil, "", storeErr(err)
 		}
@@ -528,8 +554,28 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	hidden, err := s.store.HiddenFolderIDs(ctx, p.AccountID, p.UserID)
+	if err != nil {
+		return err
+	}
+	for i := range out.Items {
+		out.Items[i].Hidden = hidden[out.Items[i].ID]
+	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// hiddenParam reads ?hidden=: absent or false leaves hidden spaces out, and true lists only them.
+// Any other value is refused, so a typo does not silently show the wrong list.
+func hiddenParam(r *http.Request) (bool, error) {
+	switch v := r.URL.Query().Get("hidden"); v {
+	case "", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	default:
+		return false, apierr.New(apierr.InvalidRequest, "hidden must be true or false")
+	}
 }
 
 // pageWithPersonal lists a caller's personal folder first, on the first page, then the team spaces.

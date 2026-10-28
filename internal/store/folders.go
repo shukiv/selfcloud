@@ -46,15 +46,27 @@ type Folder struct {
 	OwnerUserID string // the user of a personal folder; "" for a team space
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	// The settings below are for team spaces only; they stay false on a personal folder.
+	// MembersOnly refuses a permission below the root to anyone who holds none on the root.
+	MembersOnly bool
+	// SharingManagersOnly keeps permission changes in the space to managers, whatever the nodes
+	// say about editors sharing.
+	SharingManagersOnly bool
+	// NoDownloadForViewers applies the no-download rule to every node in the space.
+	NoDownloadForViewers bool
+	// AllowLinks is stored for the public-link slice, which enforces it. Nothing reads it yet.
+	AllowLinks bool
 }
 
-const folderCols = "id, account_id, external_id, name, name_key, kind, owner_user_id, created_at, updated_at"
+const folderCols = "id, account_id, external_id, name, name_key, kind, owner_user_id, created_at, updated_at, " +
+	"members_only, sharing_managers_only, no_download_for_viewers, allow_links"
 
 func scanFolder(row interface{ Scan(...any) error }) (*Folder, error) {
 	var f Folder
 	var ext, owner sql.NullString
-	var created, updated int64
-	err := row.Scan(&f.ID, &f.AccountID, &ext, &f.Name, &f.NameKey, &f.Kind, &owner, &created, &updated)
+	var created, updated, membersOnly, managersOnly, noDownload, allowLinks int64
+	err := row.Scan(&f.ID, &f.AccountID, &ext, &f.Name, &f.NameKey, &f.Kind, &owner, &created, &updated,
+		&membersOnly, &managersOnly, &noDownload, &allowLinks)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -65,6 +77,10 @@ func scanFolder(row interface{ Scan(...any) error }) (*Folder, error) {
 	f.OwnerUserID = owner.String
 	f.CreatedAt = fromMillis(created)
 	f.UpdatedAt = fromMillis(updated)
+	f.MembersOnly = membersOnly == 1
+	f.SharingManagersOnly = managersOnly == 1
+	f.NoDownloadForViewers = noDownload == 1
+	f.AllowLinks = allowLinks == 1
 	return &f, nil
 }
 
@@ -110,6 +126,7 @@ func (tx *Tx) PersonalFolder(ctx context.Context, accountID, userID string) (*Fo
 type FolderFilter struct {
 	ExternalID string
 	Kind       string // KindTeam or KindPersonal
+	Hide       HideFilter
 }
 
 // Folders lists the folders of accountID, oldest first, narrowed by f.
@@ -124,7 +141,8 @@ func (s *Store) Folders(ctx context.Context, accountID string, f FolderFilter, p
 		where = append(where, "kind = ?")
 		args = append(args, f.Kind)
 	}
-	return s.pageFolders(ctx, strings.Join(where, " AND "), args, p)
+	hide, hargs := hideCond("", f.Hide)
+	return s.pageFolders(ctx, strings.Join(where, " AND ")+hide, append(args, hargs...), p)
 }
 
 // pageFolders runs a folder query with the given condition and one page of the cursor.
@@ -178,11 +196,14 @@ type ReachedFolder struct {
 // RootReachedFolders lists the team spaces of accountID whose root userID holds a permission on,
 // directly or through a group, one page at a time. A team space an owner reaches without a
 // permission is not listed here; the caller adds those. Expired permissions are left out.
-func (s *Store) RootReachedFolders(ctx context.Context, accountID, userID string, p Page) ([]ReachedFolder, string, error) {
+func (s *Store) RootReachedFolders(ctx context.Context, accountID, userID string, hide HideFilter, p Page) ([]ReachedFolder, string, error) {
 	args := []any{accountID, userID, userID, nowMillis()}
 	cond := `f.account_id = ? AND f.kind = 'team' AND EXISTS (
 		SELECT 1 FROM nodes r JOIN permissions pm ON pm.node_id = r.id
 		WHERE r.folder_id = f.id AND r.parent_id IS NULL AND ` + subjectPredicate + ` AND ` + liveClause + `)`
+	hideSQL, hargs := hideCond("f.", hide)
+	cond += hideSQL
+	args = append(args, hargs...)
 	folders, next, err := s.pageFoldersAliased(ctx, cond, args, p)
 	if err != nil {
 		return nil, "", err
@@ -262,8 +283,10 @@ func (tx *Tx) InsertFolder(ctx context.Context, f *Folder, by string) error {
 	if f.Kind == KindTeam {
 		owner = ""
 	}
+	// A new folder has no settings: a team space starts with every setting off, a personal folder
+	// never takes one.
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO folders (`+folderCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0)`,
 		f.ID, f.AccountID, nullString(f.ExternalID), f.Name, f.NameKey, f.Kind, nullString(owner),
 		millis(f.CreatedAt), millis(f.UpdatedAt))
 	if isUniqueViolation(err) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/shukiv/selfcloud/internal/id"
 )
@@ -129,6 +130,8 @@ func TestRootPermissionsAndUserDeletion(t *testing.T) {
 	other := newFolderRow(t, s, b, "Other", "other")
 
 	setRootPermission(t, s, a, f1.ID, ann.ID, RoleViewer)
+	// Two grants made in the same millisecond would order arbitrarily by created_at.
+	time.Sleep(2 * time.Millisecond)
 	setRootPermission(t, s, a, f2.ID, ann.ID, RoleEditor)
 	// Setting again changes the role rather than adding a second permission.
 	setRootPermission(t, s, a, f1.ID, ann.ID, RoleEditor)
@@ -145,7 +148,7 @@ func TestRootPermissionsAndUserDeletion(t *testing.T) {
 	}
 	// A permission on a folder of another account is refused by the join, not by trusting the caller.
 	setRootPermission(t, s, b, other.ID, ann.ID, RoleViewer)
-	if reached, _, _ := s.RootReachedFolders(ctx, a, ann.ID, Page{Limit: 50}); len(reached) != 2 {
+	if reached, _, _ := s.RootReachedFolders(ctx, a, ann.ID, HideFilter{}, Page{Limit: 50}); len(reached) != 2 {
 		t.Errorf("folders reached under A = %d, want 2", len(reached))
 	}
 

@@ -1,0 +1,7 @@
+Subject: {{.Actor}} {{if .Approved}}approved{{else}}declined{{end}} your access request for {{.Item}}
+
+{{if .Approved}}{{.Actor}} approved your request for {{.Role}} access to {{.Item}}.{{else}}{{.Actor}} declined your request for access to {{.Item}}.{{end}}
+
+{{.Link}}
+
+If you did not expect this message, you can ignore it.

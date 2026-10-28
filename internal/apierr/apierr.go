@@ -47,6 +47,9 @@ const (
 	Unavailable          Code = "unavailable"
 	QuotaExceeded        Code = "quota_exceeded"
 	StorageFull          Code = "storage_full"
+	// DownloadRestricted refuses a download, a signed link or a copy that the node's no-download rule
+	// forbids the caller. It is a 403 the caller can understand without a retry.
+	DownloadRestricted Code = "download_restricted"
 )
 
 // StatusChecksumMismatch is the status the tus protocol defines for a failed piece checksum.
@@ -59,6 +62,7 @@ var statuses = map[Code]int{
 	Unauthenticated:      http.StatusUnauthorized,
 	TokenExpired:         http.StatusUnauthorized,
 	Forbidden:            http.StatusForbidden,
+	DownloadRestricted:   http.StatusForbidden,
 	AccountSuspended:     http.StatusForbidden,
 	UserNotVerified:      http.StatusForbidden,
 	UserDisabled:         http.StatusForbidden,

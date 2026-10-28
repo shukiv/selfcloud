@@ -425,6 +425,7 @@ paths:
       operationId: listMyFolders
       summary: List the folders the caller can reach
       description: |
+        A user's hidden team spaces are left out unless `hidden=true`, which lists only them.
         An account key or owner session gets every folder of its account with access `write`.
         A member session gets its granted folders at the granted level. Both lists are paged the
         same way. Admins get `403 forbidden`: they manage tenants and never read their files.
@@ -432,6 +433,11 @@ paths:
       parameters:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
+        - name: hidden
+          in: query
+          required: false
+          description: "false (the default) leaves hidden team spaces out; true lists only the hidden ones."
+          schema: { type: string, enum: ["true", "false"] }
       responses:
         "200":
           description: The folders, with the caller's access to each.
@@ -884,6 +890,11 @@ paths:
         Removes the user with its sessions, tokens, group memberships and permissions. The user's
         personal folder goes with it. If that folder holds any file or directory, the delete is
         refused with `conflict` unless `delete_files=true`, since the files are then gone for good.
+        Instead, `transfer_to=usr_...` moves the files into a new directory in that user's My files,
+        named after the deleted user, "<display name or email> (files)". It is a different answer:
+        the two parameters cannot be given together. An owner session may name only an active member
+        as the recipient, never itself and never another owner, and gets `forbidden` otherwise. The
+        account key is not limited this way.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - name: delete_files
@@ -891,6 +902,11 @@ paths:
           required: false
           description: Delete the files of the user's personal folder too.
           schema: { type: boolean, default: false }
+        - name: transfer_to
+          in: query
+          required: false
+          description: An active user of the account whose My files take the files of this user.
+          schema: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
       responses:
         "204":
           description: Deleted.
@@ -1433,13 +1449,18 @@ paths:
     patch:
       tags: [Files]
       operationId: renameNode
-      summary: Rename a file or directory inside its directory
+      summary: Rename a file or directory, or change its sharing flags
+      description: |
+        `name` needs the editor role. `no_download` needs the editor role: it refuses viewers and
+        commenters the downloads of the node and its subtree, though inline viewing still works.
+        `editors_can_share` needs the manager role: it lets editors set permissions below the node,
+        up to editor. A folder's root has no name. At least one field is required.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/NodeRename" }
+            schema: { $ref: "#/components/schemas/NodeUpdate" }
       responses:
         "200":
           description: The renamed node.
@@ -1736,9 +1757,16 @@ paths:
       operationId: setNodePermission
       summary: Give a user or group a role on a node, or change it
       description: |
-        Needs the manager role on the node, or an account key. A caller may not grant a role above
-        its own. The subject must belong to the account, and an installation admin cannot hold a
-        permission. Delegated tokens never manage permissions.
+        Needs the manager role on the node, or an editor when the node or an ancestor has
+        `editors_can_share` and the team space does not set `sharing_managers_only`; or an account
+        key. A caller may not grant a role above its own, so an editor cannot make a manager. The
+        subject must belong to the account, and an installation admin cannot hold a permission.
+        `expires_at` ends the permission at that instant; it must be in the future and within
+        `sharing.max_expiry` of now (0 means no cap). A team space with `members_only` refuses a
+        permission below its root to anyone who holds nothing on the root, with `conflict`.
+        `notify` (default true) mails the subject, in its own language: an active user, or each
+        active member of a group of at most 50 members. The reply says whether mail went out and,
+        if not, why. Delegated tokens never manage permissions.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -1747,16 +1775,16 @@ paths:
             schema: { $ref: "#/components/schemas/PermissionSet" }
       responses:
         "200":
-          description: The permission.
+          description: The permission, and whether the subject was told by mail.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Permission" }
+              schema: { $ref: "#/components/schemas/PermissionChange" }
         default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [Permissions]
       operationId: removeNodePermission
       summary: Remove a permission that sits on the node
-      description: Needs the manager role on the node, or an account key.
+      description: Needs the same right as setting one, and may not remove a permission above the caller's own role.
       security: [{ bearer: [] }, { session: [] }]
       responses:
         "204": { description: Removed. }
@@ -1781,6 +1809,187 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/NodeList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/folders/{fld}/settings:
+    parameters:
+      - $ref: "#/components/parameters/fld"
+    patch:
+      tags: [Permissions]
+      operationId: updateFolderSettings
+      summary: Change a team space's restrictions
+      description: |
+        Sets `members_only`, `sharing_managers_only`, `no_download_for_viewers` and `allow_links`.
+        Needs the manager role on the space's root, which the account's owners and an account key
+        hold. A personal folder has no such settings and is refused with `invalid_request`. A caller
+        who cannot reach the folder gets `not_found`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FolderSettingsUpdate" }
+      responses:
+        "200":
+          description: The folder, with its settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Folder" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/folders/{fld}/hidden:
+    parameters:
+      - $ref: "#/components/parameters/fld"
+    put:
+      tags: [Permissions]
+      operationId: hideFolder
+      summary: Hide a team space from the caller's own list
+      description: |
+        Per user. The caller must reach the space. Hiding changes nothing about access: the space is
+        still reached, and it is listed with `GET /folders?hidden=true`. A personal folder cannot be hidden.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Hidden. }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Permissions]
+      operationId: showFolder
+      summary: Show a hidden team space again
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Shown again. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/transfer-ownership:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Permissions]
+      operationId: transferOwnership
+      summary: Give a file or folder to another user of the account
+      description: |
+        Only the item's owner (`owner_id`), or an account key, may transfer it, and the caller needs
+        the editor role on it. The new owner must be an active user of the same account.
+        In a personal folder the item moves, with its subtree and direct permissions, into the new
+        owner's My files, renamed if the name is taken; the previous owner keeps editor on it. In a
+        team space the item stays where it is, and only the owners of it and its subtree change.
+        Usage does not change, since both users belong to the same account.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              additionalProperties: false
+              properties:
+                to: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+      responses:
+        "200":
+          description: The node, now owned by the new owner.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/access-requests:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Permissions]
+      operationId: requestAccess
+      summary: Ask for a role on a node
+      description: |
+        A user asks for a role it lacks. The answer is always `202` with no body, whether or not the
+        node exists or the caller can reach it, so the answer reveals nothing about the node. A
+        request is recorded only when the node exists in the caller's account and its role is below
+        the one asked for, and a user with no role counts as below. A pending request from the same
+        user on the same node collapses into the first, which keeps its role and message. Managers are
+        mailed when a request is new, and not again within 24 hours of the user's previous request on
+        that node. Rate limited per user. An account key and a delegated token get the same silent
+        `202`, and nothing is recorded.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccessRequestCreate" }
+      responses:
+        "202": { description: Accepted. No body. }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Permissions]
+      operationId: listNodeAccessRequests
+      summary: List the access requests on a node
+      description: Needs the manager role on the node, or editor where editors may share there. A delegated token gets `forbidden`.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The requests, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequestList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/access-requests:
+    get:
+      tags: [Permissions]
+      operationId: listPendingAccessRequests
+      summary: List the pending requests the caller may decide
+      description: |
+        Reads the oldest pending requests of the account, up to 5,000, and answers those on nodes the
+        caller may share, up to the page limit. Rate limited per caller (limiter `access.list`, 60 a
+        minute). A delegated token gets `forbidden`.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: The pending requests the caller may decide.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequestList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/access-requests/{arq}/approve:
+    parameters:
+      - $ref: "#/components/parameters/arq"
+    post:
+      tags: [Permissions]
+      operationId: approveAccessRequest
+      summary: Approve an access request
+      description: |
+        Grants the role asked for, or the role named, which may not be above the caller's own. A grant
+        only raises: a requester who already holds that role or more keeps it. The requester is
+        mailed the decision. A grant respects `members_only`: approving a requester who holds nothing on
+        the root of a members-only space gets `conflict`. The decided role is stored, so a listing shows
+        what was granted. A request already decided gets `conflict`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccessRequestDecision" }
+      responses:
+        "200":
+          description: The decided request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequest" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/access-requests/{arq}/deny:
+    parameters:
+      - $ref: "#/components/parameters/arq"
+    post:
+      tags: [Permissions]
+      operationId: denyAccessRequest
+      summary: Deny an access request
+      description: Closes the request without granting anything, and mails the requester. The mail says that an item was involved, without naming it. A request already decided gets `conflict`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The decided request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequest" }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/links/{token}:
     parameters:
@@ -1907,6 +2116,11 @@ components:
       required: true
       description: A user (`usr_...`) or a group (`grp_...`) of the same account.
       schema: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    arq:
+      name: arq
+      in: path
+      required: true
+      schema: { type: string, example: arq_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     tusResumable:
       name: Tus-Resumable
       in: header
@@ -2009,6 +2223,61 @@ components:
         owner_user_id: { type: string, description: The user of a personal folder. Absent for a team space. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        members_only: { type: boolean, description: A team space only. Always false on a personal folder. }
+        sharing_managers_only: { type: boolean, description: A team space only. Only managers may share in the space. }
+        no_download_for_viewers: { type: boolean, description: A team space only. The no-download rule applies to every node. }
+        allow_links: { type: boolean, description: A team space only. Stored now; public and organisation links (slice o) enforce it. It does nothing yet. }
+
+    FolderSettingsUpdate:
+      type: object
+      additionalProperties: false
+      description: At least one field is required. Team spaces only; the caller must manage the space's root.
+      properties:
+        members_only: { type: boolean }
+        sharing_managers_only: { type: boolean }
+        no_download_for_viewers: { type: boolean }
+        allow_links: { type: boolean, description: Stored now; it does nothing until slice o. }
+
+    AccessRequestCreate:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: { type: string, enum: [viewer, commenter, editor] }
+        message: { type: string, maxLength: 500, description: A note for the managers, shown verbatim as plain text. }
+
+    AccessRequestDecision:
+      type: object
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum: [viewer, commenter, contributor, editor, manager]
+          description: On approval, the role to grant. It defaults to the role asked for and may not be above the caller's own.
+
+    AccessRequest:
+      type: object
+      required: [id, node_id, user_id, role, message, status, created_at, decided_by]
+      properties:
+        id: { type: string, example: arq_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        node_id: { type: string }
+        user_id: { type: string, description: The requester. }
+        user_name: { type: string, description: The requester's display name or email. Shown to those who may decide. }
+        role: { type: string, enum: [viewer, commenter, editor] }
+        message: { type: string }
+        status: { type: string, enum: [pending, approved, denied] }
+        created_at: { type: string, format: date-time }
+        decided_at: { type: [string, "null"], format: date-time }
+        decided_by: { type: string, description: The caller who decided, empty while pending. }
+
+    AccessRequestList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AccessRequest" }
+        next_cursor: { type: string }
 
     FolderCreate:
       type: object
@@ -2059,6 +2328,8 @@ components:
           type: string
           enum: [viewer, commenter, contributor, editor, manager]
           description: The caller's effective role on the node. Set by stat, listings and the shared list; an account key gets manager.
+        no_download: { type: boolean, description: The node's own no-download setting. It also reaches the subtree. }
+        editors_can_share: { type: boolean, description: The node's own setting letting editors share. It also reaches the subtree. }
 
     NodeList:
       type: object
@@ -2077,12 +2348,13 @@ components:
         path: { type: string, maxLength: 4096, description: "Relative to the folder's root, e.g. /a/b." }
         parents: { type: boolean, default: false }
 
-    NodeRename:
+    NodeUpdate:
       type: object
-      required: [name]
       additionalProperties: false
       properties:
         name: { type: string, minLength: 1, maxLength: 255 }
+        no_download: { type: boolean }
+        editors_can_share: { type: boolean }
 
     Transfer:
       type: object
@@ -2112,6 +2384,9 @@ components:
         - type: object
           required: [access, role]
           properties:
+            hidden:
+              type: boolean
+              description: True when the caller has hidden this team space from its own list. Hiding changes nothing about access.
             access:
               type: string
               enum: [read, write]
@@ -2192,8 +2467,19 @@ components:
         inherited_from:
           type: [string, "null"]
           description: The ancestor node the permission sits on. Null when it sits on the node itself.
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the permission ends, or null for one that never ends. Expired ones grant nothing.
         created_at: { type: string, format: date-time }
         created_by: { type: string, description: The ID of the caller who made or last changed it. }
+        subject_name:
+          type: string
+          description: The user's display name or email, or the group's name. Shown to a manager or an account key only.
+        subject_status:
+          type: string
+          enum: [pending, active, disabled]
+          description: A user subject's status. Shown to a manager or an account key only.
 
     PermissionSet:
       type: object
@@ -2201,6 +2487,31 @@ components:
       additionalProperties: false
       properties:
         role: { type: string, enum: [viewer, commenter, contributor, editor, manager] }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: Optional end of the permission. Must be in the future and within sharing.max_expiry.
+        notify:
+          type: boolean
+          default: true
+          description: Whether the subject is mailed about the change.
+        message:
+          type: string
+          maxLength: 500
+          description: A note for the mail, shown verbatim as plain text.
+
+    PermissionChange:
+      allOf:
+        - $ref: "#/components/schemas/Permission"
+        - type: object
+          required: [notified]
+          properties:
+            notified:
+              type: boolean
+              description: True when every subject that should be told was mailed.
+            reason:
+              type: string
+              description: Why a subject was not mailed, when it was not. One of not_requested, no_recipients, recipient_not_active, too_many_recipients, mail_budget, mail_failed, mail_not_configured.
 
     PermissionList:
       type: object
@@ -2321,6 +2632,7 @@ components:
         | unauthenticated | 401 | No valid credential; sign in again. |
         | token_expired | 401 | Delegated token expired; refresh it and retry. |
         | forbidden | 403 | The caller may not do this. |
+        | download_restricted | 403 | The no-download rule forbids this download, signed link or copy. Inline viewing, where the type allows it, still works. |
         | account_suspended, user_not_verified, user_disabled | 403 | Account or user state blocks access. |
         | not_found | 404 | No such resource, or the caller may not know it exists. |
         | conflict | 409 | Name taken, duplicate external_id, or a concurrent upload. |
@@ -2348,6 +2660,7 @@ components:
         - unauthenticated
         - token_expired
         - forbidden
+        - download_restricted
         - account_suspended
         - user_not_verified
         - user_disabled

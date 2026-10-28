@@ -39,7 +39,7 @@ func TestExpiredPermissionGrantsNothing(t *testing.T) {
 	if perms, err := s.ChainPermissions(ctx, a, root.ID, ""); err != nil || len(perms) != 0 {
 		t.Errorf("chain permissions = %v, %v; want none", perms, err)
 	}
-	if reached, _, _ := s.RootReachedFolders(ctx, a, ann.ID, Page{Limit: 10}); len(reached) != 0 {
+	if reached, _, _ := s.RootReachedFolders(ctx, a, ann.ID, HideFilter{}, Page{Limit: 10}); len(reached) != 0 {
 		t.Errorf("folders reached under an expired permission = %d", len(reached))
 	}
 	if shared, _, _ := s.SharedNodes(ctx, a, ann.ID, false, Page{Limit: 10}); len(shared) != 0 {

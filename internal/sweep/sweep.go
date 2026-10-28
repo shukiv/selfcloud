@@ -40,6 +40,14 @@ type Options struct {
 	Logger            *slog.Logger
 }
 
+// permissionGrace is how long an expired permission keeps its row. A permission grants nothing once it
+// expires, since every read filters it; the row is kept a day so the audit shows the access ending.
+const permissionGrace = 24 * time.Hour
+
+// accessRequestRetention is how long a decided access request is kept. It is kept for a month so the
+// people who decided and the requester can still see what was asked, and then it is removed.
+const accessRequestRetention = 30 * 24 * time.Hour
+
 // defaultUploadExpiry is upload.expiry's default, used when none is given.
 const defaultUploadExpiry = 24 * time.Hour
 
@@ -75,14 +83,16 @@ func New(o Options) *Sweeper {
 
 // Result counts what one pass did.
 type Result struct {
-	Orphaned      int64 // live blobs found unreferenced and marked
-	Removed       int   // orphan blobs whose files and rows are gone
-	Failed        int   // orphan blobs whose file could not be removed; they are retried next pass
-	Sessions      int64 // expired sessions removed
-	Verifications int64 // expired or used verification and reset tokens removed
-	TempRemoved   int   // abandoned temporary upload files removed
-	Uploads       int   // expired resumable uploads removed, rows and files
-	UploadFiles   int   // resumable upload files with no row, removed
+	Orphaned       int64 // live blobs found unreferenced and marked
+	Removed        int   // orphan blobs whose files and rows are gone
+	Failed         int   // orphan blobs whose file could not be removed; they are retried next pass
+	Sessions       int64 // expired sessions removed
+	Verifications  int64 // expired or used verification and reset tokens removed
+	TempRemoved    int   // abandoned temporary upload files removed
+	Uploads        int   // expired resumable uploads removed, rows and files
+	UploadFiles    int   // resumable upload files with no row, removed
+	Permissions    int   // permissions expired more than permissionGrace ago, removed and audited
+	AccessRequests int64 // decided access requests older than accessRequestRetention, removed
 }
 
 // Run sweeps at once and then every interval, until ctx is cancelled.
@@ -132,6 +142,29 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 			return err
 		}
 		if res.Verifications, err = tx.DeleteSpentVerifications(ctx, now); err != nil {
+			return err
+		}
+		// Each expired permission is audited with the folder it was on, so one in a personal folder
+		// stays private to that folder's user, as every entry about it does.
+		expired, err := tx.DeleteExpiredPermissions(ctx, now.Add(-permissionGrace))
+		if err != nil {
+			return err
+		}
+		for _, pm := range expired {
+			n, err := tx.Node(ctx, pm.AccountID, pm.NodeID)
+			if err != nil {
+				return err
+			}
+			entry := &store.AuditEntry{Time: now, AccountID: pm.AccountID, ActorKind: "system",
+				Action: "permission.expired", Target: pm.NodeID, Folders: []string{n.FolderID},
+				Details: map[string]any{"subject_kind": pm.SubjectKind, "subject_id": pm.SubjectID,
+					"role": pm.Role, "expires_at": pm.ExpiresAt.UTC().Format(time.RFC3339)}}
+			if err := tx.InsertAudit(ctx, entry); err != nil {
+				return err
+			}
+		}
+		res.Permissions = len(expired)
+		if res.AccessRequests, err = tx.DeleteDecidedAccessRequests(ctx, now.Add(-accessRequestRetention)); err != nil {
 			return err
 		}
 		// A cheap check of the reservation counters against the uploads. It only reports: the numbers

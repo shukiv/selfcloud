@@ -1,0 +1,9 @@
+Subject: {{.Actor}} a partagé {{.Item}} avec vous
+
+{{.Actor}} a partagé {{.Item}} avec vous comme {{.Role}}.{{if .Message}}
+
+{{.Message}}{{end}}
+
+{{.Link}}
+
+Si vous n'attendiez pas ce message, vous pouvez l'ignorer.

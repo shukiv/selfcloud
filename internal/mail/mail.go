@@ -22,11 +22,25 @@ type Sender interface {
 	Send(ctx context.Context, m Message) error
 }
 
-// Purposes of mail. They name the templates, verify.<locale>.txt and reset.<locale>.txt.
+// Purposes of mail. Each names a family of templates, <purpose>.<locale>.txt, in the
+// internal/mail/templates directory.
 const (
-	PurposeVerify = "verify"
-	PurposeReset  = "reset"
+	PurposeVerify         = "verify"
+	PurposeReset          = "reset"
+	PurposeShare          = "share"
+	PurposeAccessRequest  = "access_request"
+	PurposeAccessDecision = "access_decision"
 )
+
+// Purposes lists every purpose. Every one needs an English template, and the filename pattern for
+// templates is built from this list, so a new purpose is added here and nowhere else.
+var Purposes = []string{
+	PurposeVerify,
+	PurposeReset,
+	PurposeShare,
+	PurposeAccessRequest,
+	PurposeAccessDecision,
+}
 
 // ReadSecretFile returns the contents of a file holding a secret, without the final line break.
 // An empty path means no secret.

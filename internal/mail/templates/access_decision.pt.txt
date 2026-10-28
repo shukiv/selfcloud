@@ -1,0 +1,7 @@
+Subject: {{.Actor}} {{if .Approved}}aprovou{{else}}recusou{{end}} o seu pedido de acesso a {{.Item}}
+
+{{if .Approved}}{{.Actor}} aprovou o seu pedido de acesso a {{.Item}} como {{.Role}}.{{else}}{{.Actor}} recusou o seu pedido de acesso a {{.Item}}.{{end}}
+
+{{.Link}}
+
+Se não esperava esta mensagem, pode ignorá-la.

@@ -1,0 +1,9 @@
+Subject: {{.Actor}} partilhou {{.Item}} consigo
+
+{{.Actor}} partilhou {{.Item}} consigo como {{.Role}}.{{if .Message}}
+
+{{.Message}}{{end}}
+
+{{.Link}}
+
+Se não esperava esta mensagem, pode ignorá-la.

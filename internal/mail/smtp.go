@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // SMTPConfig says how to reach the mail server.
@@ -162,7 +163,8 @@ func buildMessage(from, to *netmail.Address, subject, body string, now time.Time
 	b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 	b.WriteString("\r\n")
 	qp := quotedprintable.NewWriter(&b)
-	text := strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", "\r\n")
+	// Only CRLF leaves the sender: a bare CR or LF in a body is how SMTP smuggling starts.
+	text := strings.ReplaceAll(CleanBody(body), "\n", "\r\n")
 	if _, err := qp.Write([]byte(text)); err != nil {
 		return nil, err
 	}
@@ -171,6 +173,22 @@ func buildMessage(from, to *netmail.Address, subject, body string, now time.Time
 	}
 	b.WriteString("\r\n")
 	return b.Bytes(), nil
+}
+
+// CleanBody normalises a body of user-written text: CRLF and lone CR become LF, and every control
+// character but LF and TAB is dropped, NUL included. The sender turns the LFs into CRLF, and nothing
+// else in a body may carry a line break or a NUL.
+func CleanBody(s string) string {
+	s = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s)
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // checkHeader refuses a header value with a line break or a NUL byte.
