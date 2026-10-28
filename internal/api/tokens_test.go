@@ -567,4 +567,12 @@ func TestCallerReadsTheJobItQueued(t *testing.T) {
 	wantStatus(t, call(t, s, "GET", jobPath, key, nil), 200) // the account key manages the account
 	other := mintFor(t, s, key, accID, map[string]any{"folders": []string{m.f.ID}})
 	wantError(t, getWith(t, s, other, jobPath), 404, apierr.NotFound)
+
+	// The same user's token for other folders sees nothing of the job; one that also covers the
+	// copy's folder does.
+	gOnly := mintFor(t, s, key, accID, map[string]any{"folders": []string{m.g.ID}, "user": m.ann.ID})
+	wantError(t, getWith(t, s, gOnly, jobPath), 404, apierr.NotFound)
+	both := mintFor(t, s, key, accID, map[string]any{"folders": []string{m.f.ID, m.g.ID}, "user": m.ann.ID})
+	wantStatus(t, getWith(t, s, both, jobPath), 200)
+	wantStatus(t, callSession(t, s, m.sess, "GET", jobPath, nil), 200) // ann's own session has no token scope
 }
