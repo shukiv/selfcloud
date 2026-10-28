@@ -1,0 +1,8 @@
+Subject: Verifique a sua conta
+
+Abra esta ligação para verificar a sua conta e definir uma palavra-passe:
+
+{{.URL}}
+
+A ligação funciona uma só vez e expira a {{.ExpiresAt}}.
+Se não esperava esta mensagem, pode ignorá-la.

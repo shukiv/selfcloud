@@ -1,0 +1,8 @@
+Subject: Réinitialisez votre mot de passe
+
+Ouvrez ce lien pour choisir un nouveau mot de passe :
+
+{{.URL}}
+
+Le lien ne fonctionne qu'une fois et expire le {{.ExpiresAt}}.
+Si vous n'avez pas demandé de nouveau mot de passe, ignorez ce message. Votre mot de passe ne change pas.

@@ -7,15 +7,19 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"text/template"
+
+	"selfcloud/internal/locale"
 )
 
 //go:embed templates/*.txt
 var builtin embed.FS
 
-// templateName matches a template file: purpose, then locale, as in verify.en.txt.
-var templateName = regexp.MustCompile(`^(verify|reset)\.([a-z0-9]+(?:-[a-z0-9]+)*)\.txt$`)
+// templateName matches a template file: purpose, then locale, as in verify.en.txt. The locale must
+// be one of locale.Supported, since a template for any other language would never be chosen.
+var templateName = regexp.MustCompile(`^(verify|reset)\.([a-z0-9]+)\.txt$`)
 
 // Templates holds the mail bodies, built-in or overridden from a directory. A file starts with
 // its subject on a line of its own, "Subject: ...", then a blank line, then the body, which is a
@@ -72,8 +76,9 @@ func NewTemplates(dir string) (*Templates, error) {
 
 func (t *Templates) add(name, text string) error {
 	m := templateName.FindStringSubmatch(name)
-	if m == nil {
-		return fmt.Errorf("mail: template %q is not named purpose.locale.txt (verify or reset)", name)
+	if m == nil || !slices.Contains(locale.Supported, m[2]) {
+		return fmt.Errorf("mail: template %q is not named purpose.locale.txt, with purpose verify or reset and "+
+			"locale one of %v", name, locale.Supported)
 	}
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	head, body, ok := strings.Cut(text, "\n\n")
@@ -89,25 +94,20 @@ func (t *Templates) add(name, text string) error {
 	return nil
 }
 
-// Render returns the subject and body for purpose in the caller's locale, falling back from
-// "pt-BR" to "pt" and then to English. data fills the template.
-func (t *Templates) Render(purpose, locale string, data any) (subject, body string, err error) {
-	loc := strings.ToLower(locale)
-	candidates := []string{loc}
-	if primary, _, found := strings.Cut(loc, "-"); found {
-		candidates = append(candidates, primary)
+// Render returns the subject and body for purpose in the caller's locale. The locale is resolved as
+// locale.Resolve does: "pt-BR" gets the Portuguese text, and an unknown language gets English. data
+// fills the template.
+func (t *Templates) Render(purpose, loc string, data any) (subject, body string, err error) {
+	e, ok := t.byKey[purpose+"."+locale.Resolve(loc)]
+	if !ok {
+		e, ok = t.byKey[purpose+"."+locale.Default]
 	}
-	candidates = append(candidates, "en")
-	for _, c := range candidates {
-		e, ok := t.byKey[purpose+"."+c]
-		if !ok {
-			continue
-		}
-		var b strings.Builder
-		if err := e.body.Execute(&b, data); err != nil {
-			return "", "", fmt.Errorf("mail: rendering %s: %w", purpose, err)
-		}
-		return e.subject, b.String(), nil
+	if !ok {
+		return "", "", fmt.Errorf("mail: no template for %s", purpose)
 	}
-	return "", "", fmt.Errorf("mail: no template for %s", purpose)
+	var b strings.Builder
+	if err := e.body.Execute(&b, data); err != nil {
+		return "", "", fmt.Errorf("mail: rendering %s: %w", purpose, err)
+	}
+	return e.subject, b.String(), nil
 }

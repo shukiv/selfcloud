@@ -1,7 +1,9 @@
 package api
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"selfcloud/internal/apierr"
 	"selfcloud/internal/mail"
@@ -63,5 +65,35 @@ func TestForgotBudgetDoesNotBlockInvitations(t *testing.T) {
 		map[string]any{"method": "email"}), 200)
 	if invited.Verification == nil || invited.Verification.Sent == nil || !*invited.Verification.Sent {
 		t.Fatalf("invitation was not sent: %+v", invited.Verification)
+	}
+}
+
+// TestForgotAccountCap checks that one account's users cannot all be mailed by forgot requests
+// from many addresses: the account has 30 an hour, shared by its users. Another account is not
+// affected. The per-client limit is raised here, so this test isolates the account cap.
+func TestForgotAccountCap(t *testing.T) {
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	s.limits["mail.forgot.ip"] = newLimiterRate(1000, time.Hour)
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Alpha")
+	for i := range 31 {
+		verifiedUser(t, s, key, acc.ID, fmt.Sprintf("u%d@example.com", i))
+	}
+	for i := range 31 {
+		wantStatus(t, call(t, s, "POST", "/api/v1/auth/password/forgot", "",
+			map[string]any{"email": fmt.Sprintf("u%d@example.com", i)}), 202)
+	}
+	s.bg.Wait()
+	if n := len(rec.Messages()); n != 30 {
+		t.Fatalf("reset mails for one account = %d, want 30", n)
+	}
+
+	// The second account still invites normally.
+	other, otherKey := newAccount(t, s, admin, "Beta")
+	invited := decode[userResponse](t, call(t, s, "POST", "/api/v1/accounts/"+other.ID+"/users", otherKey,
+		map[string]any{"email": "u0@example.com", "verification": "email"}))
+	if invited.Verification == nil || invited.Verification.Sent == nil || !*invited.Verification.Sent {
+		t.Fatalf("invitation in another account was not sent: %+v", invited.Verification)
 	}
 }

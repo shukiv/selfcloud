@@ -1,0 +1,8 @@
+Subject: Verifica tu cuenta
+
+Abre este enlace para verificar tu cuenta y elegir una contraseña:
+
+{{.URL}}
+
+El enlace funciona una sola vez y caduca el {{.ExpiresAt}}.
+Si no esperabas este mensaje, puedes ignorarlo.

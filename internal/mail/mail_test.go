@@ -87,7 +87,8 @@ func TestTemplatesRenderWithFallback(t *testing.T) {
 	if err != nil || subject != "Verify your account" || !strings.Contains(body, data.URL) || !strings.Contains(body, data.ExpiresAt) {
 		t.Fatalf("en = %q %q %v", subject, body, err)
 	}
-	// An unknown locale and a regional one fall back to English.
+	// An unknown language, even with a region, falls back to English. A regional tag of a supported
+	// language gets that language instead (see below).
 	if s, _, err := tpl.Render(PurposeReset, "de-AT", data); err != nil || s != "Reset your password" {
 		t.Errorf("fallback = %q, %v", s, err)
 	}

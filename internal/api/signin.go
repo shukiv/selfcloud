@@ -441,7 +441,14 @@ func (s *Server) sendResetLinks(ctx context.Context, r *http.Request, key, accou
 			}
 			// Over the mail budget, this address gets no mail. The answer is the same 202, so the
 			// limit cannot show whether the address is known.
-			if err := s.chargeAll(charge{"mail.forgot.target", emailKey(u.Email)}); err != nil {
+			// An account's users share a budget, so one caller with many addresses cannot mail every
+			// user. Admins have no account and share the "admin" key. Both are charged together.
+			accountKey := u.AccountID
+			if accountKey == "" {
+				accountKey = "admin"
+			}
+			if err := s.chargeAll(charge{"mail.forgot.target", emailKey(u.Email)},
+				charge{"mail.forgot.account", accountKey}); err != nil {
 				continue
 			}
 			it, err := s.issueToken(ctx, tx, u, store.PurposeReset, now)
@@ -583,15 +590,78 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	out, err := s.meOf(r, u)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// meOf is the answer for the signed-in user u: the user, the account (none for an admin) and the
+// session's CSRF token. GET /me and PATCH /me both answer with it.
+func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
 	out := meResponse{User: toUserJSON(u), CSRFToken: sessionOf(r).CSRFToken}
-	if p.AccountID != "" {
-		acc, err := s.store.Account(ctx, p.AccountID)
+	if u.AccountID != "" {
+		acc, err := s.store.Account(r.Context(), u.AccountID)
 		if err != nil {
-			return err
+			return meResponse{}, err
 		}
 		out.Account = &accountRef{ID: acc.ID, Name: acc.Name}
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
+}
+
+// handleUpdateMe changes the signed-in user's own display name and locale. Each field is optional,
+// and each is checked as it is on users. The change is audited as user.update. The answer has the
+// same shape as GET /me.
+func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) error {
+	p := principalOf(r)
+	var in struct {
+		DisplayName *string `json:"display_name"`
+		Locale      *string `json:"locale"`
+	}
+	if err := decodeJSON(w, r, &in); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	var out *store.User
+	err := s.store.Write(ctx, func(tx *store.Tx) error {
+		u, err := tx.User(ctx, p.AccountID, p.UserID)
+		if errors.Is(err, store.ErrNotFound) {
+			return apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+		}
+		if err != nil {
+			return err
+		}
+		changed := map[string]any{}
+		if in.DisplayName != nil {
+			if u.DisplayName, err = cleanOptionalLabel("display_name", *in.DisplayName, 200); err != nil {
+				return err
+			}
+			changed["display_name"] = u.DisplayName
+		}
+		if in.Locale != nil {
+			if u.Locale, err = cleanLocale(*in.Locale); err != nil {
+				return err
+			}
+			changed["locale"] = u.Locale
+		}
+		u.UpdatedAt = store.Now()
+		if err := tx.UpdateUser(ctx, u); err != nil {
+			return err
+		}
+		out = u
+		return tx.InsertAudit(ctx, s.auditEntry(r, p.AccountID, "user.update", p.UserID, changed))
+	})
+	if err != nil {
+		return err
+	}
+	me, err := s.meOf(r, out)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, me)
 	return nil
 }
 

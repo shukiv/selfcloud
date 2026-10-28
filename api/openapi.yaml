@@ -800,8 +800,9 @@ paths:
       description: |
         Always answers 202. If an active user has this email, a reset link is mailed in the
         background. Rate-limited per client address and per email. Past the forgot budget
-        (3 an hour per address, 20 an hour per client address) no mail is sent, and the answer is
-        still 202. Its buckets are separate from the ones invitations and resends use.
+        (3 an hour per address, 20 an hour per client address, 30 an hour per account, where an
+        installation admin counts as one account) no mail is sent, and the answer is still 202.
+        Its buckets are separate from the ones invitations and resends use.
       security: []
       requestBody:
         required: true
@@ -847,6 +848,27 @@ paths:
       responses:
         "200":
           description: The user and account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Auth]
+      operationId: updateMe
+      summary: Change the signed-in user's display name or language
+      description: |
+        Session only, so the request needs the `Origin` header and the `X-CSRF-Token` header, as
+        `POST /me/password` does. Only `display_name` and `locale` can change here. The answer is
+        the same as `GET /me`.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MeUpdate" }
+      responses:
+        "200":
+          description: The user, their account and the CSRF token.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Me" }
@@ -1175,7 +1197,14 @@ components:
       properties:
         email: { type: string, format: email, maxLength: 254 }
         display_name: { type: string, maxLength: 200 }
-        locale: { type: string, maxLength: 35, default: en }
+        locale:
+          type: string
+          maxLength: 35
+          default: en
+          description: |
+            A BCP 47-style tag, stored as given. Rendering resolves it: the exact tag if it is one of the
+            seven languages, then its base language (`pt-BR` is `pt`), then English. The seven are `en`,
+            `es`, `fr`, `pt` (European Portuguese), `ru`, `ar` and `he`.
         verification: { type: string, enum: [email, link, none] }
 
     AccountCreated:
@@ -1353,7 +1382,14 @@ components:
       properties:
         email: { type: string, format: email, maxLength: 254 }
         display_name: { type: string, maxLength: 200 }
-        locale: { type: string, maxLength: 35, default: en, description: A tag such as en or pt-BR. }
+        locale:
+          type: string
+          maxLength: 35
+          default: en
+          description: |
+            A BCP 47-style tag, stored as given. Rendering resolves it: the exact tag if it is one of the
+            seven languages, then its base language (`pt-BR` is `pt`), then English. The seven are `en`,
+            `es`, `fr`, `pt` (European Portuguese), `ru`, `ar` and `he`.
         role: { type: string, enum: [owner, member], default: member }
         external_id: { type: string, maxLength: 255 }
         verification:
@@ -1366,7 +1402,13 @@ components:
       additionalProperties: false
       properties:
         display_name: { type: string, maxLength: 200 }
-        locale: { type: string, maxLength: 35 }
+        locale:
+          type: string
+          maxLength: 35
+          description: |
+            A BCP 47-style tag, stored as given. Rendering resolves it: the exact tag if it is one of the
+            seven languages, then its base language (`pt-BR` is `pt`), then English. The seven are `en`,
+            `es`, `fr`, `pt` (European Portuguese), `ru`, `ar` and `he`.
         role: { type: string, enum: [owner, member] }
         external_id: { type: string, maxLength: 255, description: An empty string clears it. }
         status: { type: string, enum: [active, disabled] }
@@ -1478,6 +1520,19 @@ components:
         csrf_token:
           type: string
           description: Send it as `X-CSRF-Token` on every request that changes state.
+
+    MeUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name: { type: string, maxLength: 200, description: Empty clears it. }
+        locale:
+          type: string
+          maxLength: 35
+          description: |
+            A BCP 47-style tag, stored as given. Rendering resolves it: the exact tag if it is one of the
+            seven languages, then its base language (`pt-BR` is `pt`), then English. The seven are `en`,
+            `es`, `fr`, `pt` (European Portuguese), `ru`, `ar` and `he`.
 
     Me:
       type: object

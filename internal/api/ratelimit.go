@@ -9,8 +9,9 @@ import (
 	"selfcloud/internal/apierr"
 )
 
-// limiterIdle is how long a key may go unused before its bucket is forgotten. A bucket that has
-// been idle this long has refilled completely, so forgetting it changes nothing.
+// limiterIdle is how long a key may go unused before its bucket is considered for removal. A
+// bucket is removed only once it is also full again: an idle bucket of a per-hour limiter has not
+// refilled yet, and forgetting it would give its key a fresh budget early.
 const limiterIdle = 10 * time.Minute
 
 // limiter gives each key its own token bucket. A bucket holds perMinute tokens and refills at
@@ -77,7 +78,7 @@ func (l *limiter) reserve(key string, now time.Time) (*rate.Reservation, error) 
 // sweep forgets the buckets that have been idle. The caller holds l.mu.
 func (l *limiter) sweep(now time.Time) {
 	for k, b := range l.buckets {
-		if now.Sub(b.seen) > limiterIdle {
+		if now.Sub(b.seen) > limiterIdle && b.lim.TokensAt(now) >= float64(b.lim.Burst()) {
 			delete(l.buckets, k)
 		}
 	}

@@ -1,0 +1,8 @@
+Subject: Vérifiez votre compte
+
+Ouvrez ce lien pour vérifier votre compte et choisir un mot de passe :
+
+{{.URL}}
+
+Le lien ne fonctionne qu'une fois et expire le {{.ExpiresAt}}.
+Si ce message ne vous est pas destiné, vous pouvez l'ignorer.

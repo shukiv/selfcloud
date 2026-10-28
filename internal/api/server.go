@@ -133,8 +133,9 @@ func New(opts Options) (*Server, error) {
 			"mail.target":  newLimiterRate(3, time.Hour),
 			// Forgot-password mail is requested by anyone, so it has buckets of its own. Invitations
 			// and resends never draw on these, and these never draw on the buckets above.
-			"mail.forgot.target": newLimiterRate(3, time.Hour),
-			"mail.forgot.ip":     newLimiterRate(20, time.Hour),
+			"mail.forgot.target":  newLimiterRate(3, time.Hour),
+			"mail.forgot.ip":      newLimiterRate(20, time.Hour),
+			"mail.forgot.account": newLimiterRate(30, time.Hour),
 		},
 	}
 	if pub.Scheme == "https" {
@@ -199,6 +200,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/auth/password/forgot", handle: s.handleForgotPassword, sameSite: true},
 		{method: http.MethodPost, path: "/api/v1/auth/password/reset", handle: s.handleResetPassword, sameSite: true},
 		{method: http.MethodGet, path: "/api/v1/me", handle: s.handleMe, session: true},
+		{method: http.MethodPatch, path: "/api/v1/me", handle: s.handleUpdateMe, session: true},
 		{method: http.MethodPost, path: "/api/v1/me/password", handle: s.handleChangePassword, session: true},
 	}
 	if s.cfg.MetricsListen == "" {

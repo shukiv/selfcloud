@@ -1,0 +1,8 @@
+Subject: Redefina a sua palavra-passe
+
+Clique nesta ligação para escolher uma nova palavra-passe:
+
+{{.URL}}
+
+A ligação funciona uma só vez e expira a {{.ExpiresAt}}.
+Se não pediu uma nova palavra-passe, ignore esta mensagem. A sua palavra-passe mantém-se.

@@ -1,0 +1,8 @@
+Subject: Restablece tu contraseña
+
+Abre este enlace para elegir una contraseña nueva:
+
+{{.URL}}
+
+El enlace funciona una sola vez y caduca el {{.ExpiresAt}}.
+Si no pediste una contraseña nueva, ignora este mensaje. Tu contraseña no cambia.
