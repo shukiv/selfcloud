@@ -19,6 +19,12 @@ servers:
 tags:
   - name: System
     description: Health, readiness, metrics and server facts.
+  - name: Accounts
+    description: |
+      Accounts are tenants. Installation admin keys manage them; an account key manages one
+      account's contents. Account IDs a caller may not manage are reported as `not_found`.
+  - name: Jobs
+    description: Background work started by a request that answered 202.
 
 paths:
   /healthz:
@@ -101,7 +107,247 @@ paths:
             application/yaml:
               schema: { type: string }
 
+  /api/v1/accounts:
+    post:
+      tags: [Accounts]
+      operationId: createAccount
+      summary: Create an account
+      description: |
+        Admin key only. With an `external_id`, repeating the request with the same fields
+        returns the existing account with status 200 instead of creating another, so a retry
+        after a timeout is safe. Different fields get `409 conflict`, with the existing
+        account's ID in `details.id`.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccountCreate" }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "200":
+          description: An account with this external_id and these fields already existed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Accounts]
+      operationId: listAccounts
+      summary: List accounts
+      description: Admin key only. Oldest first.
+      security: [{ bearer: [] }]
+      parameters:
+        - name: external_id
+          in: query
+          description: Only the account with this external ID.
+          schema: { type: string }
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: One page of accounts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountList" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Accounts]
+      operationId: getAccount
+      summary: Get an account
+      description: Admin key, or the account's own key.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Accounts]
+      operationId: updateAccount
+      summary: Change an account
+      description: |
+        Admin key only. Only the fields given change. A quota below current usage is allowed:
+        stored files stay, and new writes get `quota_exceeded` until usage drops. Suspending
+        blocks all access to the account but keeps its data.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccountUpdate" }
+      responses:
+        "200":
+          description: The changed account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Accounts]
+      operationId: deleteAccount
+      summary: Delete an account
+      description: |
+        Admin key only. Access ends at once; the account and everything in it are removed by a
+        background job. Repeating the call returns the same job.
+      security: [{ bearer: [] }]
+      responses:
+        "202":
+          description: Deletion has started.
+          headers:
+            Location: { schema: { type: string }, description: The job's URL. }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/usage:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Accounts]
+      operationId: getUsage
+      summary: Storage usage
+      description: Admin key, or the account's own key.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Usage and quota.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Usage" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/keys:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    post:
+      tags: [Accounts]
+      operationId: createKey
+      summary: Create an account key
+      description: Admin key only. The key is in this response and nowhere else.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KeyCreate" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyCreated" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Accounts]
+      operationId: listKeys
+      summary: List an account's keys
+      description: Admin key only. Revoked keys are listed too.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The keys, oldest first. Secrets are never shown.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyList" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/keys/{key}:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - name: key
+        in: path
+        required: true
+        schema: { type: string, example: key_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    delete:
+      tags: [Accounts]
+      operationId: revokeKey
+      summary: Revoke an account key
+      description: Admin key only. The key stops working at once.
+      security: [{ bearer: [] }]
+      responses:
+        "204": { description: Revoked. }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/audit:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Accounts]
+      operationId: getAuditLog
+      summary: The account's audit log
+      description: Admin key, or the account's own key. Newest first.
+      security: [{ bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: One page of entries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditList" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/jobs/{job}:
+    parameters:
+      - name: job
+        in: path
+        required: true
+        schema: { type: string, example: job_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    get:
+      tags: [Jobs]
+      operationId: getJob
+      summary: Get a job
+      description: Admin key, or the key of the account the job belongs to.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        default: { $ref: "#/components/responses/Error" }
+
 components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: |
+        `Authorization: Bearer <credential>`. Installation admin keys start with `sc_admin_`;
+        account keys start with `sc_acct_`.
+
+  parameters:
+    acc:
+      name: acc
+      in: path
+      required: true
+      schema: { type: string, example: acc_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    limit:
+      name: limit
+      in: query
+      description: Page size.
+      schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+    cursor:
+      name: cursor
+      in: query
+      description: The `next_cursor` of the previous page.
+      schema: { type: string }
+
   headers:
     X-Request-Id:
       description: The request's ID, also logged by the server.
@@ -244,3 +490,155 @@ components:
         - unavailable
         - quota_exceeded
         - storage_full
+
+    Account:
+      type: object
+      required: [id, external_id, name, status, quota_bytes, used_bytes, used_files, created_at, updated_at]
+      properties:
+        id: { type: string, example: acc_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        external_id:
+          type: [string, "null"]
+          description: The client's own reference; unique among accounts.
+        name: { type: string }
+        status:
+          type: string
+          enum: [active, suspended, deleting]
+        quota_bytes:
+          type: integer
+          format: int64
+          description: Storage quota; 0 means unlimited.
+        used_bytes: { type: integer, format: int64 }
+        used_files: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    AccountCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        external_id: { type: string, maxLength: 255 }
+        quota_bytes: { type: integer, format: int64, minimum: 0, default: 0 }
+
+    AccountUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        external_id: { type: string, maxLength: 255, description: An empty string clears it. }
+        quota_bytes: { type: integer, format: int64, minimum: 0 }
+        status: { type: string, enum: [active, suspended] }
+
+    AccountList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Account" }
+        next_cursor: { type: string, description: Absent on the last page. }
+
+    Usage:
+      type: object
+      required: [quota_bytes, used_bytes, used_files, reserved_bytes, available_bytes]
+      properties:
+        quota_bytes: { type: integer, format: int64, description: 0 means unlimited. }
+        used_bytes: { type: integer, format: int64 }
+        used_files: { type: integer, format: int64 }
+        reserved_bytes:
+          type: integer
+          format: int64
+          description: Held by uploads in progress.
+        available_bytes:
+          type: [integer, "null"]
+          format: int64
+          description: What new uploads may still use; null when the quota is unlimited.
+
+    Key:
+      type: object
+      required: [id, name, prefix, created_at, expires_at, revoked_at, last_used_at]
+      properties:
+        id: { type: string, example: key_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        name: { type: string }
+        prefix:
+          type: string
+          description: The start of the key, to tell keys apart.
+          example: sc_acct_Xq3v9T
+        created_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        revoked_at: { type: [string, "null"], format: date-time }
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+          description: Updated at most once a minute.
+
+    KeyCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        expires_at: { type: string, format: date-time, description: Must be in the future. }
+
+    KeyCreated:
+      allOf:
+        - $ref: "#/components/schemas/Key"
+        - type: object
+          required: [key]
+          properties:
+            key:
+              type: string
+              description: The secret. Shown only in this response.
+
+    KeyList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Key" }
+
+    AuditEntry:
+      type: object
+      required: [id, time, actor, action, target, ip, user_agent, outcome]
+      properties:
+        id: { type: string }
+        time: { type: string, format: date-time }
+        actor:
+          type: object
+          required: [kind, id]
+          properties:
+            kind:
+              type: string
+              description: admin_key, account_key or system (more kinds come with users and tokens).
+            id: { type: string }
+        action: { type: string, example: account.create }
+        target: { type: string, description: The ID acted on. }
+        ip: { type: string }
+        user_agent: { type: string }
+        outcome: { type: string, example: ok }
+        details: { type: object, additionalProperties: true }
+
+    AuditList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEntry" }
+        next_cursor: { type: string }
+
+    Job:
+      type: object
+      required: [id, kind, status, created_at, updated_at, finished_at]
+      properties:
+        id: { type: string, example: job_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        kind: { type: string, example: account.delete }
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        error: { type: string, description: Why the job failed. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }

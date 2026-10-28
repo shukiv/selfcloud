@@ -46,6 +46,10 @@ type Config struct {
 	ClientIPHeader string `yaml:"client_ip_header"`
 	// ShutdownTimeout is how long in-flight requests get to finish on shutdown.
 	ShutdownTimeout Duration `yaml:"shutdown_timeout"`
+	// AdminKeyFile names a file holding an installation admin key (from `selfcloud admin
+	// generate-key`). On start the key is added if it is not known yet, so automated
+	// deployments can provision the first admin key as a secret.
+	AdminKeyFile string `yaml:"admin_key_file"`
 
 	Log     LogConfig     `yaml:"log"`
 	Store   StoreConfig   `yaml:"store"`

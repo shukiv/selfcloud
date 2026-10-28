@@ -27,6 +27,7 @@ const usage = `Usage: selfcloud <command> [-config FILE]
 Commands:
   serve         run the server
   migrate       apply database migrations and exit
+  admin         create admin keys and accounts (selfcloud admin help)
   healthcheck   exit 0 if the local server is ready (for container health checks)
   version       print the version
 
@@ -48,6 +49,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return serve(args[1:], stdout, stderr)
 	case "migrate":
 		return migrate(args[1:], stdout, stderr)
+	case "admin":
+		return admin(args[1:], stdout, stderr)
 	case "healthcheck":
 		return healthcheck(args[1:], stderr)
 	case "version", "-version", "--version":
@@ -61,28 +64,33 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 2
 }
 
-// loadConfig parses the command's flags and loads the configuration. It reports errors itself
-// and returns the exit code to use when cfg is nil.
-func loadConfig(name string, args []string, stderr io.Writer) (*config.Config, int) {
+// loadConfig parses the command's flags (-config, plus any that setup adds), checks that
+// exactly nargs positional arguments follow, and loads the configuration. It reports errors
+// itself; when cfg is nil the caller exits with code.
+func loadConfig(name string, args []string, stderr io.Writer, nargs int, setup func(*flag.FlagSet)) (
+	cfg *config.Config, rest []string, code int) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	path := fs.String("config", os.Getenv("SELFCLOUD_CONFIG"), "configuration `file` (YAML)")
+	if setup != nil {
+		setup(fs)
+	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return nil, 0
+			return nil, nil, 0
 		}
-		return nil, 2
+		return nil, nil, 2
 	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "selfcloud %s: unexpected argument %q\n", name, fs.Arg(0))
-		return nil, 2
+	if fs.NArg() != nargs {
+		fmt.Fprintf(stderr, "selfcloud %s: expected %d argument(s), got %d\n", name, nargs, fs.NArg())
+		return nil, nil, 2
 	}
 	cfg, err := config.Load(*path, os.LookupEnv)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
-		return nil, 2
+		return nil, nil, 2
 	}
-	return cfg, 0
+	return cfg, fs.Args(), 0
 }
 
 func newLogger(c config.LogConfig, w io.Writer) *slog.Logger {
@@ -111,7 +119,7 @@ func openStore(ctx context.Context, cfg *config.Config, log *slog.Logger) (*stor
 }
 
 func serve(args []string, stdout, stderr io.Writer) int {
-	cfg, code := loadConfig("serve", args, stderr)
+	cfg, _, code := loadConfig("serve", args, stderr, 0, nil)
 	if cfg == nil {
 		return code
 	}
@@ -126,6 +134,12 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer st.Close()
+	if cfg.AdminKeyFile != "" {
+		if err := bootstrapAdminKey(ctx, st, cfg.AdminKeyFile, log); err != nil {
+			log.Error("cannot load admin_key_file", "error", err)
+			return 1
+		}
+	}
 
 	srv, err := api.New(api.Options{Config: cfg, Logger: log, Store: st})
 	if err != nil {
@@ -141,7 +155,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 }
 
 func migrate(args []string, stdout, stderr io.Writer) int {
-	cfg, code := loadConfig("migrate", args, stderr)
+	cfg, _, code := loadConfig("migrate", args, stderr, 0, nil)
 	if cfg == nil {
 		return code
 	}
@@ -164,7 +178,7 @@ func migrate(args []string, stdout, stderr io.Writer) int {
 
 // healthcheck asks the server on this host whether it is ready.
 func healthcheck(args []string, stderr io.Writer) int {
-	cfg, code := loadConfig("healthcheck", args, stderr)
+	cfg, _, code := loadConfig("healthcheck", args, stderr, 0, nil)
 	if cfg == nil {
 		return code
 	}

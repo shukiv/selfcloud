@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"selfcloud/internal/apierr"
+	"selfcloud/internal/auth"
 	"selfcloud/internal/id"
 )
 
@@ -21,6 +22,7 @@ type reqInfo struct {
 	ip         netip.Addr
 	route      string // route label: "GET /api/v1/info", or "unmatched"
 	secretPath bool
+	principal  *auth.Principal // set once the route has authenticated the caller
 	err        *apierr.Error
 	sw         *statusWriter
 }

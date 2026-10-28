@@ -27,6 +27,30 @@ docker run -p 8080:8080 -v selfcloud-data:/data selfcloud
 
 Then `curl localhost:8080/api/v1/info`.
 
+## First steps
+
+An installation admin key manages accounts. Make one on the server (it is printed once):
+
+```sh
+./bin/selfcloud admin create-key -name ops
+# in Docker: docker exec <container> selfcloud admin create-key -name ops
+```
+
+For automated deployments, write a key from `selfcloud admin generate-key` into a secret file
+and point `admin_key_file` at it; the server adds it on start.
+
+With the admin key, create an account and an account key for the application that will use it:
+
+```sh
+curl -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{"name":"Example","external_id":"customer-42","quota_bytes":53687091200}' \
+  localhost:8080/api/v1/accounts
+curl -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{"name":"backend"}' localhost:8080/api/v1/accounts/$ACCOUNT_ID/keys
+```
+
+`selfcloud admin create-account -name Example` does both in one step.
+
 ## Configuration
 
 Defaults, then an optional YAML file (`-config FILE` or `$SELFCLOUD_CONFIG`), then environment
@@ -44,6 +68,7 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `upload.max_file_size` | `100GiB` | Largest file. |
 | `upload.max_chunk_size` | `64MiB` | Largest upload request. Keep it at or under `90MiB` behind a proxy that caps requests at 100 MB. |
 | `metrics_listen` | none | Serve `/metrics` on a separate address. |
+| `admin_key_file` | none | File holding an admin key to add on start. |
 | `log.level`, `log.format` | `info`, `json` | |
 
 ## Development

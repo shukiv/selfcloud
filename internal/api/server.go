@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"selfcloud/internal/config"
+	"selfcloud/internal/jobs"
 	"selfcloud/internal/store"
 )
 
@@ -34,6 +35,7 @@ type Server struct {
 	store    *store.Store
 	trusted  []netip.Prefix
 	metrics  *metrics
+	jobs     *jobs.Runner
 	draining atomic.Bool
 	handler  http.Handler
 }
@@ -48,6 +50,8 @@ type route struct {
 	method string
 	path   string
 	handle handlerFunc
+	// auth requires a credential; the handler then finds the caller with principalOf.
+	auth bool
 	// secretPath marks a path that carries a credential, such as a signed link. The access log
 	// records the route pattern instead of the path.
 	secretPath bool
@@ -72,7 +76,10 @@ func New(opts Options) (*Server, error) {
 		store:   opts.Store,
 		trusted: trusted,
 		metrics: newMetrics(),
+		jobs:    jobs.New(opts.Store, log),
 	}
+	s.jobs.Handle(jobAccountDelete, s.runAccountDelete)
+
 	mux := http.NewServeMux()
 	for _, rt := range s.routes() {
 		mux.Handle(rt.method+" "+rt.path, s.wrap(rt))
@@ -88,6 +95,18 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/readyz", handle: s.handleReadyz},
 		{method: http.MethodGet, path: "/api/v1/info", handle: s.handleInfo},
 		{method: http.MethodGet, path: "/api/v1/openapi.yaml", handle: s.handleSpec},
+
+		{method: http.MethodPost, path: "/api/v1/accounts", handle: s.handleCreateAccount, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts", handle: s.handleListAccounts, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}", handle: s.handleGetAccount, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}", handle: s.handleUpdateAccount, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}", handle: s.handleDeleteAccount, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/usage", handle: s.handleUsage, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/keys", handle: s.handleCreateKey, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/keys", handle: s.handleListKeys, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/keys/{key}", handle: s.handleRevokeKey, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit", handle: s.handleAuditLog, auth: true},
+		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true},
 	}
 	if s.cfg.MetricsListen == "" {
 		rs = append(rs, route{method: http.MethodGet, path: "/metrics", handle: s.handleMetrics})
@@ -103,9 +122,20 @@ func (s *Server) wrap(rt route) http.Handler {
 		label = rt.method + " " + rt.path
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if info := infoFrom(r.Context()); info != nil {
+		info := infoFrom(r.Context())
+		if info != nil {
 			info.route = label
 			info.secretPath = rt.secretPath
+		}
+		if rt.auth {
+			p, err := s.authenticate(r)
+			if err != nil {
+				s.writeError(w, r, err)
+				return
+			}
+			if info != nil {
+				info.principal = p
+			}
 		}
 		if err := rt.handle(w, r); err != nil {
 			s.writeError(w, r, err)
@@ -162,12 +192,18 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		s.log.Info("metrics listening", "addr", mln.Addr().String())
 	}
 
+	jobsCtx, stopJobs := context.WithCancel(baseCtx)
+	jobsDone := make(chan struct{})
+	go func() { defer close(jobsDone); s.jobs.Run(jobsCtx) }()
+
 	var serveErr error
 	select {
 	case <-ctx.Done():
 	case serveErr = <-errc:
 	}
 	s.draining.Store(true)
+	stopJobs() // an interrupted job is run again on the next start
+	defer func() { <-jobsDone }()
 	s.log.Info("shutting down", "timeout", s.cfg.ShutdownTimeout.String())
 
 	shCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout.D())
