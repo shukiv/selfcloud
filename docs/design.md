@@ -86,7 +86,8 @@ file's contents is an immutable **blob** named by a random ID:
 ```
 <data_dir>/
   selfcloud.db                         metadata (SQLite; absent when PostgreSQL is used)
-  keys/                                signing and encryption keys, mode 0600 (unless given by config)
+  keys/                                signing and encryption keys: directory 0700, files 0600
+                                       (signing.key, signing.prev.key), unless given by config
   blobs/<account-id>/<b1>/<b2>/<blob-id>     committed file contents, never modified in place
   uploads/<account-id>/<upload-id>           uploads in progress (same file system as blobs/)
   uploads/<account-id>/tmp-*                 small writes before they become blobs; removed after a day
@@ -245,7 +246,7 @@ short lifetimes and are scrubbed from logs.
 headers: `Location`, `Upload-Offset`, `Upload-Length`, `Upload-Expires`, `Tus-Resumable`,
 `Tus-Max-Size`, `Tus-Version`, `Tus-Extension`, `Tus-Checksum-Algorithm`,
 `Selfcloud-Max-Chunk-Size`, `Selfcloud-Node-ID`, `Selfcloud-Upload-State`, `ETag`,
-`Content-Range`, `Retry-After`. Cookies are never accepted on
+`Content-Range`, `Accept-Ranges`, `Content-Disposition`, `Retry-After`. Cookies are never accepted on
 cross-origin requests; browsers from other origins use delegated tokens.
 
 **Web sessions** are stored server-side (hashed ID), rotated at sign-in, and protected against
@@ -343,7 +344,7 @@ Files                                      any caller, limited to what it may re
   GET    /nodes/{nod}/content              download: Range, If-Range, ETag, Last-Modified, ?disposition=inline
   PUT    /nodes/{nod}/content              replace a small file; If-Match required
   POST   /nodes/{nod}/links                signed download link {ttl, disposition}
-  GET    /links/{signed}                   follow a signed link (no other auth)
+  GET    /links/{token}                    follow a signed link (no other auth); HEAD too
   GET    /jobs/{job}
 
 Uploads (tus 1.0)
@@ -372,8 +373,19 @@ same setting lets bulk downloads take a different route from the API, for exampl
 CDN whose terms limit large-file traffic.
 
 **Signed links** are HMAC-signed URLs naming one file, a disposition and an expiry (default 5
-minutes, capped by config). They exist for `<img>`, `<video>` and plain downloads, where the
-browser cannot send an `Authorization` header.
+minutes, capped by `links.max_ttl`). They exist for `<img>`, `<video>` and plain downloads, where
+the browser cannot send an `Authorization` header. A link is `/api/v1/links/{token}` on
+`content_url` (else `public_url`); the token is the node, account, disposition and expiry, with
+an HMAC-SHA256 that also covers the node's current ETag, so any write to the file kills the link.
+A link is a capability: serving it needs no grant, only that the node still exists unchanged and
+the account is not suspended. Expired gives `410 link_expired`, forged or stale `404`, suspended
+`403`. On `content_url`, only link paths are served and no cookie is read. Creating links and
+serving them are rate-limited. The key is `keys/signing.key` (32 random bytes, created on first
+start); `keys/signing.prev.key` is also accepted, so rotating means renaming the current key to
+`signing.prev.key` and starting again. Inline display is allowed on `content_url`; on the main
+origin only for images other than SVG, PDF, audio, video and plain text, and otherwise the file
+is sent as an attachment. Every content response and every JSON error carries
+`X-Content-Type-Options: nosniff` and a sandbox Content-Security-Policy.
 
 **Small-file edit.** `PUT /nodes/{nod}/content` requires `If-Match` with the ETag the editor
 read; a stale ETag gets `412 precondition_failed`, so two editors cannot overwrite each other,
@@ -403,6 +415,7 @@ status:
 | `upload_offset_mismatch` | 409 | `Upload-Offset` differs from the server's. |
 | `locked` | 409 | Locked by an office editor (WOPI), or another request is writing this upload. |
 | `upload_expired` | 410 | The upload expired; start again. |
+| `link_expired` | 410 | The signed link expired; ask for a new one. |
 | `precondition_failed` | 412 | Stale ETag in `If-Match`. |
 | `precondition_required` | 428 | `If-Match` is required here and was not sent. |
 | `too_large` | 413 | File over the size limit. `limit_bytes`. |
