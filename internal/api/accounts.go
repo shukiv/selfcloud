@@ -340,12 +340,16 @@ func (s *Server) runAccountDelete(ctx context.Context, job *store.Job) error {
 	return s.blobs.RemoveAccount(job.Target)
 }
 
+// usageJSON is an account's usage, as GET /accounts/{acc}/usage returns it. The quota and the
+// available bytes are null when the account has no quota.
 type usageJSON struct {
-	QuotaBytes     int64  `json:"quota_bytes"`
-	UsedBytes      int64  `json:"used_bytes"`
-	UsedFiles      int64  `json:"used_files"`
-	ReservedBytes  int64  `json:"reserved_bytes"`
-	AvailableBytes *int64 `json:"available_bytes"` // null when the quota is unlimited
+	QuotaBytes     *int64 `json:"quota_bytes"`     // null when unlimited
+	UsedBytes      int64  `json:"used_bytes"`      // the sizes of its files, copies included
+	ReservedBytes  int64  `json:"reserved_bytes"`  // the declared lengths of its unfinished uploads
+	AvailableBytes *int64 `json:"available_bytes"` // quota less used and reserved; null when unlimited
+	Files          int64  `json:"files"`           // how many files it holds
+	Folders        int64  `json:"folders"`         // its top-level folders
+	UsedFiles      int64  `json:"used_files"`      // the same as files; kept for clients that read it
 }
 
 func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) error {
@@ -353,9 +357,15 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := usageJSON{QuotaBytes: acc.QuotaBytes, UsedBytes: acc.UsedBytes, UsedFiles: acc.UsedFiles,
-		ReservedBytes: acc.ReservedBytes}
+	folders, err := s.store.CountFolders(r.Context(), acc.ID)
+	if err != nil {
+		return err
+	}
+	out := usageJSON{UsedBytes: acc.UsedBytes, ReservedBytes: acc.ReservedBytes, Files: acc.UsedFiles,
+		Folders: folders, UsedFiles: acc.UsedFiles}
 	if acc.QuotaBytes > 0 {
+		quota := acc.QuotaBytes
+		out.QuotaBytes = &quota
 		avail := max(0, acc.QuotaBytes-acc.UsedBytes-acc.ReservedBytes)
 		out.AvailableBytes = &avail
 	}

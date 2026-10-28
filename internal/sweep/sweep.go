@@ -32,11 +32,17 @@ type Options struct {
 	// UploadExpiry is upload.expiry: an upload file with no row is removed once it is this old.
 	// Zero means defaultUploadExpiry.
 	UploadExpiry time.Duration
-	Logger       *slog.Logger
+	// UploadMaxLifetime is upload.max_lifetime: an upload is expired this long after it was created,
+	// whatever its activity. Zero means defaultUploadMaxLifetime.
+	UploadMaxLifetime time.Duration
+	Logger            *slog.Logger
 }
 
 // defaultUploadExpiry is upload.expiry's default, used when none is given.
 const defaultUploadExpiry = 24 * time.Hour
+
+// defaultUploadMaxLifetime is upload.max_lifetime's default, used when none is given.
+const defaultUploadMaxLifetime = 7 * 24 * time.Hour
 
 // Sweeper runs the housekeeping.
 type Sweeper struct {
@@ -45,6 +51,7 @@ type Sweeper struct {
 	grace        time.Duration
 	interval     time.Duration
 	uploadExpiry time.Duration
+	maxLifetime  time.Duration
 	log          *slog.Logger
 }
 
@@ -57,8 +64,11 @@ func New(o Options) *Sweeper {
 	if o.UploadExpiry <= 0 {
 		o.UploadExpiry = defaultUploadExpiry
 	}
+	if o.UploadMaxLifetime <= 0 {
+		o.UploadMaxLifetime = defaultUploadMaxLifetime
+	}
 	return &Sweeper{st: o.Store, blobs: o.Blobs, grace: o.DeleteGrace, interval: o.Interval,
-		uploadExpiry: o.UploadExpiry, log: log}
+		uploadExpiry: o.UploadExpiry, maxLifetime: o.UploadMaxLifetime, log: log}
 }
 
 // Result counts what one pass did.
@@ -119,8 +129,20 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 		if res.Sessions, err = tx.DeleteExpiredSessions(ctx, now); err != nil {
 			return err
 		}
-		res.Verifications, err = tx.DeleteSpentVerifications(ctx, now)
-		return err
+		if res.Verifications, err = tx.DeleteSpentVerifications(ctx, now); err != nil {
+			return err
+		}
+		// A cheap check of the reservation counters against the uploads. It only reports: the numbers
+		// are repaired by `selfcloud admin recount-usage`, never here.
+		counted, declared, err := tx.ReservationTotals(ctx)
+		if err != nil {
+			return err
+		}
+		if counted != declared {
+			w.log.Warn("upload reservations disagree with the uploads; run selfcloud admin recount-usage",
+				"reserved_bytes", counted, "upload_bytes", declared)
+		}
+		return nil
 	})
 	return res, err
 }
@@ -176,13 +198,15 @@ func (w *Sweeper) removeDue(ctx context.Context, now time.Time, res *Result) err
 	return ctx.Err()
 }
 
-// expireUploads removes resumable uploads whose expiry has passed: each row goes in its own
-// transaction, which checks the expiry again, and then its file. A file that outlives its row is
+// expireUploads removes resumable uploads that have expired, or passed upload.max_lifetime: each row
+// goes in its own transaction, which checks the expiry again and releases the upload's reservation,
+// and then its file. A file that outlives its row is
 // collected by RemoveOrphanUploads.
 func (w *Sweeper) expireUploads(ctx context.Context, now time.Time) (int, error) {
 	removed := 0
+	createdBefore := now.Add(-w.maxLifetime)
 	for ctx.Err() == nil {
-		due, err := w.st.ExpiredUploads(ctx, now, batchSize)
+		due, err := w.st.ExpiredUploads(ctx, now, createdBefore, batchSize)
 		if err != nil {
 			return removed, err
 		}
@@ -194,7 +218,7 @@ func (w *Sweeper) expireUploads(ctx context.Context, now time.Time) (int, error)
 			var gone bool
 			err := w.st.Write(ctx, func(tx *store.Tx) error {
 				var err error
-				gone, err = tx.DeleteExpiredUpload(ctx, u.AccountID, u.ID, now)
+				gone, err = tx.DeleteExpiredUpload(ctx, u.AccountID, u.ID, now, createdBefore)
 				if err != nil || !gone {
 					return err
 				}

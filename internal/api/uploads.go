@@ -258,8 +258,18 @@ func restoreHash(state []byte, offset int64) (hash.Hash, error) {
 
 // ---- access to an upload ----
 
+// uploadDeadline is when an upload expires, given that it was just created, or just written, at now:
+// upload.expiry after now, but never upload.max_lifetime after its creation.
+func (s *Server) uploadDeadline(created, now time.Time) time.Time {
+	idle := now.Add(s.cfg.Upload.Expiry.D())
+	if hard := created.Add(s.cfg.Upload.MaxLifetime.D()); hard.Before(idle) {
+		return hard
+	}
+	return idle
+}
+
 // ownedUpload loads an upload for its creator. Anyone else gets not_found, so upload IDs cannot be
-// probed. An expired upload is upload_expired.
+// probed. An upload past its expiry, or past upload.max_lifetime, is upload_expired.
 func (s *Server) ownedUpload(r *http.Request, p *auth.Principal, uplID string) (*store.Upload, error) {
 	if !id.Valid("upl", uplID) {
 		return nil, notFound("upload")
@@ -274,7 +284,8 @@ func (s *Server) ownedUpload(r *http.Request, p *auth.Principal, uplID string) (
 	if up.CreatedBy != p.ID || up.CreatedKind != string(p.Kind) {
 		return nil, notFound("upload")
 	}
-	if !up.ExpiresAt.After(store.Now()) {
+	now := store.Now()
+	if !up.ExpiresAt.After(now) || !now.Before(up.CreatedAt.Add(s.cfg.Upload.MaxLifetime.D())) {
 		return nil, apierr.New(apierr.UploadExpired, "the upload expired; start it again")
 	}
 	return up, nil
@@ -282,8 +293,6 @@ func (s *Server) ownedUpload(r *http.Request, p *auth.Principal, uplID string) (
 
 // lockUpload takes the single PATCH slot of an upload. It returns false when another request
 // holds it. The slot is per process, which suits a server that is not shared between processes.
-
-// checkDisk refuses when the disk would be left below storage.min_free after need more bytes.
 
 // ---- creating ----
 
@@ -523,27 +532,75 @@ func busyError() error {
 	return apierr.New(apierr.Locked, "another request is writing this upload; retry after it finishes")
 }
 
-// checkDisk refuses when the disk, after writing extra more bytes, could not hold every unfinished
-// upload's unwritten bytes and keep storage.min_free free. Bytes already reserved by an upload
-// (including the piece about to be written) are counted once, here.
-func (s *Server) checkDisk(ctx context.Context, extra int64) error {
-	reserved, err := s.store.ReservedBytes(ctx)
+// diskUsable is the disk space uploads may still be promised: the free space of the data directory
+// less storage.min_free. ok is false where free space cannot be read, and then no disk check is made.
+func (s *Server) diskUsable() (usable int64, ok bool, err error) {
+	free, err := s.freeBytes(s.cfg.DataDir)
+	if errors.Is(err, fsutil.ErrUnsupported) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, apierr.Wrap(apierr.Internal, "the free disk space could not be read", err)
+	}
+	return max(0, int64(free)-int64(s.cfg.Storage.MinFree)), true, nil
+}
+
+// checkDisk refuses uploads the disk cannot hold. mine is the unwritten bytes of the caller's
+// account and total those of every account; usable is from diskUsable. Two rules:
+//
+//   - the whole pool, total, must fit in usable: the disk must hold what every open upload still
+//     has to write (install-wide);
+//   - when creating, mine must stay within upload.max_disk_share_percent of usable, so that no one
+//     account can take the whole pool and refuse every other account's uploads.
+//
+// Each refusal is storage_full, with details.scope "server" or "account".
+func (s *Server) checkDisk(usable, mine, total int64, creating bool) error {
+	if total > usable {
+		return apierr.New(apierr.StorageFull, "the server's disk does not have room for this upload").
+			With("required_bytes", total).With("available_bytes", usable).With("scope", "server")
+	}
+	if creating {
+		share := usable * int64(s.cfg.Upload.MaxDiskSharePercent) / 100
+		if mine > share {
+			return apierr.New(apierr.StorageFull, "this account already holds its share of the disk for uploads").
+				With("required_bytes", mine).With("available_bytes", share).With("scope", "account")
+		}
+	}
+	return nil
+}
+
+// checkDiskNow is the install-wide disk check for a piece. It reads the counts outside a transaction;
+// a piece adds no unwritten bytes, so only the install-wide rule applies.
+func (s *Server) checkDiskNow(ctx context.Context, accountID string) error {
+	usable, ok, err := s.diskUsable()
+	if err != nil || !ok {
+		return err
+	}
+	mine, total, err := s.store.UnwrittenBytes(ctx, accountID)
 	if err != nil {
 		return err
 	}
-	free, err := s.freeBytes(s.cfg.DataDir)
-	if errors.Is(err, fsutil.ErrUnsupported) {
-		return nil
-	}
+	return s.checkDisk(usable, mine, total, false)
+}
+
+// reserveTx reserves an upload's declared length, inside tx, the transaction that inserted it: the
+// disk must hold the account's share and the whole pool, and the account's quota (or its reservation
+// cap) must allow the length. A refusal rolls the whole creation back.
+func (s *Server) reserveTx(ctx context.Context, tx *store.Tx, up *store.Upload) error {
+	usable, ok, err := s.diskUsable()
 	if err != nil {
-		return apierr.Wrap(apierr.Internal, "the free disk space could not be read", err)
+		return err
 	}
-	need := reserved + extra
-	if free < uint64(need)+uint64(s.cfg.Storage.MinFree) {
-		return apierr.New(apierr.StorageFull, "the server's disk does not have room for this upload").
-			With("required_bytes", need).With("available_bytes", free)
+	if ok {
+		mine, total, err := tx.UnwrittenBytes(ctx, up.AccountID)
+		if err != nil {
+			return err
+		}
+		if err := s.checkDisk(usable, mine, total, true); err != nil {
+			return err
+		}
 	}
-	return nil
+	return s.applyUsage(ctx, tx, up.AccountID, store.UsageChange{Reserved: up.Length})
 }
 
 // handleCreateUpload starts an upload (tus creation). The body may carry the first piece
@@ -595,9 +652,9 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 		ParentID: tgt.parent, DirPath: tgt.dirPath, Parents: tgt.parents, Name: tgt.name, NameKey: tgt.nameKey,
 		OnConflict: tgt.onConflict, MimeType: mimeOf(tgt.mime, tgt.name), SHA256: tgt.sha, Length: length,
 		BlobID: id.New("blb"), CreatedBy: p.ID, CreatedKind: string(p.Kind), CreatedAt: now, UpdatedAt: now,
-		ExpiresAt: now.Add(s.cfg.Upload.Expiry.D())}
+		ExpiresAt: s.uploadDeadline(now, now)}
 
-	// Checked before anything is written: the directory, a name already taken (fail), and the disk.
+	// Checked before anything is written: the directory and a name already taken (fail).
 	dir, err := s.uploadDirNow(r, up)
 	if err != nil {
 		return err
@@ -609,14 +666,11 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 			return nameConflict(taken)
 		}
 	}
-	if err := s.checkDisk(ctx, length); err != nil {
-		return err
-	}
 	if err := s.blobs.CreateUpload(up.AccountID, up.ID); err != nil {
 		return apierr.Wrap(apierr.Internal, "the upload file could not be created", err)
 	}
-	// slice h: the account's quota is checked here, and length is reserved against it in the
-	// transaction below.
+	// The disk, the quota and the reservation are checked in the transaction that inserts the upload,
+	// so two creations cannot both pass on the same space.
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		if _, err := requireAccess(ctx, tx, p, up.FolderID, true); err != nil {
 			return err
@@ -632,6 +686,9 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 			return tooManyUploads("account", s.cfg.Upload.MaxOpenPerAccount)
 		}
 		if err := tx.InsertUpload(ctx, up); err != nil {
+			return err
+		}
+		if err := s.reserveTx(ctx, tx, up); err != nil {
 			return err
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, up.AccountID, "upload.create", up.ID,
@@ -741,7 +798,7 @@ func (s *Server) appendChunk(w http.ResponseWriter, r *http.Request, p *auth.Pri
 	}
 	chunkCap := min(maxChunk, remaining)
 	// The piece's bytes are already in the reservation the disk check counts, so none are added.
-	if err := s.checkDisk(ctx, 0); err != nil {
+	if err := s.checkDiskNow(ctx, up.AccountID); err != nil {
 		return err
 	}
 	h, err := restoreHash(up.HashState, start)
@@ -808,7 +865,7 @@ func (s *Server) appendChunk(w http.ResponseWriter, r *http.Request, p *auth.Pri
 		if err != nil {
 			return apierr.Wrap(apierr.Internal, "the hash state could not be saved", err)
 		}
-		expires := store.Now().Add(s.cfg.Upload.Expiry.D())
+		expires := s.uploadDeadline(up.CreatedAt, store.Now())
 		if err := s.recordPiece(ctx, p, up, f, start, cw.off, state, expires); err != nil {
 			return err
 		}
@@ -1010,11 +1067,13 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 				return err
 			}
 		}
-		// slice h: the quota check goes here, before usage moves; the reservation is released too.
-		if err := tx.AdjustUsage(ctx, cur.AccountID, delta, files); err != nil {
+		// Completion turns the reservation into usage, so it never grows the quota and is not checked
+		// against it: DeleteUpload releases the reservation, and the usage takes the bytes. A quota
+		// lowered while the upload was going does not strand a file that has been written in full.
+		if err := tx.DeleteUpload(ctx, cur.AccountID, cur.ID); err != nil {
 			return err
 		}
-		if err := tx.DeleteUpload(ctx, cur.AccountID, cur.ID); err != nil {
+		if err := tx.AdjustUsage(ctx, cur.AccountID, store.UsageChange{Bytes: delta, Files: files}); err != nil {
 			return err
 		}
 		// The last step before commit: the file moves only once every check and insert has passed.

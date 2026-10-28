@@ -41,7 +41,8 @@ tags:
   - name: Uploads
     description: |
       Resumable uploads, following tus 1.0.0 (creation, creation-with-upload, expiration,
-      checksum, termination). An upload that is not finished expires after `upload.expiry`.
+      checksum, termination). An upload that is not finished expires after `upload.expiry`
+      without a write, and in any case `upload.max_lifetime` after its creation.
   - name: Jobs
     description: Background work started by a request that answered 202.
   - name: Files
@@ -1043,9 +1044,26 @@ paths:
         Limits: a caller may hold `upload.max_open_per_principal` unfinished uploads (default 100),
         and an account `upload.max_open_per_account` (default 1000); above either, creation is
         `too_many_uploads` (429) with `details.scope` (`caller` or `account`). Creation is also
-        rate limited per caller, at 60 a minute, and answers `rate_limited` (429). The disk must
-        hold the unwritten bytes of every open upload, plus `storage.min_free`, or the answer is
-        `storage_full`.
+        rate limited per caller, at 60 a minute, and answers `rate_limited` (429).
+
+        Quota: creation reserves the declared length against the account. The account's used
+        bytes, its reserved bytes and this length must fit in `quota_bytes`, or the answer is
+        `quota_exceeded` (507) with `details.scope` `quota`. An account with no quota may hold at
+        most `upload.max_reserved_per_account` in reservations (`details.scope`
+        `account_reservations`). The reservation is held until the upload completes, is
+        terminated, or expires; completion never refuses for quota. Writes to the file tree are
+        checked against the same quota: a write that grows usage past it is refused, and one
+        that shrinks it always passes.
+
+        Disk: the unwritten bytes of every open upload must fit in the free space of the server
+        less `storage.min_free`, or the answer is `storage_full` (507) with `details.scope`
+        `server`. When creating, one account's unwritten bytes may not exceed
+        `upload.max_disk_share_percent` of that space, or the answer is `storage_full` with
+        `details.scope` `account`. Both refusals carry `required_bytes` and `available_bytes`.
+
+        Lifetime: an upload expires `upload.max_lifetime` after its creation (default 7 days),
+        however often it is written to, and `upload.expiry` (default 24 h) after its last write.
+        A request for an upload past either time is `upload_expired`.
 
         A creation whose first piece fails is removed, since the reply carries no `Location`. A
         completion that meets a name taken under `fail` answers `conflict` with
@@ -1652,7 +1670,7 @@ components:
       description: The declared length of the file.
       schema: { type: integer, format: int64, minimum: 0 }
     Upload-Expires:
-      description: When the upload expires unless a piece refreshes it (HTTP date).
+      description: When the upload expires unless a piece refreshes it (HTTP date). Never later than upload.max_lifetime after creation.
       schema: { type: string }
     Selfcloud-Max-Chunk-Size:
       description: The largest piece in bytes (upload.max_chunk_size).
@@ -1896,7 +1914,9 @@ components:
               description: |
                 Numbers for the client's message: `limit_bytes` (too_large),
                 `max_chunk_size` (chunk_too_large), `required_bytes` and `available_bytes`
-                (quota_exceeded).
+                (quota_exceeded, storage_full). `scope` says which limit refused the write:
+                for quota_exceeded `quota` or `account_reservations`; for storage_full `server`
+                or `account`.
               additionalProperties: true
             request_id: { type: string }
 
@@ -1927,8 +1947,8 @@ components:
         | checksum_mismatch | 460 | Piece failed its Upload-Checksum. |
         | internal | 500 | Server fault; quote request_id. |
         | unavailable | 503 | Shutting down or in maintenance; see Retry-After. |
-        | quota_exceeded | 507 | Account quota reached. |
-        | storage_full | 507 | The server's disk is full. |
+        | quota_exceeded | 507 | The write would take the account past its quota, or past its reservation cap when it has no quota. `required_bytes`, `available_bytes`, `scope` (`quota`, `account_reservations`). |
+        | storage_full | 507 | The disk cannot hold the open uploads, or this account's share of them. `required_bytes`, `available_bytes`, `scope` (`server`, `account`). |
       enum:
         - invalid_request
         - invalid_path
@@ -2063,19 +2083,36 @@ components:
 
     Usage:
       type: object
-      required: [quota_bytes, used_bytes, used_files, reserved_bytes, available_bytes]
+      required: [quota_bytes, used_bytes, reserved_bytes, available_bytes, files, folders, used_files]
       properties:
-        quota_bytes: { type: integer, format: int64, description: 0 means unlimited. }
-        used_bytes: { type: integer, format: int64 }
-        used_files: { type: integer, format: int64 }
+        quota_bytes:
+          type: [integer, "null"]
+          format: int64
+          description: The account's quota in bytes; null when the account is unlimited.
+        used_bytes:
+          type: integer
+          format: int64
+          description: The sizes of its files. A copy counts in full.
         reserved_bytes:
           type: integer
           format: int64
-          description: Held by uploads in progress.
+          description: The declared lengths of its unfinished uploads, held until each completes or ends.
         available_bytes:
           type: [integer, "null"]
           format: int64
-          description: What new uploads may still use; null when the quota is unlimited.
+          description: Quota less used and reserved bytes, never below zero; null when the quota is unlimited.
+        files:
+          type: integer
+          format: int64
+          description: How many files the account holds.
+        folders:
+          type: integer
+          format: int64
+          description: How many top-level folders it has.
+        used_files:
+          type: integer
+          format: int64
+          description: The same as files. Kept for clients that already read it.
 
     Key:
       type: object

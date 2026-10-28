@@ -208,7 +208,8 @@ func truncateBytes(s string, max int) string {
 
 // applyReplace removes the file a transfer displaces, inside the transaction, and returns it. Its
 // contents are left for the collector, which finds them unreferenced. It returns nil when the
-// transfer displaces nothing.
+// transfer displaces nothing. The caller takes the displaced file's usage off as part of the
+// transfer's net change (see replacedUsage).
 func applyReplace(ctx context.Context, tx *store.Tx, plan *transferPlan) (*store.Node, error) {
 	if plan.replaced == nil {
 		return nil, nil
@@ -217,11 +218,16 @@ func applyReplace(ctx context.Context, tx *store.Tx, plan *transferPlan) (*store
 	if err := tx.DeleteNode(ctx, old.AccountID, old.ID); err != nil {
 		return nil, err
 	}
-	// slice h: quota counters move with the files, in this transaction.
-	if err := tx.AdjustUsage(ctx, old.AccountID, -old.Size, -1); err != nil {
-		return nil, err
-	}
 	return old, nil
+}
+
+// replacedUsage is the usage change of the file a transfer displaces: its size and count come off.
+// It is zero when nothing was displaced.
+func replacedUsage(replaced *store.Node) store.UsageChange {
+	if replaced == nil {
+		return store.UsageChange{}
+	}
+	return store.UsageChange{Bytes: -replaced.Size, Files: -1}
 }
 
 // copyTree makes the copy of src's tree in the target place of plan. The copy of src gets rootID;
@@ -319,6 +325,10 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		from := map[string]any{"parent": cur.ParentID, "folder": cur.FolderID, "name": cur.Name}
 		replaced, err := applyReplace(ctx, tx, plan)
 		if err != nil {
+			return err
+		}
+		// A move never grows usage: displacing a file only shrinks it, so this is never refused.
+		if err := tx.AdjustUsage(ctx, cur.AccountID, replacedUsage(replaced)); err != nil {
 			return err
 		}
 		folderChanged := plan.folderID != cur.FolderID
@@ -460,8 +470,11 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		// slice h: quota counters move with the copies, in this transaction.
-		if err := tx.AdjustUsage(ctx, cur.AccountID, bytes, files); err != nil {
+		// The copies count in full, and what they displace comes off. Only the net growth is checked.
+		change := replacedUsage(replaced)
+		change.Bytes += bytes
+		change.Files += files
+		if err := s.applyUsage(ctx, tx, cur.AccountID, change); err != nil {
 			return err
 		}
 		if out, err = tx.Node(ctx, cur.AccountID, rootID); err != nil {
@@ -593,8 +606,10 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		if err != nil {
 			return err
 		}
-		// slice h: quota counters move with the copies, in this transaction.
-		if err := tx.AdjustUsage(ctx, job.AccountID, bytes, files); err != nil {
+		change := replacedUsage(replaced)
+		change.Bytes += bytes
+		change.Files += files
+		if err := s.applyUsage(ctx, tx, job.AccountID, change); err != nil {
 			return err
 		}
 		if replaced != nil {

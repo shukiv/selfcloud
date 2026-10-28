@@ -194,3 +194,28 @@ func TestUserMailAndLimitValidation(t *testing.T) {
 		}
 	}
 }
+
+// TestUploadQuotaSettings: the reservation settings have defaults, and invalid values are refused.
+func TestUploadQuotaSettings(t *testing.T) {
+	cfg := Defaults()
+	if cfg.Upload.MaxLifetime.D() != 168*time.Hour || cfg.Upload.MaxReservedPerAccount != TiB ||
+		cfg.Upload.MaxDiskSharePercent != 50 {
+		t.Errorf("defaults = %v, %v, %d", cfg.Upload.MaxLifetime, cfg.Upload.MaxReservedPerAccount, cfg.Upload.MaxDiskSharePercent)
+	}
+	for name, mutate := range map[string]func(*Config){
+		"lifetime zero":   func(c *Config) { c.Upload.MaxLifetime = 0 },
+		"reservations 0":  func(c *Config) { c.Upload.MaxReservedPerAccount = 0 },
+		"share 0":         func(c *Config) { c.Upload.MaxDiskSharePercent = 0 },
+		"share above 100": func(c *Config) { c.Upload.MaxDiskSharePercent = 101 },
+	} {
+		c := Defaults()
+		mutate(c)
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: Validate accepted it", name)
+		}
+	}
+	c, err := Load(writeFile(t, ""), env(map[string]string{"SELFCLOUD_UPLOAD_MAX_DISK_SHARE_PERCENT": "80"}))
+	if err != nil || c.Upload.MaxDiskSharePercent != 80 {
+		t.Errorf("env override = %+v, %v", c, err)
+	}
+}

@@ -163,9 +163,15 @@ func (tx *Tx) UpdateFolder(ctx context.Context, f *Folder) error {
 // The blobs the files pointed at are not removed here. Copies share blobs, so a blob may still be
 // in use elsewhere; the blob garbage collector (slice e) finds the orphaned ones by reference.
 func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) error {
-	var bytes, files int64
+	var bytes, files, reserved int64
 	err := tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0), COUNT(*) FROM nodes
 		WHERE folder_id = ? AND account_id = ? AND kind = 'file'`, folderID, accountID).Scan(&bytes, &files)
+	if err != nil {
+		return err
+	}
+	// The foreign key deletes the folder's uploads with it, so their reservations go here too.
+	err = tx.q.QueryRowContext(ctx, "SELECT COALESCE(SUM(length), 0) FROM uploads WHERE folder_id = ? AND account_id = ?",
+		folderID, accountID).Scan(&reserved)
 	if err != nil {
 		return err
 	}
@@ -174,16 +180,7 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 	if err != nil {
 		return err
 	}
-	// slice h: usage is taken off here too; quota checks rely on these counters.
-	return tx.AdjustUsage(ctx, accountID, -bytes, -files)
-}
-
-// AdjustUsage adds deltaBytes and deltaFiles to the account's usage counters. Callers change
-// usage only alongside the files they count, in the same transaction.
-func (tx *Tx) AdjustUsage(ctx context.Context, accountID string, deltaBytes, deltaFiles int64) error {
-	return rowsAffected(tx.q.ExecContext(ctx,
-		"UPDATE accounts SET used_bytes = used_bytes + ?, used_files = used_files + ? WHERE id = ?",
-		deltaBytes, deltaFiles, accountID))
+	return tx.AdjustUsage(ctx, accountID, UsageChange{Bytes: -bytes, Files: -files, Reserved: -reserved})
 }
 
 // Grant shares a folder with a user at a level.

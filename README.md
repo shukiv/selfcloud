@@ -67,6 +67,9 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `client_ip_header` | `X-Forwarded-For` | Or a single-address header such as `CF-Connecting-IP`. |
 | `upload.max_file_size` | `100GiB` | Largest file. |
 | `upload.max_chunk_size` | `64MiB` | Largest upload request. Keep it at or under `90MiB` behind a proxy that caps requests at 100 MB. |
+| `upload.max_lifetime` | `168h` | Longest life of an upload from its creation, however often it is written to. |
+| `upload.max_reserved_per_account` | `1TiB` | Bytes an account with no quota may hold in unfinished uploads. |
+| `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished uploads may hold. Set `100` for a single tenant. |
 | `metrics_listen` | none | Serve `/metrics` on a separate address. |
 | `admin_key_file` | none | File holding an admin key to add on start. |
 | `log.level`, `log.format` | `info`, `json` | |

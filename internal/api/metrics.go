@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -8,6 +10,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"selfcloud/internal/store"
 )
 
 // metrics holds the server's Prometheus collectors. Labels come from the route table, never
@@ -64,4 +68,43 @@ func (m *metrics) observe(method, route string, status int, d time.Duration, byt
 	m.requests.WithLabelValues(method, route, strconv.Itoa(status)).Inc()
 	m.duration.WithLabelValues(method, route).Observe(d.Seconds())
 	m.sent.WithLabelValues(route).Add(float64(bytes))
+}
+
+// totalsCollector reports the installation's totals of used and reserved bytes, read from the store
+// at each scrape. Per-account figures come from the usage API, not from metric labels.
+type totalsCollector struct {
+	st       *store.Store
+	log      *slog.Logger
+	used     *prometheus.Desc
+	reserved *prometheus.Desc
+}
+
+func newTotalsCollector(st *store.Store, log *slog.Logger) *totalsCollector {
+	return &totalsCollector{
+		st:  st,
+		log: log,
+		used: prometheus.NewDesc("selfcloud_storage_used_bytes",
+			"Bytes of files held by all accounts.", nil, nil),
+		reserved: prometheus.NewDesc("selfcloud_storage_reserved_bytes",
+			"Declared lengths of unfinished uploads, summed over all accounts.", nil, nil),
+	}
+}
+
+// Describe implements prometheus.Collector.
+func (c *totalsCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.used
+	ch <- c.reserved
+}
+
+// Collect implements prometheus.Collector. A failed read reports nothing rather than a false zero.
+func (c *totalsCollector) Collect(ch chan<- prometheus.Metric) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	used, reserved, err := c.st.UsageTotals(ctx)
+	if err != nil {
+		c.log.Warn("metrics: cannot read the usage totals", "error", err)
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(c.used, prometheus.GaugeValue, float64(used))
+	ch <- prometheus.MustNewConstMetric(c.reserved, prometheus.GaugeValue, float64(reserved))
 }

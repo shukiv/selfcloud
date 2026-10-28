@@ -79,7 +79,7 @@ func TestDeleteFolderCascadesAndAdjustsUsage(t *testing.T) {
 			WHERE folder_id = ? AND parent_id IS NULL`, id.New("nod"), acc, f.ID, f.ID); err != nil {
 			return err
 		}
-		return tx.AdjustUsage(ctx, acc, 150, 2)
+		return tx.AdjustUsage(ctx, acc, UsageChange{Bytes: 150, Files: 2})
 	})
 	if err != nil {
 		t.Fatal(err)

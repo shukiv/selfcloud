@@ -145,7 +145,7 @@ func TestUploadCreationRateLimited(t *testing.T) {
 
 // Item 2: the disk check counts every open upload's unwritten bytes, not just the new piece.
 func TestDiskCheckCountsReservations(t *testing.T) {
-	s, key, _, f := uploadSetup(t)
+	s, key, _, f := uploadSetup(t, func(c *config.Config) { c.Upload.MaxDiskSharePercent = 100 })
 	s.freeBytes = func(string) (uint64, error) { return 100, nil }
 	upl := uploadID(t, createUpload(t, s, key, 60, md("folder", f.ID, "name", "d60.bin")))
 	wantError(t, createUpload(t, s, key, 50, md("folder", f.ID, "name", "d50.bin")), 507, apierr.StorageFull)

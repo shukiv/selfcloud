@@ -90,15 +90,35 @@ func (tx *Tx) RecordUploadProgress(ctx context.Context, accountID, id string, fr
 		offset, hashState, millis(at), millis(expires), accountID, id, fromOffset))
 }
 
-// DeleteUpload removes an upload's row. ErrNotFound if there is none.
+// DeleteUpload removes an upload's row and releases the reservation it held, in the same
+// transaction. Every path that ends an upload without completing it comes here: termination, a
+// failed creation, a checksum failure, the sweep. ErrNotFound if there is no such row, in which
+// case nothing is released.
+//
+// Completion does not come here: it moves the reservation into usage itself (see completeUpload).
 func (tx *Tx) DeleteUpload(ctx context.Context, accountID, id string) error {
-	return rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM uploads WHERE account_id = ? AND id = ?", accountID, id))
+	var length int64
+	err := tx.q.QueryRowContext(ctx, "SELECT length FROM uploads WHERE account_id = ? AND id = ?",
+		accountID, id).Scan(&length)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if err := rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM uploads WHERE account_id = ? AND id = ?",
+		accountID, id)); err != nil {
+		return err
+	}
+	return tx.AdjustUsage(ctx, accountID, UsageChange{Reserved: -length})
 }
 
-// ExpiredUploads lists up to limit uploads whose expiry is not after now.
-func (s *Store) ExpiredUploads(ctx context.Context, now time.Time, limit int) ([]*Upload, error) {
+// ExpiredUploads lists up to limit uploads that have expired by now: their expiry is not after now,
+// or they were created at or before createdBefore (upload.max_lifetime has passed).
+func (s *Store) ExpiredUploads(ctx context.Context, now, createdBefore time.Time, limit int) ([]*Upload, error) {
 	rows, err := s.r.QueryContext(ctx, "SELECT "+uploadCols+
-		" FROM uploads WHERE expires_at <= ? ORDER BY expires_at, id LIMIT ?", millis(now), limit)
+		" FROM uploads WHERE expires_at <= ? OR created_at <= ? ORDER BY expires_at, id LIMIT ?",
+		millis(now), millis(createdBefore), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -114,16 +134,30 @@ func (s *Store) ExpiredUploads(ctx context.Context, now time.Time, limit int) ([
 	return out, rows.Err()
 }
 
-// DeleteExpiredUpload removes an upload only if it has still expired at now, and reports whether it
+// DeleteExpiredUpload removes an upload only if it has still expired at now (or passed its
+// lifetime, created at or before createdBefore), releasing its reservation, and reports whether it
 // did. An upload a request refreshed in the meantime is left alone.
-func (tx *Tx) DeleteExpiredUpload(ctx context.Context, accountID, id string, now time.Time) (bool, error) {
-	res, err := tx.q.ExecContext(ctx, "DELETE FROM uploads WHERE account_id = ? AND id = ? AND expires_at <= ?",
-		accountID, id, millis(now))
+func (tx *Tx) DeleteExpiredUpload(ctx context.Context, accountID, id string, now, createdBefore time.Time) (bool, error) {
+	const expired = "account_id = ? AND id = ? AND (expires_at <= ? OR created_at <= ?)"
+	var length int64
+	err := tx.q.QueryRowContext(ctx, "SELECT length FROM uploads WHERE "+expired,
+		accountID, id, millis(now), millis(createdBefore)).Scan(&length)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	res, err := tx.q.ExecContext(ctx, "DELETE FROM uploads WHERE "+expired,
+		accountID, id, millis(now), millis(createdBefore))
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil || n == 0 {
+		return false, err
+	}
+	return true, tx.AdjustUsage(ctx, accountID, UsageChange{Reserved: -length})
 }
 
 // CountOpenUploads counts the unfinished uploads a caller holds in an account.
@@ -141,12 +175,21 @@ func (tx *Tx) CountAccountUploads(ctx context.Context, accountID string) (int, e
 	return n, err
 }
 
-// ReservedBytes is the sum of the bytes that unfinished uploads still have to write. The disk must
-// hold them, whoever owns them.
-func (s *Store) ReservedBytes(ctx context.Context) (int64, error) {
-	var n int64
-	err := s.r.QueryRowContext(ctx, "SELECT COALESCE(SUM(length - durable_offset), 0) FROM uploads").Scan(&n)
-	return n, err
+// UnwrittenBytes returns the bytes that unfinished uploads still have to write: for accountID alone
+// (mine), and summed over every account (total). The disk must hold them.
+func (s *Store) UnwrittenBytes(ctx context.Context, accountID string) (mine, total int64, err error) {
+	return unwrittenBytes(ctx, s.r, accountID)
+}
+
+// UnwrittenBytes is Store.UnwrittenBytes inside a transaction, so it sees uploads made in it.
+func (tx *Tx) UnwrittenBytes(ctx context.Context, accountID string) (mine, total int64, err error) {
+	return unwrittenBytes(ctx, tx.q, accountID)
+}
+
+func unwrittenBytes(ctx context.Context, q querier, accountID string) (mine, total int64, err error) {
+	err = q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN account_id = ? THEN length - durable_offset END), 0),
+		COALESCE(SUM(length - durable_offset), 0) FROM uploads`, accountID).Scan(&mine, &total)
+	return mine, total, err
 }
 
 // UpdateUploadTarget sets where an upload's file will go. The caller checks access and the target.

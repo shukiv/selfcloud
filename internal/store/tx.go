@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -29,13 +30,14 @@ type querier interface {
 // Tx is a write transaction. Everything a change needs (the change itself, its audit entry,
 // any job it starts) goes in one Tx so they commit or fail together.
 type Tx struct {
-	q *sql.Tx
+	q   *sql.Tx
+	log *slog.Logger
 }
 
 // Write runs fn in a write transaction and commits if fn returns nil. Errors from fn are
 // returned unchanged.
 func (s *Store) Write(ctx context.Context, fn func(tx *Tx) error) error {
-	return s.write(ctx, func(t *sql.Tx) error { return fn(&Tx{q: t}) })
+	return s.write(ctx, func(t *sql.Tx) error { return fn(&Tx{q: t, log: s.log}) })
 }
 
 // Page selects one page of a list.

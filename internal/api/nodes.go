@@ -499,8 +499,8 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 		if err := tx.UpdateNode(ctx, n); err != nil {
 			return err
 		}
-		// slice h: quota counters move with the files, in this transaction.
-		if err := tx.AdjustUsage(ctx, f.AccountID, c.Size, 1); err != nil {
+		// The quota is checked here, in the transaction that makes the file.
+		if err := s.applyUsage(ctx, tx, f.AccountID, store.UsageChange{Bytes: c.Size, Files: 1}); err != nil {
 			return err
 		}
 		out = n
@@ -656,8 +656,8 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) error 
 		} else if err != nil {
 			return err
 		}
-		// slice h: quota counters move with the files, in this transaction.
-		if err := tx.AdjustUsage(ctx, n.AccountID, -bytes, -files); err != nil {
+		// A delete only shrinks usage, so it is never refused for quota.
+		if err := tx.AdjustUsage(ctx, n.AccountID, store.UsageChange{Bytes: -bytes, Files: -files}); err != nil {
 			return err
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "node.delete", n.ID,
@@ -724,8 +724,8 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 		if err := tx.UpdateNode(ctx, cur); err != nil {
 			return err
 		}
-		// slice h: quota counters move with the contents, in this transaction.
-		if err := tx.AdjustUsage(ctx, cur.AccountID, c.Size-prev, 0); err != nil {
+		// Only the growth of the file counts against the quota: a smaller replacement always passes.
+		if err := s.applyUsage(ctx, tx, cur.AccountID, store.UsageChange{Bytes: c.Size - prev}); err != nil {
 			return err
 		}
 		out = cur

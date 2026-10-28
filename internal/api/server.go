@@ -205,6 +205,7 @@ func New(opts Options) (*Server, error) {
 	s.freeBytes = fsutil.FreeBytes
 	s.uploadSlots = map[string]*uploadSlot{}
 	s.uploadSlotWait = 5 * time.Second
+	s.metrics.reg.MustRegister(newTotalsCollector(opts.Store, log))
 
 	mux := http.NewServeMux()
 	for _, rt := range s.routes() {
@@ -396,7 +397,8 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	go func() { defer close(jobsDone); s.jobs.Run(jobsCtx) }()
 	sweepDone := make(chan struct{})
 	sw := sweep.New(sweep.Options{Store: s.store, Blobs: s.blobs, DeleteGrace: s.cfg.Blobs.DeleteGrace.D(),
-		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(), Logger: s.log})
+		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
+		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), Logger: s.log})
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
 
 	var serveErr error

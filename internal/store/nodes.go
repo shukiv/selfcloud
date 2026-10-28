@@ -247,9 +247,29 @@ func (tx *Tx) SetSubtreeFolder(ctx context.Context, accountID, id, folderID stri
 }
 
 // DeleteNode removes a node and, through the foreign key, everything below it. The caller takes
-// the usage off first, with SubtreeFiles. Blobs are not touched: the collector finds them.
+// the file usage off first, with SubtreeFiles. Blobs are not touched: the collector finds them.
+//
+// An upload whose target directory is in the subtree is deleted by the foreign key too, so its
+// reservation is released here, in the same transaction, from the same rows.
 func (tx *Tx) DeleteNode(ctx context.Context, accountID, id string) error {
-	return rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM nodes WHERE account_id = ? AND id = ?", accountID, id))
+	var reserved int64
+	err := tx.q.QueryRowContext(ctx, `WITH RECURSIVE sub(nid) AS (
+		SELECT id FROM nodes WHERE account_id = ? AND id = ?
+		UNION ALL
+		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
+	)
+	SELECT COALESCE(SUM(length), 0) FROM uploads WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub)`,
+		accountID, id, accountID, accountID).Scan(&reserved)
+	if err != nil {
+		return err
+	}
+	if err := rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM nodes WHERE account_id = ? AND id = ?", accountID, id)); err != nil {
+		return err
+	}
+	if reserved == 0 {
+		return nil
+	}
+	return tx.AdjustUsage(ctx, accountID, UsageChange{Reserved: -reserved})
 }
 
 // Blob is a stored file's contents.

@@ -166,6 +166,16 @@ type UploadConfig struct {
 	MaxOpenPerPrincipal int `yaml:"max_open_per_principal"`
 	// MaxOpenPerAccount is how many unfinished uploads an account may hold.
 	MaxOpenPerAccount int `yaml:"max_open_per_account"`
+	// MaxLifetime ends an upload this long after it was created, however often it is written to.
+	// upload.expiry still applies between writes.
+	MaxLifetime Duration `yaml:"max_lifetime"`
+	// MaxReservedPerAccount caps the bytes that unfinished uploads may reserve in an account that
+	// has no quota. An account with a quota is held to the quota instead.
+	MaxReservedPerAccount ByteSize `yaml:"max_reserved_per_account"`
+	// MaxDiskSharePercent caps the unwritten bytes of one account's uploads, as a percentage of
+	// the disk space that uploads may use (free space less storage.min_free). It is checked when
+	// an upload is created, so no single account can take the whole pool; 1 to 100.
+	MaxDiskSharePercent int `yaml:"max_disk_share_percent"`
 }
 
 // LinksConfig controls signed download links.
@@ -202,13 +212,16 @@ func Defaults() *Config {
 		Copy:            CopyConfig{MaxNodes: 200000},
 		Links:           LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
 		Upload: UploadConfig{
-			MaxFileSize:         100 * GiB,
-			MaxChunkSize:        64 * MiB,
-			MaxSmallFileSize:    16 * MiB,
-			BodyTimeout:         Duration(30 * time.Second),
-			Expiry:              Duration(24 * time.Hour),
-			MaxOpenPerPrincipal: 100,
-			MaxOpenPerAccount:   1000,
+			MaxFileSize:           100 * GiB,
+			MaxChunkSize:          64 * MiB,
+			MaxSmallFileSize:      16 * MiB,
+			BodyTimeout:           Duration(30 * time.Second),
+			Expiry:                Duration(24 * time.Hour),
+			MaxOpenPerPrincipal:   100,
+			MaxOpenPerAccount:     1000,
+			MaxLifetime:           Duration(168 * time.Hour),
+			MaxReservedPerAccount: 1 * TiB,
+			MaxDiskSharePercent:   50,
 		},
 		Users: UsersConfig{
 			VerificationTTL:   Duration(72 * time.Hour),
@@ -332,6 +345,15 @@ func (c *Config) Validate() error {
 	}
 	if c.Upload.MaxOpenPerPrincipal <= 0 || c.Upload.MaxOpenPerAccount <= 0 {
 		bad("upload.max_open_per_principal and upload.max_open_per_account must be positive")
+	}
+	if c.Upload.MaxLifetime <= 0 {
+		bad("upload.max_lifetime must be positive")
+	}
+	if c.Upload.MaxReservedPerAccount <= 0 {
+		bad("upload.max_reserved_per_account must be positive")
+	}
+	if c.Upload.MaxDiskSharePercent < 1 || c.Upload.MaxDiskSharePercent > 100 {
+		bad("upload.max_disk_share_percent must be from 1 to 100")
 	}
 	if c.Links.DefaultTTL <= 0 || c.Links.MaxTTL <= 0 || c.Links.DefaultTTL > c.Links.MaxTTL {
 		bad("links.default_ttl and links.max_ttl must be positive, and default_ttl at most max_ttl")

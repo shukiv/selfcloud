@@ -1,6 +1,7 @@
 package api
 
 import (
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -65,5 +66,35 @@ func TestErrorCodesMatchSpec(t *testing.T) {
 	slices.Sort(spec)
 	if !slices.Equal(codes, spec) {
 		t.Errorf("ErrorCode enum in api/openapi.yaml:\n  %v\ndiffers from internal/apierr:\n  %v", spec, codes)
+	}
+}
+
+// TestUsageSchemaMatchesResponse keeps the Usage schema and the usage reply in step: every field the
+// reply carries is documented, and nothing documented is missing from the reply.
+func TestUsageSchemaMatchesResponse(t *testing.T) {
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(apispec.Spec, &doc); err != nil {
+		t.Fatalf("api/openapi.yaml: %v", err)
+	}
+	documented := doc.Components.Schemas["Usage"].Properties
+	var fields []string
+	typ := reflect.TypeFor[usageJSON]()
+	for i := range typ.NumField() {
+		name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
+		fields = append(fields, name)
+		if _, ok := documented[name]; !ok {
+			t.Errorf("usage reply field %s is not in the Usage schema", name)
+		}
+	}
+	for name := range documented {
+		if !slices.Contains(fields, name) {
+			t.Errorf("Usage schema documents %s, which the usage reply does not carry", name)
+		}
 	}
 }

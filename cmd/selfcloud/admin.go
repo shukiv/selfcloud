@@ -34,6 +34,8 @@ Commands:
                                  create an account and an account key; print both
   create-admin -email EMAIL [-name NAME]
                                  create a pending admin user; print its set-password link and token
+  recount-usage [-account ID]    recompute usage and reserved bytes from the files and uploads
+                                 (all accounts unless -account is given), and print the change
 `
 
 // cliActor is the audit log's name for these commands.
@@ -60,6 +62,8 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return adminCreateAccount(args, stdout, stderr)
 	case "create-admin":
 		return adminCreateAdmin(args, stdout, stderr)
+	case "recount-usage":
+		return adminRecountUsage(args, stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, adminUsage)
 		return 0
@@ -328,5 +332,72 @@ func adminCreateAdmin(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "user_id=%s\nlink=%s\ntoken=%s\n", u.ID, link, secret)
 	fmt.Fprintf(stderr, "The link expires at %s. Send it to the admin; it works once.\n",
 		expires.UTC().Format(time.RFC3339))
+	return 0
+}
+
+// usageDetails is a usage record as the audit log and the command's output show it.
+func usageDetails(u store.Usage) map[string]any {
+	return map[string]any{"used_bytes": u.Bytes, "used_files": u.Files, "reserved_bytes": u.Reserved}
+}
+
+// adminRecountUsage recomputes each account's counters from its files and uploads, one transaction
+// per account, and prints the counters before and after. It is the repair for drift; a clamp to zero
+// or a sweep warning is the signal to run it.
+func adminRecountUsage(args []string, stdout, stderr io.Writer) int {
+	var only *string
+	st, _, code := adminStore("recount-usage", args, stderr, 0, func(fs *flag.FlagSet) {
+		only = fs.String("account", "", "recount only this account (default: every account)")
+	})
+	if st == nil {
+		return code
+	}
+	defer st.Close()
+	ctx := context.Background()
+	var accounts []string
+	if *only != "" {
+		if !id.Valid("acc", *only) {
+			fmt.Fprintln(stderr, "selfcloud admin recount-usage: -account is not an account ID")
+			return 2
+		}
+		accounts = []string{*only}
+	} else {
+		var cursor string
+		for {
+			page, next, err := st.Accounts(ctx, "", store.Page{Limit: 200, Cursor: cursor})
+			if err != nil {
+				fmt.Fprintln(stderr, "selfcloud admin recount-usage:", err)
+				return 1
+			}
+			for _, a := range page {
+				accounts = append(accounts, a.ID)
+			}
+			if next == "" {
+				break
+			}
+			cursor = next
+		}
+	}
+	for _, acc := range accounts {
+		var before, after store.Usage
+		err := st.Write(ctx, func(tx *store.Tx) error {
+			var err error
+			before, after, err = tx.RecountAccount(ctx, acc)
+			if err != nil {
+				return err
+			}
+			return tx.InsertAudit(ctx, cliAudit(acc, "account.recount", acc,
+				map[string]any{"before": usageDetails(before), "after": usageDetails(after)}))
+		})
+		if errors.Is(err, store.ErrNotFound) {
+			fmt.Fprintf(stderr, "selfcloud admin recount-usage: no account %s\n", acc)
+			return 1
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, "selfcloud admin recount-usage:", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "account=%s used_bytes=%d->%d used_files=%d->%d reserved_bytes=%d->%d\n",
+			acc, before.Bytes, after.Bytes, before.Files, after.Files, before.Reserved, after.Reserved)
+	}
 	return 0
 }

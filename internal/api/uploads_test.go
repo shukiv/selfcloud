@@ -507,7 +507,8 @@ func TestUploadTermination(t *testing.T) {
 }
 
 func TestUploadDiskSpace(t *testing.T) {
-	s, key, _, f := uploadSetup(t, func(c *config.Config) { c.Storage.MinFree = 50 })
+	// One account alone: its share is set to the whole pool, so this tests the install-wide rule.
+	s, key, _, f := uploadSetup(t, func(c *config.Config) { c.Storage.MinFree = 50; c.Upload.MaxDiskSharePercent = 100 })
 	free := uint64(100)
 	s.freeBytes = func(string) (uint64, error) { return free, nil }
 	// 100 bytes free, 50 kept back: a 60-byte file does not fit, a 50-byte one does.
