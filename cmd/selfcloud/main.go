@@ -18,6 +18,7 @@ import (
 	"selfcloud/internal/api"
 	"selfcloud/internal/config"
 	"selfcloud/internal/fsutil"
+	"selfcloud/internal/mail"
 	"selfcloud/internal/store"
 	"selfcloud/internal/version"
 )
@@ -118,6 +119,24 @@ func openStore(ctx context.Context, cfg *config.Config, log *slog.Logger) (*stor
 	})
 }
 
+// newMailer returns the SMTP sender for the configuration, or nil when mail is not configured. The
+// password is read from its file here, so a missing file stops the server at start.
+func newMailer(c config.MailConfig) (mail.Sender, error) {
+	if !c.Configured() {
+		return nil, nil
+	}
+	pw, err := mail.ReadSecretFile(c.SMTPPasswordFile)
+	if err != nil {
+		return nil, fmt.Errorf("mail.smtp_password_file: %w", err)
+	}
+	smtp, err := mail.NewSMTP(mail.SMTPConfig{Host: c.SMTPHost, Port: c.SMTPPort, Username: c.SMTPUsername,
+		Password: pw, TLS: c.SMTPTLS, From: c.From})
+	if err != nil {
+		return nil, err
+	}
+	return smtp, nil
+}
+
 func serve(args []string, stdout, stderr io.Writer) int {
 	cfg, _, code := loadConfig("serve", args, stderr, 0, nil)
 	if cfg == nil {
@@ -141,7 +160,12 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	srv, err := api.New(api.Options{Config: cfg, Logger: log, Store: st})
+	mailer, err := newMailer(cfg.Mail)
+	if err != nil {
+		log.Error("cannot configure mail", "error", err)
+		return 1
+	}
+	srv, err := api.New(api.Options{Config: cfg, Logger: log, Store: st, Mailer: mailer})
 	if err != nil {
 		log.Error("cannot start", "error", err)
 		return 1

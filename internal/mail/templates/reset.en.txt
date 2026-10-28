@@ -1,0 +1,8 @@
+Subject: Reset your password
+
+Open this link to choose a new password:
+
+{{.URL}}
+
+The link works once and expires at {{.ExpiresAt}}.
+If you did not ask for a new password, ignore this message. Your password stays the same.

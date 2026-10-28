@@ -151,3 +151,44 @@ func TestParsePrefixes(t *testing.T) {
 		}
 	}
 }
+
+func TestUserMailAndLimitSettings(t *testing.T) {
+	cfg, err := Load("", env(map[string]string{
+		"SELFCLOUD_USERS_VERIFICATION_TTL":          "24h",
+		"SELFCLOUD_SESSIONS_MAX_AGE":                "48h",
+		"SELFCLOUD_MAIL_SMTP_HOST":                  "smtp.example.com",
+		"SELFCLOUD_MAIL_SMTP_PORT":                  "465",
+		"SELFCLOUD_MAIL_SMTP_TLS":                   "tls",
+		"SELFCLOUD_MAIL_FROM":                       "Drive <drive@example.com>",
+		"SELFCLOUD_RATE_LIMIT_PER_EMAIL_PER_MINUTE": "3",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Users.VerificationTTL.D() != 24*time.Hour || cfg.Sessions.MaxAge.D() != 48*time.Hour ||
+		cfg.Sessions.IdleTimeout.D() != 168*time.Hour {
+		t.Errorf("ttl/session settings = %+v %+v", cfg.Users, cfg.Sessions)
+	}
+	if !cfg.Mail.Configured() || cfg.Mail.SMTPPort != 465 || cfg.Mail.SMTPTLS != "tls" {
+		t.Errorf("mail = %+v", cfg.Mail)
+	}
+	if cfg.RateLimit.PerEmailPerMinute != 3 || cfg.RateLimit.PerIPPerMinute != 10 {
+		t.Errorf("rate limits = %+v", cfg.RateLimit)
+	}
+}
+
+func TestUserMailAndLimitValidation(t *testing.T) {
+	for name, vars := range map[string]map[string]string{
+		"template without token": {"SELFCLOUD_USERS_VERIFY_URL_TEMPLATE": "{public_url}/verify"},
+		"zero ttl":               {"SELFCLOUD_USERS_RESET_TTL": "0s"},
+		"zero idle timeout":      {"SELFCLOUD_SESSIONS_IDLE_TIMEOUT": "0s"},
+		"zero rate limit":        {"SELFCLOUD_RATE_LIMIT_PER_IP_PER_MINUTE": "0"},
+		"bad smtp tls":           {"SELFCLOUD_MAIL_SMTP_HOST": "smtp.example.com", "SELFCLOUD_MAIL_FROM": "d@example.com", "SELFCLOUD_MAIL_SMTP_TLS": "ssl"},
+		"bad port":               {"SELFCLOUD_MAIL_SMTP_HOST": "smtp.example.com", "SELFCLOUD_MAIL_FROM": "d@example.com", "SELFCLOUD_MAIL_SMTP_PORT": "70000"},
+		"bad from":               {"SELFCLOUD_MAIL_SMTP_HOST": "smtp.example.com", "SELFCLOUD_MAIL_FROM": "not an address"},
+	} {
+		if _, err := Load("", env(vars)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

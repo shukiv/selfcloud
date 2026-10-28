@@ -9,11 +9,16 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"selfcloud/internal/apierr"
+	"selfcloud/internal/auth"
 	"selfcloud/internal/config"
 	"selfcloud/internal/jobs"
+	"selfcloud/internal/mail"
 	"selfcloud/internal/store"
 )
 
@@ -26,16 +31,29 @@ type Options struct {
 	Config *config.Config
 	Logger *slog.Logger
 	Store  *store.Store
+	// Mailer sends verification and reset mail. Nil means mail is not configured: the server
+	// then refuses the "email" verification method instead of failing at send time.
+	Mailer mail.Sender
 }
 
 // Server serves the HTTP API.
 type Server struct {
-	cfg      *config.Config
-	log      *slog.Logger
-	store    *store.Store
-	trusted  []netip.Prefix
-	metrics  *metrics
-	jobs     *jobs.Runner
+	cfg       *config.Config
+	log       *slog.Logger
+	store     *store.Store
+	trusted   []netip.Prefix
+	metrics   *metrics
+	jobs      *jobs.Runner
+	mailer    mail.Sender // nil when mail is not configured
+	templates *mail.Templates
+	limits    map[string]*limiter // rate limiters by "endpoint.dimension"
+	// origin is public_url's scheme and host. Browsers send it as Origin, and unsafe requests
+	// made with a session must carry it.
+	origin string
+	// sessionCookie is the cookie's name; the "__Host-" form is used when public_url is https.
+	sessionCookie string
+	// bg holds mail sent after a response has gone out, so Serve can wait for it.
+	bg       sync.WaitGroup
 	draining atomic.Bool
 	handler  http.Handler
 }
@@ -50,8 +68,15 @@ type route struct {
 	method string
 	path   string
 	handle handlerFunc
-	// auth requires a credential; the handler then finds the caller with principalOf.
+	// auth requires a credential; the handler then finds the caller with principalOf. A
+	// credential is a Bearer key, or a session cookie when there is no Authorization header.
 	auth bool
+	// session requires a session cookie and ignores any Authorization header.
+	session bool
+	// sameSite refuses requests whose Origin header names another site. It guards sign-in
+	// endpoints that take no credential, so another site cannot sign a browser in to an
+	// account of its choosing. Requests without an Origin header, from servers, pass.
+	sameSite bool
 	// secretPath marks a path that carries a credential, such as a signed link. The access log
 	// records the route pattern instead of the path.
 	secretPath bool
@@ -70,13 +95,37 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: trusted_proxies: %w", err)
 	}
+	templates, err := mail.NewTemplates(opts.Config.Mail.TemplatesDir)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	pub, err := url.Parse(opts.Config.PublicURL)
+	if err != nil {
+		return nil, fmt.Errorf("api: public_url: %w", err)
+	}
+	cfg := opts.Config
 	s := &Server{
-		cfg:     opts.Config,
-		log:     log,
-		store:   opts.Store,
-		trusted: trusted,
-		metrics: newMetrics(),
-		jobs:    jobs.New(opts.Store, log),
+		cfg:           cfg,
+		log:           log,
+		store:         opts.Store,
+		trusted:       trusted,
+		metrics:       newMetrics(),
+		jobs:          jobs.New(opts.Store, log),
+		mailer:        opts.Mailer,
+		templates:     templates,
+		origin:        pub.Scheme + "://" + pub.Host,
+		sessionCookie: "selfcloud_session",
+		limits: map[string]*limiter{
+			"login.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
+			"login.email":  newLimiter(cfg.RateLimit.PerEmailPerMinute),
+			"forgot.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),
+			"forgot.email": newLimiter(cfg.RateLimit.PerEmailPerMinute),
+			"verify.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),
+			"reset.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
+		},
+	}
+	if pub.Scheme == "https" {
+		s.sessionCookie = "__Host-selfcloud_session"
 	}
 	s.jobs.Handle(jobAccountDelete, s.runAccountDelete)
 
@@ -107,6 +156,22 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/keys/{key}", handle: s.handleRevokeKey, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit", handle: s.handleAuditLog, auth: true},
 		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true},
+
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users", handle: s.handleCreateUser, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users", handle: s.handleListUsers, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleGetUser, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleUpdateUser, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleDeleteUser, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/verification", handle: s.handleSendVerification, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/password-reset", handle: s.handlePasswordReset, auth: true},
+
+		{method: http.MethodPost, path: "/api/v1/auth/verify", handle: s.handleVerify, sameSite: true},
+		{method: http.MethodPost, path: "/api/v1/auth/login", handle: s.handleLogin, sameSite: true},
+		{method: http.MethodPost, path: "/api/v1/auth/logout", handle: s.handleLogout, session: true},
+		{method: http.MethodPost, path: "/api/v1/auth/password/forgot", handle: s.handleForgotPassword, sameSite: true},
+		{method: http.MethodPost, path: "/api/v1/auth/password/reset", handle: s.handleResetPassword, sameSite: true},
+		{method: http.MethodGet, path: "/api/v1/me", handle: s.handleMe, session: true},
+		{method: http.MethodPost, path: "/api/v1/me/password", handle: s.handleChangePassword, session: true},
 	}
 	if s.cfg.MetricsListen == "" {
 		rs = append(rs, route{method: http.MethodGet, path: "/metrics", handle: s.handleMetrics})
@@ -127,14 +192,30 @@ func (s *Server) wrap(rt route) http.Handler {
 			info.route = label
 			info.secretPath = rt.secretPath
 		}
-		if rt.auth {
-			p, err := s.authenticate(r)
+		if rt.sameSite {
+			if o := r.Header.Get("Origin"); o != "" && o != s.origin {
+				s.writeError(w, r, apierr.New(apierr.Forbidden, "the request must come from this site"))
+				return
+			}
+		}
+		if rt.auth || rt.session {
+			var (
+				p    *auth.Principal
+				sess *store.Session
+				err  error
+			)
+			if rt.session {
+				p, sess, err = s.authenticateSession(r)
+			} else {
+				p, sess, err = s.authenticate(r)
+			}
 			if err != nil {
 				s.writeError(w, r, err)
 				return
 			}
 			if info != nil {
 				info.principal = p
+				info.session = sess
 			}
 		}
 		if err := rt.handle(w, r); err != nil {
@@ -208,6 +289,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 
 	shCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout.D())
 	defer cancel()
+	defer s.bg.Wait()
 	if err := hs.Shutdown(shCtx); errors.Is(err, context.DeadlineExceeded) {
 		s.log.Warn("requests still running at the shutdown deadline; cancelling them")
 		cancelBase()

@@ -23,6 +23,15 @@ tags:
     description: |
       Accounts are tenants. Installation admin keys manage them; an account key manages one
       account's contents. Account IDs a caller may not manage are reported as `not_found`.
+  - name: Users
+    description: |
+      Users belong to one account and sign in with an email and a password. A new user must
+      verify the email address first. Account keys, admin keys and owner sessions manage them.
+  - name: Auth
+    description: |
+      Sign-in, sign-out, verification and password reset. These are rate-limited per client
+      address and, for sign-in and reset requests, per email address. Answers do not reveal
+      whether an email address is known.
   - name: Jobs
     description: Background work started by a request that answered 202.
 
@@ -322,6 +331,310 @@ paths:
               schema: { $ref: "#/components/schemas/Job" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/accounts/{acc}/users:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    post:
+      tags: [Users]
+      operationId: createUser
+      summary: Add a user to an account
+      description: |
+        Account key, admin key, or an owner session. The `verification` method decides how the
+        user proves the address:
+
+        - `email`: Selfcloud mails a link. If mail is not configured, or the mail fails to send,
+          the user is still created and `verification.sent` says whether the mail went out.
+        - `link`: Selfcloud returns the link and token in `verification`, for the client to
+          deliver.
+        - `none`: the user is verified at once. Only an account or admin key may do this.
+
+        With an `external_id`, repeating the request with the same email, display name, locale
+        and role returns the existing user with status 200 and no new verification. Different
+        fields get `409 conflict`, with the existing user's ID in `details.id`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserCreate" }
+      responses:
+        "201":
+          description: Created. `verification` is present unless the method is `none`.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserWithVerification" }
+        "200":
+          description: A user with this external_id and these fields already existed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: List an account's users
+      description: Oldest first. Filter by `external_id` or `email` (case-insensitive).
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: external_id
+          in: query
+          description: Only the user with this external ID.
+          schema: { type: string }
+        - name: email
+          in: query
+          description: Only the user with this email address.
+          schema: { type: string, format: email }
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: One page of users.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserList" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/users/{usr}:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/usr"
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: Get a user
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Users]
+      operationId: updateUser
+      summary: Change a user
+      description: |
+        Only the fields given change. The email address cannot change; sending it is refused.
+        Setting `status` to `active` needs a verified user (`409 conflict` otherwise). Setting
+        `disabled` ends the user's sessions at once.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserUpdate" }
+      responses:
+        "200":
+          description: The changed user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Users]
+      operationId: deleteUser
+      summary: Delete a user
+      description: Removes the user with its sessions and tokens.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/users/{usr}/verification:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/usr"
+    post:
+      tags: [Users]
+      operationId: sendVerification
+      summary: Verify a pending user again, or verify them outright
+      description: |
+        Only for a pending user (`409 conflict` otherwise). Sends a fresh link, or creates one
+        for the client to deliver, and voids earlier ones. Method `none` verifies the user at
+        once and needs an account or admin key.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerificationRequest" }
+      responses:
+        "200":
+          description: The user, with the verification made for it when there was one.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserWithVerification" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/users/{usr}/password-reset:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/usr"
+    post:
+      tags: [Users]
+      operationId: sendPasswordReset
+      summary: Send or create a password-reset link for an active user
+      description: The link works once and for the reset TTL (`users.reset_ttl`). Earlier reset links stop working.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetRequest" }
+      responses:
+        "200":
+          description: How the link was delivered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Verification" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/verify:
+    post:
+      tags: [Auth]
+      operationId: verifyUser
+      summary: Complete a verification link
+      description: |
+        Sets the password if the user has none, makes the user active, and signs them in. The
+        link works once. An unknown, used or expired link gets `invalid_request`, whatever its
+        history. Rate-limited per client address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerifyRequest" }
+      responses:
+        "200":
+          description: Signed in. The session cookie is set.
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignedIn" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Sign in
+      description: |
+        Checks the password against every user with this email. One match is signed in, unless
+        the user is pending (`user_not_verified`), disabled (`user_disabled`) or the account is
+        suspended (`account_suspended`). Several matches, all with this password, give `409
+        conflict` with `details.accounts` listing them; send the same request again with
+        `account` set. No match gives `unauthenticated`. Rate-limited per client address and
+        per email.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Signed in. The session cookie is set.
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignedIn" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Sign out
+      description: Ends the session and clears the cookie. Needs the session cookie and the CSRF token.
+      security: [{ session: [] }]
+      responses:
+        "204":
+          description: Signed out.
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/password/forgot:
+    post:
+      tags: [Auth]
+      operationId: forgotPassword
+      summary: Ask for a password-reset link
+      description: |
+        Always answers 202. If an active user has this email, a reset link is mailed in the
+        background. Rate-limited per client address and per email.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ForgotRequest" }
+      responses:
+        "202":
+          description: Accepted. Says nothing about whether the email is known.
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/password/reset:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Set a new password with a reset link
+      description: |
+        The link works once. Every session of the user ends, and the answer starts a new
+        session. Rate-limited per client address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResetRequest" }
+      responses:
+        "200":
+          description: Signed in with the new password. The session cookie is set.
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignedIn" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      summary: The signed-in user
+      description: The user, their account and the CSRF token for unsafe requests.
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The user and account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/me/password:
+    post:
+      tags: [Auth]
+      operationId: changePassword
+      summary: Change your own password
+      description: |
+        Checks the current password, then ends every session of the user and starts a new one
+        in the cookie. The answer has no body: call `GET /me` for the new CSRF token.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordChange" }
+      responses:
+        "204":
+          description: Changed. Sessions were replaced.
+        default: { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearer:
@@ -330,6 +643,14 @@ components:
       description: |
         `Authorization: Bearer <credential>`. Installation admin keys start with `sc_admin_`;
         account keys start with `sc_acct_`.
+    session:
+      type: apiKey
+      in: cookie
+      name: __Host-selfcloud_session
+      description: |
+        The session cookie set by sign-in (named `selfcloud_session` when `public_url` is
+        http). Requests that change state also need the `Origin` header of this site and the
+        `X-CSRF-Token` header with the `csrf_token` from sign-in.
 
   parameters:
     acc:
@@ -337,6 +658,11 @@ components:
       in: path
       required: true
       schema: { type: string, example: acc_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    usr:
+      name: usr
+      in: path
+      required: true
+      schema: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     limit:
       name: limit
       in: query
@@ -611,7 +937,7 @@ components:
           properties:
             kind:
               type: string
-              description: admin_key, account_key or system (more kinds come with users and tokens).
+              description: admin_key, account_key, user, anonymous (a failed sign-in with no known user) or system.
             id: { type: string }
         action: { type: string, example: account.create }
         target: { type: string, description: The ID acted on. }
@@ -642,3 +968,170 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         finished_at: { type: [string, "null"], format: date-time }
+
+    User:
+      type: object
+      required: [id, external_id, email, display_name, locale, role, status, verified_at, created_at, updated_at]
+      properties:
+        id: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        external_id:
+          type: [string, "null"]
+          description: The client's own reference; unique within the account.
+        email: { type: string, format: email }
+        display_name: { type: string }
+        locale: { type: string, example: en }
+        role:
+          type: string
+          enum: [owner, member]
+        status:
+          type: string
+          enum: [pending, active, disabled]
+        verified_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    UserCreate:
+      type: object
+      required: [email, verification]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        display_name: { type: string, maxLength: 200 }
+        locale: { type: string, maxLength: 35, default: en, description: A tag such as en or pt-BR. }
+        role: { type: string, enum: [owner, member], default: member }
+        external_id: { type: string, maxLength: 255 }
+        verification:
+          type: string
+          enum: [email, link, none]
+          description: See the operation. `none` is for account and admin keys only.
+
+    UserUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name: { type: string, maxLength: 200 }
+        locale: { type: string, maxLength: 35 }
+        role: { type: string, enum: [owner, member] }
+        external_id: { type: string, maxLength: 255, description: An empty string clears it. }
+        status: { type: string, enum: [active, disabled] }
+
+    UserList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/User" }
+        next_cursor: { type: string, description: Absent on the last page. }
+
+    Verification:
+      type: object
+      required: [method]
+      properties:
+        method:
+          type: string
+          enum: [email, link]
+        url:
+          type: string
+          format: uri
+          description: For `link` only. The link to deliver; its token is in the fragment.
+        token:
+          type: string
+          description: For `link` only. The token itself, shown once.
+        expires_at:
+          type: string
+          format: date-time
+          description: For `link` only.
+        sent:
+          type: boolean
+          description: For `email` only. False when the mail could not be sent.
+
+    UserWithVerification:
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          properties:
+            verification: { $ref: "#/components/schemas/Verification" }
+
+    VerificationRequest:
+      type: object
+      required: [method]
+      additionalProperties: false
+      properties:
+        method: { type: string, enum: [email, link, none] }
+
+    PasswordResetRequest:
+      type: object
+      required: [method]
+      additionalProperties: false
+      properties:
+        method: { type: string, enum: [email, link] }
+
+    VerifyRequest:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string, description: The token from the link's fragment. }
+        password:
+          type: string
+          minLength: 8
+          maxLength: 256
+          description: Required when the user has no password yet.
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        account:
+          type: string
+          description: The account to sign in to, when the email is in several.
+
+    ForgotRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        account: { type: string, description: The account, when the email is in several. }
+
+    ResetRequest:
+      type: object
+      required: [token, password]
+      additionalProperties: false
+      properties:
+        token: { type: string }
+        password: { type: string, minLength: 8, maxLength: 256 }
+
+    PasswordChange:
+      type: object
+      required: [current_password, new_password]
+      additionalProperties: false
+      properties:
+        current_password: { type: string }
+        new_password: { type: string, minLength: 8, maxLength: 256 }
+
+    SignedIn:
+      type: object
+      required: [user, csrf_token]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        csrf_token:
+          type: string
+          description: Send it as `X-CSRF-Token` on every request that changes state.
+
+    Me:
+      type: object
+      required: [user, account, csrf_token]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        account:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string }
+            name: { type: string }
+        csrf_token: { type: string }

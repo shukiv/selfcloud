@@ -18,10 +18,17 @@ import (
 	apispec "selfcloud/api"
 	"selfcloud/internal/apierr"
 	"selfcloud/internal/config"
+	"selfcloud/internal/mail"
 	"selfcloud/internal/store"
 )
 
 func newTestServer(t *testing.T, mutate ...func(*config.Config)) *Server {
+	t.Helper()
+	return newTestServerWith(t, nil, mutate...)
+}
+
+// newTestServerWith is newTestServer with a mail sender, which nil leaves unconfigured.
+func newTestServerWith(t *testing.T, mailer mail.Sender, mutate ...func(*config.Config)) *Server {
 	t.Helper()
 	cfg := config.Defaults()
 	cfg.DataDir = t.TempDir()
@@ -38,7 +45,7 @@ func newTestServer(t *testing.T, mutate ...func(*config.Config)) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s, err := New(Options{Config: cfg, Store: st})
+	s, err := New(Options{Config: cfg, Store: st, Mailer: mailer})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,8 @@
+Subject: Verify your account
+
+Open this link to verify your account and set a password:
+
+{{.URL}}
+
+The link works once and expires at {{.ExpiresAt}}.
+If you did not expect this message, you can ignore it.

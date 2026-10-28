@@ -12,6 +12,7 @@ import (
 	"selfcloud/internal/apierr"
 	"selfcloud/internal/auth"
 	"selfcloud/internal/id"
+	"selfcloud/internal/store"
 )
 
 type ctxKey struct{}
@@ -23,6 +24,7 @@ type reqInfo struct {
 	route      string // route label: "GET /api/v1/info", or "unmatched"
 	secretPath bool
 	principal  *auth.Principal // set once the route has authenticated the caller
+	session    *store.Session  // set when the caller signed in with a session cookie
 	err        *apierr.Error
 	sw         *statusWriter
 }
@@ -30,6 +32,14 @@ type reqInfo struct {
 func infoFrom(ctx context.Context) *reqInfo {
 	v, _ := ctx.Value(ctxKey{}).(*reqInfo)
 	return v
+}
+
+// sessionOf returns the session the request was made with, or nil.
+func sessionOf(r *http.Request) *store.Session {
+	if info := infoFrom(r.Context()); info != nil {
+		return info.session
+	}
+	return nil
 }
 
 func (i *reqInfo) wroteHeader() bool { return i.sw != nil && i.sw.status != 0 }
@@ -169,4 +179,12 @@ func (s *Server) drain(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// requestID returns the request's ID, for logs.
+func requestID(r *http.Request) string {
+	if info := infoFrom(r.Context()); info != nil {
+		return info.id
+	}
+	return ""
 }

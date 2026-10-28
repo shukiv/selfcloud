@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
@@ -12,29 +13,140 @@ import (
 	"selfcloud/internal/store"
 )
 
-// keyTouchInterval limits how often a key's last-used time is written.
-const keyTouchInterval = time.Minute
+// keyTouchInterval limits how often a key's last-used time is written. sessionTouchInterval does
+// the same for a session's last-seen time.
+const (
+	keyTouchInterval     = time.Minute
+	sessionTouchInterval = time.Minute
+)
 
 var errBadKey = apierr.New(apierr.Unauthenticated, "the key is not valid")
 
-// authenticate identifies the caller from the Authorization header.
-func (s *Server) authenticate(r *http.Request) (*auth.Principal, error) {
+// authenticate identifies the caller. A Bearer credential in the Authorization header wins;
+// without that header, the session cookie identifies a signed-in user. The session is returned
+// only for the cookie case.
+func (s *Server) authenticate(r *http.Request) (*auth.Principal, *store.Session, error) {
 	h := r.Header.Get("Authorization")
 	if h == "" {
-		return nil, apierr.New(apierr.Unauthenticated, "credentials are required")
+		return s.authenticateSession(r)
 	}
 	scheme, cred, ok := strings.Cut(h, " ")
 	cred = strings.TrimSpace(cred)
 	if !ok || !strings.EqualFold(scheme, "Bearer") || cred == "" {
-		return nil, apierr.New(apierr.Unauthenticated, "use Authorization: Bearer <credential>")
+		return nil, nil, apierr.New(apierr.Unauthenticated, "use Authorization: Bearer <credential>")
 	}
+	var (
+		p   *auth.Principal
+		err error
+	)
 	switch {
 	case strings.HasPrefix(cred, auth.AdminKeyPrefix):
-		return s.authenticateKey(r.Context(), auth.AdminKeyPrefix, cred)
+		p, err = s.authenticateKey(r.Context(), auth.AdminKeyPrefix, cred)
 	case strings.HasPrefix(cred, auth.AccountKeyPrefix):
-		return s.authenticateKey(r.Context(), auth.AccountKeyPrefix, cred)
+		p, err = s.authenticateKey(r.Context(), auth.AccountKeyPrefix, cred)
+	default:
+		return nil, nil, apierr.New(apierr.Unauthenticated, "unrecognised credential")
 	}
-	return nil, apierr.New(apierr.Unauthenticated, "unrecognised credential")
+	return p, nil, err
+}
+
+// authenticateSession identifies a signed-in user from the session cookie. An unsafe method
+// (POST, PUT, PATCH, DELETE) must also come from this site's origin and carry the session's CSRF
+// token, which stops another site from making the browser act for the user.
+func (s *Server) authenticateSession(r *http.Request) (*auth.Principal, *store.Session, error) {
+	ctx := r.Context()
+	c, err := r.Cookie(s.sessionCookie)
+	if err != nil || !auth.ValidToken(c.Value) {
+		return nil, nil, apierr.New(apierr.Unauthenticated, "credentials are required")
+	}
+	sess, err := s.store.SessionByHash(ctx, auth.HashToken(c.Value))
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	now := time.Now()
+	if !now.Before(sess.ExpiresAt) {
+		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has expired; sign in again")
+	}
+	u, err := s.store.User(ctx, sess.AccountID, sess.UserID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	switch u.Status {
+	case store.UserPending:
+		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+	case store.UserDisabled:
+		return nil, nil, apierr.New(apierr.UserDisabled, "the user is disabled")
+	}
+	acc, err := s.store.Account(ctx, sess.AccountID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	switch acc.Status {
+	case store.AccountSuspended:
+		return nil, nil, apierr.New(apierr.AccountSuspended, "the account is suspended")
+	case store.AccountDeleting:
+		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+	}
+	if isUnsafe(r.Method) {
+		if err := s.checkCSRF(r, sess); err != nil {
+			return nil, nil, err
+		}
+	}
+	if now.Sub(sess.LastSeenAt) > sessionTouchInterval {
+		if err := s.touchSession(ctx, sess, now); err != nil {
+			s.log.Warn("cannot record session use", "request_id", requestID(r), "error", err)
+		}
+	}
+	p := &auth.Principal{Kind: auth.KindUser, ID: u.ID, AccountID: u.AccountID, UserID: u.ID, Role: u.Role}
+	return p, sess, nil
+}
+
+// isUnsafe reports whether a method changes state, and so needs the CSRF check.
+func isUnsafe(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	}
+	return false
+}
+
+// checkCSRF requires the request's Origin to be this site and X-CSRF-Token to match the
+// session's token. The token comparison is constant-time.
+func (s *Server) checkCSRF(r *http.Request, sess *store.Session) error {
+	if r.Header.Get("Origin") != s.origin {
+		return apierr.New(apierr.Forbidden, "the request must come from this site")
+	}
+	got := r.Header.Get("X-CSRF-Token")
+	if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(sess.CSRFToken)) != 1 {
+		return apierr.New(apierr.Forbidden, "the CSRF token is missing or wrong")
+	}
+	return nil
+}
+
+// touchSession records a use of the session, and pushes its expiry out to the idle limit (never
+// past its maximum age).
+func (s *Server) touchSession(ctx context.Context, sess *store.Session, now time.Time) error {
+	return s.store.Write(ctx, func(tx *store.Tx) error {
+		return tx.TouchSession(ctx, sess.IDHash, now, s.sessionExpiry(sess.CreatedAt, now))
+	})
+}
+
+// sessionExpiry returns when a session that began at created, and was last used at now, ends.
+func (s *Server) sessionExpiry(created, now time.Time) time.Time {
+	idle := now.Add(s.cfg.Sessions.IdleTimeout.D())
+	if abs := created.Add(s.cfg.Sessions.MaxAge.D()); abs.Before(idle) {
+		return abs
+	}
+	return idle
 }
 
 func (s *Server) authenticateKey(ctx context.Context, prefix, secret string) (*auth.Principal, error) {

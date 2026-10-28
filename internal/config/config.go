@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	netmail "net/mail"
 	"net/netip"
 	"net/url"
 	"os"
@@ -51,11 +52,64 @@ type Config struct {
 	// deployments can provision the first admin key as a secret.
 	AdminKeyFile string `yaml:"admin_key_file"`
 
-	Log     LogConfig     `yaml:"log"`
-	Store   StoreConfig   `yaml:"store"`
-	Storage StorageConfig `yaml:"storage"`
-	Upload  UploadConfig  `yaml:"upload"`
-	UI      UIConfig      `yaml:"ui"`
+	Log       LogConfig       `yaml:"log"`
+	Store     StoreConfig     `yaml:"store"`
+	Storage   StorageConfig   `yaml:"storage"`
+	Upload    UploadConfig    `yaml:"upload"`
+	UI        UIConfig        `yaml:"ui"`
+	Users     UsersConfig     `yaml:"users"`
+	Sessions  SessionsConfig  `yaml:"sessions"`
+	Mail      MailConfig      `yaml:"mail"`
+	RateLimit RateLimitConfig `yaml:"rate_limit"`
+}
+
+// UsersConfig controls users, verification and password reset.
+type UsersConfig struct {
+	// VerificationTTL is how long a verification link works.
+	VerificationTTL Duration `yaml:"verification_ttl"`
+	// ResetTTL is how long a password-reset link works.
+	ResetTTL Duration `yaml:"reset_ttl"`
+	// VerifyURLTemplate builds the verification link. {public_url} and {token} are replaced;
+	// the token is URL-escaped and sits in the fragment, so it stays out of server logs.
+	VerifyURLTemplate string `yaml:"verify_url_template"`
+	// ResetURLTemplate builds the password-reset link, with the same placeholders.
+	ResetURLTemplate string `yaml:"reset_url_template"`
+}
+
+// SessionsConfig controls web sessions.
+type SessionsConfig struct {
+	// IdleTimeout ends a session that has not been used for this long.
+	IdleTimeout Duration `yaml:"idle_timeout"`
+	// MaxAge ends a session this long after it began, however busy it is.
+	MaxAge Duration `yaml:"max_age"`
+}
+
+// MailConfig controls outgoing mail. Mail is configured when smtp_host and from are set.
+type MailConfig struct {
+	SMTPHost string `yaml:"smtp_host"`
+	SMTPPort int    `yaml:"smtp_port"`
+	// SMTPUsername and SMTPPasswordFile authenticate to the SMTP server. The password is read
+	// from the file, never from the configuration, so it stays out of YAML and the environment.
+	SMTPUsername     string `yaml:"smtp_username"`
+	SMTPPasswordFile string `yaml:"smtp_password_file"`
+	// SMTPTLS is starttls (the default), tls (implicit TLS, usually port 465) or none.
+	SMTPTLS string `yaml:"smtp_tls"`
+	// From is the sender address, optionally with a name: "Drive <drive@example.com>".
+	From string `yaml:"from"`
+	// TemplatesDir optionally overrides the built-in mail templates. Its files are named like
+	// the built-in ones, for example verify.en.txt.
+	TemplatesDir string `yaml:"templates_dir"`
+}
+
+// Configured reports whether outgoing mail is set up.
+func (m MailConfig) Configured() bool { return m.SMTPHost != "" && m.From != "" }
+
+// RateLimitConfig limits attempts at sign-in, verification and password reset.
+type RateLimitConfig struct {
+	// PerIPPerMinute limits each client address. Verification and reset are limited only this way.
+	PerIPPerMinute int `yaml:"per_ip_per_minute"`
+	// PerEmailPerMinute limits each email address at sign-in and password-reset requests.
+	PerEmailPerMinute int `yaml:"per_email_per_minute"`
 }
 
 // LogConfig controls logging.
@@ -108,6 +162,21 @@ func Defaults() *Config {
 			MaxFileSize:  100 * GiB,
 			MaxChunkSize: 64 * MiB,
 			Expiry:       Duration(24 * time.Hour),
+		},
+		Users: UsersConfig{
+			VerificationTTL:   Duration(72 * time.Hour),
+			ResetTTL:          Duration(time.Hour),
+			VerifyURLTemplate: "{public_url}/verify#token={token}",
+			ResetURLTemplate:  "{public_url}/reset-password#token={token}",
+		},
+		Sessions: SessionsConfig{
+			IdleTimeout: Duration(168 * time.Hour),
+			MaxAge:      Duration(720 * time.Hour),
+		},
+		Mail: MailConfig{SMTPPort: 587, SMTPTLS: "starttls"},
+		RateLimit: RateLimitConfig{
+			PerIPPerMinute:    10,
+			PerEmailPerMinute: 5,
 		},
 	}
 }
@@ -201,6 +270,36 @@ func (c *Config) Validate() error {
 	}
 	if c.Upload.Expiry <= 0 {
 		bad("upload.expiry must be positive")
+	}
+	if c.Users.VerificationTTL <= 0 || c.Users.ResetTTL <= 0 {
+		bad("users.verification_ttl and users.reset_ttl must be positive")
+	}
+	for name, tmpl := range map[string]string{
+		"users.verify_url_template": c.Users.VerifyURLTemplate,
+		"users.reset_url_template":  c.Users.ResetURLTemplate,
+	} {
+		if !strings.Contains(tmpl, "{token}") {
+			bad("%s must contain {token}", name)
+		}
+	}
+	if c.Sessions.IdleTimeout <= 0 || c.Sessions.MaxAge <= 0 {
+		bad("sessions.idle_timeout and sessions.max_age must be positive")
+	}
+	if c.RateLimit.PerIPPerMinute <= 0 || c.RateLimit.PerEmailPerMinute <= 0 {
+		bad("rate_limit values must be positive")
+	}
+	if c.Mail.Configured() {
+		if c.Mail.SMTPPort < 1 || c.Mail.SMTPPort > 65535 {
+			bad("mail.smtp_port %d is not a port number", c.Mail.SMTPPort)
+		}
+		switch c.Mail.SMTPTLS {
+		case "starttls", "tls", "none":
+		default:
+			bad("mail.smtp_tls %q is not starttls, tls or none", c.Mail.SMTPTLS)
+		}
+		if _, err := netmail.ParseAddress(c.Mail.From); err != nil {
+			bad("mail.from %q is not an address: %v", c.Mail.From, err)
+		}
 	}
 	return errors.Join(errs...)
 }
