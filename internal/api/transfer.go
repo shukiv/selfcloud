@@ -138,26 +138,33 @@ func planTransfer(ctx context.Context, tx *store.Tx, src *store.Node, in transfe
 	if taken == nil || (excludeSelf && taken.ID == src.ID) {
 		return plan, nil
 	}
-	switch in.OnConflict {
+	if err := applyConflict(ctx, tx, plan, taken, in.OnConflict, src.Kind, src.ID); err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+// applyConflict decides what a name already taken in the target directory means: refuse, rename
+// the plan, or mark the file it replaces. kind is the kind of the node placed; selfID is that
+// node's ID, or "" for a node not yet in the tree (an upload).
+func applyConflict(ctx context.Context, tx *store.Tx, plan *transferPlan, taken *store.Node, onConflict, kind, selfID string) error {
+	switch onConflict {
 	case "", "fail":
-		return nil, nameConflict(taken)
+		return nameConflict(taken)
 	case "rename":
-		if err := freeName(ctx, tx, plan, src.Kind); err != nil {
-			return nil, err
-		}
-		return plan, nil
+		return freeName(ctx, tx, plan, kind)
 	case "replace":
-		if taken.ID == src.ID {
-			return nil, apierr.New(apierr.Conflict, "a file cannot replace itself")
+		if taken.ID == selfID {
+			return apierr.New(apierr.Conflict, "a file cannot replace itself")
 		}
-		if src.Kind != store.KindFile || taken.Kind != store.KindFile {
-			return nil, apierr.New(apierr.Conflict, "replace works only file over file; a folder is never replaced").
+		if kind != store.KindFile || taken.Kind != store.KindFile {
+			return apierr.New(apierr.Conflict, "replace works only file over file; a folder is never replaced").
 				With("id", taken.ID)
 		}
 		plan.replaced = taken
-		return plan, nil
+		return nil
 	}
-	return nil, apierr.New(apierr.InvalidRequest, "on_conflict must be fail, rename or replace")
+	return apierr.New(apierr.InvalidRequest, "on_conflict must be fail, rename or replace")
 }
 
 // freeName changes plan's name to the first "base (n).ext" that is free in the target directory.

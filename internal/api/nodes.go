@@ -257,9 +257,7 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 	if r.ContentLength > limit {
 		return blob.Committed{}, tooLarge(limit)
 	}
-	deadline := s.cfg.Upload.BodyTimeout.D() + time.Duration(limit/int64(config.MiB))*time.Second
-	// Not every writer supports deadlines (test recorders do not); the cap still holds without one.
-	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(deadline))
+	s.setBodyDeadline(w, limit)
 	wr, err := s.blobs.Create(r.Context(), accountID, limit)
 	if err != nil {
 		return blob.Committed{}, err
@@ -272,6 +270,14 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 		return blob.Committed{}, apierr.Wrap(apierr.InvalidRequest, "the request body could not be read", err)
 	}
 	return wr.Commit()
+}
+
+// setBodyDeadline sets the time a request body may take to arrive: upload.body_timeout plus one
+// second per MiB of the size cap. Not every writer supports deadlines (test recorders do not); the
+// cap still holds without one.
+func (s *Server) setBodyDeadline(w http.ResponseWriter, limit int64) {
+	deadline := s.cfg.Upload.BodyTimeout.D() + time.Duration(limit/int64(config.MiB))*time.Second
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(deadline))
 }
 
 func tooLarge(limit int64) error {

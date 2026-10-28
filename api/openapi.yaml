@@ -38,6 +38,10 @@ tags:
       Sign-in, sign-out, verification and password reset. These are rate-limited per client
       address and, for sign-in and reset requests, per email address. Answers do not reveal
       whether an email address is known.
+  - name: Uploads
+    description: |
+      Resumable uploads, following tus 1.0.0 (creation, creation-with-upload, expiration,
+      checksum, termination). An upload that is not finished expires after `upload.expiry`.
   - name: Jobs
     description: Background work started by a request that answered 202.
   - name: Files
@@ -1002,6 +1006,186 @@ paths:
               schema: { $ref: "#/components/schemas/Node" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/uploads:
+    parameters:
+      - $ref: "#/components/parameters/tusResumable"
+    options:
+      tags: [Uploads]
+      operationId: uploadOptions
+      summary: What the upload protocol supports and the limits
+      description: |
+        No credential is needed. `Tus-Max-Size` is the largest file, and
+        `Selfcloud-Max-Chunk-Size` the largest piece. Clients behind a proxy with a request cap
+        should choose a piece size at or under that cap.
+      responses:
+        "204":
+          description: Advertised.
+          headers:
+            Tus-Version: { $ref: "#/components/headers/Tus-Version" }
+            Tus-Extension: { $ref: "#/components/headers/Tus-Extension" }
+            Tus-Max-Size: { $ref: "#/components/headers/Tus-Max-Size" }
+            Tus-Checksum-Algorithm: { $ref: "#/components/headers/Tus-Checksum-Algorithm" }
+            Selfcloud-Max-Chunk-Size: { $ref: "#/components/headers/Selfcloud-Max-Chunk-Size" }
+    post:
+      tags: [Uploads]
+      operationId: createUpload
+      summary: Start a resumable upload (tus creation)
+      description: |
+        `Upload-Length` is required and the length must be declared. `Upload-Metadata` names the
+        target: `folder` (required, a folder ID), then either `parent` (a directory's ID) or `path`
+        (a directory path under the folder's root, e.g. `/a/b`), `name` (the file name; `filename`
+        is accepted as well), and optionally `on_conflict` (`fail`, the default; `rename`;
+        `replace`), `parents` (`true` makes missing directories), `mime_type`, and `sha256`: the
+        64 hex digits (lowercase or not) of the whole file, which is checked when the last piece
+        arrives. A mismatch is `checksum_mismatch` (460) and the upload is dropped. Other keys are
+        ignored. Under `fail`, a name already taken is `conflict` now.
+
+        Limits: a caller may hold `upload.max_open_per_principal` unfinished uploads (default 100),
+        and an account `upload.max_open_per_account` (default 1000); above either, creation is
+        `too_many_uploads` (429) with `details.scope` (`caller` or `account`). Creation is also
+        rate limited per caller, at 60 a minute, and answers `rate_limited` (429). The disk must
+        hold the unwritten bytes of every open upload, plus `storage.min_free`, or the answer is
+        `storage_full`.
+
+        A creation whose first piece fails is removed, since the reply carries no `Location`. A
+        completion that meets a name taken under `fail` answers `conflict` with
+        `details.state: awaiting_commit`; the reply carries `Location` and `Selfcloud-Upload-State`,
+        and the upload waits for `POST .../commit`.
+
+        The request may carry the first piece (creation-with-upload), with
+        `Content-Type: application/offset+octet-stream`. The reply's `Location` is the upload's
+        URL. A file that the last piece completes is created before the reply; its ID comes back in
+        `Selfcloud-Node-ID`.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/tusResumable"
+        - $ref: "#/components/parameters/uploadLength"
+        - $ref: "#/components/parameters/uploadMetadata"
+        - $ref: "#/components/parameters/uploadChecksum"
+      requestBody:
+        required: false
+        content:
+          application/offset+octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: Created. `Upload-Offset` says how much arrived with the request.
+          headers:
+            Location: { schema: { type: string, format: uri } }
+            Tus-Resumable: { $ref: "#/components/headers/Tus-Resumable" }
+            Upload-Offset: { $ref: "#/components/headers/Upload-Offset" }
+            Upload-Expires: { $ref: "#/components/headers/Upload-Expires" }
+            Selfcloud-Node-ID: { $ref: "#/components/headers/Selfcloud-Node-ID" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/uploads/{upl}/commit:
+    parameters:
+      - $ref: "#/components/parameters/upl"
+    post:
+      tags: [Uploads]
+      operationId: commitUpload
+      summary: Commit an upload that waits for a name
+      description: |
+        Only the upload's creator may commit, and only while the upload is `awaiting_commit`: all
+        its bytes are in, and a completion found the name taken under `fail`. The body gives the
+        new target; each field left out keeps the upload's own. The file is checked for access and
+        for a free name, then created. Answers `conflict` with `details.state: awaiting_commit`
+        again if the name is still taken, and `conflict` with `details.state: uploading` if the
+        upload is not yet complete.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadCommit" }
+      responses:
+        "201":
+          description: The file, created under the new target.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/uploads/{upl}:
+    parameters:
+      - $ref: "#/components/parameters/upl"
+      - $ref: "#/components/parameters/tusResumable"
+    head:
+      tags: [Uploads]
+      operationId: headUpload
+      summary: How far an upload got, for resuming
+      description: Only the creator may ask. A deleted or completed upload is `not_found`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The durable offset and the length.
+          headers:
+            Tus-Resumable: { $ref: "#/components/headers/Tus-Resumable" }
+            Upload-Offset: { $ref: "#/components/headers/Upload-Offset" }
+            Upload-Length: { $ref: "#/components/headers/Upload-Length" }
+            Upload-Expires: { $ref: "#/components/headers/Upload-Expires" }
+            Selfcloud-Upload-State: { $ref: "#/components/headers/Selfcloud-Upload-State" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Uploads]
+      operationId: patchUpload
+      summary: Send a piece at the durable offset (tus PATCH)
+      description: |
+        `Upload-Offset` must equal the server's offset, or the answer is `upload_offset_mismatch`
+        with `details.offset`. The body goes at that offset and is synced before the offset moves.
+        A piece over `Selfcloud-Max-Chunk-Size` is `chunk_too_large`; one that would pass the
+        declared length is `too_large`. With `Upload-Checksum`, a piece that does not match is
+        `checksum_mismatch` (460) and nothing is kept. When the body stops early the bytes that
+        arrived are kept and the request fails, so HEAD gives the resume point.
+
+        Each piece checks access again: a revoked grant or a disabled user stops the upload. Only
+        one piece runs at a time. A new request from the same creator stops the one holding the
+        slot (a half-open connection, say) and waits up to 5 seconds for it to finish; if it does
+        not, the new request is `locked` (409). A piece with no bytes, sent at the full length,
+        retries completing the file.
+
+        A piece whose body is cut short with `Upload-Checksum` set cannot be verified, so it is
+        dropped and the offset stays. A piece completing an upload whose name is taken under `fail`
+        answers `conflict` with `details.state: awaiting_commit`, as in creation.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/tusResumable"
+        - name: Upload-Offset
+          in: header
+          required: true
+          schema: { type: integer, format: int64, minimum: 0 }
+        - $ref: "#/components/parameters/uploadChecksum"
+      requestBody:
+        required: true
+        content:
+          application/offset+octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "204":
+          description: The piece is kept. `Upload-Offset` is the new offset.
+          headers:
+            Tus-Resumable: { $ref: "#/components/headers/Tus-Resumable" }
+            Upload-Offset: { $ref: "#/components/headers/Upload-Offset" }
+            Upload-Expires: { $ref: "#/components/headers/Upload-Expires" }
+            Selfcloud-Node-ID: { $ref: "#/components/headers/Selfcloud-Node-ID" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Uploads]
+      operationId: deleteUpload
+      summary: Terminate an upload (tus termination)
+      description: Removes the upload and its bytes at once. Needs write on the folder.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/tusResumable"
+      responses:
+        "204":
+          description: Terminated.
+          headers:
+            Tus-Resumable: { $ref: "#/components/headers/Tus-Resumable" }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/nodes/{nod}:
     parameters:
       - $ref: "#/components/parameters/nod"
@@ -1231,6 +1415,38 @@ components:
       in: path
       required: true
       schema: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    upl:
+      name: upl
+      in: path
+      required: true
+      schema: { type: string, example: upl_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    tusResumable:
+      name: Tus-Resumable
+      in: header
+      required: true
+      description: "Must be 1.0.0 (except on OPTIONS). Otherwise 412 precondition_failed."
+      schema: { type: string, enum: ["1.0.0"] }
+    uploadLength:
+      name: Upload-Length
+      in: header
+      required: true
+      description: The file's length in bytes. Deferred lengths are not supported.
+      schema: { type: integer, format: int64, minimum: 0 }
+    uploadMetadata:
+      name: Upload-Metadata
+      in: header
+      required: true
+      description: |
+        Comma-separated `key base64value` pairs; see the operation for the keys. The value is
+        base64 of the text (`folder` takes a folder ID, `path` a directory path).
+      schema: { type: string, maxLength: 8192 }
+    uploadChecksum:
+      name: Upload-Checksum
+      in: header
+      description: |
+        `<algorithm> <base64 digest>` of the piece, with algorithm `sha256` or `sha1`. A piece
+        that does not match is refused and nothing is kept.
+      schema: { type: string }
     limit:
       name: limit
       in: query
@@ -1243,6 +1459,39 @@ components:
       schema: { type: string }
 
   headers:
+    Tus-Resumable:
+      description: The tus version the server speaks, 1.0.0.
+      schema: { type: string, enum: ["1.0.0"] }
+    Tus-Version:
+      description: The tus versions the server supports, on a 412.
+      schema: { type: string, example: "1.0.0" }
+    Tus-Extension:
+      description: The tus extensions the server has.
+      schema: { type: string, example: "creation,creation-with-upload,expiration,checksum,termination" }
+    Tus-Max-Size:
+      description: The largest file in bytes.
+      schema: { type: integer, format: int64 }
+    Tus-Checksum-Algorithm:
+      description: The checksum algorithms a piece may use.
+      schema: { type: string, example: "sha1,sha256" }
+    Upload-Offset:
+      description: "The durable offset: bytes that are on disk and synced."
+      schema: { type: integer, format: int64, minimum: 0 }
+    Upload-Length:
+      description: The declared length of the file.
+      schema: { type: integer, format: int64, minimum: 0 }
+    Upload-Expires:
+      description: When the upload expires unless a piece refreshes it (HTTP date).
+      schema: { type: string }
+    Selfcloud-Max-Chunk-Size:
+      description: The largest piece in bytes (upload.max_chunk_size).
+      schema: { type: integer, format: int64 }
+    Selfcloud-Node-ID:
+      description: The ID of the file that the request completed.
+      schema: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    Selfcloud-Upload-State:
+      description: "`awaiting_commit`: all bytes are in and the upload waits for a name (see the commit route)."
+      schema: { type: string, enum: [awaiting_commit] }
     X-Request-Id:
       description: The request's ID, also logged by the server.
       schema: { type: string, example: req_5m2k8x1v0c3d9q7r4t6w8y0z2a }
@@ -1286,6 +1535,16 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 255 }
         external_id: { type: string, maxLength: 255, description: Empty clears it. }
+
+    UploadCommit:
+      type: object
+      additionalProperties: false
+      description: The new target of an upload that waits for a name. Missing fields keep the upload's own.
+      properties:
+        parent: { type: string, description: A directory's ID, in the upload's folder. }
+        path: { type: string, maxLength: 4096, description: "A directory path under the folder's root, e.g. /a/b." }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        on_conflict: { type: string, enum: [fail, rename, replace] }
 
     Node:
       type: object
@@ -1485,6 +1744,8 @@ components:
         | upload_offset_mismatch | 409 | Upload-Offset differs from the server's. |
         | locked | 409 | Locked by an office editor. |
         | upload_expired | 410 | The upload expired; start again. |
+        | unsupported_media_type | 415 | A tus piece must be application/offset+octet-stream. |
+        | too_many_uploads | 429 | The caller or the account holds the most unfinished uploads it may; `details.scope` says which. |
         | precondition_required | 428 | A write that needs If-Match sent none. |
         | precondition_failed | 412 | Stale ETag in If-Match. |
         | too_large | 413 | File over the size limit. |
@@ -1511,6 +1772,8 @@ components:
         - upload_offset_mismatch
         - locked
         - upload_expired
+        - unsupported_media_type
+        - too_many_uploads
         - precondition_failed
         - precondition_required
         - too_large

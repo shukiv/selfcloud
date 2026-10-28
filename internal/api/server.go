@@ -18,6 +18,7 @@ import (
 	"selfcloud/internal/auth"
 	"selfcloud/internal/blob"
 	"selfcloud/internal/config"
+	"selfcloud/internal/fsutil"
 	"selfcloud/internal/jobs"
 	"selfcloud/internal/mail"
 	"selfcloud/internal/store"
@@ -68,6 +69,16 @@ type Server struct {
 	// beforeWrite is a test hook, run before a mutating request takes the write lock. Nil in
 	// production.
 	beforeWrite func()
+	// uploadSlots holds the PATCH slot of each upload with a piece or a delete in progress; see
+	// takeUploadSlot. uploadSlotWait is how long a request waits for a slot before it gives up.
+	uploadSlotMu   sync.Mutex
+	uploadSlots    map[string]*uploadSlot
+	uploadSlotWait time.Duration
+	// freeBytes reports the free space of the file system holding a path; a test replaces it.
+	freeBytes func(dir string) (uint64, error)
+	// beforeCommitUpload is a test hook, run inside a completing upload's transaction after the file
+	// has moved, to simulate a crash before the commit. Nil in production.
+	beforeCommitUpload func() error
 }
 
 // handlerFunc is a handler that returns its error instead of writing it; the route wrapper
@@ -155,6 +166,8 @@ func New(opts Options) (*Server, error) {
 			// Each address gets one reset an hour that the account cap does not count, so one
 			// caller who uses up an account's cap on repeats cannot stop its users' first resets.
 			"mail.forgot.first": newLimiterRate(1, time.Hour),
+			// Starting uploads, per caller: each one reserves disk, so a flood of them is refused.
+			"upload.create": newLimiter(60),
 		},
 	}
 	if pub.Scheme == "https" {
@@ -163,6 +176,9 @@ func New(opts Options) (*Server, error) {
 	s.jobs.Handle(jobAccountDelete, s.runAccountDelete)
 	s.jobs.Handle(jobCopyNode, s.runCopyJob)
 	s.copySyncNodes = syncCopyNodes
+	s.freeBytes = fsutil.FreeBytes
+	s.uploadSlots = map[string]*uploadSlot{}
+	s.uploadSlotWait = 5 * time.Second
 
 	mux := http.NewServeMux()
 	for _, rt := range s.routes() {
@@ -235,6 +251,13 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/copy", handle: s.handleCopyNode, auth: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true},
+
+		{method: http.MethodOptions, path: "/api/v1/uploads", handle: s.handleUploadOptions},
+		{method: http.MethodPost, path: "/api/v1/uploads", handle: s.handleCreateUpload, auth: true},
+		{method: http.MethodHead, path: "/api/v1/uploads/{upl}", handle: s.handleHeadUpload, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/uploads/{upl}", handle: s.handlePatchUpload, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/uploads/{upl}", handle: s.handleDeleteUpload, auth: true},
+		{method: http.MethodPost, path: "/api/v1/uploads/{upl}/commit", handle: s.handleCommitUpload, auth: true},
 	}
 	if s.cfg.MetricsListen == "" {
 		rs = append(rs, route{method: http.MethodGet, path: "/metrics", handle: s.handleMetrics})
@@ -341,7 +364,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	go func() { defer close(jobsDone); s.jobs.Run(jobsCtx) }()
 	sweepDone := make(chan struct{})
 	sw := sweep.New(sweep.Options{Store: s.store, Blobs: s.blobs, DeleteGrace: s.cfg.Blobs.DeleteGrace.D(),
-		Interval: sweepInterval, Logger: s.log})
+		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(), Logger: s.log})
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
 
 	var serveErr error

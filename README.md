@@ -77,6 +77,13 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 make check   # gofmt, go vet, tests with the race detector
 ```
 
+The upload benchmark pushes 1 GiB through the resumable-upload routes in 64 MiB pieces and reports
+MB/s. It writes about 1 GiB to a temporary directory, so point `TMPDIR` at a disk with room:
+
+```sh
+TMPDIR=/path/with/space go test ./internal/api -run '^$' -bench BenchmarkUpload -benchtime 1x
+```
+
 ## Licence
 
 Not chosen yet.

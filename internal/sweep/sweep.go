@@ -8,6 +8,7 @@ package sweep
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -28,16 +29,23 @@ type Options struct {
 	Blobs       blob.Store
 	DeleteGrace time.Duration // how long an orphan blob is kept before its file is removed
 	Interval    time.Duration // how often Run sweeps
-	Logger      *slog.Logger
+	// UploadExpiry is upload.expiry: an upload file with no row is removed once it is this old.
+	// Zero means defaultUploadExpiry.
+	UploadExpiry time.Duration
+	Logger       *slog.Logger
 }
+
+// defaultUploadExpiry is upload.expiry's default, used when none is given.
+const defaultUploadExpiry = 24 * time.Hour
 
 // Sweeper runs the housekeeping.
 type Sweeper struct {
-	st       *store.Store
-	blobs    blob.Store
-	grace    time.Duration
-	interval time.Duration
-	log      *slog.Logger
+	st           *store.Store
+	blobs        blob.Store
+	grace        time.Duration
+	interval     time.Duration
+	uploadExpiry time.Duration
+	log          *slog.Logger
 }
 
 // New returns a Sweeper. It does nothing until Run or Once is called.
@@ -46,7 +54,11 @@ func New(o Options) *Sweeper {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Sweeper{st: o.Store, blobs: o.Blobs, grace: o.DeleteGrace, interval: o.Interval, log: log}
+	if o.UploadExpiry <= 0 {
+		o.UploadExpiry = defaultUploadExpiry
+	}
+	return &Sweeper{st: o.Store, blobs: o.Blobs, grace: o.DeleteGrace, interval: o.Interval,
+		uploadExpiry: o.UploadExpiry, log: log}
 }
 
 // Result counts what one pass did.
@@ -57,6 +69,8 @@ type Result struct {
 	Sessions      int64 // expired sessions removed
 	Verifications int64 // expired or used verification and reset tokens removed
 	TempRemoved   int   // abandoned temporary upload files removed
+	Uploads       int   // expired resumable uploads removed, rows and files
+	UploadFiles   int   // resumable upload files with no row, removed
 }
 
 // Run sweeps at once and then every interval, until ctx is cancelled.
@@ -93,6 +107,12 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	// Files under blobs/ that no row refers to are not looked for here: that means walking the whole
 	// tree. A future `selfcloud fsck` command does it.
 	if res.TempRemoved, err = w.blobs.RemoveStaleUploads(now.Add(-staleUpload)); err != nil {
+		return res, err
+	}
+	if res.Uploads, err = w.expireUploads(ctx, now); err != nil {
+		return res, err
+	}
+	if res.UploadFiles, err = w.blobs.RemoveOrphanUploads(now.Add(-w.uploadExpiry), w.uploadRowExists); err != nil {
 		return res, err
 	}
 	err = w.st.Write(ctx, func(tx *store.Tx) error {
@@ -154,4 +174,66 @@ func (w *Sweeper) removeDue(ctx context.Context, now time.Time, res *Result) err
 		}
 	}
 	return ctx.Err()
+}
+
+// expireUploads removes resumable uploads whose expiry has passed: each row goes in its own
+// transaction, which checks the expiry again, and then its file. A file that outlives its row is
+// collected by RemoveOrphanUploads.
+func (w *Sweeper) expireUploads(ctx context.Context, now time.Time) (int, error) {
+	removed := 0
+	for ctx.Err() == nil {
+		due, err := w.st.ExpiredUploads(ctx, now, batchSize)
+		if err != nil {
+			return removed, err
+		}
+		if len(due) == 0 {
+			return removed, nil
+		}
+		progress := 0
+		for _, u := range due {
+			var gone bool
+			err := w.st.Write(ctx, func(tx *store.Tx) error {
+				var err error
+				gone, err = tx.DeleteExpiredUpload(ctx, u.AccountID, u.ID, now)
+				if err != nil || !gone {
+					return err
+				}
+				return tx.InsertAudit(ctx, &store.AuditEntry{Time: now, AccountID: u.AccountID, ActorKind: "system",
+					ActorID: "sweep", Action: "upload.expire", Target: u.ID,
+					Details: map[string]any{"name": u.Name, "length": u.Length, "durable_offset": u.DurableOffset}})
+			})
+			if err != nil {
+				return removed, err
+			}
+			if !gone {
+				continue
+			}
+			// The row is gone and so is any commit that could have run: the upload's file, and a blob
+			// a completion moved but never committed, both go.
+			if err := w.blobs.RemoveUpload(u.AccountID, u.ID); err != nil {
+				w.log.Error("cannot remove upload file", "upload", u.ID, "account", u.AccountID, "error", err)
+			}
+			if err := w.blobs.Remove(u.AccountID, u.BlobID); err != nil {
+				w.log.Error("cannot remove uncommitted blob", "blob", u.BlobID, "account", u.AccountID, "error", err)
+			}
+			removed++
+			progress++
+		}
+		if progress == 0 {
+			return removed, nil
+		}
+	}
+	return removed, ctx.Err()
+}
+
+// uploadRowExists reports whether an upload has a row. It is the keep test for RemoveOrphanUploads.
+func (w *Sweeper) uploadRowExists(accountID, uploadID string) (bool, error) {
+	_, err := w.st.Upload(context.Background(), accountID, uploadID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

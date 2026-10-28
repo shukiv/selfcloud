@@ -1,7 +1,10 @@
 // Package fsutil reports facts about the file system under a path.
 package fsutil
 
-import "errors"
+import (
+	"errors"
+	"os"
+)
 
 // ErrUnsupported is returned where the platform cannot answer.
 var ErrUnsupported = errors.New("fsutil: not supported on this platform")
@@ -14,3 +17,7 @@ type Info struct {
 	Network bool
 	Magic   uint32
 }
+
+// Datasync makes f's data durable, and the metadata needed to read it back, as fdatasync(2)
+// does. Where that call is missing it falls back to a full Sync.
+func Datasync(f *os.File) error { return datasync(f) }

@@ -161,6 +161,10 @@ type UploadConfig struct {
 	// size cap, so a slow client cannot hold a write open for ever.
 	BodyTimeout Duration `yaml:"body_timeout"`
 	Expiry      Duration `yaml:"expiry"`
+	// MaxOpenPerPrincipal is how many unfinished uploads one caller (key or user) may hold.
+	MaxOpenPerPrincipal int `yaml:"max_open_per_principal"`
+	// MaxOpenPerAccount is how many unfinished uploads an account may hold.
+	MaxOpenPerAccount int `yaml:"max_open_per_account"`
 }
 
 // UIConfig controls the web interface.
@@ -182,11 +186,13 @@ func Defaults() *Config {
 		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
 		Copy:            CopyConfig{MaxNodes: 200000},
 		Upload: UploadConfig{
-			MaxFileSize:      100 * GiB,
-			MaxChunkSize:     64 * MiB,
-			MaxSmallFileSize: 16 * MiB,
-			BodyTimeout:      Duration(30 * time.Second),
-			Expiry:           Duration(24 * time.Hour),
+			MaxFileSize:         100 * GiB,
+			MaxChunkSize:        64 * MiB,
+			MaxSmallFileSize:    16 * MiB,
+			BodyTimeout:         Duration(30 * time.Second),
+			Expiry:              Duration(24 * time.Hour),
+			MaxOpenPerPrincipal: 100,
+			MaxOpenPerAccount:   1000,
 		},
 		Users: UsersConfig{
 			VerificationTTL:   Duration(72 * time.Hour),
@@ -307,6 +313,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Upload.Expiry <= 0 {
 		bad("upload.expiry must be positive")
+	}
+	if c.Upload.MaxOpenPerPrincipal <= 0 || c.Upload.MaxOpenPerAccount <= 0 {
+		bad("upload.max_open_per_principal and upload.max_open_per_account must be positive")
 	}
 	if c.Users.VerificationTTL <= 0 || c.Users.ResetTTL <= 0 {
 		bad("users.verification_ttl and users.reset_ttl must be positive")

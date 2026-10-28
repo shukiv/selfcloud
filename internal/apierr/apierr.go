@@ -31,6 +31,8 @@ const (
 	UploadOffsetMismatch Code = "upload_offset_mismatch"
 	Locked               Code = "locked"
 	UploadExpired        Code = "upload_expired"
+	UnsupportedMedia     Code = "unsupported_media_type"
+	TooManyUploads       Code = "too_many_uploads"
 	PreconditionFailed   Code = "precondition_failed"
 	PreconditionRequired Code = "precondition_required"
 	TooLarge             Code = "too_large"
@@ -62,6 +64,8 @@ var statuses = map[Code]int{
 	UploadOffsetMismatch: http.StatusConflict,
 	Locked:               http.StatusConflict,
 	UploadExpired:        http.StatusGone,
+	UnsupportedMedia:     http.StatusUnsupportedMediaType,
+	TooManyUploads:       http.StatusTooManyRequests,
 	PreconditionFailed:   http.StatusPreconditionFailed,
 	PreconditionRequired: http.StatusPreconditionRequired,
 	TooLarge:             http.StatusRequestEntityTooLarge,

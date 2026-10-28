@@ -43,6 +43,18 @@ type Store interface {
 	// RemoveStaleUploads deletes temporary files in uploads/ last modified before the given time, and
 	// returns how many. A temporary file is one a write began and never committed.
 	RemoveStaleUploads(before time.Time) (int, error)
+	// CreateUpload makes the file of a resumable upload, exclusively, and closes it.
+	CreateUpload(accountID, uploadID string) error
+	// OpenUpload opens an upload's file for reading and writing. It does not create it.
+	OpenUpload(accountID, uploadID string) (*os.File, error)
+	// RemoveUpload deletes an upload's file. A file that is already gone is not an error.
+	RemoveUpload(accountID, uploadID string) error
+	// FinishUpload moves a complete upload's file into blobs/ under blobID and syncs both
+	// directories. It is idempotent: when the file is already in blobs/, it does nothing.
+	FinishUpload(accountID, uploadID, blobID string) error
+	// RemoveOrphanUploads deletes upload files last modified before the given time that keep
+	// reports as having no upload, and returns how many.
+	RemoveOrphanUploads(before time.Time, keep func(accountID, uploadID string) (bool, error)) (int, error)
 }
 
 // Writer streams one blob to disk.
