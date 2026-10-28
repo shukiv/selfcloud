@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"selfcloud/internal/apierr"
@@ -14,6 +15,18 @@ import (
 
 // maxLoginCandidates is how many accounts one email may be in and still be looked up at sign-in.
 const maxLoginCandidates = 10
+
+// adminChoiceID is the account value that selects an installation admin at sign-in, and the ID
+// the account choice lists for an admin match.
+const adminChoiceID = "admin"
+
+// loginScope turns the account a sign-in names into a store scope. "" means any account.
+func loginScope(account string) string {
+	if account == adminChoiceID {
+		return store.AdminScope
+	}
+	return account
+}
 
 // errBadLink answers a verification or reset link that is unknown, used, expired or malformed.
 // One message covers all of them, so a link reveals nothing about its history.
@@ -207,7 +220,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx := r.Context()
-	candidates, err := s.store.FindUsersByEmail(ctx, key, in.Account, maxLoginCandidates)
+	candidates, err := s.store.FindUsersByEmail(ctx, key, loginScope(in.Account), maxLoginCandidates)
 	if err != nil {
 		return err
 	}
@@ -240,11 +253,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		sess     *store.Session
 	)
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		acc, err := tx.Account(ctx, u.AccountID)
-		if errors.Is(err, store.ErrNotFound) {
-			stateErr = apierr.New(apierr.Unauthenticated, "wrong email or password")
-		} else if err != nil {
-			return err
+		// An admin has no account; a tenant user's account must be usable.
+		var acc *store.Account
+		if u.AccountID != "" {
+			acc, err = tx.Account(ctx, u.AccountID)
+			if errors.Is(err, store.ErrNotFound) {
+				stateErr = apierr.New(apierr.Unauthenticated, "wrong email or password")
+			} else if err != nil {
+				return err
+			}
 		}
 		switch {
 		case stateErr != nil:
@@ -252,9 +269,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 			stateErr = apierr.New(apierr.UserNotVerified, "the user has not verified the email address yet")
 		case u.Status == store.UserDisabled:
 			stateErr = apierr.New(apierr.UserDisabled, "the user is disabled")
-		case acc.Status == store.AccountSuspended:
+		case acc != nil && acc.Status == store.AccountSuspended:
 			stateErr = apierr.New(apierr.AccountSuspended, "the account is suspended")
-		case acc.Status == store.AccountDeleting:
+		case acc != nil && acc.Status == store.AccountDeleting:
 			stateErr = apierr.New(apierr.Unauthenticated, "wrong email or password")
 		}
 		if stateErr != nil {
@@ -327,6 +344,10 @@ func (s *Server) accountChoice(ctx context.Context, matches []*store.User) error
 	}
 	choices := []choice{}
 	for _, m := range matches {
+		if m.AccountID == "" {
+			choices = append(choices, choice{ID: adminChoiceID, Name: "Installation admin"})
+			continue
+		}
 		acc, err := s.store.Account(ctx, m.AccountID)
 		if errors.Is(err, store.ErrNotFound) {
 			continue
@@ -353,6 +374,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.pwFails.clear(sess.IDHash)
 	s.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
@@ -378,7 +400,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) er
 	}
 	ctx := r.Context()
 	if email != "" && s.mailer != nil {
-		if err := s.sendResetLinks(ctx, r, emailKey(email), in.Account); err != nil {
+		if err := s.sendResetLinks(ctx, r, emailKey(email), loginScope(in.Account)); err != nil {
 			return err
 		}
 	}
@@ -523,9 +545,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 
 // meResponse is the signed-in user, their account and the CSRF token.
 type meResponse struct {
-	User      userJSON   `json:"user"`
-	Account   accountRef `json:"account"`
-	CSRFToken string     `json:"csrf_token"`
+	User      userJSON    `json:"user"`
+	Account   *accountRef `json:"account"` // null for an installation admin
+	CSRFToken string      `json:"csrf_token"`
 }
 
 type accountRef struct {
@@ -543,13 +565,71 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	acc, err := s.store.Account(ctx, p.AccountID)
+	out := meResponse{User: toUserJSON(u), CSRFToken: sessionOf(r).CSRFToken}
+	if p.AccountID != "" {
+		acc, err := s.store.Account(ctx, p.AccountID)
+		if err != nil {
+			return err
+		}
+		out.Account = &accountRef{ID: acc.ID, Name: acc.Name}
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// maxPasswordFails is how many wrong current passwords in a row end the session that gave them.
+const maxPasswordFails = 5
+
+// passwordFails counts wrong current passwords per session. A right one clears the count. The
+// count lives in memory, so a restart clears it, as it clears the rate limits.
+type passwordFails struct {
+	mu sync.Mutex
+	n  map[string]int // by session hash
+}
+
+// add records one wrong password for the session and returns the count so far.
+func (f *passwordFails) add(hash []byte) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.n == nil {
+		f.n = map[string]int{}
+	}
+	f.n[string(hash)]++
+	return f.n[string(hash)]
+}
+
+// clear forgets the session's count.
+func (f *passwordFails) clear(hash []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.n, string(hash))
+}
+
+// failedPasswordChange answers a wrong current password. It is audited. The fifth in a row ends
+// the session and clears its cookie, so a stolen session cannot keep guessing.
+func (s *Server) failedPasswordChange(w http.ResponseWriter, r *http.Request) error {
+	p := principalOf(r)
+	sess := sessionOf(r)
+	ended := s.pwFails.add(sess.IDHash) >= maxPasswordFails
+	err := s.store.Write(r.Context(), func(tx *store.Tx) error {
+		if ended {
+			if err := tx.DeleteSession(r.Context(), sess.IDHash); err != nil {
+				return err
+			}
+		}
+		e := s.auditEntry(r, p.AccountID, "user.password_change", p.UserID, nil)
+		e.ActorKind, e.ActorID, e.Outcome = string(auth.KindUser), p.UserID, "failed"
+		return tx.InsertAudit(r.Context(), e)
+	})
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, meResponse{User: toUserJSON(u),
-		Account: accountRef{ID: acc.ID, Name: acc.Name}, CSRFToken: sessionOf(r).CSRFToken})
-	return nil
+	if ended {
+		s.pwFails.clear(sess.IDHash)
+		s.clearSessionCookie(w)
+		return apierr.New(apierr.Unauthenticated, "too many wrong passwords; the session has ended, sign in again")
+	}
+	return apierr.New(apierr.Forbidden, "the current password is not correct")
 }
 
 // handleChangePassword sets a new password for the signed-in user after checking the current
@@ -570,6 +650,14 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 	if err := checkPassword(in.NewPassword); err != nil {
 		return err
 	}
+	// The limits come before any hash, so guessing the current password is slowed per user and
+	// per address, whichever session makes the attempt.
+	if err := s.rateLimit("changepw.user", p.UserID); err != nil {
+		return err
+	}
+	if err := s.rateLimit("changepw.ip", clientKey(r)); err != nil {
+		return err
+	}
 	ctx := r.Context()
 	u, err := s.store.User(ctx, p.AccountID, p.UserID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -583,8 +671,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 	if !ok {
-		return apierr.New(apierr.Forbidden, "the current password is not correct")
+		return s.failedPasswordChange(w, r)
 	}
+	s.pwFails.clear(sessionOf(r).IDHash)
 	hashed, err := auth.HashPassword(ctx, in.NewPassword)
 	if err != nil {
 		return err

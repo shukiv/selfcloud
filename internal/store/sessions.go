@@ -11,7 +11,7 @@ import (
 type Session struct {
 	IDHash     []byte
 	UserID     string
-	AccountID  string
+	AccountID  string // "" for an installation admin
 	CSRFToken  string // sent back in X-CSRF-Token on unsafe requests
 	CreatedAt  time.Time
 	LastSeenAt time.Time
@@ -28,8 +28,9 @@ const sessionCols = `id_hash, user_id, account_id, csrf_token, created_at, last_
 func (s *Store) SessionByHash(ctx context.Context, hash []byte) (*Session, error) {
 	var sess Session
 	var created, seen, expires int64
+	var acc sql.NullString
 	err := s.r.QueryRowContext(ctx, "SELECT "+sessionCols+" FROM sessions WHERE id_hash = ?", hash).
-		Scan(&sess.IDHash, &sess.UserID, &sess.AccountID, &sess.CSRFToken, &created, &seen, &expires,
+		Scan(&sess.IDHash, &sess.UserID, &acc, &sess.CSRFToken, &created, &seen, &expires,
 			&sess.IP, &sess.UserAgent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -37,6 +38,7 @@ func (s *Store) SessionByHash(ctx context.Context, hash []byte) (*Session, error
 	if err != nil {
 		return nil, err
 	}
+	sess.AccountID = acc.String
 	sess.CreatedAt = fromMillis(created)
 	sess.LastSeenAt = fromMillis(seen)
 	sess.ExpiresAt = fromMillis(expires)
@@ -46,7 +48,7 @@ func (s *Store) SessionByHash(ctx context.Context, hash []byte) (*Session, error
 // InsertSession adds sess.
 func (tx *Tx) InsertSession(ctx context.Context, sess *Session) error {
 	_, err := tx.q.ExecContext(ctx, "INSERT INTO sessions ("+sessionCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		sess.IDHash, sess.UserID, sess.AccountID, sess.CSRFToken, millis(sess.CreatedAt),
+		sess.IDHash, sess.UserID, nullString(sess.AccountID), sess.CSRFToken, millis(sess.CreatedAt),
 		millis(sess.LastSeenAt), millis(sess.ExpiresAt), sess.IP, sess.UserAgent)
 	if isUniqueViolation(err) {
 		return ErrConflict

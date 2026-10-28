@@ -43,18 +43,38 @@ type verificationJSON struct {
 	Sent      *bool      `json:"sent,omitempty"`
 }
 
+// linkAllowed reports whether a caller may ask for a link. A link hands a token to the caller, so
+// a key may always ask, and an admin session may ask to set up a user who has never verified. No
+// other session may: one could take over another user's password. reset is true for a password
+// reset, which an admin session may not ask for either.
+func linkAllowed(p *auth.Principal, reset bool) bool {
+	if p == nil {
+		return false
+	}
+	if p.Kind == auth.KindUser {
+		return p.Role == auth.RoleAdmin && !reset
+	}
+	return true
+}
+
 // checkVerificationMethod checks a requested method against the caller and the configuration.
-// "none" skips verification, so only a key may ask for it. "email" needs mail to be configured.
-func (s *Server) checkVerificationMethod(r *http.Request, method string) error {
+// "none" verifies a user without any check, so only a key may use it. "link" follows linkAllowed.
+// "email" needs mail to be configured, and any caller may use it. reset is true for a password
+// reset.
+func (s *Server) checkVerificationMethod(r *http.Request, method string, reset bool) error {
+	p := principalOf(r)
 	switch method {
 	case methodEmail:
 		if s.mailer == nil {
-			return apierr.New(apierr.InvalidRequest, "mail is not configured; use the method \"link\" or \"none\"")
+			return apierr.New(apierr.InvalidRequest, "mail is not configured; an API key may use the method \"link\" or \"none\"")
 		}
 	case methodLink:
+		if !linkAllowed(p, reset) {
+			return apierr.New(apierr.Forbidden, "only an API key may use this method; use email")
+		}
 	case methodNone:
-		if principalOf(r).Kind == auth.KindUser {
-			return apierr.New(apierr.Forbidden, "only an account or admin key may skip verification")
+		if p == nil || p.Kind == auth.KindUser {
+			return apierr.New(apierr.Forbidden, "only an API key may use this method; use email")
 		}
 	default:
 		return apierr.New(apierr.InvalidRequest, "verification must be email, link or none")
@@ -109,6 +129,11 @@ func (s *Server) sendToken(ctx context.Context, u *store.User, it *issuedToken) 
 // the request: the user exists and can be sent a new token later.
 func (s *Server) deliver(ctx context.Context, r *http.Request, u *store.User, it *issuedToken, method string) *verificationJSON {
 	if method == methodLink {
+		// Defence in depth: a member or owner session never receives a token, whatever the method
+		// check said. An admin session may, since linkAllowed let it ask.
+		if p := principalOf(r); p.Kind == auth.KindUser && p.Role != auth.RoleAdmin {
+			return &verificationJSON{Method: methodLink, ExpiresAt: &it.expires}
+		}
 		return &verificationJSON{Method: methodLink, URL: it.link, Token: it.token, ExpiresAt: &it.expires}
 	}
 	sent := true

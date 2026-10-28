@@ -47,6 +47,7 @@ type Server struct {
 	mailer    mail.Sender // nil when mail is not configured
 	templates *mail.Templates
 	limits    map[string]*limiter // rate limiters by "endpoint.dimension"
+	pwFails   passwordFails       // wrong current passwords, per session, for POST /me/password
 	// origin is public_url's scheme and host. Browsers send it as Origin, and unsafe requests
 	// made with a session must carry it.
 	origin string
@@ -122,6 +123,10 @@ func New(opts Options) (*Server, error) {
 			"forgot.email": newLimiter(cfg.RateLimit.PerEmailPerMinute),
 			"verify.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),
 			"reset.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
+			// Changing a password checks the current one, so a stolen session could guess it.
+			// These limits are fixed: they guard a password, not a configurable flow.
+			"changepw.user": newLimiter(5),
+			"changepw.ip":   newLimiter(10),
 		},
 	}
 	if pub.Scheme == "https" {
@@ -156,6 +161,21 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/keys/{key}", handle: s.handleRevokeKey, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit", handle: s.handleAuditLog, auth: true},
 		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true},
+
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/folders", handle: s.handleCreateFolder, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders", handle: s.handleListFolders, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleGetFolder, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleUpdateFolder, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleDeleteFolder, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders/{fld}/grants", handle: s.handleListFolderGrants, auth: true},
+		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/folders/{fld}/grants/{usr}", handle: s.handleSetGrant, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/folders/{fld}/grants/{usr}", handle: s.handleRemoveGrant, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users/{usr}/grants", handle: s.handleListUserGrants, auth: true},
+		{method: http.MethodGet, path: "/api/v1/folders", handle: s.handleMyFolders, auth: true},
+
+		{method: http.MethodPost, path: "/api/v1/admins", handle: s.handleCreateAdmin, auth: true},
+		{method: http.MethodGet, path: "/api/v1/admins", handle: s.handleListAdmins, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/admins/{usr}", handle: s.handleDeleteAdmin, auth: true},
 
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users", handle: s.handleCreateUser, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users", handle: s.handleListUsers, auth: true},

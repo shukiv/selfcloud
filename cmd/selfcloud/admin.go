@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	netmail "net/mail"
+	"net/url"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -30,6 +32,8 @@ Commands:
   generate-key                   print a new admin key without storing it, for admin_key_file
   create-account -name NAME [-external-id ID] [-quota SIZE]
                                  create an account and an account key; print both
+  create-admin -email EMAIL [-name NAME]
+                                 create a pending admin user; print its set-password link and token
 `
 
 // cliActor is the audit log's name for these commands.
@@ -54,6 +58,8 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "create-account":
 		return adminCreateAccount(args, stdout, stderr)
+	case "create-admin":
+		return adminCreateAdmin(args, stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, adminUsage)
 		return 0
@@ -256,4 +262,71 @@ func bootstrapAdminKey(ctx context.Context, st *store.Store, path string, log *s
 		log.Info("added the admin key from admin_key_file", "key", key.ID)
 	}
 	return err
+}
+
+// adminCreateAdmin makes a pending admin user and prints the link that sets its password. The
+// admin completes it with POST /api/v1/auth/verify, so the link works the same as one made for
+// any user. The token is printed once and stored only as a hash.
+func adminCreateAdmin(args []string, stdout, stderr io.Writer) int {
+	var email, name *string
+	cfg, _, code := loadConfig("admin create-admin", args, stderr, 0, func(fs *flag.FlagSet) {
+		email = fs.String("email", "", "the admin's email address (required)")
+		name = fs.String("name", "", "the admin's display name")
+	})
+	if cfg == nil {
+		return code
+	}
+	addr := strings.TrimSpace(*email)
+	parsed, err := netmail.ParseAddress(addr)
+	if addr == "" || err != nil || parsed.Address != addr {
+		fmt.Fprintln(stderr, "selfcloud admin create-admin: -email must be a bare address such as name@example.com")
+		return 2
+	}
+	label := strings.TrimSpace(*name)
+	log := newLogger(config.LogConfig{Level: "warn", Format: cfg.Log.Format}, stderr)
+	st, err := openStore(context.Background(), cfg, log)
+	if err != nil {
+		fmt.Fprintln(stderr, "selfcloud admin create-admin:", err)
+		return 1
+	}
+	defer st.Close()
+
+	secret, hash := auth.NewToken()
+	// The same fill as api.Server.tokenLink, which this command cannot reach. The token sits in
+	// the fragment, as the templates intend.
+	link := strings.NewReplacer("{public_url}", cfg.PublicURL, "{token}", url.QueryEscape(secret)).
+		Replace(cfg.Users.VerifyURLTemplate)
+	now := store.Now()
+	key := strings.ToLower(addr)
+	u := &store.User{ID: id.New("usr"), Email: addr, EmailKey: key, DisplayName: label, Locale: "en",
+		Role: store.RoleAdmin, Status: store.UserPending, CreatedAt: now, UpdatedAt: now}
+	expires := now.Add(cfg.Users.VerificationTTL.D())
+	ctx := context.Background()
+	err = st.Write(ctx, func(tx *store.Tx) error {
+		if _, err := tx.UserByEmail(ctx, "", key); err == nil {
+			return store.ErrConflict
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if err := tx.InsertUser(ctx, u); err != nil {
+			return err
+		}
+		if err := tx.InsertVerification(ctx, &store.Verification{ID: id.New("vrf"), UserID: u.ID,
+			Purpose: store.PurposeVerify, TokenHash: hash, ExpiresAt: expires, CreatedAt: now}); err != nil {
+			return err
+		}
+		return tx.InsertAudit(ctx, cliAudit("", "admin.create", u.ID, map[string]any{"email": addr}))
+	})
+	if errors.Is(err, store.ErrConflict) {
+		fmt.Fprintf(stderr, "selfcloud admin create-admin: an admin with email %s exists\n", addr)
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "selfcloud admin create-admin:", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "user_id=%s\nlink=%s\ntoken=%s\n", u.ID, link, secret)
+	fmt.Fprintf(stderr, "The link expires at %s. Send it to the admin; it works once.\n",
+		expires.UTC().Format(time.RFC3339))
+	return 0
 }

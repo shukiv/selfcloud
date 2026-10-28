@@ -171,7 +171,7 @@ func TestOwnerSessionManagesItsAccount(t *testing.T) {
 		map[string]any{"role": "owner"}), 200)
 	// The role is read on every request, so the promotion applies to the open session at once.
 	wantStatus(t, callSession(t, s, sess, "POST", "/api/v1/accounts/"+acc.ID+"/users",
-		map[string]any{"email": "new@example.com", "verification": "link"}), 201)
+		map[string]any{"email": "new@example.com", "verification": "email"}), 201)
 	wantStatus(t, callSession(t, s, sess, "GET", "/api/v1/accounts/"+acc.ID+"/users", nil), 200)
 }
 

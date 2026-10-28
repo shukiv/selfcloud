@@ -32,9 +32,13 @@ const (
 	KindSystem     Kind = "system" // the server itself, or the admin command line
 )
 
-// RoleOwner is the role of a user who manages their account in the web interface. The other
-// role is "member". The names match the users.role column.
-const RoleOwner = "owner"
+// Roles of a signed-in user. The names match the users.role column. An admin has no account;
+// an owner manages its account in the web interface; a member reaches only granted folders.
+const (
+	RoleAdmin  = "admin"
+	RoleOwner  = "owner"
+	RoleMember = "member"
+)
 
 // Principal is who is making a request.
 type Principal struct {
@@ -45,11 +49,16 @@ type Principal struct {
 	Role      string // set for KindUser: RoleOwner or "member"
 }
 
-// IsAdmin reports whether p is an installation admin.
-func (p *Principal) IsAdmin() bool { return p != nil && p.Kind == KindAdminKey }
+// IsAdmin reports whether p is an installation admin: an admin key, or a signed-in admin user.
+func (p *Principal) IsAdmin() bool {
+	if p == nil {
+		return false
+	}
+	return p.Kind == KindAdminKey || (p.Kind == KindUser && p.Role == RoleAdmin)
+}
 
 // ManagesAccount reports whether p may manage the account: its users, folders, grants, keys
-// and audit log. An owner session manages only its own account.
+// and audit log. An admin manages every account; an owner session manages only its own.
 func (p *Principal) ManagesAccount(accountID string) bool {
 	if p == nil {
 		return false
@@ -60,6 +69,9 @@ func (p *Principal) ManagesAccount(accountID string) bool {
 	case KindAccountKey:
 		return p.AccountID == accountID
 	case KindUser:
+		if p.Role == RoleAdmin {
+			return true
+		}
 		return p.Role == RoleOwner && p.AccountID == accountID
 	}
 	return false

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/mail"
@@ -146,7 +147,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	if err := s.checkVerificationMethod(r, in.Verification); err != nil {
+	if err := s.checkVerificationMethod(r, in.Verification, false); err != nil {
 		return err
 	}
 
@@ -397,7 +398,7 @@ func (s *Server) handleSendVerification(w http.ResponseWriter, r *http.Request) 
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	if err := s.checkVerificationMethod(r, in.Method); err != nil {
+	if err := s.checkVerificationMethod(r, in.Method, false); err != nil {
 		return err
 	}
 	ctx := r.Context()
@@ -466,7 +467,7 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) err
 	if in.Method != methodEmail && in.Method != methodLink {
 		return apierr.New(apierr.InvalidRequest, "method must be email or link")
 	}
-	if err := s.checkVerificationMethod(r, in.Method); err != nil {
+	if err := s.checkVerificationMethod(r, in.Method, true); err != nil {
 		return err
 	}
 	ctx := r.Context()
@@ -501,4 +502,40 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) err
 	}
 	writeJSON(w, http.StatusOK, s.deliver(ctx, r, u, it, in.Method))
 	return nil
+}
+
+// addUser inserts u inside tx, which must be a write transaction, and audits it under action. A
+// verification method of "none" makes the user active at once; "email" and "link" issue a token
+// for the caller to deliver after commit (see deliver). It returns the token, or nil for "none".
+// Used wherever a user is created with another record, so each path verifies the same way.
+func (s *Server) addUser(ctx context.Context, r *http.Request, tx *store.Tx, u *store.User, method, action string,
+	now time.Time) (*issuedToken, error) {
+	u.Status = store.UserPending
+	if method == methodNone {
+		u.Status = store.UserActive
+		u.VerifiedAt = &now
+	}
+	if err := tx.InsertUser(ctx, u); errors.Is(err, store.ErrConflict) {
+		return nil, apierr.New(apierr.Conflict, "a user with this email or external_id already exists")
+	} else if err != nil {
+		return nil, err
+	}
+	if err := tx.InsertAudit(ctx, s.auditEntry(r, u.AccountID, action, u.ID,
+		map[string]any{"email": u.Email, "role": u.Role, "verification": method})); err != nil {
+		return nil, err
+	}
+	if method == methodNone {
+		return nil, nil
+	}
+	it, err := s.issueToken(ctx, tx, u, store.PurposeVerify, now)
+	if err != nil {
+		return nil, err
+	}
+	if method == methodLink {
+		if err := tx.InsertAudit(ctx, s.auditEntry(r, u.AccountID, "verification.send", u.ID,
+			map[string]any{"purpose": store.PurposeVerify, "method": methodLink})); err != nil {
+			return nil, err
+		}
+	}
+	return it, nil
 }

@@ -19,6 +19,12 @@ servers:
 tags:
   - name: System
     description: Health, readiness, metrics and server facts.
+  - name: Folders
+    description: Folders and who can reach them.
+  - name: Grants
+    description: Shares of a folder with a member.
+  - name: Admins
+    description: Installation admin users.
   - name: Accounts
     description: |
       Accounts are tenants. Installation admin keys manage them; an account key manages one
@@ -134,14 +140,14 @@ paths:
             schema: { $ref: "#/components/schemas/AccountCreate" }
       responses:
         "201":
-          description: Created.
+          description: Created. With `owner`, the owner user is made in the same transaction.
           headers:
             Location: { schema: { type: string } }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Account" }
+              schema: { $ref: "#/components/schemas/AccountCreated" }
         "200":
-          description: An account with this external_id and these fields already existed.
+          description: An account with this external_id and these fields already existed. Its owner, if any, is not compared or returned.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Account" }
@@ -331,6 +337,231 @@ paths:
               schema: { $ref: "#/components/schemas/Job" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/folders:
+    get:
+      tags: [Folders]
+      operationId: listMyFolders
+      summary: List the folders the caller can reach
+      description: |
+        An account key or owner session gets every folder of its account with access `write`,
+        paged. A member session gets its granted folders at the granted level, not paged. Admins
+        get `403 forbidden`: they manage tenants and never read their files.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The folders, with the caller's access to each.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FolderAccessList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/folders:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    post:
+      tags: [Folders]
+      operationId: createFolder
+      summary: Create a folder
+      description: |
+        With an `external_id`, repeating the request with the same name returns the existing
+        folder with status 200. A name another folder has is `409 conflict`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FolderCreate" }
+      responses:
+        "201":
+          description: Created, with a root directory.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Folder" }
+        "200":
+          description: The folder with this external_id and name already existed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Folder" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Folders]
+      operationId: listFolders
+      summary: List an account's folders
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: external_id
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The folders, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FolderList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/folders/{fld}:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/fld"
+    get:
+      tags: [Folders]
+      operationId: getFolder
+      summary: Get a folder
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The folder.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Folder" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Folders]
+      operationId: updateFolder
+      summary: Rename a folder or change its external ID
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FolderUpdate" }
+      responses:
+        "200":
+          description: The folder.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Folder" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Folders]
+      operationId: deleteFolder
+      summary: Delete a folder
+      description: Removes its grants and file tree, and takes its files off the account's usage.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Deleted. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/folders/{fld}/grants:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/fld"
+    get:
+      tags: [Grants]
+      operationId: listFolderGrants
+      summary: List who holds a grant on a folder
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The grants, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/fld"
+      - $ref: "#/components/parameters/usr"
+    put:
+      tags: [Grants]
+      operationId: setGrant
+      summary: Share a folder with a member, or change the level
+      description: Only a member can hold a grant. Owners and admins reach every folder without one.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GrantSet" }
+      responses:
+        "200":
+          description: The grant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Grant" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Grants]
+      operationId: removeGrant
+      summary: Remove a grant
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Removed. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/users/{usr}/grants:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/usr"
+    get:
+      tags: [Grants]
+      operationId: listUserGrants
+      summary: List the folders shared with a user
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The grants of the user, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/admins:
+    post:
+      tags: [Admins]
+      operationId: createAdmin
+      summary: Create an installation admin
+      description: |
+        Admin key or admin session. Makes a pending admin user, who completes the link with
+        `POST /api/v1/auth/verify`. Verification is `email`, or `link` for an admin key only.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminCreate" }
+      responses:
+        "201":
+          description: Created, with the verification made for it.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserWithVerification" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Admins]
+      operationId: listAdmins
+      summary: List installation admins
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The admins, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/admins/{usr}:
+    parameters:
+      - $ref: "#/components/parameters/usr"
+    delete:
+      tags: [Admins]
+      operationId: deleteAdmin
+      summary: Delete an installation admin
+      description: |
+        Refused with `409 conflict` when this is the last active admin and no admin key is
+        active.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Deleted. }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/users:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -663,6 +894,11 @@ components:
       in: path
       required: true
       schema: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    fld:
+      name: fld
+      in: path
+      required: true
+      schema: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     limit:
       name: limit
       in: query
@@ -692,6 +928,84 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    Folder:
+      type: object
+      required: [id, external_id, name, created_at, updated_at]
+      properties:
+        id: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        external_id:
+          type: [string, "null"]
+          description: The client's own reference; unique within the account.
+        name: { type: string, description: The name in Unicode NFC. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    FolderCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        external_id: { type: string, maxLength: 255 }
+
+    FolderUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        external_id: { type: string, maxLength: 255, description: Empty clears it. }
+
+    FolderList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Folder" }
+        next_cursor: { type: string }
+
+    FolderAccess:
+      allOf:
+        - $ref: "#/components/schemas/Folder"
+        - type: object
+          required: [access]
+          properties:
+            access: { type: string, enum: [read, write] }
+
+    FolderAccessList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FolderAccess" }
+        next_cursor: { type: string }
+
+    Grant:
+      type: object
+      required: [level, created_at, created_by]
+      properties:
+        folder_id: { type: string, description: Set in a user's grant list. }
+        user_id: { type: string, description: Set in a folder's grant list. }
+        level: { type: string, enum: [read, write] }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, description: The ID of the caller who made or last changed the grant. }
+
+    GrantSet:
+      type: object
+      required: [level]
+      additionalProperties: false
+      properties:
+        level: { type: string, enum: [read, write] }
+
+    GrantList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Grant" }
+
     Status:
       type: object
       required: [status]
@@ -846,6 +1160,43 @@ components:
         name: { type: string, minLength: 1, maxLength: 200 }
         external_id: { type: string, maxLength: 255 }
         quota_bytes: { type: integer, format: int64, minimum: 0, default: 0 }
+        owner: { $ref: "#/components/schemas/OwnerCreate" }
+
+    OwnerCreate:
+      type: object
+      required: [email, verification]
+      additionalProperties: false
+      description: The account's first owner, created with it. Verification is `email`, `link` or `none`. A session cannot use `link` or `none`.
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        display_name: { type: string, maxLength: 200 }
+        locale: { type: string, maxLength: 35, default: en }
+        verification: { type: string, enum: [email, link, none] }
+
+    AccountCreated:
+      allOf:
+        - $ref: "#/components/schemas/Account"
+        - type: object
+          properties:
+            owner: { $ref: "#/components/schemas/UserWithVerification" }
+
+    AdminCreate:
+      type: object
+      required: [email, verification]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        display_name: { type: string, maxLength: 200 }
+        verification: { type: string, enum: [email, link], description: A session may use only email. }
+
+    AdminList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/User" }
+        next_cursor: { type: string }
 
     AccountUpdate:
       type: object
@@ -982,7 +1333,7 @@ components:
         locale: { type: string, example: en }
         role:
           type: string
-          enum: [owner, member]
+          enum: [admin, owner, member]
         status:
           type: string
           enum: [pending, active, disabled]
@@ -1129,7 +1480,8 @@ components:
       properties:
         user: { $ref: "#/components/schemas/User" }
         account:
-          type: object
+          description: The account of a tenant user; null for an installation admin.
+          type: [object, "null"]
           required: [id, name]
           properties:
             id: { type: string }

@@ -15,9 +15,14 @@ const (
 	UserActive   = "active"
 	UserDisabled = "disabled"
 
+	RoleAdmin  = "admin"
 	RoleOwner  = "owner"
 	RoleMember = "member"
 )
+
+// AdminScope is the account argument that selects installation admins in FindUsersByEmail.
+// It cannot clash with an account ID, which always carries the acc_ prefix.
+const AdminScope = "admin"
 
 // Verification purposes.
 const (
@@ -25,10 +30,11 @@ const (
 	PurposeReset  = "reset"
 )
 
-// User is a person who belongs to one account and may sign in.
+// User is a person who may sign in. A member or owner belongs to one account; an installation
+// admin has no account, and its AccountID is "".
 type User struct {
 	ID           string
-	AccountID    string
+	AccountID    string // "" for an installation admin
 	ExternalID   string // the client's own reference; "" when unset
 	Email        string // as given, trimmed
 	EmailKey     string // lowercased; unique within the account
@@ -47,10 +53,10 @@ const userCols = `id, account_id, external_id, email, email_key, display_name, l
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
-	var ext, pw sql.NullString
+	var acc, ext, pw sql.NullString
 	var verified sql.NullInt64
 	var created, updated int64
-	err := row.Scan(&u.ID, &u.AccountID, &ext, &u.Email, &u.EmailKey, &u.DisplayName, &u.Locale,
+	err := row.Scan(&u.ID, &acc, &ext, &u.Email, &u.EmailKey, &u.DisplayName, &u.Locale,
 		&u.Role, &u.Status, &pw, &verified, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -58,6 +64,7 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
+	u.AccountID = acc.String
 	u.ExternalID = ext.String
 	u.PasswordHash = pw.String
 	u.VerifiedAt = fromNullMillis(verified)
@@ -70,15 +77,31 @@ func getUser(ctx context.Context, q querier, where string, args ...any) (*User, 
 	return scanUser(q.QueryRowContext(ctx, "SELECT "+userCols+" FROM users WHERE "+where, args...))
 }
 
-// User returns a user of accountID. A user of another account is ErrNotFound, so account
-// boundaries hold even for callers who know an ID.
-func (s *Store) User(ctx context.Context, accountID, id string) (*User, error) {
-	return getUser(ctx, s.r, "account_id = ? AND id = ?", accountID, id)
+// accountClause is the WHERE condition that selects the rows of accountID. An empty accountID
+// selects the installation admins, whose account_id is NULL. Every account-scoped query goes
+// through it, because "account_id = ”" would match nothing.
+func accountClause(accountID string) (string, []any) {
+	if accountID == "" {
+		return "account_id IS NULL", nil
+	}
+	return "account_id = ?", []any{accountID}
 }
 
-// User returns a user of accountID.
+// userIn returns the user of accountID that matches cond. A user of another account is
+// ErrNotFound, so account boundaries hold even for callers who know an ID.
+func userIn(ctx context.Context, q querier, accountID, cond string, args ...any) (*User, error) {
+	clause, cargs := accountClause(accountID)
+	return getUser(ctx, q, clause+" AND "+cond, append(cargs, args...)...)
+}
+
+// User returns a user of accountID ("" for an admin).
+func (s *Store) User(ctx context.Context, accountID, id string) (*User, error) {
+	return userIn(ctx, s.r, accountID, "id = ?", id)
+}
+
+// User returns a user of accountID ("" for an admin).
 func (tx *Tx) User(ctx context.Context, accountID, id string) (*User, error) {
-	return getUser(ctx, tx.q, "account_id = ? AND id = ?", accountID, id)
+	return userIn(ctx, tx.q, accountID, "id = ?", id)
 }
 
 // UserByID returns the user with the given ID, in any account. Only code that already holds a
@@ -89,23 +112,27 @@ func (tx *Tx) UserByID(ctx context.Context, id string) (*User, error) {
 
 // UserByEmail returns the user of accountID with the given email key.
 func (tx *Tx) UserByEmail(ctx context.Context, accountID, emailKey string) (*User, error) {
-	return getUser(ctx, tx.q, "account_id = ? AND email_key = ?", accountID, emailKey)
+	return userIn(ctx, tx.q, accountID, "email_key = ?", emailKey)
 }
 
 // UserByExternalID returns the user of accountID with the given external ID.
 func (tx *Tx) UserByExternalID(ctx context.Context, accountID, externalID string) (*User, error) {
-	return getUser(ctx, tx.q, "account_id = ? AND external_id = ?", accountID, externalID)
+	return userIn(ctx, tx.q, accountID, "external_id = ?", externalID)
 }
 
-// FindUsersByEmail returns up to limit users with the given email key, in any account, or only
-// in accountID when it is not "". It is the one lookup that crosses accounts, and it exists for
-// sign-in only.
-func (s *Store) FindUsersByEmail(ctx context.Context, emailKey, accountID string, limit int) ([]*User, error) {
+// FindUsersByEmail returns up to limit users with the given email key. scope "" finds them in
+// any account, AdminScope only the installation admins, and any other value only in that
+// account. It is the one lookup that crosses accounts, and it exists for sign-in only.
+func (s *Store) FindUsersByEmail(ctx context.Context, emailKey, scope string, limit int) ([]*User, error) {
 	query := "SELECT " + userCols + " FROM users WHERE email_key = ?"
 	args := []any{emailKey}
-	if accountID != "" {
+	switch scope {
+	case "":
+	case AdminScope:
+		query += " AND account_id IS NULL"
+	default:
 		query += " AND account_id = ?"
-		args = append(args, accountID)
+		args = append(args, scope)
 	}
 	query += " ORDER BY created_at, id LIMIT ?"
 	args = append(args, limit)
@@ -120,8 +147,9 @@ type UserFilter struct {
 
 // Users lists the users of accountID, oldest first, narrowed by f.
 func (s *Store) Users(ctx context.Context, accountID string, f UserFilter, p Page) ([]*User, string, error) {
-	where := []string{"account_id = ?"}
-	args := []any{accountID}
+	clause, cargs := accountClause(accountID)
+	where := []string{clause}
+	args := cargs
 	if f.ExternalID != "" {
 		where = append(where, "external_id = ?")
 		args = append(args, f.ExternalID)
@@ -179,7 +207,7 @@ func (s *Store) queryUsers(ctx context.Context, query string, args []any) ([]*Us
 func (tx *Tx) InsertUser(ctx context.Context, u *User) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO users (`+userCols+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		u.ID, u.AccountID, nullString(u.ExternalID), u.Email, u.EmailKey, u.DisplayName, u.Locale,
+		u.ID, nullString(u.AccountID), nullString(u.ExternalID), u.Email, u.EmailKey, u.DisplayName, u.Locale,
 		u.Role, u.Status, nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.CreatedAt),
 		millis(u.UpdatedAt))
 	if isUniqueViolation(err) {
@@ -192,22 +220,24 @@ func (tx *Tx) InsertUser(ctx context.Context, u *User) error {
 // verification time and update time. The email is fixed once the user exists. It returns
 // ErrNotFound if the user is not in the account, and ErrConflict if the external ID is taken.
 func (tx *Tx) UpdateUser(ctx context.Context, u *User) error {
+	clause, cargs := accountClause(u.AccountID)
+	args := append([]any{nullString(u.ExternalID), u.DisplayName, u.Locale, u.Role, u.Status,
+		nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.UpdatedAt), u.ID}, cargs...)
 	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE users SET external_id = ?, display_name = ?,
 		locale = ?, role = ?, status = ?, password_hash = ?, verified_at = ?, updated_at = ?
-		WHERE account_id = ? AND id = ?`,
-		nullString(u.ExternalID), u.DisplayName, u.Locale, u.Role, u.Status, nullString(u.PasswordHash),
-		nullMillis(u.VerifiedAt), millis(u.UpdatedAt), u.AccountID, u.ID))
+		WHERE id = ? AND `+clause, args...))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
 	return err
 }
 
-// DeleteUser removes a user of accountID, with its sessions and tokens. It returns ErrNotFound
+// DeleteUser removes a user of accountID ("" for an admin), with its sessions and tokens. It returns ErrNotFound
 // if there is no such user.
 func (tx *Tx) DeleteUser(ctx context.Context, accountID, id string) error {
-	return rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM users WHERE account_id = ? AND id = ?",
-		accountID, id))
+	clause, cargs := accountClause(accountID)
+	return rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM users WHERE id = ? AND "+clause,
+		append([]any{id}, cargs...)...))
 }
 
 // Verification is a single-use token that proves control of a user's email address: a
@@ -268,4 +298,13 @@ func (tx *Tx) DeleteVerifications(ctx context.Context, userID, purpose, keepID s
 	_, err := tx.q.ExecContext(ctx,
 		"DELETE FROM verifications WHERE user_id = ? AND purpose = ? AND id != ?", userID, purpose, keepID)
 	return err
+}
+
+// CountActiveAdmins returns how many active installation admins there are, not counting the one
+// with excludeID. It guards the last admin from being removed.
+func (tx *Tx) CountActiveAdmins(ctx context.Context, excludeID string) (int, error) {
+	var n int
+	err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM users
+		WHERE account_id IS NULL AND role = 'admin' AND status = 'active' AND id != ?`, excludeID).Scan(&n)
+	return n, err
 }

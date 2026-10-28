@@ -83,18 +83,21 @@ func (s *Server) authenticateSession(r *http.Request) (*auth.Principal, *store.S
 	case store.UserDisabled:
 		return nil, nil, apierr.New(apierr.UserDisabled, "the user is disabled")
 	}
-	acc, err := s.store.Account(ctx, sess.AccountID)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	switch acc.Status {
-	case store.AccountSuspended:
-		return nil, nil, apierr.New(apierr.AccountSuspended, "the account is suspended")
-	case store.AccountDeleting:
-		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+	// An installation admin has no account to check; its user status checks above still apply.
+	if u.AccountID != "" {
+		acc, err := s.store.Account(ctx, sess.AccountID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil, apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		switch acc.Status {
+		case store.AccountSuspended:
+			return nil, nil, apierr.New(apierr.AccountSuspended, "the account is suspended")
+		case store.AccountDeleting:
+			return nil, nil, apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+		}
 	}
 	if isUnsafe(r.Method) {
 		if err := s.checkCSRF(r, sess); err != nil {
@@ -207,7 +210,7 @@ func principalOf(r *http.Request) *auth.Principal {
 
 func requireAdmin(r *http.Request) error {
 	if !principalOf(r).IsAdmin() {
-		return apierr.New(apierr.Forbidden, "an installation admin key is required")
+		return apierr.New(apierr.Forbidden, "an installation admin is required")
 	}
 	return nil
 }
