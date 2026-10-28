@@ -98,6 +98,8 @@ Why this layout:
 - **Writes are copy-on-write.** Replacing a file's contents writes a new blob and then swaps the
   pointer in one database transaction. A download that already opened the old blob finishes
   reading it unharmed. File versions become cheap to add later: keep the old blob.
+- **Blobs are shared and collected.** A copy points at the same blob as its original. A blob no
+  file refers to is removed by a background sweep after `blobs.delete_grace`.
 - **Backups are consistent** without stopping the server (section 12).
 
 The cost is that the data directory is not browsable as ordinary files; `selfcloud` is the way
@@ -167,7 +169,7 @@ Small files can also be written in one request (section 9).
 | Download | `http.ServeContent` over an `*os.File`; Go hands the copy to `sendfile(2)` | Bytes go from page cache to socket without passing through the process. Holds for plain HTTP/1.1 and single ranges; TLS in the process or HTTP/2 means a copy in user space, so TLS is best terminated by the proxy in front. |
 | Upload | `pwrite` at the offset into a file preallocated with `fallocate` | No append races, no fragmentation, early disk-full error. The request body is a stream inside `net/http`, so one copy in user space is unavoidable; the network is the limit. |
 | Rename, move | Database row update | Instant, whatever the size. Only completing an upload uses `rename(2)`. |
-| Copy | `ioctl(FICLONE)` reflink where supported (XFS with reflink, Btrfs), else `copy_file_range(2)` | A 100 GB copy is near-instant with reflinks, and stays in the kernel otherwise. |
+| Copy | The new file entry points at the same blob | Blobs never change, so copies can share one: a 100 GB copy is a database row on any file system. Quota counts each copy in full, as users see them. |
 | Delete | Database delete; blob removed later by a worker | Deleting a large tree returns at once. |
 | List, usage | Indexed query; usage counters updated in the same transaction as the change | No disk walk, no `du`. |
 
@@ -181,7 +183,7 @@ Four kinds of caller:
 
 | Caller | How it authenticates | What it can do |
 |---|---|---|
-| **Installation admin** | `Authorization: Bearer sc_admin_...` | Manage accounts and their keys. |
+| **Installation admin** | `Authorization: Bearer sc_admin_...`, or an admin user signed in with a password | Manage accounts and their keys. |
 | **Account key** | `Authorization: Bearer sc_acct_...` | Everything inside one account: users, folders, grants, files, delegated tokens, webhooks, audit. |
 | **User session** | Email and password (argon2id), optional TOTP; `__Host-` session cookie, `HttpOnly`, `Secure`, `SameSite=Lax` | What the user's grants allow. Account *owners* (a user role) also manage users, folders and grants in the web interface. |
 | **Delegated token** | `Authorization: Bearer sct_...` | A short-lived, narrowed slice of an account key's or a user's rights, for a browser. |
@@ -233,6 +235,16 @@ whether or not an address exists. argon2id runs with RFC 9106 parameters, and th
 hashes running at once is capped so a burst of sign-ins cannot exhaust memory.
 
 ## 8. Accounts, users, folders and grants
+
+The hierarchy has three levels:
+
+1. An **installation admin** creates tenants (accounts). Admins are admin users who sign in, or
+   admin API keys for automation.
+2. A **tenant** (an account) creates its own users, its sub-accounts, and shares folders with
+   them, read-only or read-write. The tenant acts through its owner users in the web
+   interface, or through an account key from its own application.
+3. A **user** (a sub-account) must be verified before signing in, and reaches only the folders
+   shared with it, at the level granted.
 
 - **Account**: a tenant. Has a name, a status (`active`, `suspended`), a storage quota in bytes
   (`0` = unlimited) and usage counters (bytes, files, bytes reserved by uploads). Suspending
@@ -514,10 +526,12 @@ Decided on approval:
 6. **Delegated tokens**: Selfcloud mints them through the API.
 7. **PostgreSQL**: added after slice i.
 8. **Web interface stack**: Svelte.
+9. **Hierarchy** (2026-10-28): admin, then tenants, then sub-accounts (section 8). Admins can
+   also be users who sign in, not only API keys.
 
 Still open, and not blocking slices a to i:
 
-9. **Licence.** Options: AGPL-3.0 for the server with Apache-2.0 for the Go client (hosted forks
-   must publish their changes), or Apache-2.0 or MIT for everything (widest adoption).
-10. **Public repository.** Where it lives and when it opens. Until then the Go module path is
+10. **Licence.** Options: AGPL-3.0 for the server with Apache-2.0 for the Go client (hosted forks
+    must publish their changes), or Apache-2.0 or MIT for everything (widest adoption).
+11. **Public repository.** Where it lives and when it opens. Until then the Go module path is
     the placeholder `selfcloud`.
