@@ -123,6 +123,11 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) err
 			return nil
 		}
 		owner.AccountID, owner.CreatedAt, owner.UpdatedAt = out.ID, now, now
+		if in.Owner.Verification == methodEmail {
+			if err := s.checkMailBudget(out.ID, owner.Email); err != nil {
+				return err
+			}
+		}
 		issued, err = s.addUser(ctx, r, tx, owner, in.Owner.Verification, "user.create", now)
 		return err
 	})
@@ -165,7 +170,7 @@ func (s *Server) newOwner(r *http.Request, in *ownerInput) (*store.User, error) 
 	default:
 		return nil, apierr.New(apierr.InvalidRequest, "owner verification must be email, link or none")
 	}
-	if err := s.checkVerificationMethod(r, in.Verification, false); err != nil {
+	if err := s.checkVerificationMethod(r, in.Verification, linkTarget{role: store.RoleOwner, status: store.UserPending}); err != nil {
 		return nil, err
 	}
 	return &store.User{ID: id.New("usr"), Email: email, EmailKey: emailKey(email), DisplayName: displayName,

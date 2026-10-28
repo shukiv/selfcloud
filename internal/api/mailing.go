@@ -43,25 +43,32 @@ type verificationJSON struct {
 	Sent      *bool      `json:"sent,omitempty"`
 }
 
+// linkTarget describes the user a verification is for, which decides what an admin session may
+// ask for.
+type linkTarget struct {
+	role   string // the user's role; "" when the user is new and the role is decided by the caller
+	status string // the user's status
+	reset  bool   // true for a password reset
+}
+
 // linkAllowed reports whether a caller may ask for a link. A link hands a token to the caller, so
-// a key may always ask, and an admin session may ask to set up a user who has never verified. No
-// other session may: one could take over another user's password. reset is true for a password
-// reset, which an admin session may not ask for either.
-func linkAllowed(p *auth.Principal, reset bool) bool {
+// a key may always ask. An admin session may ask only to hand the first owner of a new account its
+// link: a pending owner, never a member, an admin or a password reset. Every other session gets
+// email only, since a session that could mint a link could take over the account it reaches.
+func linkAllowed(p *auth.Principal, t linkTarget) bool {
 	if p == nil {
 		return false
 	}
 	if p.Kind == auth.KindUser {
-		return p.Role == auth.RoleAdmin && !reset
+		return p.Role == auth.RoleAdmin && !t.reset && t.role == store.RoleOwner && t.status == store.UserPending
 	}
 	return true
 }
 
 // checkVerificationMethod checks a requested method against the caller and the configuration.
 // "none" verifies a user without any check, so only a key may use it. "link" follows linkAllowed.
-// "email" needs mail to be configured, and any caller may use it. reset is true for a password
-// reset.
-func (s *Server) checkVerificationMethod(r *http.Request, method string, reset bool) error {
+// "email" needs mail to be configured, and any caller may use it.
+func (s *Server) checkVerificationMethod(r *http.Request, method string, t linkTarget) error {
 	p := principalOf(r)
 	switch method {
 	case methodEmail:
@@ -69,7 +76,7 @@ func (s *Server) checkVerificationMethod(r *http.Request, method string, reset b
 			return apierr.New(apierr.InvalidRequest, "mail is not configured; an API key may use the method \"link\" or \"none\"")
 		}
 	case methodLink:
-		if !linkAllowed(p, reset) {
+		if !linkAllowed(p, t) {
 			return apierr.New(apierr.Forbidden, "only an API key may use this method; use email")
 		}
 	case methodNone:
@@ -130,7 +137,7 @@ func (s *Server) sendToken(ctx context.Context, u *store.User, it *issuedToken) 
 func (s *Server) deliver(ctx context.Context, r *http.Request, u *store.User, it *issuedToken, method string) *verificationJSON {
 	if method == methodLink {
 		// Defence in depth: a member or owner session never receives a token, whatever the method
-		// check said. An admin session may, since linkAllowed let it ask.
+		// check said. An admin session may, since linkAllowed let it ask for a pending owner.
 		if p := principalOf(r); p.Kind == auth.KindUser && p.Role != auth.RoleAdmin {
 			return &verificationJSON{Method: methodLink, ExpiresAt: &it.expires}
 		}
@@ -150,6 +157,15 @@ func (s *Server) deliver(ctx context.Context, r *http.Request, u *store.User, it
 		s.log.Error("cannot audit mail", "request_id", requestID(r), "error", err)
 	}
 	return &verificationJSON{Method: methodEmail, Sent: &sent}
+}
+
+// checkMailBudget charges one message to accountID and to address against the mail limits, before
+// anything is written, so a refused request creates nothing. Only method "email" sends mail.
+func (s *Server) checkMailBudget(accountID, address string) error {
+	if err := s.rateLimit("mail.account", accountID); err != nil {
+		return err
+	}
+	return s.rateLimit("mail.target", emailKey(address))
 }
 
 // clientKey is the rate-limit key for a request's client address.

@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"selfcloud/internal/apierr"
 	"selfcloud/internal/mail"
@@ -293,6 +294,8 @@ func TestListUsersFilters(t *testing.T) {
 	base := "/api/v1/accounts/" + acc.ID + "/users"
 	ann := decode[userResponse](t, call(t, s, "POST", base, key,
 		map[string]any{"email": "Ann@example.com", "external_id": "ext-a", "verification": "link"}))
+	// Listing is oldest first; two users made in the same millisecond would tie, so space them.
+	time.Sleep(2 * time.Millisecond)
 	call(t, s, "POST", base, key, map[string]any{"email": "bob@example.com", "verification": "link"})
 
 	list := decode[listResponse[userJSON]](t, call(t, s, "GET", base, key, nil))

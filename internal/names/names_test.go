@@ -82,6 +82,14 @@ func TestCleanRefuses(t *testing.T) {
 		"only spaces":       "   ",
 		"invalid utf-8":     "a\xffb",
 		"over 255 composed": strings.Repeat("é", 128), // 256 bytes after NFC
+		"zero width space":  "a\u200bb",
+		"zero width joiner": "a\u200db",
+		"byte order mark":   "\ufeffa",
+		"bidi override":     "a\u202eb",
+		"line separator":    "a\u2028b",
+		"paragraph sep":     "a\u2029b",
+		"only zero width":   "\u200b",
+		"only format chars": "\u200b\u200c\u2066",
 	} {
 		if _, _, err := Clean(in); err == nil {
 			t.Errorf("%s: Clean(%q) accepted", name, in)
@@ -101,5 +109,14 @@ func TestCleanRefuses(t *testing.T) {
 	}
 	if Valid("x/y") {
 		t.Error("Valid accepted a slash")
+	}
+}
+
+func TestCleanAcceptsVisibleScripts(t *testing.T) {
+	// Visible text in Hebrew, Arabic and Latin with no format characters still passes.
+	for _, s := range []string{"מסמך 2", "وثيقة ٢", "plain.txt"} {
+		if !Valid(s) {
+			t.Errorf("Valid(%q) = false", s)
+		}
 	}
 }

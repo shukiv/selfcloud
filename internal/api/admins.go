@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	"selfcloud/internal/apierr"
 	"selfcloud/internal/id"
@@ -43,7 +42,7 @@ func (s *Server) handleCreateAdmin(w http.ResponseWriter, r *http.Request) error
 	if in.Verification != methodEmail && in.Verification != methodLink {
 		return apierr.New(apierr.InvalidRequest, "verification must be email or link")
 	}
-	if err := s.checkVerificationMethod(r, in.Verification, false); err != nil {
+	if err := s.checkVerificationMethod(r, in.Verification, linkTarget{role: store.RoleAdmin, status: store.UserPending}); err != nil {
 		return err
 	}
 
@@ -62,6 +61,11 @@ func (s *Server) handleCreateAdmin(w http.ResponseWriter, r *http.Request) error
 		}
 		u = &store.User{ID: id.New("usr"), Email: email, EmailKey: key, DisplayName: displayName,
 			Locale: "en", Role: store.RoleAdmin, CreatedAt: now, UpdatedAt: now}
+		if in.Verification == methodEmail {
+			if err := s.checkMailBudget("", email); err != nil {
+				return err
+			}
+		}
 		var err error
 		issued, err = s.addUser(ctx, r, tx, u, in.Verification, "admin.create", now)
 		return err
@@ -97,8 +101,9 @@ func (s *Server) handleListAdmins(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
-// handleDeleteAdmin removes an admin user. Removing the last active admin is refused while no
-// active admin key exists either, because then nothing could manage the installation.
+// handleDeleteAdmin removes an admin user. Removing the last active admin is refused while no admin
+// key without an expiry is active either, because then nothing could manage the installation. A
+// key with an expiry does not count: it would lapse and leave the installation with no way in.
 func (s *Server) handleDeleteAdmin(w http.ResponseWriter, r *http.Request) error {
 	if err := requireAdmin(r); err != nil {
 		return err
@@ -118,12 +123,13 @@ func (s *Server) handleDeleteAdmin(w http.ResponseWriter, r *http.Request) error
 			if err != nil {
 				return err
 			}
-			keys, err := tx.CountActiveAdminKeys(ctx, time.Now())
+			keys, err := tx.CountUnexpiringAdminKeys(ctx)
 			if err != nil {
 				return err
 			}
 			if others == 0 && keys == 0 {
-				return apierr.New(apierr.Conflict, "this is the last active admin and no admin key is active")
+				return apierr.New(apierr.Conflict,
+					"this is the last active admin and no admin key without an expiry is active")
 			}
 		}
 		if err := tx.DeleteUser(ctx, "", u.ID); err != nil {

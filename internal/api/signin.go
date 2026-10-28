@@ -253,6 +253,17 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		sess     *store.Session
 	)
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
+		// Re-read the user under the write lock. A reset, a disable or a deletion that committed
+		// after the password check must not be undone by a session made from stale data.
+		fresh, err := tx.User(ctx, u.AccountID, u.ID)
+		switch {
+		case errors.Is(err, store.ErrNotFound) || (err == nil && fresh.PasswordHash != u.PasswordHash):
+			stateErr = apierr.New(apierr.Unauthenticated, "wrong email or password")
+		case err != nil:
+			return err
+		default:
+			u = fresh
+		}
 		// An admin has no account; a tenant user's account must be usable.
 		var acc *store.Account
 		if u.AccountID != "" {
@@ -426,6 +437,11 @@ func (s *Server) sendResetLinks(ctx context.Context, r *http.Request, key, accou
 			if u.Status != store.UserActive {
 				continue
 			}
+			// Over the mail budget, this address gets no mail. The answer is the same 202, so the
+			// limit cannot show whether the address is known.
+			if err := s.checkMailBudget(u.AccountID, u.Email); err != nil {
+				continue
+			}
 			it, err := s.issueToken(ctx, tx, u, store.PurposeReset, now)
 			if err != nil {
 				return err
@@ -580,22 +596,49 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) error {
 // maxPasswordFails is how many wrong current passwords in a row end the session that gave them.
 const maxPasswordFails = 5
 
+// passwordFailWindow is how long a session's count is kept after its last wrong password. Counts
+// of sessions that ended by reset, disable, deletion or expiry are dropped once this old, so the
+// map does not grow without bound.
+const passwordFailWindow = 15 * time.Minute
+
 // passwordFails counts wrong current passwords per session. A right one clears the count. The
 // count lives in memory, so a restart clears it, as it clears the rate limits.
 type passwordFails struct {
-	mu sync.Mutex
-	n  map[string]int // by session hash
+	mu        sync.Mutex
+	n         map[string]passwordFail // by session hash
+	lastSweep time.Time
 }
 
-// add records one wrong password for the session and returns the count so far.
+type passwordFail struct {
+	count int
+	last  time.Time
+}
+
+// add records one wrong password for the session and returns the count so far. A count older
+// than passwordFailWindow starts again at one.
 func (f *passwordFails) add(hash []byte) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	now := time.Now()
 	if f.n == nil {
-		f.n = map[string]int{}
+		f.n = map[string]passwordFail{}
 	}
-	f.n[string(hash)]++
-	return f.n[string(hash)]
+	if now.Sub(f.lastSweep) > time.Minute {
+		for k, v := range f.n {
+			if now.Sub(v.last) > passwordFailWindow {
+				delete(f.n, k)
+			}
+		}
+		f.lastSweep = now
+	}
+	e := f.n[string(hash)]
+	if now.Sub(e.last) > passwordFailWindow {
+		e.count = 0
+	}
+	e.count++
+	e.last = now
+	f.n[string(hash)] = e
+	return e.count
 }
 
 // clear forgets the session's count.
@@ -683,7 +726,13 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 		sess   *store.Session
 	)
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
+		// The password was checked outside this transaction. Under the write lock, the user must
+		// still be the one checked, with the same hash and active, or the change is refused.
 		found, err := tx.User(ctx, p.AccountID, p.UserID)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && (found.PasswordHash != u.PasswordHash ||
+			found.Status != store.UserActive)) {
+			return apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+		}
 		if err != nil {
 			return err
 		}

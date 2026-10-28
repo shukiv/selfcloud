@@ -147,7 +147,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	if err := s.checkVerificationMethod(r, in.Verification, false); err != nil {
+	if err := s.checkVerificationMethod(r, in.Verification, linkTarget{role: role, status: store.UserPending}); err != nil {
 		return err
 	}
 
@@ -181,6 +181,11 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 
+		if in.Verification == methodEmail {
+			if err := s.checkMailBudget(acc.ID, email); err != nil {
+				return err
+			}
+		}
 		u = &store.User{ID: id.New("usr"), AccountID: acc.ID, ExternalID: ext, Email: email, EmailKey: key,
 			DisplayName: displayName, Locale: locale, Role: role, Status: store.UserPending,
 			CreatedAt: now, UpdatedAt: now}
@@ -315,6 +320,20 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 				return err
 			}
 			changed["role"] = u.Role
+			// Grants are for members only. Leaving the member role ends them, so a later return
+			// to member does not bring old shares back.
+			if u.Role != store.RoleMember {
+				n, err := tx.DeleteUserGrants(ctx, u.ID)
+				if err != nil {
+					return err
+				}
+				if n > 0 {
+					if err := tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "grant.remove", u.ID,
+						map[string]any{"reason": "role", "role": u.Role, "count": n})); err != nil {
+						return err
+					}
+				}
+			}
 		}
 		if in.ExternalID != nil {
 			if u.ExternalID, err = cleanExternalID(*in.ExternalID); err != nil {
@@ -398,7 +417,14 @@ func (s *Server) handleSendVerification(w http.ResponseWriter, r *http.Request) 
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	if err := s.checkVerificationMethod(r, in.Method, false); err != nil {
+	// The check needs the target's role and status: a session may get a link only for a pending owner.
+	target := linkTarget{}
+	if found, err := s.store.User(r.Context(), acc.ID, r.PathValue("usr")); err == nil {
+		target = linkTarget{role: found.Role, status: found.Status}
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	if err := s.checkVerificationMethod(r, in.Method, target); err != nil {
 		return err
 	}
 	ctx := r.Context()
@@ -419,6 +445,11 @@ func (s *Server) handleSendVerification(w http.ResponseWriter, r *http.Request) 
 			return pendingConflict(found.Status)
 		}
 		u = found
+		if in.Method == methodEmail {
+			if err := s.checkMailBudget(acc.ID, u.Email); err != nil {
+				return err
+			}
+		}
 		if in.Method == methodNone {
 			u.Status = store.UserActive
 			u.VerifiedAt = &now
@@ -467,7 +498,7 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) err
 	if in.Method != methodEmail && in.Method != methodLink {
 		return apierr.New(apierr.InvalidRequest, "method must be email or link")
 	}
-	if err := s.checkVerificationMethod(r, in.Method, true); err != nil {
+	if err := s.checkVerificationMethod(r, in.Method, linkTarget{reset: true}); err != nil {
 		return err
 	}
 	ctx := r.Context()
@@ -488,6 +519,11 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) err
 			return apierr.New(apierr.Conflict, "the user must be verified and not disabled to reset the password")
 		}
 		u = found
+		if in.Method == methodEmail {
+			if err := s.checkMailBudget(acc.ID, u.Email); err != nil {
+				return err
+			}
+		}
 		if it, err = s.issueToken(ctx, tx, u, store.PurposeReset, now); err != nil {
 			return err
 		}

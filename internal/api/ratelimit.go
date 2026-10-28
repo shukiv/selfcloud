@@ -19,6 +19,8 @@ const limiterIdle = 10 * time.Minute
 type limiter struct {
 	mu        sync.Mutex
 	perMinute int
+	limit     rate.Limit // tokens a second
+	burst     int        // the most a key may spend at once
 	buckets   map[string]*bucket
 	lastSweep time.Time
 }
@@ -29,7 +31,14 @@ type bucket struct {
 }
 
 func newLimiter(perMinute int) *limiter {
-	return &limiter{perMinute: perMinute, buckets: map[string]*bucket{}}
+	return newLimiterRate(perMinute, time.Minute)
+}
+
+// newLimiterRate allows burst attempts per key and refills burst attempts every window, so
+// newLimiterRate(30, time.Hour) allows 30 an hour.
+func newLimiterRate(burst int, window time.Duration) *limiter {
+	return &limiter{perMinute: burst, limit: rate.Limit(float64(burst) / window.Seconds()), burst: burst,
+		buckets: map[string]*bucket{}}
 }
 
 // allow takes one token for key. When none is left it returns rate_limited with the time until
@@ -43,7 +52,7 @@ func (l *limiter) allow(key string) error {
 	}
 	b := l.buckets[key]
 	if b == nil {
-		b = &bucket{lim: rate.NewLimiter(rate.Limit(float64(l.perMinute)/60), l.perMinute)}
+		b = &bucket{lim: rate.NewLimiter(l.limit, l.burst)}
 		l.buckets[key] = b
 	}
 	b.seen = now

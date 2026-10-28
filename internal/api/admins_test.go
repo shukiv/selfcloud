@@ -55,9 +55,12 @@ func TestAdminCreationRules(t *testing.T) {
 	newAdminUser(t, s, admin, "ann@example.com")
 	sess := sessionFrom(t, s, login(t, s, "ann@example.com", testPassword, ""))
 
-	// An admin session may use a link to make a new admin, and nothing may skip verification.
+	// An admin session makes a new admin by email only: a link is for a pending owner. Nothing may
+	// skip verification.
+	wantError(t, callSession(t, s, sess, "POST", "/api/v1/admins",
+		map[string]any{"email": "eve@example.com", "verification": "link"}), 403, apierr.Forbidden)
 	wantStatus(t, callSession(t, s, sess, "POST", "/api/v1/admins",
-		map[string]any{"email": "bob@example.com", "verification": "link"}), 201)
+		map[string]any{"email": "bob@example.com", "verification": "email"}), 201)
 	wantError(t, call(t, s, "POST", "/api/v1/admins", admin,
 		map[string]any{"email": "bob@example.com", "verification": "none"}), 400, apierr.InvalidRequest)
 	// Email needs mail; with none configured it is refused.

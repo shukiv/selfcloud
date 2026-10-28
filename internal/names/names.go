@@ -6,6 +6,7 @@
 package names
 
 import (
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -44,7 +45,13 @@ func Clean(s string) (name, key string, err error) {
 			return "", "", invalid("the name may not contain / or \\")
 		case r == 0 || unicode.IsControl(r):
 			return "", "", invalid("the name contains a control character")
+		case invisible(r):
+			return "", "", invalid("the name contains an invisible or line-separator character")
 		}
+	}
+	// A name of only spaces and invisible characters shows nothing, so it is refused too.
+	if strings.IndexFunc(name, func(r rune) bool { return !unicode.IsSpace(r) && !invisible(r) }) < 0 {
+		return "", "", invalid("the name shows no visible character")
 	}
 	key = norm.NFC.String(cases.Fold().String(name))
 	return name, key, nil
@@ -54,6 +61,13 @@ func Clean(s string) (name, key string, err error) {
 func Valid(s string) bool {
 	_, _, err := Clean(s)
 	return err == nil
+}
+
+// invisible reports whether r is a format character (Cf), such as a zero-width space, a byte order
+// mark or a bidi override, or a line or paragraph separator (Zl, Zp). Such characters change how a
+// name reads or sorts without being seen, so names may not hold them.
+func invisible(r rune) bool {
+	return unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r)
 }
 
 func invalid(msg string) error {

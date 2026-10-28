@@ -295,3 +295,13 @@ func (s *Store) GrantedFolders(ctx context.Context, accountID, userID string) ([
 	}
 	return out, rows.Err()
 }
+
+// DeleteUserGrants removes every grant the user holds and returns how many. It runs when a user
+// stops being a member, so the grants do not come back if the user becomes a member again.
+func (tx *Tx) DeleteUserGrants(ctx context.Context, userID string) (int64, error) {
+	res, err := tx.q.ExecContext(ctx, "DELETE FROM grants WHERE user_id = ?", userID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

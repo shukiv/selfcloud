@@ -188,6 +188,9 @@ Four kinds of caller:
 | **User session** | Email and password (argon2id), optional TOTP; `__Host-` session cookie, `HttpOnly`, `Secure`, `SameSite=Lax` | What the user's grants allow. Account *owners* (a user role) also manage users, folders and grants in the web interface. |
 | **Delegated token** | `Authorization: Bearer sct_...` | A short-lived, narrowed slice of an account key's or a user's rights, for a browser. |
 
+An installation admin has no direct path to a tenant's files. It reaches them only through an
+account key it creates, and that creation is audited.
+
 **API keys** are 256-bit random secrets with a visible prefix. Only a SHA-256 hash is stored (a
 slow hash adds nothing for secrets this long), each key is shown once at creation, and keys can
 carry an expiry and be revoked. The first admin key comes from `selfcloud admin create-key` or

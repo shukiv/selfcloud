@@ -127,6 +127,10 @@ func New(opts Options) (*Server, error) {
 			// These limits are fixed: they guard a password, not a configurable flow.
 			"changepw.user": newLimiter(5),
 			"changepw.ip":   newLimiter(10),
+			// Verification and reset mail: per account, and per address it goes to. Links returned
+			// to a key are not mail and are not counted.
+			"mail.account": newLimiterRate(30, time.Hour),
+			"mail.target":  newLimiterRate(3, time.Hour),
 		},
 	}
 	if pub.Scheme == "https" {

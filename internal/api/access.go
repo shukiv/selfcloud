@@ -18,8 +18,9 @@ const (
 // folderAccess returns the folder with the given ID and the level the caller has on it: "read" or
 // "write". Every file operation goes through it.
 //
-// Installation admins, keys and users alike, get forbidden. Admins manage tenants and never read
-// their files, so no admin path reaches folder contents. Account keys and owner sessions reach
+// Installation admins, keys and users alike, get forbidden. An admin has no direct path to folder
+// contents. To act inside a tenant, an admin creates an account key, and the audit log records
+// that creation. Account keys and owner sessions reach
 // every folder of their account, with write. A member session reaches the folders it holds a
 // grant on, at the granted level. A folder the caller cannot reach is not_found, so folder IDs
 // cannot be probed.

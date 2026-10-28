@@ -104,12 +104,12 @@ func (s *Store) TouchAPIKey(ctx context.Context, id string, at time.Time) error 
 	})
 }
 
-// CountActiveAdminKeys returns how many installation admin keys can authenticate at now: not
-// revoked and not expired.
-func (tx *Tx) CountActiveAdminKeys(ctx context.Context, now time.Time) (int, error) {
+// CountUnexpiringAdminKeys returns how many installation admin keys are not revoked and have no
+// expiry. The last-admin guard counts only these: a key that expires would leave the installation
+// with no way in once it lapsed.
+func (tx *Tx) CountUnexpiringAdminKeys(ctx context.Context) (int, error) {
 	var n int
 	err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_keys
-		WHERE account_id IS NULL AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)`,
-		millis(now)).Scan(&n)
+		WHERE account_id IS NULL AND revoked_at IS NULL AND expires_at IS NULL`).Scan(&n)
 	return n, err
 }
