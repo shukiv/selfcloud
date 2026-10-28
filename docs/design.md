@@ -33,7 +33,7 @@ One static binary, `selfcloud`, with subcommands:
 |---|---|
 | `serve` | Run the server. `ui.enabled` decides whether the web interface is served. |
 | `migrate` | Apply database migrations (`serve` also does this on start). |
-| `admin` | Bootstrap and recovery: create an installation admin key, create an account or an owner user. |
+| `admin` | Bootstrap and recovery: create an installation admin key, create an account or an owner user, `recount-usage` to rebuild usage counters from the files and uploads. |
 | `backup`, `fsck` | Consistent metadata snapshot; check database against disk. |
 | `healthcheck` | Exit 0 if the local server is ready (for Docker, which has no curl in the image). |
 
@@ -127,7 +127,7 @@ and `report.pdf` (which would collide when downloaded to Windows or macOS).
 Uploads use **tus 1.0** with the `creation`, `creation-with-upload`, `expiration`, `checksum`
 and `termination` extensions, so existing clients such as tus-js-client and Uppy work as they
 are. The protocol is implemented inside Selfcloud (*proposed*) rather than through the tusd
-library, because quota reservation, authorisation, preallocation and error codes have to be
+library, because quota reservation, authorisation, disk checks and error codes have to be
 woven into each step.
 
 1. **Create.** `POST /api/v1/uploads` with `Upload-Length` and `Upload-Metadata` (target
@@ -137,9 +137,14 @@ woven into each step.
    Selfcloud directly from another origin. The server checks the caller's permission,
    the name, `upload.max_file_size` (default 100 GiB) and the quota: *used + reserved + length*
    must fit, or the reply is `quota_exceeded`. It then reserves `length` bytes against the
-   account, creates the upload file and preallocates it with `fallocate`, so a full disk fails
-   now with `storage_full`, not after 80 GB have been sent. Deferred length is not supported;
-   the size must be declared.
+   account and creates the upload file. The disk is checked at the same moment, so a full disk
+   fails now with `storage_full`, not after 80 GB have been sent: every open upload's unwritten
+   bytes must fit in the usable space (free space less `storage.min_free`), and one account's
+   unwritten bytes may take at most `upload.max_disk_share_percent` of it (default 50), so one
+   account cannot refuse every other account's uploads. An account with no quota may hold at
+   most `upload.max_reserved_per_account` (default 1 TiB) in unfinished uploads. Files are not
+   preallocated: `fallocate` is not on every file system, and these checks give the early
+   refusal it was meant to give. Deferred length is not supported; the size must be declared.
 2. **Send pieces.** `PATCH` with `Upload-Offset`. The body is streamed straight into the file
    at that offset (`pwrite`, through a fixed 1 MiB buffer, so memory per upload stays flat
    whatever the file size). A body larger than `upload.max_chunk_size` is refused with
@@ -169,7 +174,9 @@ woven into each step.
    and each account `upload.max_open_per_account` (default 1000); the free-space check counts
    the bytes every open upload has yet to write.
 6. **Expire.** Unfinished uploads expire after `upload.expiry` (default 24 h, sent as
-   `Upload-Expires`); the file is deleted and the reservation released.
+   `Upload-Expires`) without a write, and in any case `upload.max_lifetime` (default 168 h)
+   after creation, so a trickle of writes cannot hold a reservation for ever. The file is
+   deleted and the reservation released.
 
 An upload belongs to its account, user and target, not to the credential that created it: any
 later token for the same user with `write` on the target may continue it, so an upload can
@@ -184,7 +191,7 @@ Small files can also be written in one request (section 9).
 | Operation | Method | Effect |
 |---|---|---|
 | Download | `http.ServeContent` over an `*os.File`; Go hands the copy to `sendfile(2)` | Bytes go from page cache to socket without passing through the process. Holds for plain HTTP/1.1 and single ranges; TLS in the process or HTTP/2 means a copy in user space, so TLS is best terminated by the proxy in front. |
-| Upload | `pwrite` at the offset into a file preallocated with `fallocate` | No append races, no fragmentation, early disk-full error. The request body is a stream inside `net/http`, so one copy in user space is unavoidable; the network is the limit. |
+| Upload | `pwrite` at the offset into the upload file | No append races; the disk check at creation gives the early disk-full error. The request body is a stream inside `net/http`, so one copy in user space is unavoidable; the network is the limit. |
 | Rename, move | Database row update | Instant, whatever the size. Only completing an upload uses `rename(2)`. |
 | Copy | The new file entry points at the same blob | Blobs never change, so copies can share one: a 100 GB copy is a database row on any file system. Quota counts each copy in full, as users see them. |
 | Delete | Database delete; blob removed later by a worker | Deleting a large tree returns at once. |
@@ -269,7 +276,10 @@ The hierarchy has three levels:
    shared with it, at the level granted.
 
 - **Account**: a tenant. Has a name, a status (`active`, `suspended`), a storage quota in bytes
-  (`0` = unlimited) and usage counters (bytes, files, bytes reserved by uploads). Suspending
+  (`0` = unlimited) and usage counters (bytes, files, bytes reserved by uploads). Every write that
+  grows usage checks *used + reserved + growth* against the quota in the same transaction, and
+  an upload reserves its declared length when it is created, so the counters always match the
+  rows. A copy counts in full even though it shares the blob. Suspending
   blocks all access but keeps the data. The quota may be lowered below current usage: existing
   files stay, and new writes get `quota_exceeded` until usage drops. Deleting an account runs
   as a job (`202`), since a large tree takes time to remove.
@@ -428,8 +438,8 @@ status:
 | `checksum_mismatch` | 460 | Piece failed its `Upload-Checksum` (status as tus defines). |
 | `internal` | 500 | Server fault; the `request_id` finds it in the log. |
 | `unavailable` | 503 | Shutting down or in maintenance; retry after `Retry-After`. |
-| `quota_exceeded` | 507 | Account quota. `required_bytes`, `available_bytes`. |
-| `storage_full` | 507 | The server's disk is full. |
+| `quota_exceeded` | 507 | Account quota. `required_bytes`, `available_bytes`; `scope` is `quota`, or `account_reservations` for the unfinished-upload cap of an account with no quota. |
+| `storage_full` | 507 | The server's disk is full. `scope` is `server`, or `account` when the account holds its share of the disk in unfinished uploads. |
 
 Messages are English. Clients translate by code; `details` gives them the numbers to fill in.
 
@@ -522,8 +532,14 @@ cannot leak into another's results. Tests check this for each endpoint.
   that the data directory is writable, and that free disk is above `storage.min_free`.
 - **Metrics**: Prometheus at `/metrics`, optionally on its own address: requests by route,
   status and duration, bytes in and out, uploads active, completed and failed, webhook queue
-  depth, blob garbage-collection backlog. Per-account figures come from the usage API, not from
-  metric labels.
+  depth, blob garbage-collection backlog, and installation totals `selfcloud_storage_used_bytes`
+  and `selfcloud_storage_reserved_bytes`. Per-account figures come from the usage API
+  (`GET /accounts/{acc}/usage`: `quota_bytes` and `available_bytes` are `null` when the quota
+  is unlimited), not from metric labels.
+- **Usage counters**: the sweep compares the reserved counters with the uploads and logs a
+  warning when they disagree; it never repairs them. `selfcloud admin recount-usage
+  [-account ID]` rebuilds used and reserved bytes from the rows, one account per transaction,
+  and records the before and after figures in the audit log.
 - **Logs**: JSON through `log/slog`, one line per request with its request ID. Passwords, keys,
   tokens, signed-link tokens and file contents never reach the log.
 - **Client IP**: taken from `X-Forwarded-For` or a named header such as `CF-Connecting-IP` only
@@ -632,3 +648,8 @@ Decided on approval:
     an SPDX header. Anyone who runs a modified Selfcloud as a service must publish their changes.
 15. **Public repository** (2026-10-28): `github.com/shukiv/selfcloud`, public from the start. It
     is also the Go module path.
+16. **Upload disk checks** (2026-10-28, slice h): upload files are not preallocated with
+    `fallocate`. The disk checks at creation (section 5) give the early `storage_full` instead.
+    One account's unfinished uploads may hold at most 50% of the usable disk by default
+    (`upload.max_disk_share_percent`). Many accounts together can still fill the pool. The
+    install-wide check then refuses new uploads with `storage_full`, and the operator adds disk.

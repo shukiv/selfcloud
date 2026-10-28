@@ -177,6 +177,53 @@ func TestDeleteFolderReleasesItsUploads(t *testing.T) {
 	}
 }
 
+// TestDeleteFolderReleasesUploadsInDirsMovedIn: an upload aimed at a directory keeps its own folder
+// when the directory moves to another folder. Deleting the second folder deletes the directory and,
+// through the foreign key, the upload, so its reservation must be released too.
+func TestDeleteFolderReleasesUploadsInDirsMovedIn(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	acc := newAccountRow(t, s, "A")
+	f := newFolderRow(t, s, acc, "Docs", "docs")
+	g := newFolderRow(t, s, acc, "Other", "other")
+	froot, err := s.RootNode(ctx, acc, f.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groot, err := s.RootNode(ctx, acc, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := &Node{ID: id.New("nod"), AccountID: acc, FolderID: f.ID, ParentID: froot.ID, Name: "d", NameKey: "d",
+		Kind: KindDir, CreatedAt: Now(), ModifiedAt: Now()}
+	if err := s.Write(ctx, func(tx *Tx) error { return tx.InsertNode(ctx, dir) }); err != nil {
+		t.Fatal(err)
+	}
+	moved := newUploadRow(t, s, acc, f.ID, dir.ID, 400)
+	newUploadRow(t, s, acc, f.ID, "", 100) // stays in Docs, which is not deleted
+
+	// Move the directory to Other, as a move across folders does.
+	if err := s.Write(ctx, func(tx *Tx) error {
+		dir.ParentID = groot.ID
+		dir.FolderID = g.ID
+		if err := tx.UpdateNode(ctx, dir); err != nil {
+			return err
+		}
+		return tx.SetSubtreeFolder(ctx, acc, dir.ID, g.ID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Write(ctx, func(tx *Tx) error { return tx.DeleteFolder(ctx, acc, g.ID) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Upload(ctx, acc, moved.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the upload into the moved directory survived its folder: %v", err)
+	}
+	if got := usageRow(t, s, acc).Reserved; got != 100 {
+		t.Errorf("reserved after deleting the folder the directory moved to = %d; want 100", got)
+	}
+}
+
 // TestRecountAccountRepairsDrift: drifted counters are set back to what the rows say, and the
 // figures before and after are returned.
 func TestRecountAccountRepairsDrift(t *testing.T) {
