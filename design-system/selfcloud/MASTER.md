@@ -121,6 +121,18 @@ right-to-left match.
   ago") through `Intl.RelativeTimeFormat`.
 - The language picker shows each language in its own name: English, עברית, العربية, Español,
   Français, Português (Portugal), Русский.
+- Seven languages, no more and no fewer: `en` (default and fallback), `es`, `fr`, `pt`
+  (European Portuguese: spelling and usage of Portugal, never Brazil), `ru`, `ar` and `he`
+  (both right to left).
+- The language comes from `?lang=` on the link, then the user's `locale`, then
+  `Accept-Language`, then English. Changing it in the picker saves it with `PATCH /me`.
+- Strings live in `ui/src/i18n/<code>.json`, one flat catalogue per language with the same
+  keys. A missing key shows the English text; a test fails if any key is missing from any
+  catalogue, or a placeholder differs between languages.
+- Hebrew addresses the reader in the plural imperative, so no text assumes a gender:
+  "התחברו", "העלו קבצים", "בחרו סיסמה"; never "התחבר" or "התחברי".
+- Plurals use `Intl.PluralRules`: Arabic has six plural forms and Russian three, so a
+  catalogue entry with a count holds every form its language needs.
 
 ## Motion
 

@@ -13,6 +13,12 @@ in Docker. It handles files up to 100 GB, uploaded in resumable pieces whose siz
 can cap (some proxies refuse any request over 100 MB), and it reaches the disk by the fastest
 means the operating system offers.
 
+**Languages.** The web interface and every email Selfcloud sends are available in seven
+languages: English (`en`, the default and fallback), Spanish (`es`), French (`fr`), European
+Portuguese (`pt`, written for Portugal, not Brazil), Russian (`ru`), and Arabic (`ar`) and
+Hebrew (`he`), which are laid out right to left. API error messages stay English; clients
+translate them by `code` (section 9). Section 10 says how a language is chosen.
+
 **Non-goals for the first release.** Desktop sync clients, WebDAV or S3-compatible endpoints,
 several servers sharing one data set (high availability), object-store back ends, end-to-end
 encryption, and full-text search. The design leaves room for each of them, and section 15 asks
@@ -332,7 +338,7 @@ Uploads (tus 1.0)
 Users                                      session
   POST /auth/login /auth/logout /auth/verify /auth/password/forgot /auth/password/reset
   POST /auth/totp/{enrol,confirm,disable}
-  GET  /me
+  GET|PATCH /me                            PATCH: display_name, locale
 
 Office editing
   POST /nodes/{nod}/office                 editor URL and WOPI token for the client to open
@@ -418,9 +424,28 @@ set-up, password reset, TOTP set-up, the file browser (upload with progress and 
 download, preview of images, PDF, video and text, new folder, rename, move, copy, delete, text
 editing, opening in the office editor), and owner screens for users, folders and grants.
 Branding comes from config: product name, logo, favicon and colours. Light, dark and
-follow-the-system themes. All strings are translated from catalogues; right-to-left languages
-are laid out with CSS logical properties and `dir`. It works at phone width. *Proposed* stack:
-TypeScript, Svelte and Vite, compiled into the binary, so Node is needed only to build it.
+follow-the-system themes. It works at phone width. *Proposed* stack: TypeScript, Svelte and
+Vite, compiled into the binary, so Node is needed only to build it.
+
+**Languages in the web interface and in email.** The seven languages of section 1.
+
+- *Choosing one.* The web interface uses, in order: `?lang=` on the link that opened it (so a
+  client can open Selfcloud in its own user's language), the signed-in user's `locale`, the
+  browser's `Accept-Language`, then English. A choice made in the language picker is saved to
+  the user's `locale` with `PATCH /me`. Email uses the recipient's `locale`, then English.
+- *Setting it.* `locale` is a field on users, set when the user is created or with `PATCH` on
+  the user (by a key or an owner) or on `/me` (by the user). A tag resolves by its exact
+  match, then its base language, then English: `pt-BR` gets the European Portuguese text, the
+  only Portuguese there is.
+- *Catalogues.* Strings live in plain files, one JSON catalogue per language for the web
+  interface and one template per purpose and language for email (`verify.he.txt`). A missing
+  key falls back to English, and a test fails when any key or template is missing from any of
+  the seven languages.
+- *Layout.* Arabic and Hebrew set `dir="rtl"` and mirror the whole layout through CSS logical
+  properties, never physical left and right. Dates, numbers and sizes are formatted for the
+  locale. The language picker names each language in itself.
+- *Wording.* Hebrew addresses the reader in the plural imperative (התחברו, not התחבר or
+  התחברי), so no text assumes a gender. Portuguese follows European spelling and usage.
 
 ## 11. Data model
 
@@ -502,7 +527,7 @@ Each slice ships with tests and leaves the server runnable.
 |---|---|
 | a | Server skeleton, config, logging, `/healthz`, `/readyz`, `/metrics`, graceful shutdown, Dockerfile, CI |
 | b | Accounts, admin and account keys, `admin` bootstrap command, JSON errors, audit log |
-| c | Users, verification (`email`, `link`, `none`), SMTP and templates, passwords, sessions, rate limits |
+| c | Users, verification (`email`, `link`, `none`), SMTP and templates in the seven languages, passwords, sessions, rate limits |
 | d | Folders and grants |
 | e | File operations: list, stat, mkdir, rename, move, copy, delete, small-file write with `If-Match` |
 | f | Resumable uploads (tus), with crash and resume tests and the upload benchmark |
@@ -510,7 +535,7 @@ Each slice ships with tests and leaves the server runnable.
 | h | Quotas and usage, enforced at upload creation and while writing |
 | i | Delegated tokens and CORS |
 | j | Webhooks |
-| k | Web interface |
+| k | Web interface, in the seven languages, with right-to-left layout for Arabic and Hebrew |
 | l | WOPI host |
 
 An API client can switch over once slices a to i work; j, k and l can follow. The OpenAPI file
