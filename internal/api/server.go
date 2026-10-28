@@ -58,6 +58,12 @@ type Server struct {
 	// origin is public_url's scheme and host. Browsers send it as Origin, and unsafe requests
 	// made with a session must carry it.
 	origin string
+	// contentHost is the host of content_url, or "" when it is not set. Requests on that host
+	// get signed links and nothing else; see contentGate.
+	contentHost   string
+	contentScheme string
+	// links signs and verifies signed download links; see links.go.
+	links *linkKeys
 	// sessionCookie is the cookie's name; the "__Host-" form is used when public_url is https.
 	sessionCookie string
 	// bg holds mail sent after a response has gone out, so Serve can wait for it.
@@ -131,6 +137,19 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("api: public_url: %w", err)
 	}
 	cfg := opts.Config
+	links, err := loadLinkKeys(cfg.DataDir, cfg.Links)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	var contentHost, contentScheme string
+	if cfg.ContentURL != "" {
+		cu, err := url.Parse(cfg.ContentURL)
+		if err != nil {
+			return nil, fmt.Errorf("api: content_url: %w", err)
+		}
+		contentScheme = cu.Scheme
+		contentHost = canonicalHost(cu.Host, cu.Scheme)
+	}
 	s := &Server{
 		cfg:           cfg,
 		log:           log,
@@ -142,6 +161,9 @@ func New(opts Options) (*Server, error) {
 		mailer:        opts.Mailer,
 		templates:     templates,
 		origin:        pub.Scheme + "://" + pub.Host,
+		contentHost:   contentHost,
+		contentScheme: contentScheme,
+		links:         links,
 		sessionCookie: "selfcloud_session",
 		limits: map[string]*limiter{
 			"login.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
@@ -168,6 +190,10 @@ func New(opts Options) (*Server, error) {
 			"mail.forgot.first": newLimiterRate(1, time.Hour),
 			// Starting uploads, per caller: each one reserves disk, so a flood of them is refused.
 			"upload.create": newLimiter(60),
+			// Signed links: creation per principal; serving per client address, generous enough
+			// for a player seeking through a video.
+			"links.create": newLimiter(120),
+			"links.serve":  newLimiter(600),
 		},
 	}
 	if pub.Scheme == "https" {
@@ -185,7 +211,7 @@ func New(opts Options) (*Server, error) {
 		mux.Handle(rt.method+" "+rt.path, s.wrap(rt))
 	}
 	mux.Handle("/", s.wrap(route{path: "unmatched", handle: s.handleNotFound}))
-	s.handler = s.observe(s.drain(mux))
+	s.handler = s.observe(s.drain(s.contentGate(mux)))
 	return s, nil
 }
 
@@ -250,7 +276,13 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/move", handle: s.handleMoveNode, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/copy", handle: s.handleCopyNode, auth: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true},
+
+		// A signed link carries its own authority: no credential, and no cookie is read.
+		{method: http.MethodGet, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},
+		{method: http.MethodHead, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},
 
 		{method: http.MethodOptions, path: "/api/v1/uploads", handle: s.handleUploadOptions},
 		{method: http.MethodPost, path: "/api/v1/uploads", handle: s.handleCreateUpload, auth: true},

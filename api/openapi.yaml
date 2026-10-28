@@ -1330,25 +1330,86 @@ paths:
       operationId: getContent
       summary: Download a file
       description: |
-        The whole file, sent as an attachment with `X-Content-Type-Options: nosniff` and a
-        sandboxing `Content-Security-Policy`. A matching `If-None-Match` is `304`. Ranges and
-        signed links come later.
+        The file's contents. `Range` may name up to 16 byte ranges: one is `206` with a
+        `Content-Range`, several are a `multipart/byteranges` body. A range that is malformed, lies
+        outside the file, or is one of more than 16 is `range_not_satisfiable`, with
+        `Content-Range: bytes */<size>`. `If-Range` decides whether a range applies: when it does not
+        match the current ETag or Last-Modified, the whole file is sent. `If-None-Match` and
+        `If-Modified-Since` give `304`; `If-Match` and `If-Unmodified-Since` give
+        `precondition_failed` when they fail.
+
+        `disposition=inline` is honoured only where policy allows: on the content origin for any
+        type, and on the main origin, when `content_url` is not set, for images other than SVG, PDF,
+        audio, video and plain text (text is sent as UTF-8). Otherwise the response is an attachment.
+        Every response carries `X-Content-Type-Options: nosniff` and the sandboxing
+        `Content-Security-Policy: sandbox; default-src 'none'`.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
-        - name: If-None-Match
+        - { name: Range, in: header, schema: { type: string, example: "bytes=0-1023" } }
+        - name: If-Range
           in: header
+          description: A strong ETag or an HTTP date. The range applies only when it matches.
           schema: { type: string }
+        - { name: If-Match, in: header, schema: { type: string } }
+        - { name: If-None-Match, in: header, schema: { type: string } }
+        - { name: If-Modified-Since, in: header, schema: { type: string } }
+        - { name: If-Unmodified-Since, in: header, schema: { type: string } }
+        - name: disposition
+          in: query
+          schema: { type: string, enum: [attachment, inline], default: attachment }
       responses:
         "200":
-          description: The contents.
+          description: The whole file.
           headers:
             ETag: { schema: { type: string } }
             Last-Modified: { schema: { type: string } }
+            Accept-Ranges: { schema: { type: string, enum: [bytes] } }
+            Content-Disposition: { schema: { type: string } }
+            Cross-Origin-Resource-Policy: { schema: { type: string } }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "206":
+          description: The requested range, or a `multipart/byteranges` body for several.
+          headers:
+            Content-Range: { schema: { type: string } }
+            ETag: { schema: { type: string } }
           content:
             "*/*":
               schema: { type: string, format: binary }
         "304":
-          description: "Not modified: the If-None-Match ETag is current."
+          description: "Not modified: the If-None-Match ETag is current, or the file is older than If-Modified-Since."
+        "416":
+          description: "The Range header is malformed, names more than 16 ranges, or lies outside the file. `details.size_bytes` gives the size."
+          headers:
+            Content-Range: { schema: { type: string, example: "bytes */1048576" } }
+        default: { $ref: "#/components/responses/Error" }
+    head:
+      tags: [Files]
+      operationId: headContent
+      summary: The headers of a download, without the body
+      description: The status and headers `GET` would send, with no body. Takes the same headers.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - { name: Range, in: header, schema: { type: string } }
+        - { name: If-Range, in: header, schema: { type: string } }
+        - { name: If-None-Match, in: header, schema: { type: string } }
+        - { name: If-Modified-Since, in: header, schema: { type: string } }
+        - name: disposition
+          in: query
+          schema: { type: string, enum: [attachment, inline], default: attachment }
+      responses:
+        "200":
+          description: The file's headers.
+          headers:
+            ETag: { schema: { type: string } }
+            Content-Length: { schema: { type: integer } }
+        "206":
+          description: The range's headers.
+        "304":
+          description: Not modified.
+        "416":
+          description: The range is not satisfiable; see GET.
         default: { $ref: "#/components/responses/Error" }
     put:
       tags: [Files]
@@ -1375,6 +1436,116 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/links:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Files]
+      operationId: createLink
+      summary: Make a signed download link
+      description: |
+        A link to one file that needs no credential: `GET` on it serves the file. The link names the
+        file's current contents, so it stops working when the file changes, and it expires. The
+        caller needs read access to the file to ask for a link; the link itself is the grant for
+        whoever holds it, so treat it as a secret. It is written to the audit log (`node.link`).
+        The URL is on `content_url` when that is set, else on `public_url`. Creation is limited to
+        120 a minute per caller (`rate_limited`, with `Retry-After`).
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                ttl:
+                  type: integer
+                  minimum: 1
+                  description: "Lifetime in seconds. Default `links.default_ttl`, 5 minutes. A value above `links.max_ttl` (24 hours by default) is `invalid_request`; `details.max_ttl_seconds` gives the cap."
+                disposition:
+                  type: string
+                  enum: [attachment, inline]
+                  default: attachment
+      responses:
+        "201":
+          description: The link.
+          headers:
+            Cache-Control: { schema: { type: string, example: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignedLink" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/links/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The token from `POST /nodes/{nod}/links`. It is a credential, so the access log records the route, not the path.
+        schema: { type: string, maxLength: 512 }
+    get:
+      tags: [Files]
+      operationId: getSignedLink
+      summary: Download the file a signed link names
+      description: |
+        No credential is needed, and no cookie is read. The token must match the file's current
+        ETag. A link past its time is `link_expired` (410). A link that is malformed, forged, for a
+        file that has changed or been deleted, or for another node is `not_found`, so a probe learns
+        nothing from the difference. A suspended account is `account_suspended`. The user's grants
+        are not consulted. Requests are limited to 600 a minute per client address, charged before
+        the token is read (`rate_limited`). Range, conditional headers and the safety headers work as for
+        `GET /nodes/{nod}/content`. On the content origin this is the only path that is served.
+      security: []
+      parameters:
+        - { name: Range, in: header, schema: { type: string } }
+        - { name: If-Range, in: header, schema: { type: string } }
+        - { name: If-None-Match, in: header, schema: { type: string } }
+        - { name: If-Modified-Since, in: header, schema: { type: string } }
+      responses:
+        "200":
+          description: The whole file.
+          headers:
+            ETag: { schema: { type: string } }
+            Last-Modified: { schema: { type: string } }
+            Accept-Ranges: { schema: { type: string, enum: [bytes] } }
+            Content-Disposition: { schema: { type: string } }
+            Cross-Origin-Resource-Policy: { schema: { type: string, example: cross-origin } }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "206":
+          description: The requested range, or a `multipart/byteranges` body.
+          headers:
+            Content-Range: { schema: { type: string } }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "304":
+          description: Not modified.
+        "416":
+          description: The range is not satisfiable.
+          headers:
+            Content-Range: { schema: { type: string, example: "bytes */1048576" } }
+        default: { $ref: "#/components/responses/Error" }
+    head:
+      tags: [Files]
+      operationId: headSignedLink
+      summary: The headers of a signed link's file, without the body
+      description: As `GET`, with no body.
+      security: []
+      parameters:
+        - { name: Range, in: header, schema: { type: string } }
+        - { name: If-Range, in: header, schema: { type: string } }
+      responses:
+        "200":
+          description: The file's headers.
+        "206":
+          description: The range's headers.
+        "416":
+          description: The range is not satisfiable.
         default: { $ref: "#/components/responses/Error" }
 
 components:
@@ -1744,6 +1915,7 @@ components:
         | upload_offset_mismatch | 409 | Upload-Offset differs from the server's. |
         | locked | 409 | Locked by an office editor. |
         | upload_expired | 410 | The upload expired; start again. |
+        | link_expired | 410 | The signed link's time has run out; ask for a new one. |
         | unsupported_media_type | 415 | A tus piece must be application/offset+octet-stream. |
         | too_many_uploads | 429 | The caller or the account holds the most unfinished uploads it may; `details.scope` says which. |
         | precondition_required | 428 | A write that needs If-Match sent none. |
@@ -1772,6 +1944,7 @@ components:
         - upload_offset_mismatch
         - locked
         - upload_expired
+        - link_expired
         - unsupported_media_type
         - too_many_uploads
         - precondition_failed
@@ -1785,6 +1958,16 @@ components:
         - unavailable
         - quota_exceeded
         - storage_full
+
+    SignedLink:
+      type: object
+      required: [url, disposition, expires_at]
+      properties:
+        url:
+          type: string
+          description: The absolute link. It is a credential; do not log it.
+        disposition: { type: string, enum: [attachment, inline] }
+        expires_at: { type: string, format: date-time }
 
     Account:
       type: object

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/netip"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"selfcloud/internal/apierr"
@@ -147,7 +148,9 @@ func (s *Server) finish(r *http.Request, sw *statusWriter, info *reqInfo, d time
 		return
 	}
 	path := r.URL.Path
-	if info.secretPath {
+	if info.secretPath || strings.HasPrefix(path, linkPrefix) {
+		// A signed link's token is a credential. It is never logged, even on a request that
+		// matched no route.
 		path = info.route
 	}
 	attrs := []slog.Attr{

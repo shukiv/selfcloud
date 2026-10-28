@@ -58,6 +58,7 @@ type Config struct {
 	Blobs     BlobsConfig     `yaml:"blobs"`
 	Copy      CopyConfig      `yaml:"copy"`
 	Upload    UploadConfig    `yaml:"upload"`
+	Links     LinksConfig     `yaml:"links"`
 	UI        UIConfig        `yaml:"ui"`
 	Users     UsersConfig     `yaml:"users"`
 	Sessions  SessionsConfig  `yaml:"sessions"`
@@ -167,6 +168,20 @@ type UploadConfig struct {
 	MaxOpenPerAccount int `yaml:"max_open_per_account"`
 }
 
+// LinksConfig controls signed download links.
+type LinksConfig struct {
+	// DefaultTTL is a link's lifetime when a request names none.
+	DefaultTTL Duration `yaml:"default_ttl"`
+	// MaxTTL is the longest lifetime a link may be asked for. A longer request is refused.
+	MaxTTL Duration `yaml:"max_ttl"`
+	// SigningKeyFile names the file holding the current signing key: 32 raw bytes, mode 0600.
+	// Empty means data_dir/keys/signing.key, which is made on first start if it is missing.
+	SigningKeyFile string `yaml:"signing_key_file"`
+	// PreviousKeyFile names the key that links signed before the last rotation still verify
+	// with. Empty means data_dir/keys/signing.prev.key, used when that file exists.
+	PreviousKeyFile string `yaml:"previous_key_file"`
+}
+
 // UIConfig controls the web interface.
 type UIConfig struct {
 	Enabled bool `yaml:"enabled"`
@@ -185,6 +200,7 @@ func Defaults() *Config {
 		Storage:         StorageConfig{MinFree: 1 * GiB},
 		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
 		Copy:            CopyConfig{MaxNodes: 200000},
+		Links:           LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
 		Upload: UploadConfig{
 			MaxFileSize:         100 * GiB,
 			MaxChunkSize:        64 * MiB,
@@ -316,6 +332,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Upload.MaxOpenPerPrincipal <= 0 || c.Upload.MaxOpenPerAccount <= 0 {
 		bad("upload.max_open_per_principal and upload.max_open_per_account must be positive")
+	}
+	if c.Links.DefaultTTL <= 0 || c.Links.MaxTTL <= 0 || c.Links.DefaultTTL > c.Links.MaxTTL {
+		bad("links.default_ttl and links.max_ttl must be positive, and default_ttl at most max_ttl")
 	}
 	if c.Users.VerificationTTL <= 0 || c.Users.ResetTTL <= 0 {
 		bad("users.verification_ttl and users.reset_ttl must be positive")

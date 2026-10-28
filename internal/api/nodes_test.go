@@ -347,7 +347,7 @@ func TestContentReadAndWrite(t *testing.T) {
 	wantStatus(t, get, 200)
 	if get.Body.String() != "v1" || get.Header().Get("ETag") != doc.ETag ||
 		get.Header().Get("X-Content-Type-Options") != "nosniff" ||
-		get.Header().Get("Content-Security-Policy") != "sandbox" ||
+		get.Header().Get("Content-Security-Policy") != "sandbox; default-src 'none'" ||
 		!strings.HasPrefix(get.Header().Get("Content-Disposition"), "attachment") ||
 		get.Header().Get("Content-Type") != "text/plain" {
 		t.Errorf("download: %q %v", get.Body.String(), get.Header())

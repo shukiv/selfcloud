@@ -101,6 +101,8 @@ func TestValidationErrors(t *testing.T) {
 		"log level":            {"SELFCLOUD_LOG_LEVEL": "loud"},
 		"bad bool":             {"SELFCLOUD_UI_ENABLED": "maybe"},
 		"bad duration":         {"SELFCLOUD_SHUTDOWN_TIMEOUT": "30"},
+		"link ttl over cap":    {"SELFCLOUD_LINKS_DEFAULT_TTL": "48h", "SELFCLOUD_LINKS_MAX_TTL": "24h"},
+		"zero link max ttl":    {"SELFCLOUD_LINKS_MAX_TTL": "0s"},
 	} {
 		if _, err := Load("", env(vars)); err == nil {
 			t.Errorf("%s: accepted", name)

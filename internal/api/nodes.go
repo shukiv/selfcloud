@@ -352,61 +352,6 @@ func (s *Server) handleListPathChildren(w http.ResponseWriter, r *http.Request) 
 	return s.writeChildren(w, r, dir)
 }
 
-// handleGetContent sends a file's contents. Only the whole file is sent for now: ranges and signed
-// links come later. The body is always an attachment, sandboxed and not sniffed.
-func (s *Server) handleGetContent(w http.ResponseWriter, r *http.Request) error {
-	n, err := s.nodeOf(r, r.PathValue("nod"), false)
-	if err != nil {
-		return err
-	}
-	if n.Kind != store.KindFile {
-		return apierr.New(apierr.InvalidRequest, "a folder has no contents; list its children instead")
-	}
-	f, err := s.blobs.Open(n.AccountID, n.BlobID)
-	if err != nil {
-		return apierr.Wrap(apierr.Internal, "the file's contents are missing", err)
-	}
-	defer f.Close()
-	h := w.Header()
-	h.Set("ETag", n.ETag)
-	h.Set("Last-Modified", n.ModifiedAt.UTC().Format(http.TimeFormat))
-	if etagMatches(r.Header.Get("If-None-Match"), n.ETag) {
-		w.WriteHeader(http.StatusNotModified)
-		return nil
-	}
-	h.Set("Content-Type", n.MimeType)
-	h.Set("Content-Length", strconv.FormatInt(n.Size, 10))
-	h.Set("Content-Disposition", attachment(n.Name))
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", "sandbox")
-	h.Set("Cache-Control", "private, no-cache")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, f) // the client may have gone; nothing useful to do with the error
-	return nil
-}
-
-// etagMatches reports whether an If-None-Match header names the entity tag etag.
-func etagMatches(header, etag string) bool {
-	if header == "" || etag == "" {
-		return false
-	}
-	for _, t := range strings.Split(header, ",") {
-		t = strings.TrimSpace(t)
-		if t == "*" || t == etag {
-			return true
-		}
-	}
-	return false
-}
-
-// attachment is a Content-Disposition for a download of name.
-func attachment(name string) string {
-	if v := mime.FormatMediaType("attachment", map[string]string{"filename": name}); v != "" {
-		return v
-	}
-	return "attachment"
-}
-
 // ---- creating ----
 
 // handleMkdir makes a directory in a folder. With parents, missing directories on the way are

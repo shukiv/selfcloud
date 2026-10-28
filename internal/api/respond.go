@@ -46,6 +46,10 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(e.RetryAfter.Seconds()))))
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	// JSON errors are never rendered, but a browser that sniffed one, or was sent it as a
+	// document, must not run anything in it.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	writeJSON(w, e.Code.Status(), errorBody{Error: errorDetail{
 		Code:      e.Code,
 		Message:   e.Message,
