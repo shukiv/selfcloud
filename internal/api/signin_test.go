@@ -217,7 +217,7 @@ func TestSessionCSRFAndPrecedence(t *testing.T) {
 	foreign.Header.Set("X-CSRF-Token", sess.csrf)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, foreign)
-	wantError(t, rec, 403, apierr.Forbidden)
+	wantError(t, rec, 401, apierr.Unauthenticated)
 
 	// Reads need only the cookie.
 	wantStatus(t, callSession(t, s, testSession{cookie: sess.cookie}, "GET", "/api/v1/me", nil), 200)

@@ -70,6 +70,8 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `upload.max_lifetime` | `168h` | Longest life of an upload from its creation, however often it is written to. |
 | `upload.max_reserved_per_account` | `1TiB` | Bytes an account with no quota may hold in unfinished uploads. |
 | `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished uploads may hold. Set `100` for a single tenant. |
+| `tokens.max_ttl` | `1h` | Longest lifetime of a delegated token. A longer `ttl` is refused. |
+| `cors.allowed_origins` | none | Origins whose pages may call the API, as exact origins such as `https://app.example.com`. Empty turns CORS off. |
 | `metrics_listen` | none | Serve `/metrics` on a separate address. |
 | `admin_key_file` | none | File holding an admin key to add on start. |
 | `log.level`, `log.format` | `info`, `json` | |

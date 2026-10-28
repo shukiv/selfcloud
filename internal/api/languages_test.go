@@ -86,7 +86,8 @@ func TestPatchMe(t *testing.T) {
 	wrongOrigin.AddCookie(sess.cookie)
 	wrongOrigin.Header.Set("Origin", "https://evil.example.net")
 	wrongOrigin.Header.Set("X-CSRF-Token", sess.csrf)
-	wantError(t, httptestRecorder(t, s, wrongOrigin), 403, apierr.Forbidden)
+	// A session from another site is refused as unauthenticated: the cookie never counts there.
+	wantError(t, httptestRecorder(t, s, wrongOrigin), 401, apierr.Unauthenticated)
 
 	// The change is audited as user.update.
 	entries := decode[listResponse[auditJSON]](t, call(t, s, "GET", "/api/v1/accounts/"+acc.ID+"/audit", admin, nil))

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"strings"
+	"time"
 )
 
 // Key prefixes. The prefix says what a key is for, so a leaked key is easy to recognise and a
@@ -15,6 +16,9 @@ import (
 const (
 	AdminKeyPrefix   = "sc_admin_"
 	AccountKeyPrefix = "sc_acct_"
+	// TokenPrefix starts a delegated token. It differs from the key prefixes, so a token is never
+	// mistaken for a key.
+	TokenPrefix = "sct_"
 )
 
 // keySecretLen is the length of 32 random bytes in unpadded base64url.
@@ -49,6 +53,23 @@ type Principal struct {
 	AccountID string // the account a key or user belongs to; "" for installation admins
 	UserID    string // set for KindUser
 	Role      string // set for KindUser: RoleOwner or "member"
+	// Token is set when the caller presents a delegated token. The token then narrows what the
+	// caller may reach; see TokenScope.
+	Token *TokenScope
+}
+
+// TokenScope is what a delegated token allows. A token acts as its user, when it names one, or
+// as the account key that minted it. It never manages anything, and it reaches only Folders, at
+// most at Write.
+type TokenScope struct {
+	Folders  []string  `json:"folders"`
+	Write    bool      `json:"write"`    // false: read only
+	Audience string    `json:"audience"` // "api"; the only audience in use
+	MintedBy string    `json:"minted_by"`
+	IssuedAt time.Time `json:"issued_at"`
+	// ExpiresAt bounds anything the token creates that outlives the request, such as a signed link.
+	// A queued job does not check it: the job was authorised when it was queued.
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // IsAdmin reports whether p is an installation admin: an admin key, or a signed-in admin user.
@@ -62,7 +83,8 @@ func (p *Principal) IsAdmin() bool {
 // ManagesAccount reports whether p may manage the account: its users, folders, grants, keys
 // and audit log. An admin manages every account; an owner session manages only its own.
 func (p *Principal) ManagesAccount(accountID string) bool {
-	if p == nil {
+	if p == nil || p.Token != nil {
+		// A delegated token never manages an account, even when it acts for an owner or a key.
 		return false
 	}
 	switch p.Kind {

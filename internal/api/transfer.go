@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -388,16 +389,19 @@ type copyPayload struct {
 	Actor      actorPayload `json:"actor"`
 }
 
-// actorPayload is the caller a queued copy runs for. The job checks access again as this caller.
+// actorPayload is the caller a queued copy runs for. The job checks access again as this caller,
+// and checks that the caller may still act: its account, key or user is live, and a token was not
+// revoked since it was issued.
 type actorPayload struct {
-	Kind   string `json:"kind"`
-	ID     string `json:"id"`
-	UserID string `json:"user_id,omitempty"`
-	Role   string `json:"role,omitempty"`
+	Kind   string           `json:"kind"`
+	ID     string           `json:"id"`
+	UserID string           `json:"user_id,omitempty"`
+	Role   string           `json:"role,omitempty"`
+	Token  *auth.TokenScope `json:"token,omitempty"`
 }
 
 func actorOf(p *auth.Principal) actorPayload {
-	return actorPayload{Kind: string(p.Kind), ID: p.ID, UserID: p.UserID, Role: p.Role}
+	return actorPayload{Kind: string(p.Kind), ID: p.ID, UserID: p.UserID, Role: p.Role, Token: p.Token}
 }
 
 // handleCopyNode copies a file, or a folder with everything in it. The caller needs read on the
@@ -568,11 +572,20 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		return fmt.Errorf("copy job payload: %w", err)
 	}
 	p := &auth.Principal{Kind: auth.Kind(pl.Actor.Kind), ID: pl.Actor.ID, AccountID: job.AccountID,
-		UserID: pl.Actor.UserID, Role: pl.Actor.Role}
+		UserID: pl.Actor.UserID, Role: pl.Actor.Role, Token: pl.Actor.Token}
 	return s.store.Write(ctx, func(tx *store.Tx) error {
 		if _, err := tx.Node(ctx, job.AccountID, pl.Root); err == nil {
 			return nil // made by an earlier run
 		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		// Queued work is checked again: a copy whose caller was revoked since the job was queued
+		// writes nothing. Expiry alone does not count, because the copy was allowed when it was asked.
+		d, err := tx.Delegation(ctx, job.AccountID, callerKeyID(p), p.UserID)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && !callerLive(p, d, time.Now())) {
+			return apierr.New(apierr.Forbidden, "the caller of this copy no longer has access; nothing was copied")
+		}
+		if err != nil {
 			return err
 		}
 		src, err := tx.Node(ctx, job.AccountID, pl.Source)
@@ -628,5 +641,5 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 // auditAs describes an action by p for the audit log, for work that runs outside a request.
 func auditAs(p *auth.Principal, accountID, action, target string, details map[string]any) *store.AuditEntry {
 	return &store.AuditEntry{Time: store.Now(), AccountID: accountID, ActorKind: string(p.Kind), ActorID: p.ID,
-		Action: action, Target: target, Details: details}
+		Action: action, Target: target, Details: delegated(p, details)}
 }

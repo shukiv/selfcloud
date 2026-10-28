@@ -221,3 +221,51 @@ func TestUploadQuotaSettings(t *testing.T) {
 		t.Errorf("env override = %+v, %v", c, err)
 	}
 }
+
+func TestTokenAndCORSSettings(t *testing.T) {
+	cfg, err := Load("", env(map[string]string{
+		"SELFCLOUD_CORS_ALLOWED_ORIGINS": " https://App.example.com , http://localhost:5173",
+		"SELFCLOUD_TOKENS_MAX_TTL":       "2h",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.CORS.AllowedOrigins, " "); got != "https://app.example.com http://localhost:5173" {
+		t.Errorf("allowed origins = %q; want them trimmed and in lower case", got)
+	}
+	if cfg.Tokens.MaxTTL.D() != 2*time.Hour {
+		t.Errorf("tokens.max_ttl = %v", cfg.Tokens.MaxTTL)
+	}
+	def, err := Load("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if def.Tokens.MaxTTL.D() != time.Hour || len(def.CORS.AllowedOrigins) != 0 {
+		t.Errorf("defaults: tokens.max_ttl %v, origins %v; want 1h and CORS off", def.Tokens.MaxTTL, def.CORS.AllowedOrigins)
+	}
+}
+
+// TestOriginsMustBeExact refuses every entry that is not a bare origin: a wildcard, a path, a query,
+// a fragment, user information, a missing scheme or host, or another scheme.
+func TestOriginsMustBeExact(t *testing.T) {
+	for _, bad := range []string{
+		"*", "https://*.example.com", "https://app.example.com/", "https://app.example.com/path",
+		"ftp://app.example.com", "https://app.example.com?x=1", "https://app.example.com#f",
+		"https://user@app.example.com", "app.example.com", "https://",
+	} {
+		if _, err := Load("", env(map[string]string{"SELFCLOUD_CORS_ALLOWED_ORIGINS": bad})); err == nil {
+			t.Errorf("origin %q was accepted", bad)
+		}
+	}
+	if _, err := Load("", env(map[string]string{"SELFCLOUD_CORS_ALLOWED_ORIGINS": "https://app.example.com:8443"})); err != nil {
+		t.Errorf("an origin with a port was refused: %v", err)
+	}
+}
+
+func TestTokenTTLBounds(t *testing.T) {
+	for _, bad := range []string{"0s", "30s", "-1h"} {
+		if _, err := Load("", env(map[string]string{"SELFCLOUD_TOKENS_MAX_TTL": bad})); err == nil {
+			t.Errorf("tokens.max_ttl %s was accepted", bad)
+		}
+	}
+}

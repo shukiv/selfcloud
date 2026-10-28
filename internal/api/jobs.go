@@ -3,10 +3,12 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
 
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -26,6 +28,22 @@ func toJobJSON(j *store.Job) jobJSON {
 		UpdatedAt: j.UpdatedAt, FinishedAt: j.FinishedAt}
 }
 
+// queuedBy reports whether p is the caller a job runs for, as its payload records it: the same
+// account, kind and ID. A member, or a browser with a delegated token, can then follow a copy it
+// started without managing the account.
+func queuedBy(job *store.Job, p *auth.Principal) bool {
+	if p == nil || job.Payload == "" || p.AccountID != job.AccountID {
+		return false
+	}
+	var pl struct {
+		Actor *actorPayload `json:"actor"`
+	}
+	if json.Unmarshal([]byte(job.Payload), &pl) != nil || pl.Actor == nil {
+		return false
+	}
+	return pl.Actor.Kind == string(p.Kind) && pl.Actor.ID == p.ID
+}
+
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) error {
 	job, err := s.store.Job(r.Context(), r.PathValue("job"))
 	if errors.Is(err, store.ErrNotFound) {
@@ -34,7 +52,7 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if !principalOf(r).ManagesAccount(job.AccountID) {
+	if p := principalOf(r); !p.ManagesAccount(job.AccountID) && !queuedBy(job, p) {
 		return notFound("job")
 	}
 	writeJSON(w, http.StatusOK, toJobJSON(job))

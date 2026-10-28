@@ -61,6 +61,8 @@ type Config struct {
 	Copy      CopyConfig      `yaml:"copy"`
 	Upload    UploadConfig    `yaml:"upload"`
 	Links     LinksConfig     `yaml:"links"`
+	Tokens    TokensConfig    `yaml:"tokens"`
+	CORS      CORSConfig      `yaml:"cors"`
 	UI        UIConfig        `yaml:"ui"`
 	Users     UsersConfig     `yaml:"users"`
 	Sessions  SessionsConfig  `yaml:"sessions"`
@@ -194,6 +196,22 @@ type LinksConfig struct {
 	PreviousKeyFile string `yaml:"previous_key_file"`
 }
 
+// TokensConfig controls delegated tokens, the short-lived credentials an account key mints for a
+// browser.
+type TokensConfig struct {
+	// MaxTTL is the longest lifetime a delegated token may be minted with. A longer request is
+	// refused, not shortened, as for signed links.
+	MaxTTL Duration `yaml:"max_ttl"`
+}
+
+// CORSConfig controls cross-origin requests from browser applications.
+type CORSConfig struct {
+	// AllowedOrigins lists the origins (scheme, host and port, such as https://app.example.com)
+	// whose pages may call the API. Empty turns CORS off. Cookies are never accepted on
+	// cross-origin requests, so these origins use delegated tokens.
+	AllowedOrigins []string `yaml:"allowed_origins"`
+}
+
 // UIConfig controls the web interface.
 type UIConfig struct {
 	Enabled bool `yaml:"enabled"`
@@ -213,6 +231,7 @@ func Defaults() *Config {
 		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
 		Copy:            CopyConfig{MaxNodes: 200000},
 		Links:           LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
+		Tokens:          TokensConfig{MaxTTL: Duration(time.Hour)},
 		Upload: UploadConfig{
 			MaxFileSize:           100 * GiB,
 			MaxChunkSize:          64 * MiB,
@@ -275,6 +294,10 @@ func Load(path string, lookup func(string) (string, bool)) (*Config, error) {
 func (c *Config) normalize() {
 	c.PublicURL = strings.TrimRight(c.PublicURL, "/")
 	c.ContentURL = strings.TrimRight(c.ContentURL, "/")
+	// Browsers send origins in lower case, so the configured ones are compared that way too.
+	for i, o := range c.CORS.AllowedOrigins {
+		c.CORS.AllowedOrigins[i] = strings.ToLower(strings.TrimSpace(o))
+	}
 	if c.Store.Path == "" && c.DataDir != "" {
 		c.Store.Path = filepath.Join(c.DataDir, "selfcloud.db")
 	}
@@ -360,6 +383,14 @@ func (c *Config) Validate() error {
 	if c.Links.DefaultTTL <= 0 || c.Links.MaxTTL <= 0 || c.Links.DefaultTTL > c.Links.MaxTTL {
 		bad("links.default_ttl and links.max_ttl must be positive, and default_ttl at most max_ttl")
 	}
+	if c.Tokens.MaxTTL < Duration(time.Minute) {
+		bad("tokens.max_ttl must be at least one minute")
+	}
+	for _, o := range c.CORS.AllowedOrigins {
+		if err := checkOrigin(o); err != nil {
+			bad("cors.allowed_origins: %v", err)
+		}
+	}
 	if c.Users.VerificationTTL <= 0 || c.Users.ResetTTL <= 0 {
 		bad("users.verification_ttl and users.reset_ttl must be positive")
 	}
@@ -408,6 +439,32 @@ func checkBaseURL(s string) error {
 	}
 	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
 		return fmt.Errorf("%q must be scheme and host only", s)
+	}
+	return nil
+}
+
+// checkOrigin accepts an exact origin: http or https, a host, and an optional port. A path, a
+// query, a fragment, user information and wildcards are refused, because a browser sends only
+// the bare origin and a looser entry would match nothing, or match too much.
+func checkOrigin(s string) error {
+	if s == "" {
+		return errors.New("an origin is empty")
+	}
+	if strings.Contains(s, "*") {
+		return fmt.Errorf("%q: wildcards are not allowed; list each origin", s)
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return fmt.Errorf("%q: %w", s, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%q must start with http:// or https://", s)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%q has no host", s)
+	}
+	if u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil || strings.HasSuffix(s, "?") || strings.HasSuffix(s, "#") {
+		return fmt.Errorf("%q must be the origin only: scheme, host and port, with no path, query or fragment", s)
 	}
 	return nil
 }

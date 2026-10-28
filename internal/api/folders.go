@@ -392,6 +392,22 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if p.Token != nil {
+		// A token names at most tokenMaxFolders folders, so they are listed in one page, each at the
+		// level folderAccess gives the token.
+		for _, fid := range p.Token.Folders {
+			f, level, err := folderAccessWith(ctx, s.store, p, fid)
+			if err != nil {
+				if apierr.From(err).Code == apierr.NotFound {
+					continue // the folder is gone, or the user's grant on it is
+				}
+				return err
+			}
+			out.Items = append(out.Items, folderAccessJSON{folderJSON: toFolderJSON(f), Access: level})
+		}
+		writeJSON(w, http.StatusOK, out)
+		return nil
+	}
 	if p.Kind == auth.KindUser && p.Role == auth.RoleMember {
 		granted, next, err := s.store.GrantedFolders(ctx, p.AccountID, p.UserID, page)
 		if err != nil {

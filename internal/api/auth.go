@@ -46,6 +46,8 @@ func (s *Server) authenticate(r *http.Request) (*auth.Principal, *store.Session,
 		p, err = s.authenticateKey(r.Context(), auth.AdminKeyPrefix, cred)
 	case strings.HasPrefix(cred, auth.AccountKeyPrefix):
 		p, err = s.authenticateKey(r.Context(), auth.AccountKeyPrefix, cred)
+	case strings.HasPrefix(cred, auth.TokenPrefix):
+		p, err = s.authenticateToken(r.Context(), cred)
 	default:
 		return nil, nil, apierr.New(apierr.Unauthenticated, "unrecognised credential")
 	}
@@ -57,6 +59,12 @@ func (s *Server) authenticate(r *http.Request) (*auth.Principal, *store.Session,
 // token, which stops another site from making the browser act for the user.
 func (s *Server) authenticateSession(r *http.Request) (*auth.Principal, *store.Session, error) {
 	ctx := r.Context()
+	// A cookie never authenticates a request from another site, whatever the route. Such a page
+	// uses a delegated token instead. A request with no Origin, from a server or a same-site GET,
+	// is unaffected.
+	if o := r.Header.Get("Origin"); o != "" && o != s.origin {
+		return nil, nil, apierr.New(apierr.Unauthenticated, "a session cannot be used from another site; use a delegated token")
+	}
 	c, err := r.Cookie(s.sessionCookie)
 	if err != nil || !auth.ValidToken(c.Value) {
 		return nil, nil, apierr.New(apierr.Unauthenticated, "credentials are required")
@@ -247,9 +255,25 @@ func (s *Server) auditEntry(r *http.Request, accountID, action, target string, d
 		}
 		if p := info.principal; p != nil {
 			e.ActorKind, e.ActorID = string(p.Kind), p.ID
+			e.Details = delegated(p, details)
 		}
 	}
 	return e
+}
+
+// delegated adds to an audit entry's details that the action came through a delegated token, and
+// which account key minted the token. The actor is still the user or key the token acts for.
+func delegated(p *auth.Principal, details map[string]any) map[string]any {
+	if p == nil || p.Token == nil {
+		return details
+	}
+	out := make(map[string]any, len(details)+2)
+	for k, v := range details {
+		out[k] = v
+	}
+	out["via"] = "delegated_token"
+	out["token_key"] = p.Token.MintedBy
+	return out
 }
 
 func truncate(s string, n int) string {

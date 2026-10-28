@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
@@ -34,12 +35,19 @@ type accessReader interface {
 // as the store has it now: a disabled or vanished user is refused, and a member reaches the
 // folders it holds a grant on, at the granted level. A folder the caller cannot reach is not_found,
 // so folder IDs cannot be probed.
+//
+// A delegated token narrows that. The folder must be one the token names, and the level is at most
+// the token's permission, so a token with read never writes, and a token with write still reads only
+// what its user's grant allows. The token cannot widen anything.
 func folderAccessWith(ctx context.Context, rd accessReader, p *auth.Principal, folderID string) (*store.Folder, string, error) {
 	if p == nil {
 		return nil, "", apierr.New(apierr.Unauthenticated, "credentials are required")
 	}
 	if p.IsAdmin() {
 		return nil, "", apierr.New(apierr.Forbidden, "admins manage tenants and may not read their files")
+	}
+	if p.Token != nil && !slices.Contains(p.Token.Folders, folderID) {
+		return nil, "", notFound("folder")
 	}
 
 	level := accessWrite
@@ -69,8 +77,9 @@ func folderAccessWith(ctx context.Context, rd accessReader, p *auth.Principal, f
 			level = g.Level
 		}
 	}
-	// Slice i: a delegated token narrows level here, to read or to a path prefix, before the
-	// check below. A grant or an account key is never widened.
+	if p.Token != nil && !p.Token.Write {
+		level = accessRead
+	}
 
 	f, err := rd.Folder(ctx, p.AccountID, folderID)
 	if errors.Is(err, store.ErrNotFound) {

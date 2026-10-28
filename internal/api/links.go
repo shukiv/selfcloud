@@ -276,9 +276,17 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 	}
-	ttl := s.cfg.Links.DefaultTTL.D()
+	// A link is a capability that no revocation reaches, so one made with a delegated token may not
+	// outlive the token: its longest life is what the token has left.
+	ttl, maxTTL := s.cfg.Links.DefaultTTL.D(), s.cfg.Links.MaxTTL.D()
+	if p.Token != nil {
+		left := time.Until(p.Token.ExpiresAt).Truncate(time.Second)
+		if left < time.Second {
+			return apierr.New(apierr.TokenExpired, "the token has expired")
+		}
+		ttl, maxTTL = min(ttl, left), min(maxTTL, left)
+	}
 	if in.TTL != nil {
-		maxTTL := s.cfg.Links.MaxTTL.D()
 		if *in.TTL < 1 {
 			return apierr.New(apierr.InvalidRequest, "ttl must be at least 1 second")
 		}

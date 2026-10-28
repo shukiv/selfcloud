@@ -220,42 +220,44 @@ slow hash adds nothing for secrets this long), each key is shown once at creatio
 carry an expiry and be revoked. The first admin key comes from `selfcloud admin create-key` or
 from a secret file named in the config.
 
-**Delegated tokens** (*proposed*) let a client's back end hand a browser direct access, so file
-bytes never pass through the client's server. The back end calls
-`POST /api/v1/accounts/{account}/tokens` with its account key and gets back a token scoped by:
+**Delegated tokens** let a client's back end hand a browser direct access, so file bytes never pass through the client's server. The back end calls `POST /api/v1/accounts/{account}/tokens` with its account key and gets back a token scoped by:
 
-- `user`: act as this user; rights are then the intersection of the token and the user's grants,
-  and the audit log names the user;
-- `folders` and optionally a `path` prefix;
-- `permissions`: `read`, `write`;
-- `ttl`: default 15 minutes, capped by `tokens.max_ttl` (default 1 hour, configurable);
-- `audience`: `api` or `wopi`.
+- `user`: optional. The token acts as this user, and its rights are the intersection of the token and the user's grants. Without `user`, the token acts as the account key that minted it, with write on the folders it names. The audit log names the acting user or key and records `via: delegated_token` with the minting key.
+- `folders`: 1 to 32 folders of the account. A folder outside the list is `not_found`, even where the user may reach it. A `path` prefix is **deferred to slice n**: it needs node-level access, which sharing v2 brings. A prefix check on folder-level access now would be a half-done security check.
+- `permissions`: `read` (the default) or `write`; write implies read. A token can narrow a grant, never widen it.
+- `ttl`: default 15 minutes, at least 1 minute. A longer lifetime than `tokens.max_ttl` (default 1 hour) is refused with the limit in `details.max_ttl_seconds`, not cut short, as for signed links.
+- `audience`: `api`. `wopi` is refused until the office-editing slice.
 
-The reply carries the token and its `expires_at`, so the back end can cache a token for most of
-its lifetime instead of minting one per request.
+Only an account key of the same account may mint. An installation admin, a signed-in session and a token itself get `forbidden`, so a token never widens itself. Tokens manage nothing: the management routes (users, folders, grants, keys, usage, audit, webhooks, minting and revocation) refuse a token as they refuse any caller outside the account. The reply carries the token and its `expires_at`, so the back end can cache a token for most of its lifetime instead of minting one per request. Minting is rate-limited per account key.
 
-Tokens are signed with HMAC-SHA256 by a server key with a key ID, so checking one needs no
-database lookup and keys can rotate. To revoke, an account can invalidate every token issued
-before a given moment, and disabling a user ends that user's tokens. An expired token gets
-`401 token_expired`, distinct from `401 unauthenticated`, so a client refreshes silently in the
-first case and asks the person to sign in only in the second. A long upload that outlives its
-token keeps going: tus-js-client fetches a fresh token from the client's back end when the
-current one nears expiry (section 5).
+*Format.* `sct_` followed by the unpadded base64url of a compact JSON payload, a `.`, and the unpadded base64url of HMAC-SHA256 over the payload bytes. The payload holds the format version, the signing key ID (`kid`), the account, the user (empty when none), the minting key, the folders, the permission, the audience, and the issue and expiry times in Unix milliseconds. A token is at most 4096 bytes; a longer one is refused before anything is decoded.
 
-*Alternative:* the client signs tokens itself with a secret shared with Selfcloud, which saves
-one round trip per token but brings key distribution, rotation and clock-skew problems to every
-client. Section 15 asks which one to build.
+*Keys.* The MAC key is derived from the signing key of section 9 (`keys/signing.key`, with `signing.prev.key` also accepted) by HKDF-SHA256 with the label `selfcloud token v1`, so a token and a signed link never share a MAC key. `kid` is the first 8 bytes of the SHA-256 of the derived key, in base64url. A token is checked against both keys, so it survives one rotation; once the previous key file is removed, the tokens it signed fail.
+
+*Verification.* In order: the shape and length; the MAC; the payload, parsed strictly (an unknown field is refused), whose `kid` must be the key that verified the MAC; the expiry, which is the one distinct answer, `token_expired`; then one read of the database. The account must be `active`; the minting key must exist, not be revoked and not have expired; a user must exist and be `active`; and the token must have been issued after the account's cut-off. Every other failure is `unauthenticated` with no detail. So checking a token's signature needs no database read, but revocation needs one. A client refreshes an expired token silently, and asks the person to sign in only when a token is refused. A long upload that outlives its token keeps going: tus-js-client fetches a fresh token from the client's back end when the current one nears expiry (section 5).
+
+*Revocation.* `POST /api/v1/accounts/{account}/tokens/revoke` moves the account's cut-off to now, so every token issued before it stops working; a token issued in the same millisecond is void too. The cut-off only moves forward, so two revocations racing each other cannot reopen tokens. Revoking the minting key ends its tokens, disabling the user ends the user's tokens, and suspending the account ends all of them until it is reactivated. The account key or a person who manages the account may revoke, and the call is audited.
+
+*Signed links.* A signed link is a capability that no revocation reaches, so a link made with a token may not outlive the token: its default and longest lifetime are cut to what the token has left, and a longer `ttl` is refused with that limit in `details.max_ttl_seconds`.
+
+*Shared limits.* A token without `user` acts as its minting key, so it shares that key's limits: open uploads, upload and link rate buckets, and upload ownership. A client that hands tokens to many people's browsers should mint them with `user`, so each person has their own limits.
+
+*Queued work.* A copy queued with a token checks its caller again when it runs (section 9). The caller it runs for may read the job with `GET /jobs/{job}`, under any credential that is the same user or key, without managing the account. If the account, the minting key, the user or the cut-off says the caller may no longer act, the job fails and writes nothing. Expiry alone does not cancel a job, because the action was allowed when it was asked for.
+
+*Alternative, not built:* the client signs tokens itself with a secret shared with Selfcloud. Selfcloud mints them instead (section 15, decision 6), which keeps key distribution and rotation on the server.
 
 **Tokens stay out of URLs**, with one exception: signed download links (section 9), which have
 short lifetimes and are scrubbed from logs.
 
-**CORS.** `cors.allowed_origins` lists the client origins. Allowed request headers:
-`Authorization`, `Content-Type`, `If-Match`, `Tus-Resumable`, `Upload-*`. Exposed response
-headers: `Location`, `Upload-Offset`, `Upload-Length`, `Upload-Expires`, `Tus-Resumable`,
-`Tus-Max-Size`, `Tus-Version`, `Tus-Extension`, `Tus-Checksum-Algorithm`,
-`Selfcloud-Max-Chunk-Size`, `Selfcloud-Node-ID`, `Selfcloud-Upload-State`, `ETag`,
-`Content-Range`, `Accept-Ranges`, `Content-Disposition`, `Retry-After`. Cookies are never accepted on
-cross-origin requests; browsers from other origins use delegated tokens.
+**CORS.** `cors.allowed_origins` lists the origins whose pages may call the API, as exact origins: `https://app.example.com`, optionally with a port, and never a wildcard or a path. Empty turns CORS off. An allowed origin gets its own origin back in `Access-Control-Allow-Origin`, `Vary: Origin`, and the exposed headers below. Credentials are never allowed.
+
+A preflight (an `OPTIONS` with `Access-Control-Request-Method`) from an allowed origin is answered `204` before routing and authentication, with `Access-Control-Allow-Methods: GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS` and `Access-Control-Max-Age: 600`. A preflight from any other origin gets `403` and no CORS headers. A plain `OPTIONS` without the request-method header, such as the tus capability probe on `/uploads`, is answered as before. The server's own origin is not a CORS origin.
+
+Allowed request headers: `Authorization`, `Content-Type`, `If-Match`, `If-None-Match`, `If-Range`, `Range`, `Tus-Resumable`, `Upload-Length`, `Upload-Offset`, `Upload-Metadata`, `Upload-Checksum`. Exposed response headers: `Location`, `Upload-Offset`, `Upload-Length`, `Upload-Expires`, `Upload-Metadata`, `Tus-Resumable`, `Tus-Max-Size`, `Tus-Version`, `Tus-Extension`, `Tus-Checksum-Algorithm`, `Selfcloud-Max-Chunk-Size`, `Selfcloud-Node-ID`, `Selfcloud-Upload-State`, `ETag`, `Content-Range`, `Accept-Ranges`, `Content-Disposition`, `Retry-After`, `X-Request-Id`.
+
+Signed links and the content origin get no CORS headers: a link is already a capability for anyone who holds it, and nothing in a cross-origin page needs one. CORS does not weaken the other protections. The `sameSite` sign-in checks, the content headers and the signed-link routes are as they were.
+
+**Cookies never authenticate across sites.** A request whose `Origin` is not the server's own `public_url` origin is refused a session cookie on every route, read or write. Such a page uses a delegated token instead. A request with no `Origin`, from a server or a same-site read, is unaffected.
 
 **Web sessions** are stored server-side (hashed ID), rotated at sign-in, and protected against
 CSRF by `SameSite`, an `Origin` check and a token on state-changing requests. Sign-in,

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -66,6 +67,10 @@ type Server struct {
 	contentScheme string
 	// links signs and verifies signed download links; see links.go.
 	links *linkKeys
+	// tokens signs and verifies delegated tokens; see tokens.go.
+	tokens *tokenKeys
+	// corsAllowed holds the origins whose pages may call the API; see cors.go. Empty when CORS is off.
+	corsAllowed map[string]bool
 	// sessionCookie is the cookie's name; the "__Host-" form is used when public_url is https.
 	sessionCookie string
 	// bg holds mail sent after a response has gone out, so Serve can wait for it.
@@ -143,6 +148,14 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
+	tokens, err := deriveTokenKeys(links)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	corsAllowed := map[string]bool{}
+	for _, o := range cfg.CORS.AllowedOrigins {
+		corsAllowed[strings.ToLower(o)] = true
+	}
 	var contentHost, contentScheme string
 	if cfg.ContentURL != "" {
 		cu, err := url.Parse(cfg.ContentURL)
@@ -166,6 +179,8 @@ func New(opts Options) (*Server, error) {
 		contentHost:   contentHost,
 		contentScheme: contentScheme,
 		links:         links,
+		tokens:        tokens,
+		corsAllowed:   corsAllowed,
 		sessionCookie: "selfcloud_session",
 		limits: map[string]*limiter{
 			"login.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
@@ -192,6 +207,8 @@ func New(opts Options) (*Server, error) {
 			"mail.forgot.first": newLimiterRate(1, time.Hour),
 			// Starting uploads, per caller: each one reserves disk, so a flood of them is refused.
 			"upload.create": newLimiter(60),
+			// Minting delegated tokens, per account key: each is a credential, so a flood is refused.
+			"tokens.mint": newLimiter(60),
 			// Signed links: creation per principal; serving per client address, generous enough
 			// for a player seeking through a video.
 			"links.create": newLimiter(120),
@@ -214,7 +231,7 @@ func New(opts Options) (*Server, error) {
 		mux.Handle(rt.method+" "+rt.path, s.wrap(rt))
 	}
 	mux.Handle("/", s.wrap(route{path: "unmatched", handle: s.handleNotFound}))
-	s.handler = s.observe(s.drain(s.contentGate(mux)))
+	s.handler = s.observe(s.drain(s.cors(s.contentGate(mux))))
 	return s, nil
 }
 
@@ -234,6 +251,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/keys", handle: s.handleCreateKey, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/keys", handle: s.handleListKeys, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/keys/{key}", handle: s.handleRevokeKey, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens", handle: s.handleMintToken, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens/revoke", handle: s.handleRevokeTokens, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit", handle: s.handleAuditLog, auth: true},
 		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true},
 

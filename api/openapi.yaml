@@ -13,6 +13,11 @@ info:
     **Request IDs.** Every response carries an `X-Request-Id` header; error bodies repeat it
     as `request_id`.
 
+    **Browsers on other origins.** `cors.allowed_origins` lists the origins whose pages may call
+    the API. Such a page sends a delegated token in `Authorization`, never a cookie. Preflights
+    from allowed origins are answered before routing and authentication. The headers a page may
+    read are listed in `docs/design.md` section 7.
+
     This document grows with each slice of the build. Only what it lists is implemented.
 servers:
   - url: /
@@ -29,6 +34,11 @@ tags:
     description: |
       Accounts are tenants. Installation admin keys manage them; an account key manages one
       account's contents. Account IDs a caller may not manage are reported as `not_found`.
+  - name: Tokens
+    description: |
+      Delegated tokens. An account key mints a short-lived token for a browser, so the browser calls
+      the API directly and no file bytes pass through the client's server. Revoking every token of an
+      account is here too.
   - name: Users
     description: |
       Users belong to one account and sign in with an email and a password. A new user must
@@ -307,6 +317,54 @@ paths:
         "204": { description: Revoked. }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/accounts/{acc}/tokens:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    post:
+      tags: [Tokens]
+      operationId: mintToken
+      summary: Mint a delegated token
+      description: |
+        Only an account key of this account may mint, so an installation admin, a signed-in user
+        and a delegated token cannot. The token acts as `user` when one is named (its rights are
+        then the token's intersected with the user's grants), and as the key otherwise. It reaches
+        only `folders`, and at most at `permissions`; it never manages the account. Its lifetime is
+        `ttl`, capped by `tokens.max_ttl`. The token is in this response and nowhere else. The audit
+        log records the mint without it. Rate-limited per account key.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenCreate" }
+      responses:
+        "201":
+          description: "Created. Send the token as `Authorization: Bearer sct_...`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenCreated" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/tokens/revoke:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    post:
+      tags: [Tokens]
+      operationId: revokeTokens
+      summary: Revoke every delegated token issued so far
+      description: |
+        Every token of the account issued at or before this moment stops working, at once. Tokens
+        made afterwards work. The account key, or a person who manages the account, may call it.
+        The call is audited.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Revoked. Tokens issued at or before `tokens_not_before` are void.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokensRevoked" }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/accounts/{acc}/audit:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -337,7 +395,9 @@ paths:
       tags: [Jobs]
       operationId: getJob
       summary: Get a job
-      description: Admin key, or the key of the account the job belongs to.
+      description: |
+        Admin key, or a caller who manages the account the job belongs to. The caller a queued copy
+        runs for may also read it: the same user (by session or delegated token) or the same key.
       security: [{ bearer: [] }]
       responses:
         "200":
@@ -1469,7 +1529,9 @@ paths:
         caller needs read access to the file to ask for a link; the link itself is the grant for
         whoever holds it, so treat it as a secret. It is written to the audit log (`node.link`).
         The URL is on `content_url` when that is set, else on `public_url`. Creation is limited to
-        120 a minute per caller (`rate_limited`, with `Retry-After`).
+        120 a minute per caller (`rate_limited`, with `Retry-After`). A link made with a delegated
+        token may not outlive the token: the default and the largest `ttl` are cut to what the token
+        has left, and an expired token gets `token_expired`.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: false
@@ -1573,7 +1635,9 @@ components:
       scheme: bearer
       description: |
         `Authorization: Bearer <credential>`. Installation admin keys start with `sc_admin_`;
-        account keys start with `sc_acct_`.
+        account keys start with `sc_acct_`; delegated tokens start with `sct_` and are refused
+        once they expire (`token_expired`) or are revoked (`unauthenticated`). A cookie session
+        is never accepted for a request from another origin.
     session:
       type: apiKey
       in: cookie
@@ -2157,6 +2221,54 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/Key" }
+
+    TokenCreate:
+      type: object
+      required: [folders]
+      additionalProperties: false
+      properties:
+        user:
+          type: string
+          description: A user of the account to act as. Must exist and be active.
+        folders:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+          description: Folders of the account the token reaches. Duplicates are dropped.
+        permissions:
+          type: string
+          enum: [read, write]
+          default: read
+          description: Write implies read.
+        ttl:
+          type: integer
+          minimum: 60
+          default: 900
+          description: Seconds. A value above `tokens.max_ttl` is refused with its limit in `details.max_ttl_seconds`.
+        audience:
+          type: string
+          enum: [api]
+          default: api
+          description: Only `api` is accepted; `wopi` is not available yet.
+
+    TokenCreated:
+      type: object
+      required: [token, expires_at]
+      properties:
+        token:
+          type: string
+          description: The token. Shown only in this response.
+        expires_at: { type: string, format: date-time }
+
+    TokensRevoked:
+      type: object
+      required: [tokens_not_before]
+      properties:
+        tokens_not_before:
+          type: string
+          format: date-time
+          description: Tokens issued at or before this time no longer work.
 
     AuditEntry:
       type: object

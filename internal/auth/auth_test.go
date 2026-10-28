@@ -42,6 +42,9 @@ func TestManagesAccount(t *testing.T) {
 		{acct, "acc_2", false},
 		{none, "acc_1", false},
 		{&Principal{Kind: KindSystem}, "acc_1", false},
+		// A delegated token manages nothing, even when it acts for an owner or a key of the account.
+		{&Principal{Kind: KindAccountKey, ID: "key_b", AccountID: "acc_1", Token: &TokenScope{}}, "acc_1", false},
+		{&Principal{Kind: KindUser, Role: RoleOwner, AccountID: "acc_1", Token: &TokenScope{}}, "acc_1", false},
 	} {
 		if got := tc.p.ManagesAccount(tc.acc); got != tc.want {
 			t.Errorf("%+v.ManagesAccount(%s) = %v", tc.p, tc.acc, got)
