@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
-	"path"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -96,13 +95,13 @@ type writerOnly struct{ io.Writer }
 // observe is the outermost middleware. It gives each request an ID and its client address,
 // turns panics into internal errors, and records the access log line and metrics.
 // logPath is the request path as the access log shows it. A signed link's token is a
-// credential, so a path with a links segment is replaced by the route label however it is
-// spelled: the mux answers a path with doubled slashes or dot segments by a redirect that matches
-// no route, and such a path would not start with linkPrefix. Routes marked secretPath are never
-// logged either.
+// credential, so any path that mentions links in any spelling is replaced by the route label.
+// The check fails closed on the raw path rather than parsing it: the mux answers a path with
+// doubled slashes or dot segments by a redirect that matches no route, and a cleaned form such as
+// that of /links/../TOKEN no longer names links while the raw path still holds the token. Routes
+// marked secretPath are never logged either.
 func logPath(info *reqInfo, p string) string {
-	clean := strings.ToLower(path.Clean("/" + p))
-	if info.secretPath || strings.Contains(clean+"/", "/links/") {
+	if info.secretPath || strings.Contains(strings.ToLower(p), "links") {
 		return info.route
 	}
 	return p
