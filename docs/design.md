@@ -597,10 +597,13 @@ Decided on approval:
 8. **Web interface stack**: Svelte.
 9. **Hierarchy** (2026-10-28): admin, then tenants, then sub-accounts (section 8). Admins can
    also be users who sign in, not only API keys.
+10. **Office editor** (2026-10-28): Collabora Online, through WOPI (section 10). No headless
+    LibreOffice inside Selfcloud; previews and conversions, if wanted, use Collabora's
+    conversion API.
 
 Still open, and not blocking slices a to i:
 
-10. **Licence.** Options: AGPL-3.0 for the server with Apache-2.0 for the Go client (hosted forks
+11. **Licence.** Options: AGPL-3.0 for the server with Apache-2.0 for the Go client (hosted forks
     must publish their changes), or Apache-2.0 or MIT for everything (widest adoption).
-11. **Public repository.** Where it lives and when it opens. Until then the Go module path is
+12. **Public repository.** Where it lives and when it opens. Until then the Go module path is
     the placeholder `selfcloud`.
