@@ -89,7 +89,11 @@ file's contents is an immutable **blob** named by a random ID:
   keys/                                signing and encryption keys, mode 0600 (unless given by config)
   blobs/<account-id>/<b1>/<b2>/<blob-id>     committed file contents, never modified in place
   uploads/<account-id>/<upload-id>           uploads in progress (same file system as blobs/)
+  uploads/<account-id>/tmp-*                 small writes before they become blobs; removed after a day
 ```
+
+A crash can still leave a file under `blobs/` that no row names. The periodic sweep does not walk
+the blob tree; a `selfcloud fsck` command (planned) finds and removes such files.
 
 Why this layout:
 
@@ -322,9 +326,12 @@ Files                                      any caller, limited to what it may re
   GET    /nodes/{nod}                      stat: name, size, mime_type, etag, modified_at, sha256
   GET    /nodes/{nod}/children             list a directory by ID (sort, paging)
   POST   /folders/{fld}/directories        {path, parents: true}
-  POST   /folders/{fld}/files              small file in one request, or a blank document from a template
-  POST   /nodes/{nod}/move                 {folder, parent | path, name, on_conflict}
-  POST   /nodes/{nod}/copy                 same; 202 and a job for large trees
+  POST   /folders/{fld}/files?path=        small file as the raw body (If-None-Match: * refuses an existing one),
+                                           or a blank document from a template
+  PATCH  /nodes/{nod}                      {name}: rename in place
+  POST   /nodes/{nod}/move                 {folder, parent | path, name, on_conflict: fail | rename | replace}
+  POST   /nodes/{nod}/copy                 same; read on the source, write on the target; 202 and a job
+                                           above 10,000 nodes, too_large above copy.max_nodes
   DELETE /nodes/{nod}                      a directory is always deleted with its contents
   GET    /nodes/{nod}/content              download: Range, If-Range, ETag, Last-Modified, ?disposition=inline
   PUT    /nodes/{nod}/content              replace a small file; If-Match required
@@ -360,7 +367,11 @@ minutes, capped by config). They exist for `<img>`, `<video>` and plain download
 browser cannot send an `Authorization` header.
 
 **Small-file edit.** `PUT /nodes/{nod}/content` requires `If-Match` with the ETag the editor
-read; a stale ETag gets `412 precondition_failed`, so two editors cannot overwrite each other.
+read; a stale ETag gets `412 precondition_failed`, so two editors cannot overwrite each other,
+and a missing one gets `428 precondition_required`. Every write checks the caller's access again
+inside its transaction, so a grant revoked or a node moved while a body was arriving stops it.
+`on_conflict: replace` on move and copy replaces a file with a file only; a folder on either side
+is a `conflict`.
 
 **Errors.** Every error is JSON with a stable code. Clients switch on `code`, not on the HTTP
 status:
@@ -384,6 +395,7 @@ status:
 | `locked` | 409 | Locked by an office editor (WOPI). |
 | `upload_expired` | 410 | The upload expired; start again. |
 | `precondition_failed` | 412 | Stale ETag in `If-Match`. |
+| `precondition_required` | 428 | `If-Match` is required here and was not sent. |
 | `too_large` | 413 | File over the size limit. `limit_bytes`. |
 | `chunk_too_large` | 413 | Piece over the limit. `max_chunk_size`. |
 | `range_not_satisfiable` | 416 | Requested range outside the file. |
@@ -459,7 +471,7 @@ Vite, compiled into the binary, so Node is needed only to build it.
 | `folders` | id, account_id, external_id, name, root_node_id |
 | `grants` | folder_id, user_id, level, created_by, created_at |
 | `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by |
-| `blobs` | id, account_id, size, sha256, state, delete_after |
+| `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
 | `uploads` | id, account_id, target (folder, parent, name, on_conflict), length, durable_offset, hash_state, created_by, expires_at |
 | `wopi_locks` | node_id, lock_id, expires_at |
 | `webhooks`, `webhook_deliveries` | endpoint (url, secret encrypted, events); outbox (event, payload, attempts, next_attempt_at, status, last_error) |
