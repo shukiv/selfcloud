@@ -417,7 +417,7 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		return s.tooManyNodes(nodes)
 	}
 	if nodes > s.copySyncNodes {
-		return s.queueCopy(w, r, src, in, p, target)
+		return s.queueCopy(w, r, src, in, p)
 	}
 
 	rootID := id.New("nod")
@@ -434,12 +434,16 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		if _, err := requireAccess(ctx, tx, p, cur.FolderID, false); err != nil {
 			return err
 		}
-		if _, err := requireAccess(ctx, tx, p, target, true); err != nil {
+		dst := copyTarget(in, cur)
+		if _, err := requireAccess(ctx, tx, p, dst, true); err != nil {
 			return err
 		}
 		plan, err := planTransfer(ctx, tx, cur, in, false)
 		if err != nil {
 			return err
+		}
+		if plan.folderID != dst {
+			return fmt.Errorf("copy: planned folder %s is not the checked folder %s", plan.folderID, dst)
 		}
 		replaced, err := applyReplace(ctx, tx, plan)
 		if err != nil {
@@ -473,10 +477,21 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// copyTarget is the folder a copy writes into: the one named in the request, else the source's
+// folder as read inside the transaction. Taking it from the current node, not from the node read
+// before the transaction, keeps the folder checked for write and the folder written the same even
+// when the source moved in between.
+func copyTarget(in transferBody, cur *store.Node) string {
+	if in.Folder != "" {
+		return in.Folder
+	}
+	return cur.FolderID
+}
+
 // queueCopy checks the copy's plan now, so a conflict is answered at once, then queues the copy as a
 // job. The job's target is the new root node.
 func (s *Server) queueCopy(w http.ResponseWriter, r *http.Request, src *store.Node, in transferBody,
-	p *auth.Principal, target string) error {
+	p *auth.Principal) error {
 	ctx := r.Context()
 	rootID := id.New("nod")
 	var job *store.Job
@@ -492,12 +507,16 @@ func (s *Server) queueCopy(w http.ResponseWriter, r *http.Request, src *store.No
 		if _, err := requireAccess(ctx, tx, p, cur.FolderID, false); err != nil {
 			return err
 		}
-		if _, err := requireAccess(ctx, tx, p, target, true); err != nil {
+		dst := copyTarget(in, cur)
+		if _, err := requireAccess(ctx, tx, p, dst, true); err != nil {
 			return err
 		}
 		plan, err := planTransfer(ctx, tx, cur, in, false)
 		if err != nil {
 			return err
+		}
+		if plan.folderID != dst {
+			return fmt.Errorf("copy: planned folder %s is not the checked folder %s", plan.folderID, dst)
 		}
 		body, err := json.Marshal(copyPayload{Source: cur.ID, Root: rootID, Folder: plan.folderID,
 			Parent: plan.parent.ID, Name: in.Name, OnConflict: in.OnConflict, Actor: actorOf(p)})

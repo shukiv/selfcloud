@@ -159,6 +159,27 @@ func TestCopyRecheckedAtCommit(t *testing.T) {
 	}
 }
 
+// TestCopyTargetFollowsMovedSource covers a copy that names no folder, so it copies within the
+// source's folder. The source moves into a folder the member may only read between the check and the
+// commit: the copy must be refused, not written into the read-only folder.
+func TestCopyTargetFollowsMovedSource(t *testing.T) {
+	m := newMemberFixture(t)
+	before, files := snapshot(t, m)
+	onceBefore(m.s, func() {
+		wantStatus(t, call(t, m.s, "POST", "/api/v1/nodes/"+m.fileF.ID+"/move", m.key,
+			map[string]any{"folder": m.g.ID}), 200)
+	})
+	wantError(t, callSession(t, m.s, m.sess, "POST", "/api/v1/nodes/"+m.fileF.ID+"/copy",
+		map[string]any{"name": "copy.txt"}), 403, apierr.Forbidden)
+	for _, fld := range []string{m.f.ID, m.g.ID} {
+		wantError(t, call(t, m.s, "GET", "/api/v1/folders/"+fld+"/children?"+q("/copy.txt"), m.key, nil),
+			404, apierr.NotFound)
+	}
+	if after, n := snapshot(t, m); after != before || n != files {
+		t.Errorf("refused copy changed usage or files")
+	}
+}
+
 // TestDeadlineSetForBodyReads checks that a raw-body write sets a read deadline that grows with the
 // size cap: 30 seconds plus a second per MiB, here 16 MiB.
 func TestDeadlineSetForBodyReads(t *testing.T) {
