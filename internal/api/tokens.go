@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -102,7 +103,8 @@ type tokenPayload struct {
 	UserID     string   `json:"usr"` // "" when the token acts as the minting key
 	MintedBy   string   `json:"key"` // the account key that minted the token
 	Folders    []string `json:"fld"`
-	Permission string   `json:"perm"` // read or write
+	Node       string   `json:"nod,omitempty"` // a directory the token is confined to; "" for whole folders
+	Permission string   `json:"perm"`          // read or write
 	Audience   string   `json:"aud"`
 	IssuedAt   int64    `json:"iat"` // Unix milliseconds
 	ExpiresAt  int64    `json:"exp"` // Unix milliseconds
@@ -124,6 +126,9 @@ func (pl tokenPayload) valid() bool {
 		if !id.Valid("fld", f) {
 			return false
 		}
+	}
+	if pl.Node != "" && !id.Valid("nod", pl.Node) {
+		return false
 	}
 	return (pl.Permission == permRead || pl.Permission == permWrite) && pl.Audience == tokenAudience &&
 		pl.IssuedAt > 0 && pl.ExpiresAt > pl.IssuedAt
@@ -232,6 +237,7 @@ func (s *Server) authenticateToken(ctx context.Context, tok string) (*auth.Princ
 func principalOfToken(pl tokenPayload, d *store.Delegation) *auth.Principal {
 	scope := &auth.TokenScope{
 		Folders:   pl.Folders,
+		Node:      pl.Node,
 		Write:     pl.Permission == permWrite,
 		Audience:  pl.Audience,
 		MintedBy:  pl.MintedBy,
@@ -288,6 +294,11 @@ type tokenRequest struct {
 	Permissions string   `json:"permissions"` // read (the default) or write
 	TTL         *int64   `json:"ttl"`         // seconds; the default is 15 minutes
 	Audience    string   `json:"audience"`    // api (the default)
+	// Path or Node confines the token to one directory and everything below it. Path names a
+	// directory inside the one folder given, and Node is a directory ID in one of the folders. Give
+	// at most one of them.
+	Path *string `json:"path"`
+	Node string  `json:"node"`
 }
 
 // tokenJSON is the answer to a mint. The token is shown here and nowhere else.
@@ -335,6 +346,9 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 	if write {
 		pl.Permission = permWrite
 	}
+	if err := checkTokenScope(in, folders); err != nil {
+		return err
+	}
 	var out tokenJSON
 	ctx := r.Context()
 	s.atWrite()
@@ -377,13 +391,35 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
+		// The directory is resolved here, inside the transaction, so the node the token is
+		// confined to is the one that exists when the token is signed.
+		switch {
+		case in.Path != nil:
+			dir, err := s.tokenDirByPath(ctx, tx, accID, folders[0], *in.Path)
+			if err != nil {
+				return err
+			}
+			pl.Node = dir.ID
+		case in.Node != "":
+			dir, err := tx.Node(ctx, accID, in.Node)
+			if errors.Is(err, store.ErrNotFound) || (err == nil && !slices.Contains(folders, dir.FolderID)) {
+				return notFound("node")
+			}
+			if err != nil {
+				return err
+			}
+			if dir.Kind != store.KindDir {
+				return apierr.New(apierr.InvalidRequest, "node must be a directory")
+			}
+			pl.Node = dir.ID
+		}
 		token, err := s.tokens.sign(pl)
 		if err != nil {
 			return err
 		}
 		out = tokenJSON{Token: token, ExpiresAt: time.UnixMilli(pl.ExpiresAt).UTC()}
 		return tx.InsertAudit(ctx, s.auditEntry(r, accID, "token.mint", target, map[string]any{
-			"user": in.User, "folders": folders, "permissions": pl.Permission,
+			"user": in.User, "folders": folders, "node": pl.Node, "permissions": pl.Permission,
 			"audience": pl.Audience, "expires_at": out.ExpiresAt.Format(time.RFC3339),
 		}))
 	})
@@ -393,6 +429,51 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, out)
 	return nil
+}
+
+// checkTokenScope checks the shape of the directory a mint names. Path needs exactly one folder,
+// since a path has no meaning across several; Node needs a valid directory ID; and Path and Node
+// are exclusive.
+func checkTokenScope(in tokenRequest, folders []string) error {
+	switch {
+	case in.Path != nil && in.Node != "":
+		return apierr.New(apierr.InvalidRequest, "give path or node, not both")
+	case in.Path != nil && len(folders) != 1:
+		return apierr.New(apierr.InvalidRequest, "path needs exactly one folder")
+	case in.Node != "":
+		return validID("nod", in.Node)
+	}
+	return nil
+}
+
+// tokenDirByPath resolves a path under a folder's root to the directory it names, inside the
+// transaction. A path that names no directory is not_found.
+func (s *Server) tokenDirByPath(ctx context.Context, tx *store.Tx, accID, folderID, path string) (*store.Node, error) {
+	segs, err := parsePath(path)
+	if err != nil {
+		return nil, err
+	}
+	root, err := tx.RootNode(ctx, accID, folderID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, notFound("folder")
+	}
+	if err != nil {
+		return nil, err
+	}
+	find := func(ctx context.Context, parentID, key string) (*store.Node, error) {
+		return tx.Child(ctx, accID, parentID, key)
+	}
+	dir, err := walkDirs(ctx, find, root, segs)
+	if errors.As(err, new(*notDirError)) {
+		return nil, notFound("directory")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if dir == nil {
+		return nil, notFound("directory")
+	}
+	return dir, nil
 }
 
 // checkTokenRequest validates a mint request. It returns the folders with duplicates removed, the

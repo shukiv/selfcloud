@@ -34,6 +34,7 @@ type Node struct {
 	ModifiedAt time.Time
 	CreatedBy  string
 	ModifiedBy string
+	OwnerID    string // the user who owns the node; a new node's owner is its creator
 }
 
 // IsRoot reports whether n is a folder's root.
@@ -42,18 +43,18 @@ func (n *Node) IsRoot() bool { return n.ParentID == "" }
 // nodeSelect reads a node with its blob's hash. Callers add a WHERE clause.
 const nodeSelect = `SELECT n.id, n.account_id, n.folder_id, n.parent_id, n.name, n.name_key, n.kind,
 	n.size, n.mime_type, n.blob_id, COALESCE(b.sha256, ''), n.etag, n.created_at, n.modified_at,
-	n.created_by, n.modified_by
+	n.created_by, n.modified_by, n.owner_id
 	FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id AND b.account_id = n.account_id`
 
 const nodeCols = `id, account_id, folder_id, parent_id, name, name_key, kind, size, mime_type, blob_id,
-	etag, created_at, modified_at, created_by, modified_by`
+	etag, created_at, modified_at, created_by, modified_by, owner_id`
 
 func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	var n Node
 	var parent, blob sql.NullString
 	var created, modified int64
 	err := row.Scan(&n.ID, &n.AccountID, &n.FolderID, &parent, &n.Name, &n.NameKey, &n.Kind, &n.Size,
-		&n.MimeType, &blob, &n.SHA256, &n.ETag, &created, &modified, &n.CreatedBy, &n.ModifiedBy)
+		&n.MimeType, &blob, &n.SHA256, &n.ETag, &created, &modified, &n.CreatedBy, &n.ModifiedBy, &n.OwnerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -196,10 +197,16 @@ func (s *Store) SubtreeSize(ctx context.Context, accountID, id string, limit int
 	return n, err
 }
 
-// IsWithin reports whether node id of accountID is ancestor itself or lies below it.
+// IsWithin reports whether node id of accountID is ancestor itself or lies below it, read inside
+// the transaction.
 func (tx *Tx) IsWithin(ctx context.Context, accountID, id, ancestor string) (bool, error) {
+	return isWithin(ctx, tx.q, accountID, id, ancestor)
+}
+
+// isWithin is IsWithin over either a pool or a transaction.
+func isWithin(ctx context.Context, q querier, accountID, id, ancestor string) (bool, error) {
 	var found bool
-	err := tx.q.QueryRowContext(ctx, `WITH RECURSIVE up(nid, parent) AS (
+	err := q.QueryRowContext(ctx, `WITH RECURSIVE up(nid, parent) AS (
 		SELECT id, parent_id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
 		SELECT p.id, p.parent_id FROM nodes p JOIN up ON p.id = up.parent WHERE p.account_id = ?
@@ -210,11 +217,18 @@ func (tx *Tx) IsWithin(ctx context.Context, accountID, id, ancestor string) (boo
 
 // InsertNode adds a node. It returns ErrConflict if a sibling has the same name key.
 func (tx *Tx) InsertNode(ctx context.Context, n *Node) error {
+	// A node in a personal folder belongs to the folder's user, whoever creates or copies it there.
+	// Anywhere else its owner is the one given, or else its creator.
+	owner := n.OwnerID
+	if owner == "" {
+		owner = n.CreatedBy
+	}
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), ?))`,
 		n.ID, n.AccountID, n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Kind, n.Size,
 		n.MimeType, nullString(n.BlobID), n.ETag, millis(n.CreatedAt), millis(n.ModifiedAt),
-		n.CreatedBy, n.ModifiedBy)
+		n.CreatedBy, n.ModifiedBy, n.FolderID, owner)
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -225,10 +239,10 @@ func (tx *Tx) InsertNode(ctx context.Context, n *Node) error {
 // ErrNotFound if the node is not in the account, and ErrConflict on a sibling name clash.
 func (tx *Tx) UpdateNode(ctx context.Context, n *Node) error {
 	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET folder_id = ?, parent_id = ?, name = ?,
-		name_key = ?, size = ?, mime_type = ?, blob_id = ?, etag = ?, modified_at = ?, modified_by = ?
-		WHERE account_id = ? AND id = ?`,
+		name_key = ?, size = ?, mime_type = ?, blob_id = ?, etag = ?, modified_at = ?, modified_by = ?,
+		owner_id = CASE WHEN ? = '' THEN owner_id ELSE ? END WHERE account_id = ? AND id = ?`,
 		n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Size, n.MimeType, nullString(n.BlobID),
-		n.ETag, millis(n.ModifiedAt), n.ModifiedBy, n.AccountID, n.ID))
+		n.ETag, millis(n.ModifiedAt), n.ModifiedBy, n.OwnerID, n.OwnerID, n.AccountID, n.ID))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -236,15 +250,18 @@ func (tx *Tx) UpdateNode(ctx context.Context, n *Node) error {
 }
 
 // SetSubtreeFolder moves every node under id, id included, into folderID. Folder membership is
-// stored on each node, so a move across folders must rewrite the whole subtree.
+// stored on each node, so a move across folders must rewrite the whole subtree. Moved into a personal
+// folder, the subtree becomes its user's; moved into a team space, the owners stay as they were.
 func (tx *Tx) SetSubtreeFolder(ctx context.Context, accountID, id, folderID string) error {
 	_, err := tx.q.ExecContext(ctx, `WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
 		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
 	)
-	UPDATE nodes SET folder_id = ? WHERE account_id = ? AND id IN (SELECT nid FROM sub)`,
-		accountID, id, accountID, folderID, accountID)
+	UPDATE nodes SET folder_id = ?,
+		owner_id = COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), owner_id)
+		WHERE account_id = ? AND id IN (SELECT nid FROM sub)`,
+		accountID, id, accountID, folderID, folderID, accountID)
 	return err
 }
 

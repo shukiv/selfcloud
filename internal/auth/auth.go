@@ -63,8 +63,9 @@ type Principal struct {
 // most at Write.
 type TokenScope struct {
 	Folders  []string  `json:"folders"`
-	Write    bool      `json:"write"`    // false: read only
-	Audience string    `json:"audience"` // "api"; the only audience in use
+	Node     string    `json:"node,omitempty"` // a directory of one of Folders; "" for the whole folders
+	Write    bool      `json:"write"`          // false: read only
+	Audience string    `json:"audience"`       // "api"; the only audience in use
 	MintedBy string    `json:"minted_by"`
 	IssuedAt time.Time `json:"issued_at"`
 	// ExpiresAt bounds anything the token creates that outlives the request, such as a signed link.

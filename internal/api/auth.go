@@ -240,8 +240,11 @@ func (s *Server) managedAccount(r *http.Request) (*store.Account, error) {
 }
 
 // auditEntry describes an action by the request's caller, for the audit log.
-func (s *Server) auditEntry(r *http.Request, accountID, action, target string, details map[string]any) *store.AuditEntry {
+// folders, when given, are the folders the entry is about; an entry about a personal folder is
+// private to its user (store.AuditEntry.Folders).
+func (s *Server) auditEntry(r *http.Request, accountID, action, target string, details map[string]any, folders ...string) *store.AuditEntry {
 	e := &store.AuditEntry{
+		Folders:   folders,
 		Time:      store.Now(),
 		AccountID: accountID,
 		Action:    action,

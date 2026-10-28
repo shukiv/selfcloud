@@ -25,9 +25,21 @@ tags:
   - name: System
     description: Health, readiness, metrics and server facts.
   - name: Folders
-    description: Folders and who can reach them.
+    description: |
+      Team spaces and personal folders, and who can reach them. A team space is shared by
+      permissions and managed by the account; each user also has one personal folder ("My files"),
+      which is private to that user. The account key reaches personal folders too.
   - name: Grants
-    description: Shares of a folder with a member.
+    description: |
+      Shares of a team space with a member. These routes predate roles: `read` is the viewer role
+      and `write` is the editor role on the folder's root. New clients use permissions.
+  - name: Permissions
+    description: |
+      Roles on any file or folder, inherited downward. A user or a group holds a role on a node,
+      and reaches the node and everything below it at that role or a higher one. Inheritance only
+      adds: a permission deeper down never lowers the role above it.
+  - name: Groups
+    description: Named sets of users of one account. A permission may name a group.
   - name: Admins
     description: Installation admin users.
   - name: Accounts
@@ -580,6 +592,133 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/GrantList" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/groups:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    post:
+      tags: [Groups]
+      operationId: createGroup
+      summary: Create a group
+      description: |
+        With `external_id`, repeating the request with the same name returns the existing group
+        (200), so a retry is safe. A name another group has is a conflict.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GroupCreate" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        "200":
+          description: The group with this external_id already exists with the same name.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Groups]
+      operationId: listGroups
+      summary: List the groups of the account
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The groups, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GroupList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/groups/{grp}:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/grp"
+    get:
+      tags: [Groups]
+      operationId: getGroup
+      summary: Get a group
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The group.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Groups]
+      operationId: updateGroup
+      summary: Rename a group or change its external ID
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GroupUpdate" }
+      responses:
+        "200":
+          description: The group.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Groups]
+      operationId: deleteGroup
+      summary: Delete a group
+      description: Removes the group, its members, and every permission it holds, in one transaction.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Deleted. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/groups/{grp}/members:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/grp"
+    get:
+      tags: [Groups]
+      operationId: listGroupMembers
+      summary: List the members of a group
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The members, earliest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GroupMemberList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/groups/{grp}/members/{usr}:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/grp"
+      - $ref: "#/components/parameters/usr"
+    put:
+      tags: [Groups]
+      operationId: addGroupMember
+      summary: Add a user to a group
+      description: A user already in the group is left as it is. An installation admin cannot be a member.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: The user is in the group. }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Groups]
+      operationId: removeGroupMember
+      summary: Remove a user from a group
+      description: The user's permissions through the group stop at once.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Removed. }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/admins:
     post:
       tags: [Admins]
@@ -741,8 +880,17 @@ paths:
       tags: [Users]
       operationId: deleteUser
       summary: Delete a user
-      description: Removes the user with its sessions and tokens.
+      description: |
+        Removes the user with its sessions, tokens, group memberships and permissions. The user's
+        personal folder goes with it. If that folder holds any file or directory, the delete is
+        refused with `conflict` unless `delete_files=true`, since the files are then gone for good.
       security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: delete_files
+          in: query
+          required: false
+          description: Delete the files of the user's personal folder too.
+          schema: { type: boolean, default: false }
       responses:
         "204":
           description: Deleted.
@@ -1559,6 +1707,81 @@ paths:
               schema: { $ref: "#/components/schemas/SignedLink" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/nodes/{nod}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Permissions]
+      operationId: listNodePermissions
+      summary: List the permissions that reach a node
+      description: |
+        The permissions on the node and on its ancestors. Each says whether it sits on the node
+        (`inherited_from` is null) or above it. Needs a role on the node. A manager on the node and
+        an account key see the full chain. A user below manager sees only the rows that name it or a
+        group it is in, and inherited rows only among those. A delegated token gets `forbidden`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The permissions, the node's own first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PermissionList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/permissions/{subject}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+      - $ref: "#/components/parameters/subject"
+    put:
+      tags: [Permissions]
+      operationId: setNodePermission
+      summary: Give a user or group a role on a node, or change it
+      description: |
+        Needs the manager role on the node, or an account key. A caller may not grant a role above
+        its own. The subject must belong to the account, and an installation admin cannot hold a
+        permission. Delegated tokens never manage permissions.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PermissionSet" }
+      responses:
+        "200":
+          description: The permission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Permission" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Permissions]
+      operationId: removeNodePermission
+      summary: Remove a permission that sits on the node
+      description: Needs the manager role on the node, or an account key.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Removed. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/shared:
+    get:
+      tags: [Permissions]
+      operationId: listShared
+      summary: List what was shared with the caller
+      description: |
+        The nodes the caller holds a permission on, directly or through a group, each with the
+        caller's role. Nodes in the caller's own personal folder are left out, and so are nodes
+        whose team space's root the caller already reaches. The caller reaches nothing above a
+        shared node. A user only: an account key has no shares.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The shared nodes, in node ID order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeList" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/links/{token}:
     parameters:
       - name: token
@@ -1673,6 +1896,17 @@ components:
       in: path
       required: true
       schema: { type: string, example: upl_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    grp:
+      name: grp
+      in: path
+      required: true
+      schema: { type: string, example: grp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    subject:
+      name: subject
+      in: path
+      required: true
+      description: A user (`usr_...`) or a group (`grp_...`) of the same account.
+      schema: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     tusResumable:
       name: Tus-Resumable
       in: header
@@ -1771,6 +2005,8 @@ components:
           type: [string, "null"]
           description: The client's own reference; unique within the account.
         name: { type: string, description: The name in Unicode NFC. }
+        kind: { type: string, enum: [team, personal], description: "A team space, or a user's personal folder." }
+        owner_user_id: { type: string, description: The user of a personal folder. Absent for a team space. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -1819,6 +2055,10 @@ components:
         sha256: { type: string, description: Files only. Hex SHA-256 of the contents. }
         created_at: { type: string, format: date-time }
         modified_at: { type: string, format: date-time }
+        role:
+          type: string
+          enum: [viewer, commenter, contributor, editor, manager]
+          description: The caller's effective role on the node. Set by stat, listings and the shared list; an account key gets manager.
 
     NodeList:
       type: object
@@ -1870,9 +2110,16 @@ components:
       allOf:
         - $ref: "#/components/schemas/Folder"
         - type: object
-          required: [access]
+          required: [access, role]
           properties:
-            access: { type: string, enum: [read, write] }
+            access:
+              type: string
+              enum: [read, write]
+              description: The grants-route level of the caller on the folder. Viewer and commenter read; the others write.
+            role:
+              type: string
+              enum: [viewer, commenter, contributor, editor, manager]
+              description: The caller's role on the folder's root.
 
     FolderAccessList:
       type: object
@@ -1881,6 +2128,87 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/FolderAccess" }
+        next_cursor: { type: string }
+
+    Group:
+      type: object
+      required: [id, external_id, name, created_at, updated_at]
+      properties:
+        id: { type: string, example: grp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        external_id:
+          type: [string, "null"]
+          description: The client's own reference; unique within the account.
+        name: { type: string, description: The name in Unicode NFC. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    GroupCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        external_id: { type: string, maxLength: 255 }
+
+    GroupUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        external_id: { type: string, maxLength: 255, description: Empty clears it. }
+
+    GroupList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Group" }
+        next_cursor: { type: string }
+
+    GroupMember:
+      type: object
+      required: [user_id, created_at]
+      properties:
+        user_id: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        created_at: { type: string, format: date-time }
+
+    GroupMemberList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/GroupMember" }
+        next_cursor: { type: string }
+
+    Permission:
+      type: object
+      required: [subject_kind, subject_id, role, inherited_from, created_at, created_by]
+      properties:
+        subject_kind: { type: string, enum: [user, group] }
+        subject_id: { type: string, description: A user (usr_...) or a group (grp_...). }
+        role: { type: string, enum: [viewer, commenter, contributor, editor, manager] }
+        inherited_from:
+          type: [string, "null"]
+          description: The ancestor node the permission sits on. Null when it sits on the node itself.
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, description: The ID of the caller who made or last changed it. }
+
+    PermissionSet:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: { type: string, enum: [viewer, commenter, contributor, editor, manager] }
+
+    PermissionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Permission" }
         next_cursor: { type: string }
 
     Grant:
@@ -2236,6 +2564,18 @@ components:
           maxItems: 32
           items: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
           description: Folders of the account the token reaches. Duplicates are dropped.
+        path:
+          type: string
+          maxLength: 4096
+          description: |
+            A directory under the root of the one folder given, e.g. `/a/b`. The token is then
+            confined to that directory and everything below it. Needs exactly one folder; not
+            with `node`.
+        node:
+          type: string
+          description: |
+            A directory ID in one of the folders. The token is confined to it and everything below
+            it. Not with `path`. A move or copy that carries an item into or out of the directory is refused.
         permissions:
           type: string
           enum: [read, write]
@@ -2508,3 +2848,6 @@ components:
             id: { type: string }
             name: { type: string }
         csrf_token: { type: string }
+        personal_folder_id:
+          type: [string, "null"]
+          description: The caller's "My files" folder. Null for an installation admin.

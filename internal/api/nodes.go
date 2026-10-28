@@ -11,11 +11,13 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/blob"
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/id"
@@ -100,6 +102,9 @@ type nodeJSON struct {
 	SHA256     string    `json:"sha256,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	ModifiedAt time.Time `json:"modified_at"`
+	// Role is the caller's role on the node. Listings and stat carry it; an account key gets
+	// manager, the highest role, since it reaches everything in its account.
+	Role string `json:"role,omitempty"`
 }
 
 func toNodeJSON(n *store.Node) nodeJSON {
@@ -118,58 +123,30 @@ func toNodeJSON(n *store.Node) nodeJSON {
 // nodeNotFound is what a node the caller cannot reach looks like.
 func nodeNotFound() error { return notFound("node") }
 
-// nodeOf loads a node of the caller's account. It checks that the caller reaches the node's folder,
-// at write when write is set. A node the caller cannot reach is not_found; a reachable one that
-// needs write is forbidden, because the caller already knows it exists.
-func (s *Server) nodeOf(r *http.Request, nodeID string, write bool) (*store.Node, error) {
-	p := principalOf(r)
-	if p == nil {
-		return nil, apierr.New(apierr.Unauthenticated, "credentials are required")
+// nodeAccess loads a node the caller reaches, with the role the caller holds on it. A node the
+// caller cannot reach is not_found, and the answer is the same whether or not the node exists.
+func (s *Server) nodeAccess(r *http.Request, nodeID string) (*store.Node, string, error) {
+	if !id.Valid("nod", nodeID) {
+		return nil, "", nodeNotFound()
 	}
-	if p.IsAdmin() {
-		return nil, apierr.New(apierr.Forbidden, "admins manage tenants and may not read their files")
-	}
+	return nodeAccessWith(r.Context(), s.store, principalOf(r), nodeID)
+}
+
+// nodeOf loads a node the caller holds at least minRole on. Below that role the caller already knows
+// the node exists, so the answer is forbidden, not not_found.
+func (s *Server) nodeOf(r *http.Request, nodeID, minRole string) (*store.Node, error) {
 	if !id.Valid("nod", nodeID) {
 		return nil, nodeNotFound()
 	}
-	n, err := s.store.Node(r.Context(), p.AccountID, nodeID)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, nodeNotFound()
-	}
-	if err != nil {
-		return nil, err
-	}
-	_, level, err := s.folderAccess(r, n.FolderID)
-	if err != nil {
-		if apierr.From(err).Code == apierr.NotFound {
-			return nil, nodeNotFound()
-		}
-		return nil, err
-	}
-	if write && level != accessWrite {
-		return nil, apierr.New(apierr.Forbidden, "this needs write access to the folder")
-	}
-	return n, nil
-}
-
-// folderFor loads a folder the caller reaches, at write when write is set.
-func (s *Server) folderFor(r *http.Request, folderID string, write bool) (*store.Folder, error) {
-	f, level, err := s.folderAccess(r, folderID)
-	if err != nil {
-		return nil, err
-	}
-	if write && level != accessWrite {
-		return nil, apierr.New(apierr.Forbidden, "this needs write access to the folder")
-	}
-	return f, nil
+	return requireNodeRole(r.Context(), s.store, principalOf(r), nodeID, minRole)
 }
 
 // nodeFinder looks up the child of a directory by name key, from the store or a transaction.
 type nodeFinder func(ctx context.Context, parentID, key string) (*store.Node, error)
 
 // walkDirs follows the directories named by segs from root, without creating anything. It returns
-// the last directory, or nil with no error when one on the way is missing. A file on the way is an
-// invalid path.
+// the last directory, or nil with no error when one on the way is missing. A file on the way is a
+// notDirError; the caller answers it with fileOnPath.
 func walkDirs(ctx context.Context, find nodeFinder, root *store.Node, segs []pathSeg) (*store.Node, error) {
 	cur := root
 	for _, seg := range segs {
@@ -181,7 +158,7 @@ func walkDirs(ctx context.Context, find nodeFinder, root *store.Node, segs []pat
 			return nil, err
 		}
 		if child.Kind != store.KindDir {
-			return nil, apierr.Newf(apierr.InvalidPath, "%s is a file, not a directory", seg.name)
+			return nil, &notDirError{at: cur, name: seg.name}
 		}
 		cur = child
 	}
@@ -214,7 +191,7 @@ func (s *Server) walkDirsTx(r *http.Request, tx *store.Tx, accountID, folderID s
 			return nil, err
 		}
 		if err := tx.InsertAudit(ctx, s.auditEntry(r, accountID, "node.create", dir.ID,
-			map[string]any{"kind": store.KindDir, "name": seg.name, "parent": cur.ID})); err != nil {
+			map[string]any{"kind": store.KindDir, "name": seg.name, "parent": cur.ID}, folderID)); err != nil {
 			return nil, err
 		}
 		cur = dir
@@ -223,12 +200,33 @@ func (s *Server) walkDirsTx(r *http.Request, tx *store.Tx, accountID, folderID s
 }
 
 // newNode inserts a directory or file node under parentID with the given name, and returns it.
+// ownerIn is the owner a new node gets in a folder: the folder's user inside a personal folder, and
+// its creator everywhere else. It is the rule the store applies when a node is inserted, given here
+// so that the node in memory matches the row.
+func ownerIn(ctx context.Context, tx *store.Tx, accountID, folderID, creator string) (string, error) {
+	f, err := tx.Folder(ctx, accountID, folderID)
+	if errors.Is(err, store.ErrNotFound) {
+		return creator, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if f.Kind == store.KindPersonal {
+		return f.OwnerUserID, nil
+	}
+	return creator, nil
+}
+
 func (s *Server) newNode(ctx context.Context, tx *store.Tx, accountID, folderID, parentID string, seg pathSeg,
 	kind, by string) (*store.Node, error) {
 	now := store.Now()
+	owner, err := ownerIn(ctx, tx, accountID, folderID, by)
+	if err != nil {
+		return nil, err
+	}
 	n := &store.Node{ID: id.New("nod"), AccountID: accountID, FolderID: folderID, ParentID: parentID,
 		Name: seg.name, NameKey: seg.key, Kind: kind, CreatedAt: now, ModifiedAt: now,
-		CreatedBy: by, ModifiedBy: by}
+		CreatedBy: by, ModifiedBy: by, OwnerID: owner}
 	if err := tx.InsertNode(ctx, n); err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			return nil, apierr.New(apierr.Conflict, "a file or folder with this name already exists here")
@@ -290,68 +288,111 @@ func tooLarge(limit int64) error {
 // ---- reading ----
 
 func (s *Server) handleStatNode(w http.ResponseWriter, r *http.Request) error {
-	n, err := s.nodeOf(r, r.PathValue("nod"), false)
+	n, role, err := s.nodeAccess(r, r.PathValue("nod"))
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toNodeJSON(n))
+	out := toNodeJSON(n)
+	out.Role = role
+	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
-// writeChildren answers a page of a directory's children.
-func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *store.Node) error {
+// callerRankCap is the highest rank the caller may carry on any node: a token's cap, and manager for
+// everything else. Children of a listing are capped the same way, so a token never lists more than
+// it may act on.
+func callerRankCap(p *auth.Principal) int {
+	if p.Token != nil {
+		return store.RoleRank(tokenRoleCap(p.Token))
+	}
+	return store.RoleRank(store.RoleManager)
+}
+
+// writeChildren answers a page of a directory's children. role is the caller's role on dir. Each
+// child's role is the higher of that and its own permissions, so the parent's role is worked out
+// once for the whole listing, and only the children's direct permissions are read per page.
+func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *store.Node, role string) error {
 	page, err := pageParams(r)
 	if err != nil {
 		return err
 	}
-	kids, next, err := s.store.Children(r.Context(), dir.AccountID, dir.ID, page)
+	ctx := r.Context()
+	p := principalOf(r)
+	kids, next, err := s.store.Children(ctx, dir.AccountID, dir.ID, page)
 	if err != nil {
 		return storeErr(err)
 	}
+	var ranks map[string]int
+	if p.Kind == auth.KindUser {
+		if ranks, err = s.store.ChildRanks(ctx, dir.AccountID, dir.ID, p.UserID); err != nil {
+			return err
+		}
+	}
+	cap := callerRankCap(p)
+	base := min(store.RoleRank(role), cap)
 	out := listResponse[nodeJSON]{Items: []nodeJSON{}, NextCursor: next}
 	for _, k := range kids {
-		out.Items = append(out.Items, toNodeJSON(k))
+		j := toNodeJSON(k)
+		j.Role = store.RoleOfRank(max(base, min(ranks[k.ID], cap)))
+		out.Items = append(out.Items, j)
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
 func (s *Server) handleListNodeChildren(w http.ResponseWriter, r *http.Request) error {
-	dir, err := s.nodeOf(r, r.PathValue("nod"), false)
+	dir, role, err := s.nodeAccess(r, r.PathValue("nod"))
 	if err != nil {
 		return err
 	}
 	if dir.Kind != store.KindDir {
 		return apierr.New(apierr.InvalidRequest, "this node is a file, not a directory")
 	}
-	return s.writeChildren(w, r, dir)
+	return s.writeChildren(w, r, dir, role)
 }
 
 // handleListPathChildren lists a directory of a folder by its path; ?path= empty or "/" is the root.
+// The path is walked before the access check, because the directory may sit below a root the caller
+// cannot reach while the caller holds a permission on it. A path the caller cannot reach answers
+// not_found, the same as a missing one.
 func (s *Server) handleListPathChildren(w http.ResponseWriter, r *http.Request) error {
-	f, err := s.folderFor(r, r.PathValue("fld"), false)
-	if err != nil {
+	p := principalOf(r)
+	if err := callerCheck(p); err != nil {
 		return err
+	}
+	fld := r.PathValue("fld")
+	if p.Token != nil && !slices.Contains(p.Token.Folders, fld) {
+		return notFound("folder")
 	}
 	segs, err := parsePath(r.URL.Query().Get("path"))
 	if err != nil {
 		return err
 	}
 	ctx := r.Context()
-	root, err := s.store.RootNode(ctx, f.AccountID, f.ID)
+	root, err := s.store.RootNode(ctx, p.AccountID, fld)
+	if errors.Is(err, store.ErrNotFound) {
+		return notFound("folder")
+	}
 	if err != nil {
 		return err
 	}
 	dir, err := walkDirs(ctx, func(ctx context.Context, parentID, key string) (*store.Node, error) {
-		return s.store.Child(ctx, f.AccountID, parentID, key)
+		return s.store.Child(ctx, p.AccountID, parentID, key)
 	}, root, segs)
 	if err != nil {
-		return err
+		return fileOnPath(ctx, s.store, p, err, "path")
 	}
 	if dir == nil {
 		return notFound("path")
 	}
-	return s.writeChildren(w, r, dir)
+	dir, role, err := nodeAccessWith(ctx, s.store, p, dir.ID)
+	if err != nil {
+		if apierr.From(err).Code == apierr.NotFound {
+			return notFound("path")
+		}
+		return err
+	}
+	return s.writeChildren(w, r, dir, role)
 }
 
 // ---- creating ----
@@ -373,17 +414,19 @@ func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) error {
 	if len(segs) == 0 {
 		return apierr.New(apierr.InvalidPath, "the path names the folder's root, which already exists")
 	}
-	f, err := s.folderFor(r, r.PathValue("fld"), true)
-	if err != nil {
-		return err
-	}
 	ctx := r.Context()
 	p := principalOf(r)
+	fld := r.PathValue("fld")
+	// The directory is made under the deepest one that exists, so that is where contributor is needed.
+	if _, _, err := writeAnchor(ctx, s.store, p, fld, segs[:len(segs)-1], store.RoleContributor); err != nil {
+		return err
+	}
 	var out *store.Node
 	created := false
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		if _, err := requireAccess(ctx, tx, p, f.ID, true); err != nil {
+		f, _, err := writeAnchor(ctx, tx, p, fld, segs[:len(segs)-1], store.RoleContributor)
+		if err != nil {
 			return err
 		}
 		root, err := tx.RootNode(ctx, f.AccountID, f.ID)
@@ -412,7 +455,7 @@ func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) error {
 		}
 		out, created = dir, true
 		return tx.InsertAudit(ctx, s.auditEntry(r, f.AccountID, "node.create", dir.ID,
-			map[string]any{"kind": store.KindDir, "name": leaf.name, "parent": parent.ID}))
+			map[string]any{"kind": store.KindDir, "name": leaf.name, "parent": parent.ID}, f.ID))
 	})
 	if err != nil {
 		return err
@@ -447,18 +490,20 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 	if ifNoneMatch != "" && ifNoneMatch != "*" {
 		return apierr.New(apierr.InvalidRequest, "If-None-Match may only be *")
 	}
-	f, err := s.folderFor(r, r.PathValue("fld"), true)
-	if err != nil {
-		return err
-	}
 	ctx := r.Context()
 	p := principalOf(r)
 	leaf := segs[len(segs)-1]
 	dirs := segs[:len(segs)-1]
 	mt := mimeOf(r.Header.Get("Content-Type"), leaf.name)
 
-	// Checked before the body is written, so a refused name costs no disk.
-	if err := s.checkFreeName(ctx, f, dirs, leaf, parents, ifNoneMatch != ""); err != nil {
+	// The directory the file lands in needs contributor. Checked before the body is written, so a
+	// refused name or role costs no disk.
+	fld := r.PathValue("fld")
+	f, _, err := writeAnchor(ctx, s.store, p, fld, dirs, store.RoleContributor)
+	if err != nil {
+		return err
+	}
+	if err := s.checkFreeName(ctx, p, f, dirs, leaf, parents, ifNoneMatch != ""); err != nil {
 		return err
 	}
 	c, err := s.writeBlob(w, r, f.AccountID, int64(s.cfg.Upload.MaxSmallFileSize))
@@ -468,7 +513,7 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 	var out *store.Node
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		if _, err := requireAccess(ctx, tx, p, f.ID, true); err != nil {
+		if _, _, err := writeAnchor(ctx, tx, p, f.ID, dirs, store.RoleContributor); err != nil {
 			return err
 		}
 		root, err := tx.RootNode(ctx, f.AccountID, f.ID)
@@ -507,7 +552,7 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 		}
 		out = n
 		return tx.InsertAudit(ctx, s.auditEntry(r, f.AccountID, "node.create", n.ID,
-			map[string]any{"kind": store.KindFile, "name": leaf.name, "parent": parent.ID, "size": c.Size}))
+			map[string]any{"kind": store.KindFile, "name": leaf.name, "parent": parent.ID, "size": c.Size}, f.ID))
 	})
 	if err != nil {
 		s.discardBlob(f.AccountID, c.ID)
@@ -520,8 +565,8 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 
 // checkFreeName is the read-only check before a file is written: the folder's directories exist (or
 // parents is set), and the name is free. It is repeated inside the write transaction.
-func (s *Server) checkFreeName(ctx context.Context, f *store.Folder, dirs []pathSeg, leaf pathSeg,
-	parents, ifNoneMatch bool) error {
+func (s *Server) checkFreeName(ctx context.Context, p *auth.Principal, f *store.Folder, dirs []pathSeg,
+	leaf pathSeg, parents, ifNoneMatch bool) error {
 	root, err := s.store.RootNode(ctx, f.AccountID, f.ID)
 	if err != nil {
 		return err
@@ -530,7 +575,7 @@ func (s *Server) checkFreeName(ctx context.Context, f *store.Folder, dirs []path
 		return s.store.Child(ctx, f.AccountID, parentID, key)
 	}, root, dirs)
 	if err != nil {
-		return err
+		return fileOnPath(ctx, s.store, p, err, "parent directory")
 	}
 	if parent == nil {
 		if !parents {
@@ -573,7 +618,7 @@ func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	n, err := s.nodeOf(r, r.PathValue("nod"), true)
+	n, err := s.nodeOf(r, r.PathValue("nod"), store.RoleEditor)
 	if err != nil {
 		return err
 	}
@@ -592,7 +637,7 @@ func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			return err
 		}
-		if _, err := requireAccess(ctx, tx, p, cur.FolderID, true); err != nil {
+		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleEditor); err != nil {
 			return err
 		}
 		if taken, err := nameTakenBy(tx.Child(ctx, cur.AccountID, cur.ParentID, key)); err != nil {
@@ -608,7 +653,7 @@ func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error 
 		}
 		out = cur
 		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.rename", cur.ID,
-			map[string]any{"from": from, "to": name}))
+			map[string]any{"from": from, "to": name}, cur.FolderID))
 	})
 	if err != nil {
 		return err
@@ -628,7 +673,7 @@ func storeNameErr(err error) error {
 // handleDeleteNode removes a file, or a folder with everything in it. The blobs are left for the
 // collector. The usage counters come down in the same transaction.
 func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) error {
-	n, err := s.nodeOf(r, r.PathValue("nod"), true)
+	n, err := s.nodeOf(r, r.PathValue("nod"), store.RoleEditor)
 	if err != nil {
 		return err
 	}
@@ -646,7 +691,7 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			return err
 		}
-		if _, err := requireAccess(ctx, tx, p, cur.FolderID, true); err != nil {
+		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleEditor); err != nil {
 			return err
 		}
 		files, bytes, err := tx.SubtreeFiles(ctx, n.AccountID, n.ID)
@@ -663,7 +708,7 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "node.delete", n.ID,
-			map[string]any{"kind": n.Kind, "name": n.Name, "files": files, "bytes": bytes}))
+			map[string]any{"kind": n.Kind, "name": n.Name, "files": files, "bytes": bytes}, n.FolderID))
 	})
 	if err != nil {
 		return err
@@ -683,7 +728,7 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 	if !strings.HasPrefix(ifMatch, `"`) {
 		return apierr.New(apierr.InvalidRequest, "If-Match must be the ETag of the version being replaced")
 	}
-	n, err := s.nodeOf(r, r.PathValue("nod"), true)
+	n, err := s.nodeOf(r, r.PathValue("nod"), store.RoleContributor)
 	if err != nil {
 		return err
 	}
@@ -710,7 +755,7 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			return err
 		}
-		if _, err := requireAccess(ctx, tx, p, cur.FolderID, true); err != nil {
+		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleContributor); err != nil {
 			return err
 		}
 		if cur.ETag != ifMatch {
@@ -732,7 +777,7 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 		}
 		out = cur
 		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.write", cur.ID,
-			map[string]any{"size": c.Size, "previous_size": prev}))
+			map[string]any{"size": c.Size, "previous_size": prev}, cur.FolderID))
 	})
 	if err != nil {
 		s.discardBlob(n.AccountID, c.ID)

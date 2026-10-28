@@ -260,6 +260,15 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders", handle: s.handleListFolders, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleGetFolder, auth: true},
 		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleUpdateFolder, auth: true},
+
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/groups", handle: s.handleCreateGroup, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/groups", handle: s.handleListGroups, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/groups/{grp}", handle: s.handleGetGroup, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/groups/{grp}", handle: s.handleUpdateGroup, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/groups/{grp}", handle: s.handleDeleteGroup, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/groups/{grp}/members", handle: s.handleListGroupMembers, auth: true},
+		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/groups/{grp}/members/{usr}", handle: s.handleAddGroupMember, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/groups/{grp}/members/{usr}", handle: s.handleRemoveGroupMember, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleDeleteFolder, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders/{fld}/grants", handle: s.handleListFolderGrants, auth: true},
 		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/folders/{fld}/grants/{usr}", handle: s.handleSetGrant, auth: true},
@@ -301,6 +310,10 @@ func (s *Server) routes() []route {
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/permissions", handle: s.handleListNodePermissions, auth: true},
+		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true},
+		{method: http.MethodGet, path: "/api/v1/shared", handle: s.handleSharedWithMe, auth: true},
 
 		// A signed link carries its own authority: no credential, and no cookie is read.
 		{method: http.MethodGet, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},

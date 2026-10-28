@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/mail"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -200,6 +201,9 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) error 
 		} else if err != nil {
 			return err
 		}
+		if err := insertPersonalFolder(ctx, tx, u, now); err != nil {
+			return err
+		}
 		created = true
 		if err := tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.create", u.ID,
 			map[string]any{"email": email, "role": role, "verification": in.Verification})); err != nil {
@@ -322,10 +326,10 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 				return err
 			}
 			changed["role"] = u.Role
-			// Grants are for members only. Leaving the member role ends them, so a later return
-			// to member does not bring old shares back.
+			// Shares are for members only. Leaving the member role ends the user's own permissions,
+			// so a later return to member does not bring old shares back. Group memberships stay.
 			if u.Role != store.RoleMember {
-				n, err := tx.DeleteUserGrants(ctx, u.ID)
+				n, err := tx.DeleteUserTeamPermissions(ctx, acc.ID, u.ID)
 				if err != nil {
 					return err
 				}
@@ -383,7 +387,46 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 	}
 	ctx := r.Context()
 	usr := r.PathValue("usr")
+	deleteFiles := false
+	if v := r.URL.Query().Get("delete_files"); v != "" {
+		if deleteFiles, err = strconv.ParseBool(v); err != nil {
+			return apierr.New(apierr.InvalidRequest, "delete_files must be true or false")
+		}
+	}
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
+		if _, err := tx.User(ctx, acc.ID, usr); errors.Is(err, store.ErrNotFound) {
+			return notFound("user")
+		} else if err != nil {
+			return err
+		}
+		// The personal folder goes with its user. Its files are not kept by default: the caller
+		// must say so, since they are gone for good. The folder goes first, through DeleteFolder, so
+		// its usage and reservations are adjusted; the foreign key refuses a user delete that skips it.
+		pf, err := tx.PersonalFolder(ctx, acc.ID, usr)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if err == nil {
+			entries, err := tx.CountFolderEntries(ctx, acc.ID, pf.ID)
+			if err != nil {
+				return err
+			}
+			// The answer does not say how many entries: that would show an owner how large another
+			// user's My files is.
+			if entries > 0 && !deleteFiles {
+				return apierr.New(apierr.Conflict, "the user's personal folder is not empty; pass delete_files=true")
+			}
+			if err := tx.DeleteFolder(ctx, acc.ID, pf.ID); err != nil {
+				return err
+			}
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "folder.delete", pf.ID,
+				map[string]any{"reason": "user.delete"}, pf.ID)); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.DeleteSubjectPermissions(ctx, acc.ID, store.SubjectUser, usr); err != nil {
+			return err
+		}
 		if err := tx.DeleteUser(ctx, acc.ID, usr); errors.Is(err, store.ErrNotFound) {
 			return notFound("user")
 		} else if err != nil {
@@ -558,6 +601,9 @@ func (s *Server) addUser(ctx context.Context, r *http.Request, tx *store.Tx, u *
 	} else if err != nil {
 		return nil, err
 	}
+	if err := insertPersonalFolder(ctx, tx, u, now); err != nil {
+		return nil, err
+	}
 	if err := tx.InsertAudit(ctx, s.auditEntry(r, u.AccountID, action, u.ID,
 		map[string]any{"email": u.Email, "role": u.Role, "verification": method})); err != nil {
 		return nil, err
@@ -576,4 +622,16 @@ func (s *Server) addUser(ctx context.Context, r *http.Request, tx *store.Tx, u *
 		}
 	}
 	return it, nil
+}
+
+// insertPersonalFolder makes the personal folder of an account user, in the caller's transaction, so
+// that the folder exists exactly when the user does. An installation admin has no account and so no
+// folder.
+func insertPersonalFolder(ctx context.Context, tx *store.Tx, u *store.User, now time.Time) error {
+	if u.AccountID == "" {
+		return nil
+	}
+	pf := &store.Folder{ID: id.New("fld"), AccountID: u.AccountID, Name: store.PersonalFolderName,
+		NameKey: store.PersonalNameKey(u.ID), Kind: store.KindPersonal, OwnerUserID: u.ID, CreatedAt: now, UpdatedAt: now}
+	return tx.InsertFolder(ctx, pf, u.ID)
 }

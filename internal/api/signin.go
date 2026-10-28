@@ -580,6 +580,8 @@ type meResponse struct {
 	User      userJSON    `json:"user"`
 	Account   *accountRef `json:"account"` // null for an installation admin
 	CSRFToken string      `json:"csrf_token"`
+	// PersonalFolderID is the caller's "My files" folder. Null for an installation admin.
+	PersonalFolderID *string `json:"personal_folder_id"`
 }
 
 type accountRef struct {
@@ -615,6 +617,13 @@ func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
 			return meResponse{}, err
 		}
 		out.Account = &accountRef{ID: acc.ID, Name: acc.Name}
+		pf, err := s.store.PersonalFolder(r.Context(), u.AccountID, u.ID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return meResponse{}, err
+		}
+		if err == nil {
+			out.PersonalFolderID = &pf.ID
+		}
 	}
 	return out, nil
 }

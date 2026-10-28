@@ -209,7 +209,7 @@ Four kinds of caller:
 |---|---|---|
 | **Installation admin** | `Authorization: Bearer sc_admin_...`, or an admin user signed in with a password | Manage accounts and their keys. |
 | **Account key** | `Authorization: Bearer sc_acct_...` | Everything inside one account: users, folders, grants, files, delegated tokens, webhooks, audit. |
-| **User session** | Email and password (argon2id), optional TOTP; `__Host-` session cookie, `HttpOnly`, `Secure`, `SameSite=Lax` | What the user's grants allow. Account *owners* (a user role) also manage users, folders and grants in the web interface. |
+| **User session** | Email and password (argon2id), optional TOTP; `__Host-` session cookie, `HttpOnly`, `Secure`, `SameSite=Lax` | What the user's roles allow: permissions on nodes, its groups' permissions, and its own personal folder. Account *owners* (a user role) also manage users, folders, groups and permissions in the web interface, and hold manager on every team space. |
 | **Delegated token** | `Authorization: Bearer sct_...` | A short-lived, narrowed slice of an account key's or a user's rights, for a browser. |
 
 An installation admin has no direct path to a tenant's files. It reaches them only through an
@@ -223,12 +223,13 @@ from a secret file named in the config.
 **Delegated tokens** let a client's back end hand a browser direct access, so file bytes never pass through the client's server. The back end calls `POST /api/v1/accounts/{account}/tokens` with its account key and gets back a token scoped by:
 
 - `user`: optional. The token acts as this user, and its rights are the intersection of the token and the user's grants. Without `user`, the token acts as the account key that minted it, with write on the folders it names. The audit log names the acting user or key and records `via: delegated_token` with the minting key.
-- `folders`: 1 to 32 folders of the account. A folder outside the list is `not_found`, even where the user may reach it. A `path` prefix is **deferred to slice n**: it needs node-level access, which sharing v2 brings. A prefix check on folder-level access now would be a half-done security check.
-- `permissions`: `read` (the default) or `write`; write implies read. A token can narrow a grant, never widen it.
+- `folders`: 1 to 32 folders of the account. A folder outside the list is `not_found`, even where the user may reach it.
+- `path` or `node`: optional, and at most one. `path` names a directory under the root of the one folder given, so it needs exactly one folder; `node` names a directory ID in one of the folders. The directory is resolved at mint time, inside the mint transaction, and stored in the token as its node ID. The token then reaches that directory and everything below it, and nothing else in its folders. Anything outside that subtree is `not_found`, and a move that would carry an item out of it, or bring one in from outside, is refused.
+- `permissions`: `read` (the default) or `write`; write implies read. A token can narrow a role, never widen it. The role a token carries is capped: `read` at viewer, `write` at editor. A token never manages anything, so it never reaches manager (section 8).
 - `ttl`: default 15 minutes, at least 1 minute. A longer lifetime than `tokens.max_ttl` (default 1 hour) is refused with the limit in `details.max_ttl_seconds`, not cut short, as for signed links.
 - `audience`: `api`. `wopi` is refused until the office-editing slice.
 
-Only an account key of the same account may mint. An installation admin, a signed-in session and a token itself get `forbidden`, so a token never widens itself. Tokens manage nothing: the management routes (users, folders, grants, keys, usage, audit, webhooks, minting and revocation) refuse a token as they refuse any caller outside the account. The reply carries the token and its `expires_at`, so the back end can cache a token for most of its lifetime instead of minting one per request. Minting is rate-limited per account key.
+Only an account key of the same account may mint. An installation admin, a signed-in session and a token itself get `forbidden`, so a token never widens itself. Tokens manage nothing: the management routes (users, folders, grants, groups, permissions, keys, usage, audit, webhooks, minting and revocation) refuse a token as they refuse any caller outside the account. The reply carries the token and its `expires_at`, so the back end can cache a token for most of its lifetime instead of minting one per request. Minting is rate-limited per account key.
 
 *Format.* `sct_` followed by the unpadded base64url of a compact JSON payload, a `.`, and the unpadded base64url of HMAC-SHA256 over the payload bytes. The payload holds the format version, the signing key ID (`kid`), the account, the user (empty when none), the minting key, the folders, the permission, the audience, and the issue and expiry times in Unix milliseconds. A token is at most 4096 bytes; a longer one is refused before anything is decoded.
 
@@ -274,8 +275,8 @@ The hierarchy has three levels:
 2. A **tenant** (an account) creates its own users, its sub-accounts, and shares folders with
    them, read-only or read-write. The tenant acts through its owner users in the web
    interface, or through an account key from its own application.
-3. A **user** (a sub-account) must be verified before signing in, and reaches only the folders
-   shared with it, at the level granted.
+3. A **user** (a sub-account) must be verified before signing in. It reaches its own personal
+   folder, and whatever is shared with it, at the role granted.
 
 - **Account**: a tenant. Has a name, a status (`active`, `suspended`), a storage quota in bytes
   (`0` = unlimited) and usage counters (bytes, files, bytes reserved by uploads). Every write that
@@ -303,10 +304,127 @@ The hierarchy has three levels:
   single-use, stored hashed, and expire after 72 hours by default. In headless mode the link
   points to a page the client hosts (`verify_url_template`), which calls
   `POST /api/v1/auth/verify`.
-- **Folder**: a named top-level root inside an account, holding its own tree.
-- **Grant**: attaches a folder to a user at a level: `read` (list, download, preview) or `write`
-  (also upload, create, rename, move, copy, delete, edit). Owners reach every folder in their
-  account without grants.
+- **Folder**: a named top-level root inside an account, holding its own tree. Two kinds:
+  - a **team space** (`kind: team`, the default, and every folder made before slice n1). Its name is
+    unique in the account. Account owners manage it, and everyone else reaches it through
+    permissions.
+  - a **personal folder** (`kind: personal`, "My files"). Each user has exactly one, made in the
+    same transaction as the user, and at most one per user. Its name key is `/personal/` and the
+    user's ID, which a folder name cannot contain (names refuse `/`), so it never collides with a
+    team space. The personal folder carries `owner_user_id`.
+
+The rest of this section is the sharing model, built in slice n1 (section 15, decisions 17 to 19).
+
+### Roles and permissions
+
+Five roles, one ordered ladder. Each includes everything below it:
+
+| Role | Adds to the role below |
+|---|---|
+| `viewer` | list, stat, download, signed links |
+| `commenter` | comments (slice r; the role is stored and accepted now) |
+| `contributor` | create files and directories, upload into a directory, replace a file's content. Nothing is renamed, moved, deleted or copied away. |
+| `editor` | every content operation: rename, move, delete, copy |
+| `manager` | change the permissions on the node and below it |
+
+On a team space the docs may call `editor` Drive's "content manager"; the API value stays `editor`.
+
+A **permission** gives a user or a group one role on one node (table `permissions`, key node, subject). A permission on a directory reaches the directory and everything below it. Nodes have no stored path: the ancestors come from a recursive walk up `parent_id`.
+
+**Effective role.** A subject's role on a node is the highest role of its permissions over the node and every ancestor, root included. The subject is the user itself, or any group the user is in (a group permission reaches each member at once, and removing a member revokes it at once). Two rules are not stored, and the access code adds them:
+
+- on a team space, an account owner is `manager`;
+- on a personal folder, its user is `manager`.
+
+Nobody else gets a role on a personal folder by rule. So an account owner does not reach another user's personal folder unless it is shared with them, but the account key reaches everything, personal folders included.
+
+**Inheritance only adds.** A deeper permission never lowers the role above it. A viewer on the root and an editor on a subdirectory give editor below that directory and viewer everywhere else. There are no "limited access" subfolders.
+
+**Reach.** A node the caller cannot reach at all is `not_found`. A node it reaches at a role too low for the operation is `forbidden`. A folder is reached through its root, so a permission deep in a folder does not reach the folder's root: the root stays `not_found` for that user, and the user sees its shared subtree and nothing above it, with no names of ancestors in the answers.
+
+**Paths.** A path that does not lead to a node the caller reaches is `not_found`, and a missing name and an unreachable one give the same code and message at the same place in the path. A file standing on the path answers `invalid_path` only to a caller who reaches the directory the walk stopped in, since only then does the caller already know what that directory holds; anyone else gets the `not_found` of a missing name. The account key reaches everything, so it is told the path is invalid. A destination (`parent`, `path` or `folder`) the caller does not reach is `not_found` with the same label a missing one gets.
+
+**Operations and the role they need** (each checked again inside the transaction that writes):
+
+| Operation | Needs |
+|---|---|
+| stat, list, download, signed link | viewer on the node |
+| mkdir, create file, upload (create, patch, complete, commit) | contributor on the target directory (the deepest existing directory of the path when `parents` creates the rest) |
+| replace a file's content | contributor on the file |
+| move or copy with `on_conflict=replace`, and upload completion that replaces | editor on the displaced file, checked inside the transaction (a contributor may place a file but not overwrite one) |
+| rename, delete | editor on the node |
+| move | editor on the item and contributor on the destination directory |
+| copy | viewer on the source and contributor on the destination |
+| set or remove permissions | manager on the node, or an account key |
+
+A move into a directory needs only contributor there, since nothing is removed from the destination. The destination is resolved and checked before any name is checked, so a refused role is `forbidden` whatever the name. A queued copy checks the source and the destination again when it runs.
+
+**Tokens.** The role a delegated token carries is capped at editor (write) or viewer (read), and a token never reaches manager. Its node scope (section 7) confines it further. A token does not list permissions at all, since that is a management view. A queued copy job is visible to the token that queued it and to tokens of the same user with the same node scope; another token of the same user, scoped to a different node, gets `not_found` for the job.
+
+**Permissions are not copied.** A move keeps the permissions of the node it moves, since the node keeps its ID. A copy is a new node and has none.
+
+**Expiry.** A permission may carry `expires_at`. Every read filters it: an expired permission grants nothing. No API sets it yet (slice n2). **Ownership.** Each node has an `owner_id`: its creator, or the folder's user inside a personal folder. Nothing uses it until slice n2 transfers ownership.
+
+### Groups
+
+An account has named groups of its users (`grp_` IDs; name unique in the account; optional
+`external_id`, with the same idempotent create as folders). A group member may hold any role, and a
+group permission is a permission on a node held by every member. A user is removed from a group,
+or a group is deleted, and its permissions stop at once. A group's members and permissions are
+removed in the same transaction as the group. Only users of the same account may join a group, and
+an installation admin may not join one. Group management refuses delegated tokens, as user
+management does.
+
+### Sharing a file or folder
+
+`PUT /nodes/{nod}/permissions/{usr|grp}` gives a subject a role on a node. The caller needs manager
+on the node, or to be an account key. A caller may not grant a role above its own. The subject must
+be a user or group of the same account, and an installation admin cannot hold a permission.
+Every change is audited in the same transaction. `GET /nodes/{nod}/permissions` lists the
+permissions on the node and above it, each saying where it sits (`inherited_from`). A manager on the
+node and the account key see the full chain. A user below manager sees only the rows that name it or
+a group it is in, and inherited rows only among those; the other subjects' rows stay hidden, so a
+viewer cannot learn who else holds the node. A delegated token gets `forbidden`. `GET /shared`
+lists, for a user, the nodes shared with it, each with its role. It leaves out what the user
+reaches already: its own personal folder, and any node under a team space whose root it reaches.
+
+### Team spaces and personal folders
+
+Account owners manage team spaces and their members, but not personal folders. `GET /folders` lists,
+for a user, the team spaces it reaches at the root, plus its own personal folder. For an owner it
+lists every team space. The account key lists every folder, personal folders included, each with
+role manager. The management list (`GET /accounts/{acc}/folders`) lists team spaces only.
+
+**Audit privacy.** An audit entry about a node or folder in a personal folder is private to the folder's
+user. The store records that user with the entry when it is written (`audit_log.private_user_id`), taken
+from the folder, so a move or copy into or out of a personal folder is private too. The account owner's
+audit listing and any user's hide such entries unless the viewer is that user; the account key sees every
+entry. The filter runs in the query, so a hidden entry never appears in a page.
+
+Deleting a user removes its permissions and group memberships, and its personal folder. A personal
+folder that holds any file or directory refuses the delete with `conflict` unless the caller says
+`delete_files=true`, since the files are then gone for good. The folder goes through the normal
+folder delete, so the usage counters and reservations are adjusted in the same transaction.
+
+### Grants: the older routes
+
+`/accounts/{acc}/folders/{fld}/grants` and `/accounts/{acc}/users/{usr}/grants` keep their request and
+response shapes and status codes. They read and write user permissions on the folder's root: `read`
+is viewer and `write` is editor. Listing shows viewer and commenter as `read`, and contributor,
+editor and manager as `write`. Only a member can hold a grant; an owner is refused. A personal
+folder has no grants and answers `not_found`. Migration 0009 turned every grant into such a
+permission, so existing shares keep working.
+
+### Accepted limits
+
+These were reviewed in the slice n1 security review and accepted for now. They have no code of their own.
+
+- **Groups (L4).** Account owners manage groups. Sharing with a group shares with whoever is in it at
+  the time, the sharer included if the sharer is a member. Membership changes are audited.
+- **Quota through My files (L6).** Any member can fill the account's quota through its personal folder
+  until the quotas slice (p) adds per-user limits.
+- **Shared subtree root (L7).** The root of a shared subtree shows its `parent_id`, which is an ID only.
+  It names no ancestor, but it does tell the user that a parent exists.
 
 ## 9. API outline
 
@@ -334,7 +452,11 @@ Inside an account                          account key, admin key, or owner sess
   POST|GET              /accounts/{acc}/folders             ?external_id=
   PATCH|DELETE          /accounts/{acc}/folders/{fld}
   GET                   /accounts/{acc}/folders/{fld}/grants
-  PUT|DELETE            /accounts/{acc}/folders/{fld}/grants/{usr}   {level}
+  PUT|DELETE            /accounts/{acc}/folders/{fld}/grants/{usr}   {level}   (alias: viewer or editor on the root, section 8)
+  POST|GET              /accounts/{acc}/groups              ?external_id=
+  GET|PATCH|DELETE      /accounts/{acc}/groups/{grp}
+  GET                   /accounts/{acc}/groups/{grp}/members
+  PUT|DELETE            /accounts/{acc}/groups/{grp}/members/{usr}
   POST                  /accounts/{acc}/tokens              mint a delegated token
   POST                  /accounts/{acc}/tokens/revoke       revoke all issued before now
   GET                   /accounts/{acc}/audit
@@ -342,10 +464,13 @@ Inside an account                          account key, admin key, or owner sess
   PATCH|DELETE          /accounts/{acc}/webhooks/{hook}
 
 Files                                      any caller, limited to what it may reach
-  GET    /folders                          folders the caller can reach
+  GET    /folders                          team spaces the caller reaches at the root, plus its personal folder
+  GET    /shared                           nodes shared with the caller (users only), each with its role
   GET    /folders/{fld}/children?path=/a/b list a directory by path
   GET    /nodes/{nod}                      stat: name, size, mime_type, etag, modified_at, sha256
-  GET    /nodes/{nod}/children             list a directory by ID (sort, paging)
+  GET    /nodes/{nod}/children             list a directory by ID (sort, paging); each child carries the caller's role
+  GET    /nodes/{nod}/permissions          the permissions on a node and above it (viewer on the node)
+  PUT|DELETE /nodes/{nod}/permissions/{subject}   {role}: a usr_ or grp_ subject; manager on the node or an account key
   POST   /folders/{fld}/directories        {path, parents: true}
   POST   /folders/{fld}/files?path=        small file as the raw body (If-None-Match: * refuses an existing one),
                                            or a blank document from a template
@@ -374,6 +499,8 @@ Office editing
   POST /nodes/{nod}/office                 editor URL and WOPI token for the client to open
   /wopi/files/{nod}...                     WOPI host (section 10)
 ```
+
+**Grants alias.** `/accounts/{acc}/folders/{fld}/grants` and `/accounts/{acc}/users/{usr}/grants` (slice d) keep working after slice n1 with the same requests, responses and status codes. They map `read` to the viewer role and `write` to the editor role, on the folder's root (section 8). Listing reports viewer and commenter as `read`, and the other three roles as `write`. A client that predates roles needs no change.
 
 **Downloads.** `GET /nodes/{nod}/content` supports single and multiple ranges, `If-Range`,
 `If-None-Match` and `If-Modified-Since`, so interrupted downloads resume. The ETag is strong and
@@ -510,9 +637,11 @@ Vite, compiled into the binary, so Node is needed only to build it.
 | `users` | id, account_id, external_id, email, display_name, locale, role, status, password_hash, totp_secret (encrypted), verified_at |
 | `verifications` | id, user_id, purpose (verify, reset), token_hash, expires_at, used_at |
 | `sessions` | id_hash, user_id, created_at, last_seen_at, expires_at, ip, user_agent |
-| `folders` | id, account_id, external_id, name, root_node_id |
-| `grants` | folder_id, user_id, level, created_by, created_at |
-| `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by |
+| `folders` | id, account_id, external_id, name, name_key, kind (`team` or `personal`), owner_user_id (personal only; at most one personal folder per user) |
+| `groups` | id, account_id, external_id, name, name_key, created_at, updated_at |
+| `group_members` | group_id, user_id, created_at |
+| `permissions` | node_id, account_id, subject_kind (`user` or `group`), subject_id, role (viewer, commenter, contributor, editor, manager), created_at, created_by, expires_at (null: no expiry) |
+| `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id |
 | `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
 | `uploads` | id, account_id, target (folder_id, parent_id or dir_path, parents, name, name_key, on_conflict, mime_type), length, durable_offset, hash_state, blob_id, created_by, created_kind, expires_at |
 | `wopi_locks` | node_id, lock_id, expires_at |
@@ -594,7 +723,8 @@ Each slice ships with tests and leaves the server runnable.
 | g | Ranged downloads and signed links, with the download benchmark |
 | h | Quotas and usage, enforced at upload creation and while writing |
 | i | Delegated tokens and CORS |
-| n | Sharing v2: roles, permissions on any node with inheritance, groups, personal "My files", team-space roles and restrictions, expiry, no-download, ownership transfer, access requests, share emails |
+| n1 | Sharing model: roles on any node with inheritance, groups, personal "My files", team spaces and their owners, the grants routes on top of permissions, `GET /shared`, delegated-token node scope |
+| n2 | Sharing v2: access expiry, no-download, the "editors can share" switch, ownership transfer, team-space restrictions and hiding, access requests, share emails |
 | m | Trash, version history, keep forever, restore, undo |
 | k | Web interface, in the seven languages, with right-to-left layout for Arabic and Hebrew |
 | o | Organisation-wide and public links (off by default), link expiry and password, drop folders |
@@ -610,8 +740,9 @@ Each slice ships with tests and leaves the server runnable.
 
 Slices are listed in build order; the letters keep their first meaning. Slices m to u come from
 the Google Drive parity plan in `feature-parity.md` (approved 2026-10-28). An API client can switch
-over once slices a to i work. Slice n keeps the `/grants` routes working, mapping `read` to viewer
-and `write` to editor, so a client that switched after i keeps working. The OpenAPI file
+over once slices a to i work. Slice n1 keeps the `/grants` routes working, mapping `read` to viewer
+and `write` to editor, so a client that switched after i keeps working. Slice n was split in two
+(section 15, decision 19): n1 is the model, and n2 adds the features that sit on it. The OpenAPI file
 grows with each slice, and a test checks that every route is in it. The Go client in `client/`
 is generated from it.
 
@@ -655,3 +786,22 @@ Decided on approval:
     One account's unfinished uploads may hold at most 50% of the usable disk by default
     (`upload.max_disk_share_percent`). Many accounts together can still fill the pool. The
     install-wide check then refuses new uploads with `storage_full`, and the operator adds disk.
+17. **Sharing model** (2026-10-28, slice n1). One ordered role ladder: viewer, commenter,
+    contributor, editor, manager (section 8). Permissions sit on any file or folder, and a
+    subject's role on a node is the highest over the node and its ancestors, so inheritance only
+    adds: a deeper permission never lowers the role above it. Groups hold permissions as members do.
+    A token carries at most editor, and reaches a directory it is confined to, when it names one.
+    Moves keep the permissions of the moved node; copies take none. Expiry is in the store and
+    filtered at every read, and the API sets it in slice n2.
+18. **My files is private from account owners; the account key reaches all** (2026-10-28, slice n1).
+    Each user has a personal folder, made with the user. An account owner manages team spaces but
+    does not reach another user's personal folder unless it is shared with them. The account key is
+    the tenant application's own credential, so it reaches every folder, personal ones included.
+    Admins never reach contents, personal folders included. Deleting a user with files in its
+    personal folder needs `delete_files=true`.
+19. **Slice n split into n1 and n2** (2026-10-28). n1 is the model: roles, permissions with
+    inheritance, groups, personal folders, team-space owners, the grants routes on permissions, the
+    shared list and token node scope. n2 builds on it: access expiry through the API, no-download,
+    the "editors can share" switch, ownership transfer, team-space restrictions and hiding, access
+    requests and share emails. Nothing of n2 is in n1, except the `expires_at` and `owner_id` columns
+    that n2 needs and the store reads already filter on.

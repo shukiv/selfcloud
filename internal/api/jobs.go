@@ -58,6 +58,10 @@ func queuedBy(job *store.Job, p *auth.Principal) bool {
 			return false
 		}
 	}
+	// A token confined to a directory reads only the jobs queued under the same confinement.
+	if p.Token.Node != "" && p.Token.Node != pl.Actor.Token.Node {
+		return false
+	}
 	return true
 }
 

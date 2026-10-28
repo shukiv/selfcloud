@@ -149,7 +149,7 @@ func TestAuditLog(t *testing.T) {
 	var actions []string
 	cursor := ""
 	for {
-		page, next, err := s.AuditLog(ctx, "acc_1", Page{Limit: 2, Cursor: cursor})
+		page, next, err := s.AuditLog(ctx, "acc_1", "", true, Page{Limit: 2, Cursor: cursor})
 		if err != nil {
 			t.Fatal(err)
 		}

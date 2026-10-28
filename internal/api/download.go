@@ -393,7 +393,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, n *store.Node
 // handleGetContent sends a file's contents to a caller who may read the file. The body is an
 // attachment unless ?disposition=inline is asked for and the policy allows it.
 func (s *Server) handleGetContent(w http.ResponseWriter, r *http.Request) error {
-	n, err := s.nodeOf(r, r.PathValue("nod"), false)
+	n, err := s.nodeOf(r, r.PathValue("nod"), store.RoleViewer)
 	if err != nil {
 		return err
 	}

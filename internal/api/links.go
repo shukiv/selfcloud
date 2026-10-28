@@ -303,7 +303,7 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	if !validDisposition(disp) {
 		return apierr.New(apierr.InvalidRequest, "disposition must be attachment or inline")
 	}
-	n, err := s.nodeOf(r, r.PathValue("nod"), false)
+	n, err := s.nodeOf(r, r.PathValue("nod"), store.RoleViewer)
 	if err != nil {
 		return err
 	}
@@ -321,7 +321,7 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "node.link", n.ID,
 			map[string]any{"disposition": disp, "ttl_seconds": int64(ttl / time.Second),
-				"expires_at": expires.Format(time.RFC3339)}))
+				"expires_at": expires.Format(time.RFC3339)}, n.FolderID))
 	})
 	if err != nil {
 		return err

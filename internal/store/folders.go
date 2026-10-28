@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -13,30 +14,47 @@ import (
 	"github.com/shukiv/selfcloud/internal/id"
 )
 
-// Grant levels, as the grants.level column names them.
+// Folder kinds, as the folders.kind column names them. A team space is shared by permissions. A
+// personal folder belongs to one user ("My files") and is reached by that user, and by the account
+// key.
 const (
-	LevelRead  = "read"
-	LevelWrite = "write"
+	KindTeam     = "team"
+	KindPersonal = "personal"
 )
+
+// PersonalFolderName is the name shown for a personal folder. Its name key is not derived from the
+// name: names.Clean refuses "/", so a personal folder's key is PersonalNameKey(userID), which no
+// team space can have.
+const PersonalFolderName = "My files"
+
+// StartCursor is the folder cursor that sorts before every folder: a page that resumes from it begins
+// with the oldest team space. The API uses it when the personal folder took the first slot of a page.
+func StartCursor() string { return encodeCursor("0", "") }
+
+// PersonalNameKey is the name key of a user's personal folder. It contains "/", which a folder name
+// cannot, so it never equals a team space's key, and it is unique because user IDs are.
+func PersonalNameKey(userID string) string { return "/personal/" + userID }
 
 // Folder is a named top-level root inside an account, holding its own file tree.
 type Folder struct {
-	ID         string
-	AccountID  string
-	ExternalID string // the client's own reference; "" when unset
-	Name       string // NFC
-	NameKey    string // case-folded NFC; unique within the account
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID          string
+	AccountID   string
+	ExternalID  string // the client's own reference; "" when unset
+	Name        string // NFC
+	NameKey     string // case-folded NFC; unique within the account
+	Kind        string // KindTeam or KindPersonal
+	OwnerUserID string // the user of a personal folder; "" for a team space
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
-const folderCols = "id, account_id, external_id, name, name_key, created_at, updated_at"
+const folderCols = "id, account_id, external_id, name, name_key, kind, owner_user_id, created_at, updated_at"
 
 func scanFolder(row interface{ Scan(...any) error }) (*Folder, error) {
 	var f Folder
-	var ext sql.NullString
+	var ext, owner sql.NullString
 	var created, updated int64
-	err := row.Scan(&f.ID, &f.AccountID, &ext, &f.Name, &f.NameKey, &created, &updated)
+	err := row.Scan(&f.ID, &f.AccountID, &ext, &f.Name, &f.NameKey, &f.Kind, &owner, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -44,6 +62,7 @@ func scanFolder(row interface{ Scan(...any) error }) (*Folder, error) {
 		return nil, err
 	}
 	f.ExternalID = ext.String
+	f.OwnerUserID = owner.String
 	f.CreatedAt = fromMillis(created)
 	f.UpdatedAt = fromMillis(updated)
 	return &f, nil
@@ -74,9 +93,23 @@ func (tx *Tx) FolderByExternalID(ctx context.Context, accountID, externalID stri
 		"SELECT "+folderCols+" FROM folders WHERE account_id = ? AND external_id = ?", accountID, externalID))
 }
 
+// PersonalFolder returns the personal folder of userID in accountID. It returns ErrNotFound for a
+// user without one, which only a user made before migration 0009 can be until the backfill runs.
+func (s *Store) PersonalFolder(ctx context.Context, accountID, userID string) (*Folder, error) {
+	return scanFolder(s.r.QueryRowContext(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ? AND "+
+		"kind = 'personal' AND owner_user_id = ?", accountID, userID))
+}
+
+// PersonalFolder returns the personal folder of userID in accountID, read inside the transaction.
+func (tx *Tx) PersonalFolder(ctx context.Context, accountID, userID string) (*Folder, error) {
+	return scanFolder(tx.q.QueryRowContext(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ? AND "+
+		"kind = 'personal' AND owner_user_id = ?", accountID, userID))
+}
+
 // FolderFilter narrows a folder list. Empty fields do not narrow.
 type FolderFilter struct {
 	ExternalID string
+	Kind       string // KindTeam or KindPersonal
 }
 
 // Folders lists the folders of accountID, oldest first, narrowed by f.
@@ -87,6 +120,15 @@ func (s *Store) Folders(ctx context.Context, accountID string, f FolderFilter, p
 		where = append(where, "external_id = ?")
 		args = append(args, f.ExternalID)
 	}
+	if f.Kind != "" {
+		where = append(where, "kind = ?")
+		args = append(args, f.Kind)
+	}
+	return s.pageFolders(ctx, strings.Join(where, " AND "), args, p)
+}
+
+// pageFolders runs a folder query with the given condition and one page of the cursor.
+func (s *Store) pageFolders(ctx context.Context, cond string, args []any, p Page) ([]*Folder, string, error) {
 	if p.Cursor != "" {
 		parts, err := decodeCursor(p.Cursor, 2)
 		if err != nil {
@@ -96,12 +138,12 @@ func (s *Store) Folders(ctx context.Context, accountID string, f FolderFilter, p
 		if err != nil {
 			return nil, "", ErrBadCursor
 		}
-		where = append(where, "(created_at, id) > (?, ?)")
+		cond += " AND (created_at, id) > (?, ?)"
 		args = append(args, ms, parts[1])
 	}
 	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, "SELECT "+folderCols+" FROM folders WHERE "+
-		strings.Join(where, " AND ")+" ORDER BY created_at, id LIMIT ?", args...)
+	rows, err := s.r.QueryContext(ctx, "SELECT "+folderCols+" FROM folders WHERE "+cond+
+		" ORDER BY created_at, id LIMIT ?", args...)
 	if err != nil {
 		return nil, "", err
 	}
@@ -126,23 +168,120 @@ func (s *Store) Folders(ctx context.Context, accountID string, f FolderFilter, p
 	return out, next, nil
 }
 
-// InsertFolder adds f and its root node in one transaction, so every folder has a root. It
-// returns ErrConflict if the name key or the external ID is taken in the account.
+// ReachedFolder is a folder whose root the caller holds a permission on, with the highest rank of
+// those permissions. The access code adds the implicit rules on top.
+type ReachedFolder struct {
+	Folder *Folder
+	Rank   int
+}
+
+// RootReachedFolders lists the team spaces of accountID whose root userID holds a permission on,
+// directly or through a group, one page at a time. A team space an owner reaches without a
+// permission is not listed here; the caller adds those. Expired permissions are left out.
+func (s *Store) RootReachedFolders(ctx context.Context, accountID, userID string, p Page) ([]ReachedFolder, string, error) {
+	args := []any{accountID, userID, userID, nowMillis()}
+	cond := `f.account_id = ? AND f.kind = 'team' AND EXISTS (
+		SELECT 1 FROM nodes r JOIN permissions pm ON pm.node_id = r.id
+		WHERE r.folder_id = f.id AND r.parent_id IS NULL AND ` + subjectPredicate + ` AND ` + liveClause + `)`
+	folders, next, err := s.pageFoldersAliased(ctx, cond, args, p)
+	if err != nil {
+		return nil, "", err
+	}
+	out := make([]ReachedFolder, 0, len(folders))
+	for _, f := range folders {
+		rank, err := s.rootRank(ctx, f.ID, userID)
+		if err != nil {
+			return nil, "", err
+		}
+		out = append(out, ReachedFolder{Folder: f, Rank: rank})
+	}
+	return out, next, nil
+}
+
+// pageFoldersAliased is pageFolders for a condition written against the alias f.
+func (s *Store) pageFoldersAliased(ctx context.Context, cond string, args []any, p Page) ([]*Folder, string, error) {
+	if p.Cursor != "" {
+		parts, err := decodeCursor(p.Cursor, 2)
+		if err != nil {
+			return nil, "", err
+		}
+		ms, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return nil, "", ErrBadCursor
+		}
+		cond += " AND (f.created_at, f.id) > (?, ?)"
+		args = append(args, ms, parts[1])
+	}
+	args = append(args, p.Limit+1)
+	rows, err := s.r.QueryContext(ctx, "SELECT "+prefixed("f.", folderCols)+" FROM folders f WHERE "+cond+
+		" ORDER BY f.created_at, f.id LIMIT ?", args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	var out []*Folder
+	for rows.Next() {
+		f, err := scanFolder(rows)
+		if err != nil {
+			return nil, "", err
+		}
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(out) > p.Limit {
+		out = out[:p.Limit]
+		last := out[len(out)-1]
+		next = encodeCursor(strconv.FormatInt(millis(last.CreatedAt), 10), last.ID)
+	}
+	return out, next, nil
+}
+
+// rootRank is the highest rank of the live permissions userID holds on a folder's root, direct or
+// through a group.
+func (s *Store) rootRank(ctx context.Context, folderID, userID string) (int, error) {
+	var rank int
+	err := s.r.QueryRowContext(ctx, `SELECT COALESCE(MAX(`+fmt.Sprintf(roleRankSQL, "pm.role")+`), 0)
+		FROM nodes r JOIN permissions pm ON pm.node_id = r.id
+		WHERE r.folder_id = ? AND r.parent_id IS NULL AND `+subjectPredicate+` AND `+liveClause,
+		folderID, userID, userID, nowMillis()).Scan(&rank)
+	return rank, err
+}
+
+// InsertFolder adds f and its root node in one transaction, so every folder has a root. An empty
+// Kind is a team space. A personal folder's root is owned by its user, and the root's owner is
+// otherwise the creator. It returns ErrConflict if the name key or the external ID is taken in the
+// account, or if the user already has a personal folder.
 func (tx *Tx) InsertFolder(ctx context.Context, f *Folder, by string) error {
+	if f.Kind == "" {
+		f.Kind = KindTeam
+	}
+	owner := f.OwnerUserID
+	if f.Kind == KindTeam {
+		owner = ""
+	}
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO folders (`+folderCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		f.ID, f.AccountID, nullString(f.ExternalID), f.Name, f.NameKey, millis(f.CreatedAt), millis(f.UpdatedAt))
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.ID, f.AccountID, nullString(f.ExternalID), f.Name, f.NameKey, f.Kind, nullString(owner),
+		millis(f.CreatedAt), millis(f.UpdatedAt))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
 	if err != nil {
 		return err
 	}
-	// The root has the empty name, which no child can have, and no parent.
+	// The root has the empty name, which no child can have, and no parent. Its owner is the
+	// personal folder's user, or the creator.
+	rootOwner := by
+	if owner != "" {
+		rootOwner = owner
+	}
 	_, err = tx.q.ExecContext(ctx, `INSERT INTO nodes (id, account_id, folder_id, parent_id, name, name_key,
-		kind, created_at, modified_at, created_by, modified_by)
-		VALUES (?, ?, ?, NULL, '', '', 'dir', ?, ?, ?, ?)`,
-		id.New("nod"), f.AccountID, f.ID, millis(f.CreatedAt), millis(f.CreatedAt), by, by)
+		kind, created_at, modified_at, created_by, modified_by, owner_id)
+		VALUES (?, ?, ?, NULL, '', '', 'dir', ?, ?, ?, ?, ?)`,
+		id.New("nod"), f.AccountID, f.ID, millis(f.CreatedAt), millis(f.CreatedAt), by, by, rootOwner)
 	return err
 }
 
@@ -158,7 +297,7 @@ func (tx *Tx) UpdateFolder(ctx context.Context, f *Folder) error {
 	return err
 }
 
-// DeleteFolder removes a folder of accountID, with its grants and its file tree, and takes the
+// DeleteFolder removes a folder of accountID, with its permissions and its file tree, and takes the
 // size and count of its files off the account's usage. Usage changes in the same transaction
 // as the delete, so the counters always match the files that remain.
 //
@@ -188,153 +327,11 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 	return tx.AdjustUsage(ctx, accountID, UsageChange{Bytes: -bytes, Files: -files, Reserved: -reserved})
 }
 
-// Grant shares a folder with a user at a level.
-type Grant struct {
-	FolderID  string
-	UserID    string
-	Level     string // LevelRead or LevelWrite
-	CreatedAt time.Time
-	CreatedBy string // the ID of the caller who made or last changed the grant
-}
-
-// SetGrant creates the grant or changes its level. The caller checks that the user is a member
-// of the folder's account first.
-func (tx *Tx) SetGrant(ctx context.Context, g *Grant) error {
-	_, err := tx.q.ExecContext(ctx, `INSERT INTO grants (folder_id, user_id, level, created_at, created_by)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (folder_id, user_id) DO UPDATE SET level = excluded.level`,
-		g.FolderID, g.UserID, g.Level, millis(g.CreatedAt), g.CreatedBy)
-	return err
-}
-
-// DeleteGrant removes the grant of a user on a folder. It returns ErrNotFound if there is none.
-func (tx *Tx) DeleteGrant(ctx context.Context, folderID, userID string) error {
-	return rowsAffected(tx.q.ExecContext(ctx,
-		"DELETE FROM grants WHERE folder_id = ? AND user_id = ?", folderID, userID))
-}
-
-const grantCols = "folder_id, user_id, level, created_at, created_by"
-
-func scanGrant(row interface{ Scan(...any) error }) (*Grant, error) {
-	var g Grant
-	var created int64
-	err := row.Scan(&g.FolderID, &g.UserID, &g.Level, &created, &g.CreatedBy)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	g.CreatedAt = fromMillis(created)
-	return &g, nil
-}
-
-// Grant returns the grant of a user on a folder. It returns ErrNotFound if there is none.
-func (s *Store) Grant(ctx context.Context, folderID, userID string) (*Grant, error) {
-	return scanGrant(s.r.QueryRowContext(ctx,
-		"SELECT "+grantCols+" FROM grants WHERE folder_id = ? AND user_id = ?", folderID, userID))
-}
-
-// Grant returns the grant of a user on a folder, read inside the transaction.
-func (tx *Tx) Grant(ctx context.Context, folderID, userID string) (*Grant, error) {
-	return scanGrant(tx.q.QueryRowContext(ctx,
-		"SELECT "+grantCols+" FROM grants WHERE folder_id = ? AND user_id = ?", folderID, userID))
-}
-
-// GrantsOfFolder lists the grants of a folder, oldest first.
-func (s *Store) GrantsOfFolder(ctx context.Context, folderID string) ([]*Grant, error) {
-	return s.queryGrants(ctx, "SELECT "+grantCols+" FROM grants WHERE folder_id = ? ORDER BY created_at, user_id",
-		folderID)
-}
-
-// GrantsOfUser lists the grants a user holds in accountID, oldest first. The account join keeps
-// a grant from another account out, even when a user ID is known.
-func (s *Store) GrantsOfUser(ctx context.Context, accountID, userID string) ([]*Grant, error) {
-	return s.queryGrants(ctx, `SELECT g.folder_id, g.user_id, g.level, g.created_at, g.created_by
-		FROM grants g JOIN folders f ON f.id = g.folder_id
-		WHERE f.account_id = ? AND g.user_id = ? ORDER BY g.created_at, g.folder_id`, accountID, userID)
-}
-
-func (s *Store) queryGrants(ctx context.Context, query string, args ...any) ([]*Grant, error) {
-	rows, err := s.r.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []*Grant
-	for rows.Next() {
-		g, err := scanGrant(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, g)
-	}
-	return out, rows.Err()
-}
-
-// FolderAccess is a folder a user may reach through a grant, with the level granted.
-type FolderAccess struct {
-	Folder *Folder
-	Level  string
-}
-
-// GrantedFolders lists the folders of accountID that userID holds a grant on, with their levels,
-// one page at a time. The order is creation time, then ID, as for the folder list.
-func (s *Store) GrantedFolders(ctx context.Context, accountID, userID string, p Page) ([]FolderAccess, string, error) {
-	query := `SELECT f.id, f.account_id, f.external_id, f.name, f.name_key, f.created_at, f.updated_at, g.level
-		FROM grants g JOIN folders f ON f.id = g.folder_id
-		WHERE f.account_id = ? AND g.user_id = ?`
-	args := []any{accountID, userID}
-	if p.Cursor != "" {
-		parts, err := decodeCursor(p.Cursor, 2)
-		if err != nil {
-			return nil, "", err
-		}
-		ms, err := strconv.ParseInt(parts[0], 10, 64)
-		if err != nil {
-			return nil, "", ErrBadCursor
-		}
-		query += " AND (f.created_at, f.id) > (?, ?)"
-		args = append(args, ms, parts[1])
-	}
-	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, query+" ORDER BY f.created_at, f.id LIMIT ?", args...)
-	if err != nil {
-		return nil, "", err
-	}
-	defer rows.Close()
-	var out []FolderAccess
-	for rows.Next() {
-		var f Folder
-		var ext sql.NullString
-		var created, updated int64
-		var level string
-		if err := rows.Scan(&f.ID, &f.AccountID, &ext, &f.Name, &f.NameKey, &created, &updated, &level); err != nil {
-			return nil, "", err
-		}
-		f.ExternalID = ext.String
-		f.CreatedAt = fromMillis(created)
-		f.UpdatedAt = fromMillis(updated)
-		out = append(out, FolderAccess{Folder: &f, Level: level})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, "", err
-	}
-	next := ""
-	if len(out) > p.Limit {
-		out = out[:p.Limit]
-		last := out[len(out)-1].Folder
-		next = encodeCursor(strconv.FormatInt(millis(last.CreatedAt), 10), last.ID)
-	}
-	return out, next, nil
-}
-
-// DeleteUserGrants removes every grant the user holds and returns how many. It runs when a user
-// stops being a member, so the grants do not come back if the user becomes a member again.
-func (tx *Tx) DeleteUserGrants(ctx context.Context, userID string) (int64, error) {
-	res, err := tx.q.ExecContext(ctx, "DELETE FROM grants WHERE user_id = ?", userID)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
+// CountFolderEntries returns how many files and directories a folder holds below its root. A
+// personal folder with entries blocks its user's deletion unless the caller asks for them to go.
+func (tx *Tx) CountFolderEntries(ctx context.Context, accountID, folderID string) (int64, error) {
+	var n int64
+	err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM nodes
+		WHERE account_id = ? AND folder_id = ? AND parent_id IS NOT NULL`, accountID, folderID).Scan(&n)
+	return n, err
 }

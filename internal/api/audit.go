@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/shukiv/selfcloud/internal/auth"
 )
 
 type auditJSON struct {
@@ -34,7 +36,10 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	entries, next, err := s.store.AuditLog(r.Context(), acc.ID, page)
+	// The account key reads everything. A user reads what is not private to a personal folder, and
+	// what is private to itself.
+	p := principalOf(r)
+	entries, next, err := s.store.AuditLog(r.Context(), acc.ID, p.UserID, p.Kind == auth.KindAccountKey, page)
 	if err != nil {
 		return storeErr(err)
 	}

@@ -179,6 +179,22 @@ type uploadTarget struct {
 	parents                                                       bool
 }
 
+// uploadAccess checks the role on an upload's target. An upload aimed at a directory by ID needs
+// minRole on that directory. One aimed at a path needs it on the deepest directory that exists on
+// the path, since the rest is created under that one. The folder check is folded into both.
+func uploadAccess(ctx context.Context, rd accessReader, p *auth.Principal, up *store.Upload, minRole string) error {
+	if up.ParentID != "" {
+		_, err := requireNodeRole(ctx, rd, p, up.ParentID, minRole)
+		return err
+	}
+	segs, err := parsePath(up.DirPath)
+	if err != nil {
+		return err
+	}
+	_, _, err = writeAnchor(ctx, rd, p, up.FolderID, segs, minRole)
+	return err
+}
+
 // readTarget checks the metadata fields with the same rules as the JSON API: IDs, paths and names.
 func readTarget(meta map[string]string) (*uploadTarget, error) {
 	t := &uploadTarget{folder: meta["folder"], parent: meta["parent"], onConflict: meta["on_conflict"]}
@@ -330,7 +346,7 @@ func (s *Server) uploadDirNow(r *http.Request, up *store.Upload) (*store.Node, e
 		return s.store.Child(ctx, up.AccountID, parentID, key)
 	}, root, segs)
 	if err != nil {
-		return nil, err
+		return nil, fileOnPath(ctx, s.store, principalOf(r), err, "parent directory")
 	}
 	if dir == nil && !up.Parents {
 		return nil, notFound("parent directory")
@@ -416,7 +432,7 @@ func (s *Server) recordPiece(ctx context.Context, p *auth.Principal, up *store.U
 	}
 	now := store.Now()
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
-		if _, err := requireAccess(ctx, tx, p, up.FolderID, true); err != nil {
+		if err := uploadAccess(ctx, tx, p, up, store.RoleContributor); err != nil {
 			return err
 		}
 		if err := tx.RecordUploadProgress(ctx, up.AccountID, up.ID, from, to, state, now, expires); err != nil {
@@ -646,15 +662,15 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 	if err := s.rateLimit("upload.create", string(p.Kind)+":"+p.ID); err != nil {
 		return err
 	}
-	if _, err := requireAccess(ctx, s.store, p, tgt.folder, true); err != nil {
-		return err
-	}
 	now := store.Now()
 	up := &store.Upload{ID: id.New("upl"), AccountID: p.AccountID, FolderID: tgt.folder,
 		ParentID: tgt.parent, DirPath: tgt.dirPath, Parents: tgt.parents, Name: tgt.name, NameKey: tgt.nameKey,
 		OnConflict: tgt.onConflict, MimeType: mimeOf(tgt.mime, tgt.name), SHA256: tgt.sha, Length: length,
 		BlobID: id.New("blb"), CreatedBy: p.ID, CreatedKind: string(p.Kind), CreatedAt: now, UpdatedAt: now,
 		ExpiresAt: s.uploadDeadline(now, now)}
+	if err := uploadAccess(ctx, s.store, p, up, store.RoleContributor); err != nil {
+		return err
+	}
 
 	// Checked before anything is written: the directory and a name already taken (fail).
 	dir, err := s.uploadDirNow(r, up)
@@ -674,7 +690,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 	// The disk, the quota and the reservation are checked in the transaction that inserts the upload,
 	// so two creations cannot both pass on the same space.
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		if _, err := requireAccess(ctx, tx, p, up.FolderID, true); err != nil {
+		if err := uploadAccess(ctx, tx, p, up, store.RoleContributor); err != nil {
 			return err
 		}
 		if n, err := tx.CountOpenUploads(ctx, up.AccountID, p.ID, string(p.Kind)); err != nil {
@@ -694,7 +710,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 			return err
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, up.AccountID, "upload.create", up.ID,
-			map[string]any{"folder": up.FolderID, "name": up.Name, "length": up.Length}))
+			map[string]any{"folder": up.FolderID, "name": up.Name, "length": up.Length}, up.FolderID))
 	})
 	if err != nil {
 		s.discardUploadFile(up)
@@ -757,7 +773,7 @@ func (s *Server) removeUploadTx(r *http.Request, tx *store.Tx, up *store.Upload,
 		return err
 	}
 	return tx.InsertAudit(r.Context(), s.auditEntry(r, up.AccountID, "upload.delete", up.ID,
-		map[string]any{"reason": reason, "length": up.Length, "durable_offset": up.DurableOffset}))
+		map[string]any{"reason": reason, "length": up.Length, "durable_offset": up.DurableOffset}, up.FolderID))
 }
 
 // discardUploadFile removes an upload's file and any blob a completion moved into blobs/ without
@@ -931,7 +947,7 @@ func (s *Server) handlePatchUpload(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	if _, err := requireAccess(r.Context(), s.store, p, up.FolderID, true); err != nil {
+	if err := uploadAccess(r.Context(), s.store, p, up, store.RoleContributor); err != nil {
 		return err
 	}
 	if offset != up.DurableOffset {
@@ -1009,15 +1025,14 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 			}
 		}
 		// Everything below uses the folder the row names, which is the one checked here.
-		folder := cur.FolderID
-		if _, err := requireAccess(ctx, tx, p, folder, true); err != nil {
+		if err := uploadAccess(ctx, tx, p, cur, store.RoleContributor); err != nil {
 			return err
 		}
 		parent, err := s.uploadParentTx(r, tx, p, cur)
 		if err != nil {
 			return err
 		}
-		plan := &transferPlan{folderID: folder, parent: parent, name: cur.Name, key: cur.NameKey}
+		plan := &transferPlan{folderID: cur.FolderID, parent: parent, name: cur.Name, key: cur.NameKey}
 		taken, err := nameTakenBy(tx.Child(ctx, cur.AccountID, parent.ID, cur.NameKey))
 		if err != nil {
 			return err
@@ -1030,9 +1045,9 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 			if err := applyConflict(ctx, tx, plan, taken, cur.OnConflict, store.KindFile, ""); err != nil {
 				return err
 			}
-		}
-		if plan.folderID != folder {
-			return apierr.New(apierr.Internal, "the upload would be written to another folder than the one checked")
+			if err := requireReplaceRole(ctx, tx, p, plan); err != nil {
+				return err
+			}
 		}
 		now := store.Now()
 		if err := tx.InsertBlob(ctx, &store.Blob{ID: cur.BlobID, AccountID: cur.AccountID, Size: cur.Length,
@@ -1051,11 +1066,11 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 			}
 			out, action, delta = n, "node.write", cur.Length-prev
 			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, action, n.ID,
-				map[string]any{"size": cur.Length, "previous_size": prev, "upload": cur.ID})); err != nil {
+				map[string]any{"size": cur.Length, "previous_size": prev, "upload": cur.ID}, cur.FolderID)); err != nil {
 				return err
 			}
 		} else {
-			n := &store.Node{ID: id.New("nod"), AccountID: cur.AccountID, FolderID: folder, ParentID: parent.ID,
+			n := &store.Node{ID: id.New("nod"), AccountID: cur.AccountID, FolderID: cur.FolderID, ParentID: parent.ID,
 				Name: plan.name, NameKey: plan.key, Kind: store.KindFile, Size: cur.Length, MimeType: cur.MimeType,
 				BlobID: cur.BlobID, ETag: newETag(), SHA256: digest, CreatedAt: now, ModifiedAt: now,
 				CreatedBy: p.ID, ModifiedBy: p.ID}
@@ -1065,7 +1080,7 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 			out, action, delta, files = n, "node.create", cur.Length, 1
 			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, action, n.ID,
 				map[string]any{"kind": store.KindFile, "name": n.Name, "parent": parent.ID, "size": cur.Length,
-					"upload": cur.ID})); err != nil {
+					"upload": cur.ID}, cur.FolderID)); err != nil {
 				return err
 			}
 		}
@@ -1117,7 +1132,7 @@ func (s *Server) handleHeadUpload(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	if _, err := requireAccess(r.Context(), s.store, p, up.FolderID, false); err != nil {
+	if err := uploadAccess(r.Context(), s.store, p, up, store.RoleViewer); err != nil {
 		return err
 	}
 	h := w.Header()
@@ -1151,7 +1166,7 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) erro
 	defer release()
 	ctx := r.Context()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		if _, err := requireAccess(ctx, tx, p, up.FolderID, true); err != nil {
+		if err := uploadAccess(ctx, tx, p, up, store.RoleContributor); err != nil {
 			return err
 		}
 		return s.removeUploadTx(r, tx, up, "terminated")

@@ -58,17 +58,29 @@ func TestFolderRootAndNameConflicts(t *testing.T) {
 	}
 }
 
+// setRootPermission gives a user a role on a folder's root, the way the grants routes do.
+func setRootPermission(t *testing.T, s *Store, accountID, folderID, userID, role string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := s.Write(ctx, func(tx *Tx) error {
+		root, err := tx.RootNode(ctx, accountID, folderID)
+		if err != nil {
+			return err
+		}
+		return tx.SetPermission(ctx, &Permission{NodeID: root.ID, AccountID: accountID, SubjectKind: SubjectUser,
+			SubjectID: userID, Role: role, CreatedAt: Now(), CreatedBy: "x"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDeleteFolderCascadesAndAdjustsUsage(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	acc := newAccountRow(t, s, "A")
 	usr := newUserRow(t, s, acc, "ann@example.com", "")
 	f := newFolderRow(t, s, acc, "Docs", "docs")
-	if err := s.Write(ctx, func(tx *Tx) error {
-		return tx.SetGrant(ctx, &Grant{FolderID: f.ID, UserID: usr.ID, Level: LevelRead, CreatedAt: Now(), CreatedBy: "x"})
-	}); err != nil {
-		t.Fatal(err)
-	}
+	setRootPermission(t, s, acc, f.ID, usr.ID, RoleViewer)
 	// Two files of 100 and 50 bytes count against the account; the folder's usage goes with them.
 	err := s.Write(ctx, func(tx *Tx) error {
 		if _, err := tx.q.ExecContext(ctx, `INSERT INTO nodes (id, account_id, folder_id, parent_id, name, name_key,
@@ -97,15 +109,16 @@ func TestDeleteFolderCascadesAndAdjustsUsage(t *testing.T) {
 	if n := countRows(t, s, "SELECT COUNT(*) FROM nodes WHERE folder_id = ?", f.ID); n != 0 {
 		t.Errorf("nodes left = %d", n)
 	}
-	if grants, _ := s.GrantsOfFolder(ctx, f.ID); len(grants) != 0 {
-		t.Errorf("grants left = %v", grants)
+	// The permissions sat on nodes of the folder, so they went with its nodes.
+	if n := countRows(t, s, "SELECT COUNT(*) FROM permissions WHERE subject_id = ?", usr.ID); n != 0 {
+		t.Errorf("permissions left = %d", n)
 	}
 	if err := s.Write(ctx, func(tx *Tx) error { return tx.DeleteFolder(ctx, acc, f.ID) }); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second delete = %v, want ErrNotFound", err)
 	}
 }
 
-func TestGrantsAndUserDeletion(t *testing.T) {
+func TestRootPermissionsAndUserDeletion(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	a := newAccountRow(t, s, "A")
@@ -115,65 +128,64 @@ func TestGrantsAndUserDeletion(t *testing.T) {
 	f2 := newFolderRow(t, s, a, "Two", "two")
 	other := newFolderRow(t, s, b, "Other", "other")
 
-	set := func(folder, level string) error {
-		return s.Write(ctx, func(tx *Tx) error {
-			return tx.SetGrant(ctx, &Grant{FolderID: folder, UserID: ann.ID, Level: level, CreatedAt: Now(), CreatedBy: "k"})
-		})
+	setRootPermission(t, s, a, f1.ID, ann.ID, RoleViewer)
+	setRootPermission(t, s, a, f2.ID, ann.ID, RoleEditor)
+	// Setting again changes the role rather than adding a second permission.
+	setRootPermission(t, s, a, f1.ID, ann.ID, RoleEditor)
+	grants, err := s.UserRootGrants(ctx, a, ann.ID)
+	if err != nil || len(grants) != 2 {
+		t.Fatalf("root grants of user = %+v, %v; want 2", grants, err)
 	}
-	if err := set(f1.ID, LevelRead); err != nil {
-		t.Fatal(err)
-	}
-	if err := set(f2.ID, LevelWrite); err != nil {
-		t.Fatal(err)
-	}
-	// Setting again changes the level rather than adding a second grant.
-	if err := set(f1.ID, LevelWrite); err != nil {
-		t.Fatal(err)
-	}
-	g, err := s.Grant(ctx, f1.ID, ann.ID)
-	if err != nil || g.Level != LevelWrite {
-		t.Fatalf("grant = %+v, %v", g, err)
-	}
-	grants, _ := s.GrantsOfUser(ctx, a, ann.ID)
-	if len(grants) != 2 {
-		t.Fatalf("grants of user = %d, want 2", len(grants))
+	if grants[0].FolderID != f1.ID || grants[0].Role != RoleEditor {
+		t.Errorf("first grant = %+v, want folder one at editor", grants[0])
 	}
 	// Account B sees none of them.
-	if none, _ := s.GrantsOfUser(ctx, b, ann.ID); len(none) != 0 {
-		t.Errorf("grants of the user under B = %v", none)
+	if none, _ := s.UserRootGrants(ctx, b, ann.ID); len(none) != 0 {
+		t.Errorf("root grants of the user under B = %v", none)
 	}
-	// A grant on a folder of another account is refused by the join, not by trusting the caller.
-	if err := set(other.ID, LevelRead); err != nil {
-		t.Fatal(err)
-	}
-	if n, _, _ := s.GrantedFolders(ctx, a, ann.ID, Page{Limit: 50}); len(n) != 2 {
-		t.Errorf("granted folders under A = %d, want 2", len(n))
+	// A permission on a folder of another account is refused by the join, not by trusting the caller.
+	setRootPermission(t, s, b, other.ID, ann.ID, RoleViewer)
+	if reached, _, _ := s.RootReachedFolders(ctx, a, ann.ID, Page{Limit: 50}); len(reached) != 2 {
+		t.Errorf("folders reached under A = %d, want 2", len(reached))
 	}
 
-	// Deleting the user cascades its grants.
-	if err := s.Write(ctx, func(tx *Tx) error { return tx.DeleteUser(ctx, a, ann.ID) }); err != nil {
+	// Deleting the user removes its permissions, as the API does in the same transaction.
+	if err := s.Write(ctx, func(tx *Tx) error {
+		if _, err := tx.DeleteSubjectPermissions(ctx, a, SubjectUser, ann.ID); err != nil {
+			return err
+		}
+		return tx.DeleteUser(ctx, a, ann.ID)
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if g, _ := s.GrantsOfFolder(ctx, f1.ID); len(g) != 0 {
-		t.Errorf("grants after user delete = %v", g)
+	if g, _ := s.UserRootGrants(ctx, a, ann.ID); len(g) != 0 {
+		t.Errorf("root grants after user delete = %v", g)
 	}
 }
 
-func TestDeleteGrant(t *testing.T) {
+func TestDeletePermission(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	a := newAccountRow(t, s, "A")
 	ann := newUserRow(t, s, a, "ann@example.com", "")
 	f := newFolderRow(t, s, a, "One", "one")
+	setRootPermission(t, s, a, f.ID, ann.ID, RoleViewer)
 	if err := s.Write(ctx, func(tx *Tx) error {
-		return tx.SetGrant(ctx, &Grant{FolderID: f.ID, UserID: ann.ID, Level: LevelRead, CreatedAt: Now()})
+		root, err := tx.RootNode(ctx, a, f.ID)
+		if err != nil {
+			return err
+		}
+		return tx.DeletePermission(ctx, root.ID, SubjectUser, ann.ID)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Write(ctx, func(tx *Tx) error { return tx.DeleteGrant(ctx, f.ID, ann.ID) }); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Write(ctx, func(tx *Tx) error { return tx.DeleteGrant(ctx, f.ID, ann.ID) }); !errors.Is(err, ErrNotFound) {
+	if err := s.Write(ctx, func(tx *Tx) error {
+		root, err := tx.RootNode(ctx, a, f.ID)
+		if err != nil {
+			return err
+		}
+		return tx.DeletePermission(ctx, root.ID, SubjectUser, ann.ID)
+	}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second revoke = %v, want ErrNotFound", err)
 	}
 }

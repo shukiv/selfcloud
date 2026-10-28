@@ -480,12 +480,13 @@ func TestMemberFoldersArePaged(t *testing.T) {
 			map[string]any{"level": "read"}), 200)
 	}
 	first := decode[listResponse[folderAccessJSON]](t, callSession(t, s, annSess, "GET", "/api/v1/folders?limit=2", nil))
-	if len(first.Items) != 2 || first.NextCursor == "" {
+	if len(first.Items) != 2 || first.NextCursor == "" || first.Items[0].Kind != "personal" {
 		t.Fatalf("first page = %+v", first)
 	}
 	second := decode[listResponse[folderAccessJSON]](t, callSession(t, s, annSess, "GET",
 		"/api/v1/folders?limit=2&cursor="+url.QueryEscape(first.NextCursor), nil))
-	if len(second.Items) != 1 || second.NextCursor != "" {
+	// The personal folder takes the first slot, so the three granted folders make 4 with it.
+	if len(second.Items) != 2 || second.NextCursor != "" {
 		t.Fatalf("second page = %+v", second)
 	}
 	// Folders made in the same millisecond are ordered by ID, so only the set is checked.
@@ -493,8 +494,8 @@ func TestMemberFoldersArePaged(t *testing.T) {
 	for _, f := range append(first.Items, second.Items...) {
 		seen[f.Name] = true
 	}
-	if len(seen) != 3 {
-		t.Errorf("paged folders cover %v, want all three", seen)
+	if len(seen) != 4 {
+		t.Errorf("paged folders cover %v, want the three granted and the personal folder", seen)
 	}
 }
 

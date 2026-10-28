@@ -68,8 +68,11 @@ func TestFolderDeleteCascadesGrants(t *testing.T) {
 
 	wantStatus(t, call(t, s, "DELETE", folders+"/"+f.ID, key, nil), 204)
 	wantError(t, call(t, s, "GET", folders+"/"+f.ID, key, nil), 404, apierr.NotFound)
-	if got := decode[listResponse[folderAccessJSON]](t, callSession(t, s, member, "GET", "/api/v1/folders", nil)); len(got.Items) != 0 {
-		t.Errorf("member still reaches %+v", got.Items)
+	// The member's own personal folder is listed too; no team space may be.
+	for _, it := range decode[listResponse[folderAccessJSON]](t, callSession(t, s, member, "GET", "/api/v1/folders", nil)).Items {
+		if it.Kind != "personal" {
+			t.Errorf("member still reaches %+v", it)
+		}
 	}
 	if got := decode[listResponse[grantJSON]](t, call(t, s, "GET", "/api/v1/accounts/"+acc.ID+"/users/"+annID+"/grants", key, nil)); len(got.Items) != 0 {
 		t.Errorf("grants left after folder delete: %+v", got.Items)
@@ -108,17 +111,24 @@ func TestGrantsAndMyFolders(t *testing.T) {
 	}
 
 	// The member sees only Reports, at write; Drafts is not found.
-	mine := decode[listResponse[folderAccessJSON]](t, callSession(t, s, annSess, "GET", "/api/v1/folders", nil))
-	if len(mine.Items) != 1 || mine.Items[0].ID != reports.ID || mine.Items[0].Access != "write" {
-		t.Fatalf("member folders = %+v", mine.Items)
+	// The member's personal folder is listed with the team space it reaches.
+	var teams []folderAccessJSON
+	for _, it := range decode[listResponse[folderAccessJSON]](t, callSession(t, s, annSess, "GET", "/api/v1/folders", nil)).Items {
+		if it.Kind == "team" {
+			teams = append(teams, it)
+		}
+	}
+	if len(teams) != 1 || teams[0].ID != reports.ID || teams[0].Access != "write" {
+		t.Fatalf("member team folders = %+v", teams)
 	}
 	wantStatus(t, callSession(t, s, annSess, "GET", "/api/v1/folders", nil), 200)
 	// Member sessions cannot manage folders at all: the account is not theirs to manage.
 	wantError(t, callSession(t, s, annSess, "GET", folders, nil), 404, apierr.NotFound)
 
 	// An owner session reaches every folder, with write, and no grant is needed.
+	// Two team spaces, and the owner's own personal folder.
 	all := decode[listResponse[folderAccessJSON]](t, callSession(t, s, ownerSess, "GET", "/api/v1/folders", nil))
-	if len(all.Items) != 2 {
+	if len(all.Items) != 3 {
 		t.Fatalf("owner folders = %+v", all.Items)
 	}
 	for _, f := range all.Items {
@@ -130,8 +140,10 @@ func TestGrantsAndMyFolders(t *testing.T) {
 	// Removing the grant takes the folder away from the member.
 	wantStatus(t, call(t, s, "DELETE", folders+"/"+reports.ID+"/grants/"+ann.ID, key, nil), 204)
 	wantError(t, call(t, s, "DELETE", folders+"/"+reports.ID+"/grants/"+ann.ID, key, nil), 404, apierr.NotFound)
-	if got := decode[listResponse[folderAccessJSON]](t, callSession(t, s, annSess, "GET", "/api/v1/folders", nil)); len(got.Items) != 0 {
-		t.Errorf("member after revoke = %+v", got.Items)
+	for _, it := range decode[listResponse[folderAccessJSON]](t, callSession(t, s, annSess, "GET", "/api/v1/folders", nil)).Items {
+		if it.Kind != "personal" {
+			t.Errorf("member after revoke = %+v", it)
+		}
 	}
 }
 

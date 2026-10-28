@@ -56,66 +56,96 @@ type transferPlan struct {
 
 // planTransfer works out the target of a move or copy, inside tx. The caller has checked access to
 // the folders involved. A node may not go into itself or below itself.
-func planTransfer(ctx context.Context, tx *store.Tx, src *store.Node, in transferBody, excludeSelf bool) (*transferPlan, error) {
+// resolveDestination finds the folder and the directory a move or copy of src goes to, from the
+// request's folder, parent or path. It only reads, so a caller can check its role on that directory
+// before any name is checked. A node may not go into itself, which is checked by planTransfer.
+// A destination the caller does not reach is not_found, the same answer a missing one gets.
+func resolveDestination(ctx context.Context, tx *store.Tx, p *auth.Principal, src *store.Node,
+	in transferBody) (string, *store.Node, error) {
 	acc := src.AccountID
 	folderID := src.FolderID
 	if in.Folder != "" {
 		if err := validID("fld", in.Folder); err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		folderID = in.Folder
 	}
 	if in.Parent != "" && in.Path != "" {
-		return nil, apierr.New(apierr.InvalidRequest, "give parent or path, not both")
+		return "", nil, apierr.New(apierr.InvalidRequest, "give parent or path, not both")
+	}
+	if _, err := tx.Folder(ctx, acc, folderID); errors.Is(err, store.ErrNotFound) {
+		return "", nil, notFound("folder")
+	} else if err != nil {
+		return "", nil, err
 	}
 	var parent *store.Node
 	switch {
 	case in.Parent != "":
 		if err := validID("nod", in.Parent); err != nil {
-			return nil, err
+			return "", nil, err
 		}
-		p, err := tx.Node(ctx, acc, in.Parent)
-		if errors.Is(err, store.ErrNotFound) || (err == nil && p.FolderID != folderID) {
-			return nil, notFound("parent")
+		n, err := tx.Node(ctx, acc, in.Parent)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && n.FolderID != folderID) {
+			return "", nil, notFound("parent")
 		}
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
-		if p.Kind != store.KindDir {
-			return nil, apierr.New(apierr.InvalidRequest, "the parent is a file, not a directory")
+		// Only a parent the caller reaches may say it is a file.
+		if err := reachedOr(ctx, tx, p, n.ID, "parent"); err != nil {
+			return "", nil, err
 		}
-		parent = p
+		if n.Kind != store.KindDir {
+			return "", nil, apierr.New(apierr.InvalidRequest, "the parent is a file, not a directory")
+		}
+		parent = n
 	case in.Path != "":
 		segs, err := parsePath(in.Path)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		root, err := tx.RootNode(ctx, acc, folderID)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		parent, err = walkDirs(ctx, func(ctx context.Context, parentID, key string) (*store.Node, error) {
 			return tx.Child(ctx, acc, parentID, key)
 		}, root, segs)
 		if err != nil {
-			return nil, err
+			return "", nil, fileOnPath(ctx, tx, p, err, "parent")
 		}
 		if parent == nil {
-			return nil, notFound("parent")
+			return "", nil, notFound("parent")
+		}
+		if err := reachedOr(ctx, tx, p, parent.ID, "parent"); err != nil {
+			return "", nil, err
 		}
 	case folderID == src.FolderID && !src.IsRoot():
 		p, err := tx.Node(ctx, acc, src.ParentID)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		parent = p
 	default:
 		root, err := tx.RootNode(ctx, acc, folderID)
 		if err != nil {
-			return nil, err
+			return "", nil, err
+		}
+		if err := reachedOr(ctx, tx, p, root.ID, "folder"); err != nil {
+			return "", nil, err
 		}
 		parent = root
 	}
+	return folderID, parent, nil
+}
+
+func planTransfer(ctx context.Context, tx *store.Tx, p *auth.Principal, src *store.Node, in transferBody,
+	excludeSelf bool) (*transferPlan, error) {
+	folderID, parent, err := resolveDestination(ctx, tx, p, src, in)
+	if err != nil {
+		return nil, err
+	}
+	acc := src.AccountID
 	if src.Kind == store.KindDir {
 		within, err := tx.IsWithin(ctx, acc, parent.ID, src.ID)
 		if err != nil {
@@ -213,6 +243,17 @@ func truncateBytes(s string, max int) string {
 // contents are left for the collector, which finds them unreferenced. It returns nil when the
 // transfer displaces nothing. The caller takes the displaced file's usage off as part of the
 // transfer's net change (see replacedUsage).
+// requireReplaceRole is the check a replace needs on the file it displaces: editor on that file, inside
+// the write's transaction. Contributor may place a file in a directory but may not overwrite one, so a
+// replace with only contributor is forbidden. A file the caller does not reach is not_found.
+func requireReplaceRole(ctx context.Context, tx *store.Tx, p *auth.Principal, plan *transferPlan) error {
+	if plan.replaced == nil {
+		return nil
+	}
+	_, err := requireNodeRole(ctx, tx, p, plan.replaced.ID, store.RoleEditor)
+	return err
+}
+
 func applyReplace(ctx context.Context, tx *store.Tx, plan *transferPlan) (*store.Node, error) {
 	if plan.replaced == nil {
 		return nil, nil
@@ -255,6 +296,9 @@ func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string,
 		c.FolderID = plan.folderID
 		c.CreatedAt, c.ModifiedAt = now, now
 		c.CreatedBy, c.ModifiedBy = by, by
+		// The copy's owner is its creator, or the user of a personal folder it lands in; the source's
+		// owner does not carry over. The store applies that rule when the node is inserted.
+		c.OwnerID = ""
 		if i == 0 {
 			c.ParentID, c.Name, c.NameKey = plan.parent.ID, plan.name, plan.key
 		} else {
@@ -285,15 +329,12 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	src, err := s.nodeOf(r, r.PathValue("nod"), true)
+	src, err := s.nodeOf(r, r.PathValue("nod"), store.RoleEditor)
 	if err != nil {
 		return err
 	}
 	if src.IsRoot() {
 		return apierr.New(apierr.InvalidRequest, "a folder's root cannot be moved")
-	}
-	if err := s.checkTargetFolder(r, src, in.Folder); err != nil {
-		return err
 	}
 	ctx := r.Context()
 	p := principalOf(r)
@@ -307,17 +348,20 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		targetFolder := cur.FolderID
-		if in.Folder != "" {
-			targetFolder = in.Folder
-		}
-		if _, err := requireAccess(ctx, tx, p, cur.FolderID, true); err != nil {
+		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleEditor); err != nil {
 			return err
 		}
-		if _, err := requireAccess(ctx, tx, p, targetFolder, true); err != nil {
+		// Moving in takes contributor on the directory it lands in, and moving out takes editor
+		// on the item (above). Contributor is enough to receive, since nothing is removed there.
+		// The destination is checked before any name, so a refused role is a 403 whatever the name.
+		_, dest, err := resolveDestination(ctx, tx, p, cur, in)
+		if err != nil {
 			return err
 		}
-		plan, err := planTransfer(ctx, tx, cur, in, true)
+		if _, err := requireNodeRole(ctx, tx, p, dest.ID, store.RoleContributor); err != nil {
+			return err
+		}
+		plan, err := planTransfer(ctx, tx, p, cur, in, true)
 		if err != nil {
 			return err
 		}
@@ -325,7 +369,11 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 			out = cur
 			return nil
 		}
+		srcFolder := cur.FolderID
 		from := map[string]any{"parent": cur.ParentID, "folder": cur.FolderID, "name": cur.Name}
+		if err := requireReplaceRole(ctx, tx, p, plan); err != nil {
+			return err
+		}
 		replaced, err := applyReplace(ctx, tx, plan)
 		if err != nil {
 			return err
@@ -335,6 +383,12 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		folderChanged := plan.folderID != cur.FolderID
+		if folderChanged {
+			// Inside a personal folder everything belongs to the folder's user.
+			if dst, err := tx.Folder(ctx, cur.AccountID, plan.folderID); err == nil && dst.Kind == store.KindPersonal {
+				cur.OwnerID = dst.OwnerUserID
+			}
+		}
 		cur.FolderID, cur.ParentID = plan.folderID, plan.parent.ID
 		cur.Name, cur.NameKey = plan.name, plan.key
 		cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
@@ -349,32 +403,19 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		out = cur
 		if replaced != nil {
 			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.delete", replaced.ID,
-				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": cur.ID})); err != nil {
+				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": cur.ID}, srcFolder, plan.folderID)); err != nil {
 				return err
 			}
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.move", cur.ID,
 			map[string]any{"from": from, "to": map[string]any{"parent": plan.parent.ID,
-				"folder": plan.folderID, "name": plan.name}}))
+				"folder": plan.folderID, "name": plan.name}}, srcFolder, plan.folderID))
 	})
 	if err != nil {
 		return err
 	}
 	writeJSON(w, http.StatusOK, toNodeJSON(out))
 	return nil
-}
-
-// checkTargetFolder checks write on the folder a move goes to, when it is not src's own. A move
-// within the folder is already checked by nodeOf.
-func (s *Server) checkTargetFolder(r *http.Request, src *store.Node, target string) error {
-	if target == "" || target == src.FolderID {
-		return nil
-	}
-	if err := validID("fld", target); err != nil {
-		return err
-	}
-	_, err := s.folderFor(r, target, true)
-	return err
 }
 
 // copyPayload is what a queued copy needs. The new root's ID is fixed here, so a repeat of the job
@@ -413,22 +454,17 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	src, err := s.nodeOf(r, r.PathValue("nod"), false)
+	src, err := s.nodeOf(r, r.PathValue("nod"), store.RoleViewer)
 	if err != nil {
 		return err
 	}
 	if src.IsRoot() {
 		return apierr.New(apierr.InvalidRequest, "a folder's root cannot be copied; copy its contents instead")
 	}
-	target := src.FolderID
 	if in.Folder != "" {
 		if err := validID("fld", in.Folder); err != nil {
 			return err
 		}
-		target = in.Folder
-	}
-	if _, err := s.folderFor(r, target, true); err != nil {
-		return err
 	}
 	ctx := r.Context()
 	p := principalOf(r)
@@ -454,19 +490,22 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if _, err := requireAccess(ctx, tx, p, cur.FolderID, false); err != nil {
+		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleViewer); err != nil {
 			return err
 		}
-		dst := copyTarget(in, cur)
-		if _, err := requireAccess(ctx, tx, p, dst, true); err != nil {
-			return err
-		}
-		plan, err := planTransfer(ctx, tx, cur, in, false)
+		_, dest, err := resolveDestination(ctx, tx, p, cur, in)
 		if err != nil {
 			return err
 		}
-		if plan.folderID != dst {
-			return fmt.Errorf("copy: planned folder %s is not the checked folder %s", plan.folderID, dst)
+		if _, err := requireNodeRole(ctx, tx, p, dest.ID, store.RoleContributor); err != nil {
+			return err
+		}
+		plan, err := planTransfer(ctx, tx, p, cur, in, false)
+		if err != nil {
+			return err
+		}
+		if err := requireReplaceRole(ctx, tx, p, plan); err != nil {
+			return err
 		}
 		replaced, err := applyReplace(ctx, tx, plan)
 		if err != nil {
@@ -488,12 +527,12 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		}
 		if replaced != nil {
 			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.delete", replaced.ID,
-				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": rootID})); err != nil {
+				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": rootID}, cur.FolderID, plan.folderID)); err != nil {
 				return err
 			}
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.copy", rootID,
-			map[string]any{"source": cur.ID, "nodes": count, "bytes": bytes}))
+			map[string]any{"source": cur.ID, "nodes": count, "bytes": bytes}, cur.FolderID, plan.folderID))
 	})
 	if err != nil {
 		return err
@@ -501,17 +540,6 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Location", "/api/v1/nodes/"+out.ID)
 	writeJSON(w, http.StatusCreated, toNodeJSON(out))
 	return nil
-}
-
-// copyTarget is the folder a copy writes into: the one named in the request, else the source's
-// folder as read inside the transaction. Taking it from the current node, not from the node read
-// before the transaction, keeps the folder checked for write and the folder written the same even
-// when the source moved in between.
-func copyTarget(in transferBody, cur *store.Node) string {
-	if in.Folder != "" {
-		return in.Folder
-	}
-	return cur.FolderID
 }
 
 // queueCopy checks the copy's plan now, so a conflict is answered at once, then queues the copy as a
@@ -530,19 +558,19 @@ func (s *Server) queueCopy(w http.ResponseWriter, r *http.Request, src *store.No
 		if err != nil {
 			return err
 		}
-		if _, err := requireAccess(ctx, tx, p, cur.FolderID, false); err != nil {
+		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleViewer); err != nil {
 			return err
 		}
-		dst := copyTarget(in, cur)
-		if _, err := requireAccess(ctx, tx, p, dst, true); err != nil {
-			return err
-		}
-		plan, err := planTransfer(ctx, tx, cur, in, false)
+		_, dest, err := resolveDestination(ctx, tx, p, cur, in)
 		if err != nil {
 			return err
 		}
-		if plan.folderID != dst {
-			return fmt.Errorf("copy: planned folder %s is not the checked folder %s", plan.folderID, dst)
+		if _, err := requireNodeRole(ctx, tx, p, dest.ID, store.RoleContributor); err != nil {
+			return err
+		}
+		plan, err := planTransfer(ctx, tx, p, cur, in, false)
+		if err != nil {
+			return err
 		}
 		body, err := json.Marshal(copyPayload{Source: cur.ID, Root: rootID, Folder: plan.folderID,
 			Parent: plan.parent.ID, Name: in.Name, OnConflict: in.OnConflict, Actor: actorOf(p)})
@@ -595,10 +623,7 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		if err != nil {
 			return err
 		}
-		if _, err := requireAccess(ctx, tx, p, src.FolderID, false); err != nil {
-			return err
-		}
-		if _, err := requireAccess(ctx, tx, p, pl.Folder, true); err != nil {
+		if _, err := requireNodeRole(ctx, tx, p, src.ID, store.RoleViewer); err != nil {
 			return err
 		}
 		nodes, err := tx.Subtree(ctx, job.AccountID, src.ID)
@@ -608,9 +633,19 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		if len(nodes) > s.cfg.Copy.MaxNodes {
 			return s.tooManyNodes(len(nodes))
 		}
-		plan, err := planTransfer(ctx, tx, src, transferBody{Folder: pl.Folder, Parent: pl.Parent,
-			Name: pl.Name, OnConflict: pl.OnConflict}, false)
+		in := transferBody{Folder: pl.Folder, Parent: pl.Parent, Name: pl.Name, OnConflict: pl.OnConflict}
+		_, dest, err := resolveDestination(ctx, tx, p, src, in)
 		if err != nil {
+			return err
+		}
+		if _, err := requireNodeRole(ctx, tx, p, dest.ID, store.RoleContributor); err != nil {
+			return err
+		}
+		plan, err := planTransfer(ctx, tx, p, src, in, false)
+		if err != nil {
+			return err
+		}
+		if err := requireReplaceRole(ctx, tx, p, plan); err != nil {
 			return err
 		}
 		replaced, err := applyReplace(ctx, tx, plan)
@@ -629,17 +664,17 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		}
 		if replaced != nil {
 			if err := tx.InsertAudit(ctx, auditAs(p, job.AccountID, "node.delete", replaced.ID,
-				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": pl.Root})); err != nil {
+				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": pl.Root}, src.FolderID, plan.folderID)); err != nil {
 				return err
 			}
 		}
 		return tx.InsertAudit(ctx, auditAs(p, job.AccountID, "node.copy", pl.Root,
-			map[string]any{"source": src.ID, "nodes": count, "bytes": bytes, "job": job.ID}))
+			map[string]any{"source": src.ID, "nodes": count, "bytes": bytes, "job": job.ID}, src.FolderID, plan.folderID))
 	})
 }
 
 // auditAs describes an action by p for the audit log, for work that runs outside a request.
-func auditAs(p *auth.Principal, accountID, action, target string, details map[string]any) *store.AuditEntry {
+func auditAs(p *auth.Principal, accountID, action, target string, details map[string]any, folders ...string) *store.AuditEntry {
 	return &store.AuditEntry{Time: store.Now(), AccountID: accountID, ActorKind: string(p.Kind), ActorID: p.ID,
-		Action: action, Target: target, Details: delegated(p, details)}
+		Action: action, Target: target, Details: delegated(p, details), Folders: folders}
 }

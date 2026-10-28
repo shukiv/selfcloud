@@ -108,6 +108,10 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	r.SetMaxOpenConns(n)
 	r.SetMaxIdleConns(n)
 	s.r = r
+	if err := s.ensurePersonalFolders(ctx); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("store: personal folders: %w", err)
+	}
 	if err := s.Ping(ctx); err != nil {
 		s.Close()
 		return nil, err

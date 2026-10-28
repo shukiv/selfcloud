@@ -54,8 +54,8 @@ space ("My files"), and a group can hold users.
 | Drive feature | Selfcloud |
 |---|---|
 | Nested folders | Have |
-| Personal space ("My Drive") | New (n): "My files" per user, under the account quota |
-| Team spaces ("Shared drives") | Have in effect: the account's top-level folders. New (n): Drive's role tiers and settings for them |
+| Personal space ("My Drive") | Built (n1): "My files" per user, made with the user. Counts against the account quota; per-user quota is slice p |
+| Team spaces ("Shared drives") | Have in effect: the account's top-level folders. Built (n1): role tiers on the root, and owners as managers. Settings are n2 |
 | Starred | New (p) |
 | Recent | New (p): from views and edits |
 | Home page (recent, starred, recently shared, comments waiting) | New (p): plain rules, no machine learning |
@@ -70,18 +70,18 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Roles: viewer, commenter, editor, owner | New (n): viewer, commenter, editor, plus manager on team spaces |
-| Share a single file, or any folder at any depth | New (n): permissions on any node, inherited downward |
-| Share with a group | New (n): account groups |
+| Roles: viewer, commenter, editor, owner | Built (n1): viewer, commenter, contributor, editor, manager. Drive's "content manager" is `editor` in the API; owners of the account hold manager on team spaces |
+| Share a single file, or any folder at any depth | Built (n1): permissions on any node, inherited downward, additive only |
+| Share with a group | Built (n1): account groups, with members of any role; removing a member revokes at once |
 | Link sharing: restricted, organisation, anyone with the link | New (o): organisation-wide and public links |
 | People outside the organisation open "anyone" links without an account | New (o) |
-| Access expiry for a person | New (n): up to a configurable maximum |
-| Stop viewers and commenters from downloading, copying or printing | New (n): enforced on download and signed-link routes. In-browser viewing still shows the content; this deters, it does not secure |
-| "Editors can change permissions" switch | New (n) |
-| Transfer ownership | New (n): within one account |
-| Access requests, with approve and deny | New (n) |
-| Email when something is shared with you | New (n): in the seven languages |
-| Pending invitations list | Have: pending users. New (n): shown on the share dialog |
+| Access expiry for a person | Store only (n1): `expires_at` is filtered at every read. API and maximum: New (n2) |
+| Stop viewers and commenters from downloading, copying or printing | New (n2): enforced on download and signed-link routes. In-browser viewing still shows the content; this deters, it does not secure |
+| "Editors can change permissions" switch | New (n2) |
+| Transfer ownership | New (n2): within one account. The `owner_id` column is in place (n1) |
+| Access requests, with approve and deny | New (n2) |
+| Email when something is shared with you | New (n2): in the seven languages |
+| Pending invitations list | Have: pending users. New (n2): shown on the share dialog |
 | Sharing limited to trusted domains (admin) | New (u): per-account allowlist for public links and invitations |
 | Extra beyond Drive: password and expiry on public links, upload-only drop folders | New (o): optional, off by default |
 
@@ -89,9 +89,9 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Create, rename, hide and delete | Have: create, rename, delete. New (n): hide |
-| Roles: manager, content manager, contributor, commenter, viewer | New (n) |
-| Restrictions: members only, organisation only, managers-only folder sharing, no download for viewers | New (n) |
+| Create, rename, hide and delete | Have: create, rename, delete. New (n2): hide |
+| Roles: manager, content manager, contributor, commenter, viewer | Built (n1), with the API names of section 8 |
+| Restrictions: members only, organisation only, managers-only folder sharing, no download for viewers | New (n2) |
 | Background image | Skip: cosmetic; a colour (p) covers it |
 | Membership and item limits | New (u): configurable caps |
 
@@ -194,7 +194,8 @@ come **before** k.
 
 | Slice | Contents | Size |
 |---|---|---|
-| n | Sharing v2: roles, permissions on any node with inheritance, groups, personal "My files", team-space roles and restrictions, expiry, no-download, ownership transfer, access requests, share emails | Large |
+| n1 | Sharing model (built, see the sections marked (n1) above): roles, permissions on any node with inheritance, groups, personal "My files", team-space owners, the grants routes on permissions, `GET /shared`, token node scope | Large |
+| n2 | Sharing v2 (the rows marked New (n2) above): access expiry, no-download, "editors can share", ownership transfer, team-space restrictions and hiding, access requests, share emails | Medium |
 | m | Trash, version history, keep forever, restore, undo | Medium |
 | k | Web interface (as planned, on the new model) | Large |
 | o | Organisation and public links, link expiry and password, drop folders, admin policy | Medium |

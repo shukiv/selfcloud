@@ -183,7 +183,7 @@ func TestFailedCreationWithBodyDeletesUpload(t *testing.T) {
 	if n := dirFiles(t, filepath.Join(s.cfg.DataDir, "uploads", accID)); n != 0 {
 		t.Errorf("upload files after failed creation = %d, want 0", n)
 	}
-	page, _, err := s.store.AuditLog(context.Background(), accID, store.Page{Limit: 50})
+	page, _, err := s.store.AuditLog(context.Background(), accID, "", true, store.Page{Limit: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestUploadsAreAudited(t *testing.T) {
 	if _, err := sw.Once(context.Background(), store.Now().Add(2*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	entries, _, err := s.store.AuditLog(context.Background(), accID, store.Page{Limit: 100})
+	entries, _, err := s.store.AuditLog(context.Background(), accID, "", true, store.Page{Limit: 100})
 	if err != nil {
 		t.Fatal(err)
 	}

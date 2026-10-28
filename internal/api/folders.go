@@ -15,17 +15,22 @@ import (
 )
 
 type folderJSON struct {
-	ID         string    `json:"id"`
-	ExternalID *string   `json:"external_id"`
-	Name       string    `json:"name"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	ExternalID  *string   `json:"external_id"`
+	Name        string    `json:"name"`
+	Kind        string    `json:"kind"`                    // team or personal
+	OwnerUserID *string   `json:"owner_user_id,omitempty"` // the user of a personal folder
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func toFolderJSON(f *store.Folder) folderJSON {
-	out := folderJSON{ID: f.ID, Name: f.Name, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt}
+	out := folderJSON{ID: f.ID, Name: f.Name, Kind: f.Kind, CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt}
 	if f.ExternalID != "" {
 		out.ExternalID = &f.ExternalID
+	}
+	if f.OwnerUserID != "" {
+		out.OwnerUserID = &f.OwnerUserID
 	}
 	return out
 }
@@ -33,7 +38,15 @@ func toFolderJSON(f *store.Folder) folderJSON {
 // folderAccessJSON is a folder the caller can reach, with the level it has there.
 type folderAccessJSON struct {
 	folderJSON
+	// Access is the grants-route level the caller holds (read or write), kept for clients that
+	// predate roles. Role is the role itself.
 	Access string `json:"access"`
+	Role   string `json:"role"`
+}
+
+// folderAccessOf builds a folder the caller reaches, from its folder JSON and the role it holds.
+func folderAccessOf(f *store.Folder, role string) folderAccessJSON {
+	return folderAccessJSON{folderJSON: toFolderJSON(f), Access: grantLevel(role), Role: role}
 }
 
 // grantJSON is a grant. A folder's grants list user_id; a user's grants list folder_id.
@@ -130,8 +143,10 @@ func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
+	// The management list is the team spaces. A personal folder is reached through its user, or
+	// through GET /folders, and is not listed to whoever manages the account.
 	folders, next, err := s.store.Folders(r.Context(), acc.ID,
-		store.FolderFilter{ExternalID: r.URL.Query().Get("external_id")}, page)
+		store.FolderFilter{ExternalID: r.URL.Query().Get("external_id"), Kind: store.KindTeam}, page)
 	if err != nil {
 		return storeErr(err)
 	}
@@ -144,9 +159,23 @@ func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request) error
 }
 
 // folderOf loads the folder named in the path, within the managed account.
+// The account key reaches a personal folder like any other, so it may read one; every other
+// caller, an owner session included, gets not_found for it.
 func (s *Server) folderOf(r *http.Request, accountID string) (*store.Folder, error) {
 	f, err := s.store.Folder(r.Context(), accountID, r.PathValue("fld"))
 	if errors.Is(err, store.ErrNotFound) {
+		return nil, notFound("folder")
+	}
+	if err == nil && f.Kind != store.KindTeam && principalOf(r).Kind != auth.KindAccountKey {
+		return nil, notFound("folder")
+	}
+	return f, err
+}
+
+// teamFolderOf is folderOf for the grants routes, which apply to team spaces only.
+func (s *Server) teamFolderOf(r *http.Request, accountID string) (*store.Folder, error) {
+	f, err := s.folderOf(r, accountID)
+	if err == nil && f.Kind != store.KindTeam {
 		return nil, notFound("folder")
 	}
 	return f, err
@@ -183,6 +212,9 @@ func (s *Server) handleUpdateFolder(w http.ResponseWriter, r *http.Request) erro
 	var out *store.Folder
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		f, err := tx.Folder(ctx, acc.ID, r.PathValue("fld"))
+		if err == nil && f.Kind != store.KindTeam {
+			return notFound("folder")
+		}
 		if errors.Is(err, store.ErrNotFound) {
 			return notFound("folder")
 		}
@@ -235,6 +267,10 @@ func (s *Server) handleDeleteFolder(w http.ResponseWriter, r *http.Request) erro
 	ctx := r.Context()
 	fld := r.PathValue("fld")
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
+		// A personal folder goes with its user, through DELETE /users/{usr}, never through here.
+		if f, err := tx.Folder(ctx, acc.ID, fld); err == nil && f.Kind != store.KindTeam {
+			return notFound("folder")
+		}
 		if err := tx.DeleteFolder(ctx, acc.ID, fld); errors.Is(err, store.ErrNotFound) {
 			return notFound("folder")
 		} else if err != nil {
@@ -249,31 +285,57 @@ func (s *Server) handleDeleteFolder(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 
-// handleListFolderGrants lists who holds a grant on a folder.
+// grantLevel is the grants route's name for a role: viewer and commenter read, and every role that
+// may change content writes. The grants routes exist for clients that predate roles.
+func grantLevel(role string) string {
+	if store.RoleRank(role) <= store.RoleRank(store.RoleCommenter) {
+		return accessRead
+	}
+	return accessWrite
+}
+
+// grantRole is the role a grants route level writes: read is viewer, write is editor.
+func grantRole(level string) string {
+	if level == accessWrite {
+		return store.RoleEditor
+	}
+	return store.RoleViewer
+}
+
+// handleListFolderGrants lists who holds a grant on a team space. The grants are the user permissions
+// on its root, shown at the level they map to. A personal folder has no grants.
 func (s *Server) handleListFolderGrants(w http.ResponseWriter, r *http.Request) error {
 	acc, err := s.managedAccount(r)
 	if err != nil {
 		return err
 	}
-	f, err := s.folderOf(r, acc.ID)
+	f, err := s.teamFolderOf(r, acc.ID)
 	if err != nil {
 		return err
 	}
-	grants, err := s.store.GrantsOfFolder(r.Context(), f.ID)
+	root, err := s.store.RootNode(r.Context(), acc.ID, f.ID)
+	if err != nil {
+		return err
+	}
+	perms, err := s.store.NodePermissions(r.Context(), acc.ID, root.ID)
 	if err != nil {
 		return err
 	}
 	out := listResponse[grantJSON]{Items: []grantJSON{}}
-	for _, g := range grants {
-		out.Items = append(out.Items, grantJSON{UserID: g.UserID, Level: g.Level, CreatedAt: g.CreatedAt, CreatedBy: g.CreatedBy})
+	for _, pm := range perms {
+		if pm.SubjectKind != store.SubjectUser {
+			continue
+		}
+		out.Items = append(out.Items, grantJSON{UserID: pm.SubjectID, Level: grantLevel(pm.Role),
+			CreatedAt: pm.CreatedAt, CreatedBy: pm.CreatedBy})
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
-// handleSetGrant shares a folder with a member user at a level, or changes the level of an
-// existing grant. Owners and admins reach every folder without one, so a grant to anyone else
-// is refused.
+// handleSetGrant shares a team space with a member user at a level, or changes the level of an
+// existing grant. It writes a user permission on the folder's root: read is viewer and write is
+// editor. Owners reach every team space without one, so a grant to anyone else is refused.
 func (s *Server) handleSetGrant(w http.ResponseWriter, r *http.Request) error {
 	acc, err := s.writableAccount(r)
 	if err != nil {
@@ -291,10 +353,10 @@ func (s *Server) handleSetGrant(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	p := principalOf(r)
 	fld, usr := r.PathValue("fld"), r.PathValue("usr")
-	var out *store.Grant
+	var out grantJSON
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		f, err := tx.Folder(ctx, acc.ID, fld)
-		if errors.Is(err, store.ErrNotFound) {
+		if errors.Is(err, store.ErrNotFound) || (err == nil && f.Kind != store.KindTeam) {
 			return notFound("folder")
 		}
 		if err != nil {
@@ -311,21 +373,28 @@ func (s *Server) handleSetGrant(w http.ResponseWriter, r *http.Request) error {
 			return apierr.New(apierr.InvalidRequest,
 				"only a member can hold a grant; owners reach every folder of the account without one")
 		}
-		out = &store.Grant{FolderID: f.ID, UserID: u.ID, Level: in.Level, CreatedAt: store.Now(), CreatedBy: p.ID}
-		if err := tx.SetGrant(ctx, out); err != nil {
+		root, err := tx.RootNode(ctx, acc.ID, f.ID)
+		if err != nil {
 			return err
 		}
+		now := store.Now()
+		if err := tx.SetPermission(ctx, &store.Permission{NodeID: root.ID, AccountID: acc.ID,
+			SubjectKind: store.SubjectUser, SubjectID: u.ID, Role: grantRole(in.Level), CreatedAt: now,
+			CreatedBy: p.ID}); err != nil {
+			return err
+		}
+		out = grantJSON{FolderID: f.ID, UserID: u.ID, Level: in.Level, CreatedAt: now, CreatedBy: p.ID}
 		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "grant.set", f.ID+"/"+u.ID,
 			map[string]any{"user_id": u.ID, "level": in.Level}))
 	})
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, grantJSON{FolderID: out.FolderID, UserID: out.UserID, Level: out.Level,
-		CreatedAt: out.CreatedAt, CreatedBy: out.CreatedBy})
+	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
+// handleRemoveGrant removes a user's permission on a team space's root.
 func (s *Server) handleRemoveGrant(w http.ResponseWriter, r *http.Request) error {
 	acc, err := s.writableAccount(r)
 	if err != nil {
@@ -334,12 +403,17 @@ func (s *Server) handleRemoveGrant(w http.ResponseWriter, r *http.Request) error
 	ctx := r.Context()
 	fld, usr := r.PathValue("fld"), r.PathValue("usr")
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		if _, err := tx.Folder(ctx, acc.ID, fld); errors.Is(err, store.ErrNotFound) {
+		f, err := tx.Folder(ctx, acc.ID, fld)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && f.Kind != store.KindTeam) {
 			return notFound("folder")
 		} else if err != nil {
 			return err
 		}
-		if err := tx.DeleteGrant(ctx, fld, usr); errors.Is(err, store.ErrNotFound) {
+		root, err := tx.RootNode(ctx, acc.ID, f.ID)
+		if err != nil {
+			return err
+		}
+		if err := tx.DeletePermission(ctx, root.ID, store.SubjectUser, usr); errors.Is(err, store.ErrNotFound) {
 			return notFound("grant")
 		} else if err != nil {
 			return err
@@ -353,7 +427,7 @@ func (s *Server) handleRemoveGrant(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
-// handleListUserGrants lists the folders shared with a user, with their levels.
+// handleListUserGrants lists the team spaces shared with a user, with their levels.
 func (s *Server) handleListUserGrants(w http.ResponseWriter, r *http.Request) error {
 	acc, err := s.managedAccount(r)
 	if err != nil {
@@ -365,26 +439,29 @@ func (s *Server) handleListUserGrants(w http.ResponseWriter, r *http.Request) er
 	} else if err != nil {
 		return err
 	}
-	grants, err := s.store.GrantsOfUser(r.Context(), acc.ID, usr)
+	grants, err := s.store.UserRootGrants(r.Context(), acc.ID, usr)
 	if err != nil {
 		return err
 	}
 	out := listResponse[grantJSON]{Items: []grantJSON{}}
 	for _, g := range grants {
-		out.Items = append(out.Items, grantJSON{FolderID: g.FolderID, Level: g.Level, CreatedAt: g.CreatedAt, CreatedBy: g.CreatedBy})
+		out.Items = append(out.Items, grantJSON{FolderID: g.FolderID, Level: grantLevel(g.Role),
+			CreatedAt: g.CreatedAt, CreatedBy: g.CreatedBy})
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
-// handleMyFolders lists the folders the caller can reach, paged the same way for everyone. An
-// account key or an owner session gets every folder of its account with write. A member session
-// gets its granted folders at the granted level. Admins get forbidden, the same rule folderAccess
+// handleMyFolders lists the folders the caller can reach, paged the same way for everyone. A team
+// space is listed when the caller reaches its root: an account owner reaches every team space, and
+// a member the team spaces it holds a permission on, directly or through a group. The caller's own
+// personal folder comes first on the first page. An account key gets every folder of its account,
+// personal ones included, each with manager. Admins get forbidden, the same rule folderAccess
 // applies: they manage tenants and never read their files.
 func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
-	if p.IsAdmin() {
-		return apierr.New(apierr.Forbidden, "admins manage tenants and may not read their files")
+	if err := callerCheck(p); err != nil {
+		return err
 	}
 	ctx := r.Context()
 	out := listResponse[folderAccessJSON]{Items: []folderAccessJSON{}}
@@ -394,40 +471,84 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	}
 	if p.Token != nil {
 		// A token names at most tokenMaxFolders folders, so they are listed in one page, each at the
-		// level folderAccess gives the token.
+		// role folderAccess gives the token.
 		for _, fid := range p.Token.Folders {
-			f, level, err := folderAccessWith(ctx, s.store, p, fid)
+			f, role, err := folderAccessWith(ctx, s.store, p, fid)
 			if err != nil {
 				if apierr.From(err).Code == apierr.NotFound {
-					continue // the folder is gone, or the user's grant on it is
+					continue // the folder is gone, or the caller reaches nothing at its root
 				}
 				return err
 			}
-			out.Items = append(out.Items, folderAccessJSON{folderJSON: toFolderJSON(f), Access: level})
+			out.Items = append(out.Items, folderAccessOf(f, role))
 		}
 		writeJSON(w, http.StatusOK, out)
 		return nil
 	}
-	if p.Kind == auth.KindUser && p.Role == auth.RoleMember {
-		granted, next, err := s.store.GrantedFolders(ctx, p.AccountID, p.UserID, page)
+	if p.Kind != auth.KindUser {
+		folders, next, err := s.store.Folders(ctx, p.AccountID, store.FolderFilter{}, page)
 		if err != nil {
 			return storeErr(err)
 		}
 		out.NextCursor = next
-		for _, g := range granted {
-			out.Items = append(out.Items, folderAccessJSON{folderJSON: toFolderJSON(g.Folder), Access: g.Level})
+		for _, f := range folders {
+			out.Items = append(out.Items, folderAccessOf(f, store.RoleManager))
 		}
 		writeJSON(w, http.StatusOK, out)
 		return nil
 	}
-	folders, next, err := s.store.Folders(ctx, p.AccountID, store.FolderFilter{}, page)
-	if err != nil {
-		return storeErr(err)
+
+	own, err := s.store.PersonalFolder(ctx, p.AccountID, p.UserID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return err
 	}
-	out.NextCursor = next
-	for _, f := range folders {
-		out.Items = append(out.Items, folderAccessJSON{folderJSON: toFolderJSON(f), Access: accessWrite})
+	teams := func(tp store.Page) ([]folderAccessJSON, string, error) {
+		if p.Role == auth.RoleOwner {
+			folders, next, err := s.store.Folders(ctx, p.AccountID, store.FolderFilter{Kind: store.KindTeam}, tp)
+			if err != nil {
+				return nil, "", storeErr(err)
+			}
+			var items []folderAccessJSON
+			for _, f := range folders {
+				items = append(items, folderAccessOf(f, store.RoleManager))
+			}
+			return items, next, nil
+		}
+		reached, next, err := s.store.RootReachedFolders(ctx, p.AccountID, p.UserID, tp)
+		if err != nil {
+			return nil, "", storeErr(err)
+		}
+		var items []folderAccessJSON
+		for _, rf := range reached {
+			items = append(items, folderAccessOf(rf.Folder, store.RoleOfRank(rf.Rank)))
+		}
+		return items, next, nil
+	}
+	out.Items, out.NextCursor, err = pageWithPersonal(page, own, teams)
+	if err != nil {
+		return err
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// pageWithPersonal lists a caller's personal folder first, on the first page, then the team spaces.
+// The personal folder takes a slot of the page, so a page never holds more than the limit. When the
+// page is only that slot, the next page starts the team spaces from the start cursor.
+func pageWithPersonal(page store.Page, own *store.Folder,
+	teams func(store.Page) ([]folderAccessJSON, string, error)) ([]folderAccessJSON, string, error) {
+	var items []folderAccessJSON
+	tp := page
+	if page.Cursor == "" && own != nil {
+		items = append(items, folderAccessOf(own, store.RoleManager))
+		if page.Limit <= 1 {
+			return items, store.StartCursor(), nil
+		}
+		tp.Limit = page.Limit - 1
+	}
+	more, next, err := teams(tp)
+	if err != nil {
+		return nil, "", err
+	}
+	return append(items, more...), next, nil
 }
