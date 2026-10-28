@@ -1,0 +1,67 @@
+package api
+
+import (
+	"testing"
+
+	"selfcloud/internal/apierr"
+	"selfcloud/internal/mail"
+)
+
+// TestRefusedAddressSpendsNoAccountBudget checks that a message refused by the per-address limit
+// does not use up the account's budget: the account keeps its full 30 for other addresses.
+func TestRefusedAddressSpendsNoAccountBudget(t *testing.T) {
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	users := "/api/v1/accounts/" + acc.ID + "/users"
+
+	// Three messages to x: the address is at its limit of 3 an hour.
+	x := decode[userResponse](t, call(t, s, "POST", users, key,
+		map[string]any{"email": "x@example.com", "verification": "email"}))
+	wantStatus(t, call(t, s, "POST", users+"/"+x.ID+"/verification", key, map[string]any{"method": "email"}), 200)
+	wantStatus(t, call(t, s, "POST", users+"/"+x.ID+"/verification", key, map[string]any{"method": "email"}), 200)
+	// The fourth is refused, and must cost the account nothing.
+	wantError(t, call(t, s, "POST", users+"/"+x.ID+"/verification", key, map[string]any{"method": "email"}),
+		429, apierr.RateLimited)
+
+	// So the account still has 27 for fresh addresses after the 3 above, and the 28th is refused.
+	for i := 0; i < 27; i++ {
+		wantStatus(t, call(t, s, "POST", users, key, map[string]any{
+			"email": "f" + string(rune('a'+i%26)) + string(rune('a'+i/26)) + "@example.com", "verification": "email"}), 201)
+	}
+	wantError(t, call(t, s, "POST", users, key,
+		map[string]any{"email": "last@example.com", "verification": "email"}), 429, apierr.RateLimited)
+}
+
+// TestForgotBudgetDoesNotBlockInvitations checks that someone who hammers password-forgot for an
+// address cannot stop the account's owner from inviting or resending to that address. The forgot
+// path has its own buckets, and the forgot answer is the same 202 whether or not mail went out.
+func TestForgotBudgetDoesNotBlockInvitations(t *testing.T) {
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	admin := adminKey(t, s)
+	accA, keyA := newAccount(t, s, admin, "Alpha")
+	accB, keyB := newAccount(t, s, admin, "Beta")
+	verifiedUser(t, s, keyA, accA.ID, "ann@example.com")
+
+	// Ask for a reset to ann's address five times. Each answer is 202; only three mails go out.
+	for i := 0; i < 5; i++ {
+		wantStatus(t, call(t, s, "POST", "/api/v1/auth/password/forgot", "",
+			map[string]any{"email": "ann@example.com"}), 202)
+	}
+	s.bg.Wait()
+	// Ann was verified by link, which sends nothing, so the three reset mails are all there is.
+	if n := len(rec.Messages()); n != 3 {
+		t.Fatalf("mails after forgot flood = %d, want 3", n)
+	}
+
+	// The owner of account B invites the same address, and resends to it, unaffected.
+	users := "/api/v1/accounts/" + accB.ID + "/users"
+	invited := decode[userResponse](t, call(t, s, "POST", users, keyB,
+		map[string]any{"email": "ann@example.com", "verification": "email"}))
+	wantStatus(t, call(t, s, "POST", users+"/"+invited.ID+"/verification", keyB,
+		map[string]any{"method": "email"}), 200)
+	if invited.Verification == nil || invited.Verification.Sent == nil || !*invited.Verification.Sent {
+		t.Fatalf("invitation was not sent: %+v", invited.Verification)
+	}
+}

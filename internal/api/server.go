@@ -131,6 +131,10 @@ func New(opts Options) (*Server, error) {
 			// to a key are not mail and are not counted.
 			"mail.account": newLimiterRate(30, time.Hour),
 			"mail.target":  newLimiterRate(3, time.Hour),
+			// Forgot-password mail is requested by anyone, so it has buckets of its own. Invitations
+			// and resends never draw on these, and these never draw on the buckets above.
+			"mail.forgot.target": newLimiterRate(3, time.Hour),
+			"mail.forgot.ip":     newLimiterRate(20, time.Hour),
 		},
 	}
 	if pub.Scheme == "https" {

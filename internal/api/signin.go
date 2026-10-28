@@ -410,7 +410,9 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 	ctx := r.Context()
-	if email != "" && s.mailer != nil {
+	// Over the per-address or per-IP forgot budget, nothing is sent, and the answer stays 202: the
+	// budget must not show whether the address is known.
+	if email != "" && s.mailer != nil && s.chargeAll(charge{"mail.forgot.ip", clientKey(r)}) == nil {
 		if err := s.sendResetLinks(ctx, r, emailKey(email), loginScope(in.Account)); err != nil {
 			return err
 		}
@@ -439,7 +441,7 @@ func (s *Server) sendResetLinks(ctx context.Context, r *http.Request, key, accou
 			}
 			// Over the mail budget, this address gets no mail. The answer is the same 202, so the
 			// limit cannot show whether the address is known.
-			if err := s.checkMailBudget(u.AccountID, u.Email); err != nil {
+			if err := s.chargeAll(charge{"mail.forgot.target", emailKey(u.Email)}); err != nil {
 				continue
 			}
 			it, err := s.issueToken(ctx, tx, u, store.PurposeReset, now)

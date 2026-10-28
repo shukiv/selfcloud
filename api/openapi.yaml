@@ -799,7 +799,9 @@ paths:
       summary: Ask for a password-reset link
       description: |
         Always answers 202. If an active user has this email, a reset link is mailed in the
-        background. Rate-limited per client address and per email.
+        background. Rate-limited per client address and per email. Past the forgot budget
+        (3 an hour per address, 20 an hour per client address) no mail is sent, and the answer is
+        still 202. Its buckets are separate from the ones invitations and resends use.
       security: []
       requestBody:
         required: true

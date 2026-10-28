@@ -44,9 +44,16 @@ func newLimiterRate(burst int, window time.Duration) *limiter {
 // allow takes one token for key. When none is left it returns rate_limited with the time until
 // the next one, and takes nothing.
 func (l *limiter) allow(key string) error {
+	_, err := l.reserve(key, time.Now())
+	return err
+}
+
+// reserve takes one token for key and returns the reservation, so a caller holding several can
+// cancel them together. When no token is available now, it cancels its own reservation, takes
+// nothing, and returns rate_limited with the wait.
+func (l *limiter) reserve(key string, now time.Time) (*rate.Reservation, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	now := time.Now()
 	if now.Sub(l.lastSweep) > time.Minute {
 		l.sweep(now)
 	}
@@ -58,13 +65,13 @@ func (l *limiter) allow(key string) error {
 	b.seen = now
 	res := b.lim.ReserveN(now, 1)
 	if !res.OK() {
-		return apierr.New(apierr.RateLimited, "too many attempts; try again later").Retry(time.Minute)
+		return nil, apierr.New(apierr.RateLimited, "too many attempts; try again later").Retry(time.Minute)
 	}
 	if delay := res.DelayFrom(now); delay > 0 {
 		res.CancelAt(now)
-		return apierr.New(apierr.RateLimited, "too many attempts; try again later").Retry(delay)
+		return nil, apierr.New(apierr.RateLimited, "too many attempts; try again later").Retry(delay)
 	}
-	return nil
+	return res, nil
 }
 
 // sweep forgets the buckets that have been idle. The caller holds l.mu.
@@ -82,4 +89,28 @@ func (l *limiter) sweep(now time.Time) {
 // little.
 func (s *Server) rateLimit(name, key string) error {
 	return s.limits[name].allow(key)
+}
+
+// charge names one limiter and the key to charge in it.
+type charge struct {
+	name string // the limiter's name, as in Server.limits
+	key  string
+}
+
+// chargeAll takes one token from each named bucket, or from none. If any bucket is empty, the tokens
+// already taken are given back, so a refused request spends nothing from the others.
+func (s *Server) chargeAll(charges ...charge) error {
+	now := time.Now()
+	var held []*rate.Reservation
+	for _, c := range charges {
+		res, err := s.limits[c.name].reserve(c.key, now)
+		if err != nil {
+			for _, h := range held {
+				h.CancelAt(now)
+			}
+			return err
+		}
+		held = append(held, res)
+	}
+	return nil
 }

@@ -160,12 +160,11 @@ func (s *Server) deliver(ctx context.Context, r *http.Request, u *store.User, it
 }
 
 // checkMailBudget charges one message to accountID and to address against the mail limits, before
-// anything is written, so a refused request creates nothing. Only method "email" sends mail.
+// anything is written, so a refused request creates nothing. Both buckets are charged together or
+// not at all: a refused address does not spend the account's budget. Only method "email" sends
+// mail. The forgot-password path has its own buckets and does not use this.
 func (s *Server) checkMailBudget(accountID, address string) error {
-	if err := s.rateLimit("mail.account", accountID); err != nil {
-		return err
-	}
-	return s.rateLimit("mail.target", emailKey(address))
+	return s.chargeAll(charge{"mail.account", accountID}, charge{"mail.target", emailKey(address)})
 }
 
 // clientKey is the rate-limit key for a request's client address.
