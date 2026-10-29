@@ -111,6 +111,7 @@ type Result struct {
 	Failed         int   // orphan blobs whose file could not be removed; they are retried next pass
 	Sessions       int64 // expired sessions removed
 	Verifications  int64 // expired or used verification and reset tokens removed
+	SignInLinks    int64 // expired or used sign-in links removed
 	TempRemoved    int   // abandoned temporary upload files removed
 	Uploads        int   // expired resumable uploads removed, rows and files
 	UploadFiles    int   // resumable upload files with no row, removed
@@ -129,9 +130,10 @@ func (w *Sweeper) Run(ctx context.Context) {
 		switch {
 		case err != nil && ctx.Err() == nil:
 			w.log.Error("housekeeping", "error", err)
-		case err == nil && (res.Removed > 0 || res.Orphaned > 0 || res.Sessions > 0 || res.Verifications > 0):
+		case err == nil && (res.Removed > 0 || res.Orphaned > 0 || res.Sessions > 0 || res.Verifications > 0 ||
+			res.SignInLinks > 0):
 			w.log.Info("housekeeping", "orphaned", res.Orphaned, "removed", res.Removed, "failed", res.Failed,
-				"sessions", res.Sessions, "verifications", res.Verifications)
+				"sessions", res.Sessions, "verifications", res.Verifications, "sign_in_links", res.SignInLinks)
 		}
 		select {
 		case <-ctx.Done():
@@ -173,6 +175,9 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 			return err
 		}
 		if res.Verifications, err = tx.DeleteSpentVerifications(ctx, now); err != nil {
+			return err
+		}
+		if res.SignInLinks, err = tx.DeleteSpentSignInLinks(ctx, now); err != nil {
 			return err
 		}
 		// Each expired permission is audited with the folder it was on, so one in a personal folder

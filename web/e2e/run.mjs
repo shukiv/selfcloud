@@ -255,9 +255,13 @@ async function main() {
     await signIn(page, MEMBER);
     await memberNotFound(page);
 
+    // A sign-in link: the account's key makes one for the member, the browser opens it and lands signed in.
+    await signInLinkChecks(page, { base, accountID, accountKey, memberID, teamA });
+
     // Policy: no console error, no CSP violation, no request to another origin.
     check(page.errors.length === 0, `no console errors or policy violations (${page.errors.join(' | ') || 'none'})`);
     check(page.expectedConflicts.length === 1, `exactly one upload met a taken name, and was asked about it (${page.expectedConflicts.length})`);
+    check(page.expectedSignInRefusals.length === 1, `the used sign-in link was refused once, on the second visit (${page.expectedSignInRefusals.length})`);
     check(page.expectedMissing.length >= 2, `the not-found views asked for access, and the browser logged their 404s (${page.expectedMissing.length})`);
     // A data: URL is inline, not a request: Chrome draws the calendar icon of a date input from one.
     const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:'));
@@ -463,6 +467,29 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
     check(!viewer.includes(hidden), `a viewer of Team B has no ${hidden}`);
   }
   check(viewer.includes('Download'), 'a viewer of Team B can download');
+}
+
+// signInLinkChecks: the account's key makes a sign-in link for the member with a path to open. The browser opens
+// it and lands on that path, signed in, with the token gone from the address bar. The same link a second time
+// shows the expired message and no shell.
+async function signInLinkChecks(page, { base, accountID, accountKey, memberID, teamA }) {
+  await signOut(page);
+  const made = await api(base, 'POST', `/api/v1/accounts/${accountID}/users/${memberID}/sign-in-links`, accountKey, {
+    next: `/files/${teamA}`,
+  });
+  check(made.url.startsWith(base + '/sign-in#token='), 'the account key makes a sign-in link for the member');
+  await page.goto(made.url);
+  await page.waitFor(`location.pathname === '/files/${teamA}' && !location.hash && !!document.querySelector('.topbar')`, 15000);
+  const who = await page.evaluate(`document.querySelector('.user-menu > button').textContent`);
+  check(who.includes(MEMBER.name), `the browser opens the link, lands on the requested path, signed in (${who.trim()})`);
+
+  await signOut(page);
+  await page.goto(made.url);
+  await page.waitFor(
+    `!!document.querySelector('.alert') && document.querySelector('.alert').textContent.includes('already used')`,
+    15000,
+  );
+  check(!(await page.evaluate(`!!document.querySelector('.topbar')`)), 'the same link a second time shows the expired message, and no shell');
 }
 
 // signOut signs out through the account menu, as a person would.

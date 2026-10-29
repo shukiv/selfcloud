@@ -27,6 +27,11 @@ export interface SignedIn {
   csrf_token: string;
 }
 
+// SignedInLink is a sign-in by link: the session, and the path the page opens next.
+export interface SignedInLink extends SignedIn {
+  next: string;
+}
+
 export interface AccountChoice {
   id: string;
   name: string;

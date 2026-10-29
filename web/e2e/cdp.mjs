@@ -70,6 +70,8 @@ export class Page {
     this.expectedConflicts = [];
     // expectedMissing lists the node lookups answered 404 on purpose (a node the caller cannot reach).
     this.expectedMissing = [];
+    // expectedSignInRefusals lists the sign-in link redeems answered 400 on purpose (a used link).
+    this.expectedSignInRefusals = [];
     this.opened = new Promise((resolve, reject) => {
       this.ws.onopen = resolve;
       this.ws.onerror = () => reject(new Error('cannot open the page socket'));
@@ -128,6 +130,14 @@ export class Page {
         p.entry.source === 'network' && /\/api\/v1\/nodes\/[a-z0-9_]+$/.test(p.entry.url ?? '') && /status of 404/.test(p.entry.text);
       if (expectedMissing) {
         this.expectedMissing.push(p.entry.url);
+        return;
+      }
+      // A sign-in link used a second time is answered 400, and the browser logs it. The page shows the expired
+      // message then, so the test counts this answer and checks that it came from the second visit.
+      const expectedSignInRefusal =
+        p.entry.source === 'network' && /\/api\/v1\/auth\/sign-in-link$/.test(p.entry.url ?? '') && /status of 400/.test(p.entry.text);
+      if (expectedSignInRefusal) {
+        this.expectedSignInRefusals.push(p.entry.url);
         return;
       }
       // The last requests before the error show what the page was doing when it happened.

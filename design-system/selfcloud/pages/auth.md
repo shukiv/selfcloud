@@ -36,6 +36,16 @@ Overrides `MASTER.md` for the pages a person sees before they are signed in. API
 - `token_expired` or `not_found`: "This link has expired or was already used. Ask whoever
   invited you to send a new one." No form.
 
+## Sign in with a link (`/sign-in#token=…`)
+
+- Opened from an application that holds the account key; no form. Heading "Signing you in", then a status line
+  "One moment…" while the one request runs.
+- The token is read from the fragment and removed from the address bar before the request is made.
+- Success: signed in, straight to the `next` path the server answered (`/files` when none).
+- Any failure is one message: "This sign-in link has expired or was already used. Go back to the application that
+  sent you and try again." Other codes from the server (`user_disabled`, `account_suspended`, `rate_limited`) show
+  their own message, as elsewhere. There is no retry button for the same token.
+
 ## Forgot password (`/forgot`)
 
 - One field, Email. After submit always show "If an account exists for this email, we sent a

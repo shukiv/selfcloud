@@ -87,6 +87,11 @@ type UsersConfig struct {
 	VerifyURLTemplate string `yaml:"verify_url_template"`
 	// ResetURLTemplate builds the password-reset link, with the same placeholders.
 	ResetURLTemplate string `yaml:"reset_url_template"`
+	// SignInLinkTTL is how long a sign-in link works. At most 10 minutes.
+	SignInLinkTTL Duration `yaml:"sign_in_link_ttl"`
+	// SignInURLTemplate builds the sign-in link, with {public_url} and {token} replaced. The token
+	// goes in the fragment, so it never reaches a server log or a Referer.
+	SignInURLTemplate string `yaml:"sign_in_url_template"`
 }
 
 // SessionsConfig controls web sessions.
@@ -300,6 +305,8 @@ func Defaults() *Config {
 			ResetTTL:          Duration(time.Hour),
 			VerifyURLTemplate: "{public_url}/verify#token={token}",
 			ResetURLTemplate:  "{public_url}/reset#token={token}",
+			SignInLinkTTL:     Duration(60 * time.Second),
+			SignInURLTemplate: "{public_url}/sign-in#token={token}",
 		},
 		Sessions: SessionsConfig{
 			IdleTimeout: Duration(168 * time.Hour),
@@ -461,13 +468,22 @@ func (c *Config) Validate() error {
 	if c.Users.VerificationTTL <= 0 || c.Users.ResetTTL <= 0 {
 		bad("users.verification_ttl and users.reset_ttl must be positive")
 	}
+	if c.Users.SignInLinkTTL <= 0 || c.Users.SignInLinkTTL > Duration(10*time.Minute) {
+		bad("users.sign_in_link_ttl must be positive and at most 10m")
+	}
 	for name, tmpl := range map[string]string{
-		"users.verify_url_template": c.Users.VerifyURLTemplate,
-		"users.reset_url_template":  c.Users.ResetURLTemplate,
+		"users.verify_url_template":  c.Users.VerifyURLTemplate,
+		"users.reset_url_template":   c.Users.ResetURLTemplate,
+		"users.sign_in_url_template": c.Users.SignInURLTemplate,
 	} {
 		if !strings.Contains(tmpl, "{token}") {
 			bad("%s must contain {token}", name)
 		}
+	}
+	// A sign-in link signs a browser in, so its token must stay in the fragment, which never reaches a
+	// server, a proxy's log or a Referer header.
+	if i := strings.Index(c.Users.SignInURLTemplate, "{token}"); i >= 0 && !strings.Contains(c.Users.SignInURLTemplate[:i], "#") {
+		bad("users.sign_in_url_template must carry {token} in the fragment, after #")
 	}
 	if c.Sessions.IdleTimeout <= 0 || c.Sessions.MaxAge <= 0 {
 		bad("sessions.idle_timeout and sessions.max_age must be positive")

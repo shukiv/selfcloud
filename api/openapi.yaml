@@ -993,6 +993,69 @@ paths:
               schema: { $ref: "#/components/schemas/UserWithVerification" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/accounts/{acc}/users/{usr}/sign-in-links:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/usr"
+    post:
+      tags: [Users]
+      operationId: createSignInLink
+      summary: Make a sign-in link for a user
+      description: |
+        For an application that holds the account's own key and has signed its user in itself. The
+        answer is a single-use link that starts a normal session for the user, with no password and
+        no TOTP: the client vouches for the user (decided 2026-10-29). The link works once and for
+        `users.sign_in_link_ttl` (60 seconds by default, at most 10 minutes). The token is only in
+        the URL's fragment, so it never reaches a server log, a proxy or a Referer. Only the account's
+        own key may call this: an admin key, a session and a delegated token are refused. The audit
+        entry (`user.sign_in_link`) names the user and never holds the token, the URL or the path.
+        Rate-limited per account, 60 a minute.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SignInLinkRequest" }
+      responses:
+        "201":
+          description: The link. Give it to the browser; it opens it once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignInLink" }
+        "400":
+          description: |
+            `invalid_request`: `next` is not a path on this site. It must start with exactly one
+            `/`, have no backslash, scheme, host, control character or space, no percent-encoded dot,
+            slash or backslash (`%2e`, `%2f`, `%5c`, which a browser can turn into another host), and
+            be at most 2048 bytes. Encode a space as `%20`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: |
+            `forbidden`: the caller is not the account's own key. `user_not_verified`: the user is
+            pending. `user_disabled`: the user is disabled. `account_suspended`: the account is
+            suspended. A key of an account being deleted is refused earlier, at
+            authentication, with `unauthenticated`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: |
+            `not_found`: no such user in this account. An installation admin is not in any account,
+            so it is not found here either.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: "`rate_limited`, with `Retry-After`."
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/accounts/{acc}/users/{usr}/password-reset:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -1039,6 +1102,34 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SignedIn" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/sign-in-link:
+    post:
+      tags: [Auth]
+      operationId: redeemSignInLink
+      summary: Complete a sign-in link
+      description: |
+        Consumes the link and signs the browser in as its user, with a normal session: the same
+        cookie, the CSRF token in the answer, and the same limits as a password sign-in. Any session
+        this browser already had is ended first. An unknown, used, expired or malformed link gets
+        `invalid_request`, whatever its history. A user or account that may no longer sign in gets
+        `user_not_verified`, `user_disabled` or `account_suspended`, and that refusal also uses the
+        link up. Rate-limited per client address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SignInLinkRedeemRequest" }
+      responses:
+        "200":
+          description: Signed in. The session cookie is set. `next` is the path the page opens.
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignInLinkSignedIn" }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/auth/login:
@@ -3570,6 +3661,46 @@ components:
       properties:
         token: { type: string }
         password: { type: string, minLength: 8, maxLength: 256 }
+
+    SignInLinkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        next:
+          type: string
+          maxLength: 2048
+          description: |
+            The path to open after sign-in, such as `/files/x`. Optional; empty or absent means
+            `/files`. Checked on the server: it must start with exactly one `/`, not be `//`, and
+            have no backslash, scheme, host, control character or space.
+
+    SignInLink:
+      type: object
+      required: [url, expires_at]
+      properties:
+        url:
+          type: string
+          description: |
+            Absolute, from `users.sign_in_url_template` (default `{public_url}/sign-in#token={token}`).
+            Carries only the token, in its fragment.
+        expires_at: { type: string, format: date-time }
+
+    SignInLinkRedeemRequest:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string, description: The token from the link's fragment. }
+
+    SignInLinkSignedIn:
+      allOf:
+        - $ref: "#/components/schemas/SignedIn"
+        - type: object
+          required: [next]
+          properties:
+            next:
+              type: string
+              description: The path to open, from the link. Validated again by the page.
 
     PasswordChange:
       type: object

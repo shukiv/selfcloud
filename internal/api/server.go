@@ -201,6 +201,9 @@ func New(opts Options) (*Server, error) {
 			// These limits are fixed: they guard a password, not a configurable flow.
 			"changepw.user": newLimiter(5),
 			"changepw.ip":   newLimiter(10),
+			// Sign-in links: made by an account key, per account; redeemed per client address, as login is.
+			"signlink.create": newLimiter(60),
+			"signlink.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
 			// Verification and reset mail: per account, and per address it goes to. Links returned
 			// to a key are not mail and are not counted.
 			"mail.account": newLimiterRate(30, time.Hour),
@@ -338,12 +341,14 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleDeleteUser, auth: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/verification", handle: s.handleSendVerification, auth: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/password-reset", handle: s.handlePasswordReset, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/sign-in-links", handle: s.handleCreateSignInLink, auth: true},
 
 		{method: http.MethodPost, path: "/api/v1/auth/verify", handle: s.handleVerify, sameSite: true},
 		{method: http.MethodPost, path: "/api/v1/auth/login", handle: s.handleLogin, sameSite: true},
 		{method: http.MethodPost, path: "/api/v1/auth/logout", handle: s.handleLogout, session: true},
 		{method: http.MethodPost, path: "/api/v1/auth/password/forgot", handle: s.handleForgotPassword, sameSite: true},
 		{method: http.MethodPost, path: "/api/v1/auth/password/reset", handle: s.handleResetPassword, sameSite: true},
+		{method: http.MethodPost, path: "/api/v1/auth/sign-in-link", handle: s.handleRedeemSignInLink, sameSite: true},
 		{method: http.MethodGet, path: "/api/v1/me", handle: s.handleMe, session: true},
 		{method: http.MethodPatch, path: "/api/v1/me", handle: s.handleUpdateMe, session: true},
 		{method: http.MethodPost, path: "/api/v1/me/password", handle: s.handleChangePassword, session: true},

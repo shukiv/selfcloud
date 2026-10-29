@@ -3,7 +3,7 @@
 import { api, ApiError } from './api';
 import { clearSession, setMe, setSignedIn } from './session';
 import type { Brand } from './brand';
-import type { Me, SignedIn } from './types';
+import type { Me, SignedIn, SignedInLink } from './types';
 import { sharingMaxExpiryDays } from './sharing/api';
 
 export interface Info {
@@ -59,6 +59,11 @@ export async function establish(signed: SignedIn): Promise<void> {
 
 export function verifyAccount(token: string, password: string): Promise<SignedIn> {
   return api<SignedIn>('POST', '/api/v1/auth/verify', { body: { token, password }, noRedirect: true });
+}
+
+// signInWithLink redeems a sign-in link: the server starts a session and answers the path to open.
+export function signInWithLink(token: string): Promise<SignedInLink> {
+  return api<SignedInLink>('POST', '/api/v1/auth/sign-in-link', { body: { token }, noRedirect: true });
 }
 
 export function resetPassword(token: string, password: string): Promise<SignedIn> {

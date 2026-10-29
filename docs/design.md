@@ -212,6 +212,7 @@ Four kinds of caller:
 | **Account key** | `Authorization: Bearer sc_acct_...` | Everything inside one account: users, folders, grants, files, delegated tokens, webhooks, audit. |
 | **User session** | Email and password (argon2id), optional TOTP; `__Host-` session cookie, `HttpOnly`, `Secure`, `SameSite=Lax` | What the user's roles allow: permissions on nodes, its groups' permissions, and its own personal folder. Account *owners* (a user role) also manage users, folders, groups and permissions in the web interface, and hold manager on every team space. |
 | **Delegated token** | `Authorization: Bearer sct_...` | A short-lived, narrowed slice of an account key's or a user's rights, for a browser. |
+| **Sign-in link** | A single-use token from `POST /accounts/{account}/users/{user}/sign-in-links`, redeemed at `POST /api/v1/auth/sign-in-link` | A normal user session for one user, with no password and no TOTP. The account's own key makes the link; nothing else can. |
 
 An installation admin has no direct path to a tenant's files. It reaches them only through an
 account key it creates, and that creation is audited.
@@ -305,6 +306,21 @@ The hierarchy has three levels:
   single-use, stored hashed, and expire after 72 hours by default. In headless mode the link
   points to a page the client hosts (`verify_url_template`), which calls
   `POST /api/v1/auth/verify`.
+- **Sign-in links.** A way in for a user with or without a password. An application that holds the
+  account's own key (not a delegated token) calls `POST /accounts/{account}/users/{user}/sign-in-links`
+  and gets a single-use link, valid for `users.sign_in_link_ttl` (60 seconds by default, at most 10
+  minutes). The browser opens it at `users.sign_in_url_template` (default
+  `{public_url}/sign-in#token={token}`; the start-up check refuses a template that puts `{token}`
+  before a `#`, since a token outside the fragment reaches servers and logs). `POST
+  /api/v1/auth/sign-in-link` redeems it: it starts a
+  normal session and answers the path to open. The token is 256-bit, stored hashed in
+  `sign_in_links`, and consumed in the redeem transaction. The path (`next`) is stored with the token,
+  so the link carries only the token. `next` is a path on this site: one leading `/`, no backslash,
+  scheme, host, control character or space, no `%2e`, `%2f` or `%5c` (a browser reads `%2e` as a dot,
+  so `/%2e%2e//host` would become `//host`), at most 2048 bytes. A replay of a used or expired link
+  answers `invalid_request` and writes nothing. **A sign-in link skips TOTP**: the client vouches for the user
+  (decided 2026-10-29). The TOTP slice must keep that rule: a password sign-in asks for a TOTP code
+  when the user has one, and a sign-in link never does.
 - **Folder**: a named top-level root inside an account, holding its own tree. Two kinds:
   - a **team space** (`kind: team`, the default, and every folder made before slice n1). Its name is
     unique in the account. Account owners manage it, and everyone else reaches it through
@@ -690,6 +706,13 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   until the quotas slice (p) adds per-user limits.
 - **Shared subtree root (L7).** The root of a shared subtree shows its `parent_id`, which is an ID only.
   It names no ancestor, but it does tell the user that a parent exists.
+- **Login CSRF by sign-in link.** Whoever holds a fresh sign-in link can sign a browser into that user.
+  The link is single use, lasts `users.sign_in_link_ttl`, and only the account's own key can make one, so
+  the holder was handed it by the application that holds the key. A verification or reset link already
+  carries the same risk.
+- **A handed-in user skips TOTP (decided 2026-10-29).** A sign-in link starts a session without a TOTP
+  code, because the client holding the account key vouches for the user. TOTP does not protect a user
+  against that client. The TOTP slice (section 9) must keep this rule.
 - **The account directory (k3).** Any active user of an account, whatever its role and whether or not
   it reaches any folder, can find the name and email of every active user of the account through
   `GET /directory`, 20 at a time and rate limited. That is the purpose of the directory: a share dialog
@@ -719,6 +742,7 @@ Inside an account                          account key, admin key, or owner sess
   POST|GET              /accounts/{acc}/users               verification: email | link | none; ?external_id=
   GET|PATCH|DELETE      /accounts/{acc}/users/{usr}         DELETE: ?transfer_to=usr_ moves the user's files to another user's My files; ?delete_files=true deletes them; the two are refused together
   POST                  /accounts/{acc}/users/{usr}/verification     send again, or a new link
+  POST                  /accounts/{acc}/users/{usr}/sign-in-links    account key only: a single-use sign-in link, {next}; answers {url, expires_at}
   POST|GET              /accounts/{acc}/folders             ?external_id=
   PATCH|DELETE          /accounts/{acc}/folders/{fld}
   GET                   /accounts/{acc}/folders/{fld}/grants
@@ -780,6 +804,7 @@ Uploads (tus 1.0)
 
 Users                                      session
   POST /auth/login /auth/logout /auth/verify /auth/password/forgot /auth/password/reset
+  POST /auth/sign-in-link                  redeem a sign-in link: the session, and next
   POST /auth/totp/{enrol,confirm,disable}
   GET|PATCH /me                            PATCH: display_name, locale
 
@@ -1052,6 +1077,12 @@ a redirect to sign-in (except the start-up check and the auth pages), and reads 
 `code`. The server's English message is never shown. `?next=` after sign-in is accepted only as a
 same-origin path. Sign-in answers 409 with `details.accounts` when the email is in several accounts, and
 the page then asks which one.
+
+*Sign-in link page.* `/sign-in` reads the token from the fragment and removes the fragment from the address
+bar before any request. It makes one `POST /api/v1/auth/sign-in-link`, then opens the `next` the server answered
+(checked again by `next.ts`; `/files` when it is unusable). A failure shows one message per code: a used, expired
+or unknown link gets "This sign-in link has expired or was already used. Go back to the application that sent you
+and try again.", with no form and no retry of the same token. A malformed token is refused without a request.
 
 *Languages.* Seven catalogues (`web/src/i18n/{en,es,fr,pt,ru,ar,he}.json`), one flat object each, with
 the same keys and no empty values. Plural keys carry all six categories in every language, so a count

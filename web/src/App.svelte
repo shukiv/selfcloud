@@ -16,6 +16,7 @@
   import Login from './pages/Login.svelte';
   import Verify from './pages/Verify.svelte';
   import Reset from './pages/Reset.svelte';
+  import SignIn from './pages/SignIn.svelte';
   import Forgot from './pages/Forgot.svelte';
   import ChangePassword from './pages/ChangePassword.svelte';
   import Shared from './pages/Shared.svelte';
@@ -39,6 +40,7 @@
     | 'verify'
     | 'reset'
     | 'forgot'
+    | 'sign-in'
     | 'files'
     | 'node'
     | 'shared'
@@ -49,7 +51,7 @@
     | 'change-password'
     | 'notfound';
 
-  const PUBLIC_VIEWS: View[] = ['login', 'verify', 'reset', 'forgot'];
+  const PUBLIC_VIEWS: View[] = ['login', 'verify', 'reset', 'forgot', 'sign-in'];
 
   let ready = $state(false);
 
@@ -69,6 +71,8 @@
         return 'reset';
       case '/forgot':
         return 'forgot';
+      case '/sign-in':
+        return 'sign-in';
       case '/shared':
         return 'shared';
       case '/requests':
@@ -165,6 +169,8 @@
       <Reset />
     {:else if view === 'forgot'}
       <Forgot />
+    {:else if view === 'sign-in'}
+      <SignIn />
     {:else}
       <NotFound />
     {/if}

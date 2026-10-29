@@ -105,6 +105,10 @@ func TestValidationErrors(t *testing.T) {
 		"bad duration":         {"SELFCLOUD_SHUTDOWN_TIMEOUT": "30"},
 		"link ttl over cap":    {"SELFCLOUD_LINKS_DEFAULT_TTL": "48h", "SELFCLOUD_LINKS_MAX_TTL": "24h"},
 		"zero link max ttl":    {"SELFCLOUD_LINKS_MAX_TTL": "0s"},
+		"sign-in ttl over cap": {"SELFCLOUD_USERS_SIGN_IN_LINK_TTL": "11m"},
+		"sign-in ttl zero":     {"SELFCLOUD_USERS_SIGN_IN_LINK_TTL": "0s"},
+		"sign-in no token":     {"SELFCLOUD_USERS_SIGN_IN_URL_TEMPLATE": "{public_url}/sign-in"},
+		"sign-in token query":  {"SELFCLOUD_USERS_SIGN_IN_URL_TEMPLATE": "{public_url}/sign-in?token={token}"},
 	} {
 		if _, err := Load("", env(vars)); err == nil {
 			t.Errorf("%s: accepted", name)
