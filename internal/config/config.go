@@ -19,9 +19,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -244,7 +247,22 @@ type CORSConfig struct {
 
 // UIConfig controls the web interface.
 type UIConfig struct {
+	// Enabled serves the web interface at /. The API is unaffected either way.
 	Enabled bool `yaml:"enabled"`
+	// Brand is the installation's look. It is the same for every user; per-tenant branding is
+	// not built.
+	Brand BrandConfig `yaml:"brand"`
+}
+
+// BrandConfig is the installation-wide name, accent colour and logo of the web interface.
+type BrandConfig struct {
+	// Name is shown in the header and the page title.
+	Name string `yaml:"name"`
+	// Accent is the primary colour as #rrggbb.
+	Accent string `yaml:"accent"`
+	// LogoFile optionally names a PNG or SVG file, read at start (at most 256 KiB). Its path is
+	// never sent to clients; they get the URL /brand/logo instead.
+	LogoFile string `yaml:"logo_file"`
 }
 
 // Defaults returns the configuration used when nothing is set.
@@ -281,12 +299,13 @@ func Defaults() *Config {
 			VerificationTTL:   Duration(72 * time.Hour),
 			ResetTTL:          Duration(time.Hour),
 			VerifyURLTemplate: "{public_url}/verify#token={token}",
-			ResetURLTemplate:  "{public_url}/reset-password#token={token}",
+			ResetURLTemplate:  "{public_url}/reset#token={token}",
 		},
 		Sessions: SessionsConfig{
 			IdleTimeout: Duration(168 * time.Hour),
 			MaxAge:      Duration(720 * time.Hour),
 		},
+		UI:   UIConfig{Enabled: true, Brand: BrandConfig{Name: "Selfcloud", Accent: "#2563EB"}},
 		Mail: MailConfig{SMTPPort: 587, SMTPTLS: "starttls"},
 		RateLimit: RateLimitConfig{
 			PerIPPerMinute:    10,
@@ -469,6 +488,9 @@ func (c *Config) Validate() error {
 			bad("mail.from %q is not an address: %v", c.Mail.From, err)
 		}
 	}
+	if err := c.UI.Brand.validate(); err != nil {
+		bad("ui.brand: %v", err)
+	}
 	return errors.Join(errs...)
 }
 
@@ -602,6 +624,37 @@ func setFromString(fv reflect.Value, s string) error {
 		fv.Set(reflect.ValueOf(items))
 	default:
 		return fmt.Errorf("unsupported type %s", fv.Type())
+	}
+	return nil
+}
+
+var accentPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// validate checks the brand. The accent is only checked for form: MASTER.md asks the UI to refuse
+// a colour that fails contrast, but black or white text always reaches 4.5:1 on any colour, so that
+// rule could never refuse anything and is not enforced.
+func (b BrandConfig) validate() error {
+	n := utf8.RuneCountInString(b.Name)
+	if n == 0 {
+		return errors.New("name is empty")
+	}
+	if n > 64 {
+		return errors.New("name is longer than 64 characters")
+	}
+	for _, r := range b.Name {
+		if unicode.IsControl(r) {
+			return errors.New("name contains a control character")
+		}
+	}
+	if !accentPattern.MatchString(b.Accent) {
+		return fmt.Errorf("accent %q is not a colour as #rrggbb", b.Accent)
+	}
+	if b.LogoFile != "" {
+		switch strings.ToLower(filepath.Ext(b.LogoFile)) {
+		case ".png", ".svg":
+		default:
+			return fmt.Errorf("logo_file %q must be a .png or .svg file", b.LogoFile)
+		}
 	}
 	return nil
 }

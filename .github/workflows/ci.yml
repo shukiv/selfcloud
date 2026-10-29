@@ -9,6 +9,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Node 22 for the web interface
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: web install
+        run: npm ci
+        working-directory: web
+      - name: web check
+        run: npm run check
+        working-directory: web
+      - name: web build
+        run: npm run build
+        working-directory: web
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

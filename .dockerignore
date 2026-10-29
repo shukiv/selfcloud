@@ -5,3 +5,5 @@
 bin
 data
 docs
+web/node_modules
+web/dist

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	apispec "github.com/shukiv/selfcloud/api"
+	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/fsutil"
 	"github.com/shukiv/selfcloud/internal/version"
 )
@@ -73,12 +75,15 @@ func probeWritable(dir string) error {
 }
 
 type infoResponse struct {
-	Name         string     `json:"name"`
-	Version      string     `json:"version"`
-	PublicURL    string     `json:"public_url"`
-	WebInterface bool       `json:"web_interface"`
-	Limits       infoLimits `json:"limits"`
-	Features     []string   `json:"features"`
+	Name         string    `json:"name"`
+	Version      string    `json:"version"`
+	PublicURL    string    `json:"public_url"`
+	WebInterface bool      `json:"web_interface"`
+	Brand        infoBrand `json:"brand"`
+	// PasswordMinLength is the shortest password the server accepts. Clients check against it.
+	PasswordMinLength int        `json:"password_min_length"`
+	Limits            infoLimits `json:"limits"`
+	Features          []string   `json:"features"`
 }
 
 type infoLimits struct {
@@ -86,18 +91,49 @@ type infoLimits struct {
 	MaxChunkSize int64 `json:"max_chunk_size"`
 }
 
+// infoBrand is the installation's look. The logo is a URL, never the file's path on the host.
+type infoBrand struct {
+	Name    string  `json:"name"`
+	Accent  string  `json:"accent"`
+	LogoURL *string `json:"logo_url"`
+}
+
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusOK, infoResponse{
-		Name:         "Selfcloud",
-		Version:      version.Version,
-		PublicURL:    s.cfg.PublicURL,
-		WebInterface: s.cfg.UI.Enabled,
+		Name:              "Selfcloud",
+		Version:           version.Version,
+		PublicURL:         s.cfg.PublicURL,
+		WebInterface:      s.cfg.UI.Enabled,
+		Brand:             s.brandInfo(),
+		PasswordMinLength: auth.MinPasswordLen,
 		Limits: infoLimits{
 			MaxFileSize:  int64(s.cfg.Upload.MaxFileSize),
 			MaxChunkSize: int64(s.cfg.Upload.MaxChunkSize),
 		},
 		Features: []string{},
 	})
+	return nil
+}
+
+// brandInfo describes the brand; the logo URL is set only when there is a logo.
+func (s *Server) brandInfo() infoBrand {
+	b := infoBrand{Name: s.cfg.UI.Brand.Name, Accent: s.cfg.UI.Brand.Accent}
+	if s.logo != nil {
+		u := logoPath
+		b.LogoURL = &u
+	}
+	return b
+}
+
+// logoPath is the URL of the logo. It is served whether or not the web interface is.
+const logoPath = "/brand/logo"
+
+// handleLogo serves the installation's logo, or answers not_found when there is none.
+func (s *Server) handleLogo(w http.ResponseWriter, r *http.Request) error {
+	if s.logo == nil {
+		return apierr.New(apierr.NotFound, "the installation has no logo")
+	}
+	s.logo.ServeHTTP(w, r)
 	return nil
 }
 

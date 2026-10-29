@@ -143,14 +143,35 @@ paths:
     get:
       tags: [System]
       operationId: getInfo
-      summary: Server facts and limits
-      description: Clients read the upload limits here before uploading.
+      summary: Server facts, limits and branding
+      description: |
+        Clients read the upload limits here before uploading. `brand` is the installation's name,
+        accent colour and logo (installation-wide only; per-tenant branding is not built).
       responses:
         "200":
           description: Server facts.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Info" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /brand/logo:
+    get:
+      tags: [System]
+      operationId: getBrandLogo
+      summary: The installation's logo
+      description: |
+        The file named by `ui.brand.logo_file`, read at start (PNG or SVG, at most 256 KiB). Served
+        whether or not the web interface is on. `brand.logo_url` in `/info` is null when there is no
+        logo, and this route then answers `not_found`. An SVG is sent with a sandbox policy.
+      responses:
+        "200":
+          description: The logo, as image/png or image/svg+xml.
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+            image/svg+xml:
+              schema: { type: string }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/openapi.yaml:
@@ -2864,7 +2885,7 @@ components:
 
     Info:
       type: object
-      required: [name, version, public_url, web_interface, limits, features]
+      required: [name, version, public_url, web_interface, brand, password_min_length, limits, features]
       properties:
         name: { type: string, example: Selfcloud }
         version: { type: string, example: 0.1.0 }
@@ -2876,11 +2897,35 @@ components:
         web_interface:
           type: boolean
           description: Whether this server also serves its web interface.
+        brand: { $ref: "#/components/schemas/Brand" }
+        password_min_length:
+          type: integer
+          minimum: 1
+          description: The shortest password the server accepts, in characters. Clients check new passwords against it.
+          example: 8
         limits: { $ref: "#/components/schemas/Limits" }
         features:
           type: array
           description: Optional features this server has enabled.
           items: { type: string }
+
+    Brand:
+      type: object
+      description: The installation's look. The same for every user.
+      required: [name, accent, logo_url]
+      properties:
+        name:
+          type: string
+          description: The product name, shown in the web interface's header and title.
+          example: Selfcloud
+        accent:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+          description: The primary colour, as #rrggbb.
+          example: "#2563EB"
+        logo_url:
+          type: [string, "null"]
+          description: The logo's URL (`/brand/logo`), or null when the installation has none. The file's path is never sent.
 
     Limits:
       type: object

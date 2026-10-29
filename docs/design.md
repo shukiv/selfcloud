@@ -54,8 +54,9 @@ HTTP (net/http, Go 1.22+ routing patterns)
 
 The web interface is a client of the public API like any other; it has no private endpoints.
 
-**Repository layout** (*proposed*): `cmd/selfcloud`, `internal/{config,store,blob,auth,api,tus,mail,webhook,wopi,audit}`,
-`web/` (UI source, built files embedded with `go:embed`), `api/openapi.yaml`, `client/` (Go
+**Repository layout** (*proposed*): `cmd/selfcloud`, `internal/{config,store,blob,auth,api,tus,mail,webhook,wopi,audit,web}`,
+`web/` (UI source in Svelte 5 with Vite; `web/embed.go` embeds the built files, since Go's `embed` cannot
+reach outside a package's directory; `internal/web` serves them), `api/openapi.yaml`, `client/` (Go
 client, its own module), `docs/`.
 
 **Dependencies** stay few: the standard library for HTTP and logging (`log/slog`),
@@ -877,13 +878,71 @@ bound to one file. A client calls `POST /nodes/{nod}/office` and embeds the edit
 back. Collabora must be allowed to call Selfcloud's WOPI address (its `aliasgroup` setting), and
 the README gives a Docker Compose example of the two together.
 
-**Web interface.** Served at `/` when `ui.enabled`. Screens: sign-in, verification and password
-set-up, password reset, TOTP set-up, the file browser (upload with progress and resume,
+**Web interface.** Served at `/` when `ui.enabled` (on by default). Screens: sign-in, verification
+and password set-up, password reset, TOTP set-up, the file browser (upload with progress and resume,
 download, preview of images, PDF, video and text, new folder, rename, move, copy, delete, text
-editing, opening in the office editor), and owner screens for users, folders and grants.
-Branding comes from config: product name, logo, favicon and colours. Light, dark and
-follow-the-system themes. It works at phone width. *Proposed* stack: TypeScript, Svelte and
-Vite, compiled into the binary, so Node is needed only to build it.
+editing, opening in the office editor), and owner screens for users, folders and grants. Light, dark
+and follow-the-system themes. It works at phone width. The stack is TypeScript, Svelte 5 and Vite
+(`web/`). Node is needed only to build it. The web interface is built in four parts: **k1**
+(foundation and the auth pages), **k2** (file browser), **k3** (sharing) and **k4** (admin pages).
+
+*Build.* `make web` runs `npm ci && npm run build` in `web/`, which writes `web/dist/`. `make build`
+does that first and then the Go build, which embeds `web/dist` (`web/embed.go`, `internal/web`).
+`web/dist/index.html` is committed as a placeholder that says the interface is not built, so the Go
+build works with no Node at all. A build overwrites that placeholder; restore it before committing.
+CI runs `npm ci`, `npm run check` (svelte-check with no errors or warnings, a source check and the
+unit tests) and `npm run build` (which checks the built files) before the Go steps, so the Go tests
+run against the real build. The Dockerfile has a Node stage whose `dist/` is copied into the Go stage.
+`make e2e` runs the browser smoke test (section 10, *Smoke test*).
+
+*Serving.* `internal/web` answers every GET and HEAD outside `/api/`, `/wopi/`, `/brand/`, `/metrics`,
+`/healthz` and `/readyz`. A path with no file gets `index.html`, so the client-side router can answer
+it. An unmatched API path still gets the JSON 404: the web interface never answers under `/api/`.
+A name that starts with a dot is never served. Hashed files under `assets/` get
+`Cache-Control: public, max-age=31536000, immutable`; `index.html` and the fallback get
+`Cache-Control: no-store`. Every UI response carries a strict policy:
+`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self';
+connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`, with
+the origin of `content_url` added to `img-src` and `frame-src` when it is set. Also `nosniff`,
+`Referrer-Policy: same-origin` and `X-Frame-Options: DENY`. These headers are set only on UI responses;
+content, link and API responses keep their own policies (section 9). The build emits no inline script
+or style: CSS is in files, and the module preload polyfill, an inline script, is off. Fonts are
+self-hosted (`@fontsource-variable`, OFL licence texts in `web/public/licenses`), so no request leaves
+the origin.
+
+*Branding.* Installation-wide only: `ui.brand.name` (default `Selfcloud`), `ui.brand.accent` (a colour as
+`#rrggbb`, default `#2563EB`) and `ui.brand.logo_file` (a PNG or SVG, read at start, at most 256 KiB).
+`GET /api/v1/info` returns them under `brand`, with the logo as a URL (`/brand/logo`, or null) so
+the host's file path is never sent. `/brand/logo` is served whether or not the interface is on. An SVG logo
+is sent with a sandbox policy. Per-tenant branding is not built: every tenant sees the installation's look.
+
+*The client.* The interface is a client of the public API like any other. It has no private endpoints.
+Every call goes through one client that sends `credentials: same-origin`, sends the CSRF token from the
+sign-in or `GET /me` answer on every change (the token stays in memory, not in storage), turns a 401 into
+a redirect to sign-in (except the start-up check and the auth pages), and reads the error envelope by its
+`code`. The server's English message is never shown. `?next=` after sign-in is accepted only as a
+same-origin path. Sign-in answers 409 with `details.accounts` when the email is in several accounts, and
+the page then asks which one.
+
+*Languages.* Seven catalogues (`web/src/i18n/{en,es,fr,pt,ru,ar,he}.json`), one flat object each, with
+the same keys and no empty values. Plural keys carry all six categories in every language, so a count
+always finds its form. The Go tests in `internal/web` check the keys, the values, the plural categories
+and the placeholders. The order is `?lang=`, the signed-in user's `locale`, this browser's saved choice,
+`navigator.languages`, then English. Hebrew and Arabic set `dir="rtl"`, and layout uses CSS logical
+properties only: `npm run check` fails on a physical left or right. A language picked while signed in is
+saved with `PATCH /me`; otherwise it is saved in the browser. The theme is saved in the browser only,
+since no server field holds it.
+
+*Smoke test.* `make e2e` builds, starts the server on a temporary data directory, makes an account, an
+owner and a member through the CLI and the API, and drives headless Chrome through the interface: sign-in,
+the shell and the name, Hebrew (checking `dir`, a translated string and that the choice is kept), the
+dark theme, sign-out. It fails on a console error, a policy violation or a request to another origin. It
+uses the Chrome DevTools Protocol directly rather than Playwright, which is Apache-2.0 and so outside the
+licence rule for npm packages.
+
+*Split.* k1 is the foundation and the auth pages. k2 replaces the file browser placeholder, k3 the
+sharing placeholder, and k4 the administration placeholder. Each placeholder says "coming soon" through
+the catalogue.
 
 **Languages in the web interface and in email.** The seven languages of section 1.
 
@@ -1108,3 +1167,6 @@ Decided on approval:
     toward quota; versions kept on every content replace, pruned at 100 or 30 days unless kept forever, counting
     toward quota; no server undo API. A restore needs the trasher or a manager, and editor on the original parent.
     Admins never reach contents, so no admin can restore: an account key does it.
+22. **Web interface** (2026-10-29): Svelte 5 SPA in `web/`, embedded with `go:embed` (through `web/embed.go`);
+    built in four parts, k1 to k4; strict CSP with no inline code; errors shown by code, never the server's
+    text; installation branding only (`ui.brand`), per-tenant branding later.

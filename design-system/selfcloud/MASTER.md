@@ -47,9 +47,7 @@ picks one unless the user chose a theme.
 **Changed:** the generated input border `#E2E8F0` was 1.2:1 against white; form controls need
 3:1, hence `--color-input-border`. **Changed:** added the dark set, absent from the output.
 
-**Branding.** `--color-primary` (and its dark twin) may be replaced by the operator. The UI
-derives `--color-on-primary` by contrast (black or white, whichever is higher) and refuses a
-colour that reaches neither 4.5:1 against its text nor 3:1 against the background.
+**Branding.** The operator's accent replaces `--color-primary` (and its dark twin) in each theme where it reaches 3:1 against that theme's page background (`--color-background`, checked separately for light and dark). A theme where it fails keeps the default primary. `--color-on-primary` is black or white, whichever has the higher contrast; it always reaches 4.5:1.
 
 ## Typography
 
@@ -126,7 +124,7 @@ right-to-left match.
   (both right to left).
 - The language comes from `?lang=` on the link, then the user's `locale`, then
   `Accept-Language`, then English. Changing it in the picker saves it with `PATCH /me`.
-- Strings live in `ui/src/i18n/<code>.json`, one flat catalogue per language with the same
+- Strings live in `web/src/i18n/<code>.json`, one flat catalogue per language with the same
   keys. A missing key shows the English text; a test fails if any key is missing from any
   catalogue, or a placeholder differs between languages.
 - Hebrew addresses the reader in the plural imperative, so no text assumes a gender:

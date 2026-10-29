@@ -30,7 +30,7 @@ Overrides `MASTER.md` for the pages a person sees before they are signed in. API
 - The token is read from the fragment, so it never reaches server logs, then removed from the
   address bar with `history.replaceState`.
 - Heading "Set your password" with the account's product name. Fields: New password
-  (`autocomplete="new-password"`), Confirm. A strength hint lists the rules (length at least 12)
+  (`autocomplete="new-password"`), Confirm. A strength hint lists the rules (length at least the server's minimum, `password_min_length` in `GET /api/v1/info`, which is 8 today)
   and ticks them as they are met; the hint is text, not only colour.
 - Success: signed in, straight to the home page for the role.
 - `token_expired` or `not_found`: "This link has expired or was already used. Ask whoever

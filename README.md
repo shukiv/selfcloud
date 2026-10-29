@@ -11,12 +11,28 @@ today.
 
 ## Build and run
 
-Go 1.26 or newer:
+Go 1.26 or newer, and Node 22 for the web interface:
 
 ```sh
-make build
+make build            # builds the web interface (web/dist), then the binary that embeds it
 ./bin/selfcloud serve
 ```
+
+Open `http://localhost:8080/` for the web interface, or `curl localhost:8080/api/v1/info` for the API.
+A checkout with no Node can still build the Go binary: the web interface then shows a page saying it is
+not built, because the committed placeholder is what gets embedded.
+
+Developing the web interface:
+
+```sh
+make web              # build web/dist only
+cd web && npm run dev # Vite on :5173, forwarding /api and /brand to a server on :8080
+```
+
+Start the server (`./bin/selfcloud serve`) first. Set `SELFCLOUD_API` to point the dev server
+somewhere else. `npm run check` runs svelte-check, the source checks and the unit tests;
+`make e2e` builds the binary and runs the browser smoke test. It needs Chrome or Chromium, found
+on `PATH` or named by `SELFCLOUD_E2E_BROWSER`.
 
 Or with Docker:
 
@@ -79,13 +95,22 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `cors.allowed_origins` | none | Origins whose pages may call the API, as exact origins such as `https://app.example.com`. Empty turns CORS off. |
 | `metrics_listen` | none | Serve `/metrics` on a separate address. |
 | `admin_key_file` | none | File holding an admin key to add on start. |
+| `ui.enabled` | `true` | Serve the web interface at `/`. With `false`, the API alone runs; `/` is the JSON 404. |
+| `ui.brand.name` | `Selfcloud` | Product name in the web interface and `/api/v1/info`. Up to 64 characters. |
+| `ui.brand.accent` | `#2563EB` | Primary colour, as `#rrggbb`. |
+| `ui.brand.logo_file` | none | A PNG or SVG logo, at most 256 KiB, read at start and served at `/brand/logo`. Installation-wide only. |
 | `log.level`, `log.format` | `info`, `json` | |
 
 ## Development
 
 ```sh
 make check   # gofmt, go vet, tests with the race detector
+make web     # the web interface build (Node 22)
+make e2e     # the browser smoke test (needs Chrome or Chromium)
+cd web && npm run check   # svelte-check, source checks, unit tests
 ```
+
+CI runs `npm run check` and `npm run build` in `web/`, then the Go checks.
 
 The upload benchmark pushes 1 GiB through the resumable-upload routes in 64 MiB pieces and reports
 MB/s. It writes about 1 GiB to a temporary directory, so point `TMPDIR` at a disk with room:
@@ -93,6 +118,12 @@ MB/s. It writes about 1 GiB to a temporary directory, so point `TMPDIR` at a dis
 ```sh
 TMPDIR=/path/with/space go test ./internal/api -run '^$' -bench BenchmarkUpload -benchtime 1x
 ```
+
+## Dependency licences
+
+Code that reaches the browser (runtime packages, and the browser runtime of Svelte, all of which go
+into `web/dist/`) must be MIT, ISC, BSD or OFL. Build-time packages may also be Apache-2.0 or MPL-2.0.
+`npm run check` in `web/` enforces this by reading each package's licence from `node_modules`.
 
 ## Licence
 

@@ -26,6 +26,8 @@ import (
 	"github.com/shukiv/selfcloud/internal/mail"
 	"github.com/shukiv/selfcloud/internal/store"
 	"github.com/shukiv/selfcloud/internal/sweep"
+	"github.com/shukiv/selfcloud/internal/web"
+	webassets "github.com/shukiv/selfcloud/web"
 )
 
 // sweepInterval is how often housekeeping runs: blob removal, expired sessions and tokens.
@@ -48,6 +50,8 @@ type Options struct {
 // Server serves the HTTP API.
 type Server struct {
 	cfg       *config.Config
+	ui        *web.Handler // nil when ui.enabled is false
+	logo      *web.Logo    // nil when no ui.brand.logo_file is set
 	log       *slog.Logger
 	store     *store.Store
 	blobs     blob.Store
@@ -246,13 +250,35 @@ func New(opts Options) (*Server, error) {
 	s.uploadSlotWait = 5 * time.Second
 	s.metrics.reg.MustRegister(newTotalsCollector(opts.Store, log))
 
+	if cfg.UI.Brand.LogoFile != "" {
+		if s.logo, err = web.LoadLogo(cfg.UI.Brand.LogoFile); err != nil {
+			return nil, fmt.Errorf("api: ui.brand.logo_file: %w", err)
+		}
+	}
+	if cfg.UI.Enabled {
+		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL}); err != nil {
+			return nil, fmt.Errorf("api: %w", err)
+		}
+	}
+
 	mux := http.NewServeMux()
 	for _, rt := range s.routes() {
 		mux.Handle(rt.method+" "+rt.path, s.wrap(rt))
 	}
-	mux.Handle("/", s.wrap(route{path: "unmatched", handle: s.handleNotFound}))
+	// Unmatched requests go to the web interface when it serves them; anything else, the JSON 404.
+	mux.Handle("/", s.wrap(route{path: "unmatched", handle: s.handleUnmatched}))
 	s.handler = s.observe(s.drain(s.cors(s.contentGate(mux))))
 	return s, nil
+}
+
+// handleUnmatched answers a request no API route matched: the web interface's file when it is
+// for the web interface, else the JSON 404.
+func (s *Server) handleUnmatched(w http.ResponseWriter, r *http.Request) error {
+	if s.ui != nil && s.ui.Serves(r) {
+		s.ui.ServeHTTP(w, r)
+		return nil
+	}
+	return s.handleNotFound(w, r)
 }
 
 func (s *Server) routes() []route {
@@ -366,6 +392,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/uploads/{upl}", handle: s.handleDeleteUpload, auth: true},
 		{method: http.MethodPost, path: "/api/v1/uploads/{upl}/commit", handle: s.handleCommitUpload, auth: true},
 	}
+	rs = append(rs, route{method: http.MethodGet, path: logoPath, handle: s.handleLogo})
 	if s.cfg.MetricsListen == "" {
 		rs = append(rs, route{method: http.MethodGet, path: "/metrics", handle: s.handleMetrics})
 	}
