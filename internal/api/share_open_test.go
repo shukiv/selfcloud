@@ -735,7 +735,7 @@ func TestPasswordChecksOfALinkRunOneAtATime(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func() {
 			req := jsonRequest(t, "POST", "/api/v1/share/open", map[string]any{"secret": secret, "password": "a wrong guess"})
-			req.RemoteAddr = "198.51.100.7:4000"
+			req.RemoteAddr = fmt.Sprintf("198.51.100.%d:4000", 7+i)
 			fx.s.Handler().ServeHTTP(httptest.NewRecorder(), req)
 			done <- struct{}{}
 		}()
@@ -966,5 +966,138 @@ func TestSharingPolicyCountsAnyoneLinks(t *testing.T) {
 	setPolicy(t, fx.s, fx.key, fx.acc.ID, false)
 	if m := policy(); m["anyone_links"] != float64(1) || m["public_links"] != false {
 		t.Errorf("paused policy = %v, want anyone_links 1 and public_links false", m)
+	}
+}
+
+// A renewal that races a reset: the reset lands after the presented credential is checked and before the renewal
+// reads the link again. The renewal must not mint a credential the reset has ended.
+func TestRenewRefusedWhenAResetLandsBetweenCheckAndRenewal(t *testing.T) {
+	fx := newAnyoneFixture(t)
+	link, secret := fx.makeAnyone(t, fx.b.ID, nil)
+	tok := fx.visitAnyone(t, secret, "")
+	// The reset is later than the credential, so the credential's own check still passes.
+	time.Sleep(2 * time.Millisecond)
+	fired := false
+	fx.s.beforeWrite = func() {
+		fx.s.beforeWrite = nil
+		fired = true
+		wantStatus(t, call(t, fx.s, "POST", "/api/v1/share-links/"+link.ID+"/reset", fx.key, nil), 201)
+	}
+	deadVisitor(t, fx.visitor(t, tok, "POST", "/api/v1/share/renew"))
+	if !fired {
+		t.Fatal("the reset was not injected into the renewal")
+	}
+	deadVisitor(t, fx.visitor(t, tok, "GET", "/api/v1/nodes/"+fx.deep.ID))
+}
+
+// keyOf is the guard's key for one client address on one link, as openAnyoneLink builds it.
+func keyOf(addr, linkID string) string {
+	req := httptest.NewRequest("POST", "/", nil)
+	req.RemoteAddr = addr
+	return addressKey(req) + "|" + linkID
+}
+
+// within runs f and fails the test when it takes longer than d.
+func within(t *testing.T, d time.Duration, what string, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	select {
+	case <-done:
+	case <-time.After(d):
+		t.Fatalf("%s: still waiting after %v", what, d)
+	}
+}
+
+// slotUsers is how many requests hold or wait for the link's password check turn.
+func (fx *anyoneFixture) slotUsers(linkID string) int {
+	fx.s.guard.mu.Lock()
+	defer fx.s.guard.mu.Unlock()
+	if sl := fx.s.guard.linkSlots[linkID]; sl != nil {
+		return sl.users
+	}
+	return 0
+}
+
+// A locked address is refused before it takes or waits for the link's password turn: a holder of the secret who
+// locks their address out does not hold the turn against the real visitors.
+func TestLockedAddressDoesNotTakeOrWaitForTheSlot(t *testing.T) {
+	fx := newAnyoneFixture(t)
+	const password = "correct horse battery"
+	link, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
+	const addr = "198.51.100.30:4000"
+	for i := 0; i < passwordIPMax; i++ {
+		fx.tryFrom(t, addr, secret, "a wrong guess")
+	}
+	release, err := fx.s.guard.lockLink(context.Background(), link.ID, keyOf("203.0.113.60:4000", link.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	var rec *httptest.ResponseRecorder
+	within(t, 3*time.Second, "a locked address behind the turn", func() {
+		rec = fx.tryFrom(t, addr, secret, password)
+	})
+	wantError(t, rec, 429, apierr.RateLimited)
+	if n := fx.slotUsers(link.ID); n != 1 {
+		t.Errorf("turn users = %d while a locked address was refused, want 1 (the holder only)", n)
+	}
+}
+
+// Only one request per address may hold or wait for a link's turn: a second from the same address is refused at
+// once, and the first still gets its turn.
+func TestSecondAttemptFromAddressIsRefusedWhileItsFirstWaits(t *testing.T) {
+	fx := newAnyoneFixture(t)
+	const password = "correct horse battery"
+	link, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
+	release, err := fx.s.guard.lockLink(context.Background(), link.ID, keyOf("203.0.113.61:4000", link.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const addr = "198.51.100.31:4000"
+	first := make(chan *httptest.ResponseRecorder, 1)
+	go func() { first <- fx.tryFrom(t, addr, secret, password) }()
+	for i := 0; fx.slotUsers(link.ID) < 2; i++ {
+		if i > 500 {
+			t.Fatal("the first attempt never queued for the turn")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	var second *httptest.ResponseRecorder
+	within(t, time.Second, "a second attempt from the same address", func() {
+		second = fx.tryFrom(t, addr, secret, password)
+	})
+	wantError(t, second, 429, apierr.RateLimited)
+	release()
+	var rec *httptest.ResponseRecorder
+	within(t, 5*time.Second, "the first attempt after the turn is free", func() { rec = <-first })
+	wantStatus(t, rec, 200)
+}
+
+// A waiter for the turn gives up after the bound, with rate_limited and a Retry-After; it does not wait forever.
+func TestSlotWaiterGivesUpAfterTheBound(t *testing.T) {
+	fx := newAnyoneFixture(t)
+	const password = "correct horse battery"
+	link, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
+	release, err := fx.s.guard.lockLink(context.Background(), link.ID, keyOf("203.0.113.62:4000", link.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	fx.s.guard.slotWait = 200 * time.Millisecond
+	start := time.Now()
+	rec := fx.tryFrom(t, "198.51.100.32:4000", secret, password)
+	if d := time.Since(start); d < 200*time.Millisecond || d > 5*time.Second {
+		t.Errorf("the waiter gave up after %v, want about the 200ms bound", d)
+	}
+	wantError(t, rec, 429, apierr.RateLimited)
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("the refusal has no Retry-After")
+	}
+	if n := fx.slotUsers(link.ID); n != 1 {
+		t.Errorf("turn users = %d after the waiter gave up, want 1", n)
 	}
 }

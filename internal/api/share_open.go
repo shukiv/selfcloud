@@ -32,6 +32,8 @@ const (
 	passwordLinkWindow = time.Hour
 	passwordLinkBudget = 30
 	passwordSlowdown   = 2 * time.Second
+	// passwordSlotWait bounds the wait for a link's password check turn. Past it, the request is refused rate_limited.
+	passwordSlotWait = 10 * time.Second
 	// throttleAuditGap is the least time between two link.throttled entries for one key, so a flood of
 	// refusals writes one entry, not one each.
 	throttleAuditGap = 15 * time.Minute
@@ -49,6 +51,8 @@ type shareGuard struct {
 	lastAudit   map[string]time.Time   // key -> the last audit entry for it
 	linkSlots   map[string]*linkSlot   // link -> its one password check at a time; present only while in use
 	lastSweep   time.Time
+	// slotWait bounds the wait for a link's password check turn; passwordSlotWait in production, lower in a test.
+	slotWait time.Duration
 }
 
 // linkSlot is the turn a link's password check takes. ch holds one token while a check runs; users counts the
@@ -56,41 +60,61 @@ type shareGuard struct {
 type linkSlot struct {
 	ch    chan struct{}
 	users int
+	// addrs holds the address keys that hold or wait for the turn: one per address at a time.
+	addrs map[string]bool
 }
 
 func newShareGuard() *shareGuard {
 	return &shareGuard{ipFails: map[string][]time.Time{}, lockedUntil: map[string]time.Time{},
-		linkFails: map[string][]time.Time{}, lastAudit: map[string]time.Time{}, linkSlots: map[string]*linkSlot{}}
+		linkFails: map[string][]time.Time{}, lastAudit: map[string]time.Time{}, linkSlots: map[string]*linkSlot{},
+		slotWait: passwordSlotWait}
 }
 
 // lockLink takes the password check's turn on a link, and returns the func that gives it back. Only one check runs
 // on a link at a time, so the lock and the budget are read and written by one attempt at once, and the slowdown
-// bounds a link to one guess per passwordSlowdown. It gives up when ctx ends first.
-func (g *shareGuard) lockLink(ctx context.Context, linkID string) (func(), error) {
+// bounds a link to one guess per passwordSlowdown. Two limits keep the turn from being held hostage. One request
+// per address (ipKey) may hold or wait for a link's turn: a second from the same address is refused at once. A wait
+// gives up after the guard's slotWait, with rate_limited, and so does a wait that ctx ends first. A holder of the
+// secret can therefore slow the real visitors of a password link, but cannot queue them behind an unbounded line.
+func (g *shareGuard) lockLink(ctx context.Context, linkID, ipKey string) (func(), error) {
 	g.mu.Lock()
 	sl := g.linkSlots[linkID]
 	if sl == nil {
-		sl = &linkSlot{ch: make(chan struct{}, 1)}
+		sl = &linkSlot{ch: make(chan struct{}, 1), addrs: map[string]bool{}}
 		g.linkSlots[linkID] = sl
 	}
+	if sl.addrs[ipKey] {
+		g.mu.Unlock()
+		return nil, apierr.New(apierr.RateLimited, "a password check from this address is already running on this link").
+			Retry(passwordSlowdown)
+	}
+	sl.addrs[ipKey] = true
 	sl.users++
+	wait := g.slotWait
 	g.mu.Unlock()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
 	select {
 	case sl.ch <- struct{}{}:
 		return func() {
 			<-sl.ch
-			g.leaveLink(linkID, sl)
+			g.leaveLink(linkID, sl, ipKey)
 		}, nil
+	case <-timer.C:
+		g.leaveLink(linkID, sl, ipKey)
+		return nil, apierr.New(apierr.RateLimited, "the link is busy with other password checks; try again shortly").
+			Retry(wait)
 	case <-ctx.Done():
-		g.leaveLink(linkID, sl)
+		g.leaveLink(linkID, sl, ipKey)
 		return nil, ctx.Err()
 	}
 }
 
 // leaveLink drops one user of a link's slot, and the slot itself when no user is left.
-func (g *shareGuard) leaveLink(linkID string, sl *linkSlot) {
+func (g *shareGuard) leaveLink(linkID string, sl *linkSlot, ipKey string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	delete(sl.addrs, ipKey)
 	sl.users--
 	if sl.users == 0 {
 		delete(g.linkSlots, linkID)
@@ -249,18 +273,23 @@ func (s *Server) openAnyoneLink(w http.ResponseWriter, r *http.Request, st *stor
 	dead := notFound("link")
 	ctx := r.Context()
 	now := time.Now()
+	ipKey := addressKey(r) + "|" + st.Link.ID
+	// A locked address is refused before it takes or waits for the link's turn, so it neither holds the turn nor
+	// queues behind it. The check is made again once the turn is held, since a guess may have locked it meanwhile.
+	if wait, locked := s.guard.locked(ipKey, now); locked {
+		return apierr.New(apierr.RateLimited, "too many wrong passwords; try again later").Retry(wait)
+	}
 	if st.Link.PasswordHash != "" {
 		// One password check at a time on this link. The turn is held through the lockout check, the slowdown, the
 		// verify and the recording of the outcome, so none of them can be raced by another guess.
-		release, err := s.guard.lockLink(ctx, st.Link.ID)
+		release, err := s.guard.lockLink(ctx, st.Link.ID, ipKey)
 		if err != nil {
 			return err
 		}
 		defer release()
-	}
-	ipKey := addressKey(r) + "|" + st.Link.ID
-	if wait, locked := s.guard.locked(ipKey, now); locked {
-		return apierr.New(apierr.RateLimited, "too many wrong passwords; try again later").Retry(wait)
+		if wait, locked := s.guard.locked(ipKey, now); locked {
+			return apierr.New(apierr.RateLimited, "too many wrong passwords; try again later").Retry(wait)
+		}
 	}
 	if !shareOpenable(st, now) {
 		return dead
@@ -387,25 +416,38 @@ func (s *Server) handleRenewShareCredential(w http.ResponseWriter, r *http.Reque
 		return apierr.New(apierr.Forbidden, "renew is for a share link credential")
 	}
 	ctx := r.Context()
-	self, above, err := s.store.TrashState(ctx, p.AccountID, p.Link.Node)
-	if err != nil {
+	s.atWrite()
+	var (
+		tok string
+		exp time.Time
+	)
+	err := s.store.Write(ctx, func(tx *store.Tx) error {
+		self, above, err := tx.TrashState(ctx, p.AccountID, p.Link.Node)
+		if err != nil {
+			return err
+		}
+		if self || above {
+			return notFound("link")
+		}
+		now := time.Now()
+		st, err := tx.ShareLinkStateByID(ctx, p.AccountID, p.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			return notFound("link")
+		}
+		if err != nil {
+			return err
+		}
+		if !shareOpenable(st, now) {
+			return notFound("link")
+		}
+		// The presented credential must have been issued after the link's current secret, judged on this read:
+		// a reset that landed after the credential was checked ends it here, and nothing is minted for it.
+		if !p.Link.IssuedAt.After(st.Link.CredentialsAt) {
+			return notFound("link")
+		}
+		tok, exp, err = s.renewShareCredential(st, p.Link.IssuedAt, now)
 		return err
-	}
-	if self || above {
-		return notFound("link")
-	}
-	now := time.Now()
-	st, err := s.store.ShareLinkStateByID(ctx, p.AccountID, p.ID)
-	if errors.Is(err, store.ErrNotFound) {
-		return notFound("link")
-	}
-	if err != nil {
-		return err
-	}
-	if !shareOpenable(st, now) {
-		return notFound("link")
-	}
-	tok, exp, err := s.issueShareCredential(st, now)
+	})
 	if err != nil {
 		return err
 	}

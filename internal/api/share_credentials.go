@@ -217,7 +217,8 @@ func (s *Server) authenticateShare(ctx context.Context, cred string) (*auth.Prin
 	}
 	// An anyone link gives the viewer role, whatever its row says: the row is read here for the link's state only.
 	return &auth.Principal{Kind: auth.KindShareLink, ID: st.Link.ID, AccountID: st.Link.AccountID,
-		Link: &auth.LinkScope{Node: st.Link.NodeID, Role: store.RoleViewer, ExpiresAt: time.UnixMilli(pl.ExpiresAt)}}, nil
+		Link: &auth.LinkScope{Node: st.Link.NodeID, Role: store.RoleViewer, IssuedAt: time.UnixMilli(pl.IssuedAt),
+			ExpiresAt: time.UnixMilli(pl.ExpiresAt)}}, nil
 }
 
 // issueShareCredential signs a fresh credential for the link st describes. It is issued at now, or one
@@ -228,6 +229,24 @@ func (s *Server) issueShareCredential(st *store.ShareLinkState, now time.Time) (
 	if !iat.After(st.Link.CredentialsAt) {
 		iat = st.Link.CredentialsAt.Add(time.Millisecond)
 	}
+	return s.signShareCredential(st, iat)
+}
+
+// renewShareCredential signs the renewal of a presented credential, issued at now. It never moves the issue time
+// forward past the link's credentials_at: a renewal the reset overtook is refused by the caller, not clamped.
+func (s *Server) renewShareCredential(st *store.ShareLinkState, presented, now time.Time) (string, time.Time, error) {
+	iat := time.UnixMilli(now.UnixMilli())
+	if !iat.After(presented) {
+		iat = time.UnixMilli(presented.UnixMilli())
+	}
+	if !iat.After(st.Link.CredentialsAt) {
+		return "", time.Time{}, notFound("link")
+	}
+	return s.signShareCredential(st, iat)
+}
+
+// signShareCredential signs a credential for the link st describes, issued at iat.
+func (s *Server) signShareCredential(st *store.ShareLinkState, iat time.Time) (string, time.Time, error) {
 	exp := iat.Add(shareCredentialTTL)
 	tok, err := s.shares.sign(credentialPayload{Version: shareCredentialVer, KeyID: s.shares.current.kid,
 		AccountID: st.Link.AccountID, LinkID: st.Link.ID, NodeID: st.Link.NodeID,

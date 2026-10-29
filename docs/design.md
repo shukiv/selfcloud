@@ -773,6 +773,11 @@ routes already carry their columns.
   - One password check runs at a time per link. The check's turn is held through the lockout check, the slowdown,
     the verify and the recording of the outcome, so no two guesses race each other. Once the link's budget is spent,
     that gives one guess per two seconds per link.
+  - The turn is bounded. A locked address is refused before it takes or waits for the turn. One request per address
+    may hold or wait for a link's turn; a second from the same address is `rate_limited` at once. A waiter gives up
+    after 10 seconds with `rate_limited` and `Retry-After`. A holder of the secret who floods a link therefore slows
+    its real visitors for at most those bounds, and cannot queue them behind an unbounded line. Under a distributed
+    attack, real visitors of a password link may be asked to retry; resetting the link ends the attack.
   - Each per-address map holds at most 100000 keys, and the per-link timestamps at most thirty. A full map is swept
     at once; if it is still full, the new address is not recorded. The link's budget and the turn still apply.
   - The limits are kept in memory: a restart clears them, which only shortens a lock.
@@ -784,7 +789,9 @@ routes already carry their columns.
     cannot use it up for everyone on the link. A visitor's stat of the link's node has `folder_id` blank and
     `editors_can_share` false.
   `POST /share/renew` takes the credential as its bearer and answers a new one, if the link is still live. The
-  page renews two minutes before the credential ends, and reopens with the secret (and the password) when renewal
+  renewal reads the link and writes the new credential in one transaction, and refuses (`not_found`) a credential
+  issued at or before the link's current `credentials_at`. It never moves the issue time forward, so a reset that
+  lands between the credential's check and the renewal ends the credential. The page renews two minutes before the credential ends, and reopens with the secret (and the password) when renewal
   fails.
   A visitor reaches only these routes, marked with the route flag `link` in the route table, and nothing else:
 
@@ -1583,4 +1590,14 @@ Decided on approval:
       account-wide list and bulk delete come in o4.
     - The per-address limits and lockouts of `/share/open` count an IPv6 client by its /64. The other limits still
       count one address each.
+
+    Security fixes to o2 (review, 2026-10-29), each with a test that failed first:
+    - A renewal racing a reset could mint a credential after the reset. The renewal now reads and writes in one
+      transaction, carries the presented credential's issue time, and refuses it when the link's `credentials_at` is
+      later. It never clamps the issue time forward.
+    - The per-link password turn was an unbounded queue. A locked address no longer takes or waits for it; one
+      request per address per link may hold or wait for it; a waiter gives up after 10 seconds (`rate_limited`,
+      `Retry-After`). Under a distributed attack, real visitors of a password link may be asked to retry; resetting
+      the link ends the attack. The bounds are the 10 seconds, the one-per-address rule and the lockout, not a count
+      of the whole queue.
 

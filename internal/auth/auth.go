@@ -72,8 +72,11 @@ type Principal struct {
 // with everything below it, and the link's role there. ExpiresAt is when the visitor's credential ends,
 // which bounds any signed link the visitor makes.
 type LinkScope struct {
-	Node      string
-	Role      string
+	Node string
+	Role string
+	// IssuedAt is when the presented visitor credential was issued. A renewal checks it against the link's
+	// current credentials_at, read again in the renewal's own write.
+	IssuedAt  time.Time
 	ExpiresAt time.Time
 }
 
