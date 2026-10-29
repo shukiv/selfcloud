@@ -212,7 +212,7 @@ Four kinds of caller:
 | **Account key** | `Authorization: Bearer sc_acct_...` | Everything inside one account: users, folders, grants, files, delegated tokens, webhooks, audit. |
 | **User session** | Email and password (argon2id), optional TOTP; `__Host-` session cookie, `HttpOnly`, `Secure`, `SameSite=Lax` | What the user's roles allow: permissions on nodes, its groups' permissions, and its own personal folder. Account *owners* (a user role) also manage users, folders, groups and permissions in the web interface, and hold manager on every team space. |
 | **Delegated token** | `Authorization: Bearer sct_...` | A short-lived, narrowed slice of an account key's or a user's rights, for a browser. |
-| **Sign-in link** | A single-use token from `POST /accounts/{account}/users/{user}/sign-in-links`, redeemed at `POST /api/v1/auth/sign-in-link` | A normal user session for one user, with no password and no TOTP. The account's own key makes the link; nothing else can. |
+| **Sign-in link** | A single-use token from `POST /accounts/{account}/users/{user}/sign-in-links`, redeemed at `POST /api/v1/auth/sign-in-link` | A normal user session for one user, with no password and no TOTP. The account's own key makes the link; nothing else can. A browser already signed in as another user is asked before it switches (section 8). |
 
 An installation admin has no direct path to a tenant's files. It reaches them only through an
 account key it creates, and that creation is audited.
@@ -321,6 +321,14 @@ The hierarchy has three levels:
   answers `invalid_request` and writes nothing. **A sign-in link skips TOTP**: the client vouches for the user
   (decided 2026-10-29). The TOTP slice must keep that rule: a password sign-in asks for a TOTP code
   when the user has one, and a sign-in link never does.
+  **A browser already signed in as another user is asked first.** When the request carries a live
+  session cookie whose user differs from the link's user, and `confirm` is not `true`, the redeem
+  answers `409 conflict` with `details.reason` `signed_in_as_other` and `details.current` and
+  `details.target`, each `{name, email}` (the display name, or the email when it is empty). Nothing
+  is consumed, nothing is deleted and nothing is audited. The page shows the two names and offers
+  Switch, which redeems again with `confirm: true`, or Stay, which does not redeem. Staying leaves the
+  link unused until its 60 seconds run out; it is not revoked. A browser with no cookie, a cookie for
+  no live session, or a session of the link's own user is signed in at once, as before.
 - **Folder**: a named top-level root inside an account, holding its own tree. Two kinds:
   - a **team space** (`kind: team`, the default, and every folder made before slice n1). Its name is
     unique in the account. Account owners manage it, and everyone else reaches it through
@@ -706,10 +714,13 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   until the quotas slice (p) adds per-user limits.
 - **Shared subtree root (L7).** The root of a shared subtree shows its `parent_id`, which is an ID only.
   It names no ancestor, but it does tell the user that a parent exists.
-- **Login CSRF by sign-in link.** Whoever holds a fresh sign-in link can sign a browser into that user.
-  The link is single use, lasts `users.sign_in_link_ttl`, and only the account's own key can make one, so
-  the holder was handed it by the application that holds the key. A verification or reset link already
-  carries the same risk.
+- **Login CSRF by sign-in link.** Any holder of an account key on a multi-tenant installation can make a
+  sign-in link for a user of its own account and send it to someone who is signed in to another account.
+  A browser that is already signed in as another user is asked first, and it switches only if its person
+  confirms (section 8). A browser that is not signed in still lands as the link's user, and its shell shows
+  that user's name. That remains accepted, bounded by single use and the 60-second life
+  (`users.sign_in_link_ttl`). Only an account key can make a link, so the link comes from whoever holds such
+  a key. A verification or reset link already carries the same risk.
 - **A handed-in user skips TOTP (decided 2026-10-29).** A sign-in link starts a session without a TOTP
   code, because the client holding the account key vouches for the user. TOTP does not protect a user
   against that client. The TOTP slice (section 9) must keep this rule.
@@ -1079,8 +1090,12 @@ same-origin path. Sign-in answers 409 with `details.accounts` when the email is 
 the page then asks which one.
 
 *Sign-in link page.* `/sign-in` reads the token from the fragment and removes the fragment from the address
-bar before any request. It makes one `POST /api/v1/auth/sign-in-link`, then opens the `next` the server answered
-(checked again by `next.ts`; `/files` when it is unusable). A failure shows one message per code: a used, expired
+bar before any request, and keeps the token in component state only. It makes one `POST /api/v1/auth/sign-in-link`,
+then opens the `next` the server answered (checked again by `next.ts`; `/files` when it is unusable). When the
+server answers `409 signed_in_as_other`, the page shows a dialog: "You're signed in as {current}. This link signs
+you in as {target} instead.", with the names in `<bdi>`. Switch redeems the same token again with `confirm: true`;
+Stay opens `/files` without redeeming, and Escape does the same. The link's 60 seconds still apply, so a late Switch
+shows the expired message. The decision is in `web/src/lib/signin.ts`. A failure shows one message per code: a used, expired
 or unknown link gets "This sign-in link has expired or was already used. Go back to the application that sent you
 and try again.", with no form and no retry of the same token. A malformed token is refused without a request.
 

@@ -277,7 +277,7 @@ func TestSignInLinkReplacesExistingSession(t *testing.T) {
 	usr := newMemberUser(t, s, key, acc.ID, "new@example.com")
 	_, tok := signInLinkOf(t, s, key, acc.ID, usr, nil)
 
-	rec := httptest.NewRequest("POST", "/api/v1/auth/sign-in-link", strings.NewReader(`{"token":"`+tok+`"}`))
+	rec := httptest.NewRequest("POST", "/api/v1/auth/sign-in-link", strings.NewReader(`{"token":"`+tok+`","confirm":true}`))
 	rec.Header.Set("Content-Type", "application/json")
 	rec.AddCookie(old.cookie)
 	out := httptest.NewRecorder()
@@ -406,4 +406,135 @@ func TestSignInLinkConcurrentRedeem(t *testing.T) {
 	if ok != 1 {
 		t.Errorf("concurrent redeems answered %v, want exactly one 200", codes)
 	}
+}
+
+// redeemAs redeems a sign-in link token from the browser sess (nil for no cookie), with confirm set as given.
+func redeemAs(t *testing.T, s *Server, sess *testSession, tok string, confirm bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := jsonRequest(t, "POST", "/api/v1/auth/sign-in-link", map[string]any{"token": tok, "confirm": confirm})
+	if sess != nil && sess.cookie != nil {
+		req.AddCookie(sess.cookie)
+	}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+// signedAsEmail returns the email of the user the session is signed in as, or "" when it is refused.
+func signedAsEmail(t *testing.T, s *Server, sess testSession) string {
+	t.Helper()
+	rec := callSession(t, s, sess, "GET", "/api/v1/me", nil)
+	if rec.Code != http.StatusOK {
+		return ""
+	}
+	return decode[signedIn](t, rec).User.Email
+}
+
+// signInAuditCount counts the auth.sign_in_link audit entries of the account.
+func signInAuditCount(t *testing.T, s *Server, key, accID string) int {
+	t.Helper()
+	rec := call(t, s, "GET", "/api/v1/accounts/"+accID+"/audit?action=auth.sign_in_link", key, nil)
+	wantStatus(t, rec, 200)
+	return len(decode[listResponse[auditJSON]](t, rec).Items)
+}
+
+// TestSignInLinkAsksBeforeSwitching: a browser signed in as A that redeems a link for B is not switched.
+// The answer is 409 signed_in_as_other, naming both users. A keeps its session, and nothing is audited.
+func TestSignInLinkAsksBeforeSwitching(t *testing.T) {
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	aUser, a := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	wantStatus(t, call(t, s, "PATCH", "/api/v1/accounts/"+acc.ID+"/users/"+aUser.ID, key,
+		map[string]any{"display_name": "Ann Current"}), 200)
+	bID := newMemberUser(t, s, key, acc.ID, "ben@example.com")
+	_, tok := signInLinkOf(t, s, key, acc.ID, bID, nil)
+
+	before := signInAuditCount(t, s, key, acc.ID)
+	rec := redeemAs(t, s, &a, tok, false)
+	e := wantError(t, rec, 409, apierr.Conflict)
+	if got := e.Details["reason"]; got != "signed_in_as_other" {
+		t.Errorf("reason = %v, want signed_in_as_other", got)
+	}
+	current, _ := e.Details["current"].(map[string]any)
+	if current["name"] != "Ann Current" || current["email"] != "ann@example.com" {
+		t.Errorf("current = %v, want the name and email of A", current)
+	}
+	target, _ := e.Details["target"].(map[string]any)
+	if target["name"] != "ben@example.com" || target["email"] != "ben@example.com" {
+		t.Errorf("target = %v, want B, named by its email when it has no display name", target)
+	}
+	if got := signedAsEmail(t, s, a); got != "ann@example.com" {
+		t.Errorf("after the prompt the browser is signed in as %q, want A", got)
+	}
+	if n := signInAuditCount(t, s, key, acc.ID); n != before {
+		t.Errorf("the 409 wrote %d auth.sign_in_link entries, want none", n-before)
+	}
+}
+
+// TestSignInLinkSwitchOnConfirm: the prompt does not use the link, so confirming it signs the browser in as B,
+// ends A's session, and consumes the link.
+func TestSignInLinkSwitchOnConfirm(t *testing.T) {
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	_, a := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	bID := newMemberUser(t, s, key, acc.ID, "ben@example.com")
+	_, tok := signInLinkOf(t, s, key, acc.ID, bID, nil)
+
+	wantError(t, redeemAs(t, s, &a, tok, false), 409, apierr.Conflict)
+	rec := redeemAs(t, s, &a, tok, true)
+	wantStatus(t, rec, 200)
+	b := sessionFrom(t, s, rec)
+	if got := signedAsEmail(t, s, b); got != "ben@example.com" {
+		t.Errorf("confirmed switch signs in as %q, want B", got)
+	}
+	if got := signedAsEmail(t, s, a); got != "" {
+		t.Errorf("A's old cookie still works as %q", got)
+	}
+	wantError(t, redeemAs(t, s, &b, tok, true), 400, apierr.InvalidRequest)
+}
+
+// TestSignInLinkSameUserNoPrompt: a browser already signed in as the link's user is signed in again at once.
+func TestSignInLinkSameUserNoPrompt(t *testing.T) {
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	same, old := verifiedUser(t, s, key, acc.ID, "same@example.com")
+	_, tok := signInLinkOf(t, s, key, acc.ID, same.ID, nil)
+
+	rec := redeemAs(t, s, &old, tok, false)
+	wantStatus(t, rec, 200)
+	fresh := sessionFrom(t, s, rec)
+	if fresh.cookie.Value == old.cookie.Value {
+		t.Fatal("the session ID was not renewed")
+	}
+	if got := signedAsEmail(t, s, old); got != "" {
+		t.Errorf("the replaced session still works as %q", got)
+	}
+	if got := signedAsEmail(t, s, fresh); got != "same@example.com" {
+		t.Errorf("fresh session is %q", got)
+	}
+}
+
+// TestSignInLinkNoLiveSessionNoPrompt: a cookie that maps to no session, or to an expired one, changes nothing.
+func TestSignInLinkNoLiveSessionNoPrompt(t *testing.T) {
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	_, expired := verifiedUser(t, s, key, acc.ID, "old@example.com")
+	bID := newMemberUser(t, s, key, acc.ID, "new@example.com")
+
+	stale := testSession{cookie: &http.Cookie{Name: s.sessionCookie, Value: freshToken()}}
+	_, tok := signInLinkOf(t, s, key, acc.ID, bID, nil)
+	wantStatus(t, redeemAs(t, s, &stale, tok, false), 200)
+
+	ctx := context.Background()
+	if err := s.store.Write(ctx, func(tx *store.Tx) error {
+		return tx.TouchSession(ctx, auth.HashToken(expired.cookie.Value), time.Now().Add(-time.Hour), time.Now().Add(-time.Minute))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, tok = signInLinkOf(t, s, key, acc.ID, bID, nil)
+	wantStatus(t, redeemAs(t, s, &expired, tok, false), 200)
 }

@@ -1116,6 +1116,12 @@ paths:
         `invalid_request`, whatever its history. A user or account that may no longer sign in gets
         `user_not_verified`, `user_disabled` or `account_suspended`, and that refusal also uses the
         link up. Rate-limited per client address.
+
+        A browser whose live session belongs to another user than the link's is not switched by a
+        request without `confirm`: it gets `409 conflict` with `details.reason` `signed_in_as_other`,
+        `details.current` and `details.target` (each `{name, email}`), and nothing is consumed,
+        deleted or audited. Send the request again with `confirm` true to switch, or do not send it
+        to stay; the link keeps its life either way.
       security: []
       requestBody:
         required: true
@@ -1130,6 +1136,14 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SignInLinkSignedIn" }
+        "409":
+          description: |
+            This browser is signed in as another user and `confirm` is not true. `details.reason` is
+            `signed_in_as_other`; `details.current` is the signed-in user and `details.target` the link's
+            user, each `{name, email}` with the display name, or the email when it is empty. Nothing changed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/auth/login:
@@ -3691,6 +3705,12 @@ components:
       additionalProperties: false
       properties:
         token: { type: string, description: The token from the link's fragment. }
+        confirm:
+          type: boolean
+          default: false
+          description: |
+            True to sign the browser in as the link's user although it is signed in as another user. Sent
+            after the `409 signed_in_as_other` answer, once the person chooses to switch.
 
     SignInLinkSignedIn:
       allOf:

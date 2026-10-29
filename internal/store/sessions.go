@@ -28,12 +28,22 @@ const sessionCols = `id_hash, user_id, account_id, csrf_token, created_at, last_
 // SessionByHash returns the session with the given cookie hash. Expired sessions are returned
 // too; the caller checks ExpiresAt. It returns ErrNotFound if there is none.
 func (s *Store) SessionByHash(ctx context.Context, hash []byte) (*Session, error) {
+	return scanSession(s.r.QueryRowContext(ctx, "SELECT "+sessionCols+" FROM sessions WHERE id_hash = ?", hash))
+}
+
+// SessionByHash is Store.SessionByHash inside a write transaction, so the answer and the writes
+// that depend on it see the same state.
+func (tx *Tx) SessionByHash(ctx context.Context, hash []byte) (*Session, error) {
+	return scanSession(tx.q.QueryRowContext(ctx, "SELECT "+sessionCols+" FROM sessions WHERE id_hash = ?", hash))
+}
+
+// scanSession reads one session row. It returns ErrNotFound when there is no row.
+func scanSession(row *sql.Row) (*Session, error) {
 	var sess Session
 	var created, seen, expires int64
 	var acc sql.NullString
-	err := s.r.QueryRowContext(ctx, "SELECT "+sessionCols+" FROM sessions WHERE id_hash = ?", hash).
-		Scan(&sess.IDHash, &sess.UserID, &acc, &sess.CSRFToken, &created, &seen, &expires,
-			&sess.IP, &sess.UserAgent)
+	err := row.Scan(&sess.IDHash, &sess.UserID, &acc, &sess.CSRFToken, &created, &seen, &expires,
+		&sess.IP, &sess.UserAgent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

@@ -4,6 +4,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -139,6 +140,39 @@ func (s *Server) handleCreateSignInLink(w http.ResponseWriter, r *http.Request) 
 	return nil
 }
 
+// signedInUser returns the user of the live session this browser holds, or nil when the browser has no
+// cookie, the cookie maps to no session, the session has expired, or its user is gone.
+func (s *Server) signedInUser(ctx context.Context, tx *store.Tx, r *http.Request, now time.Time) (*store.User, error) {
+	c, err := r.Cookie(s.sessionCookie)
+	if err != nil || !auth.ValidToken(c.Value) {
+		return nil, nil
+	}
+	sess, err := tx.SessionByHash(ctx, auth.HashToken(c.Value))
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !now.Before(sess.ExpiresAt) {
+		return nil, nil
+	}
+	u, err := tx.UserByID(ctx, sess.UserID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	return u, err
+}
+
+// userNameOf is the name a user is shown by: its display name, or its email when it has none.
+func userNameOf(u *store.User) map[string]string {
+	name := u.DisplayName
+	if name == "" {
+		name = u.Email
+	}
+	return map[string]string{"name": name, "email": u.Email}
+}
+
 type signInLinkJSON struct {
 	URL       string    `json:"url"`
 	ExpiresAt time.Time `json:"expires_at"`
@@ -159,7 +193,8 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 		return err
 	}
 	var in struct {
-		Token string `json:"token"`
+		Token   string `json:"token"`
+		Confirm bool   `json:"confirm"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -235,6 +270,21 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 			e := s.auditEntry(r, l.AccountID, "auth.sign_in_link", l.UserID, nil)
 			e.ActorKind, e.ActorID, e.Outcome = string(auth.KindUser), l.UserID, "failed"
 			return tx.InsertAudit(ctx, e)
+		}
+		// A browser signed in as another user is asked before it switches. Nothing is written here, so
+		// the link stays live for the prompt's second answer, which carries confirm.
+		if !in.Confirm {
+			cur, err := s.signedInUser(ctx, tx, r, now)
+			if err != nil {
+				return err
+			}
+			if cur != nil && cur.ID != l.UserID {
+				stateErr = apierr.New(apierr.Conflict, "this browser is signed in as another user").
+					With("reason", "signed_in_as_other").
+					With("current", userNameOf(cur)).
+					With("target", userNameOf(found))
+				return nil
+			}
 		}
 		if err := tx.UseSignInLink(ctx, l.ID, at); errors.Is(err, store.ErrNotFound) {
 			stateErr = errBadLink

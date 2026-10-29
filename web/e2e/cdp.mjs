@@ -72,6 +72,8 @@ export class Page {
     this.expectedMissing = [];
     // expectedSignInRefusals lists the sign-in link redeems answered 400 on purpose (a used link).
     this.expectedSignInRefusals = [];
+    // expectedSwitchPrompts lists the sign-in link redeems answered 409 on purpose (a browser signed in as another user).
+    this.expectedSwitchPrompts = [];
     this.opened = new Promise((resolve, reject) => {
       this.ws.onopen = resolve;
       this.ws.onerror = () => reject(new Error('cannot open the page socket'));
@@ -138,6 +140,14 @@ export class Page {
         p.entry.source === 'network' && /\/api\/v1\/auth\/sign-in-link$/.test(p.entry.url ?? '') && /status of 400/.test(p.entry.text);
       if (expectedSignInRefusal) {
         this.expectedSignInRefusals.push(p.entry.url);
+        return;
+      }
+      // A browser signed in as another user is asked before a link switches it, and the browser logs the 409.
+      // The page shows the question then, so the test counts these answers.
+      const expectedSwitchPrompt =
+        p.entry.source === 'network' && /\/api\/v1\/auth\/sign-in-link$/.test(p.entry.url ?? '') && /status of 409/.test(p.entry.text);
+      if (expectedSwitchPrompt) {
+        this.expectedSwitchPrompts.push(p.entry.url);
         return;
       }
       // The last requests before the error show what the page was doing when it happened.

@@ -61,9 +61,11 @@ export function verifyAccount(token: string, password: string): Promise<SignedIn
   return api<SignedIn>('POST', '/api/v1/auth/verify', { body: { token, password }, noRedirect: true });
 }
 
-// signInWithLink redeems a sign-in link: the server starts a session and answers the path to open.
-export function signInWithLink(token: string): Promise<SignedInLink> {
-  return api<SignedInLink>('POST', '/api/v1/auth/sign-in-link', { body: { token }, noRedirect: true });
+// signInWithLink redeems a sign-in link: the server starts a session and answers the path to open. confirm
+// is sent only when true: it accepts the switch to the link's user from a browser signed in as another.
+export function signInWithLink(token: string, confirm = false): Promise<SignedInLink> {
+  const body = confirm ? { token, confirm: true } : { token };
+  return api<SignedInLink>('POST', '/api/v1/auth/sign-in-link', { body, noRedirect: true });
 }
 
 export function resetPassword(token: string, password: string): Promise<SignedIn> {

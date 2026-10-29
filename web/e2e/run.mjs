@@ -257,11 +257,13 @@ async function main() {
 
     // A sign-in link: the account's key makes one for the member, the browser opens it and lands signed in.
     await signInLinkChecks(page, { base, accountID, accountKey, memberID, teamA });
+    await switchChecks(page, { base, accountID, accountKey });
 
     // Policy: no console error, no CSP violation, no request to another origin.
     check(page.errors.length === 0, `no console errors or policy violations (${page.errors.join(' | ') || 'none'})`);
     check(page.expectedConflicts.length === 1, `exactly one upload met a taken name, and was asked about it (${page.expectedConflicts.length})`);
     check(page.expectedSignInRefusals.length === 1, `the used sign-in link was refused once, on the second visit (${page.expectedSignInRefusals.length})`);
+    check(page.expectedSwitchPrompts.length === 2, `the two links for another user were each asked about, on a browser signed in as another (${page.expectedSwitchPrompts.length})`);
     check(page.expectedMissing.length >= 2, `the not-found views asked for access, and the browser logged their 404s (${page.expectedMissing.length})`);
     // A data: URL is inline, not a request: Chrome draws the calendar icon of a date input from one.
     const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:'));
@@ -490,6 +492,44 @@ async function signInLinkChecks(page, { base, accountID, accountKey, memberID, t
     15000,
   );
   check(!(await page.evaluate(`!!document.querySelector('.topbar')`)), 'the same link a second time shows the expired message, and no shell');
+}
+
+// switchChecks: a browser signed in as the member that opens a link for the owner is asked first. Stay keeps the
+// member signed in and the link unused. A new link, then Switch, signs the browser in as the owner.
+async function switchChecks(page, { base, accountID, accountKey }) {
+  const ownerID = (await api(base, 'GET', `/api/v1/accounts/${accountID}/users`, accountKey)).items.find(
+    (u) => u.email === OWNER.email,
+  )?.id;
+  check(!!ownerID, 'the account lists the owner, so a link can be made for the owner');
+
+  await page.goto(base + '/login');
+  await signIn(page, MEMBER);
+  const first = await api(base, 'POST', `/api/v1/accounts/${accountID}/users/${ownerID}/sign-in-links`, accountKey, {
+    next: '/files',
+  });
+  await page.goto(first.url);
+  await page.waitFor(`!!document.querySelector('[role="dialog"]')`, 15000);
+  const asked = await page.evaluate(`document.querySelector('[role="dialog"]').textContent`);
+  check(
+    asked.includes(MEMBER.name) && asked.includes(OWNER.name),
+    `a browser signed in as the member is asked before a link signs it in as the owner (${asked.trim().slice(0, 90)}...)`,
+  );
+  await clickButton(page, `Stay signed in as ${MEMBER.name}`);
+  // /files moves on to My files at once, so the path only has to be under /files.
+  await page.waitFor(`location.pathname.startsWith('/files') && !!document.querySelector('.topbar')`, 15000);
+  const stayed = await page.evaluate(`document.querySelector('.user-menu > button').textContent`);
+  check(stayed.includes(MEMBER.name), `Stay keeps the member signed in (${stayed.trim()})`);
+
+  const second = await api(base, 'POST', `/api/v1/accounts/${accountID}/users/${ownerID}/sign-in-links`, accountKey, {
+    next: '/files',
+  });
+  await page.goto(second.url);
+  await page.waitFor(`!!document.querySelector('[role="dialog"]')`, 15000);
+  await clickButton(page, `Switch to ${OWNER.name}`);
+  // The shell may open the folder the owner last used, so the path only has to be under /files.
+  await page.waitFor(`location.pathname.startsWith('/files') && !!document.querySelector('.topbar')`, 15000);
+  const switched = await page.evaluate(`document.querySelector('.user-menu > button').textContent`);
+  check(switched.includes(OWNER.name), `Switch signs the browser in as the owner (${switched.trim()})`);
 }
 
 // signOut signs out through the account menu, as a person would.
