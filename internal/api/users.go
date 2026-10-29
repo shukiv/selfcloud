@@ -310,6 +310,8 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			return err
 		}
+		// An active owner may not stop being one, or be disabled, while it is the last active owner.
+		wasActiveOwner := u.Role == store.RoleOwner && u.Status == store.UserActive
 		changed := map[string]any{}
 		if in.DisplayName != nil {
 			if u.DisplayName, err = cleanOptionalLabel("display_name", *in.DisplayName, 200); err != nil {
@@ -366,6 +368,11 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 			}
 			changed["status"] = u.Status
 		}
+		if wasActiveOwner && (u.Role != store.RoleOwner || u.Status != store.UserActive) {
+			if err := ownerGuard(ctx, tx, acc.ID, u.ID); err != nil {
+				return err
+			}
+		}
 		u.UpdatedAt = now
 		if err := tx.UpdateUser(ctx, u); errors.Is(err, store.ErrConflict) {
 			return apierr.New(apierr.Conflict, "another user in the account has this external_id")
@@ -379,6 +386,19 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	writeJSON(w, http.StatusOK, toUserJSON(out))
+	return nil
+}
+
+// ownerGuard refuses a change that would leave accountID without an active owner. Only an active owner
+// counts, since a pending or disabled owner cannot sign in. The conflict's details give the reason, by code.
+func ownerGuard(ctx context.Context, tx *store.Tx, accountID, excludeID string) error {
+	others, err := tx.CountActiveOwners(ctx, accountID, excludeID)
+	if err != nil {
+		return err
+	}
+	if others == 0 {
+		return apierr.New(apierr.Conflict, "the account needs an active owner").With("reason", "last_owner")
+	}
 	return nil
 }
 
@@ -419,6 +439,16 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 		} else if err != nil {
 			return err
 		}
+		// A user may not remove itself, and the last active owner may not be removed. Both would leave the
+		// account without a way to manage it.
+		if p.Kind == auth.KindUser && p.UserID == u.ID {
+			return apierr.New(apierr.Conflict, "you cannot remove your own user").With("reason", "self")
+		}
+		if u.Role == store.RoleOwner && u.Status == store.UserActive {
+			if err := ownerGuard(ctx, tx, acc.ID, u.ID); err != nil {
+				return err
+			}
+		}
 		if transferTo != "" {
 			to, err := s.activeUser(ctx, tx, acc.ID, transferTo)
 			if err != nil {
@@ -445,7 +475,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 			}
 			switch {
 			case transferTo != "" && entries > 0:
-				if err := s.moveDeletedFiles(ctx, tx, r, acc.ID, u, pf, transferTo, entries); err != nil {
+				if err := s.moveDeletedFiles(ctx, tx, r, acc.ID, u, pf, transferTo); err != nil {
 					return err
 				}
 			case entries > 0 && !deleteFiles:
@@ -501,7 +531,7 @@ func (s *Server) activeUser(ctx context.Context, tx *store.Tx, accountID, userID
 // files, inside the deletion's transaction. The directory is named after the deleted user, and renamed
 // if the recipient already has that name. The move keeps the files' contents, permissions and usage.
 func (s *Server) moveDeletedFiles(ctx context.Context, tx *store.Tx, r *http.Request, accountID string,
-	u *store.User, pf *store.Folder, to string, entries int64) error {
+	u *store.User, pf *store.Folder, to string) error {
 	recipient, err := s.activeUser(ctx, tx, accountID, to)
 	if err != nil {
 		return err
@@ -547,10 +577,11 @@ func (s *Server) moveDeletedFiles(ctx context.Context, tx *store.Tx, r *http.Req
 	if err := tx.ClearSubtreeEditorsCanShare(ctx, accountID, dir.ID); err != nil {
 		return err
 	}
-	// The entry names no file, and it is not private to the recipient, so owners can see that a move was
-	// made. The directory's name stays out of the audit log.
+	// The entry is not private to the recipient, so owners can see that a move was made and to whom. It
+	// therefore names the recipient only: not the count of entries, which would show how large the deleted
+	// user's My files was, nor the recipient's personal folder or the new directory.
 	return tx.InsertAudit(ctx, s.auditEntry(r, accountID, "user.files_moved", u.ID,
-		map[string]any{"to": recipient.ID, "folder": dest.ID, "directory": dir.ID, "entries": entries}))
+		map[string]any{"to": recipient.ID}))
 }
 
 // deletedFilesName is the name of the directory that takes a deleted user's files: the user's display

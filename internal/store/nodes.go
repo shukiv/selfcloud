@@ -209,7 +209,19 @@ func (tx *Tx) Subtree(ctx context.Context, accountID, id string) ([]*Node, error
 // total size, versions included: the bytes a version holds count toward usage, and they go when the
 // file does. Usage is taken off by these numbers when the subtree goes.
 func (tx *Tx) SubtreeFiles(ctx context.Context, accountID, id string) (files, bytes int64, err error) {
-	err = tx.q.QueryRowContext(ctx, `WITH RECURSIVE sub(nid) AS (
+	return subtreeFiles(ctx, tx.q, accountID, id)
+}
+
+// SubtreeTotals is SubtreeFiles read outside a transaction: the files under a node, and their bytes.
+func (s *Store) SubtreeTotals(ctx context.Context, accountID, id string) (files, bytes int64, err error) {
+	return subtreeFiles(ctx, s.r, accountID, id)
+}
+
+// subtreeFiles is the count behind SubtreeFiles and SubtreeTotals.
+func subtreeFiles(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, accountID, id string) (files, bytes int64, err error) {
+	err = q.QueryRowContext(ctx, `WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
 		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?

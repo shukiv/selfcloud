@@ -23,6 +23,7 @@
     onpick,
     invalid = false,
     errorId = undefined,
+    kind = 'all',
   }: {
     id: string;
     label: string;
@@ -30,6 +31,8 @@
     onpick: (entry: DirectoryEntry | null) => void;
     invalid?: boolean;
     errorId?: string;
+    // kind limits the search to people or groups; the default searches both.
+    kind?: 'all' | 'user' | 'group';
   } = $props();
 
   let state = $state<ComboState>(COMBO_START);
@@ -37,7 +40,7 @@
   const optionId = (i: number) => `${id}-opt-${i}`;
 
   const search = debounce((q: string) => {
-    void searchDirectory(q.trim(), 'all')
+    void searchDirectory(q.trim(), kind)
       .then((res) => {
         state = comboReducer(state, { type: 'results', query: q, items: res.items });
       })

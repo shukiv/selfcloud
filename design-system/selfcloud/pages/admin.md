@@ -70,3 +70,12 @@ tenant page opens.
 
 - Read-only facts from `/api/v1/info`: version, upload piece size, largest file, public URL,
   web UI on/off. Links to the OpenAPI spec and to `/readyz`.
+
+## As built (k4)
+
+- The tenant list has no users column: the API gives no per-tenant user count yet.
+- Tenant search matches the name only, ASCII-only, as the sharing directory does.
+- The tenant page keeps its tab in the address (`?tab=`), so a tab survives a reload.
+- Installation facts are read-only: version, public URL, interface on or off, piece size, largest file, and links to
+  the OpenAPI spec and `/readyz`.
+- Known gaps are in docs/design.md section 10 (Administration, k4).

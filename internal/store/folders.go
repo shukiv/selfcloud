@@ -367,3 +367,32 @@ func (tx *Tx) CountFolderEntries(ctx context.Context, accountID, folderID string
 		WHERE account_id = ? AND folder_id = ? AND parent_id IS NOT NULL`, accountID, folderID).Scan(&n)
 	return n, err
 }
+
+// RootNodeIDs returns the root node of each folder of accountID named in folderIDs, keyed by folder ID.
+// A folder with no root is absent from the map. One query serves a whole page of folders.
+func (s *Store) RootNodeIDs(ctx context.Context, accountID string, folderIDs []string) (map[string]string, error) {
+	out := make(map[string]string, len(folderIDs))
+	if len(folderIDs) == 0 {
+		return out, nil
+	}
+	args := []any{accountID}
+	marks := make([]string, len(folderIDs))
+	for i, fid := range folderIDs {
+		marks[i] = "?"
+		args = append(args, fid)
+	}
+	rows, err := s.r.QueryContext(ctx, "SELECT folder_id, id FROM nodes WHERE account_id = ? AND parent_id IS NULL"+
+		" AND folder_id IN ("+strings.Join(marks, ",")+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fid, nid string
+		if err := rows.Scan(&fid, &nid); err != nil {
+			return nil, err
+		}
+		out[fid] = nid
+	}
+	return out, rows.Err()
+}

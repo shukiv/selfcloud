@@ -31,6 +31,12 @@ export function clearSession(): void {
   session.set(null);
 }
 
-export function canSeeAdmin(user: User | undefined): boolean {
-  return user?.role === 'owner' || user?.role === 'admin';
+// isAdmin is true for an installation admin, which has no account of its own.
+export function isAdmin(user: User | undefined): boolean {
+  return user?.role === 'admin';
+}
+
+// isOwner is true for an owner of the signed-in account.
+export function isOwner(user: User | undefined): boolean {
+  return user?.role === 'owner';
 }

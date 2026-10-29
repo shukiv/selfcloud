@@ -681,7 +681,8 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   an active member: never to the caller, and never to another owner. The account key is not limited
   this way. The limit is only as strong as the owners' control of accounts: an owner who can create a
   member account can move the files of that member's deleted account to it. Every move is audited, and
-  that entry is visible to owners; it names no file, and the directory's name stays out of the log.
+  that entry is visible to owners; it names the recipient only: no file, no count of what moved, and
+  neither the recipient's personal folder nor the new directory.
 
 - **Groups (L4).** Account owners manage groups. Sharing with a group shares with whoever is in it at
   the time, the sharer included if the sharer is a member. Membership changes are audited.
@@ -817,6 +818,18 @@ start); `keys/signing.prev.key` is also accepted, so rotating means renaming the
 origin only for images other than SVG, PDF, audio, video and plain text, and otherwise the file
 is sent as an attachment. Every content response and every JSON error carries
 `X-Content-Type-Options: nosniff` and a sandbox Content-Security-Policy.
+
+**Management filters and guards (k4).** `GET /accounts` (an installation admin) takes `q` (a name
+substring, trimmed, at most 200 characters, with `%` and `_` literal) and `status` (`active` or
+`suspended`; any other value is refused with 400). `GET /accounts/{acc}/usage` adds `users_active` and
+`users_pending`. `GET /accounts/{acc}/audit` takes `action` and `actor` (each at most 100 characters). The
+folder responses carry `root_node_id`, so a client can open the share dialog on a team space's root; the
+folder detail adds `files` and `bytes` for the whole tree. An account always keeps an active owner, whoever
+the caller (the account key included): removing the last active owner, or demoting or disabling it, answers
+`conflict` (409) with `details.reason` `last_owner`; an application replaces an owner by adding the new one
+first, and ends a tenant by suspending or deleting the account. A person who deletes themselves gets
+`conflict` with `reason` `self`. Removing a pending owner is allowed. The last
+admin cannot be removed; that answers `conflict` with `details.reason` `last_admin`.
 
 **Small-file edit.** `PUT /nodes/{nod}/content` requires `If-Match` with the ETag the editor
 read; a stale ETag gets `412 precondition_failed`, so two editors cannot overwrite each other,
@@ -998,14 +1011,14 @@ adds a rule: the server checks every change, and the screens only show what the 
 *Known gaps (k3).* An editor sees the add form only where the node's own `editors_can_share` is on: the
 flag of an ancestor is not visible from the node, so an editor sharing through an ancestor's switch does not
 see the form (the server would allow it). The share dialog cannot open on a team space's root: the listing
-does not give the root's ID. Matching for user names is case-insensitive for ASCII only (SQLite `LIKE`);
+does not give the root's ID (closed in k4: folder responses carry `root_node_id`). Matching for user names is case-insensitive for ASCII only (SQLite `LIKE`);
 groups fold case for every script. The Requests entry is shown to owners, and to others only while a
 request waits, so a manager who is not an owner sees it after a request arrives, not before.
 
 *Build.* `make web` runs `npm ci && npm run build` in `web/`, which writes `web/dist/`. `make build`
 does that first and then the Go build, which embeds `web/dist` (`web/embed.go`, `internal/web`).
-`web/dist/index.html` is committed as a placeholder that says the interface is not built, so the Go
-build works with no Node at all. A build overwrites that placeholder; restore it before committing.
+Only `web/dist/.gitignore` is committed; `web/dist/` is otherwise build output and is not tracked. `embed.go`
+embeds `all:dist`, so the Go build compiles with no Node at all, but serves no interface until `make web` has run.
 CI runs `npm ci`, `npm run check` (svelte-check with no errors or warnings, a source check and the
 unit tests) and `npm run build` (which checks the built files) before the Go steps, so the Go tests
 run against the real build. The Dockerfile has a Node stage whose `dist/` is copied into the Go stage.
@@ -1057,8 +1070,41 @@ uses the Chrome DevTools Protocol directly rather than Playwright, which is Apac
 licence rule for npm packages.
 
 *Split.* k1 is the foundation and the auth pages. k2 replaces the file browser placeholder, k3 the
-sharing placeholder, and k4 the administration placeholder. Each placeholder says "coming soon" through
-the catalogue.
+sharing placeholder, and k4 the administration placeholder. Each placeholder said "coming soon" through
+the catalogue; none is left.
+
+*Administration (k4).* Two areas, each shown only to the role that may use it. An account owner gets Manage
+(`/manage`): Overview (storage meter, active and pending people, folder count, the last ten audit entries
+as sentences, and next steps), People (list; invite by email; resend verification; send a password reset;
+make owner or member; disable or enable; remove; a person dialog with status, team spaces, groups and
+activity), Groups (create, rename, delete, members through the k3 people combobox), Team spaces (create,
+rename, delete with the file count, size and a typed name; share the root through the k3 share dialog;
+settings through the k3 SpaceSettings), and the Audit log (cursor paged, filter by action, the raw action
+as a second line). An installation admin gets Admin (`/admin`): Tenants (search by name, status filter,
+load more, new tenant with a storage limit or none, first owner by email or a link shown once, suspend,
+resume, delete as a job polled with backoff: the wait grows from half a second to eight, a failed check is
+tried again and only three failures in a row are shown, and after 120 checks the page says the deletion
+goes on in the background rather than calling it failed), a tenant page with tabs Overview, Users (read-only, resend the
+owner's invitation), API keys (shown once) and Audit log, Admins (list, add, remove; the last admin is
+kept), and Installation (read-only facts from `/info`, the OpenAPI spec and `/readyz`). A member or an owner
+who opens an admin page, or a member who opens `/manage`, sees the not-found view. The server checks every
+call; the interface only hides what the role may not do. Secrets (a new key, a verification link) live in
+component state, and are cleared when their dialog closes; they are never stored, logged or put in the URL.
+
+*Known gaps (k4).* The person view is a dialog, not a side drawer. The tenant list has no users column, since
+the API gives no per-tenant user count; the owner's Overview counts come from `usage`. Name search over
+tenants and people is ASCII-only, as in k3. The audit log resolves names through the people list, and the
+lookup stops after 20 pages, so an older entry may show an identifier instead of a name. The last-admin
+check in the browser reads the admins page it has loaded; the server remains the authority. The person view
+makes one call per group and per space it lists, so a large account makes many requests when one person is
+opened. A team space's file count and size come from the folder detail, which totals the whole tree on each
+request.
+
+*Smoke test, k4 additions.* The run also has an owner invite a person (the invitation goes to a local SMTP
+sink; the run takes the link from the mail and verifies the account with it), make a group with that person
+in it and a team space; an installation admin, made with the CLI, create a tenant (its owner's link is shown
+once) and an API key (shown once, and the key then works for the API); and a member who opens `/manage` see
+the not-found view.
 
 **Languages in the web interface and in email.** The seven languages of section 1.
 

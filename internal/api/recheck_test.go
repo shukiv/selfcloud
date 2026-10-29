@@ -68,7 +68,11 @@ func (m *memberFixture) revoke(t *testing.T, fld string) {
 // snapshot is what a failed write must leave unchanged: the usage and the file contents on disk.
 func snapshot(t *testing.T, m *memberFixture) (usageJSON, int) {
 	t.Helper()
-	return usageOf(t, m.s, m.key, m.acc.ID), blobFiles(t, m.s)
+	// The people counts change with a user's status, which these tests change on purpose; the snapshot
+	// compares storage only.
+	u := usageOf(t, m.s, m.key, m.acc.ID)
+	u.UsersActive, u.UsersPending = 0, 0
+	return u, blobFiles(t, m.s)
 }
 
 func TestPutRecheckedAtCommit(t *testing.T) {

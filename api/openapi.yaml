@@ -220,13 +220,21 @@ paths:
       tags: [Accounts]
       operationId: listAccounts
       summary: List accounts
-      description: Admin key only. Oldest first.
+      description: Installation admin only (an admin key or an admin session). Oldest first.
       security: [{ bearer: [] }]
       parameters:
         - name: external_id
           in: query
           description: Only the account with this external ID.
           schema: { type: string }
+        - name: q
+          in: query
+          description: Accounts whose name contains this text, folding ASCII case, or whose external ID is exactly this. Matched literally; at most 200 characters.
+          schema: { type: string, maxLength: 200 }
+        - name: status
+          in: query
+          description: Only accounts in this status.
+          schema: { type: string, enum: [active, suspended] }
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
       responses:
@@ -416,11 +424,19 @@ paths:
       tags: [Accounts]
       operationId: getAuditLog
       summary: The account's audit log
-      description: Admin key, or the account's own key. Newest first.
+      description: "Admin key, or the account's own key. Newest first. A user session sees only the entries its rules allow: an entry about a personal folder is private to its user."
       security: [{ bearer: [] }]
       parameters:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
+        - name: action
+          in: query
+          description: Only entries with this action, such as folder.create.
+          schema: { type: string, maxLength: 100 }
+        - name: actor
+          in: query
+          description: Only entries by this actor ID (the actor's id, as the entry shows it).
+          schema: { type: string, maxLength: 100 }
       responses:
         "200":
           description: One page of entries.
@@ -539,7 +555,7 @@ paths:
           description: The folder.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Folder" }
+              schema: { $ref: "#/components/schemas/FolderDetail" }
         default: { $ref: "#/components/responses/Error" }
     patch:
       tags: [Folders]
@@ -900,7 +916,9 @@ paths:
       description: |
         Only the fields given change. The email address cannot change; sending it is refused.
         Setting `status` to `active` needs a verified user (`409 conflict` otherwise). Setting
-        `disabled` ends the user's sessions at once.
+        `disabled` ends the user's sessions at once. An account always keeps an active owner,
+        whoever the caller, the account key included: demoting or disabling the last active owner
+        is refused with `409 conflict` and `details.reason` `last_owner`.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -927,6 +945,11 @@ paths:
         the two parameters cannot be given together. An owner session may name only an active member
         as the recipient, never itself and never another owner, and gets `forbidden` otherwise. The
         account key is not limited this way.
+
+        Removing the last active owner is refused for every caller, the account key included, with
+        `409 conflict` and `details.reason` `last_owner`; add the new owner first. A pending owner may
+        be removed. A user session that deletes its own user gets `409 conflict` with
+        `details.reason` `self`.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - name: delete_files
@@ -2535,6 +2558,7 @@ components:
         name: { type: string, description: The name in Unicode NFC. }
         kind: { type: string, enum: [team, personal], description: "A team space, or a user's personal folder." }
         owner_user_id: { type: string, description: The user of a personal folder. Absent for a team space. }
+        root_node_id: { type: string, description: "The folder's root node, the node its permissions are set on (the share dialog opens on it). Set in every answer that returns a folder." }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         members_only: { type: boolean, description: A team space only. Always false on a personal folder. }
@@ -2750,6 +2774,15 @@ components:
           type: array
           items: { $ref: "#/components/schemas/Folder" }
         next_cursor: { type: string }
+
+    FolderDetail:
+      allOf:
+        - $ref: "#/components/schemas/Folder"
+        - type: object
+          required: [files, bytes]
+          properties:
+            files: { type: integer, format: int64, description: The files in the folder's tree, versions aside. }
+            bytes: { type: integer, format: int64, description: The bytes of those files and of their earlier versions. }
 
     FolderAccess:
       allOf:
@@ -3200,7 +3233,7 @@ components:
 
     Usage:
       type: object
-      required: [quota_bytes, used_bytes, reserved_bytes, available_bytes, files, folders, used_files]
+      required: [quota_bytes, used_bytes, reserved_bytes, available_bytes, files, folders, used_files, users_active, users_pending]
       properties:
         quota_bytes:
           type: [integer, "null"]
@@ -3226,6 +3259,14 @@ components:
           type: integer
           format: int64
           description: How many top-level folders it has.
+        users_active:
+          type: integer
+          format: int64
+          description: How many of its users may sign in (active).
+        users_pending:
+          type: integer
+          format: int64
+          description: How many of its users have not verified yet.
         used_files:
           type: integer
           format: int64

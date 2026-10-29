@@ -131,7 +131,7 @@ func (s *Server) handleDeleteAdmin(w http.ResponseWriter, r *http.Request) error
 			}
 			if others == 0 && keys == 0 {
 				return apierr.New(apierr.Conflict,
-					"this is the last active admin and no admin key without an expiry is active")
+					"this is the last active admin and no admin key without an expiry is active").With("reason", "last_admin")
 			}
 		}
 		if err := tx.DeleteUser(ctx, "", u.ID); err != nil {

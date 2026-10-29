@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -187,7 +188,19 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	accounts, next, err := s.store.Accounts(r.Context(), r.URL.Query().Get("external_id"), page)
+	q := r.URL.Query()
+	filter := store.AccountFilter{ExternalID: q.Get("external_id"), Query: strings.TrimSpace(q.Get("q"))}
+	if len([]rune(filter.Query)) > 200 {
+		return apierr.New(apierr.InvalidRequest, "q may be at most 200 characters")
+	}
+	switch status := q.Get("status"); status {
+	case "":
+	case store.AccountActive, store.AccountSuspended:
+		filter.Status = status
+	default:
+		return apierr.New(apierr.InvalidRequest, "status must be active or suspended")
+	}
+	accounts, next, err := s.store.AccountsFiltered(r.Context(), filter, page)
 	if err != nil {
 		return storeErr(err)
 	}
@@ -352,6 +365,8 @@ type usageJSON struct {
 	Files          int64  `json:"files"`           // how many files it holds
 	Folders        int64  `json:"folders"`         // its top-level folders
 	UsedFiles      int64  `json:"used_files"`      // the same as files; kept for clients that read it
+	UsersActive    int64  `json:"users_active"`    // its users who may sign in
+	UsersPending   int64  `json:"users_pending"`   // its users who have not verified yet
 }
 
 func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) error {
@@ -365,6 +380,9 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := usageJSON{UsedBytes: acc.UsedBytes, ReservedBytes: acc.ReservedBytes, Files: acc.UsedFiles,
 		Folders: folders, UsedFiles: acc.UsedFiles}
+	if out.UsersActive, out.UsersPending, err = s.store.PeopleCounts(r.Context(), acc.ID); err != nil {
+		return err
+	}
 	if acc.QuotaBytes > 0 {
 		quota := acc.QuotaBytes
 		out.QuotaBytes = &quota

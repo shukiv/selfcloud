@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -15,13 +16,15 @@ import (
 )
 
 type folderJSON struct {
-	ID          string    `json:"id"`
-	ExternalID  *string   `json:"external_id"`
-	Name        string    `json:"name"`
-	Kind        string    `json:"kind"`                    // team or personal
-	OwnerUserID *string   `json:"owner_user_id,omitempty"` // the user of a personal folder
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string  `json:"id"`
+	ExternalID  *string `json:"external_id"`
+	Name        string  `json:"name"`
+	Kind        string  `json:"kind"`                    // team or personal
+	OwnerUserID *string `json:"owner_user_id,omitempty"` // the user of a personal folder
+	// RootNodeID is the folder's root node: the node its permissions and share dialog are about.
+	RootNodeID string    `json:"root_node_id"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 	// The team-space settings (slice n2). They are always false on a personal folder.
 	MembersOnly          bool `json:"members_only"`
 	SharingManagersOnly  bool `json:"sharing_managers_only"`
@@ -42,6 +45,14 @@ func toFolderJSON(f *store.Folder) folderJSON {
 	return out
 }
 
+// folderDetailJSON is one folder with the totals of its tree: the files it holds and their bytes, versions
+// included. Only the single-folder answer carries them.
+type folderDetailJSON struct {
+	folderJSON
+	Files int64 `json:"files"`
+	Bytes int64 `json:"bytes"`
+}
+
 // folderAccessJSON is a folder the caller can reach, with the level it has there.
 type folderAccessJSON struct {
 	folderJSON
@@ -52,6 +63,24 @@ type folderAccessJSON struct {
 	// Hidden is true when the caller has hidden this team space from its own list. Hiding changes
 	// nothing about access.
 	Hidden bool `json:"hidden"`
+}
+
+// fillRootNodeIDs sets the root node ID of each of the n folders that at returns, in one query.
+func (s *Server) fillRootNodeIDs(ctx context.Context, accountID string, n int, at func(i int) *folderJSON) error {
+	fs := make([]*folderJSON, n)
+	ids := make([]string, n)
+	for i := range fs {
+		fs[i] = at(i)
+		ids[i] = fs[i].ID
+	}
+	roots, err := s.store.RootNodeIDs(ctx, accountID, ids)
+	if err != nil {
+		return err
+	}
+	for _, f := range fs {
+		f.RootNodeID = roots[f.ID]
+	}
+	return nil
 }
 
 // folderAccessOf builds a folder the caller reaches, from its folder JSON and the role it holds.
@@ -140,7 +169,11 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request) erro
 		status = http.StatusCreated
 		w.Header().Set("Location", "/api/v1/accounts/"+acc.ID+"/folders/"+out.ID)
 	}
-	writeJSON(w, status, toFolderJSON(out))
+	fj := toFolderJSON(out)
+	if err := s.fillRootNodeIDs(ctx, acc.ID, 1, func(int) *folderJSON { return &fj }); err != nil {
+		return err
+	}
+	writeJSON(w, status, fj)
 	return nil
 }
 
@@ -163,6 +196,9 @@ func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request) error
 	out := listResponse[folderJSON]{Items: []folderJSON{}, NextCursor: next}
 	for _, f := range folders {
 		out.Items = append(out.Items, toFolderJSON(f))
+	}
+	if err := s.fillRootNodeIDs(r.Context(), acc.ID, len(out.Items), func(i int) *folderJSON { return &out.Items[i] }); err != nil {
+		return err
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -200,7 +236,15 @@ func (s *Server) handleGetFolder(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toFolderJSON(f))
+	out := folderDetailJSON{folderJSON: toFolderJSON(f)}
+	if err := s.fillRootNodeIDs(r.Context(), acc.ID, 1, func(int) *folderJSON { return &out.folderJSON }); err != nil {
+		return err
+	}
+	// The totals of the tree are counted here only: a list of folders would count every tree in it.
+	if out.Files, out.Bytes, err = s.store.SubtreeTotals(r.Context(), acc.ID, out.RootNodeID); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
@@ -263,7 +307,11 @@ func (s *Server) handleUpdateFolder(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toFolderJSON(out))
+	fj := toFolderJSON(out)
+	if err := s.fillRootNodeIDs(ctx, acc.ID, 1, func(int) *folderJSON { return &fj }); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, fj)
 	return nil
 }
 
@@ -503,6 +551,9 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 			}
 			out.Items = append(out.Items, folderAccessOf(f, role))
 		}
+		if err := s.fillMyRoots(ctx, p.AccountID, &out); err != nil {
+			return err
+		}
 		writeJSON(w, http.StatusOK, out)
 		return nil
 	}
@@ -514,6 +565,9 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 		out.NextCursor = next
 		for _, f := range folders {
 			out.Items = append(out.Items, folderAccessOf(f, store.RoleManager))
+		}
+		if err := s.fillMyRoots(ctx, p.AccountID, &out); err != nil {
+			return err
 		}
 		writeJSON(w, http.StatusOK, out)
 		return nil
@@ -565,8 +619,16 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	if out.Items == nil {
 		out.Items = []folderAccessJSON{}
 	}
+	if err := s.fillMyRoots(ctx, p.AccountID, &out); err != nil {
+		return err
+	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// fillMyRoots sets the root node ID of each folder in a listing of the caller's folders.
+func (s *Server) fillMyRoots(ctx context.Context, accountID string, out *listResponse[folderAccessJSON]) error {
+	return s.fillRootNodeIDs(ctx, accountID, len(out.Items), func(i int) *folderJSON { return &out.Items[i].folderJSON })
 }
 
 // hiddenParam reads ?hidden=: absent or false leaves hidden spaces out, and true lists only them.

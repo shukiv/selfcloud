@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"testing"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -192,4 +193,70 @@ func TestFolderAccessRules(t *testing.T) {
 	// Admins are forbidden on any node, with a key or a session.
 	wantError(t, call(t, s, "GET", "/api/v1/nodes/"+file.ID, admin, nil), 403, apierr.Forbidden)
 	wantError(t, callSession(t, s, adminSess, "GET", "/api/v1/nodes/"+file.ID, nil), 403, apierr.Forbidden)
+}
+
+// TestFolderResponsesCarryRootNodeID checks that a folder's answer names its root node, the node the
+// share dialog opens on, in every listing and lookup that returns the folder.
+func TestFolderResponsesCarryRootNodeID(t *testing.T) {
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	folders := "/api/v1/accounts/" + acc.ID + "/folders"
+	f := newFolder(t, s, key, acc.ID, "Roots")
+	root, err := s.store.RootNode(context.Background(), acc.ID, f.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := decode[folderJSON](t, call(t, s, "GET", folders+"/"+f.ID, key, nil)); got.RootNodeID != root.ID {
+		t.Errorf("GET folder root_node_id = %q, want %q", got.RootNodeID, root.ID)
+	}
+	for _, it := range decode[listResponse[folderJSON]](t, call(t, s, "GET", folders, key, nil)).Items {
+		if it.ID == f.ID && it.RootNodeID != root.ID {
+			t.Errorf("management list root_node_id = %q, want %q", it.RootNodeID, root.ID)
+		}
+	}
+
+	// The owner's own list (GET /folders) names the root too, for a team space it manages.
+	rec := call(t, s, "POST", "/api/v1/accounts/"+acc.ID+"/users", key,
+		map[string]any{"email": "owner@example.com", "role": "owner", "verification": "link"})
+	wantStatus(t, rec, 201)
+	created := decode[userResponse](t, rec)
+	wantStatus(t, call(t, s, "POST", "/api/v1/auth/verify", "",
+		map[string]any{"token": created.Verification.Token, "password": testPassword}), 200)
+	owner := sessionFrom(t, s, call(t, s, "POST", "/api/v1/auth/login", "",
+		map[string]any{"email": "owner@example.com", "password": testPassword}))
+	found := false
+	for _, it := range decode[listResponse[folderAccessJSON]](t, callSession(t, s, owner, "GET", "/api/v1/folders", nil)).Items {
+		if it.ID == f.ID {
+			found = true
+			if it.RootNodeID != root.ID {
+				t.Errorf("GET /folders root_node_id = %q, want %q", it.RootNodeID, root.ID)
+			}
+		}
+	}
+	if !found {
+		t.Error("the owner does not list the team space")
+	}
+}
+
+// TestFolderDetailCountsItsTree checks that the single-folder answer gives the files in the folder's tree and
+// their bytes, which the delete confirmation shows. A list answer does not carry them.
+func TestFolderDetailCountsItsTree(t *testing.T) {
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	f := newFolder(t, s, key, acc.ID, "Tree")
+	wantStatus(t, rawCall(t, s, "POST", "/api/v1/folders/"+f.ID+"/files?path=%2Fa.txt", key, "hello", nil), 201)
+	wantStatus(t, call(t, s, "POST", "/api/v1/folders/"+f.ID+"/directories", key,
+		map[string]any{"path": "/dir", "parents": true}), 201)
+	wantStatus(t, rawCall(t, s, "POST", "/api/v1/folders/"+f.ID+"/files?path=%2Fdir%2Fb.txt", key, "12", nil), 201)
+
+	got := decode[folderDetailJSON](t, call(t, s, "GET", "/api/v1/accounts/"+acc.ID+"/folders/"+f.ID, key, nil))
+	if got.Files != 2 || got.Bytes != 7 {
+		t.Errorf("detail counts %d files and %d bytes, want 2 and 7", got.Files, got.Bytes)
+	}
+	if got.ID != f.ID || got.RootNodeID == "" {
+		t.Errorf("detail lost the folder fields: %+v", got.folderJSON)
+	}
 }

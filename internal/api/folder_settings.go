@@ -94,7 +94,11 @@ func (s *Server) handleUpdateFolderSettings(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toFolderJSON(out))
+	fj := toFolderJSON(out)
+	if err := s.fillRootNodeIDs(r.Context(), out.AccountID, 1, func(int) *folderJSON { return &fj }); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, fj)
 	return nil
 }
 

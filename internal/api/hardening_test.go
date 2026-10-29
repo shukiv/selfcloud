@@ -181,7 +181,10 @@ func TestLastAdminIgnoresExpiringKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The admin user is the only admin, and the only key expires: it may not be deleted.
-	wantError(t, callSession(t, s, sess, "DELETE", "/api/v1/admins/"+root.ID, nil), 409, apierr.Conflict)
+	refused := wantError(t, callSession(t, s, sess, "DELETE", "/api/v1/admins/"+root.ID, nil), 409, apierr.Conflict)
+	if refused.Details["reason"] != "last_admin" {
+		t.Errorf("reason = %v, want last_admin", refused.Details["reason"])
+	}
 }
 
 // TestRoleChangeEndsGrants checks that leaving the member role ends a user's grants, so a return to
@@ -197,6 +200,8 @@ func TestRoleChangeEndsGrants(t *testing.T) {
 	wantStatus(t, call(t, s, "PUT", "/api/v1/accounts/"+acc.ID+"/folders/"+f.ID+"/grants/"+ann.ID, key,
 		map[string]any{"level": "write"}), 200)
 
+	// A second active owner, so that ann may leave the owner role: the last active owner may not.
+	makeOwner(t, s, key, acc.ID, "boss@example.com")
 	wantStatus(t, call(t, s, "PATCH", userPath, key, map[string]any{"role": "owner"}), 200)
 	if got := decode[listResponse[grantJSON]](t, call(t, s, "GET", grantsPath, key, nil)); len(got.Items) != 0 {
 		t.Fatalf("grants after promotion = %+v", got.Items)

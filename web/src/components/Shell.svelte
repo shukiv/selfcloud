@@ -4,7 +4,7 @@
   import { brand } from '../lib/brand';
   import { tr, tp } from '../lib/i18n';
   import { go, location } from '../lib/router';
-  import { canSeeAdmin, flash, session } from '../lib/session';
+  import { flash, isAdmin, isOwner as ownerOf, session } from '../lib/session';
   import { signOut } from '../lib/auth';
   import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from '../lib/files/folders';
   import type { FolderAccess } from '../lib/files/types';
@@ -26,24 +26,43 @@
   let teamMenu = $state<string | null>(null);
   let showHidden = $state(false);
   let settingsFor = $state<FolderAccess | null>(null);
-  let isOwner = $derived($session?.user.role === 'owner');
+  let admin = $derived(isAdmin($session?.user));
+  let owner = $derived(ownerOf($session?.user));
+
+  // An installation admin has no drive: its navigation is the administration pages only.
+  const ADMIN_LINKS = [
+    { href: '/admin/tenants', label: 'nav.tenants' },
+    { href: '/admin/admins', label: 'nav.admins' },
+    { href: '/admin/installation', label: 'nav.installation' },
+  ];
+  const MANAGE_LINKS = [
+    { href: '/manage', label: 'nav.overview' },
+    { href: '/manage/people', label: 'nav.people' },
+    { href: '/manage/groups', label: 'nav.groups' },
+    { href: '/manage/spaces', label: 'nav.spaces' },
+    { href: '/manage/audit', label: 'nav.audit' },
+  ];
 
   // The requests entry shows to an owner always, and to anyone else only when a request waits for a decision.
-  let links = $derived([
-    { href: '/files', label: 'nav.files' },
-    { href: '/shared', label: 'nav.shared' },
-    { href: '/trash', label: 'nav.trash' },
-    ...(isOwner || ($pendingRequests ?? 0) > 0 ? [{ href: '/requests', label: 'nav.requests' }] : []),
-    ...(canSeeAdmin($session?.user) ? [{ href: '/admin', label: 'nav.admin' }] : []),
-  ]);
+  let links = $derived(
+    admin
+      ? ADMIN_LINKS
+      : [
+          { href: '/files', label: 'nav.files' },
+          { href: '/shared', label: 'nav.shared' },
+          { href: '/trash', label: 'nav.trash' },
+          ...(owner || ($pendingRequests ?? 0) > 0 ? [{ href: '/requests', label: 'nav.requests' }] : []),
+        ],
+  );
 
   // The team spaces are listed under My files, from the folders the caller reaches. Hidden ones are listed only
-  // when the caller asks to see them.
+  // when the caller asks to see them. An admin has no drive, so it reads neither list.
   onMount(() => {
+    if (admin) return;
     void loadFolders().catch(() => undefined);
     void refreshPendingRequests();
   });
-  let teams = $derived($folders.filter((f) => f.kind === 'team'));
+  let teams = $derived(admin ? [] : $folders.filter((f) => f.kind === 'team'));
   let hiddenTeams = $derived($hiddenFolders.filter((f) => f.kind === 'team'));
 
   async function toggleHidden(on: boolean) {
@@ -115,12 +134,15 @@
 
 <a class="skip-link" href="#main">{$tr('app.skip')}</a>
 <header class="topbar">
-  <a class="brand-link" href="/files">
+  <a class="brand-link" href={admin ? '/admin/tenants' : '/files'}>
     {#if $brand.logo_url}
       <img src={$brand.logo_url} alt="" width="28" height="28" />
     {/if}
     <span class="product-name"><bdi>{$brand.name}</bdi></span>
   </a>
+  {#if admin}
+    <span class="admin-badge">{$tr('admin.badge')}</span>
+  {/if}
   <div class="topbar-end">
     <LangSwitch />
     <ThemeSwitch />
@@ -163,6 +185,18 @@
         </li>
       {/each}
     </ul>
+    {#if owner}
+      <h2 class="nav-title">{$tr('nav.manage')}</h2>
+      <ul>
+        {#each MANAGE_LINKS as link (link.href)}
+          <li>
+            <a href={link.href} aria-current={isCurrent(link.href, $location.path) ? 'page' : undefined}>
+              {$tr(link.label)}
+            </a>
+          </li>
+        {/each}
+      </ul>
+    {/if}
     {#if teams.length > 0 || showHidden}
       <h2 class="nav-title">{$tr('nav.teams')}</h2>
       <ul class="teams">
@@ -284,6 +318,15 @@
   .team-menu {
     inset-block-start: 100%;
     inset-inline-end: 0;
+  }
+
+  .admin-badge {
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--color-primary);
+    background: var(--color-primary-soft);
+    border-radius: var(--radius-full);
   }
 
   .count {

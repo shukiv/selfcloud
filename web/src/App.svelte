@@ -5,7 +5,8 @@
   import { loadInfo, loadMe, type Info } from './lib/auth';
   import { go, location, signInURL } from './lib/router';
   import { safeNext } from './lib/next';
-  import { session, canSeeAdmin } from './lib/session';
+  import { session } from './lib/session';
+  import { homeFor, mayOpen, targetOf } from './lib/routes';
   import { PREF_LANG, readPref } from './lib/prefs';
   import { lang, matchLang, setLang, tr } from './lib/i18n';
   import { loadTheme } from './lib/theme';
@@ -17,13 +18,21 @@
   import Reset from './pages/Reset.svelte';
   import Forgot from './pages/Forgot.svelte';
   import ChangePassword from './pages/ChangePassword.svelte';
-  import Placeholder from './pages/Placeholder.svelte';
   import Shared from './pages/Shared.svelte';
   import Requests from './pages/Requests.svelte';
   import NotFound from './pages/NotFound.svelte';
   import Files from './pages/Files.svelte';
   import NodeLink from './pages/NodeLink.svelte';
   import Trash from './pages/Trash.svelte';
+  import ManageOverview from './pages/manage/Overview.svelte';
+  import ManagePeople from './pages/manage/People.svelte';
+  import ManageGroups from './pages/manage/Groups.svelte';
+  import ManageSpaces from './pages/manage/Spaces.svelte';
+  import ManageAudit from './pages/manage/Audit.svelte';
+  import AdminTenants from './pages/admin/Tenants.svelte';
+  import AdminTenant from './pages/admin/Tenant.svelte';
+  import AdminAdmins from './pages/admin/Admins.svelte';
+  import AdminInstallation from './pages/admin/Installation.svelte';
 
   type View =
     | 'login'
@@ -35,6 +44,7 @@
     | 'shared'
     | 'requests'
     | 'trash'
+    | 'manage'
     | 'admin'
     | 'change-password'
     | 'notfound';
@@ -46,6 +56,10 @@
   function viewFor(path: string): View {
     if (path === '/' || path === '/files' || path.startsWith('/files/')) return 'files';
     if (path.startsWith('/n/')) return 'node';
+    // The owner and administration pages are read by their path; whether the person may open one is decided
+    // below, so a page for another role is the not-found view.
+    const target = targetOf(path);
+    if (target !== null) return target.area;
     switch (path) {
       case '/login':
         return 'login';
@@ -61,8 +75,6 @@
         return 'requests';
       case '/trash':
         return 'trash';
-      case '/admin':
-        return 'admin';
       case '/change-password':
         return 'change-password';
       default:
@@ -71,6 +83,7 @@
   }
 
   let view = $derived(viewFor($location.path));
+  let target = $derived(targetOf($location.path));
 
   // The guard: shell pages need a session, the sign-in page is pointless with one, and the
   // administration page is for owners and admins.
@@ -86,8 +99,9 @@
       go(signInURL($location.path + $location.search), { replace: true });
       return;
     }
-    if (view === 'admin' && !canSeeAdmin($session?.user)) {
-      go('/files', { replace: true });
+    // The root address opens the home of the person's role: an admin has no drive, so its home is the tenants list.
+    if ($location.path === '/' && $session?.user.role === 'admin') {
+      go(homeFor($session.user), { replace: true });
     }
   });
 
@@ -167,8 +181,32 @@
       <Requests />
     {:else if view === 'trash'}
       <Trash />
-    {:else if view === 'admin'}
-      <Placeholder titleKey="nav.admin" />
+    {:else if view === 'manage' && target?.area === 'manage' && mayOpen(target, $session?.user)}
+      {#if target.section === 'overview'}
+        <ManageOverview />
+      {:else if target.section === 'people'}
+        <ManagePeople />
+      {:else if target.section === 'groups'}
+        <ManageGroups />
+      {:else if target.section === 'spaces'}
+        <ManageSpaces />
+      {:else}
+        <ManageAudit />
+      {/if}
+    {:else if view === 'admin' && target?.area === 'admin' && mayOpen(target, $session?.user)}
+      {#if target.section === 'tenants'}
+        <AdminTenants />
+      {:else if target.section === 'tenant'}
+        {#key target.account}
+          <AdminTenant account={target.account ?? ''} />
+        {/key}
+      {:else if target.section === 'admins'}
+        <AdminAdmins />
+      {:else}
+        <AdminInstallation />
+      {/if}
+    {:else if view === 'manage' || view === 'admin'}
+      <NotFound />
     {:else if view === 'change-password'}
       <ChangePassword />
     {:else}

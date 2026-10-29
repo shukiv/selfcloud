@@ -77,6 +77,18 @@ func (tx *Tx) InsertAudit(ctx context.Context, e *AuditEntry) error {
 // viewerUserID, which is "" for a caller that is no user. The filter is in the query, so paging counts
 // only what the reader may see.
 func (s *Store) AuditLog(ctx context.Context, accountID, viewerUserID string, seeAll bool, p Page) ([]*AuditEntry, string, error) {
+	return s.AuditLogFiltered(ctx, accountID, viewerUserID, seeAll, AuditFilter{}, p)
+}
+
+// AuditFilter narrows an audit listing to one action, or to entries by one actor. Empty fields do not narrow.
+type AuditFilter struct {
+	Action  string
+	ActorID string
+}
+
+// AuditLogFiltered is AuditLog narrowed by f. The visibility rule is the same: a private entry is listed
+// only to the user it is private to, or to the caller who sees everything.
+func (s *Store) AuditLogFiltered(ctx context.Context, accountID, viewerUserID string, seeAll bool, f AuditFilter, p Page) ([]*AuditEntry, string, error) {
 	before := int64(1<<63 - 1)
 	if p.Cursor != "" {
 		parts, err := decodeCursor(p.Cursor, 1)
@@ -92,6 +104,14 @@ func (s *Store) AuditLog(ctx context.Context, accountID, viewerUserID string, se
 	if !seeAll {
 		visible = "(private_user_id IS NULL OR private_user_id = ?)"
 		args = append(args, viewerUserID)
+	}
+	if f.Action != "" {
+		visible += " AND action = ?"
+		args = append(args, f.Action)
+	}
+	if f.ActorID != "" {
+		visible += " AND actor_id = ?"
+		args = append(args, f.ActorID)
 	}
 	args = append(args, p.Limit+1)
 	rows, err := s.r.QueryContext(ctx, `SELECT id, time, account_id, actor_kind, actor_id, action,

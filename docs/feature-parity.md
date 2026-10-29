@@ -197,7 +197,7 @@ come **before** k.
 | n1 | Sharing model (built, see the sections marked (n1) above): roles, permissions on any node with inheritance, groups, personal "My files", team-space owners, the grants routes on permissions, `GET /shared`, token node scope | Large |
 | n2 | Sharing v2 (built, see the rows marked Built (n2) above): access expiry, no-download, "editors can share", ownership transfer, team-space restrictions and hiding, access requests, share emails | Medium |
 | m | Trash, version history, keep forever, restore, undo | Medium |
-| k | Web interface (as planned, on the new model). k3 (built): the sharing interface: share dialog, Shared with me, access requests, hidden spaces, space settings, and the account directory search (`GET /directory`) | Large |
+| k | Web interface (as planned, on the new model). Complete after k4. k3 (built): the sharing interface: share dialog, Shared with me, access requests, hidden spaces, space settings, and the account directory search (`GET /directory`). k4 (built): owner pages (overview, people, groups, team spaces, audit log) and installation admin pages (tenants, tenant tabs, admins, installation facts), with the owner guard and list filters in the API. Known gaps: design section 10 | Large |
 | o | Organisation and public links, link expiry and password, drop folders, admin policy | Medium |
 | p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page | Medium |
 | q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |

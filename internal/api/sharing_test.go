@@ -565,6 +565,57 @@ func TestAuditHidesPersonalFolderEntries(t *testing.T) {
 	}
 }
 
+// TestAuditFiltersKeepPersonalEntriesPrivate: the action and actor filters narrow what the owner may already
+// see; they never bring back an entry about a personal folder.
+func TestAuditFiltersKeepPersonalEntriesPrivate(t *testing.T) {
+	fx := newSharingFixture(t)
+	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.bob.ID, fx.key,
+		map[string]any{"role": "owner"}), 200)
+	pf := fx.personalFolder(t, fx.annSess)
+	rec := rawSession(t, fx.s, fx.annSess, "POST", "/api/v1/folders/"+pf+"/files?"+q("/mine.txt"), "hello", nil)
+	wantStatus(t, rec, 201)
+	id := decode[nodeJSON](t, rec).ID
+
+	audit := "/api/v1/accounts/" + fx.acc.ID + "/audit"
+	for _, filter := range []string{"?action=node.create", "?actor=" + fx.ann.ID, "?action=node.create&actor=" + fx.ann.ID} {
+		rec := callSession(t, fx.s, fx.bobSess, "GET", audit+filter, nil)
+		wantStatus(t, rec, 200)
+		for _, e := range decode[listResponse[auditJSON]](t, rec).Items {
+			if e.Target == id {
+				t.Errorf("owner sees %s about a personal file under %s", e.Action, filter)
+			}
+		}
+	}
+}
+
+// TestFilesMovedEntryDoesNotSizeMyFiles: the audit entry of a deleted user's files moved to another user is
+// visible to owners, so it names the recipient only: not how many entries moved, nor the recipient's
+// personal folder, nor the new directory.
+func TestFilesMovedEntryDoesNotSizeMyFiles(t *testing.T) {
+	fx := newSharingFixture(t)
+	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.bob.ID, fx.key,
+		map[string]any{"role": "owner"}), 200)
+	carl := newMember(t, fx, "carl@example.com")
+	victim := victimWithFiles(t, fx, "victim@example.com")
+	wantStatus(t, callSession(t, fx.s, fx.bobSess, "DELETE", "/api/v1/accounts/"+fx.acc.ID+"/users/"+victim.user.ID+
+		"?transfer_to="+carl.user.ID, nil), 204)
+
+	rec := callSession(t, fx.s, fx.bobSess, "GET", "/api/v1/accounts/"+fx.acc.ID+"/audit?action=user.files_moved", nil)
+	wantStatus(t, rec, 200)
+	items := decode[listResponse[auditJSON]](t, rec).Items
+	if len(items) != 1 {
+		t.Fatalf("owner sees %d user.files_moved entries, want 1", len(items))
+	}
+	if items[0].Details["to"] != carl.user.ID {
+		t.Errorf("details.to = %v, want the recipient %s", items[0].Details["to"], carl.user.ID)
+	}
+	for _, k := range []string{"entries", "folder", "directory"} {
+		if v, ok := items[0].Details[k]; ok {
+			t.Errorf("details.%s = %v is visible to owners", k, v)
+		}
+	}
+}
+
 // TestEveryNodeWriteKeepsItsOwner: a node made by a write keeps its creator as owner, whichever way
 // it was made. The owner must not be wiped by a later update.
 func TestEveryNodeWriteKeepsItsOwner(t *testing.T) {

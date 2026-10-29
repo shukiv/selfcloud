@@ -310,3 +310,35 @@ func (tx *Tx) CountActiveAdmins(ctx context.Context, excludeID string) (int, err
 		WHERE account_id IS NULL AND role = 'admin' AND status = 'active' AND id != ?`, excludeID).Scan(&n)
 	return n, err
 }
+
+// CountActiveOwners returns how many active owners accountID has, not counting the one with excludeID.
+// It guards an account from losing its last active owner.
+func (tx *Tx) CountActiveOwners(ctx context.Context, accountID, excludeID string) (int, error) {
+	var n int
+	err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM users
+		WHERE account_id = ? AND role = 'owner' AND status = 'active' AND id != ?`, accountID, excludeID).Scan(&n)
+	return n, err
+}
+
+// PeopleCounts returns how many active and pending users accountID has.
+func (s *Store) PeopleCounts(ctx context.Context, accountID string) (active, pending int64, err error) {
+	rows, err := s.r.QueryContext(ctx, `SELECT status, COUNT(*) FROM users WHERE account_id = ?
+		AND status IN ('active', 'pending') GROUP BY status`, accountID)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var status string
+		var n int64
+		if err := rows.Scan(&status, &n); err != nil {
+			return 0, 0, err
+		}
+		if status == UserActive {
+			active = n
+		} else {
+			pending = n
+		}
+	}
+	return active, pending, rows.Err()
+}

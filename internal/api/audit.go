@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 type auditJSON struct {
@@ -39,7 +41,12 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) error {
 	// The account key reads everything. A user reads what is not private to a personal folder, and
 	// what is private to itself.
 	p := principalOf(r)
-	entries, next, err := s.store.AuditLog(r.Context(), acc.ID, p.UserID, p.Kind == auth.KindAccountKey, page)
+	q := r.URL.Query()
+	filter := store.AuditFilter{Action: q.Get("action"), ActorID: q.Get("actor")}
+	if len(filter.Action) > 100 || len(filter.ActorID) > 100 {
+		return apierr.New(apierr.InvalidRequest, "action and actor may be at most 100 characters")
+	}
+	entries, next, err := s.store.AuditLogFiltered(r.Context(), acc.ID, p.UserID, p.Kind == auth.KindAccountKey, filter, page)
 	if err != nil {
 		return storeErr(err)
 	}

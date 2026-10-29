@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The end-to-end smoke test behind `make e2e`. It starts bin/selfcloud on a temporary data directory,
-// makes an account, an owner and a member through the CLI and the API, and drives headless Chrome
-// through the web interface: sign in, check the shell and the name, switch to Hebrew (and check the
-// layout turns right to left and the choice is saved), switch the theme, and sign out. It fails on
+// makes an account, an owner, a member and an installation admin through the CLI and the API, and drives
+// headless Chrome through the web interface: sign in, check the shell and the name, switch to Hebrew (and check the
+// layout turns right to left and the choice is saved), switch the theme, and sign out. It then runs the owner's
+// management pages (an invitation mailed to a local SMTP sink, a group, a team space), the admin's tenant pages
+// (a new tenant, an API key shown once), and a member's not-found check. It fails on
 // any console error, uncaught exception, policy violation, or request to another origin.
 //
 // Needs a Chrome or Chromium binary: set SELFCLOUD_E2E_BROWSER to its path.
@@ -15,6 +17,7 @@ import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { freePort, launchBrowser, Page } from './cdp.mjs';
+import { createServer } from 'node:net';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -23,6 +26,9 @@ const bin = process.env.SELFCLOUD_BIN ?? join(repo, 'bin', 'selfcloud');
 const OWNER = { email: 'olivia@example.com', name: 'Olivia Owner', password: 'correct horse battery staple' };
 const MEMBER = { email: 'mateo@example.com', name: 'Mateo Member', password: 'correct horse battery staple' };
 const BRAND = { name: 'E2E Drive', accent: '#0F766E' };
+const ADMIN = { email: 'ada@example.com', name: 'Ada Admin', password: 'correct horse battery staple' };
+const INVITEE = { email: 'dana@example.com', name: 'Dana Invited', password: 'correct horse battery staple' };
+const TENANT = { name: 'Acme Ltd', owner: { email: 'owen@example.com', name: 'Owen Owner' } };
 
 const results = [];
 function check(ok, what) {
@@ -81,6 +87,7 @@ async function main() {
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   const cfg = join(dir, 'selfcloud.yaml');
+  const sink = await mailSink();
   await writeFile(
     cfg,
     [
@@ -98,6 +105,12 @@ async function main() {
       '  max_chunk_size: "1MiB"',
       'storage:',
       '  min_free: "1MiB"',
+      // Mail goes to the sink above, with no TLS and no login, as the server's smtp_tls none allows on localhost.
+      'mail:',
+      `  smtp_host: "127.0.0.1"`,
+      `  smtp_port: ${sink.port}`,
+      '  smtp_tls: "none"',
+      '  from: "Selfcloud <drive@example.com>"',
       'ui:',
       '  brand:',
       `    name: "${BRAND.name}"`,
@@ -112,6 +125,10 @@ async function main() {
   const accountID = /account_id=(\S+)/.exec(made.stdout)?.[1];
   const accountKey = /account_key=(\S+)/.exec(made.stdout)?.[1];
   if (!accountID || !accountKey || !adminKey) throw new Error('the CLI did not print the account');
+  // The installation admin is made here, before the server starts, and verified through the API once it runs.
+  const adminMade = await execFileP(bin, ['admin', 'create-admin', '-email', ADMIN.email, '-name', ADMIN.name, '-config', cfg]);
+  const adminToken = /^token=(\S+)/m.exec(adminMade.stdout)?.[1];
+  if (!adminToken) throw new Error('the CLI did not print the admin token');
 
   const server = spawn(bin, ['serve', '-config', cfg], { stdio: ['ignore', 'pipe', 'pipe'] });
   let serverLog = '';
@@ -121,6 +138,7 @@ async function main() {
   let page = null;
   try {
     await waitForServer(base);
+    await api(base, 'POST', '/api/v1/auth/verify', null, { token: adminToken, password: ADMIN.password });
 
     // The users: an owner and a member, each verified through the link the API returns.
     let memberID = null;
@@ -175,10 +193,9 @@ async function main() {
     check(brandName.includes(BRAND.name), 'the header shows the configured brand name');
     const accent = await page.evaluate(`document.documentElement.style.getPropertyValue('--brand-primary')`);
     check(accent === BRAND.accent, `the accent is the configured colour (${accent})`);
-    const adminLinked = await page.evaluate(
-      `[...document.querySelectorAll('.sidenav a')].some((a) => a.getAttribute('href') === '/admin')`,
-    );
-    check(adminLinked, 'an owner sees the Admin link');
+    const ownerLinks = await page.evaluate(`[...document.querySelectorAll('.sidenav a')].map((a) => a.getAttribute('href'))`);
+    check(ownerLinks.includes('/manage'), 'an owner sees the Manage link');
+    check(!ownerLinks.includes('/admin'), 'an owner sees no Admin link: an owner is not an installation admin');
 
     // Switch to Hebrew: the page turns right to left and the choice is saved to the account.
     await setSelect(page, '.topbar .control select', 'he');
@@ -225,7 +242,18 @@ async function main() {
     await fileBrowserChecks(page, { base, dir, teamA, teamB });
 
     // Sharing, from both sides: the owner's share dialog and spaces, and the member's shared list and requests.
-    await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB });
+    await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink });
+
+    // The owner's management pages, then the installation admin's, then a member who opens the owner's pages.
+    await signOut(page);
+    await signIn(page, OWNER);
+    await ownerChecks(page, { base, accountID, sink });
+    await signOut(page);
+    await signIn(page, ADMIN);
+    await adminChecks(page, { base, adminKey });
+    await signOut(page);
+    await signIn(page, MEMBER);
+    await memberNotFound(page);
 
     // Policy: no console error, no CSP violation, no request to another origin.
     check(page.errors.length === 0, `no console errors or policy violations (${page.errors.join(' | ') || 'none'})`);
@@ -240,6 +268,7 @@ async function main() {
     page?.close();
     browser?.kill();
     server.kill();
+    sink.close();
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {
       await new Promise((r) => setTimeout(r, 200));
       await rm(dir, { recursive: true, force: true });
@@ -471,8 +500,8 @@ async function dialogSubmit(page) {
 }
 
 // pickPerson types a query into the people combobox and chooses the option with the name.
-async function pickPerson(page, query, name) {
-  await setInput(page, 'share-who', query);
+async function pickPerson(page, query, name, inputId = 'share-who') {
+  await setInput(page, inputId, query);
   await page.waitFor(
     `[...document.querySelectorAll('[role="listbox"] [role="option"]')].some((o) => o.textContent.includes(${q(name)}))`,
     10000,
@@ -480,7 +509,176 @@ async function pickPerson(page, query, name) {
   await page.evaluate(
     `(() => { const o = [...document.querySelectorAll('[role="listbox"] [role="option"]')].find((x) => x.textContent.includes(${q(name)})); o.click(); return true; })()`,
   );
-  await page.waitFor(`document.getElementById('share-who').value === ${q(name)}`);
+  await page.waitFor(`document.getElementById(${q(inputId)}).value === ${q(name)}`);
+}
+
+// mailSink is a minimal SMTP server that keeps the mail it is sent, so the run can take the links from it. It
+// does no TLS and no login: the server dials it with smtp_tls none.
+function mailSink() {
+  const messages = [];
+  const server = createServer((sock) => {
+    let buf = '';
+    let to = [];
+    let data = null;
+    const say = (line) => sock.write(`${line}\r\n`);
+    sock.on('error', () => {});
+    say('220 e2e-sink');
+    sock.on('data', (chunk) => {
+      buf += chunk.toString('latin1');
+      let end;
+      while ((end = buf.indexOf('\r\n')) !== -1) {
+        const line = buf.slice(0, end);
+        buf = buf.slice(end + 2);
+        if (data !== null) {
+          if (line !== '.') {
+            data += `${line}\r\n`;
+            continue;
+          }
+          messages.push({ to, data });
+          to = [];
+          data = null;
+          say('250 queued');
+          continue;
+        }
+        const verb = line.slice(0, 4).toUpperCase();
+        if (verb === 'RCPT') {
+          to.push(/<([^>]*)>/.exec(line)?.[1] ?? line.slice(8));
+          say('250 ok');
+        } else if (verb === 'DATA') {
+          data = '';
+          say('354 end with a dot');
+        } else if (verb === 'RSET') {
+          to = [];
+          say('250 ok');
+        } else if (verb === 'QUIT') {
+          say('221 bye');
+          sock.end();
+        } else {
+          say('250 ok');
+        }
+      }
+    });
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () =>
+      resolve({ port: server.address().port, messages, close: () => server.close() }),
+    );
+  });
+}
+
+// mailBody returns the text of a captured message, decoded from the quoted-printable the server writes.
+function mailBody(m) {
+  return m.data.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
+
+// waitForMail waits for a message to the address, and returns it.
+async function waitForMail(sink, address, timeout = 15000) {
+  const until = Date.now() + timeout;
+  for (;;) {
+    const m = sink.messages.find((x) => x.to.includes(address));
+    if (m) return m;
+    if (Date.now() > until) throw new Error(`no mail to ${address}`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+// ownerChecks is the owner's management pages, end to end. The owner invites a person by email; the run takes the
+// link from the mail the sink received and verifies the account with it. The owner then makes a group with that
+// person in it, and a team space.
+async function ownerChecks(page, { base, accountID, sink }) {
+  await navigateTo(page, '/manage/people');
+  await page.waitFor(`location.pathname === '/manage/people' && !!document.querySelector('.topbar')`);
+  await clickButton(page, 'Invite person');
+  await page.waitFor(`!!document.getElementById('invite-email')`);
+  await setInput(page, 'invite-email', INVITEE.email);
+  await setInput(page, 'invite-name', INVITEE.name);
+  await dialogSubmit(page);
+  await page.waitFor(`(document.querySelector('.alert.success')?.textContent ?? '') === 'The email was sent.'`);
+  const mail = await waitForMail(sink, INVITEE.email);
+  const token = /#token=([A-Za-z0-9_-]+)/.exec(mailBody(mail))?.[1];
+  if (!token) throw new Error('the invitation mail has no link');
+  await api(base, 'POST', '/api/v1/auth/verify', null, { token, password: INVITEE.password });
+  check(true, 'the owner invites a person by email, and the link in the mail verifies the account');
+
+  await navigateTo(page, '/manage/groups');
+  await clickButton(page, 'New group');
+  await page.waitFor(`!!document.getElementById('group-new-name')`);
+  await setInput(page, 'group-new-name', 'Ops crew');
+  await dialogSubmit(page);
+  await page.waitFor(`[...document.querySelectorAll('.row-title')].some((e) => e.textContent.trim() === 'Ops crew')`);
+  await page.evaluate(
+    `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('Members') && x.textContent.includes(': Ops crew')); b.click(); return true; })()`,
+  );
+  await page.waitFor(`!!document.getElementById('group-add')`);
+  await pickPerson(page, 'dana', INVITEE.name, 'group-add');
+  await clickButton(page, 'Add to group');
+  await page.waitFor(`(document.querySelector('.members')?.textContent ?? '').includes(${q(INVITEE.name)})`);
+  check(true, 'the owner creates a group and adds the invited person to it');
+
+  await navigateTo(page, '/manage/spaces');
+  await clickButton(page, 'New team space');
+  await page.waitFor(`!!document.getElementById('space-new-name')`);
+  await setInput(page, 'space-new-name', 'Lab');
+  await dialogSubmit(page);
+  await page.waitFor(`[...document.querySelectorAll('.row-title')].some((e) => e.textContent.trim() === 'Lab')`);
+  check(true, 'the owner creates a team space');
+}
+
+// adminChecks is the installation admin's tenant pages, end to end: a new tenant whose first owner gets a link shown
+// once, and an API key for it shown once. The key then works for the API, and is gone from the page once its dialog closes.
+async function adminChecks(page, { base, adminKey }) {
+  await page.waitFor(`location.pathname === '/admin/tenants' && !!document.querySelector('.admin-badge')`);
+  check(true, 'an admin lands on the tenants list, under the Admin badge');
+
+  await clickButton(page, 'New tenant');
+  await page.waitFor(`!!document.getElementById('new-tenant-name')`);
+  await setInput(page, 'new-tenant-name', TENANT.name);
+  await setInput(page, 'new-tenant-owner-email', TENANT.owner.email);
+  await setInput(page, 'new-tenant-owner-name', TENANT.owner.name);
+  await setInput(page, 'new-tenant-limit', '5');
+  await page.evaluate(`document.querySelector('input[name="how"][value="link"]').click(), true`);
+  await dialogSubmit(page);
+  await page.waitFor(`!!document.getElementById('tenant-link-value') || !!document.querySelector('[role="dialog"] .alert.error')`);
+  const createdError = await page.evaluate(`document.querySelector('[role="dialog"] .alert.error')?.textContent ?? ''`);
+  if (createdError) throw new Error(`the tenant was not created: ${createdError}`);
+  await page.waitFor(`!!document.getElementById('tenant-link-value')`);
+  const link = await page.evaluate(`document.getElementById('tenant-link-value').value`);
+  check(link.includes('/verify#token='), 'a new tenant shows its first owner a link');
+  await clickButton(page, 'I have copied it');
+  await page.waitFor(`!document.getElementById('tenant-link-value')`);
+  check(
+    !(await page.evaluate(`document.body.textContent.includes('#token=')`)),
+    'the link is not on the page once its dialog closes',
+  );
+
+  const tenantID = (await api(base, 'GET', '/api/v1/accounts', adminKey)).items.find((a) => a.name === TENANT.name)?.id;
+  if (!tenantID) throw new Error('the new tenant is not listed');
+  await navigateTo(page, `/admin/tenants/${tenantID}?tab=keys`);
+  await page.waitFor(`location.pathname === '/admin/tenants/${tenantID}'`);
+  await clickButton(page, 'New key');
+  await page.waitFor(`!!document.getElementById('new-key-name')`);
+  await setInput(page, 'new-key-name', 'CI');
+  await dialogSubmit(page);
+  await page.waitFor(`!!document.getElementById('new-key-once-value')`);
+  const secret = await page.evaluate(`document.getElementById('new-key-once-value').value`);
+  check(secret.length >= 20, 'the new API key is shown in its dialog');
+  await clickButton(page, 'I have copied it');
+  await page.waitFor(`!document.getElementById('new-key-once-value')`);
+  check(
+    !(await page.evaluate(`document.body.innerHTML.includes(${q(secret)})`)),
+    'the key is not on the page once its dialog closes',
+  );
+  await api(base, 'GET', `/api/v1/accounts/${tenantID}/usage`, secret);
+  check(true, 'the key the dialog showed works for the API');
+}
+
+// memberNotFound is a member opening the owner's pages: the not-found view, and no Manage link.
+async function memberNotFound(page) {
+  await navigateTo(page, '/manage');
+  await page.waitFor(`document.querySelector('h1')?.textContent === 'Page not found'`);
+  const manageLink = await page.evaluate(`!!document.querySelector('.sidenav a[href="/manage"]')`);
+  check(!manageLink, 'a member who opens /manage sees the not-found view, and no Manage link');
 }
 
 // liveText reads what the open dialog announced last.
@@ -490,7 +688,7 @@ const liveText = `(document.querySelector('[role="dialog"] .live')?.textContent 
 // (no mail), the member sees it and cannot change it, the owner raises it to editor, shares with a group with an
 // expiry, the member uploads, asks for access to a file it cannot reach, the owner approves, the owner hides and
 // shows a space, and turns on no-download for viewers.
-async function sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB }) {
+async function sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink }) {
   // Set up through the API: a team space the member has no role on, with a directory and a file in it.
   const teamC = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'Board Room' })).id;
   await api(base, 'POST', `/api/v1/folders/${teamC}/directories`, accountKey, { path: '/Board', parents: false });
@@ -572,8 +770,12 @@ async function sharingChecks(page, { base, dir, accountID, accountKey, memberID,
   await dialogSubmit(page);
   await page.waitFor(`${liveText}.includes('Shared with Field team as Can view')`);
   check(
-    (await page.evaluate(liveText)).includes('No email was sent'),
-    'the reply says no mail went out, since this server has no mail set up',
+    !(await page.evaluate(liveText)).includes('No email was sent'),
+    'the reply carries no "no email" notice, since the mail went out',
+  );
+  check(
+    (await waitForMail(sink, MEMBER.email)).to.includes(MEMBER.email),
+    'the member the group reaches is mailed the share',
   );
   check(
     await page.evaluate(`document.querySelector('[role="dialog"]').textContent.includes('Ends ')`),

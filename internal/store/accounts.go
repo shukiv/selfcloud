@@ -76,11 +76,33 @@ func (tx *Tx) AccountByExternalID(ctx context.Context, externalID string) (*Acco
 
 // Accounts lists accounts oldest first, optionally only the one with externalID.
 func (s *Store) Accounts(ctx context.Context, externalID string, p Page) ([]*Account, string, error) {
+	return s.AccountsFiltered(ctx, AccountFilter{ExternalID: externalID}, p)
+}
+
+// AccountFilter narrows an account list. Empty fields do not narrow.
+type AccountFilter struct {
+	ExternalID string
+	// Query matches an account whose name contains it, or whose external ID is exactly it. The name match
+	// folds ASCII case only, as SQLite's LIKE does, and the text is matched literally.
+	Query  string
+	Status string // AccountActive or AccountSuspended
+}
+
+// AccountsFiltered lists the accounts that f narrows to, oldest first, one page at a time.
+func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) ([]*Account, string, error) {
 	where := []string{"1 = 1"}
 	var args []any
-	if externalID != "" {
+	if f.ExternalID != "" {
 		where = append(where, "external_id = ?")
-		args = append(args, externalID)
+		args = append(args, f.ExternalID)
+	}
+	if f.Query != "" {
+		where = append(where, `(name LIKE ? ESCAPE '\' OR external_id = ?)`)
+		args = append(args, "%"+likeEscaper.Replace(f.Query)+"%", f.Query)
+	}
+	if f.Status != "" {
+		where = append(where, "status = ?")
+		args = append(args, f.Status)
 	}
 	if p.Cursor != "" {
 		parts, err := decodeCursor(p.Cursor, 2)
