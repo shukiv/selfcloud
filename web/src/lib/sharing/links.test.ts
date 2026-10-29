@@ -2,7 +2,6 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  captureSecret,
   forgetSecret,
   inheritedLinks,
   linkRoleOptions,
@@ -88,29 +87,6 @@ describe('secretFromAddress', () => {
     expect(secretFromAddress(`#${'A'.repeat(42)}`)).toBe('');
     expect(secretFromAddress(`#${'A'.repeat(43)}=`)).toBe('');
     expect(secretFromAddress(`#${'A'.repeat(42)}/`)).toBe('');
-  });
-});
-
-describe('captureSecret', () => {
-  it('moves the secret into storage and strips the address at once', () => {
-    const keep = memoryKeep();
-    const replaced: string[] = [];
-    const found = captureSecret(`#${secret}`, '/s', '', keep, (u) => replaced.push(u));
-    expect(found).toBe(true);
-    expect(JSON.parse(keep.data[pendingKey]).secret).toBe(secret);
-    expect(replaced).toEqual(['/s']);
-  });
-
-  it('strips the address even when there is no secret, and stores nothing', () => {
-    const keep = memoryKeep();
-    const replaced: string[] = [];
-    expect(captureSecret('#nope', '/s', '?x=1', keep, (u) => replaced.push(u))).toBe(false);
-    expect(keep.data).toEqual({});
-    expect(replaced).toEqual(['/s?x=1']);
-  });
-
-  it('reports no secret when storage refuses the write', () => {
-    expect(captureSecret(`#${secret}`, '/s', '', refusing, () => {})).toBe(false);
   });
 });
 

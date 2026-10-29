@@ -243,6 +243,8 @@ Only an account key of the same account may mint. An installation admin, a signe
 
 *Signed links.* A signed link is a capability that no revocation reaches, so a link made with a token may not outlive the token: its default and longest lifetime are cut to what the token has left, and a longer `ttl` is refused with that limit in `details.max_ttl_seconds`.
 
+*Visitor credentials (share links, slice o2).* A visitor who opens a link that anyone can open holds a credential, `scl_` followed by base64url(payload JSON), a `.`, and base64url(HMAC-SHA256 of the payload bytes). The payload holds the version, the signing key ID, the account, the link, the node, and the issue and expiry times in Unix milliseconds. Its MAC key is derived from the signing key by HKDF-SHA256 under the label `selfcloud share credential v1`, so it is never a token's or a link's. It lives 15 minutes; `POST /share/renew` swaps a live one for a fresh one. A credential is not a user, a key or a token: it reaches only the routes that allow it (the table in section 8), and every other route refuses it with `forbidden`, `reason: link_route`. Its role and its link's state are read from the database on every request, in one read: a credential issued before the link's `credentials_at` (a reset or a password change), a deleted, paused, trashed or expired link, a team space that pauses it, or a suspended account is refused at once with `not_found`. A forged, malformed or expired credential is `unauthenticated`.
+
 *Known gaps, all-reachable tokens.* `GET /folders` leaves out the user's hidden team spaces, as the user's own session does by default, and `?hidden=true` answers an empty list for every token. A hidden space is still reachable by its ID, since hiding changes nothing about access. A signed link made with a token is not ended by a revocation (see *Revocation*).
 
 *Shared limits.* A token without `user` acts as its minting key, so it shares that key's limits: open uploads, upload and link rate buckets, and upload ownership. A client that hands tokens to many people's browsers should mint them with `user`, so each person has their own limits.
@@ -702,8 +704,8 @@ built on these calls.
 ### Share links
 
 A share link gives access to a file or a folder without a permission row. Slice o1 builds organisation
-links. Links that anyone can open (o2) and drop folders (o3) come later; the table and the routes already
-carry their columns.
+links, and slice o2 builds links that anyone can open. Drop folders (o3) come later; the table and the
+routes already carry their columns.
 
 - **The link.** A row of `share_links` (section 11): one access link per node, so `UNIQUE (node_id,
   upload_only)`; an audience (`organisation` or `anyone`); a role (viewer, commenter, contributor or
@@ -740,12 +742,62 @@ carry their columns.
   refusals are `forbidden` with `reason: links_off` and `conflict` with `reason: members_only`. A second link on
   a node is `conflict` with `reason: exists`.
 - **The account switch.** `accounts.public_links` (off by default) is set by the account's owner or key, with
-  `GET` and `PATCH /accounts/{acc}/sharing-policy`. It has no effect until o2, which enforces it for links that
-  anyone can open. It is audited as `account.sharing_policy`.
+  `GET` and `PATCH /accounts/{acc}/sharing-policy`. It is enforced for links that anyone can open at each use, so
+  turning it off pauses them at once and turning it back on revives them. Organisation links do not need it. It is
+  audited as `account.sharing_policy`. `GET /me` answers `public_links`. `GET` and `PATCH` also answer
+  `anyone_links`: how many of the account's links that anyone can open have not ended, live or paused by the switch.
+  The owner's switch shows that count beside it.
 - **Listing.** `GET /nodes/{nod}/share-links` lists the links on the node and above it, the node's own first,
   each with `inherited_from`. A sharer (a manager, or an account key) sees every live link with its creator,
   its visitor count and whether policy pauses it. Anyone else sees only the live links on nodes it reaches.
   Expired links are not listed.
+- **Links that anyone can open (o2).** The audience `anyone` is a link whose secret opens it for whoever holds
+  it, with no session. It gives the viewer role only, and it always ends: 30 days by default, 365 days at most,
+  and `sharing.max_expiry` lowers both when it is set. Making, changing, resetting or deleting one needs the
+  node's manager (an editor with `editors_can_share` is refused, and so is a link-only role); a delegated token is
+  refused. It needs the account's `public_links` switch on, and `allow_links` on a team space; in My files only
+  the switch. Its password, when set, is hashed with argon2id like a user's, may be 8 to 256 characters, and is
+  never shown back: a listing says only `password_set`. A new or removed password, and a change of audience, end
+  the visitors' credentials issued before it.
+  `POST /share/open` takes `{secret, password}` and answers `{token, expires_at, link, node}`. A missing password
+  is `unauthenticated` with `reason: password_required`, and a wrong one `password_wrong`; neither the missing nor
+  the wrong one counts toward a lock, but a wrong one does count toward the limits below. An open is audited as
+  `link.open` with the actor `share_link` and the client address, at most once per 15 minutes for each link (see Audit), and it names the link, never its secret.
+  - Ten wrong passwords from one address on one link in 15 minutes lock that address out of that link for 15
+    minutes (`rate_limited`, audited once as `link.throttled`). Other addresses are not affected.
+  - Thirty wrong passwords on a link in an hour make every attempt on it wait two seconds, the right ones too. Nothing
+    is refused, so a holder of the secret cannot shut the link for its visitors.
+  - `share.open.ip` (30 a minute per address) is charged before any read, as for organisation links.
+  - An address is its IPv4 address, or for an IPv6 client its /64, in the lock and in `share.open.ip`, so one host
+    cannot shed a lock by changing its low bits. `clientKey` is unchanged for the other limits.
+  - One password check runs at a time per link. The check's turn is held through the lockout check, the slowdown,
+    the verify and the recording of the outcome, so no two guesses race each other. Once the link's budget is spent,
+    that gives one guess per two seconds per link.
+  - Each per-address map holds at most 100000 keys, and the per-link timestamps at most thirty. A full map is swept
+    at once; if it is still full, the new address is not recorded. The link's budget and the turn still apply.
+  - The limits are kept in memory: a restart clears them, which only shortens a lock.
+  - A link under a trashed ancestor is dead, as a trashed node is. The check is made before the password, so every
+    guess gets the same `not_found`.
+  - A switch from an organisation link to anyone pulls an end set earlier back to the anyone cap, and audits the
+    end in `link.update`. An end no later than the cap is kept.
+  - A visitor's signed-link budget (`links.create`) is per visitor and client address, not per link, so one visitor
+    cannot use it up for everyone on the link. A visitor's stat of the link's node has `folder_id` blank and
+    `editors_can_share` false.
+  `POST /share/renew` takes the credential as its bearer and answers a new one, if the link is still live. The
+  page renews two minutes before the credential ends, and reopens with the secret (and the password) when renewal
+  fails.
+  A visitor reaches only these routes, marked with the route flag `link` in the route table, and nothing else:
+
+  | Route | Visitor may |
+  |---|---|
+  | `GET /nodes/{nod}` | stat a node the link reaches, with the link's role; no `created_by`, `owner_id`, or the link root's `parent_id` |
+  | `GET /nodes/{nod}/children` | list a directory the link reaches |
+  | `GET` and `HEAD /nodes/{nod}/content` | read a file the link reaches; the no-download rules apply, as to a viewer |
+  | `POST /nodes/{nod}/links` | make a signed link to a file, capped at the credential's remaining life; not audited one by one |
+  | `POST /share/renew` | renew its own credential |
+
+  The route table decides it: a route without the flag refuses a visitor, so a route added later is closed to visitors
+  until it says otherwise. The test enumerates the table and fails on any mismatch.
 - **Open answers.** Every dead link gives one answer: `not_found`. That covers a missing link, an expired,
   deleted, paused, trashed or reset one, another account's, and every caller that is not a signed-in member of
   the link's account. The route checks its own session, so its answer comes from the handler and not from the
@@ -753,13 +805,17 @@ carry their columns.
   (60 a minute, `share.open.user`), after the session is read. The open re-reads the link inside its write, so a
   link deleted or reset between the two reads is the same `not_found`.
 - **Audit.** `link.create`, `link.update`, `link.reset`, `link.delete`, `link.open` (a member's first visit, or
-  one more than 24 hours after its last) and `account.sharing_policy`. Each names the link's ID, never its secret or URL. An entry about an item in My
+  one more than 24 hours after its last) and `account.sharing_policy`. Each names the link's ID, never its secret or URL.
+  An anyone link's `link.open` is written at most once per 15 minutes for each link (`throttleAuditGap`); the open
+  itself always runs, and re-reads the link. An entry about an item in My
   files is private to that folder's user, as every entry about a personal folder is.
 - **Web.** The share dialog's "General access" section makes and changes the link, and shows its URL once
-  (with "Get a new link" to replace it). A member who opens `/s#secret` is taken to the item. The page reads the
-  secret from the fragment at start-up and moves it into this tab's session storage, which it clears once the
-  open is made or fails, or ten minutes after it was captured. A signed-out visitor goes to sign-in, and comes back to the page with the secret still
-  waiting. The team-space switch "Allow links" is live.
+  (with "Get a new link" to replace it). A member who opens `/s#secret` is taken to the item, which replaces the address
+  and the secret in it. The page reads the secret from the fragment and holds it in memory. A signed-out visitor
+  of a link that needs sign-in goes to sign-in: the page then drops the fragment from the address and keeps the
+  secret in this tab's session storage, which it clears once the open is made or fails, or ten minutes after it
+  was stored, and comes back to the page with the secret still waiting. A dead link's fragment is dropped too. A
+  link that anyone can open keeps its fragment in the address, so a reload opens it again. The team-space switch "Allow links" is live.
 
 ### Accepted limits
 
@@ -801,6 +857,16 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   `allow_links` back on revives its paused links, since their visits are kept. The secret is shown once: a
   lost URL is replaced with "Get a new link", which also ends the old copies. A link's members are everyone
   who holds the account's sign-in, so the link is only as private as the account's membership.
+- **Links that anyone can open (o2).** A leaked anyone link works until it expires or is deleted, and a visitor's
+  credential outlives a revocation by up to 15 minutes. Turning the account's switch back on revives paused links.
+  The secret is shown once: a lost URL is replaced with "Get a new link", which ends the old copies. Anyone who holds
+  the secret can use up the password attempts of its link, and slow its real visitors for an hour. The limits are
+  in memory. Nothing scans a visitor's files: virus scanning comes in slice u.
+  The one-guess-per-two-seconds bound holds per link once its hourly budget of wrong passwords is spent (the budget
+  and the lock are in memory and reset on a restart, which only shortens a lock). Switching an organisation link to
+  anyone keeps its secret, as decided: a URL that members already hold opens it for anyone from then on. When an
+  address map is full (100000 keys), a new address is not recorded, and an audit entry for a key that finds no room
+  is not written; that is the cost of bounding the maps.
 
 ## 9. API outline
 
@@ -856,8 +922,9 @@ Files                                      any caller, limited to what it may re
   PATCH  /share-links/{shl}                {role, expires_at}: change a link; null clears the expiry
   POST   /share-links/{shl}/reset          a new secret, with the new URL (201); the old copies stop
   DELETE /share-links/{shl}                ends the link and its visits at once (204)
-  POST   /share/open                       {secret}: a signed-in member of the account opens the link; answers {node_id}, or not_found for every dead link
-  GET|PATCH /accounts/{acc}/sharing-policy {public_links}: the account's switch for links that anyone can open (owner or key)
+  POST   /share/open                       {secret, password}: a signed-in member opens an organisation link ({node_id}); anyone opens an anyone link ({token, expires_at, link, node}); not_found for every dead link
+  POST   /share/renew                      bearer scl_: a live visitor credential, renewed ({token, expires_at})
+  GET|PATCH /accounts/{acc}/sharing-policy {public_links} (answers {public_links, anyone_links}): the account's switch for links that anyone can open, and how many such links it has (owner or key)
   POST   /nodes/{nod}/access-requests      {role, message}: ask for a role (users only); always 202, with no body
   GET    /nodes/{nod}/access-requests      the requests on a node (manager, or editor where editors_can_share allows)
   GET    /access-requests                  the pending requests the caller may decide (the oldest 5,000 in the account)
@@ -1273,7 +1340,7 @@ the not-found view.
 | `group_members` | group_id, user_id, created_at |
 | `permissions` | node_id, account_id, subject_kind (`user` or `group`), subject_id, role (viewer, commenter, contributor, editor, manager), created_at, created_by, expires_at (null: no expiry) |
 | `access_requests` | id (`arq_`), account_id, node_id, user_id, role (viewer, commenter or editor), message (at most 500 characters), status (pending, approved, denied), created_at, decided_at, decided_by; at most one pending row per node and user |
-| `share_links` | id (`shl_`), account_id, node_id (cascade), audience (`organisation` or `anyone`), role (viewer, commenter, contributor or editor; null for a drop link), upload_only (0 or 1), secret_hash (SHA-256, unique), password_hash (null until o2), expires_at (null: no end), credentials_at (the secret's issue time), created_by and created_kind, created_at, updated_by, updated_kind, updated_at; unique (node_id, upload_only) |
+| `share_links` | id (`shl_`), account_id, node_id (cascade), audience (`organisation` or `anyone`), role (viewer, commenter, contributor or editor; null for a drop link), upload_only (0 or 1), secret_hash (SHA-256, unique), password_hash (argon2id; anyone links only, null otherwise), expires_at (null: no end), credentials_at (the secret's issue time), created_by and created_kind, created_at, updated_by, updated_kind, updated_at; unique (node_id, upload_only) |
 | `share_link_visits` | link_id (cascade), user_id (cascade), visited_at; primary key (link_id, user_id). A member's recorded open of a link; it counts only from `credentials_at` on |
 | `hidden_folders` | user_id, folder_id, created_at; primary key (user_id, folder_id). A user's own list of hidden team spaces, which changes no access |
 | `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors), trashed_at and trashed_by (set on a trash root only), trashed_name_key (the name key before the trash) |
@@ -1492,4 +1559,28 @@ Decided on approval:
       in its section 3, under o2.
     - The conflict answers carry a `reason` (`exists`, `members_only`) for the dialog to name the cause.
     - Organisation links take no password in o1; the field is refused as unknown.
+
+    Interpretations made in o2, for review (the owner has not decided them):
+    - The visitor's credential is refused with `not_found` once its link is dead, and `unauthenticated` when it is
+      forged, malformed or past its own 15 minutes, so a holder learns nothing it did not already hold.
+    - The route flag names the routes a visitor may call (the table in section 8). `POST /share/renew` is one of
+      them; the proposal's table did not list it, since it is the credential's own route.
+    - A visitor sees no `created_by` or `owner_id` on any node, not only on the link's root. The proposal named the
+      root's `parent_id`, `created_by` and `owner_id`.
+    - The per-link budget of wrong passwords slows attempts rather than refusing them (the proposal left the form
+      open). A wrong password that trips the per-address lock is audited once per link and reason in 15 minutes.
+    - An anyone link's end is capped at the lower of 365 days and `sharing.max_expiry`, and its default is 30 days,
+      or the cap when that is lower. The proposal set the cap; the setting also applies, as for every share.
+    - Changing an organisation link to anyone gives it the viewer role, sheds its members' visits, and keeps the
+      secret, as the owner decided. Changing back ends the anyone visitors, and clears the password.
+    - A signed-out visitor who opens an organisation link is still answered `not_found` (o1), so the open page
+      sends it to sign-in with the secret waiting, as the proposal's section 4 describes. The anyone path is tried
+      first, anonymously, so the page can tell the two kinds apart without the server saying which is which.
+    - Visits and credentials are compared in whole milliseconds, since the store keeps milliseconds. An o1 visit
+      made in the same millisecond as its link's creation was not counted; o2 fixes that comparison.
+    - The policy answers `anyone_links`, the number of anyone links that have not expired, live or paused, and the
+      switch shows it. Not built in o2: the owner's "Delete all public links" control on the policy page; the
+      account-wide list and bulk delete come in o4.
+    - The per-address limits and lockouts of `/share/open` count an IPv6 client by its /64. The other limits still
+      count one address each.
 

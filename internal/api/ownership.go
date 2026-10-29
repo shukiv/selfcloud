@@ -49,8 +49,8 @@ func (s *Server) handleTransferOwnership(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			return err
 		}
-		isKey := p.Kind != auth.KindUser
-		if !isKey && n.OwnerID != p.UserID {
+		// Only an account key, or the item's owner as a user, may transfer it. A visitor of a link is neither.
+		if p.Kind != auth.KindAccountKey && (p.Kind != auth.KindUser || n.OwnerID != p.UserID) {
 			return apierr.New(apierr.Forbidden, "only the owner of the item, or an account key, can transfer it")
 		}
 		if store.RoleRank(role) < store.RoleRank(store.RoleEditor) {

@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
@@ -269,7 +270,12 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	if p == nil {
 		return apierr.New(apierr.Unauthenticated, "credentials are required")
 	}
-	if err := s.rateLimit("links.create", string(p.Kind)+":"+p.ID); err != nil {
+	// A visitor's budget is its own: one visitor cannot use up the link's budget for everyone else on it.
+	key := string(p.Kind) + ":" + p.ID
+	if p.Kind == auth.KindShareLink {
+		key += "|" + addressKey(r)
+	}
+	if err := s.rateLimit("links.create", key); err != nil {
 		return err
 	}
 	var in linkRequest
@@ -285,6 +291,14 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 		left := time.Until(p.Token.ExpiresAt).Truncate(time.Second)
 		if left < time.Second {
 			return apierr.New(apierr.TokenExpired, "the token has expired")
+		}
+		ttl, maxTTL = min(ttl, left), min(maxTTL, left)
+	}
+	// A visitor of a link that anyone can open gets the same cap: its signed links end with its credential.
+	if p.Kind == auth.KindShareLink && p.Link != nil {
+		left := time.Until(p.Link.ExpiresAt).Truncate(time.Second)
+		if left < time.Second {
+			return apierr.New(apierr.Unauthenticated, "the credential has expired; open the link again")
 		}
 		ttl, maxTTL = min(ttl, left), min(maxTTL, left)
 	}
@@ -326,15 +340,18 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	if s.cfg.ContentURL != "" {
 		base = s.cfg.ContentURL
 	}
-	ctx := r.Context()
-	s.atWrite()
-	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "node.link", n.ID,
-			map[string]any{"disposition": disp, "ttl_seconds": int64(ttl / time.Second),
-				"expires_at": expires.Format(time.RFC3339)}, n.FolderID))
-	})
-	if err != nil {
-		return err
+	// A visitor's signed links are not logged one by one, so a busy link cannot flood the audit log.
+	if p.Kind != auth.KindShareLink {
+		ctx := r.Context()
+		s.atWrite()
+		err = s.store.Write(ctx, func(tx *store.Tx) error {
+			return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "node.link", n.ID,
+				map[string]any{"disposition": disp, "ttl_seconds": int64(ttl / time.Second),
+					"expires_at": expires.Format(time.RFC3339)}, n.FolderID))
+		})
+		if err != nil {
+			return err
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, linkJSON{

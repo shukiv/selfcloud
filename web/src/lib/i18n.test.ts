@@ -44,6 +44,16 @@ describe('translate', () => {
 });
 
 describe('translatePlural', () => {
+  it('has the count of anyone links in every language, for each plural form', () => {
+    for (const l of ['en', 'es', 'fr', 'pt', 'ru', 'ar', 'he'] as const) {
+      for (const n of [0, 1, 2, 3, 11, 100]) {
+        const text = translatePlural(l, 'policy.anyoneLinks', n);
+        expect(text).not.toBe('policy.anyoneLinks');
+        if (n >= 3) expect(text).toContain(new Intl.NumberFormat(l).format(n));
+      }
+    }
+  });
+
   it('picks Russian forms by the count', () => {
     const at = (n: number) => translatePlural('ru', 'error.rateLimited', n);
     expect(at(1)).toContain('минуту');

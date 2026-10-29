@@ -95,23 +95,35 @@ export function listShareLinks(nod: string): Promise<{ items: ShareLink[] }> {
   return api<{ items: ShareLink[] }>('GET', `/api/v1/nodes/${nod}/share-links`);
 }
 
-// createShareLink makes the node's organisation link. expires_at is optional, an RFC 3339 time. The
-// answer carries the URL, which is shown once.
+// createShareLink makes the node's link. An organisation link takes an optional expires_at and no password.
+// An anyone link takes a viewer role only, an expires_at (the server makes one when it is absent) and an
+// optional password. The answer carries the URL, which is shown once.
 export function createShareLink(
   nod: string,
-  body: { role: Role; expires_at?: string },
+  body: ShareLinkBody,
 ): Promise<ShareLinkCreated> {
-  return api<ShareLinkCreated>('POST', `/api/v1/nodes/${nod}/share-links`, {
-    body: { audience: 'organisation', ...body },
-  });
+  return api<ShareLinkCreated>('POST', `/api/v1/nodes/${nod}/share-links`, { body });
 }
 
-// updateShareLink changes a link's role, or its expiry: null clears it, an absent field keeps it.
-export function updateShareLink(
-  shl: string,
-  body: { role?: Role; expires_at?: string | null },
-): Promise<ShareLink> {
+// ShareLinkBody is what a new link takes. audience defaults to organisation on the server, and is sent here.
+export interface ShareLinkBody {
+  audience: 'organisation' | 'anyone';
+  role?: Role;
+  expires_at?: string;
+  password?: string;
+}
+
+// updateShareLink changes a link. An absent field keeps its value; expires_at null clears it (refused for an
+// anyone link); password "" removes the password of an anyone link. Switching audience keeps the secret.
+export function updateShareLink(shl: string, body: ShareLinkUpdate): Promise<ShareLink> {
   return api<ShareLink>('PATCH', `/api/v1/share-links/${shl}`, { body });
+}
+
+export interface ShareLinkUpdate {
+  audience?: 'organisation' | 'anyone';
+  role?: Role;
+  expires_at?: string | null;
+  password?: string;
 }
 
 // resetShareLink gives a link a new secret. The old URL stops working.
@@ -123,7 +135,69 @@ export function deleteShareLink(shl: string): Promise<void> {
   return api<void>('DELETE', `/api/v1/share-links/${shl}`);
 }
 
-// openShareLink opens a link for the signed-in member, and answers the node it opens.
-export function openShareLink(secret: string): Promise<{ node_id: string }> {
-  return api<{ node_id: string }>('POST', '/api/v1/share/open', { body: { secret } });
+// OpenedLink is what a link opens to. An organisation link, opened by a signed-in member, names its node.
+// An anyone link answers a bearer credential for the visit and the node it opens.
+export type OpenedLink =
+  | { node_id: string }
+  | { token: string; expires_at: string; link: ShareLink; node: string };
+
+// openShareLink opens a link from its secret. A password is sent only when the visitor gave one.
+export function openShareLink(secret: string, password?: string): Promise<OpenedLink> {
+  const body = password ? { secret, password } : { secret };
+  return api<OpenedLink>('POST', '/api/v1/share/open', { body, noRedirect: true });
+}
+
+// renewShareLink swaps a live visitor credential for a new one. The bearer is sent in the header only.
+export function renewShareLink(token: string): Promise<{ token: string; expires_at: string }> {
+  return api<{ token: string; expires_at: string }>('POST', '/api/v1/share/renew', {
+    headers: { Authorization: `Bearer ${token}` },
+    noRedirect: true,
+  });
+}
+
+// The calls a visitor makes with the bearer. A 401 means the credential has ended, and the page asks again;
+// it must never send the visitor to sign-in, so every one passes noRedirect.
+export function visitorNode(token: string, nod: string): Promise<Node> {
+  return api<Node>('GET', `/api/v1/nodes/${nod}`, visitorOpts(token));
+}
+
+export function visitorChildren(token: string, nod: string, cursor?: string): Promise<Page<Node>> {
+  const c = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+  return api<Page<Node>>('GET', `/api/v1/nodes/${nod}/children?limit=200${c}`, visitorOpts(token));
+}
+
+// visitorLink makes a signed link to a file the visitor reaches. Inline gives a URL for a preview; attachment
+// gives one for a download, which the server refuses when no-download applies.
+export function visitorLink(
+  token: string,
+  nod: string,
+  disposition: 'inline' | 'attachment',
+): Promise<{ url: string; expires_at: string }> {
+  return api<{ url: string; expires_at: string }>('POST', `/api/v1/nodes/${nod}/links`, {
+    ...visitorOpts(token),
+    // No ttl: the server gives the longest life the visitor's credential has left.
+    body: { disposition },
+  });
+}
+
+function visitorOpts(token: string): { headers: Record<string, string>; noRedirect: true } {
+  return { headers: { Authorization: `Bearer ${token}` }, noRedirect: true };
+}
+
+// SharingPolicy is the account's switch for links that anyone can open, and how many such links it has.
+export interface SharingPolicy {
+  public_links: boolean;
+  anyone_links: number;
+}
+
+// getSharingPolicy reads the account's switch for links that anyone can open.
+export function getSharingPolicy(acc: string): Promise<SharingPolicy> {
+  return api<SharingPolicy>('GET', `/api/v1/accounts/${acc}/sharing-policy`);
+}
+
+// setSharingPolicy turns the account's switch for anyone links on or off. Off pauses those links at once.
+export function setSharingPolicy(acc: string, on: boolean): Promise<SharingPolicy> {
+  return api<SharingPolicy>('PATCH', `/api/v1/accounts/${acc}/sharing-policy`, {
+    body: { public_links: on },
+  });
 }

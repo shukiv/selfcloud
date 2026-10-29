@@ -1626,6 +1626,9 @@ paths:
       operationId: statNode
       summary: Stat a file or directory
       description: |
+        A visitor of a link that anyone can open may call this with its credential, for a node the
+        link reaches, and gets the link's role. A visitor sees no `created_by` or `owner_id`, and no
+        `parent_id` at the link's own node.
         For a file: its size, media type, `etag` (a strong ETag that changes with every write)
         and `sha256` of the contents. A folder's root is a directory with no `parent_id`.
       security: [{ bearer: [] }, { session: [] }]
@@ -1693,6 +1696,7 @@ paths:
       tags: [Files]
       operationId: listChildren
       summary: List a directory by its ID
+      description: A visitor of a link that anyone can open may call this with its credential, below the link's node.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - $ref: "#/components/parameters/limit"
@@ -1785,6 +1789,8 @@ paths:
       operationId: getContent
       summary: Download a file
       description: |
+        A visitor of a link that anyone can open may call this with its credential. The no-download
+        rules apply to a visitor as to a viewer.
         The file's contents. `Range` may name up to 16 byte ranges: one is `206` with a
         `Content-Range`, several are a `multipart/byteranges` body. A range that is malformed, lies
         outside the file, or is one of more than 16 is `range_not_satisfiable`, with
@@ -1901,6 +1907,8 @@ paths:
       operationId: createLink
       summary: Make a signed download link
       description: |
+        A visitor of a link that anyone can open may call this with its credential. Its signed link
+        lives no longer than the visitor's credential, and is not audited.
         A link to one file that needs no credential: `GET` on it serves the file. The link names the
         file's current contents, so it stops working when the file changes, and it expires. The
         caller needs read access to the file to ask for a link; the link itself is the grant for
@@ -1970,8 +1978,12 @@ paths:
         always allows an organisation link. `expires_at` is optional and capped at `sharing.max_expiry`
         when that is set. The secret is shown in `url`, here and on reset, and nowhere else.
 
-        Links that anyone can open, and drop links, are not available yet: `audience: anyone` and
-        `upload_only: true` are refused with `invalid_request`. A delegated token gets `forbidden`.
+        A link that anyone can open (`audience: anyone`) needs the node's manager, not an editor, even
+        where `editors_can_share` allows editors to share. It gives the viewer role only, needs an end
+        date (30 days by default, 365 days at most), may carry a password, and needs the account's
+        `public_links` switch on, and `allow_links` on a team space. Its URL works for anyone who holds
+        it, without a session. Drop links (`upload_only: true`) are not available yet and are refused
+        with `invalid_request`. A delegated token gets `forbidden`.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -1997,7 +2009,9 @@ paths:
         caller's own role is `forbidden`, and so is a role above the caller's own. An absent
         `expires_at` keeps the expiry, and `null` clears it. A link whose team space pauses it
         (`allow_links` off, or members_only below the root) is `forbidden` with `reason: links_off`
-        until the policy allows it again.
+        until the policy allows it again. A link that anyone can open needs the node's manager and the
+        account's `public_links` switch; `forbidden` with `reason: manager_required` or
+        `public_links_off` otherwise.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -2045,14 +2059,25 @@ paths:
     post:
       tags: [Sharing]
       operationId: openShareLink
-      summary: Open a link (a signed-in member)
+      summary: Open a link
       description: |
-        The page at `{public_url}/s` sends the secret taken from the URL fragment. A signed-in user
-        of the link's account gets `{node_id}` and the visit is recorded, so the node and its
-        contents are shared with it from then on. Every other caller gets `not_found`: no session, a
-        session of another account, an installation admin, a credential in the `Authorization`
-        header, a missing link, and a link that is expired, deleted, paused, reset since the visit,
-        or trashed. The session check uses the cookie's `Origin` and `X-CSRF-Token` rules.
+        The page at `{public_url}/s` sends the secret taken from the URL fragment.
+
+        **An organisation link** opens for a signed-in user of the link's account, which gets
+        `{node_id}`; the visit is recorded, so the node and its contents are shared with it from then
+        on. Every other caller gets `not_found`: no session, a session of another account, an
+        installation admin, a credential in the `Authorization` header, a missing link, and a link
+        that is expired, deleted, paused, reset since the visit, or trashed. The session check uses
+        the cookie's `Origin` and `X-CSRF-Token` rules.
+
+        **An anyone link** opens without a session, for whoever holds the secret. If the link has a
+        password, a request without it gets `unauthenticated` with `reason: password_required`, and a
+        wrong one `reason: password_wrong`. Ten wrong passwords from one address in fifteen minutes
+        lock that address out of that link for fifteen minutes (`rate_limited`); thirty wrong ones in
+        an hour slow every attempt on the link by two seconds, and refuse none. The answer is
+        `{token, expires_at, link, node}`: the visitor's credential (`scl_`), which lives fifteen
+        minutes, the link, and the node it opens. Renew the credential with `POST /share/renew`.
+        Every dead link gets `not_found`.
       requestBody:
         required: true
         content:
@@ -2063,16 +2088,49 @@ paths:
               additionalProperties: false
               properties:
                 secret: { type: string, description: The secret from the URL fragment. }
+                password: { type: string, maxLength: 256, description: "The link's password, for an anyone link that has one." }
       responses:
         "200":
-          description: The node the link opens.
+          description: "An organisation link: `node_id`. An anyone link: `token`, `expires_at`, `link` and `node`."
           content:
             application/json:
               schema:
                 type: object
-                required: [node_id]
                 properties:
-                  node_id: { type: string }
+                  node_id: { type: string, description: "An organisation link." }
+                  token: { type: string, description: "An anyone link: the visitor's credential, starting scl_." }
+                  expires_at: { type: string, format: date-time, description: "An anyone link: when the credential ends." }
+                  link: { $ref: "#/components/schemas/ShareLink" }
+                  node: { type: string, description: "An anyone link: the node the link opens." }
+        "401":
+          description: An anyone link with a password, and no password or the wrong one. `details.reason` is `password_required` or `password_wrong`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/share/renew:
+    post:
+      tags: [Sharing]
+      operationId: renewShareCredential
+      summary: Renew a visitor's credential
+      description: |
+        The bearer is a visitor's credential (`scl_`) for a link that anyone can open. A live one
+        is swapped for a fresh one that lives fifteen minutes. The link's state is checked again:
+        a reset, deleted, paused, expired or trashed link, or a suspended account, is `not_found`,
+        and a credential that has expired or is not valid is `unauthenticated`. A key or a token
+        gets `forbidden`.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The new credential and when it ends.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expires_at]
+                properties:
+                  token: { type: string }
+                  expires_at: { type: string, format: date-time }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/sharing-policy:
     parameters:
@@ -2102,7 +2160,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/SharingPolicy" }
+            schema: { $ref: "#/components/schemas/SharingPolicyUpdate" }
       responses:
         "200":
           description: The policy as it now stands.
@@ -2702,8 +2760,10 @@ components:
       description: |
         `Authorization: Bearer <credential>`. Installation admin keys start with `sc_admin_`;
         account keys start with `sc_acct_`; delegated tokens start with `sct_` and are refused
-        once they expire (`token_expired`) or are revoked (`unauthenticated`). A cookie session
-        is never accepted for a request from another origin.
+        once they expire (`token_expired`) or are revoked (`unauthenticated`). A visitor of a link
+        that anyone can open holds a credential that starts with `scl_`; it is accepted only on the
+        routes that say so, and refused elsewhere with `forbidden`, `reason: link_route`. A cookie
+        session is never accepted for a request from another origin.
     session:
       type: apiKey
       in: cookie
@@ -3217,6 +3277,7 @@ components:
         created_by: { type: string, description: "Sharers only: the user or account key that made the link." }
         visitors: { type: integer, description: "Sharers only: members who hold a live visit to the link." }
         paused: { type: boolean, description: "Sharers only: true while policy pauses the link, so it grants nothing." }
+        password_set: { type: boolean, description: "Sharers only: an anyone link has a password. The password itself is never shown." }
 
     ShareLinkList:
       type: object
@@ -3231,19 +3292,31 @@ components:
       required: [audience]
       additionalProperties: false
       properties:
-        audience: { type: string, enum: [organisation, anyone], description: "Only organisation is available yet." }
-        role: { type: string, enum: [viewer, commenter, contributor, editor], description: Defaults to viewer. }
+        audience: { type: string, enum: [organisation, anyone] }
+        role: { type: string, enum: [viewer, commenter, contributor, editor], description: "Defaults to viewer. An anyone link gives viewer only." }
         upload_only: { type: boolean, description: "Drop links are not available yet; true is refused." }
-        expires_at: { type: [string, "null"], format: date-time }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: "An anyone link ends: the default is 30 days from now, and the longest is 365 days (and sharing.max_expiry when that is set). An organisation link may have no end."
+        password:
+          type: string
+          minLength: 8
+          maxLength: 256
+          description: "Anyone links only. Empty or absent means no password. Stored as an argon2id hash and never shown back."
 
     ShareLinkUpdate:
       type: object
       additionalProperties: false
       properties:
-        audience: { type: string, enum: [organisation, anyone] }
+        audience: { type: string, enum: [organisation, anyone], description: "Switching to anyone gives the viewer role and, when the link has no end, the default end. Switching to organisation clears the password and ends the anyone visitors." }
         role: { type: string, enum: [viewer, commenter, contributor, editor] }
         upload_only: { type: boolean }
-        expires_at: { type: [string, "null"], format: date-time, description: Absent keeps the expiry; null clears it. }
+        expires_at: { type: [string, "null"], format: date-time, description: "Absent keeps the expiry; null clears it, which an anyone link refuses." }
+        password:
+          type: string
+          maxLength: 256
+          description: "Anyone links only. A new password, or empty to remove it. Visitors' credentials issued before the change stop working."
 
     ShareLinkCreated:
       type: object
@@ -3255,6 +3328,17 @@ components:
           description: The address that opens the link, with the secret in its fragment. Shown here only.
 
     SharingPolicy:
+      type: object
+      required: [public_links, anyone_links]
+      additionalProperties: false
+      properties:
+        public_links: { type: boolean, description: Links that anyone can open are allowed in the account. }
+        anyone_links:
+          type: integer
+          minimum: 0
+          description: How many of the account's links that anyone can open have not ended, live or paused by public_links.
+
+    SharingPolicyUpdate:
       type: object
       required: [public_links]
       additionalProperties: false
@@ -4048,3 +4132,6 @@ components:
         personal_folder_id:
           type: [string, "null"]
           description: The caller's "My files" folder. Null for an installation admin.
+        public_links:
+          type: boolean
+          description: The account's switch for links that anyone can open. False for an installation admin.

@@ -13,6 +13,7 @@
   import type { Usage } from '../../lib/manage/types';
   import UsageMeter from '../../components/UsageMeter.svelte';
   import AuditItem from '../../components/manage/AuditItem.svelte';
+  import PublicLinksSwitch from '../../components/share/PublicLinksSwitch.svelte';
 
   // Overview: the tenant's usage and people, its recent activity, and the next steps while it is new.
   let usageNow = $state<Usage | null>(null);
@@ -86,6 +87,10 @@
       <dd>{formatNumber(usageNow.files, $lang)}</dd>
     </div>
   </dl>
+
+  {#if account}
+    <PublicLinksSwitch {account} />
+  {/if}
 
   {#if fresh}
     <section class="panel-plain" aria-labelledby="next-title">

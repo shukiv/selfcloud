@@ -264,7 +264,8 @@ async function main() {
     check(page.errors.length === 0, `no console errors or policy violations (${page.errors.join(' | ') || 'none'})`);
     check(page.expectedConflicts.length === 1, `exactly one upload met a taken name, and was asked about it (${page.expectedConflicts.length})`);
     check(page.expectedSignInRefusals.length === 1, `the used sign-in link was refused once, on the second visit (${page.expectedSignInRefusals.length})`);
-    check(page.expectedDeadLinks.length === 1, `the removed link was refused once, and its page showed the one message (${page.expectedDeadLinks.length})`);
+    check(page.expectedDeadLinks.length === 3, `the three dead links were refused once each: signed out before sign-in, removed, and deleted (${page.expectedDeadLinks.length})`);
+    check(page.expectedPasswordRefusals.length === 2, `the password link was refused twice: asked for, then a wrong one (${page.expectedPasswordRefusals.length})`);
     check(page.expectedSwitchPrompts.length === 2, `the two links for another user were each asked about, on a browser signed in as another (${page.expectedSwitchPrompts.length})`);
     check(page.expectedMissing.length >= 2, `the not-found views asked for access, and the browser logged their 404s (${page.expectedMissing.length})`);
     // A data: URL is inline, not a request: Chrome draws the calendar icon of a date input from one.
@@ -286,10 +287,10 @@ async function main() {
 }
 
 // rawPut sends a body that is not JSON, as the small-file route takes it.
-async function rawPut(base, path, key, body) {
+async function rawPut(base, path, key, body, type = 'text/plain') {
   const res = await fetch(base + path, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'text/plain' },
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': type },
     body,
   });
   if (!res.ok) throw new Error(`POST ${path}: ${res.status} ${await res.text()}`);
@@ -543,6 +544,9 @@ async function linkChecks(page, { base, accountID, accountKey }) {
   await api(base, 'PATCH', `/api/v1/folders/${fld}/settings`, accountKey, { allow_links: true });
   const plans = await api(base, 'POST', `/api/v1/folders/${fld}/directories`, accountKey, { path: '/Plans', parents: false });
   await rawPut(base, `/api/v1/folders/${fld}/files?path=%2FPlans%2Fbrief.txt`, accountKey, 'the brief\n');
+  // An image, so the visitor's file view has a preview: a real one-pixel PNG, so the browser draws it without an error.
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+  await rawPut(base, `/api/v1/folders/${fld}/files?path=%2FPlans%2Fplan.png`, accountKey, pixel, 'image/png');
 
   // The owner shares Plans through an organisation link, and copies the URL the dialog shows once.
   if (await page.evaluate(`!!document.querySelector('.topbar')`)) await signOut(page);
@@ -603,10 +607,109 @@ async function linkChecks(page, { base, accountID, accountKey }) {
   await page.goto(url);
   await page.waitFor(`!!document.querySelector('.alert') && document.querySelector('.alert').textContent.includes("doesn't work")`, 15000);
   check(true, 'the removed link shows the one message a dead link gets');
+  await anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans });
+}
+
+// anyoneLinkChecks: the owner turns on links that anyone can open, and makes one on Plans with a password. A
+// signed-out visitor opens it, is asked for the password, is refused a wrong one, then sees the folder, previews
+// a file, and cannot reach an item outside the link. The owner deletes the link, and the visitor gets the one message.
+async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans }) {
+  const PASSWORD = 'open sesame 2026';
+  const outside = (await api(base, 'POST', `/api/v1/folders/${fld}/directories`, accountKey, { path: '/Other', parents: false })).id;
+
+  // The owner turns the account's switch on in Manage > Overview. The session reads the switch when it starts, so the
+  // owner signs in again after the change.
+  await signOut(page);
+  await signIn(page, OWNER);
+  await navigateTo(page, '/manage');
+  // The switch appears once the policy has loaded; a click that finds no switch yet is tried again.
+  await page.waitFor(`(() => { const el = document.getElementById('public-links-switch'); if (!el) return false; el.click(); return true; })()`);
+  await page.waitFor(`document.getElementById('public-links-switch').checked`);
+  await signOut(page);
+  await signIn(page, OWNER);
+  check(true, 'the owner turns on links that anyone can open in Manage > Overview');
+
+  // The owner makes a link on Plans that anyone can open, with a password, and copies the URL the dialog shows once.
+  await navigateTo(page, `/files/${fld}`);
+  await rowAppears(page, 'Plans');
+  await selectRow(page, 'Plans');
+  await clickButton(page, 'Share');
+  await page.waitFor(`!!document.getElementById('share-general')`);
+  await page.waitFor(`!!document.querySelector('input[name="share-general-access"][value="anyone"]')`);
+  await page.evaluate(`document.querySelector('input[name="share-general-access"][value="anyone"]').click(), true`);
+  await page.waitFor(`!!document.getElementById('share-anyone-password')`);
+  await setInput(page, 'share-anyone-password', PASSWORD);
+  await clickButton(page, 'Create link');
+  await page.waitFor(`!!document.querySelector('.made input')`);
+  const url = await page.evaluate(`document.querySelector('.made input').value`);
+  check(url.startsWith(base + '/s#') && url.slice(base.length + 3).length === 43, 'the owner makes a link that anyone can open, with a password');
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+
+  // A signed-out visitor is asked for the password; a wrong one is refused with the message; the right one opens it.
+  await signOut(page);
+  await page.goto(url);
+  await page.waitFor(`!!document.getElementById('share-password')`);
+  check(true, 'a signed-out visitor is asked for the password of a link that anyone can open');
+  await setInput(page, 'share-password', 'not the password');
+  await clickButton(page, 'Open');
+  await page.waitFor(`!!document.querySelector('.alert.error') && document.querySelector('.alert.error').textContent.includes('not right')`);
+  check(true, 'a wrong password is refused with its message');
+  await setInput(page, 'share-password', PASSWORD);
+  await clickButton(page, 'Open');
+  await page.waitFor(`!!document.querySelector('.rows') && [...document.querySelectorAll('h1')].some((h) => h.textContent === 'Plans')`, 15000);
+  const listed = await page.evaluate(`document.querySelector('.rows').textContent`);
+  check(listed.includes('brief.txt') && listed.includes('plan.png'), 'the visitor sees the folder, with no sign-in');
+  const kept = await page.evaluate(`location.hash.length > 1`);
+  check(kept, 'the secret stays in the address, so a reload works');
+  const stored = await page.evaluate(`sessionStorage.getItem('selfcloud.share.secret')`);
+  check(stored === null, 'nothing about the visit is left in session storage');
+
+  // The visitor previews the picture: the preview is a signed link, and it has a Download button.
+  await page.evaluate(`[...document.querySelectorAll('.rows button')].find((b) => b.textContent === 'plan.png').click(), true`);
+  await page.waitFor(`!!document.querySelector('img.public-preview')`, 15000);
+  const src = await page.evaluate(`document.querySelector('img.public-preview').getAttribute('src')`);
+  check(src.includes('/api/v1/links/'), 'the file opens with a preview from a signed link');
+  check(await page.evaluate(`!!document.querySelector('a.btn[download]')`), 'the file has a Download button');
+  // The path stops at the link's root: no item above it is named.
+  const crumbs = await page.evaluate(`[...document.querySelectorAll('.crumbs button')].map((b) => b.textContent)`);
+  check(JSON.stringify(crumbs) === JSON.stringify(['Plans']), `the path stops at the link's root (${crumbs.join(' / ')})`);
+
+  // The visitor's credential cannot reach an item outside the link. The check runs on the server, from the harness.
+  const secret = url.slice(url.indexOf('#') + 1);
+  const opened = await api(base, 'POST', '/api/v1/share/open', '', { secret, password: PASSWORD });
+  const inside = await fetch(base + `/api/v1/nodes/${plans.id}`, { headers: { Authorization: `Bearer ${opened.token}` } });
+  const beside = await fetch(base + `/api/v1/nodes/${outside}`, { headers: { Authorization: `Bearer ${opened.token}` } });
+  check(inside.status === 200 && beside.status === 404, `a visitor reaches the link's folder, and not the item beside it (${inside.status}, ${beside.status})`);
+
+  // The owner deletes the link. A signed-in member who opens it gets the one dead-link message.
+  await signOut(page);
+  await signIn(page, OWNER);
+  await navigateTo(page, `/files/${fld}`);
+  await rowAppears(page, 'Plans');
+  await selectRow(page, 'Plans');
+  await clickButton(page, 'Share');
+  await page.waitFor(`!!document.querySelector('input[name="share-general-access"][value="restricted"]')`);
+  await page.evaluate(`document.querySelector('input[name="share-general-access"][value="restricted"]').click(), true`);
+  await page.waitFor(`document.querySelector('input[name="share-general-access"][value="restricted"]').checked`);
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+  await signOut(page);
+  await signIn(page, MEMBER);
+  await page.goto(url);
+  await page.waitFor(`!!document.querySelector('.alert') && document.querySelector('.alert').textContent.includes("doesn't work")`, 15000);
+  check(true, 'a deleted link that anyone can open shows the one dead-link message');
 }
 
 // signOut signs out through the account menu, as a person would.
 async function signOut(page) {
+  // A page without the app shell, such as /s, has no user menu even when signed in. The app's home page shows the
+  // menu to a signed-in browser and the sign-in page to a signed-out one; a signed-out browser is done there.
+  if (!(await page.evaluate(`!!document.querySelector('.user-menu > button')`))) {
+    await navigateTo(page, '/files');
+    await page.waitFor(`!!document.querySelector('.user-menu > button') || !!document.getElementById('login-email')`, 15000);
+    if (await page.evaluate(`!!document.getElementById('login-email')`)) return;
+  }
   await page.evaluate(`document.querySelector('.user-menu > button').click(), true`);
   await page.waitFor(`!!document.querySelector('.menu-item:last-child')`);
   await page.evaluate(`document.querySelector('.menu-item:last-child').click(), true`);

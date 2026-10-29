@@ -84,7 +84,7 @@ func (s *Server) subjectDetails(ctx context.Context, accountID, kind, subj strin
 // seesFullChain reports whether a caller sees every permission that reaches a node, and the names of
 // their subjects: an account key, or a caller whose role on the node is manager.
 func seesFullChain(p *auth.Principal, role string) bool {
-	return p.Kind != auth.KindUser || store.RoleRank(role) >= store.RoleRank(store.RoleManager)
+	return p.Kind == auth.KindAccountKey || store.RoleRank(role) >= store.RoleRank(store.RoleManager)
 }
 
 // handleListNodePermissions lists the permissions that reach a node: the ones on the node and the

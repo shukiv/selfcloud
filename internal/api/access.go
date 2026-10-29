@@ -141,6 +141,22 @@ func nodeRoleIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeID 
 		return nil, "", err
 	}
 
+	if p.Kind == auth.KindShareLink {
+		// A visitor of a link that anyone can open reaches the link's node and everything below it, at the link's
+		// role, and nothing else: no permission, group or implicit rule applies to it.
+		if p.Link == nil {
+			return nil, "", apierr.New(apierr.Unauthenticated, "the credential is not valid")
+		}
+		within, err := rd.IsWithin(ctx, p.AccountID, nodeID, p.Link.Node)
+		if err != nil {
+			return nil, "", err
+		}
+		if !within {
+			return nil, "", nodeNotFound()
+		}
+		return n, p.Link.Role, nil
+	}
+
 	role := store.RoleManager // an account key, which reaches everything in its account
 	if p.Kind == auth.KindUser {
 		u, err := rd.User(ctx, p.AccountID, p.UserID)

@@ -18,13 +18,14 @@ import (
 )
 
 // A share link gives access to a file or a directory without a permission row. This file holds the
-// slice o1 routes: organisation links, which open for members of the account, and the account's policy
-// switch. Links that anyone can open and drop links come in later slices and are refused here.
+// management routes and the open of organisation links, which open for members of the account, and of
+// links that anyone can open, which open for whoever holds the secret (share_open.go). The account's
+// policy switch is here too. Drop links come in a later slice and are refused here.
 //
 // A link follows the same rules as a permission: the caller must share the node (mayShare), it may
-// not grant a role above its own, and a delegated token never reaches a link. Opening a link records
-// a visit (share_link_visits), and the rank queries count the visit; the link itself is never a
-// permission row. See design.md section 8 and docs/design.md "Share links".
+// not grant a role above its own, and a delegated token never reaches a link. An anyone link also needs
+// the node's manager. Opening an organisation link records a visit (share_link_visits), and the rank
+// queries count the visit; the link itself is never a permission row. See design.md section 8.
 
 // linkRoles are the roles a link may give. A link never gives manager.
 var linkRoles = []string{store.RoleViewer, store.RoleCommenter, store.RoleContributor, store.RoleEditor}
@@ -44,6 +45,8 @@ type shareLinkJSON struct {
 	CreatedBy     *string    `json:"created_by,omitempty"`
 	Visitors      *int       `json:"visitors,omitempty"`
 	Paused        *bool      `json:"paused,omitempty"`
+	// PasswordSet says whether an anyone link has a password. The password itself is never shown.
+	PasswordSet *bool `json:"password_set,omitempty"`
 }
 
 // shareLinkCreated is the answer to a new link or a reset: the link, and its URL. The URL is the only
@@ -53,8 +56,11 @@ type shareLinkCreated struct {
 	URL  string        `json:"url"`
 }
 
+// sharingPolicyJSON is the account's switch, and how many links that anyone can open the account has (live or
+// paused by the switch; expired ones are left out).
 type sharingPolicyJSON struct {
 	PublicLinks bool `json:"public_links"`
+	AnyoneLinks int  `json:"anyone_links"`
 }
 
 // toShareLinkJSON shows a stored link. node is the node the listing is about; sharer says whether the
@@ -70,9 +76,16 @@ func toShareLinkJSON(l *store.ShareLink, v *store.ShareLinkView, node string, sh
 		by := l.CreatedBy
 		j.CreatedBy = &by
 		if v != nil {
-			visitors, paused := v.Visitors, v.Paused
-			j.Visitors, j.Paused = &visitors, &paused
+			paused := v.Paused
+			j.Paused = &paused
+			// Visits belong to organisation links; an anyone link has no member who visits it.
+			if l.Audience == store.AudienceOrganisation {
+				visitors := v.Visitors
+				j.Visitors = &visitors
+			}
 		}
+		set := l.PasswordHash != ""
+		j.PasswordSet = &set
 	}
 	return j
 }
@@ -104,16 +117,13 @@ func shareLinkCaller(r *http.Request) (*auth.Principal, error) {
 	return p, nil
 }
 
-// checkLinkShape refuses what slice o1 does not build yet: links that anyone can open, and drop links.
-// It also checks the audience's name.
+// checkLinkShape refuses what slice o2 does not build yet, drop links, and checks the audience's name.
 func checkLinkShape(audience string, uploadOnly bool) error {
 	switch {
 	case uploadOnly:
 		return apierr.New(apierr.InvalidRequest, "drop links are not available yet")
-	case audience == store.AudienceAnyone:
-		return apierr.New(apierr.InvalidRequest, "links that anyone can open are not available yet")
-	case audience != store.AudienceOrganisation:
-		return apierr.New(apierr.InvalidRequest, "audience must be organisation")
+	case audience != store.AudienceOrganisation && audience != store.AudienceAnyone:
+		return apierr.New(apierr.InvalidRequest, "audience must be organisation or anyone")
 	}
 	return nil
 }
@@ -126,6 +136,65 @@ func checkLinkRole(role string) error {
 		}
 	}
 	return apierr.New(apierr.InvalidRequest, "a link's role is viewer, commenter, contributor or editor")
+}
+
+// An anyone link must end. Its default end is 30 days from now and its longest is 365 days; sharing.max_expiry
+// lowers both when it is set.
+const (
+	anyoneLinkDefault = 30 * 24 * time.Hour
+	anyoneLinkMax     = 365 * 24 * time.Hour
+)
+
+// anyoneLimit is the longest an anyone link may run from now: 365 days, or sharing.max_expiry when that is lower.
+func (s *Server) anyoneLimit() time.Duration {
+	limit := anyoneLinkMax
+	if max := s.cfg.Sharing.MaxExpiry.D(); max > 0 && max < limit {
+		limit = max
+	}
+	return limit
+}
+
+// anyoneExpiry returns the end an anyone link gets. A nil at is the default; any other end is checked against
+// the installation cap and the 365-day maximum.
+func (s *Server) anyoneExpiry(at *time.Time, now time.Time) (*time.Time, error) {
+	limit := s.anyoneLimit()
+	if at == nil {
+		end := now.Add(min(anyoneLinkDefault, limit))
+		return &end, nil
+	}
+	if err := s.checkExpiry(at, now); err != nil {
+		return nil, err
+	}
+	if at.After(now.Add(limit)) {
+		secs := int64(limit / time.Second)
+		return nil, apierr.Newf(apierr.InvalidRequest, "expires_at may be at most %d seconds from now", secs).
+			With("max_expiry_seconds", secs)
+	}
+	return at, nil
+}
+
+// hashAnyonePassword checks a new password for an anyone link and returns its argon2id hash. An empty password
+// means none, and returns "".
+func hashAnyonePassword(ctx context.Context, password string) (string, error) {
+	if password == "" {
+		return "", nil
+	}
+	if err := auth.ValidPassword(password); err != nil {
+		return "", apierr.New(apierr.InvalidRequest, err.Error())
+	}
+	return auth.HashPassword(ctx, password)
+}
+
+// publicLinksOff is the refusal for an anyone link while the account's switch is off.
+func publicLinksOff() error {
+	return apierr.New(apierr.Forbidden, "links that anyone can open are turned off for this account").
+		With("reason", "public_links_off")
+}
+
+// managerRequired is the refusal for an anyone link made or changed by anyone but a manager of the node.
+func managerRequired() error {
+	return apierr.New(apierr.Forbidden, "only a manager of the item may make or change a link that anyone can open").
+		With("reason", "manager_required")
 }
 
 // linkPolicyRefusal is the team-space policy for a link on n in folder f. A team space needs allow_links;
@@ -143,9 +212,9 @@ func linkPolicyRefusal(f *store.Folder, n *store.Node) error {
 	return nil
 }
 
-// handleCreateShareLink makes the node's link. The caller shares the node (mayShare) and may not give a
-// role above its own. A node has one organisation link; a second one is a conflict, and changing the
-// existing one is the way to change it. The secret is returned here, once.
+// handleCreateShareLink makes the node's link. The caller shares the node (mayShare) and may not give a role
+// above its own. A node has one access link; a second one is a conflict. An anyone link needs the manager of
+// the node, the account's switch, a viewer role and an end date. The secret is returned here, once.
 func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) error {
 	p, err := shareLinkCaller(r)
 	if err != nil {
@@ -156,6 +225,7 @@ func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) e
 		Role       string     `json:"role"`
 		UploadOnly bool       `json:"upload_only"`
 		ExpiresAt  *time.Time `json:"expires_at"`
+		Password   string     `json:"password"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -170,7 +240,25 @@ func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) e
 		return err
 	}
 	now := time.Now()
-	if err := s.checkExpiry(in.ExpiresAt, now); err != nil {
+	anyone := in.Audience == store.AudienceAnyone
+	expires := in.ExpiresAt
+	if anyone {
+		if in.Role != store.RoleViewer {
+			return apierr.New(apierr.InvalidRequest, "a link that anyone can open gives the viewer role only")
+		}
+		if expires, err = s.anyoneExpiry(in.ExpiresAt, now); err != nil {
+			return err
+		}
+	} else {
+		if in.Password != "" {
+			return apierr.New(apierr.InvalidRequest, "only a link that anyone can open has a password")
+		}
+		if err := s.checkExpiry(in.ExpiresAt, now); err != nil {
+			return err
+		}
+	}
+	passwordHash, err := hashAnyonePassword(r.Context(), in.Password)
+	if err != nil {
 		return err
 	}
 	nodeID := r.PathValue("nod")
@@ -188,6 +276,9 @@ func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) e
 		if err != nil {
 			return err
 		}
+		if anyone && own != store.RoleManager {
+			return managerRequired()
+		}
 		if store.RoleRank(in.Role) > store.RoleRank(own) {
 			return apierr.New(apierr.Forbidden, "you may not give a link a role above your own")
 		}
@@ -195,13 +286,22 @@ func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) e
 		if err != nil {
 			return err
 		}
+		if anyone {
+			on, err := tx.SharingPolicy(ctx, n.AccountID)
+			if err != nil {
+				return err
+			}
+			if !on {
+				return publicLinksOff()
+			}
+		}
 		if err := linkPolicyRefusal(f, n); err != nil {
 			return err
 		}
 		var hash []byte
 		secret, hash = auth.NewToken()
 		link = &store.ShareLink{ID: id.New("shl"), AccountID: n.AccountID, NodeID: n.ID,
-			Audience: in.Audience, Role: in.Role, SecretHash: hash, ExpiresAt: in.ExpiresAt,
+			Audience: in.Audience, Role: in.Role, SecretHash: hash, PasswordHash: passwordHash, ExpiresAt: expires,
 			CredentialsAt: now, CreatedBy: p.ID, CreatedKind: creatorKind(p), CreatedAt: now,
 			UpdatedBy: p.ID, UpdatedKind: creatorKind(p), UpdatedAt: now}
 		if err := tx.InsertShareLink(ctx, link); errors.Is(err, store.ErrConflict) {
@@ -213,6 +313,9 @@ func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) e
 		details := map[string]any{"audience": link.Audience, "role": link.Role}
 		if link.ExpiresAt != nil {
 			details["expires_at"] = link.ExpiresAt.UTC().Format(time.RFC3339)
+		}
+		if anyone {
+			details["password_set"] = passwordHash != ""
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "link.create", link.ID, details, n.FolderID))
 	})
@@ -263,8 +366,9 @@ func (s *Server) handleListShareLinks(w http.ResponseWriter, r *http.Request) er
 }
 
 // changeShareLink loads a link for a change or a reset, inside tx. The link must be in the caller's
-// account and its node reached (not_found otherwise). The caller must share that node and hold at least
-// the link's role (forbidden otherwise). Policy must allow links now (links_off or members_only).
+// account and its node reached (not_found otherwise). The caller must share that node (forbidden otherwise),
+// hold at least the link's role, and, for an anyone link, be the node's manager with the account's switch on.
+// Policy must allow links now (links_off or members_only).
 //
 // It returns the link, its node and the role the caller holds there, which bounds the roles it may give.
 func changeShareLink(ctx context.Context, tx *store.Tx, p *auth.Principal, linkID string) (*store.ShareLink, *store.Node, string, error) {
@@ -289,11 +393,25 @@ func changeShareLink(ctx context.Context, tx *store.Tx, p *auth.Principal, linkI
 	if err := linkPolicyRefusal(f, n); err != nil {
 		return nil, nil, "", err
 	}
+	if l.Audience == store.AudienceAnyone {
+		if own != store.RoleManager {
+			return nil, nil, "", managerRequired()
+		}
+		on, err := tx.SharingPolicy(ctx, n.AccountID)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if !on {
+			return nil, nil, "", publicLinksOff()
+		}
+	}
 	return l, n, own, nil
 }
 
-// handleUpdateShareLink changes a link's role or expiry. An absent expires_at keeps the expiry; null
-// clears it. Changing the audience to anyone, or a drop link, is refused for now.
+// handleUpdateShareLink changes a link: its audience, role, expiry or password. An absent field keeps its value;
+// expires_at null clears the expiry, which an anyone link refuses. Switching to anyone gives the viewer role and,
+// when the link has none, an end date; switching to organisation clears the password and ends the anyone visitors.
+// A new password, or a removed one, ends the visitors' credentials issued before it.
 func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) error {
 	p, err := shareLinkCaller(r)
 	if err != nil {
@@ -304,17 +422,16 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 		Role       *string         `json:"role"`
 		UploadOnly *bool           `json:"upload_only"`
 		ExpiresAt  json.RawMessage `json:"expires_at"`
+		Password   *string         `json:"password"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	if in.Audience != nil || in.UploadOnly != nil {
-		audience := store.AudienceOrganisation
-		if in.Audience != nil {
-			audience = *in.Audience
-		}
-		uploadOnly := in.UploadOnly != nil && *in.UploadOnly
-		if err := checkLinkShape(audience, uploadOnly); err != nil {
+	if in.UploadOnly != nil && *in.UploadOnly {
+		return checkLinkShape(store.AudienceOrganisation, true)
+	}
+	if in.Audience != nil {
+		if err := checkLinkShape(*in.Audience, false); err != nil {
 			return err
 		}
 	}
@@ -332,9 +449,11 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 			return apierr.New(apierr.InvalidRequest, "expires_at must be a time, or null")
 		}
 	}
-	now := time.Now()
-	if expires != nil {
-		if err := s.checkExpiry(expires, now); err != nil {
+	ctx := r.Context()
+	newPassword := in.Password != nil
+	passwordHash := ""
+	if newPassword {
+		if passwordHash, err = hashAnyonePassword(ctx, *in.Password); err != nil {
 			return err
 		}
 	}
@@ -342,7 +461,7 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 	if !id.Valid("shl", linkID) {
 		return notFound("link")
 	}
-	ctx := r.Context()
+	now := time.Now()
 	var out *store.ShareLink
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
@@ -350,20 +469,98 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 		if err != nil {
 			return err
 		}
+		orig := l.Audience
+		final := orig
+		if in.Audience != nil {
+			final = *in.Audience
+		}
 		details := map[string]any{}
 		if in.Role != nil {
 			if store.RoleRank(*in.Role) > store.RoleRank(own) {
 				return apierr.New(apierr.Forbidden, "you may not give a link a role above your own")
 			}
+		}
+		anyone := final == store.AudienceAnyone
+		if anyone {
+			if own != store.RoleManager {
+				return managerRequired()
+			}
+			on, err := tx.SharingPolicy(ctx, n.AccountID)
+			if err != nil {
+				return err
+			}
+			if !on {
+				return publicLinksOff()
+			}
+			if in.Role != nil && *in.Role != store.RoleViewer {
+				return apierr.New(apierr.InvalidRequest, "a link that anyone can open gives the viewer role only")
+			}
+			if clearExpiry {
+				return apierr.New(apierr.InvalidRequest, "a link that anyone can open needs an end date")
+			}
+			if expires != nil {
+				if expires, err = s.anyoneExpiry(expires, now); err != nil {
+					return err
+				}
+				l.ExpiresAt = expires
+				details["expires_at"] = expires.UTC().Format(time.RFC3339)
+			} else if l.ExpiresAt == nil {
+				end, err := s.anyoneExpiry(nil, now)
+				if err != nil {
+					return err
+				}
+				l.ExpiresAt = end
+				details["expires_at"] = end.UTC().Format(time.RFC3339)
+			} else if limit := s.anyoneLimit(); final != orig && l.ExpiresAt.After(now.Add(limit)) {
+				// A link switched to anyone keeps no end past the anyone cap: an end set while it was an organisation
+				// link is pulled back to the cap.
+				capped := now.Add(limit)
+				l.ExpiresAt = &capped
+				details["expires_at"] = capped.UTC().Format(time.RFC3339)
+			}
+		} else {
+			if newPassword && *in.Password != "" {
+				return apierr.New(apierr.InvalidRequest, "only a link that anyone can open has a password")
+			}
+			if clearExpiry {
+				l.ExpiresAt = nil
+				details["expires_at"] = nil
+			} else if expires != nil {
+				if err := s.checkExpiry(expires, now); err != nil {
+					return err
+				}
+				l.ExpiresAt = expires
+				details["expires_at"] = expires.UTC().Format(time.RFC3339)
+			}
+		}
+		if in.Role != nil {
 			l.Role = *in.Role
 			details["role"] = l.Role
 		}
-		if clearExpiry {
-			l.ExpiresAt = nil
-			details["expires_at"] = nil
-		} else if expires != nil {
-			l.ExpiresAt = expires
-			details["expires_at"] = expires.UTC().Format(time.RFC3339)
+		switch {
+		case final != orig:
+			// A change of audience ends every visitor and every earlier copy's credentials, and the visits of
+			// the old audience. The secret stays the same.
+			l.Audience = final
+			l.CredentialsAt = now
+			details["audience"] = final
+			if anyone {
+				l.Role = store.RoleViewer
+				if err := tx.DeleteShareLinkVisits(ctx, l.ID); err != nil {
+					return err
+				}
+			}
+			l.PasswordHash = ""
+			if anyone {
+				l.PasswordHash = passwordHash
+			}
+		case anyone && newPassword:
+			// A new password, or none, ends the visitors' credentials issued before it.
+			l.PasswordHash = passwordHash
+			l.CredentialsAt = now
+		}
+		if anyone {
+			details["password_set"] = l.PasswordHash != ""
 		}
 		l.UpdatedBy, l.UpdatedKind, l.UpdatedAt = p.ID, creatorKind(p), now
 		if err := tx.UpdateShareLink(ctx, l); err != nil {
@@ -422,8 +619,9 @@ func (s *Server) handleResetShareLink(w http.ResponseWriter, r *http.Request) er
 }
 
 // handleDeleteShareLink removes a link at once: its visits go with it, so its members lose the access
-// that came through it. The link's creator may always delete it, as long as it still reaches the node;
-// anyone else must share the node, and may not remove a link above its own role.
+// that came through it. The link's creator may always delete it, as long as it still reaches the node; anyone
+// else must share the node, and an anyone link needs the node's manager. A link above the caller's own role is
+// not removed by it.
 func (s *Server) handleDeleteShareLink(w http.ResponseWriter, r *http.Request) error {
 	p, err := shareLinkCaller(r)
 	if err != nil {
@@ -458,6 +656,9 @@ func (s *Server) handleDeleteShareLink(w http.ResponseWriter, r *http.Request) e
 			if store.RoleRank(l.Role) > store.RoleRank(own) {
 				return apierr.New(apierr.Forbidden, "you may not remove a link above your own role")
 			}
+			if l.Audience == store.AudienceAnyone && own != store.RoleManager {
+				return managerRequired()
+			}
 		}
 		if err := tx.DeleteShareLink(ctx, p.AccountID, l.ID); err != nil {
 			return err
@@ -475,14 +676,15 @@ func (s *Server) handleDeleteShareLink(w http.ResponseWriter, r *http.Request) e
 // shareOpenAuditGap is how long a member's last visit to a link must be before its next open is audited again.
 const shareOpenAuditGap = 24 * time.Hour
 
-// handleOpenShareLink opens a link for a signed-in member of the link's account. It records the visit,
-// and answers the node the link opens. Every other caller, and every dead link, gets the same not_found:
-// a link that is missing, expired, deleted, paused, trashed, of another account, or opened by a token,
-// an admin or someone with no session. The session check is the cookie's own, with its origin and CSRF
+// handleOpenShareLink opens a link. An anyone link opens for whoever holds its secret, and its password when it
+// has one (openAnyoneLink); no session is read for it. An organisation link opens for a signed-in member of the
+// link's account: it records the visit and answers the node. Every other caller, and every dead link, gets the
+// same not_found: a link that is missing, expired, deleted, paused, trashed, of another account, or opened by a
+// token, an admin or someone with no session. The session check is the cookie's own, with its origin and CSRF
 // checks, so the answer comes from here and not from the wrap's 401.
 func (s *Server) handleOpenShareLink(w http.ResponseWriter, r *http.Request) error {
 	dead := notFound("link")
-	if err := s.rateLimit("share.open.ip", clientKey(r)); err != nil {
+	if err := s.rateLimit("share.open.ip", addressKey(r)); err != nil {
 		return err
 	}
 	// A credential in the header is a key or a token, never a browser session: refuse it as dead.
@@ -490,13 +692,26 @@ func (s *Server) handleOpenShareLink(w http.ResponseWriter, r *http.Request) err
 		return dead
 	}
 	var in struct {
-		Secret string `json:"secret"`
+		Secret   string `json:"secret"`
+		Password string `json:"password"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
 	if !auth.ValidToken(in.Secret) {
 		return dead
+	}
+	ctx := r.Context()
+	hash := auth.HashToken(in.Secret)
+	early, err := s.store.ShareLinkStateBySecretHash(ctx, hash)
+	if errors.Is(err, store.ErrNotFound) {
+		return dead
+	}
+	if err != nil {
+		return err
+	}
+	if early.Link.Audience == store.AudienceAnyone {
+		return s.openAnyoneLink(w, r, early, hash, in.Password)
 	}
 	p, _, err := s.authenticateSession(r)
 	if err != nil || p == nil || p.Kind != auth.KindUser || p.IsAdmin() || p.UserID == "" {
@@ -506,16 +721,11 @@ func (s *Server) handleOpenShareLink(w http.ResponseWriter, r *http.Request) err
 	if err := s.rateLimit("share.open.user", p.UserID); err != nil {
 		return err
 	}
-	ctx := r.Context()
-	hash := auth.HashToken(in.Secret)
 	// The early read refuses a stranger cheaply. The write re-reads the link by ID and checks it again, so
 	// a link deleted or reset between the two gives the same dead answer.
-	l, err := s.store.ShareLinkBySecretHash(ctx, hash)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && (l.AccountID != p.AccountID || l.Audience != store.AudienceOrganisation)) {
+	l := &early.Link
+	if l.AccountID != p.AccountID || l.Audience != store.AudienceOrganisation {
 		return dead
-	}
-	if err != nil {
-		return err
 	}
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
@@ -553,8 +763,9 @@ func (s *Server) handleOpenShareLink(w http.ResponseWriter, r *http.Request) err
 			return err
 		}
 		// A visit counts only after the credentials it used were made (linkLiveSQL compares strictly), so a visit
-		// in the same millisecond as the link's credentials is stamped one millisecond later.
-		visitAt := now
+		// in the same millisecond as the link's credentials is stamped one millisecond later. Times are stored in
+		// whole milliseconds, so the comparison is made on the stored value, not on the nanoseconds of now.
+		visitAt := time.UnixMilli(now.UnixMilli())
 		if !visitAt.After(cur.CredentialsAt) {
 			visitAt = cur.CredentialsAt.Add(time.Millisecond)
 		}
@@ -593,7 +804,11 @@ func (s *Server) handleGetSharingPolicy(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: on})
+	n, err := s.store.CountAnyoneLinks(r.Context(), acc.ID, time.Now())
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: on, AnyoneLinks: n})
 	return nil
 }
 
@@ -626,6 +841,10 @@ func (s *Server) handleUpdateSharingPolicy(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: *in.PublicLinks})
+	n, err := s.store.CountAnyoneLinks(r.Context(), acc.ID, time.Now())
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: *in.PublicLinks, AnyoneLinks: n})
 	return nil
 }

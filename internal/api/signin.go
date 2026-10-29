@@ -582,6 +582,8 @@ type meResponse struct {
 	CSRFToken string      `json:"csrf_token"`
 	// PersonalFolderID is the caller's "My files" folder. Null for an installation admin.
 	PersonalFolderID *string `json:"personal_folder_id"`
+	// PublicLinks is the account's switch for links that anyone can open. False for an installation admin.
+	PublicLinks bool `json:"public_links"`
 }
 
 type accountRef struct {
@@ -617,6 +619,11 @@ func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
 			return meResponse{}, err
 		}
 		out.Account = &accountRef{ID: acc.ID, Name: acc.Name}
+		on, err := s.store.SharingPolicy(r.Context(), acc.ID)
+		if err != nil {
+			return meResponse{}, err
+		}
+		out.PublicLinks = on
 		pf, err := s.store.PersonalFolder(r.Context(), u.AccountID, u.ID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return meResponse{}, err

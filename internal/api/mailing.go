@@ -177,5 +177,22 @@ func clientKey(r *http.Request) string {
 	return "unknown"
 }
 
+// addressKey is clientKey for the limits and lockouts that count one address. An IPv6 client counts by its /64,
+// since a host holds the whole /64 and could otherwise change address at will; an IPv4 client counts as clientKey
+// does. clientKey itself is unchanged, since other limits use it.
+func addressKey(r *http.Request) string {
+	info := infoFrom(r.Context())
+	if info == nil || !info.ip.IsValid() {
+		return "unknown"
+	}
+	ip := info.ip.Unmap()
+	if ip.Is6() {
+		if p, err := ip.Prefix(64); err == nil {
+			return p.String()
+		}
+	}
+	return ip.String()
+}
+
 // emailKey is the form of an email address used to look users up: lowercased.
 func emailKey(email string) string { return strings.ToLower(email) }

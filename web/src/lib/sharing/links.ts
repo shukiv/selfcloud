@@ -20,6 +20,8 @@ export interface ShareLink {
   created_by?: string;
   visitors?: number;
   paused?: boolean;
+  // password_set is sharer-only: whether an anyone link has a password. The password is never shown.
+  password_set?: boolean;
 }
 
 // ShareLinkCreated is the answer to a new link or a reset: the link, and the URL that opens it. The URL is
@@ -68,27 +70,6 @@ export interface Keep {
   removeItem(key: string): void;
 }
 
-// captureSecret moves the secret out of the address, into storage, and strips the address at once. It
-// reports whether a secret was found. Storage that refuses the write leaves no secret behind, and the
-// address is stripped all the same.
-export function captureSecret(
-  hash: string,
-  pathname: string,
-  search: string,
-  keep: Keep,
-  replace: (url: string) => void,
-): boolean {
-  const secret = secretFromAddress(hash);
-  replace(pathname + search);
-  if (secret === '') return false;
-  try {
-    keep.setItem(pendingKey, JSON.stringify({ secret, at: Date.now() }));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // pendingTTL is how long a captured secret waits. A visit that does not finish in this time starts again from
 // the link, so a secret does not sit in the tab for a whole session.
 export const pendingTTL = 10 * 60_000;
@@ -121,6 +102,17 @@ function parsePending(raw: string): { secret: string; at: number } | null {
     return { secret, at };
   } catch {
     return null;
+  }
+}
+
+// stashSecret keeps a secret in storage while the visitor signs in, so the link page can open it again. It
+// reports whether storage took it.
+export function stashSecret(secret: string, keep: Keep, now: number = Date.now()): boolean {
+  try {
+    keep.setItem(pendingKey, JSON.stringify({ secret, at: now }));
+    return true;
+  } catch {
+    return false;
   }
 }
 

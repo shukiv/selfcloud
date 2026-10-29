@@ -559,7 +559,7 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 		writeJSON(w, http.StatusOK, out)
 		return nil
 	}
-	if p.Kind != auth.KindUser {
+	if p.Kind == auth.KindAccountKey {
 		folders, next, err := s.store.Folders(ctx, p.AccountID, store.FolderFilter{}, page)
 		if err != nil {
 			return storeErr(err)

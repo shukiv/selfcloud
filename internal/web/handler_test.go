@@ -211,3 +211,30 @@ func TestBuiltIndexWinsOverNotBuilt(t *testing.T) {
 		t.Errorf("built index replaced by the not-built page: %q", rec.Body.String())
 	}
 }
+
+// TestSharePageIsNotReferredOrIndexed: the page that opens a share link gets no Referer and no index, and the
+// rest of the interface gets neither. robots.txt keeps crawlers off that page, and only that page.
+func TestSharePageIsNotReferredOrIndexed(t *testing.T) {
+	h := newTestHandler(t, testFiles(), Options{})
+	for _, target := range []string{"/s", "/s/"} {
+		rec := get(t, h, http.MethodGet, target)
+		if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+			t.Errorf("%s: Referrer-Policy = %q, want no-referrer", target, got)
+		}
+		if got := rec.Header().Get("X-Robots-Tag"); got != "noindex, nofollow" {
+			t.Errorf("%s: X-Robots-Tag = %q", target, got)
+		}
+	}
+	rec := get(t, h, http.MethodGet, "/sign-in")
+	if rec.Header().Get("X-Robots-Tag") != "" || rec.Header().Get("Referrer-Policy") != "same-origin" {
+		t.Errorf("/sign-in: headers %v, want the ordinary UI policy", rec.Header())
+	}
+	rec = get(t, h, http.MethodGet, "/robots.txt")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Disallow: /s$") ||
+		!strings.Contains(rec.Body.String(), "Disallow: /s/") || strings.Contains(rec.Body.String(), "<title>") {
+		t.Errorf("/robots.txt = %d %q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/plain") {
+		t.Errorf("robots.txt Content-Type = %q", got)
+	}
+}

@@ -9,6 +9,7 @@
   import { limitBytes, splitLimit, type LimitUnit } from '../../lib/quota';
   import type { Account, Usage } from '../../lib/manage/types';
   import UsageMeter from '../UsageMeter.svelte';
+  import PublicLinksSwitch from '../share/PublicLinksSwitch.svelte';
 
   // TenantOverview: the tenant's usage and counts, and its storage limit, which an admin changes here.
   let {
@@ -136,6 +137,8 @@
     </div>
   </dl>
 {/if}
+
+<PublicLinksSwitch account={account.id} />
 
 <dl class="dates">
   <div><dt>{translate($lang, 'tenant.overview.created')}</dt><dd><time datetime={account.created_at}>{formatDate(account.created_at, $lang)}</time></dd></div>

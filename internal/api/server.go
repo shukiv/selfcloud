@@ -73,6 +73,10 @@ type Server struct {
 	links *linkKeys
 	// tokens signs and verifies delegated tokens; see tokens.go.
 	tokens *tokenKeys
+	// shares signs and verifies the visitor credentials of links that anyone can open; see
+	// share_credentials.go. guard counts the wrong passwords those links take; see share_open.go.
+	shares *shareKeys
+	guard  *shareGuard
 	// corsAllowed holds the origins whose pages may call the API; see cors.go. Empty when CORS is off.
 	corsAllowed map[string]bool
 	// sessionCookie is the cookie's name; the "__Host-" form is used when public_url is https.
@@ -124,6 +128,9 @@ type route struct {
 	// secretPath marks a path that carries a credential, such as a signed link. The access log
 	// records the route pattern instead of the path.
 	secretPath bool
+	// link admits a visitor credential (a link that anyone can open). A route without it refuses such a
+	// credential, so a route added later fails closed. Only the routes a visitor may use set it.
+	link bool
 }
 
 // New builds a Server.
@@ -160,6 +167,10 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
+	shares, err := deriveShareKeys(links)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
 	corsAllowed := map[string]bool{}
 	for _, o := range cfg.CORS.AllowedOrigins {
 		corsAllowed[strings.ToLower(o)] = true
@@ -188,6 +199,8 @@ func New(opts Options) (*Server, error) {
 		contentScheme: contentScheme,
 		links:         links,
 		tokens:        tokens,
+		shares:        shares,
+		guard:         newShareGuard(),
 		corsAllowed:   corsAllowed,
 		sessionCookie: "selfcloud_session",
 		limits: map[string]*limiter{
@@ -360,16 +373,16 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/folders/{fld}/children", handle: s.handleListPathChildren, auth: true},
 		{method: http.MethodPost, path: "/api/v1/folders/{fld}/directories", handle: s.handleMkdir, auth: true},
 		{method: http.MethodPost, path: "/api/v1/folders/{fld}/files", handle: s.handleCreateFile, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}", handle: s.handleStatNode, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}", handle: s.handleStatNode, auth: true, link: true},
 		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}", handle: s.handleRenameNode, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}", handle: s.handleDeleteNode, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/children", handle: s.handleListNodeChildren, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/children", handle: s.handleListNodeChildren, auth: true, link: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/move", handle: s.handleMoveNode, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/copy", handle: s.handleCopyNode, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true},
-		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/permissions", handle: s.handleListNodePermissions, auth: true},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true},
@@ -381,6 +394,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/share-links/{shl}", handle: s.handleDeleteShareLink, auth: true},
 		// Opening a link checks its own credential: the handler answers a dead link the same way for every caller.
 		{method: http.MethodPost, path: "/api/v1/share/open", handle: s.handleOpenShareLink},
+		// Renewing a visitor credential: the credential itself is the caller.
+		{method: http.MethodPost, path: "/api/v1/share/renew", handle: s.handleRenewShareCredential, auth: true, link: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleGetSharingPolicy, auth: true},
 		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleUpdateSharingPolicy, auth: true},
 		{method: http.MethodGet, path: "/api/v1/directory", handle: s.handleDirectory, auth: true},
@@ -452,6 +467,13 @@ func (s *Server) wrap(rt route) http.Handler {
 			}
 			if err != nil {
 				s.writeError(w, r, err)
+				return
+			}
+			// A visitor's credential reaches only the routes that admit it. Any other route refuses it, so a
+			// route added later is closed to visitors unless it says otherwise.
+			if p != nil && p.Kind == auth.KindShareLink && !rt.link {
+				s.writeError(w, r, apierr.New(apierr.Forbidden,
+					"a link that anyone can open does not reach this").With("reason", "link_route"))
 				return
 			}
 			if info != nil {

@@ -66,6 +66,19 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 	return &Handler{files: files, csp: csp}, nil
 }
 
+// robotsTxt keeps crawlers away from the pages that open share links. The pages also answer with
+// X-Robots-Tag, which binds the crawlers that ignore this file. Its path is "/s" and the paths under it, and
+// nothing else: a longer path such as /sign-in is not a share link.
+const robotsTxt = `User-agent: *
+Disallow: /s$
+Disallow: /s/
+`
+
+// sharePagePath reports whether p is the page that opens a share link, or a path under it.
+func sharePagePath(p string) bool {
+	return p == "/s" || strings.HasPrefix(p, "/s/")
+}
+
 // Serves reports whether r belongs to the web interface: a GET or HEAD outside the reserved
 // paths, and with no name that starts with a dot.
 func (h *Handler) Serves(r *http.Request) bool {
@@ -94,6 +107,14 @@ func hidden(p string) bool {
 // ServeHTTP serves the file at the request path. A path with no file gets index.html, so the
 // client-side router can answer it.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/robots.txt" {
+		hd := w.Header()
+		hd.Set("Content-Type", "text/plain; charset=utf-8")
+		hd.Set("Cache-Control", "no-cache")
+		hd.Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, "robots.txt", time.Time{}, strings.NewReader(robotsTxt))
+		return
+	}
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 	if name == "" {
 		name = "index.html"
@@ -113,6 +134,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("Referrer-Policy", "same-origin")
 	hd.Set("X-Frame-Options", "DENY")
+	if sharePagePath(r.URL.Path) {
+		// The page that opens a share link holds the link's secret in its address. Nothing it links to may see
+		// that address in a Referer, and no search engine may index it.
+		hd.Set("Referrer-Policy", "no-referrer")
+		hd.Set("X-Robots-Tag", "noindex, nofollow")
+	}
 	if missingAsset {
 		// A build asset that is not there is a stale or mistyped reference; answering with the app
 		// page would hide that behind a script or style that fails to parse.

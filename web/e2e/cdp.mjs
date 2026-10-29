@@ -72,6 +72,8 @@ export class Page {
     this.expectedMissing = [];
     // expectedDeadLinks lists the share link opens answered 404 on purpose (a link that no longer works).
     this.expectedDeadLinks = [];
+    // expectedPasswordRefusals lists the share link opens answered 401 on purpose: a password asked for, or a wrong one.
+    this.expectedPasswordRefusals = [];
     // expectedSignInRefusals lists the sign-in link redeems answered 400 on purpose (a used link).
     this.expectedSignInRefusals = [];
     // expectedSwitchPrompts lists the sign-in link redeems answered 409 on purpose (a browser signed in as another user).
@@ -142,6 +144,14 @@ export class Page {
         p.entry.source === 'network' && /\/api\/v1\/share\/open$/.test(p.entry.url ?? '') && /status of 404/.test(p.entry.text);
       if (expectedDeadLink) {
         this.expectedDeadLinks.push(p.entry.url);
+        return;
+      }
+      // A link that anyone can open asks for its password, and a wrong one is refused; the browser logs both 401s.
+      // The page shows the form, and the message for a wrong password, so the test counts these answers.
+      const expectedPasswordRefusal =
+        p.entry.source === 'network' && /\/api\/v1\/share\/open$/.test(p.entry.url ?? '') && /status of 401/.test(p.entry.text);
+      if (expectedPasswordRefusal) {
+        this.expectedPasswordRefusals.push(p.entry.url);
         return;
       }
       // A sign-in link used a second time is answered 400, and the browser logs it. The page shows the expired

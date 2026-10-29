@@ -48,6 +48,8 @@ func (s *Server) authenticate(r *http.Request) (*auth.Principal, *store.Session,
 		p, err = s.authenticateKey(r.Context(), auth.AccountKeyPrefix, cred)
 	case strings.HasPrefix(cred, auth.TokenPrefix):
 		p, err = s.authenticateToken(r.Context(), cred)
+	case strings.HasPrefix(cred, auth.SharePrefix):
+		p, err = s.authenticateShare(r.Context(), cred)
 	default:
 		return nil, nil, apierr.New(apierr.Unauthenticated, "unrecognised credential")
 	}

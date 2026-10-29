@@ -20,6 +20,9 @@ const (
 	// TokenPrefix starts a delegated token. It differs from the key prefixes, so a token is never
 	// mistaken for a key.
 	TokenPrefix = "sct_"
+	// SharePrefix starts the credential a visitor gets from opening a link that anyone can open. It
+	// differs from the other prefixes, so it is never mistaken for a key or a token.
+	SharePrefix = "scl_"
 )
 
 // keySecretLen is the length of 32 random bytes in unpadded base64url.
@@ -37,6 +40,9 @@ const (
 	KindAccountKey Kind = "account_key"
 	KindUser       Kind = "user"   // a signed-in user, by session cookie
 	KindSystem     Kind = "system" // the server itself, or the admin command line
+	// KindShareLink is a visitor who opened a link that anyone can open. It reaches only what the link
+	// gives, through the routes that allow it (see server.go).
+	KindShareLink Kind = "share_link"
 )
 
 // Roles of a signed-in user. The names match the users.role column. An admin has no account;
@@ -57,6 +63,18 @@ type Principal struct {
 	// Token is set when the caller presents a delegated token. The token then narrows what the
 	// caller may reach; see TokenScope.
 	Token *TokenScope
+	// Link is set for KindShareLink: the node the link sits on and the role it gives there, read from
+	// the database on every request.
+	Link *LinkScope
+}
+
+// LinkScope is what an open link gives its visitor: the node the link sits on, which the visitor reaches
+// with everything below it, and the link's role there. ExpiresAt is when the visitor's credential ends,
+// which bounds any signed link the visitor makes.
+type LinkScope struct {
+	Node      string
+	Role      string
+	ExpiresAt time.Time
 }
 
 // TokenScope is what a delegated token allows. A token acts as its user, when it names one, or

@@ -20,6 +20,8 @@ export interface Me {
   account: Account | null;
   csrf_token: string;
   personal_folder_id: string | null;
+  // public_links is the account's switch for links that anyone can open. False for an installation admin.
+  public_links?: boolean;
 }
 
 export interface SignedIn {

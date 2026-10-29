@@ -8,6 +8,8 @@ export interface Session {
   account: Account | null;
   // csrf is kept in memory only. It is not in storage, so another page cannot read it.
   csrf: string;
+  // publicLinks is the account's switch for links that anyone can open.
+  publicLinks: boolean;
 }
 
 export const session = writable<Session | null>(null);
@@ -20,11 +22,11 @@ export function currentCsrf(): string | null {
 }
 
 export function setSignedIn(s: SignedIn): void {
-  session.set({ user: s.user, account: null, csrf: s.csrf_token });
+  session.set({ user: s.user, account: null, csrf: s.csrf_token, publicLinks: false });
 }
 
 export function setMe(me: Me): void {
-  session.set({ user: me.user, account: me.account, csrf: me.csrf_token });
+  session.set({ user: me.user, account: me.account, csrf: me.csrf_token, publicLinks: me.public_links === true });
 }
 
 export function clearSession(): void {

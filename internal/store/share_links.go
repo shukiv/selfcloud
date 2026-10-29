@@ -24,7 +24,8 @@ const (
 
 // ShareLink is a link to one file or directory. Only the hash of its secret is stored, and the
 // secret itself is shown once, when the link is made or reset. CredentialsAt is the time the current
-// secret was issued: a visit recorded before it no longer counts.
+// secret was issued: a visit recorded before it no longer counts, and a visitor's credential issued
+// before it no longer works. PasswordHash is the argon2id hash of an anyone link's password, or "".
 type ShareLink struct {
 	ID            string
 	AccountID     string
@@ -32,6 +33,7 @@ type ShareLink struct {
 	Audience      string
 	Role          string // viewer, commenter, contributor or editor
 	SecretHash    []byte
+	PasswordHash  string
 	ExpiresAt     *time.Time
 	CredentialsAt time.Time
 	CreatedBy     string
@@ -50,16 +52,31 @@ type ShareLinkView struct {
 	Paused   bool
 }
 
-const shareLinkCols = `sl.id, sl.account_id, sl.node_id, sl.audience, sl.role, sl.secret_hash, sl.expires_at,
-	sl.credentials_at, sl.created_by, sl.created_kind, sl.created_at, sl.updated_by, sl.updated_kind, sl.updated_at`
+const shareLinkCols = `sl.id, sl.account_id, sl.node_id, sl.audience, sl.role, sl.secret_hash, sl.password_hash,
+	sl.expires_at, sl.credentials_at, sl.created_by, sl.created_kind, sl.created_at, sl.updated_by, sl.updated_kind,
+	sl.updated_at`
+
+// scanShareLinkInto reads the columns of shareLinkCols into l, and returns the nullable ones it needs.
+func scanShareLinkInto(row interface{ Scan(...any) error }, l *ShareLink) (role sql.NullString, err error) {
+	var password sql.NullString
+	var expires sql.NullInt64
+	var credentials, created, updated int64
+	err = row.Scan(&l.ID, &l.AccountID, &l.NodeID, &l.Audience, &role, &l.SecretHash, &password, &expires,
+		&credentials, &l.CreatedBy, &l.CreatedKind, &created, &l.UpdatedBy, &l.UpdatedKind, &updated)
+	if err != nil {
+		return role, err
+	}
+	l.PasswordHash = password.String
+	l.ExpiresAt = fromNullMillis(expires)
+	l.CredentialsAt = fromMillis(credentials)
+	l.CreatedAt = fromMillis(created)
+	l.UpdatedAt = fromMillis(updated)
+	return role, nil
+}
 
 func scanShareLink(row interface{ Scan(...any) error }) (*ShareLink, error) {
 	var l ShareLink
-	var role sql.NullString
-	var expires sql.NullInt64
-	var credentials, created, updated int64
-	err := row.Scan(&l.ID, &l.AccountID, &l.NodeID, &l.Audience, &role, &l.SecretHash, &expires,
-		&credentials, &l.CreatedBy, &l.CreatedKind, &created, &l.UpdatedBy, &l.UpdatedKind, &updated)
+	role, err := scanShareLinkInto(row, &l)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -67,10 +84,6 @@ func scanShareLink(row interface{ Scan(...any) error }) (*ShareLink, error) {
 		return nil, err
 	}
 	l.Role = role.String
-	l.ExpiresAt = fromNullMillis(expires)
-	l.CredentialsAt = fromMillis(credentials)
-	l.CreatedAt = fromMillis(created)
-	l.UpdatedAt = fromMillis(updated)
 	return &l, nil
 }
 
@@ -93,11 +106,12 @@ const linkLiveSQL = `sl.audience = 'organisation' AND sl.role IS NOT NULL
 // access link.
 func (tx *Tx) InsertShareLink(ctx context.Context, l *ShareLink) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO share_links (id, account_id, node_id, audience, role, upload_only,
-		secret_hash, expires_at, credentials_at, created_by, created_kind, created_at, updated_by, updated_kind, updated_at)
-		VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.AccountID, l.NodeID, l.Audience, l.Role, l.SecretHash, nullMillis(l.ExpiresAt),
-		millis(l.CredentialsAt), l.CreatedBy, l.CreatedKind, millis(l.CreatedAt), l.UpdatedBy, l.UpdatedKind,
-		millis(l.UpdatedAt))
+		secret_hash, password_hash, expires_at, credentials_at, created_by, created_kind, created_at, updated_by,
+		updated_kind, updated_at)
+		VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.ID, l.AccountID, l.NodeID, l.Audience, l.Role, l.SecretHash, nullString(l.PasswordHash),
+		nullMillis(l.ExpiresAt), millis(l.CredentialsAt), l.CreatedBy, l.CreatedKind, millis(l.CreatedAt),
+		l.UpdatedBy, l.UpdatedKind, millis(l.UpdatedAt))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -126,13 +140,91 @@ func (s *Store) ShareLinkBySecretHash(ctx context.Context, hash []byte) (*ShareL
 		WHERE sl.secret_hash = ?`, hash))
 }
 
-// UpdateShareLink writes the mutable fields of l: its role, expiry, secret and the last changer. A reset
-// is an update with a new SecretHash and CredentialsAt.
+// UpdateShareLink writes the mutable fields of l: its audience, role, expiry, password, secret and the
+// last changer. A reset is an update with a new SecretHash and CredentialsAt.
 func (tx *Tx) UpdateShareLink(ctx context.Context, l *ShareLink) error {
-	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE share_links SET role = ?, expires_at = ?, secret_hash = ?,
-		credentials_at = ?, updated_by = ?, updated_kind = ?, updated_at = ? WHERE account_id = ? AND id = ?`,
-		l.Role, nullMillis(l.ExpiresAt), l.SecretHash, millis(l.CredentialsAt), l.UpdatedBy, l.UpdatedKind,
-		millis(l.UpdatedAt), l.AccountID, l.ID))
+	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE share_links SET audience = ?, role = ?, expires_at = ?,
+		secret_hash = ?, password_hash = ?, credentials_at = ?, updated_by = ?, updated_kind = ?, updated_at = ?
+		WHERE account_id = ? AND id = ?`,
+		l.Audience, l.Role, nullMillis(l.ExpiresAt), l.SecretHash, nullString(l.PasswordHash), millis(l.CredentialsAt),
+		l.UpdatedBy, l.UpdatedKind, millis(l.UpdatedAt), l.AccountID, l.ID))
+}
+
+// DeleteShareLinkVisits removes the visits to a link. An anyone link has none, so a link that changes to
+// that audience sheds the members it had as an organisation link.
+func (tx *Tx) DeleteShareLinkVisits(ctx context.Context, linkID string) error {
+	_, err := tx.q.ExecContext(ctx, "DELETE FROM share_link_visits WHERE link_id = ?", linkID)
+	return err
+}
+
+// ShareLinkState is what a visitor's credential, or an open of a secret, needs to know about a link in one
+// read: the link, its node's trash and position, its folder's policy and its account's state.
+type ShareLinkState struct {
+	Link          ShareLink
+	FolderID      string // the folder the node is in
+	NodeTrashed   bool   // the node itself is an explicit trash root
+	NodeIsRoot    bool   // the node is a folder's root
+	FolderKind    string // KindTeam or KindPersonal
+	AllowLinks    bool   // the team space allows links
+	MembersOnly   bool   // the team space admits links on its root only
+	AccountStatus string
+	PublicLinks   bool // the account's switch for links that anyone can open
+}
+
+const shareLinkStateSQL = `SELECT ` + shareLinkCols + `,
+	ln.folder_id, ln.trashed_at IS NOT NULL, ln.parent_id IS NULL, lf.kind, lf.allow_links, lf.members_only,
+	ac.status, ac.public_links
+	FROM share_links sl JOIN nodes ln ON ln.id = sl.node_id JOIN folders lf ON lf.id = ln.folder_id
+	JOIN accounts ac ON ac.id = sl.account_id`
+
+func scanShareLinkState(row interface{ Scan(...any) error }) (*ShareLinkState, error) {
+	var (
+		st                                         ShareLinkState
+		role, password                             sql.NullString
+		expires                                    sql.NullInt64
+		credentials, created, updated              int64
+		trashed, root, allow, members, publicLinks int64
+	)
+	l := &st.Link
+	err := row.Scan(&l.ID, &l.AccountID, &l.NodeID, &l.Audience, &role, &l.SecretHash, &password, &expires,
+		&credentials, &l.CreatedBy, &l.CreatedKind, &created, &l.UpdatedBy, &l.UpdatedKind, &updated,
+		&st.FolderID, &trashed, &root, &st.FolderKind, &allow, &members, &st.AccountStatus, &publicLinks)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	l.Role = role.String
+	l.PasswordHash = password.String
+	l.ExpiresAt = fromNullMillis(expires)
+	l.CredentialsAt = fromMillis(credentials)
+	l.CreatedAt = fromMillis(created)
+	l.UpdatedAt = fromMillis(updated)
+	st.NodeTrashed = trashed == 1
+	st.NodeIsRoot = root == 1
+	st.AllowLinks = allow == 1
+	st.MembersOnly = members == 1
+	st.PublicLinks = publicLinks == 1
+	return &st, nil
+}
+
+// ShareLinkStateByID reads the state of the link with the given ID in accountID, or ErrNotFound.
+func (s *Store) ShareLinkStateByID(ctx context.Context, accountID, id string) (*ShareLinkState, error) {
+	return scanShareLinkState(s.r.QueryRowContext(ctx, shareLinkStateSQL+" WHERE sl.account_id = ? AND sl.id = ?",
+		accountID, id))
+}
+
+// ShareLinkStateByID is Store.ShareLinkStateByID read inside the transaction.
+func (tx *Tx) ShareLinkStateByID(ctx context.Context, accountID, id string) (*ShareLinkState, error) {
+	return scanShareLinkState(tx.q.QueryRowContext(ctx, shareLinkStateSQL+" WHERE sl.account_id = ? AND sl.id = ?",
+		accountID, id))
+}
+
+// ShareLinkStateBySecretHash reads the state of the link whose secret has the given hash, in any account, or
+// ErrNotFound. The caller checks the account.
+func (s *Store) ShareLinkStateBySecretHash(ctx context.Context, hash []byte) (*ShareLinkState, error) {
+	return scanShareLinkState(s.r.QueryRowContext(ctx, shareLinkStateSQL+" WHERE sl.secret_hash = ?", hash))
 }
 
 // DeleteShareLink removes a link and, with it, its visits. ErrNotFound when there is none.
@@ -151,9 +243,10 @@ func (s *Store) ChainShareLinks(ctx context.Context, accountID, nodeID string, n
 		)
 		SELECT `+shareLinkCols+`,
 			(SELECT COUNT(*) FROM share_link_visits v WHERE v.link_id = sl.id AND v.visited_at > sl.credentials_at),
-			NOT (`+linkPolicySQL+`)
+			NOT ((sl.audience = 'organisation' OR ac.public_links = 1) AND `+linkPolicySQL+`)
 		FROM chain c JOIN share_links sl ON sl.node_id = c.id AND sl.account_id = ?
 		JOIN nodes ln ON ln.id = sl.node_id JOIN folders lf ON lf.id = ln.folder_id
+		JOIN accounts ac ON ac.id = sl.account_id
 		WHERE sl.expires_at IS NULL OR sl.expires_at > ?
 		ORDER BY c.depth, sl.created_at, sl.id`,
 		accountID, nodeID, accountID, accountID, millis(now))
@@ -165,16 +258,17 @@ func (s *Store) ChainShareLinks(ctx context.Context, accountID, nodeID string, n
 	for rows.Next() {
 		var v ShareLinkView
 		var paused int64
+		var role, password sql.NullString
 		var expires sql.NullInt64
-		var role sql.NullString
 		var credentials, created, updated int64
-		err := rows.Scan(&v.ID, &v.AccountID, &v.NodeID, &v.Audience, &role, &v.SecretHash, &expires,
+		err := rows.Scan(&v.ID, &v.AccountID, &v.NodeID, &v.Audience, &role, &v.SecretHash, &password, &expires,
 			&credentials, &v.CreatedBy, &v.CreatedKind, &created, &v.UpdatedBy, &v.UpdatedKind, &updated,
 			&v.Visitors, &paused)
 		if err != nil {
 			return nil, err
 		}
 		v.Role = role.String
+		v.PasswordHash = password.String
 		v.ExpiresAt = fromNullMillis(expires)
 		v.CredentialsAt = fromMillis(credentials)
 		v.CreatedAt = fromMillis(created)
@@ -216,6 +310,25 @@ func (s *Store) SharingPolicy(ctx context.Context, accountID string) (publicLink
 		return false, ErrNotFound
 	}
 	return on == 1, err
+}
+
+// SharingPolicy is Store.SharingPolicy read inside the transaction.
+func (tx *Tx) SharingPolicy(ctx context.Context, accountID string) (publicLinks bool, err error) {
+	var on int64
+	err = tx.q.QueryRowContext(ctx, "SELECT public_links FROM accounts WHERE id = ?", accountID).Scan(&on)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	return on == 1, err
+}
+
+// CountAnyoneLinks counts the account's links that anyone can open and that have not ended at now, whether the
+// switch is on or off. An expired link is left out, as a listing leaves it out.
+func (s *Store) CountAnyoneLinks(ctx context.Context, accountID string, now time.Time) (int, error) {
+	var n int
+	err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM share_links WHERE account_id = ? AND audience = ?
+		AND (expires_at IS NULL OR expires_at > ?)`, accountID, AudienceAnyone, millis(now)).Scan(&n)
+	return n, err
 }
 
 // SetSharingPolicy stores the account's switch for links that anyone can open.

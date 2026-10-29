@@ -141,6 +141,20 @@ type nodeJSON struct {
 	OwnerID   string `json:"owner_id"`
 }
 
+// nodeJSONFor is toNodeJSON as the caller may see it. A visitor of a link that anyone can open sees no user IDs,
+// and the link's own node has no parent: the visitor is not told where the link sits.
+func nodeJSONFor(p *auth.Principal, n *store.Node) nodeJSON {
+	out := toNodeJSON(n)
+	if p != nil && p.Kind == auth.KindShareLink {
+		out.CreatedBy, out.OwnerID = "", ""
+		out.FolderID, out.EditorsCanShare = "", false
+		if p.Link != nil && n.ID == p.Link.Node {
+			out.ParentID = nil
+		}
+	}
+	return out
+}
+
 func toNodeJSON(n *store.Node) nodeJSON {
 	out := nodeJSON{ID: n.ID, FolderID: n.FolderID, Name: n.Name, Kind: n.Kind, Size: n.Size,
 		CreatedAt: n.CreatedAt, ModifiedAt: n.ModifiedAt, NoDownload: n.NoDownload,
@@ -328,7 +342,7 @@ func (s *Server) handleStatNode(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := toNodeJSON(n)
+	out := nodeJSONFor(principalOf(r), n)
 	out.Role = role
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -368,7 +382,7 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 	base := min(store.RoleRank(role), cap)
 	out := listResponse[nodeJSON]{Items: []nodeJSON{}, NextCursor: next}
 	for _, k := range kids {
-		j := toNodeJSON(k)
+		j := nodeJSONFor(p, k)
 		j.Role = store.RoleOfRank(max(base, min(ranks[k.ID], cap)))
 		out.Items = append(out.Items, j)
 	}
