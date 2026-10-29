@@ -349,6 +349,9 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleEditor); err != nil {
 			return err
 		}
+		if err := checkIfMatch(r, cur); err != nil {
+			return err
+		}
 		// Moving in takes contributor on the directory it lands in, and moving out takes editor
 		// on the item (above). Contributor is enough to receive, since nothing is removed there.
 		// The destination is checked before any name, so a refused role is a 403 whatever the name.
@@ -390,6 +393,9 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		cur.FolderID, cur.ParentID = plan.folderID, plan.parent.ID
 		cur.Name, cur.NameKey = plan.name, plan.key
 		cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
+		if cur.Kind == store.KindFile {
+			cur.ETag = newETag() // a move is a write, so the ETag changes, as on a rename
+		}
 		if err := tx.UpdateNode(ctx, cur); err != nil {
 			return storeNameErr(err)
 		}

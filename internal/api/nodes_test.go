@@ -511,8 +511,10 @@ func TestNodesAreAudited(t *testing.T) {
 	wantStatus(t, call(t, s, "PATCH", "/api/v1/nodes/"+a.ID, key, map[string]any{"name": "b.txt"}), 200)
 	wantStatus(t, call(t, s, "POST", "/api/v1/nodes/"+a.ID+"/move", key, map[string]any{"parent": d.ID}), 200)
 	wantStatus(t, call(t, s, "POST", "/api/v1/nodes/"+a.ID+"/copy", key, map[string]any{"on_conflict": "rename"}), 201)
+	// Renames and moves are writes, so the ETag read at creation is stale: read it again.
+	current := decode[nodeJSON](t, call(t, s, "GET", "/api/v1/nodes/"+a.ID, key, nil))
 	wantStatus(t, rawCall(t, s, "PUT", "/api/v1/nodes/"+a.ID+"/content", key, "new",
-		map[string]string{"If-Match": a.ETag}), 200)
+		map[string]string{"If-Match": current.ETag}), 200)
 	wantStatus(t, call(t, s, "DELETE", "/api/v1/nodes/"+a.ID, key, nil), 204)
 
 	log := decode[listResponse[auditJSON]](t, call(t, s, "GET", "/api/v1/accounts/"+acc.ID+"/audit", key, nil))

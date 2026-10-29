@@ -1487,7 +1487,12 @@ paths:
         commenters the downloads of the node and its subtree, though inline viewing still works.
         `editors_can_share` needs the manager role: it lets editors set permissions below the node,
         up to editor. A folder's root has no name. At least one field is required.
+        `If-Match` is optional. With the node's current `etag`, the change applies only if the node
+        is still that version; otherwise the answer is `precondition_failed` (412) and nothing
+        changes. The check runs inside the write.
       security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ifMatch"
       requestBody:
         required: true
         content:
@@ -1558,7 +1563,11 @@ paths:
         file over file; a folder on either side is `conflict`). The replaced file's contents are
         collected later, as for any delete. A folder cannot go into itself or below itself
         (`invalid_request`). Moving needs `write` on the node's folder and on the target folder.
+        `If-Match` is optional, as on a rename: a mismatch is `precondition_failed` and nothing moves.
+        A move that changes nothing returns the node without changing its `etag`.
       security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ifMatch"
       requestBody:
         required: true
         content:
@@ -2407,6 +2416,12 @@ components:
         `<algorithm> <base64 digest>` of the piece, with algorithm `sha256` or `sha1`. A piece
         that does not match is refused and nothing is kept.
       schema: { type: string }
+    ifMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: "The node's current `etag`. Optional; a mismatch on a rename or move is precondition_failed."
+      schema: { type: string }
     limit:
       name: limit
       in: query
@@ -2579,7 +2594,7 @@ components:
         kind: { type: string, enum: [dir, file] }
         size: { type: integer, minimum: 0, description: Bytes, for a file. }
         mime_type: { type: string, description: Files only. }
-        etag: { type: string, description: Files only. A strong ETag; changes with every write. }
+        etag: { type: string, description: "A strong ETag. A file's changes with every write to it, its contents and its record (a rename, a move, a flag). A directory's changes with every write to its record. Send it as If-Match to make a rename or move conditional." }
         sha256: { type: string, description: Files only. Hex SHA-256 of the contents. }
         created_at: { type: string, format: date-time }
         modified_at: { type: string, format: date-time }
@@ -2589,6 +2604,8 @@ components:
           description: The caller's effective role on the node. Set by stat, listings and the shared list; an account key gets manager.
         no_download: { type: boolean, description: The node's own no-download setting. It also reaches the subtree. }
         editors_can_share: { type: boolean, description: The node's own setting letting editors share. It also reaches the subtree. }
+        created_by: { type: string, description: "The ID of the user, or of the key, that made the node." }
+        owner_id: { type: string, description: "The ID of the user that owns the node." }
 
     NodeList:
       type: object

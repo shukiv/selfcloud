@@ -1,28 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { ApiError } from './apiError';
 import { clearSession, currentCsrf } from './session';
 import { go, signInURL } from './router';
 
-// ApiError is a refused request. Its message is never shown: the interface shows text by code.
-export class ApiError extends Error {
-  readonly status: number;
-  readonly code: string;
-  readonly details: Record<string, unknown>;
-  // retryAfter is the Retry-After header in seconds, or 0.
-  readonly retryAfter: number;
-
-  constructor(status: number, code: string, details: Record<string, unknown>, retryAfter: number) {
-    super(code);
-    this.name = 'ApiError';
-    this.status = status;
-    this.code = code;
-    this.details = details;
-    this.retryAfter = retryAfter;
-  }
-}
+export { ApiError } from './apiError';
 
 export interface RequestOptions {
   body?: unknown;
+  // headers adds request headers, such as If-Match. The CSRF header is set by api itself.
+  headers?: Record<string, string>;
   // noRedirect is for calls where a 401 is an answer, not an expired session: the start-up check,
   // and the sign-in and link pages themselves.
   noRedirect?: boolean;
@@ -33,7 +20,7 @@ export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 // api calls the Selfcloud API on this origin. Cookies go with the request only to this site. Every
 // request that changes something carries the CSRF token from the session.
 export async function api<T = void>(method: Method, path: string, opts: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  const headers: Record<string, string> = { Accept: 'application/json', ...opts.headers };
   let body: string | undefined;
   if (opts.body !== undefined) {
     headers['Content-Type'] = 'application/json';

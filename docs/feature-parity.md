@@ -30,7 +30,7 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Upload files and folders, with drag and drop | Have: resumable uploads (f); folder upload comes with the web interface (k) |
+| Upload files and folders, with drag and drop | Have: resumable uploads (f). Built (k2): the upload tray, folder upload and drag and drop |
 | Create blank documents, spreadsheets and presentations | Planned (l): Collabora, from templates (`TemplateSource`) |
 | Create from a template gallery | New (l+): per-account template folders |
 | Maximum file size (5 TB in Drive) | Have: settable, default 100 GiB (`upload.max_file`) |
@@ -43,10 +43,10 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Full-screen preview of images, PDF, video, audio and text | Planned (k), over signed links (g) |
+| Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route |
 | Preview of office documents | New (s): read-only Collabora view, or a converted PDF |
 | Thumbnails | New (s): images in-process, documents through Collabora |
-| Details pane (size, type, owner, location, dates, who has access) | New (k): the data already exists |
+| Details pane (size, type, owner, location, dates, who has access) | Built (k2): size, type, dates, creator, owner and your access. Location is in the breadcrumbs. Who has access is slice k3 |
 | Activity pane per file | New (r): from the audit log, filtered by access |
 
 ## 3. Organisation
@@ -62,7 +62,7 @@ space ("My files"), and a group can hold users.
 | Shortcuts (one item in several places) | New (p) |
 | Folder colours, descriptions | New (p) |
 | Labels (admin-defined metadata fields) | New (p): typed fields per account (text, number, date, user, choice) |
-| Sorting, grid and list views, density | Planned (k) |
+| Sorting, grid and list views, density | Built (k2): sorting by name, modified and size (within the items loaded so far), list and grid views. Density is not built |
 | Workspaces (ad hoc groups of files) | Skip: stars and shortcuts cover the need |
 | "Suggested" files chosen by machine learning | Skip: replaced by the rules-based Home page |
 
@@ -105,7 +105,7 @@ space ("My files"), and a group can hold users.
 | Version history for every file | Built (m): blobs never change, so a version is an old blob kept |
 | Keep forever, name a version, restore a version | Built (m) |
 | Automatic pruning (100 versions or 30 days) | Built (m): `versions.max_count` and `versions.max_age`; kept versions count toward quota |
-| Undo for move, rename and delete | Built (m): the trash and the restore calls; the undo toast is slice k, and there is no change log |
+| Undo for move, rename and delete | Built (m): the trash and the restore calls. Built (k2): the undo toast (8 seconds), with `If-Match` on rename and move. There is no change log |
 
 ## 7. Search
 
@@ -154,11 +154,11 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Keyboard shortcuts and a shortcut list (ctrl+/) | Planned (k): the same keys where browsers allow, listed in the interface |
-| Multi-select, right-click menu, grid and list, density, dark mode | Planned (k) |
-| Upload progress panel | Planned (k) |
+| Keyboard shortcuts and a shortcut list (ctrl+/) | Built in part (k2): arrows, Enter, Space, F2, Delete, Backspace, Escape and Ctrl+A in the file list. The shortcut list (ctrl+/) is not built |
+| Multi-select, right-click menu, grid and list, density, dark mode | Built in part (k2): multi-select, grid and list, dark mode (k1). No right-click menu, no density |
+| Upload progress panel | Built (k2): the upload tray, with pause, resume, cancel and retry |
 | Download progress, download a selection as zip | New (s): streamed zip, no temporary copy |
-| Copy link, open in new tab | Planned (k) |
+| Copy link, open in new tab | Planned (k), not in k2 |
 | Cut, paste, paste as shortcut | New (p/k) |
 
 ## 12. Admin and security

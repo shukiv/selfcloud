@@ -36,8 +36,8 @@ var reserved = []string{"/api", "/wopi", "/brand", "/metrics", "/healthz", "/rea
 
 // Options configure a Handler.
 type Options struct {
-	// ContentURL is content_url, or empty. Its origin is allowed for images and frames, because
-	// file previews load from it.
+	// ContentURL is content_url, or empty. Its origin is allowed for images, video, audio and frames,
+	// because file previews load from it.
 	ContentURL string
 }
 
@@ -50,16 +50,17 @@ type Handler struct {
 // New returns a handler for files. The build's index.html is served at "/" and for client routes.
 // A build without one (dist/ holds only its .gitignore) serves the not-built page instead.
 func New(files fs.FS, opts Options) (*Handler, error) {
-	imgSrc, frameSrc := "", ""
+	imgSrc, frameSrc, mediaSrc := "", "", ""
 	if opts.ContentURL != "" {
 		u, err := url.Parse(opts.ContentURL)
 		if err != nil || u.Scheme == "" || u.Host == "" {
 			return nil, fmt.Errorf("web: content URL %q has no origin", opts.ContentURL)
 		}
 		origin := u.Scheme + "://" + u.Host
-		imgSrc, frameSrc = " "+origin, " "+origin
+		imgSrc, frameSrc, mediaSrc = " "+origin, " "+origin, " "+origin
 	}
 	csp := "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:" + imgSrc +
+		"; media-src 'self'" + mediaSrc +
 		"; font-src 'self'; connect-src 'self'; frame-src 'self'" + frameSrc +
 		"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 	return &Handler{files: files, csp: csp}, nil

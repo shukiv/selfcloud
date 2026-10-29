@@ -2,7 +2,8 @@
 .claude/settings.local.json
 /bin/
 /data/
-/web/node_modules/
+# Package and tool caches, wherever a tool creates them (vitest writes one beside the test it runs).
+node_modules/
 # The build output is never committed. Only dist/.gitignore is, so the Go embed compiles before a build.
 /web/dist/*
 !/web/dist/.gitignore

@@ -352,9 +352,13 @@ func TestUploadReplaceKeepsAVersion(t *testing.T) {
 	putNode(t, s, key, f.ID, "/same.txt", "old")
 	old := nodeIn(t, s, key, f.ID, "same.txt")
 	before := usageOf(t, s, key, accID)
+	// A link to the old content dies when the upload replaces it.
+	oldLink := makeLink(t, s, key, old, "")
+	wantStatus(t, rawCall(t, s, "GET", urlPath(t, oldLink.URL), "", "", nil), 200)
 
 	upl := uploadID(t, createUpload(t, s, key, 8, md("folder", f.ID, "name", "same.txt", "on_conflict", "replace")))
 	wantStatus(t, piece(t, s, key, upl, 0, "replaced", nil), 204)
+	wantError(t, rawCall(t, s, "GET", urlPath(t, oldLink.URL), "", "", nil), 404, apierr.NotFound)
 
 	if got := usageOf(t, s, key, accID); got.UsedBytes-before.UsedBytes != 8 {
 		t.Errorf("usage grew by %d, want the new eight bytes", got.UsedBytes-before.UsedBytes)

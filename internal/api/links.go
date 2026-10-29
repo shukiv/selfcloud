@@ -7,10 +7,12 @@ package api
 // A link is one token, base64url(payload) "." base64url(MAC), served at /api/v1/links/{token}:
 //
 //	payload  "nod|acc|disposition|exp", exp in Unix seconds
-//	MAC      HMAC-SHA256 over a label, the node's current ETag and the payload
+//	MAC      HMAC-SHA256 over a label, the node's content tag and the payload
 //
-// The MAC covers the ETag, which the token does not carry. A link therefore stops working as
-// soon as the file's contents change, and it names one node and one disposition. Two keys verify:
+// The content tag is a random value that the store changes on every content write and never on a rename or
+// move. It is not in the token. So a link stops working as soon as the contents change, and it stays dead
+// when the same bytes come back (a re-upload or a version restore gets a new tag). A rename or move keeps
+// the tag, so a link survives it. The link names one node, one account and one disposition. Two keys verify:
 // the current signing key and, after a rotation, the previous one.
 
 import (
@@ -167,31 +169,31 @@ func (c linkClaims) payload() []byte {
 	return []byte(c.nod + "|" + c.acc + "|" + c.disp + "|" + strconv.FormatInt(c.exp, 10))
 }
 
-// linkMAC is the MAC of a payload for a node whose current ETag is etag.
-func linkMAC(key []byte, etag string, payload []byte) []byte {
+// linkMAC is the MAC of a payload for a file whose current content tag is tag.
+func linkMAC(key []byte, tag string, payload []byte) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write([]byte(linkMACLabel))
 	h.Write([]byte{0})
-	h.Write([]byte(etag))
+	h.Write([]byte(tag))
 	h.Write([]byte{0})
 	h.Write(payload)
 	return h.Sum(nil)
 }
 
-// sign returns the token for the claims, signed with the current key. etag is the node's ETag
+// sign returns the token for the claims, signed with the current key. tag is the file's content tag
 // now.
-func (k *linkKeys) sign(c linkClaims, etag string) string {
+func (k *linkKeys) sign(c linkClaims, tag string) string {
 	p := c.payload()
 	return base64.RawURLEncoding.EncodeToString(p) + "." +
-		base64.RawURLEncoding.EncodeToString(linkMAC(k.current, etag, p))
+		base64.RawURLEncoding.EncodeToString(linkMAC(k.current, tag, p))
 }
 
-// verify reports whether mac is a valid MAC of payload for etag under either key. Both are
+// verify reports whether mac is a valid MAC of payload for tag under either key. Both are
 // computed and compared in constant time.
-func (k *linkKeys) verify(payload, mac []byte, etag string) bool {
-	ok := hmac.Equal(linkMAC(k.current, etag, payload), mac)
+func (k *linkKeys) verify(payload, mac []byte, tag string) bool {
+	ok := hmac.Equal(linkMAC(k.current, tag, payload), mac)
 	if k.previous != nil {
-		ok = hmac.Equal(linkMAC(k.previous, etag, payload), mac) || ok
+		ok = hmac.Equal(linkMAC(k.previous, tag, payload), mac) || ok
 	}
 	return ok
 }
@@ -336,7 +338,7 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, linkJSON{
-		URL:         base + linkPrefix + s.links.sign(c, n.ETag),
+		URL:         base + linkPrefix + s.links.sign(c, n.ContentTag),
 		Disposition: disp,
 		ExpiresAt:   expires,
 	})
@@ -344,7 +346,7 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 }
 
 // handleGetLink serves the file a signed link names. It needs no credential and reads no cookie.
-// The token must verify against the node's current ETag; the link must not have expired; the
+// The token must verify against the node's current content tag; the link must not have expired; the
 // account must be active. The user's grants are not consulted: the link is the capability.
 func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 	// Charged before the token is parsed or the database is read: a flood of guesses costs
@@ -364,10 +366,10 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if !s.links.verify(payload, mac, n.ETag) {
+	if !s.links.verify(payload, mac, n.ContentTag) {
 		return linkNotFound()
 	}
-	// Trashing a file does not change its ETag, so the link's MAC still checks. A link to a file in the trash
+	// Trashing a file does not change its SHA-256, so the link's MAC still checks. A link to a file in the trash
 	// is refused here, so the link stops working the moment the file is trashed.
 	self, above, err := s.store.TrashState(ctx, n.AccountID, n.ID)
 	if err != nil {

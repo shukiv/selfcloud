@@ -1067,6 +1067,7 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 				return err
 			}
 			n.BlobID, n.Size, n.MimeType, n.ETag, n.SHA256 = cur.BlobID, cur.Length, cur.MimeType, newETag(), digest
+			n.ContentTag = store.NewContentTag()
 			n.ModifiedAt, n.ModifiedBy = now, p.ID
 			if err := tx.UpdateNode(ctx, n); err != nil {
 				return storeNameErr(err)

@@ -665,9 +665,13 @@ A version's blob is referenced by its row, so the collector keeps it while the v
 ### Undo
 
 The server has no undo API. A client undoes a delete with a restore, which the trash makes possible until the
-retention ends. It undoes a move or a rename with the inverse call. The move and rename routes take no `If-Match`:
-a client that must know nothing changed in between reads the node and compares its `etag`, which the content
-routes require. The undo toast of the web interface (slice k) is built on these calls.
+retention ends. It undoes a move or a rename with the inverse call, sent with `If-Match` set to the `etag` the item got from the
+first call. The rename and move routes take an optional `If-Match`: a mismatch is `precondition_failed` and changes
+nothing, and the check runs inside the write transaction. Every write changes the node's `etag`, a rename and a move
+included, so the token catches a change of name or place as well as of contents. A directory has no contents to tag,
+so its `etag` comes from its record (its ID and `modified_at`); a directory's token therefore changes with a rename, a
+move or a flag change, but not when something is added inside it. The undo toast of the web interface (slice k2) is
+built on these calls.
 
 ### Accepted limits
 
@@ -742,8 +746,8 @@ Files                                      any caller, limited to what it may re
   POST   /folders/{fld}/directories        {path, parents: true}
   POST   /folders/{fld}/files?path=        small file as the raw body (If-None-Match: * refuses an existing one),
                                            or a blank document from a template
-  PATCH  /nodes/{nod}                      {name, no_download, editors_can_share}: rename in place (editor); no_download (editor); editors_can_share (manager)
-  POST   /nodes/{nod}/move                 {folder, parent | path, name, on_conflict: fail | rename | replace}
+  PATCH  /nodes/{nod}                      {name, no_download, editors_can_share}: rename in place (editor); no_download (editor); editors_can_share (manager); optional If-Match with the etag (412 on a mismatch)
+  POST   /nodes/{nod}/move                 {folder, parent | path, name, on_conflict: fail | rename | replace}; optional If-Match, as PATCH
   POST   /nodes/{nod}/copy                 same; read on the source, write on the target; 202 and a job
                                            above 10,000 nodes, too_large above copy.max_nodes
   DELETE /nodes/{nod}                      to the trash (editor); ?permanent=true deletes for good (manager)
@@ -793,7 +797,11 @@ CDN whose terms limit large-file traffic.
 minutes, capped by `links.max_ttl`). They exist for `<img>`, `<video>` and plain downloads, where
 the browser cannot send an `Authorization` header. A link is `/api/v1/links/{token}` on
 `content_url` (else `public_url`); the token is the node, account, disposition and expiry, with
-an HMAC-SHA256 that also covers the node's current ETag, so any write to the file kills the link.
+an HMAC-SHA256 that also covers the file's content tag: a random value kept in `nodes.content_tag` (migration 0012),
+rotated by every content write (a PUT of content, an upload that replaces, a version restore) and not by a rename or
+move. So any change of contents kills the link, and the link stays dead when the same bytes come back. Signing on the
+SHA-256 would revive a link when an old version returns, which is why the tag is random. Links made before migration
+0012 stop working when it runs, and their holders ask for new ones.
 A link is a capability: serving it needs no grant, only that the node still exists unchanged and
 the account is not suspended. Expired gives `410 link_expired`, forged or stale `404`, suspended
 `403`. On `content_url`, only link paths are served and no cookie is read. Creating links and
@@ -885,6 +893,50 @@ editing, opening in the office editor), and owner screens for users, folders and
 and follow-the-system themes. It works at phone width. The stack is TypeScript, Svelte 5 and Vite
 (`web/`). Node is needed only to build it. The web interface is built in four parts: **k1**
 (foundation and the auth pages), **k2** (file browser), **k3** (sharing) and **k4** (admin pages).
+
+*File browser (k2).* The routes: `/files` opens My files (the caller's `personal_folder_id`); `/files/{fld}` a folder's
+root; `/files/{fld}/{dir}` a directory, which must belong to that folder; `/n/{nod}` resolves a node: a file opens its
+preview in its folder (`?preview=`), a directory opens its parent with the directory selected (`?select=`). Anything the
+caller cannot reach is the not-found view. Breadcrumbs walk `parent_id` upward with `GET /nodes/{nod}` and stop at the
+first `not_found`, so no name above the first reachable ancestor is shown; a directory whose folder root is not reachable
+shows only its own name, and no folder can be created in it, since the API creates directories by path from the root.
+The list is cursor-paged, with infinite scroll and a "load more" button. The server has no sort parameter on the
+children route, so sorting applies to the items loaded so far, and the page says so. Selection is kept by item ID, so a
+later page cannot move it. The view and the sort are kept in local storage, in a guarded read and write.
+
+*Uploads.* The browser's own client (`web/src/lib/files/tus.ts`) speaks tus 1.0.0 to `/api/v1/uploads`: it creates an
+upload, sends pieces of `max_chunk_size` (from `GET /info`) with `PATCH`, asks `HEAD` where it stopped, and deletes an
+upload that is cancelled. Every unsafe request carries the session's `X-CSRF-Token` and, because the browser sends its
+own origin, passes the same check as any other route. A library was considered and not used: its dependency tree
+includes a package with no licence field, which the licence check refuses. A name taken under `fail` answers `conflict`
+at creation; the browser asks once per batch (replace, keep both, or skip) and creates again with that `on_conflict`. A
+completion that finds the name taken answers `awaiting_commit`; the browser asks for a new name and calls
+`POST /uploads/{upl}/commit`. Three uploads run at once; a `too_many_uploads` or `rate_limited` answer waits and tries
+again. A reload keeps each unfinished upload's name, size, time stamp, folder, target, upload URL and the SHA-256 of
+the file's first MiB in local storage, with the signed-in user's ID (no token). Records are checked when read: a URL
+must be an upload's path, IDs must be valid, and records of other users are ignored. The list follows the session, and
+a sign-out removes that user's records from the browser; signing out while uploads run asks first. The tray asks for
+the same file again; a file whose name, size and time match but whose first MiB differs starts a new upload, and the
+stored one is dropped. Resuming reads `HEAD`: an upload whose bytes are all in (`Selfcloud-Upload-State:
+awaiting_commit`) waits for a name and is never shown as done. An upload is done only on the answer that carries its
+`Selfcloud-Node-ID`. The browser computes the first MiB's SHA-256 with crypto.subtle, or with its own pure-TypeScript SHA-256 where
+crypto.subtle is missing (a plain-HTTP LAN address); a record without a fingerprint is never resumed. Each piece
+carries `Upload-Checksum: sha256 <base64>` only where crypto.subtle exists, since pure JavaScript over 8 MiB pieces
+would slow large uploads; elsewhere no checksum header is sent. A 460 reads the offset once and sends the piece
+again. Use HTTPS in production for per-piece checksums. A `beforeunload` prompt is registered only while an upload runs.
+
+*Downloads and previews.* Before a download the browser makes a `HEAD` on
+`/api/v1/nodes/{nod}/content?disposition=attachment`: a refusal (403, `download_restricted`) is shown, since a plain link
+could not show it, and an accepted one starts the download through a link. That response is an attachment, so it works
+whether or not `content_url` is set. Images, PDFs, video and audio load from a signed link (`POST /nodes/{nod}/links`,
+`disposition=inline`, ttl 300) on the content origin, and the CSP allows that origin for `img`, `iframe` and `media`
+(`media-src` was added for this). Text is read on the main origin with a `Range` of the first 1 MiB and shown as text in
+a `pre`, never as HTML. A signed URL is never stored or shown.
+
+*Undo.* The toast lasts 8 seconds and is announced through a live region. A delete is undone with
+`POST /nodes/{nod}/restore`. A rename is undone with the inverse call and `If-Match` set to the `etag` the rename
+returned; a move likewise. A `412` reads "it changed since; undo not possible". A multi-item undo runs each item and
+reports how many failed.
 
 *Build.* `make web` runs `npm ci && npm run build` in `web/`, which writes `web/dist/`. `make build`
 does that first and then the Go build, which embeds `web/dist` (`web/embed.go`, `internal/web`).

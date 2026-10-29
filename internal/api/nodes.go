@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -65,6 +66,32 @@ func newETag() string {
 	return `"` + hex.EncodeToString(b[:]) + `"`
 }
 
+// dirETag is a directory's version token. A directory has no contents of its own to tag, so the token
+// comes from its record: it changes with every write to the record (a rename, a move, a flag change).
+func dirETag(n *store.Node) string {
+	sum := sha256.Sum256([]byte(n.ID + "|" + strconv.FormatInt(n.ModifiedAt.UnixMilli(), 10)))
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
+// nodeETag is the version token a node reports and If-Match checks: a file's ETag, or a directory's.
+func nodeETag(n *store.Node) string {
+	if n.Kind == store.KindFile {
+		return n.ETag
+	}
+	return dirETag(n)
+}
+
+// checkIfMatch answers precondition_failed when If-Match names another version of the node than the
+// one held. An absent If-Match checks nothing. Callers run it inside the write transaction, after the
+// role check and before any change, so a refused request changes nothing.
+func checkIfMatch(r *http.Request, n *store.Node) error {
+	im := r.Header.Get("If-Match")
+	if im == "" || im == nodeETag(n) {
+		return nil
+	}
+	return apierr.New(apierr.PreconditionFailed, "the node changed since it was read; read it again")
+}
+
 // mimeOf returns the media type to store for a file: the one the client sent, else one from the
 // name's extension, else application/octet-stream.
 func mimeOf(header, name string) string {
@@ -109,18 +136,23 @@ type nodeJSON struct {
 	// access rules read the ancestors.
 	NoDownload      bool `json:"no_download"`
 	EditorsCanShare bool `json:"editors_can_share"`
+	// CreatedBy and OwnerID are the IDs of the user (or key) that made the node and of the node's owner.
+	// The interface shows "you" when one is the signed-in user.
+	CreatedBy string `json:"created_by"`
+	OwnerID   string `json:"owner_id"`
 }
 
 func toNodeJSON(n *store.Node) nodeJSON {
 	out := nodeJSON{ID: n.ID, FolderID: n.FolderID, Name: n.Name, Kind: n.Kind, Size: n.Size,
 		CreatedAt: n.CreatedAt, ModifiedAt: n.ModifiedAt, NoDownload: n.NoDownload,
-		EditorsCanShare: n.EditorsCanShare}
+		EditorsCanShare: n.EditorsCanShare, CreatedBy: n.CreatedBy, OwnerID: n.OwnerID}
 	if !n.IsRoot() {
 		parent := n.ParentID
 		out.ParentID = &parent
 	}
+	out.ETag = nodeETag(n)
 	if n.Kind == store.KindFile {
-		out.MimeType, out.ETag, out.SHA256 = n.MimeType, n.ETag, n.SHA256
+		out.MimeType, out.SHA256 = n.MimeType, n.SHA256
 	}
 	return out
 }
@@ -548,6 +580,7 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		n.Size, n.MimeType, n.BlobID, n.ETag, n.SHA256 = c.Size, mt, c.ID, newETag(), c.SHA256
+		n.ContentTag = store.NewContentTag()
 		if err := tx.UpdateNode(ctx, n); err != nil {
 			return err
 		}
@@ -659,6 +692,9 @@ func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error 
 		if _, err := requireNodeRole(ctx, tx, p, cur.ID, need); err != nil {
 			return err
 		}
+		if err := checkIfMatch(r, cur); err != nil {
+			return err
+		}
 		var renamed *string
 		if in.Name != nil {
 			if taken, err := nameTakenBy(tx.Child(ctx, cur.AccountID, cur.ParentID, key)); err != nil {
@@ -680,6 +716,10 @@ func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error 
 			sharing["editors_can_share"] = cur.EditorsCanShare
 		}
 		cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
+		if cur.Kind == store.KindFile {
+			// Every write changes the ETag, as the API promises; a rename is a write.
+			cur.ETag = newETag()
+		}
 		if err := tx.UpdateNode(ctx, cur); err != nil {
 			return storeNameErr(err)
 		}
@@ -814,6 +854,7 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		cur.BlobID, cur.Size, cur.MimeType, cur.ETag, cur.SHA256 = c.ID, c.Size, mt, newETag(), c.SHA256
+		cur.ContentTag = store.NewContentTag()
 		cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
 		if err := tx.UpdateNode(ctx, cur); err != nil {
 			return err

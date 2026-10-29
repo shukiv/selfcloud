@@ -18,6 +18,9 @@
   import ChangePassword from './pages/ChangePassword.svelte';
   import Placeholder from './pages/Placeholder.svelte';
   import NotFound from './pages/NotFound.svelte';
+  import Files from './pages/Files.svelte';
+  import NodeLink from './pages/NodeLink.svelte';
+  import Trash from './pages/Trash.svelte';
 
   type View =
     | 'login'
@@ -25,6 +28,7 @@
     | 'reset'
     | 'forgot'
     | 'files'
+    | 'node'
     | 'shared'
     | 'trash'
     | 'admin'
@@ -37,6 +41,7 @@
 
   function viewFor(path: string): View {
     if (path === '/' || path === '/files' || path.startsWith('/files/')) return 'files';
+    if (path.startsWith('/n/')) return 'node';
     switch (path) {
       case '/login':
         return 'login';
@@ -146,11 +151,13 @@
 {:else if $session !== null}
   <Shell>
     {#if view === 'files'}
-      <Placeholder titleKey="nav.files" />
+      <Files />
+    {:else if view === 'node'}
+      <NodeLink />
     {:else if view === 'shared'}
       <Placeholder titleKey="nav.shared" />
     {:else if view === 'trash'}
-      <Placeholder titleKey="nav.trash" />
+      <Trash />
     {:else if view === 'admin'}
       <Placeholder titleKey="nav.admin" />
     {:else if view === 'change-password'}

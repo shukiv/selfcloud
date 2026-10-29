@@ -295,6 +295,7 @@ func (s *Server) handleRestoreVersion(w http.ResponseWriter, r *http.Request) er
 		prev := cur.Size
 		cur.BlobID, cur.Size, cur.MimeType, cur.SHA256 = v.BlobID, v.Size, v.MimeType, v.SHA256
 		cur.ETag, cur.ModifiedAt, cur.ModifiedBy = newETag(), store.Now(), p.ID
+		cur.ContentTag = store.NewContentTag()
 		if err := tx.UpdateNode(ctx, cur); err != nil {
 			return err
 		}

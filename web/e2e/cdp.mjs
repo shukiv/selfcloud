@@ -64,6 +64,10 @@ export class Page {
     this.listeners = new Map();
     this.errors = [];
     this.requests = [];
+    // sent records each request's method and URL, so the test can count the pieces of an upload.
+    this.sent = [];
+    // expectedConflicts lists the upload creations answered 409 on purpose (a name taken).
+    this.expectedConflicts = [];
     this.opened = new Promise((resolve, reject) => {
       this.ws.onopen = resolve;
       this.ws.onerror = () => reject(new Error('cannot open the page socket'));
@@ -108,13 +112,33 @@ export class Page {
       // The browser logs every failed request, so that one expected answer is not counted.
       const expectedProbe =
         p.entry.source === 'network' && /\/api\/v1\/me$/.test(p.entry.url ?? '') && /status of 401/.test(p.entry.text);
+      // An upload whose name is taken is answered 409, and the browser logs it. The interface asks what to do
+      // then, so the test counts these answers and checks that there is exactly the one it caused.
+      const expectedConflict =
+        p.entry.source === 'network' && /\/api\/v1\/uploads$/.test(p.entry.url ?? '') && /status of 409/.test(p.entry.text);
+      if (expectedConflict) {
+        this.expectedConflicts.push(p.entry.url);
+        return;
+      }
       if (!expectedProbe) this.errors.push(`log(${p.entry.source}): ${p.entry.text}`);
     });
-    this.on('Network.requestWillBeSent', (p) => this.requests.push(p.request.url));
+    this.on('Network.requestWillBeSent', (p) => {
+      this.requests.push(p.request.url);
+      this.sent.push({ method: p.request.method, url: p.request.url });
+    });
     await this.send('Runtime.enable');
     await this.send('Log.enable');
     await this.send('Network.enable');
     await this.send('Page.enable');
+    await this.send('DOM.enable');
+  }
+
+  // setFiles puts files into the file input the selector names, as a person would pick them.
+  async setFiles(selector, files) {
+    const { root } = await this.send('DOM.getDocument', { depth: -1 });
+    const { nodeId } = await this.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    if (!nodeId) throw new Error(`no file input for ${selector}`);
+    await this.send('DOM.setFileInputFiles', { nodeId, files });
   }
 
   async goto(url) {

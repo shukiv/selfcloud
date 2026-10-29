@@ -63,7 +63,7 @@ func TestUIHeaders(t *testing.T) {
 	rec := get(t, h, http.MethodGet, "/")
 	want := map[string]string{
 		"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; " +
-			"font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+			"media-src 'self'; font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 		"X-Content-Type-Options": "nosniff",
 		"Referrer-Policy":        "same-origin",
 		"X-Frame-Options":        "DENY",
@@ -75,11 +75,11 @@ func TestUIHeaders(t *testing.T) {
 	}
 }
 
-// TestContentURLOriginIsAllowed adds the content origin to images and frames, and nothing else.
+// TestContentURLOriginIsAllowed adds the content origin to images, media and frames, and nothing else.
 func TestContentURLOriginIsAllowed(t *testing.T) {
 	h := newTestHandler(t, testFiles(), Options{ContentURL: "https://files.example.com/base/"})
 	csp := get(t, h, http.MethodGet, "/").Header().Get("Content-Security-Policy")
-	for _, want := range []string{"img-src 'self' data: blob: https://files.example.com;", "frame-src 'self' https://files.example.com;"} {
+	for _, want := range []string{"img-src 'self' data: blob: https://files.example.com;", "media-src 'self' https://files.example.com;", "frame-src 'self' https://files.example.com;"} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP %q lacks %q", csp, want)
 		}

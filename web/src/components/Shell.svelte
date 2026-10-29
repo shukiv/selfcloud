@@ -6,7 +6,12 @@
   import { go, location } from '../lib/router';
   import { canSeeAdmin, flash, session } from '../lib/session';
   import { signOut } from '../lib/auth';
+  import { folders, loadFolders } from '../lib/files/folders';
+  import { manager } from '../lib/files/uploads';
+  import Dialog from './Dialog.svelte';
+  import { onMount } from 'svelte';
   import Alert from './Alert.svelte';
+  import UploadTray from './UploadTray.svelte';
   import LangSwitch from './LangSwitch.svelte';
   import ThemeSwitch from './ThemeSwitch.svelte';
 
@@ -20,6 +25,12 @@
     { href: '/trash', label: 'nav.trash' },
     ...(canSeeAdmin($session?.user) ? [{ href: '/admin', label: 'nav.admin' }] : []),
   ]);
+
+  // The team spaces are listed under My files, from the folders the caller reaches.
+  onMount(() => {
+    void loadFolders().catch(() => undefined);
+  });
+  let teams = $derived($folders.filter((f) => f.kind === 'team'));
 
   function isCurrent(href: string, path: string): boolean {
     return path === href || path.startsWith(href + '/');
@@ -36,8 +47,22 @@
     go(href);
   }
 
-  async function logout() {
+  // signOutAsk is open while the person is asked whether to sign out with uploads still running.
+  let signOutAsk = $state(false);
+
+  // logout asks first when uploads are running: signing out stops them. The uploads leave the list with the
+  // session (see the upload manager), so this only confirms.
+  function logout() {
     menuOpen = false;
+    if (manager.active > 0) {
+      signOutAsk = true;
+      return;
+    }
+    void doLogout();
+  }
+
+  async function doLogout() {
+    signOutAsk = false;
     try {
       await signOut();
     } finally {
@@ -101,6 +126,21 @@
         </li>
       {/each}
     </ul>
+    {#if teams.length > 0}
+      <h2 class="nav-title">{$tr('nav.teams')}</h2>
+      <ul class="teams">
+        {#each teams as team (team.id)}
+          <li>
+            <a
+              href={`/files/${team.id}`}
+              aria-current={isCurrent(`/files/${team.id}`, $location.path) ? 'page' : undefined}
+            >
+              <bdi>{team.name}</bdi>
+            </a>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   </nav>
   <main id="main" class="content" tabindex="-1">
     {#if $flash}
@@ -112,3 +152,13 @@
     {@render children()}
   </main>
 </div>
+<UploadTray />
+{#if signOutAsk}
+  <Dialog title={$tr('user.signOutTitle')} id="signout-ask" onclose={() => (signOutAsk = false)}>
+    <p>{$tr('user.signOutUploads')}</p>
+    <div class="foot">
+      <button type="button" class="btn secondary" onclick={() => (signOutAsk = false)}>{$tr('common.cancel')}</button>
+      <button type="button" class="btn primary danger-fill" data-autofocus onclick={doLogout}>{$tr('user.signOut')}</button>
+    </div>
+  </Dialog>
+{/if}

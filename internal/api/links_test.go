@@ -191,6 +191,53 @@ func makeLinkStatus(t *testing.T, s *Server, cred, nodeID, body string) *httptes
 		map[string]string{"Content-Type": "application/json"})
 }
 
+// contentTagOf reads the content tag a link to the file is signed with.
+func contentTagOf(t *testing.T, s *Server, accID, nodeID string) string {
+	t.Helper()
+	n, err := s.store.Node(context.Background(), accID, nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n.ContentTag
+}
+
+// TestLinkStaysDeadWhenOldContentReturns: a link made on contents X dies when the contents become Y, and it
+// stays dead when X comes back by a version restore. A rename does not kill it.
+func TestLinkStaysDeadWhenOldContentReturns(t *testing.T) {
+	fx := newSharingFixture(t)
+	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "X")
+	onX := makeLink(t, fx.s, fx.key, f.ID, "")
+	path := urlPath(t, onX.URL)
+	wantStatus(t, rawCall(t, fx.s, "GET", path, "", "", nil), 200)
+
+	// A rename keeps the content, so the link works.
+	renamed := decode[nodeJSON](t, call(t, fx.s, "PATCH", "/api/v1/nodes/"+f.ID, fx.key, map[string]any{"name": "two.txt"}))
+	wantStatus(t, rawCall(t, fx.s, "GET", path, "", "", nil), 200)
+
+	// Overwriting with Y kills it.
+	replaceContent(t, fx, f.ID, renamed.ETag, "Y")
+	wantError(t, rawCall(t, fx.s, "GET", path, "", "", nil), 404, apierr.NotFound)
+	// A link made on Y works until the restore below replaces Y.
+	onY := makeLink(t, fx.s, fx.key, f.ID, "")
+	wantStatus(t, rawCall(t, fx.s, "GET", urlPath(t, onY.URL), "", "", nil), 200)
+
+	// Restoring X brings the same bytes back, but the link made on the first X stays dead.
+	cur := decode[nodeJSON](t, call(t, fx.s, "GET", "/api/v1/nodes/"+f.ID, fx.key, nil))
+	ver := versionsOf(t, fx, f.ID)[1].ID
+	rec := rawCall(t, fx.s, "POST", "/api/v1/nodes/"+f.ID+"/versions/"+ver+"/restore", fx.key, "",
+		map[string]string{"If-Match": cur.ETag})
+	wantStatus(t, rec, 200)
+	if got := decode[nodeJSON](t, rec).SHA256; got != sha("X") {
+		t.Fatalf("restored SHA-256 = %s, want X's", got)
+	}
+	wantError(t, rawCall(t, fx.s, "GET", path, "", "", nil), 404, apierr.NotFound)
+	wantError(t, rawCall(t, fx.s, "GET", urlPath(t, onY.URL), "", "", nil), 404, apierr.NotFound)
+
+	// A link made now, on the restored X, works.
+	fresh := makeLink(t, fx.s, fx.key, f.ID, "")
+	wantStatus(t, rawCall(t, fx.s, "GET", urlPath(t, fresh.URL), "", "", nil), 200)
+}
+
 func TestSignedLinkExpiryAndChanges(t *testing.T) {
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
@@ -202,7 +249,7 @@ func TestSignedLinkExpiryAndChanges(t *testing.T) {
 	// A link past its time is link_expired. The link is signed with a time in the past, as a
 	// genuine link would be once its time has run out.
 	past := linkClaims{nod: doc.ID, acc: acc.ID, disp: dispAttachment, exp: time.Now().Add(-time.Minute).Unix()}
-	expired := "/api/v1/links/" + s.links.sign(past, doc.ETag)
+	expired := "/api/v1/links/" + s.links.sign(past, contentTagOf(t, s, acc.ID, doc.ID))
 	wantError(t, rawCall(t, s, "GET", expired, "", "", nil), 410, apierr.LinkExpired)
 
 	// Another node's ID under this node's MAC is not_found.
@@ -212,11 +259,15 @@ func TestSignedLinkExpiryAndChanges(t *testing.T) {
 	moved := strings.Replace(payload, doc.ID, other.ID, 1)
 	wantError(t, rawCall(t, s, "GET", "/api/v1/links/"+encodeB64(moved)+"."+m, "", "", nil), 404, apierr.NotFound)
 
-	// Changing the contents kills the link: its MAC names the old ETag.
+	// Changing the contents kills the link: its MAC names the content tag, which the change rotates.
 	path := urlPath(t, live.URL)
 	wantStatus(t, rawCall(t, s, "GET", path, "", "", nil), 200)
+	// A rename changes the ETag but not the contents, so the link still works.
+	wantStatus(t, call(t, s, "PATCH", "/api/v1/nodes/"+doc.ID, key, map[string]any{"name": "doc2.txt"}), 200)
+	wantStatus(t, rawCall(t, s, "GET", path, "", "", nil), 200)
+	current := decode[nodeJSON](t, call(t, s, "GET", "/api/v1/nodes/"+doc.ID, key, nil))
 	wantStatus(t, rawCall(t, s, "PUT", "/api/v1/nodes/"+doc.ID+"/content", key, "v2",
-		map[string]string{"If-Match": doc.ETag}), 200)
+		map[string]string{"If-Match": current.ETag}), 200)
 	wantError(t, rawCall(t, s, "GET", path, "", "", nil), 404, apierr.NotFound)
 	// A new link to the new contents works.
 	fresh := makeLink(t, s, key, doc.ID, "")
@@ -386,7 +437,7 @@ func TestLinkKeyRotation(t *testing.T) {
 	stranger := linkClaims{nod: doc.ID, acc: acc.ID, disp: dispAttachment, exp: time.Now().Add(time.Hour).Unix()}
 	forged := &linkKeys{current: make([]byte, 32)}
 	forged.current[0] = 9
-	wantError(t, rawCall(t, s3, "GET", "/api/v1/links/"+forged.sign(stranger, doc.ETag), "", "", nil), 404, apierr.NotFound)
+	wantError(t, rawCall(t, s3, "GET", "/api/v1/links/"+forged.sign(stranger, contentTagOf(t, s3, acc.ID, doc.ID)), "", "", nil), 404, apierr.NotFound)
 }
 
 // newTestServerOn starts a second server on the same store and configuration, as a restart does.
@@ -424,7 +475,7 @@ func TestErrorsCarrySafetyHeaders(t *testing.T) {
 
 	// An expired link.
 	past := linkClaims{nod: doc.ID, acc: acc.ID, disp: dispAttachment, exp: time.Now().Add(-time.Minute).Unix()}
-	expired := rawCall(t, s, "GET", "/api/v1/links/"+s.links.sign(past, doc.ETag), "", "", nil)
+	expired := rawCall(t, s, "GET", "/api/v1/links/"+s.links.sign(past, contentTagOf(t, s, acc.ID, doc.ID)), "", "", nil)
 	wantError(t, expired, 410, apierr.LinkExpired)
 	errorHeaders(t, "expired link", expired)
 

@@ -4,7 +4,9 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"time"
 )
@@ -18,18 +20,21 @@ const (
 // Node is an entry of a folder's file tree: a directory, a file, or a folder's root (a directory
 // with no parent and the empty name).
 type Node struct {
-	ID         string
-	AccountID  string
-	FolderID   string
-	ParentID   string // "" for a folder's root
-	Name       string // NFC; "" for a root
-	NameKey    string
-	Kind       string // KindDir or KindFile
-	Size       int64
-	MimeType   string
-	BlobID     string // files only
-	SHA256     string // files only; from the blob
-	ETag       string // files only; changes with every write
+	ID        string
+	AccountID string
+	FolderID  string
+	ParentID  string // "" for a folder's root
+	Name      string // NFC; "" for a root
+	NameKey   string
+	Kind      string // KindDir or KindFile
+	Size      int64
+	MimeType  string
+	BlobID    string // files only
+	SHA256    string // files only; from the blob
+	ETag      string // files only; changes with every write
+	// ContentTag is a random value for a file, changed by every content write (PUT, upload replace,
+	// version restore) and never by a rename or move. A signed link is bound to it. Not sent to clients.
+	ContentTag string // files only
 	CreatedAt  time.Time
 	ModifiedAt time.Time
 	CreatedBy  string
@@ -48,18 +53,27 @@ type Node struct {
 	TrashedNameKey string
 }
 
+// NewContentTag returns a fresh random content tag: 16 random bytes, base64url.
+func NewContentTag() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("store: no randomness: " + err.Error())
+	}
+	return base64.RawURLEncoding.EncodeToString(b[:])
+}
+
 // IsRoot reports whether n is a folder's root.
 func (n *Node) IsRoot() bool { return n.ParentID == "" }
 
 // nodeSelect reads a node with its blob's hash. Callers add a WHERE clause.
 const nodeSelect = `SELECT n.id, n.account_id, n.folder_id, n.parent_id, n.name, n.name_key, n.kind,
-	n.size, n.mime_type, n.blob_id, COALESCE(b.sha256, ''), n.etag, n.created_at, n.modified_at,
+	n.size, n.mime_type, n.blob_id, COALESCE(b.sha256, ''), n.etag, n.content_tag, n.created_at, n.modified_at,
 	n.created_by, n.modified_by, n.owner_id, n.no_download, n.editors_can_share,
 	n.trashed_at, n.trashed_by, n.trashed_name_key
 	FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id AND b.account_id = n.account_id`
 
 const nodeCols = `id, account_id, folder_id, parent_id, name, name_key, kind, size, mime_type, blob_id,
-	etag, created_at, modified_at, created_by, modified_by, owner_id, no_download, editors_can_share`
+	etag, content_tag, created_at, modified_at, created_by, modified_by, owner_id, no_download, editors_can_share`
 
 func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	var n Node
@@ -68,7 +82,7 @@ func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	var noDownload, editorsCanShare int64
 	var trashed sql.NullInt64
 	err := row.Scan(&n.ID, &n.AccountID, &n.FolderID, &parent, &n.Name, &n.NameKey, &n.Kind, &n.Size,
-		&n.MimeType, &blob, &n.SHA256, &n.ETag, &created, &modified, &n.CreatedBy, &n.ModifiedBy, &n.OwnerID,
+		&n.MimeType, &blob, &n.SHA256, &n.ETag, &n.ContentTag, &created, &modified, &n.CreatedBy, &n.ModifiedBy, &n.OwnerID,
 		&noDownload, &editorsCanShare, &trashed, &n.TrashedBy, &n.TrashedNameKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -246,11 +260,15 @@ func (tx *Tx) InsertNode(ctx context.Context, n *Node) error {
 	if owner == "" {
 		owner = n.CreatedBy
 	}
+	if n.Kind == KindFile {
+		// A new file has new content, so it gets a new tag whatever the caller copied from.
+		n.ContentTag = NewContentTag()
+	}
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), ?), ?, ?)`,
 		n.ID, n.AccountID, n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Kind, n.Size,
-		n.MimeType, nullString(n.BlobID), n.ETag, millis(n.CreatedAt), millis(n.ModifiedAt),
+		n.MimeType, nullString(n.BlobID), n.ETag, n.ContentTag, millis(n.CreatedAt), millis(n.ModifiedAt),
 		n.CreatedBy, n.ModifiedBy, n.FolderID, owner, boolInt(n.NoDownload), boolInt(n.EditorsCanShare))
 	if isUniqueViolation(err) {
 		return ErrConflict
@@ -262,11 +280,11 @@ func (tx *Tx) InsertNode(ctx context.Context, n *Node) error {
 // ErrNotFound if the node is not in the account, and ErrConflict on a sibling name clash.
 func (tx *Tx) UpdateNode(ctx context.Context, n *Node) error {
 	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET folder_id = ?, parent_id = ?, name = ?,
-		name_key = ?, size = ?, mime_type = ?, blob_id = ?, etag = ?, modified_at = ?, modified_by = ?,
+		name_key = ?, size = ?, mime_type = ?, blob_id = ?, etag = ?, content_tag = ?, modified_at = ?, modified_by = ?,
 		owner_id = CASE WHEN ? = '' THEN owner_id ELSE ? END, no_download = ?, editors_can_share = ?
 		WHERE account_id = ? AND id = ?`,
 		n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Size, n.MimeType, nullString(n.BlobID),
-		n.ETag, millis(n.ModifiedAt), n.ModifiedBy, n.OwnerID, n.OwnerID, boolInt(n.NoDownload),
+		n.ETag, n.ContentTag, millis(n.ModifiedAt), n.ModifiedBy, n.OwnerID, n.OwnerID, boolInt(n.NoDownload),
 		boolInt(n.EditorsCanShare), n.AccountID, n.ID))
 	if isUniqueViolation(err) {
 		return ErrConflict
