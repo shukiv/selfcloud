@@ -6,7 +6,7 @@
   import { go, location } from '../lib/router';
   import { lang, tr, translatePlural } from '../lib/i18n';
   import { session } from '../lib/session';
-  import { folders, loadFolders } from '../lib/files/folders';
+  import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from '../lib/files/folders';
   import {
     childrenPage,
     copyNode,
@@ -47,6 +47,8 @@
   import Details from '../components/files/Details.svelte';
   import Preview from '../components/files/Preview.svelte';
   import Versions from '../components/files/Versions.svelte';
+  import ShareDialog from '../components/share/ShareDialog.svelte';
+  import { shareCap } from '../lib/sharing/roles';
   import PickDestination, { type Destination } from '../components/files/PickDestination.svelte';
   import Conflict from '../components/files/Conflict.svelte';
   import UndoToast from '../components/UndoToast.svelte';
@@ -57,11 +59,13 @@
   // The server checks every operation again; the buttons only show what the role allows.
 
   type Status = 'loading' | 'ready' | 'missing' | 'error';
-  type Dialogs = 'newFolder' | 'delete' | 'pick' | 'details' | 'versions' | 'preview';
+  type Dialogs = 'newFolder' | 'delete' | 'pick' | 'details' | 'versions' | 'preview' | 'share';
   type Transferable = Transfer & { name: string };
 
   let personalID = $state<string | null>(null);
   let status = $state<Status>('loading');
+  // missingNodeID is the directory a not-found view was for, so the view can offer a request for it.
+  let missingNodeID = $state<string | undefined>(undefined);
   let errorMsg = $state('');
   let here = $state<Here | null>(null);
   let items = $state<Node[]>([]);
@@ -114,14 +118,32 @@
   let picked = $derived(sel.ids.map((id) => byID.get(id)).filter((n): n is Node => n !== undefined));
   let rovingID = $derived(sel.focusID && byID.has(sel.focusID) ? sel.focusID : (ids[0] ?? null));
   let folderRole = $derived(here ? (here.dir ? (here.dir.role ?? 'viewer') : here.folderRole) : 'viewer');
-  let canUploadHere = $derived(here !== null && here.path !== null && atLeast(folderRole, 'contributor'));
-  let canMakeFolder = $derived(canUploadHere);
+  // Files can go into a directory by its ID, so a shared directory whose folder root is not reachable takes them.
+  // Folders are made, and folder uploads placed, by path from the root, so those need a reachable path.
+  let canUploadHere = $derived(
+    here !== null && (here.dir !== null || here.path !== null) && atLeast(folderRole, 'contributor'),
+  );
+  let canUploadFolder = $derived(canUploadHere && here !== null && here.path !== null);
+  let canMakeFolder = $derived(canUploadFolder);
   let allEdit = $derived(picked.length > 0 && picked.every((n) => can.edit(n.role)));
   let spaces = $derived.by(() => {
     const list = $folders;
     return personalID ? [...list.filter((f) => f.id === personalID), ...list.filter((f) => f.id !== personalID)] : list;
   });
   let view = $derived(prefs.view);
+  // space is the team space (or personal folder) the browser is in, with its settings, when the caller reaches it.
+  let space = $derived(here ? ([...$folders, ...$hiddenFolders].find((f) => f.id === here?.folder) ?? null) : null);
+
+  // gated shows an item as the no-download rule of its space makes it: a viewer of a space that forbids downloads
+  // sees no download, whatever the item's own flag says. The server applies the same rule to every download.
+  function gated(n: Node): Node {
+    return here?.spaceNoDownload && !n.no_download ? { ...n, no_download: true } : n;
+  }
+
+  // canShareItem says whether the caller may share an item here, from its role and the space's settings.
+  function canShareItem(n: Node): boolean {
+    return shareCap({ role: n.role, editorsCanShare: n.editors_can_share, managersOnly: space?.sharing_managers_only ?? false }) !== null;
+  }
 
   let crumbs = $derived.by<Crumb<Place>[]>(() => {
     if (!here) return [];
@@ -174,6 +196,7 @@
   async function load(): Promise<void> {
     const my = ++loadToken;
     const r = parseFilesPath($location.path);
+    missingNodeID = r?.kind === 'dir' ? r.dir : undefined;
     if (!r || r.kind === 'node') {
       status = 'missing';
       return;
@@ -195,7 +218,11 @@
       if (!personalID) {
         personalID = (await getMe().catch(() => null))?.personal_folder_id ?? null;
       }
-      const list = get(folders).length > 0 ? get(folders) : await loadFolders().catch(() => []);
+      let list = get(folders).length > 0 ? get(folders) : await loadFolders().catch(() => []);
+      // A hidden space is not in the visible list, but it is still reached, so its name is read here.
+      if (!list.some((f) => f.id === r.folder)) {
+        list = [...list, ...(await loadHiddenFolders().catch(() => []))];
+      }
       const dirID = r.kind === 'dir' ? r.dir : null;
       const where = await locate(r.folder, dirID, list);
       if (my !== loadToken) return;
@@ -310,7 +337,7 @@
 
   function openPreview(n: Node) {
     const list = sorted.filter((x) => previewable(x));
-    previewItems = list;
+    previewItems = list.map(gated);
     previewIndex = Math.max(0, list.findIndex((x) => x.id === n.id));
     dialog = 'preview';
   }
@@ -718,7 +745,7 @@
 </svelte:head>
 
 {#if status === 'missing'}
-  <NotFound />
+  <NotFound nodeID={missingNodeID} />
 {:else}
   <section class="browser" class:dragging ondragenter={onDragEnter} ondragleave={onDragLeave} ondragover={onDragOver} ondrop={onDrop} aria-labelledby="browser-title">
     <header class="head">
@@ -746,7 +773,9 @@
         {/if}
         {#if canUploadHere}
           <button type="button" class="btn primary" onclick={() => fileInput?.click()}>{$tr('files.act.upload')}</button>
-          <button type="button" class="btn secondary" onclick={() => folderInput?.click()}>{$tr('files.act.uploadFolder')}</button>
+          {#if canUploadFolder}
+            <button type="button" class="btn secondary" onclick={() => folderInput?.click()}>{$tr('files.act.uploadFolder')}</button>
+          {/if}
           <input bind:this={fileInput} type="file" multiple class="hidden-input" tabindex="-1" aria-hidden="true" onchange={onFilesPicked} />
           <input bind:this={folderInput} type="file" multiple class="hidden-input" tabindex="-1" aria-hidden="true" onchange={onFilesPicked} />
         {/if}
@@ -771,7 +800,7 @@
       {#if sel.ids.length > 0}
         <div class="selbar" role="toolbar" aria-label={$tr('files.selection.label')}>
           <p class="count" aria-live="polite">{translatePlural($lang, 'files.selected', sel.ids.length)}</p>
-          {#if picked.length === 1 && picked[0].kind === 'file' && downloadAllowed(picked[0])}
+          {#if picked.length === 1 && picked[0].kind === 'file' && downloadAllowed(gated(picked[0]))}
             <button type="button" class="btn secondary" onclick={() => download(picked[0])}>{$tr('files.act.download')}</button>
           {/if}
           {#if picked.length === 1 && previewable(picked[0])}
@@ -779,6 +808,9 @@
           {/if}
           {#if picked.length === 1}
             <button type="button" class="btn secondary" onclick={() => { target = picked[0]; dialog = 'details'; }}>{$tr('files.act.details')}</button>
+          {/if}
+          {#if picked.length === 1}
+            <button type="button" class="btn secondary" onclick={() => { target = picked[0]; dialog = 'share'; }}>{$tr('share.open')}</button>
           {/if}
           {#if picked.length === 1 && picked[0].kind === 'file' && atLeast(picked[0].role, 'viewer')}
             <button type="button" class="btn secondary" onclick={() => { target = picked[0]; dialog = 'versions'; }}>{$tr('files.act.versions')}</button>
@@ -892,11 +924,22 @@
   {/if}
 
   {#if dialog === 'details' && target}
-    <Details node={target} canVersions={atLeast(target.role, 'viewer')} onclose={() => (dialog = null)} onversions={() => (dialog = 'versions')} />
+    <Details
+      node={target}
+      canVersions={atLeast(target.role, 'viewer')}
+      canShare={canShareItem(target)}
+      onclose={() => (dialog = null)}
+      onversions={() => (dialog = 'versions')}
+      onshare={() => (dialog = 'share')}
+    />
   {/if}
 
   {#if dialog === 'versions' && target}
-    <Versions node={target} onclose={() => (dialog = null)} onchanged={() => void reload()} />
+    <Versions node={gated(target)} onclose={() => (dialog = null)} onchanged={() => void reload()} />
+  {/if}
+
+  {#if dialog === 'share' && target}
+    <ShareDialog node={target} {space} onclose={() => (dialog = null)} onchanged={() => void reload()} />
   {/if}
 
   {#if dialog === 'preview' && previewItems.length > 0}

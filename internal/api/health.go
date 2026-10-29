@@ -83,7 +83,9 @@ type infoResponse struct {
 	// PasswordMinLength is the shortest password the server accepts. Clients check against it.
 	PasswordMinLength int        `json:"password_min_length"`
 	Limits            infoLimits `json:"limits"`
-	Features          []string   `json:"features"`
+	// SharingMaxExpiryDays is the longest a share may run, in whole days, rounded up; 0 means no cap.
+	SharingMaxExpiryDays int      `json:"sharing_max_expiry_days"`
+	Features             []string `json:"features"`
 }
 
 type infoLimits struct {
@@ -110,7 +112,8 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) error {
 			MaxFileSize:  int64(s.cfg.Upload.MaxFileSize),
 			MaxChunkSize: int64(s.cfg.Upload.MaxChunkSize),
 		},
-		Features: []string{},
+		SharingMaxExpiryDays: maxExpiryDays(s.cfg.Sharing.MaxExpiry.D()),
+		Features:             []string{},
 	})
 	return nil
 }
@@ -146,4 +149,14 @@ func (s *Server) handleSpec(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) error {
 	s.metrics.handler().ServeHTTP(w, r)
 	return nil
+}
+
+// maxExpiryDays is a share's longest run in whole days, rounded up, so a cap of an hour reads as one
+// day and never as 0, which means no cap.
+func maxExpiryDays(d time.Duration) int {
+	if d <= 0 {
+		return 0
+	}
+	const day = 24 * time.Hour
+	return int((d + day - 1) / day)
 }

@@ -15,15 +15,17 @@ async function listAll<T>(path: string, maxPages = 40): Promise<T[]> {
     const sep = path.includes('?') ? '&' : '?';
     const q = `${path}${sep}limit=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
     const page = await api<Page<T>>('GET', q);
-    out.push(...page.items);
+    out.push(...(page.items ?? []));
     if (!page.next_cursor) break;
     cursor = page.next_cursor;
   }
   return out;
 }
 
-export function myFolders(): Promise<FolderAccess[]> {
-  return listAll<FolderAccess>('/api/v1/folders');
+// myFolders reads the team spaces the caller reaches, and its personal folder. Hidden spaces are left out,
+// unless hidden asks for only those.
+export function myFolders(hidden = false): Promise<FolderAccess[]> {
+  return listAll<FolderAccess>(hidden ? '/api/v1/folders?hidden=true' : '/api/v1/folders');
 }
 
 export function getMe(): Promise<{ personal_folder_id: string | null }> {

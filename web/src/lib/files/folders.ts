@@ -13,3 +13,13 @@ export async function loadFolders(): Promise<FolderAccess[]> {
   folders.set(list);
   return list;
 }
+
+// hiddenFolders are the team spaces the caller has hidden from its own list. They are kept apart from folders,
+// so the move and copy pickers list only what the caller shows, and they are read only when asked for.
+export const hiddenFolders = writable<FolderAccess[]>([]);
+
+export async function loadHiddenFolders(): Promise<FolderAccess[]> {
+  const list = await myFolders(true);
+  hiddenFolders.set(list);
+  return list;
+}

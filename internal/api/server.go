@@ -218,6 +218,8 @@ func New(opts Options) (*Server, error) {
 			"access.request": newLimiterRate(20, time.Hour),
 			// Listing the pending requests, per caller: the scan reads up to 5,000 rows a call.
 			"access.list": newLimiter(60),
+			// Directory searches are typed, so one caller searching while it types stays well inside this.
+			"directory.search": newLimiter(60),
 			// Access-request mail has buckets of its own, so requests cannot spend the mail a user needs to
 			// sign in: per account, and per address the mail goes to.
 			"mail.requests.account": newLimiterRate(20, time.Hour),
@@ -363,6 +365,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true},
 		{method: http.MethodGet, path: "/api/v1/shared", handle: s.handleSharedWithMe, auth: true},
+		{method: http.MethodGet, path: "/api/v1/directory", handle: s.handleDirectory, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/transfer-ownership", handle: s.handleTransferOwnership, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleCreateAccessRequest, auth: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleListNodeAccessRequests, auth: true},

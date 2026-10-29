@@ -9,6 +9,7 @@
   import { PREF_LANG, readPref } from './lib/prefs';
   import { lang, matchLang, setLang, tr } from './lib/i18n';
   import { loadTheme } from './lib/theme';
+  import { maxExpiryDays } from './lib/sharing/limits';
   import PublicLayout from './components/PublicLayout.svelte';
   import Shell from './components/Shell.svelte';
   import Login from './pages/Login.svelte';
@@ -17,6 +18,8 @@
   import Forgot from './pages/Forgot.svelte';
   import ChangePassword from './pages/ChangePassword.svelte';
   import Placeholder from './pages/Placeholder.svelte';
+  import Shared from './pages/Shared.svelte';
+  import Requests from './pages/Requests.svelte';
   import NotFound from './pages/NotFound.svelte';
   import Files from './pages/Files.svelte';
   import NodeLink from './pages/NodeLink.svelte';
@@ -30,6 +33,7 @@
     | 'files'
     | 'node'
     | 'shared'
+    | 'requests'
     | 'trash'
     | 'admin'
     | 'change-password'
@@ -53,6 +57,8 @@
         return 'forgot';
       case '/shared':
         return 'shared';
+      case '/requests':
+        return 'requests';
       case '/trash':
         return 'trash';
       case '/admin':
@@ -124,6 +130,7 @@
       }
       applyBrand(info?.brand ?? $brand);
       passwordMinLength.set(info?.passwordMinLength ?? 8);
+      maxExpiryDays.set(info?.sharingMaxExpiryDays ?? 0);
       const me = await loadMe().catch(() => null);
       chooseLang(me);
       ready = true;
@@ -155,7 +162,9 @@
     {:else if view === 'node'}
       <NodeLink />
     {:else if view === 'shared'}
-      <Placeholder titleKey="nav.shared" />
+      <Shared />
+    {:else if view === 'requests'}
+      <Requests />
     {:else if view === 'trash'}
       <Trash />
     {:else if view === 'admin'}

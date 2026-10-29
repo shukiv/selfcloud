@@ -2,35 +2,65 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { brand } from '../lib/brand';
-  import { tr } from '../lib/i18n';
+  import { tr, tp } from '../lib/i18n';
   import { go, location } from '../lib/router';
   import { canSeeAdmin, flash, session } from '../lib/session';
   import { signOut } from '../lib/auth';
-  import { folders, loadFolders } from '../lib/files/folders';
+  import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from '../lib/files/folders';
+  import type { FolderAccess } from '../lib/files/types';
   import { manager } from '../lib/files/uploads';
+  import { setHidden } from '../lib/sharing/api';
+  import { pendingRequests, refreshPendingRequests } from '../lib/sharing/requestCount';
   import Dialog from './Dialog.svelte';
   import { onMount } from 'svelte';
   import Alert from './Alert.svelte';
   import UploadTray from './UploadTray.svelte';
   import LangSwitch from './LangSwitch.svelte';
   import ThemeSwitch from './ThemeSwitch.svelte';
+  import SpaceSettings from './share/SpaceSettings.svelte';
 
   let { children }: { children: Snippet } = $props();
 
   let menuOpen = $state(false);
+  // teamMenu is the team space whose menu is open, by ID.
+  let teamMenu = $state<string | null>(null);
+  let showHidden = $state(false);
+  let settingsFor = $state<FolderAccess | null>(null);
+  let isOwner = $derived($session?.user.role === 'owner');
 
+  // The requests entry shows to an owner always, and to anyone else only when a request waits for a decision.
   let links = $derived([
     { href: '/files', label: 'nav.files' },
     { href: '/shared', label: 'nav.shared' },
     { href: '/trash', label: 'nav.trash' },
+    ...(isOwner || ($pendingRequests ?? 0) > 0 ? [{ href: '/requests', label: 'nav.requests' }] : []),
     ...(canSeeAdmin($session?.user) ? [{ href: '/admin', label: 'nav.admin' }] : []),
   ]);
 
-  // The team spaces are listed under My files, from the folders the caller reaches.
+  // The team spaces are listed under My files, from the folders the caller reaches. Hidden ones are listed only
+  // when the caller asks to see them.
   onMount(() => {
     void loadFolders().catch(() => undefined);
+    void refreshPendingRequests();
   });
   let teams = $derived($folders.filter((f) => f.kind === 'team'));
+  let hiddenTeams = $derived($hiddenFolders.filter((f) => f.kind === 'team'));
+
+  async function toggleHidden(on: boolean) {
+    showHidden = on;
+    if (on) await loadHiddenFolders().catch(() => undefined);
+  }
+
+  // hide hides a team space from the caller's own list, or shows it again. Access does not change.
+  async function hide(team: FolderAccess, hidden: boolean) {
+    teamMenu = null;
+    // A refused change leaves the lists as they are; they are read again either way, so they show the truth.
+    await setHidden(team.id, hidden).catch(() => undefined);
+    await Promise.all([
+      loadFolders().catch(() => undefined),
+      showHidden ? loadHiddenFolders().catch(() => undefined) : undefined,
+    ]);
+  }
 
   function isCurrent(href: string, path: string): boolean {
     return path === href || path.startsWith(href + '/');
@@ -71,8 +101,12 @@
   }
 
   function closeOnOutside(event: MouseEvent) {
-    if (menuOpen && !(event.target as Element).closest('.user-menu')) {
+    const target = event.target as Element;
+    if (menuOpen && !target.closest('.user-menu')) {
       menuOpen = false;
+    }
+    if (teamMenu !== null && !target.closest('.team-row')) {
+      teamMenu = null;
     }
   }
 </script>
@@ -122,24 +156,29 @@
         <li>
           <a href={link.href} aria-current={isCurrent(link.href, $location.path) ? 'page' : undefined}>
             {$tr(link.label)}
+            {#if link.href === '/requests' && ($pendingRequests ?? 0) > 0}
+              <span class="count">{$tp('nav.requests.count', $pendingRequests ?? 0)}</span>
+            {/if}
           </a>
         </li>
       {/each}
     </ul>
-    {#if teams.length > 0}
+    {#if teams.length > 0 || showHidden}
       <h2 class="nav-title">{$tr('nav.teams')}</h2>
       <ul class="teams">
         {#each teams as team (team.id)}
-          <li>
-            <a
-              href={`/files/${team.id}`}
-              aria-current={isCurrent(`/files/${team.id}`, $location.path) ? 'page' : undefined}
-            >
-              <bdi>{team.name}</bdi>
-            </a>
-          </li>
+          {@render teamRow(team)}
         {/each}
+        {#if showHidden}
+          {#each hiddenTeams as team (team.id)}
+            {@render teamRow(team)}
+          {/each}
+        {/if}
       </ul>
+      <label class="check">
+        <input type="checkbox" checked={showHidden} onchange={(e) => toggleHidden((e.currentTarget as HTMLInputElement).checked)} />
+        <span>{$tr('nav.showHidden')}</span>
+      </label>
     {/if}
   </nav>
   <main id="main" class="content" tabindex="-1">
@@ -152,7 +191,49 @@
     {@render children()}
   </main>
 </div>
-<UploadTray />
+
+{#snippet teamRow(team: FolderAccess)}
+  <li class="team-row">
+    <a
+      href={`/files/${team.id}`}
+      aria-current={isCurrent(`/files/${team.id}`, $location.path) ? 'page' : undefined}
+    >
+      <bdi>{team.name}</bdi>
+      {#if team.hidden}<span class="count">{$tr('nav.hiddenTag')}</span>{/if}
+    </a>
+    <button
+      type="button"
+      class="menu-toggle"
+      aria-haspopup="menu"
+      aria-expanded={teamMenu === team.id}
+      aria-label={$tr('nav.spaceOptions', { name: team.name })}
+      onclick={() => (teamMenu = teamMenu === team.id ? null : team.id)}
+    >
+      …
+    </button>
+    {#if teamMenu === team.id}
+      <div class="menu team-menu" role="menu">
+        <button type="button" role="menuitem" class="menu-item" onclick={() => hide(team, !team.hidden)}>
+          {team.hidden ? $tr('nav.show') : $tr('nav.hide')}
+        </button>
+        {#if team.role === 'manager'}
+          <button
+            type="button"
+            role="menuitem"
+            class="menu-item"
+            onclick={() => {
+              teamMenu = null;
+              settingsFor = team;
+            }}
+          >
+            {$tr('nav.spaceSettings')}
+          </button>
+        {/if}
+      </div>
+    {/if}
+  </li>
+{/snippet}
+
 {#if signOutAsk}
   <Dialog title={$tr('user.signOutTitle')} id="signout-ask" onclose={() => (signOutAsk = false)}>
     <p>{$tr('user.signOutUploads')}</p>
@@ -162,3 +243,79 @@
     </div>
   </Dialog>
 {/if}
+
+{#if settingsFor}
+  <SpaceSettings
+    space={settingsFor}
+    onclose={() => (settingsFor = null)}
+    onsaved={() => void loadFolders().catch(() => undefined)}
+  />
+{/if}
+<UploadTray />
+
+<style>
+  .team-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .team-row > a {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .menu-toggle {
+    min-width: 44px;
+    min-height: 44px;
+    font: inherit;
+    color: var(--color-muted-foreground);
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .menu-toggle:hover {
+    background: var(--color-muted);
+  }
+
+  .team-menu {
+    inset-block-start: 100%;
+    inset-inline-end: 0;
+  }
+
+  .count {
+    margin-inline-start: var(--space-2);
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-warning-fg);
+    background: var(--color-warning-bg);
+    border-radius: var(--radius-full);
+  }
+
+  .nav-title {
+    margin: var(--space-4) 0 var(--space-2);
+    padding-inline: var(--space-3);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-muted-foreground);
+  }
+
+  .check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 44px;
+    padding-inline: var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .check input {
+    width: 20px;
+    height: 20px;
+  }
+</style>

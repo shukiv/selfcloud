@@ -4,15 +4,19 @@ Overrides `MASTER.md` for the drive itself: what a member sees, and what owners 
 Drive. A user reaches only the top-level folders shared with them; inside a folder they can do
 what their level allows. API: `/api/v1/folders` (folders the caller can reach), file routes
 (slice e), tus uploads (slice f), downloads (slice g), `/api/v1/me`, `/me/password`.
-The folder browser, uploads, previews and the trash are slice k2; the sharing screens are k3.
+The folder browser, uploads, previews and the trash are slice k2; the sharing screens (the share
+dialog, Shared with me, access requests, hidden spaces and space settings) are k3.
 
-## Home: Shared with me (`/`, slice k3)
+## Shared with me (`/shared`, slice k3)
 
-- Title "Folders". A grid of folder tiles (≥ 768px) or a list (< 768px; switchable, the choice is
-  remembered per device).
-- Each folder shows its name, an access badge (Can view / Can edit; owners see none), size and
-  last change.
+`/` is My files, as it was in k2. The shared list is its own page.
+
+- Title "Shared with me". A list of the items other people shared with the caller (`GET /shared`), one
+  row each: the name (a link to `/n/{nod}`), the role as a badge ("Can view", "Can edit", ...), and the
+  last change. A link opens the item in its folder, through the file browser.
+- The owner's name appears only when it is the caller. The API gives no other name for an owner.
 - Empty: "Nothing is shared with you yet. Ask an owner of your organisation to share a folder."
+- Loads more with a "Load more" button; no infinite scroll here.
 
 ## Folder browser (`/files/{fld}`, `/files/{fld}/{dir}`, `/n/{nod}`)
 
@@ -86,3 +90,31 @@ not-found view.
 - Name, email (read-only), Language (each in its own name), Theme (System, Light, Dark).
 - Change password: current, new, confirm. Rate-limit errors are shown as text with the wait.
 - Sign out, and "Sign out everywhere".
+
+## Share dialog (slice k3)
+
+Opened from the selection bar ("Share") and the details panel ("Share" where the caller may share,
+and "Who has access"). Focus is trapped; Escape closes it and returns focus to the opener.
+
+- **Your access.** A person below manager reads "You have <role> access" and sees only its own rows,
+  as the server answers. A manager sees everyone who holds a role on the item, and above it.
+- **Each row.** The name ("You" for the caller), a "Group" badge for a group, an "Invited" badge for a
+  pending user, "from <name>" (or "from a parent folder" when the ancestor is not readable), and
+  "Ends <date>" when the access ends. A manager changes the role from a dropdown and removes a row
+  with a confirmation. An inherited row offers "Open the parent" instead of removal.
+- **Add people.** A combobox over `GET /directory`, with the arrow keys, Enter and Escape. The roles
+  offered stop at the caller's cap. An end date is optional and capped at the server's limit. The
+  message is at most 500 characters. Notify is on by default. A reply that says no mail went out gives
+  the reason in a sentence, and the share stands.
+- **Errors** are short sentences by code: forbidden, members only, unknown person, the end date too far
+  ahead (with the limit in days), invalid details, rate limited.
+- **Advanced (managers).** "Editors can share", "Viewers and commenters can't download" (a switch that
+  says it discourages, not prevents, downloads), and transfer ownership for the owner, with a
+  confirmation that says where the item goes.
+- **Access requests.** A not-found view on an item offers "Request access": a role and an optional message.
+  The confirmation is one sentence whatever the server answered, "If this item exists, the people who
+  manage it have been asked."
+- **Requests** (`/requests`): requester, item name when visible, role asked for, and the message. Approve
+  with a role no higher than the caller's, or deny.
+- **Team spaces** in the sidebar: a "…" menu with Hide or Show, and Space settings for a manager of the
+  space's root. "Show hidden spaces" lists hidden ones, marked "Hidden".

@@ -689,6 +689,11 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   until the quotas slice (p) adds per-user limits.
 - **Shared subtree root (L7).** The root of a shared subtree shows its `parent_id`, which is an ID only.
   It names no ancestor, but it does tell the user that a parent exists.
+- **The account directory (k3).** Any active user of an account, whatever its role and whether or not
+  it reaches any folder, can find the name and email of every active user of the account through
+  `GET /directory`, 20 at a time and rate limited. That is the purpose of the directory: a share dialog
+  must name the people it shares with. Delegated tokens cannot search it. An account setting to keep
+  plain members out of it is not built.
 
 ## 9. API outline
 
@@ -700,7 +705,7 @@ out.
 ```
 System
   GET  /healthz /readyz /metrics           (outside /api/v1)
-  GET  /info                               version, features, public_url, limits (max file size, max_chunk_size)
+  GET  /info                               version, features, public_url, limits (max file size, max_chunk_size), sharing_max_expiry_days (the longest a share may run, in whole days rounded up; 0 for no cap, from `sharing.max_expiry`)
 
 Accounts                                   admin key
   POST|GET              /accounts                           ?external_id= to look one up
@@ -732,6 +737,7 @@ Files                                      any caller, limited to what it may re
   PATCH  /folders/{fld}/settings           {members_only, sharing_managers_only, no_download_for_viewers, allow_links}: managers of the space root; refused on a personal folder
   PUT|DELETE /folders/{fld}/hidden         hide or show a team space in the caller's own list (users only; changes no access)
   GET    /shared                           nodes shared with the caller (users only), each with its role
+  GET    /directory?q=&kind=user|group|all people and groups of the account, for the share dialog (k3). Any user by session, and the account key; admins and every delegated token get `forbidden`, since a token is narrowed to its folders. `q` is 2 to 100 characters after trimming; a user matches by its email local part (prefix) or its name (substring), a group by its name (substring); `%` and `_` are literal. Active users only; at most 20 entries; rate limited per caller. Each entry carries only ID, kind, name and, for a user, email
   GET    /folders/{fld}/children?path=/a/b list a directory by path
   GET    /nodes/{nod}                      stat: name, size, mime_type, etag, modified_at, sha256
   GET    /nodes/{nod}/children             list a directory by ID (sort, paging); each child carries the caller's role
@@ -937,6 +943,64 @@ a `pre`, never as HTML. A signed URL is never stored or shown.
 `POST /nodes/{nod}/restore`. A rename is undone with the inverse call and `If-Match` set to the `etag` the rename
 returned; a move likewise. A `412` reads "it changed since; undo not possible". A multi-item undo runs each item and
 reports how many failed.
+
+*Sharing (k3).* The sharing interface is built on the sharing model of section 8. Nothing here
+adds a rule: the server checks every change, and the screens only show what the caller's role allows.
+
+- **Share dialog** (`web/src/components/share/ShareDialog.svelte`). Opened from the selection bar
+  ("Share") and the details panel ("Share", where the caller may share, and "Who has access"). It
+  lists the permissions from `GET /nodes/{nod}/permissions`: the name (or "You"), the email or group,
+  the role, "from <name>" when the ancestor it sits on is readable (else "from a parent folder"), the
+  end date, and an "Invited" badge for a pending user. A person below manager sees only its own rows,
+  and the dialog says "You have <role> access" in words. A manager changes a row's role from its
+  dropdown (a change is sent with `notify: false`) and removes a row with a confirmation. An inherited
+  row cannot be removed here; "Open the parent" opens its ancestor through `/n/{nod}`.
+- **Adding people.** A combobox (ARIA combobox pattern: `role="combobox"`, a `listbox`, and
+  `aria-activedescendant` on the arrow keys) searches `GET /directory` after 250 ms, from two characters.
+  Only a choice from the list is sent. The role offered is capped by the caller's role: a manager
+  grants up to manager; an editor grants up to editor only where the node's own `editors_can_share` is
+  on and the space does not keep sharing for managers (`mayShare`). An optional end date is capped at
+  `sharing_max_expiry_days`, and a message of at most 500 characters is sent with the share. Notify is
+  on by default. The reply's `notified` and `reason` become one sentence ("No email was sent: the group
+  has more than 50 members."); the share itself stands. Errors are shown by code: `forbidden`,
+  `conflict` (members only), `invalid_request` with `max_expiry_seconds` (the day limit), `not_found`
+  (the person or group no longer exists). Results are announced through a live region.
+- **Advanced (managers).** "Editors can share" and "Viewers and commenters can't download" are the
+  node's own flags (`PATCH /nodes/{nod}`). The download switch says that it discourages, and does not
+  prevent, downloads (section 8). Transfer ownership appears to the item's owner, with a confirmation
+  that states the consequence for a personal folder (the item moves to the recipient's My files, and
+  the caller keeps editor) and for a team space (only the owner changes).
+- **Shared with me** (`/shared`). Lists `GET /shared`, each item with its role and its last change.
+  The item opens through `/n/{nod}`. The owner's name is shown only when it is the caller; the API
+  gives no other name for an owner, so the list shows none.
+- **Access requests.** On a not-found view for an item (`/n/{nod}`, or a directory in `/files/{fld}/{dir}`), a
+  signed-in person sees "Request access": a role (viewer, commenter or editor) and an optional message. Whatever
+  the server answers, the form shows one confirmation, "If this item exists, the people who manage it have been
+  asked", because the server answers 202 for every item. Only a rate limit or a lost connection is said apart.
+  A not-found view for a folder's root has no item ID and so offers no form. The Requests page (`/requests`)
+  lists the pending requests the caller may decide, with the requester, the item's name when the caller can
+  see it, the role asked for, and the message. Approve grants the role asked for, or a role the caller
+  chooses that is not above its own; deny closes the request. A decided request answers `conflict`, which is
+  shown as its own message. The entry in the navigation has a count. It is read when the shell starts and
+  after a decision, never polled. An owner always sees the entry; anyone else sees it only while a request waits.
+- **Team spaces.** Each space in the sidebar has a menu: Hide or Show (`PUT` and `DELETE /folders/{fld}/hidden`),
+  and, for a manager of the space's root, Space settings. Hidden spaces are read into their own store, and only
+  when "Show hidden spaces" is on, so the move and copy pickers still list only what the caller shows. Space
+  settings change `members_only`, `sharing_managers_only` and `no_download_for_viewers` one switch at a time;
+  "Allow links" is shown disabled with "Available later", since slice o enforces it.
+- **No download.** Under a space whose `no_download_for_viewers` is on, the browser hides its own Download
+  buttons from a viewer or commenter, as it does for a node's own flag. The server still refuses the download,
+  so the button is a convenience, not the rule.
+- **Uploads into a shared directory.** A directory shared with a person whose folder root that person cannot
+  reach takes files by its ID, so a contributor there can upload. Folders are made, and folder uploads placed,
+  by path from the root, so those stay off in that view.
+
+*Known gaps (k3).* An editor sees the add form only where the node's own `editors_can_share` is on: the
+flag of an ancestor is not visible from the node, so an editor sharing through an ancestor's switch does not
+see the form (the server would allow it). The share dialog cannot open on a team space's root: the listing
+does not give the root's ID. Matching for user names is case-insensitive for ASCII only (SQLite `LIKE`);
+groups fold case for every script. The Requests entry is shown to owners, and to others only while a
+request waits, so a manager who is not an owner sees it after a request arrives, not before.
 
 *Build.* `make web` runs `npm ci && npm run build` in `web/`, which writes `web/dist/`. `make build`
 does that first and then the Go build, which embeds `web/dist` (`web/embed.go`, `internal/web`).

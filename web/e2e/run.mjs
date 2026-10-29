@@ -224,11 +224,16 @@ async function main() {
     // The file browser, as a member who edits Team A and only reads Team B.
     await fileBrowserChecks(page, { base, dir, teamA, teamB });
 
+    // Sharing, from both sides: the owner's share dialog and spaces, and the member's shared list and requests.
+    await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB });
+
     // Policy: no console error, no CSP violation, no request to another origin.
     check(page.errors.length === 0, `no console errors or policy violations (${page.errors.join(' | ') || 'none'})`);
     check(page.expectedConflicts.length === 1, `exactly one upload met a taken name, and was asked about it (${page.expectedConflicts.length})`);
-    const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base);
-    check(foreign.length === 0, `every request is same-origin (${foreign.length} foreign)`);
+    check(page.expectedMissing.length >= 2, `the not-found views asked for access, and the browser logged their 404s (${page.expectedMissing.length})`);
+    // A data: URL is inline, not a request: Chrome draws the calendar icon of a date input from one.
+    const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:'));
+    check(foreign.length === 0, `every request is same-origin (${foreign.length} foreign: ${foreign.join(' ')})`);
     console.log(`requests seen: ${page.requests.length}, all on ${base}`);
     console.log('e2e passed');
   } finally {
@@ -429,6 +434,222 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
     check(!viewer.includes(hidden), `a viewer of Team B has no ${hidden}`);
   }
   check(viewer.includes('Download'), 'a viewer of Team B can download');
+}
+
+// signOut signs out through the account menu, as a person would.
+async function signOut(page) {
+  await page.evaluate(`document.querySelector('.user-menu > button').click(), true`);
+  await page.waitFor(`!!document.querySelector('.menu-item:last-child')`);
+  await page.evaluate(`document.querySelector('.menu-item:last-child').click(), true`);
+  await page.waitFor(`location.pathname === '/login' && !!document.getElementById('login-email')`);
+}
+
+// signIn signs in on the sign-in page, and waits for the shell.
+async function signIn(page, who) {
+  await page.waitFor(`!!document.getElementById('login-email')`);
+  await setInput(page, 'login-email', who.email);
+  await setInput(page, 'login-password', who.password);
+  await page.evaluate(`document.querySelector('form button[type="submit"]').click(), true`);
+  await page.waitFor(`!!document.querySelector('.topbar')`);
+}
+
+// navigateTo moves inside the app, as a click on a link does, so the app's own router handles it.
+async function navigateTo(page, path) {
+  await page.evaluate(
+    `(() => { const a = document.createElement('a'); a.href = ${q(path)}; document.body.append(a); a.click(); a.remove(); return true; })()`,
+  );
+}
+
+// setCheckbox sets a checkbox by its ID and fires the change the page listens to.
+async function setCheckbox(page, id, on) {
+  await page.evaluate(`(() => { const el = document.getElementById(${q(id)}); if (el.checked !== ${on}) el.click(); return true; })()`);
+}
+
+// dialogSubmit presses the submit button of the open dialog's form.
+async function dialogSubmit(page) {
+  await page.evaluate(`document.querySelector('[role="dialog"] form button[type="submit"]').click(), true`);
+}
+
+// pickPerson types a query into the people combobox and chooses the option with the name.
+async function pickPerson(page, query, name) {
+  await setInput(page, 'share-who', query);
+  await page.waitFor(
+    `[...document.querySelectorAll('[role="listbox"] [role="option"]')].some((o) => o.textContent.includes(${q(name)}))`,
+    10000,
+  );
+  await page.evaluate(
+    `(() => { const o = [...document.querySelectorAll('[role="listbox"] [role="option"]')].find((x) => x.textContent.includes(${q(name)})); o.click(); return true; })()`,
+  );
+  await page.waitFor(`document.getElementById('share-who').value === ${q(name)}`);
+}
+
+// liveText reads what the open dialog announced last.
+const liveText = `(document.querySelector('[role="dialog"] .live')?.textContent ?? '')`;
+
+// sharingChecks is the sharing interface's end-to-end path. The owner shares a folder with the member as a viewer
+// (no mail), the member sees it and cannot change it, the owner raises it to editor, shares with a group with an
+// expiry, the member uploads, asks for access to a file it cannot reach, the owner approves, the owner hides and
+// shows a space, and turns on no-download for viewers.
+async function sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB }) {
+  // Set up through the API: a team space the member has no role on, with a directory and a file in it.
+  const teamC = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'Board Room' })).id;
+  await api(base, 'POST', `/api/v1/folders/${teamC}/directories`, accountKey, { path: '/Board', parents: false });
+  await rawPut(base, `/api/v1/folders/${teamC}/files?path=%2FBoard%2Fnotes.txt`, accountKey, 'notes for the board\n');
+  await rawPut(base, `/api/v1/folders/${teamC}/files?path=%2Fsecret.txt`, accountKey, 'the file behind the request\n');
+  const group = await api(base, 'POST', `/api/v1/accounts/${accountID}/groups`, accountKey, { name: 'Field team' });
+  await api(base, 'PUT', `/api/v1/accounts/${accountID}/groups/${group.id}/members/${memberID}`, accountKey);
+  const top = (await api(base, 'GET', `/api/v1/folders/${teamC}/children?path=%2F`, accountKey)).items;
+  const board = top.find((n) => n.name === 'Board').id;
+  const secret = top.find((n) => n.name === 'secret.txt').id;
+  const mate = join(dir, 'mate.txt');
+  await writeFile(mate, 'from the member, into the shared folder\n');
+
+  // The owner shares Board with the member as a viewer, without mail. Then hides Team B and shows it again.
+  await signOut(page);
+  await signIn(page, OWNER);
+  await page.evaluate(`document.querySelector('.teams a[href="/files/${teamC}"]').click(), true`);
+  await page.waitFor(`location.pathname === '/files/${teamC}'`);
+  await rowAppears(page, 'Board');
+  await selectRow(page, 'Board');
+  await clickButton(page, 'Share');
+  await page.waitFor(`!!document.getElementById('share-who')`);
+  await pickPerson(page, 'mateo', MEMBER.name);
+  await setCheckbox(page, 'share-notify', false);
+  await dialogSubmit(page);
+  await page.waitFor(`${liveText}.includes('Shared with ${MEMBER.name} as Can view')`);
+  check(true, 'the owner shares a folder with the member as a viewer, without mail');
+  check(
+    await page.evaluate(`document.querySelector('[role="dialog"]').textContent.includes('${MEMBER.name}')`),
+    'the share dialog lists the member among the people with access',
+  );
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+
+  await page.evaluate(`document.querySelector('button[aria-label="Options for Team B"]').click(), true`);
+  await clickMenuItem(page, 'Hide');
+  await page.waitFor(`!document.querySelector('.teams a[href="/files/${teamB}"]')`);
+  check(true, 'the owner hides a team space, and it leaves the list');
+  await page.evaluate(`document.querySelector('.nav-title + .teams + .check input').click(), true`);
+  await page.waitFor(`!!document.querySelector('.teams a[href="/files/${teamB}"]')`);
+  await page.evaluate(`document.querySelector('button[aria-label="Options for Team B"]').click(), true`);
+  await clickMenuItem(page, 'Show');
+  // Wait until both lists have been read again: the space is listed once, and no list still marks it hidden.
+  await page.waitFor(`document.querySelectorAll('.teams a[href="/files/${teamB}"]').length === 1 && !document.querySelector('.teams .count')`);
+  check(true, 'the hidden space comes back when shown again');
+
+  // The member sees the folder in Shared with me, opens it, and has no upload, rename or delete.
+  await signOut(page);
+  await signIn(page, MEMBER);
+  await page.evaluate(`document.querySelector('.sidenav a[href="/shared"]').click(), true`);
+  await page.waitFor(`location.pathname === '/shared' && document.querySelector('.shared a[href="/n/${board}"]')`);
+  check(true, 'Shared with me lists the folder the owner shared');
+  await page.evaluate(`document.querySelector('.shared a[href="/n/${board}"]').click(), true`);
+  await page.waitFor(`location.pathname === '/files/${teamC}/${board}'`);
+  await rowAppears(page, 'notes.txt');
+  const viewerButtons = await buttonTexts(page);
+  check(!viewerButtons.includes('Upload files') && !viewerButtons.includes('New folder'), 'a viewer of the shared folder cannot upload or make folders');
+  await selectRow(page, 'notes.txt');
+  const viewerSel = await buttonTexts(page);
+  check(!viewerSel.includes('Rename') && !viewerSel.includes('Delete'), 'a viewer cannot rename or delete');
+  check(viewerSel.includes('Download'), 'a viewer can download, since the space does not forbid it');
+
+  // The owner raises the member to editor, shares with the group with an expiry, and sees both in the list.
+  await signOut(page);
+  await signIn(page, OWNER);
+  await navigateTo(page, `/files/${teamC}`);
+  await rowAppears(page, 'Board');
+  await selectRow(page, 'Board');
+  await clickButton(page, 'Share');
+  await page.waitFor(`!!document.getElementById('share-who')`);
+  await page.evaluate(
+    `(() => { const el = document.getElementById(${q(`role-${memberID}`)}); el.value = 'editor'; el.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`,
+  );
+  await page.waitFor(`${liveText}.includes('is now Can edit')`);
+  check(true, 'the owner raises the member to editor');
+  await pickPerson(page, 'field', 'Field team');
+  const thirty = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  await setInput(page, 'share-expires', thirty);
+  await dialogSubmit(page);
+  await page.waitFor(`${liveText}.includes('Shared with Field team as Can view')`);
+  check(
+    (await page.evaluate(liveText)).includes('No email was sent'),
+    'the reply says no mail went out, since this server has no mail set up',
+  );
+  check(
+    await page.evaluate(`document.querySelector('[role="dialog"]').textContent.includes('Ends ')`),
+    'the group share shows its expiry',
+  );
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+
+  // The member, now an editor, uploads into the folder.
+  await signOut(page);
+  await signIn(page, MEMBER);
+  await navigateTo(page, `/files/${teamC}/${board}`);
+  await rowAppears(page, 'notes.txt');
+  await page.setFiles('.toolbar input[type="file"]:not([webkitdirectory])', [mate]);
+  await rowAppears(page, 'mate.txt');
+  check(true, 'an editor of the shared folder can upload into it');
+
+  // The member asks for editor on a file it cannot reach. The form says the same whatever the answer is.
+  await navigateTo(page, `/n/${secret}`);
+  await page.waitFor(`!!document.getElementById('request-role')`);
+  await setSelect(page, '#request-role', 'editor');
+  await setInput(page, 'request-message', 'Need it for the review');
+  await page.evaluate(`document.querySelector('#request-role').form.requestSubmit(), true`);
+  await page.waitFor(`!!document.querySelector('.request .sent')`);
+  check(
+    (await page.evaluate(`document.querySelector('.request .sent').textContent`)) ===
+      'If this item exists, the people who manage it have been asked.',
+    'the request form gives the one confirmation',
+  );
+
+  // The owner sees the request with its count, approves it, and the member gets the file.
+  await signOut(page);
+  await signIn(page, OWNER);
+  await page.waitFor(`/1 waiting/.test(document.querySelector('.sidenav a[href="/requests"]')?.textContent ?? '')`);
+  check(true, 'the owner sees a requests entry with a count');
+  await page.evaluate(`document.querySelector('.sidenav a[href="/requests"]').click(), true`);
+  await page.waitFor(`location.pathname === '/requests' && !!document.querySelector('.requests .request')`);
+  await page.waitFor(`document.querySelector('.requests .request').textContent.includes('secret.txt')`);
+  await page.evaluate(
+    `(() => { const li = document.querySelector('.requests .request'); [...li.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Approve').click(); return true; })()`,
+  );
+  await page.waitFor(`document.querySelector('.alert.success') && document.querySelector('.alert.success').textContent.includes('Access given to ${MEMBER.name}')`);
+  check(true, 'the owner approves the request');
+
+  // The owner turns on no-download for viewers in Team B.
+  await page.evaluate(`document.querySelector('button[aria-label="Options for Team B"]').click(), true`);
+  await clickMenuItem(page, 'Space settings');
+  await page.waitFor(`!!document.querySelector('[role="dialog"]')`);
+  await page.evaluate(
+    `(() => { const l = [...document.querySelectorAll('[role="dialog"] label.switch')].find((x) => x.textContent.includes("can't download")); l.querySelector('input').click(); return true; })()`,
+  );
+  await page.waitFor(`(document.querySelector('[role="dialog"] .live')?.textContent ?? '') === 'Saved.'`);
+  check(true, 'the owner turns on no-download for viewers in Team B');
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+
+  // The member opens the file it was approved for; and as a viewer of Team B it sees no Download button.
+  await signOut(page);
+  await signIn(page, MEMBER);
+  await navigateTo(page, `/n/${secret}`);
+  await page.waitFor(`document.body.textContent.includes('secret.txt')`, 15000);
+  check(true, 'the approved member opens the file it asked for');
+  await page.evaluate(`document.querySelector('.teams a[href="/files/${teamB}"]').click(), true`);
+  await page.waitFor(`location.pathname === '/files/${teamB}'`);
+  await rowAppears(page, 'readme.txt');
+  await selectRow(page, 'readme.txt');
+  const noDl = await buttonTexts(page);
+  check(!noDl.includes('Download'), 'a viewer of a no-download space sees no Download button');
+}
+
+// clickMenuItem opens nothing: it clicks the menu item with this text, in the open team menu.
+async function clickMenuItem(page, text) {
+  await page.waitFor(
+    `(() => { const b = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((x) => x.textContent.trim() === ${q(text)}); if (!b) return false; b.click(); return true; })()`,
+    10000,
+  );
 }
 
 async function setInput(page, id, value) {

@@ -561,6 +561,10 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	for i := range out.Items {
 		out.Items[i].Hidden = hidden[out.Items[i].ID]
 	}
+	// An empty listing is an empty array, never null: clients read items as a list.
+	if out.Items == nil {
+		out.Items = []folderAccessJSON{}
+	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

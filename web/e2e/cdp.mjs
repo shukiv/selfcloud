@@ -68,6 +68,8 @@ export class Page {
     this.sent = [];
     // expectedConflicts lists the upload creations answered 409 on purpose (a name taken).
     this.expectedConflicts = [];
+    // expectedMissing lists the node lookups answered 404 on purpose (a node the caller cannot reach).
+    this.expectedMissing = [];
     this.opened = new Promise((resolve, reject) => {
       this.ws.onopen = resolve;
       this.ws.onerror = () => reject(new Error('cannot open the page socket'));
@@ -120,7 +122,17 @@ export class Page {
         this.expectedConflicts.push(p.entry.url);
         return;
       }
-      if (!expectedProbe) this.errors.push(`log(${p.entry.source}): ${p.entry.text}`);
+      // A node the caller cannot reach answers 404, and the browser logs it. The not-found view asks for access
+      // then, so the test counts these answers and checks that they came from the views it opened.
+      const expectedMissing =
+        p.entry.source === 'network' && /\/api\/v1\/nodes\/[a-z0-9_]+$/.test(p.entry.url ?? '') && /status of 404/.test(p.entry.text);
+      if (expectedMissing) {
+        this.expectedMissing.push(p.entry.url);
+        return;
+      }
+      // The last requests before the error show what the page was doing when it happened.
+      const before = this.sent.slice(-4).map((r) => `${r.method} ${r.url.replace(/^https?:\/\/[^/]+/, '')}`).join(' ; ');
+      if (!expectedProbe) this.errors.push(`log(${p.entry.source}): ${p.entry.text} ${p.entry.url ?? ''} [after: ${before}]`);
     });
     this.on('Network.requestWillBeSent', (p) => {
       this.requests.push(p.request.url);

@@ -33,8 +33,9 @@ describe('the /n/ address decision', () => {
     expect(plan.kind).not.toBe('in-folder');
   });
 
-  it('keeps a directory whose parent cannot be reached on the folder root, selected', () => {
-    expect(planNodeLink(dir, null)).toEqual({ kind: 'in-folder', folder: FLD, dir: null, select: dir.id });
+  it('opens a directory whose parent cannot be reached on the directory itself', () => {
+    // A shared directory: its folder root is not reachable, so the root listing would be not found.
+    expect(planNodeLink(dir, null)).toEqual({ kind: 'in-folder', folder: FLD, dir: dir.id });
   });
 
   it('selects a directory in its parent listing', () => {

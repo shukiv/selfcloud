@@ -16,9 +16,10 @@ export type NodeLinkPlan =
 export function planNodeLink(node: Node, parent: Node | null): NodeLinkPlan {
   if (node.parent_id === null) return { kind: 'folder', folder: node.folder_id };
   if (parent === null) {
-    // The folder listing cannot be reached. A file is shown on its own; a directory keeps the folder root.
+    // The folder listing cannot be reached. A file is shown on its own; a directory is opened on its own,
+    // since a shared directory's folder root is not reachable and would answer not found.
     if (node.kind === 'file') return { kind: 'alone', node };
-    return { kind: 'in-folder', folder: node.folder_id, dir: null, select: node.id };
+    return { kind: 'in-folder', folder: node.folder_id, dir: node.id };
   }
   const dir = parent.parent_id !== null ? parent.id : null;
   if (node.kind === 'file') return { kind: 'in-folder', folder: node.folder_id, dir, preview: node.id };

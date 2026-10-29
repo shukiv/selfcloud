@@ -46,7 +46,7 @@ space ("My files"), and a group can hold users.
 | Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route |
 | Preview of office documents | New (s): read-only Collabora view, or a converted PDF |
 | Thumbnails | New (s): images in-process, documents through Collabora |
-| Details pane (size, type, owner, location, dates, who has access) | Built (k2): size, type, dates, creator, owner and your access. Location is in the breadcrumbs. Who has access is slice k3 |
+| Details pane (size, type, owner, location, dates, who has access) | Built (k2): size, type, dates, creator, owner and your access. Location is in the breadcrumbs. Built (k3): "Share" and "Who has access" open the share dialog |
 | Activity pane per file | New (r): from the audit log, filtered by access |
 
 ## 3. Organisation
@@ -75,13 +75,13 @@ space ("My files"), and a group can hold users.
 | Share with a group | Built (n1): account groups, with members of any role; removing a member revokes at once |
 | Link sharing: restricted, organisation, anyone with the link | New (o): organisation-wide and public links |
 | People outside the organisation open "anyone" links without an account | New (o) |
-| Access expiry for a person | Built (n1, n2): `expires_at` is filtered at every read (n1). The API sets it, with a maximum from `sharing.max_expiry` (n2) |
+| Access expiry for a person | Built (n1, n2): `expires_at` is filtered at every read (n1). The API sets it, with a maximum from `sharing.max_expiry` (n2). Built (k3): the share dialog sets an end date, capped by `sharing_max_expiry_days` from `GET /info`, and shows it |
 | Stop viewers and commenters from downloading, copying or printing | Built (n2): downloads, signed links and copies are refused for viewers and commenters. It does not stop viewing: the content still shows in the browser, and a viewer can copy what it sees. This deters, it does not secure |
 | "Editors can change permissions" switch | Built (n2): `editors_can_share`, off by default |
 | Transfer ownership | Built (n2): within one account. Uses the `owner_id` column (n1) |
-| Access requests, with approve and deny | Built (n2): the API. The request queue screen is slice k |
+| Access requests, with approve and deny | Built (n2): the API. Built (k3): the request form on a not-found view, and the Requests page with a count, approve (with a role) and deny |
 | Email when something is shared with you | Built (n2): in the seven languages, with a `notify` switch |
-| Pending invitations list | Have: pending users. Built (n2): `subject_status` and `subject_name` in the permission listing, for managers and account keys; the share dialog is slice k |
+| Pending invitations list | Have: pending users. Built (n2): `subject_status` and `subject_name` in the permission listing, for managers and account keys. Built (k3): the share dialog shows an "Invited" badge |
 | Sharing limited to trusted domains (admin) | New (u): per-account allowlist for public links and invitations |
 | Extra beyond Drive: password and expiry on public links, upload-only drop folders | New (o): optional, off by default |
 
@@ -197,7 +197,7 @@ come **before** k.
 | n1 | Sharing model (built, see the sections marked (n1) above): roles, permissions on any node with inheritance, groups, personal "My files", team-space owners, the grants routes on permissions, `GET /shared`, token node scope | Large |
 | n2 | Sharing v2 (built, see the rows marked Built (n2) above): access expiry, no-download, "editors can share", ownership transfer, team-space restrictions and hiding, access requests, share emails | Medium |
 | m | Trash, version history, keep forever, restore, undo | Medium |
-| k | Web interface (as planned, on the new model) | Large |
+| k | Web interface (as planned, on the new model). k3 (built): the sharing interface: share dialog, Shared with me, access requests, hidden spaces, space settings, and the account directory search (`GET /directory`) | Large |
 | o | Organisation and public links, link expiry and password, drop folders, admin policy | Medium |
 | p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page | Medium |
 | q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |

@@ -1860,6 +1860,46 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/NodeList" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/directory:
+    get:
+      tags: [Permissions]
+      operationId: searchDirectory
+      summary: Find people and groups of the caller's account, for sharing
+      description: |
+        Used by the share dialog. Any user of the account may search by session, and so may the
+        account key. An installation admin gets `forbidden`, and so does every delegated token,
+        whether or not it names a user: a token is narrowed to its folders.
+
+        `q` is matched case-insensitively. A user matches when its email local part starts with `q`,
+        or its display name contains `q`. A group matches when its name contains `q`. `%` and `_` are
+        taken literally. Only active users are listed: a pending or disabled user is never found, and
+        no other account is searched. The answer holds at most 20 entries, users and groups together,
+        sorted by name. Each caller is rate limited.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: The text to find, 2 to 100 characters after trimming.
+          schema: { type: string, minLength: 2, maxLength: 100 }
+        - name: kind
+          in: query
+          description: Which kinds to find. Defaults to all.
+          schema: { type: string, enum: [user, group, all], default: all }
+      responses:
+        "200":
+          description: The matches. An empty list means none.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 20
+                    items: { $ref: "#/components/schemas/DirectoryEntry" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/folders/{fld}/settings:
     parameters:
       - $ref: "#/components/parameters/fld"
@@ -2902,7 +2942,7 @@ components:
 
     Info:
       type: object
-      required: [name, version, public_url, web_interface, brand, password_min_length, limits, features]
+      required: [name, version, public_url, web_interface, brand, password_min_length, limits, sharing_max_expiry_days, features]
       properties:
         name: { type: string, example: Selfcloud }
         version: { type: string, example: 0.1.0 }
@@ -2921,10 +2961,25 @@ components:
           description: The shortest password the server accepts, in characters. Clients check new passwords against it.
           example: 8
         limits: { $ref: "#/components/schemas/Limits" }
+        sharing_max_expiry_days:
+          type: integer
+          minimum: 0
+          description: The longest a share may run, in whole days (rounded up). Zero means no cap. Set by `sharing.max_expiry`. A share's `expires_at` may be at most this far ahead.
+          example: 365
         features:
           type: array
           description: Optional features this server has enabled.
           items: { type: string }
+
+    DirectoryEntry:
+      type: object
+      description: A person or a group found by `GET /directory`. Nothing else about it is returned.
+      required: [id, kind, name]
+      properties:
+        id: { type: string, example: usr_k3j9xq2w7d1m }
+        kind: { type: string, enum: [user, group] }
+        name: { type: string, description: The user's display name, or its email when it has none; the group's name. }
+        email: { type: string, format: email, description: Set for a user only. }
 
     Brand:
       type: object

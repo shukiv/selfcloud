@@ -59,6 +59,53 @@ export interface FolderAccess {
   hidden?: boolean;
   access: 'read' | 'write';
   role: Role;
+  // The team-space settings (false on a personal folder). Only a manager of the space sees them change.
+  members_only: boolean;
+  sharing_managers_only: boolean;
+  no_download_for_viewers: boolean;
+  allow_links: boolean;
+}
+
+// Permission is a role a user or a group holds on a node, or above it. inherited_from is the ancestor it
+// sits on, null when it sits on the node. subject_name and subject_status come only to a manager.
+export interface Permission {
+  subject_kind: 'user' | 'group';
+  subject_id: string;
+  role: Role;
+  inherited_from: string | null;
+  expires_at: string | null;
+  created_at: string;
+  created_by: string;
+  subject_name?: string;
+  subject_status?: 'pending' | 'active' | 'disabled' | '';
+}
+
+// SetPermissionReply is a permission as it now stands, and whether the subject was mailed.
+export interface SetPermissionReply extends Permission {
+  notified: boolean;
+  reason?: string;
+}
+
+// DirectoryEntry is a person or a group found by the directory search.
+export interface DirectoryEntry {
+  id: string;
+  kind: 'user' | 'group';
+  name: string;
+  email?: string;
+}
+
+// AccessRequest is a request for a role on a node. user_name is shown to those who may decide it.
+export interface AccessRequest {
+  id: string;
+  node_id: string;
+  user_id: string;
+  user_name?: string;
+  role: Role;
+  message: string;
+  status: 'pending' | 'approved' | 'denied';
+  created_at: string;
+  decided_at: string | null;
+  decided_by: string;
 }
 
 export interface Job {

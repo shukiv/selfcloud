@@ -14,6 +14,8 @@
   // NodeLink resolves /n/{nod}, the address share mails use. The decision is planNodeLink's: a file opens its
   // preview in its folder, or on its own when the folder cannot be reached; a directory opens its parent with
   // the directory selected. Anything the caller cannot reach is not found.
+  // linkID is the node the address names; the not-found view offers a request for it.
+  let linkID = $derived($location.path.split('/')[2] ?? '');
   let missing = $state(false);
   let failed = $state('');
   let alone = $state<Node | null>(null);
@@ -57,7 +59,7 @@
 </script>
 
 {#if missing}
-  <NotFound />
+  <NotFound nodeID={validID('nod', linkID) ? linkID : undefined} />
 {:else if failed}
   <p class="alert error" role="alert">{failed}</p>
 {:else if alone}

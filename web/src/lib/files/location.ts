@@ -16,6 +16,8 @@ export interface Here {
   dirRole: Role;
   trail: Node[];
   rootReachable: boolean;
+  // spaceNoDownload is the team space's no-download rule for viewers. It binds the browser's own downloads.
+  spaceNoDownload: boolean;
   // path is the directory's path from the folder's root, "/" for the root, or null when unknown.
   path: string | null;
 }
@@ -51,6 +53,7 @@ export async function locate(
       dirRole: listed?.role ?? 'viewer',
       trail: [],
       rootReachable: true,
+      spaceNoDownload: listed?.no_download_for_viewers ?? false,
       path: '/',
     };
   }
@@ -70,6 +73,7 @@ export async function locate(
     dirRole: dir.role ?? 'viewer',
     trail,
     rootReachable,
+    spaceNoDownload: listed?.no_download_for_viewers ?? false,
     path: path === null ? null : `/${path}`,
   };
 }

@@ -13,7 +13,16 @@
     onclose,
     onversions,
     canVersions,
-  }: { node: Node; onclose: () => void; onversions: () => void; canVersions: boolean } = $props();
+    canShare,
+    onshare,
+  }: {
+    node: Node;
+    onclose: () => void;
+    onversions: () => void;
+    canVersions: boolean;
+    canShare: boolean;
+    onshare: () => void;
+  } = $props();
 
   let copied = $state<'idle' | 'done' | 'failed'>('idle');
 
@@ -70,6 +79,12 @@
   {#if node.kind === 'file' && canVersions}
     <button type="button" class="btn secondary block" onclick={onversions}>{$tr('files.details.versions')}</button>
   {/if}
+  <div class="sharing">
+    {#if canShare}
+      <button type="button" class="btn primary block" onclick={onshare}>{$tr('share.open')}</button>
+    {/if}
+    <button type="button" class="btn secondary block" onclick={onshare}>{$tr('share.whoHas')}</button>
+  </div>
 </aside>
 
 <style>
@@ -127,5 +142,10 @@
 
   .block {
     width: 100%;
+  }
+
+  .sharing {
+    display: grid;
+    gap: var(--space-2);
   }
 </style>
