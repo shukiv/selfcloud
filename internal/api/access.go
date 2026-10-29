@@ -32,6 +32,7 @@ type accessReader interface {
 	IsWithin(ctx context.Context, accountID, id, ancestor string) (bool, error)
 	RootNode(ctx context.Context, accountID, folderID string) (*store.Node, error)
 	Child(ctx context.Context, accountID, parentID, key string) (*store.Node, error)
+	TrashState(ctx context.Context, accountID, id string) (self, above bool, err error)
 }
 
 // tokenRoleCap is the highest role a delegated token can carry: editor with write, viewer without.
@@ -69,7 +70,18 @@ func implicitRole(f *store.Folder, u *store.User) string {
 // A delegated token narrows this. The node must lie in one of the token's folders, and in the
 // token's own directory when it names one. The role is capped: viewer without write, editor with it.
 // The token cannot widen anything.
+//
+// A node in the trash, or below one, is not_found too. This check sits in the one walk every access
+// makes, so no route can forget it. Trashing takes a node out of every route at once.
 func nodeAccessWith(ctx context.Context, rd accessReader, p *auth.Principal, nodeID string) (*store.Node, string, error) {
+	return nodeAccessIn(ctx, rd, p, nodeID, false)
+}
+
+// nodeAccessIn is nodeAccessWith, with one difference for the trash routes. With withTrash, the node may be a
+// trash root itself, and may sit below one: a child trashed before its parent must still be restorable, and
+// the restore then falls back to the folder root. The role is worked out as if nothing were trashed, since
+// permissions are kept in the trash. Every other route passes withTrash false, and gets not_found.
+func nodeAccessIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeID string, withTrash bool) (*store.Node, string, error) {
 	if p == nil {
 		return nil, "", apierr.New(apierr.Unauthenticated, "credentials are required")
 	}
@@ -84,6 +96,13 @@ func nodeAccessWith(ctx context.Context, rd accessReader, p *auth.Principal, nod
 		return nil, "", err
 	}
 	if p.Token != nil && !slices.Contains(p.Token.Folders, n.FolderID) {
+		return nil, "", nodeNotFound()
+	}
+	self, above, err := rd.TrashState(ctx, p.AccountID, nodeID)
+	if err != nil {
+		return nil, "", err
+	}
+	if !withTrash && (self || above) {
 		return nil, "", nodeNotFound()
 	}
 	f, err := rd.Folder(ctx, p.AccountID, n.FolderID)

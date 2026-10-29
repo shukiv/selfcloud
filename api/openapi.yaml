@@ -73,6 +73,17 @@ tags:
       deleting them. A caller needs `read` on a folder to look and `write` to change it. A node a
       caller cannot reach is `not_found`; one it can reach but may not change is `forbidden`.
 
+  - name: Trash
+    description: |
+      Deleted files and folders wait here until `trash.retention` purges them. A trashed item keeps its
+      contents, permissions and usage. It is unreachable through every other route, as if it were
+      missing, until it is restored. Only the one who trashed an item, or a manager of it, can restore it.
+  - name: Versions
+    description: |
+      The earlier contents of a file. Each replacement of a file's content keeps the content it replaces
+      as a version, which counts toward the account's usage and quota. Versions are pruned by
+      `versions.max_count` and `versions.max_age`, except those kept forever.
+
 paths:
   /healthz:
     get:
@@ -1471,15 +1482,24 @@ paths:
     delete:
       tags: [Files]
       operationId: deleteNode
-      summary: Delete a file, or a directory with everything in it
+      summary: Move a file or a directory to the trash, or delete it for good
       description: |
-        The contents of the files are removed from disk later, once nothing refers to them and
-        the blob grace period (`blobs.delete_grace`) has passed. A folder's root cannot be
-        deleted; delete the folder instead.
+        By default the node goes to the trash (editor): it keeps its contents, permissions and usage,
+        and `POST /nodes/{nod}/restore` brings it back. The trash purges it after `trash.retention`.
+        With `permanent=true` the node and everything below it are deleted at once, which needs the
+        manager role. The contents of the files are removed from disk later, once nothing refers to
+        them and the blob grace period (`blobs.delete_grace`) has passed; only a permanent delete takes
+        usage down. A folder's root cannot be deleted; delete the folder instead.
       security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: permanent
+          in: query
+          required: false
+          description: "`true` deletes for good, at once, and needs manager. Absent or `false` moves the node to the trash."
+          schema: { type: boolean, default: false }
       responses:
         "204":
-          description: Deleted.
+          description: Moved to the trash, or deleted.
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/nodes/{nod}/children:
@@ -1991,6 +2011,218 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AccessRequest" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/restore:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Trash]
+      operationId: restoreNode
+      summary: Restore a trashed file or directory
+      description: |
+        Puts the node back where it was. The caller must be the one that trashed it, or hold the manager
+        role on it. The caller must also hold editor on the original parent. If that parent is gone or is
+        in the trash, the node goes to the root of its folder, which needs editor too; otherwise the answer
+        is `conflict`. A name the destination now has is renamed to "name (1).ext", as a copy is. The node
+        is answered with its new parent and name. Audited as `node.restore`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The restored node.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/trash:
+    get:
+      tags: [Trash]
+      operationId: listTrash
+      summary: List the trash the caller may see, newest first
+      description: |
+        The explicit trash roots the caller may restore: those it trashed, and those it manages. An account
+        key sees all of them. A delegated token sees only items inside its folders and node scope. An owner
+        does not see another user's personal-folder trash. Each item is the node, with `trashed_at`,
+        `trashed_by`, `original_parent_id` and `purge_at`. A page is filled from batches and filtered, so it
+        can come back short; it carries a `next_cursor` whenever there may be more.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+        - name: folder
+          in: query
+          required: false
+          description: Only the items in this folder.
+          schema: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+      responses:
+        "200":
+          description: A page of trash items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrashList" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/trash/empty:
+    post:
+      tags: [Trash]
+      operationId: emptyTrash
+      summary: Purge every trashed item the caller may delete for good
+      description: |
+        Purges the explicit trash roots the caller holds the manager role on (an account key: all of them),
+        at most 1000 per call, and it examines at most 5000 trash roots, the ones it cannot purge included.
+        `more` is true when the call stopped early, and the client calls again until it is false. An optional
+        `folder` query limits it to one folder. Each purge is audited as `node.purge`.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: folder
+          in: query
+          required: false
+          schema: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+      responses:
+        "200":
+          description: How many items were purged, and whether more remain.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [purged, more]
+                properties:
+                  purged: { type: integer, minimum: 0 }
+                  more: { type: boolean }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/trash/{nod}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    delete:
+      tags: [Trash]
+      operationId: purgeTrashedNode
+      summary: Delete one trashed item for good
+      description: |
+        Purges an item that is in the trash, before its retention ends. Needs the manager role on it, or an
+        account key. A node that is not in the trash is `not_found`; delete a live node with
+        `DELETE /nodes/{nod}?permanent=true`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Purged.
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/versions:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Versions]
+      operationId: listVersions
+      summary: List the versions of a file
+      description: |
+        The current content first, with `current: true` and the id `current`, then the earlier versions,
+        newest replaced first. Any role that reads the file lists them. A folder has no versions.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The versions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionList" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/versions/{ver}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+      - $ref: "#/components/parameters/ver"
+    patch:
+      tags: [Versions]
+      operationId: updateVersion
+      summary: Name a version, or keep it forever
+      description: |
+        Sets `label` (at most 100 characters; empty removes it) and `keep_forever`. Needs the editor role.
+        A kept version is never pruned and does not count toward `versions.max_count`. Marking a version kept
+        forever when the file already has `versions.max_kept` (default 200) of them is `conflict`, with the
+        limit in `details`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VersionUpdate" }
+      responses:
+        "200":
+          description: The version.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Versions]
+      operationId: deleteVersion
+      summary: Delete an earlier version for good
+      description: |
+        Needs the editor role. Its bytes come off the usage. The current content is not a version and
+        cannot be deleted this way: `current` is answered `conflict`. Delete the file, or restore an older
+        version first.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/versions/{ver}/content:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+      - $ref: "#/components/parameters/ver"
+    get:
+      tags: [Versions]
+      operationId: getVersionContent
+      summary: Download an earlier version of a file
+      description: |
+        The same as the content route: ranges, `If-Range`, the ETag of the version, and `disposition`. The
+        no-download rule applies, since a version is the file's own content. Needs the viewer role.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The version's contents.
+        "206":
+          description: A range of the version's contents.
+        default: { $ref: "#/components/responses/Error" }
+    head:
+      tags: [Versions]
+      operationId: headVersionContent
+      summary: The headers of an earlier version of a file
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The headers of the version.
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/versions/{ver}/restore:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+      - $ref: "#/components/parameters/ver"
+    post:
+      tags: [Versions]
+      operationId: restoreVersion
+      summary: Make an earlier version the current content
+      description: |
+        The current content becomes a version, so the restore can be undone the same way. The chosen version
+        stays in the history with its row, label and `keep_forever`. Its bytes then count as the file's content
+        as well, so usage grows by its size and the quota is checked for it (`quota_exceeded` if it does not
+        fit). Needs the contributor role, since it replaces the content, and `If-Match` with the current ETag,
+        as a content replace does: a stale ETag is `precondition_failed`, a missing one `precondition_required`.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: The ETag of the current content, from the last read.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The file, with its new ETag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/links/{token}:
     parameters:
       - name: token
@@ -2100,6 +2332,12 @@ components:
       in: path
       required: true
       schema: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    ver:
+      name: ver
+      in: path
+      required: true
+      description: A version's ID (`ver_...`). The current content is not a version, so it has no ID here.
+      schema: { type: string, example: ver_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     upl:
       name: upl
       in: path
@@ -2347,6 +2585,63 @@ components:
       properties:
         path: { type: string, maxLength: 4096, description: "Relative to the folder's root, e.g. /a/b." }
         parents: { type: boolean, default: false }
+
+    TrashItem:
+      description: A node in the trash, with what the trash keeps about it.
+      allOf:
+        - $ref: "#/components/schemas/Node"
+        - type: object
+          required: [trashed_at, trashed_by, original_parent_id, purge_at]
+          properties:
+            trashed_at: { type: string, format: date-time }
+            trashed_by: { type: string, description: "The ID of the user, or of the key, that trashed it." }
+            original_parent_id: { type: string, description: "The directory the item was in. It may itself be in the trash." }
+            purge_at: { type: string, format: date-time, description: "When the retention sweep purges it: `trashed_at` plus `trash.retention`." }
+
+    TrashList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/TrashItem" }
+        next_cursor: { type: string }
+
+    Version:
+      type: object
+      description: |
+        An earlier content of a file. `current` is true only for the current content in a listing, which
+        is then listed with the id `current`, and has no `replaced_at`, `replaced_by`, `label` or `keep_forever`.
+      required: [id, current, size, etag, created_at, label, keep_forever]
+      properties:
+        id: { type: string, description: "`ver_...`, or `current` for the current content." }
+        current: { type: boolean }
+        size: { type: integer, minimum: 0 }
+        mime_type: { type: string }
+        etag: { type: string }
+        sha256: { type: string }
+        created_at: { type: string, format: date-time, description: When this content was first written. }
+        created_by: { type: string }
+        replaced_at: { type: string, format: date-time, description: When it stopped being the current content. }
+        replaced_by: { type: string }
+        label: { type: [string, "null"], maxLength: 100 }
+        keep_forever: { type: boolean }
+
+    VersionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Version" }
+        next_cursor: { type: string }
+
+    VersionUpdate:
+      type: object
+      description: At least one field is required.
+      properties:
+        label: { type: [string, "null"], maxLength: 100, description: Empty or null removes the label. }
+        keep_forever: { type: boolean }
 
     NodeUpdate:
       type: object

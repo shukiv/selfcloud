@@ -60,6 +60,8 @@ type Config struct {
 	Blobs     BlobsConfig     `yaml:"blobs"`
 	Copy      CopyConfig      `yaml:"copy"`
 	Sharing   SharingConfig   `yaml:"sharing"`
+	Trash     TrashConfig     `yaml:"trash"`
+	Versions  VersionsConfig  `yaml:"versions"`
 	Upload    UploadConfig    `yaml:"upload"`
 	Links     LinksConfig     `yaml:"links"`
 	Tokens    TokensConfig    `yaml:"tokens"`
@@ -154,6 +156,26 @@ type SharingConfig struct {
 	MaxExpiry Duration `yaml:"max_expiry"`
 }
 
+// TrashConfig controls the trash: deleted items wait here before they are purged.
+type TrashConfig struct {
+	// Retention is how long a deleted item stays in the trash. The retention sweep purges it after that,
+	// and the listing shows that time as purge_at. It must be positive.
+	Retention Duration `yaml:"retention"`
+}
+
+// VersionsConfig controls the version history of files: the earlier contents kept when a file's content
+// is replaced.
+type VersionsConfig struct {
+	// MaxCount is the most versions a file keeps that are not kept forever. Older ones go first. Zero means
+	// no count limit.
+	MaxCount int `yaml:"max_count"`
+	// MaxAge is how long a version that is not kept forever is kept after its content was replaced. Zero
+	// means no age limit.
+	MaxAge Duration `yaml:"max_age"`
+	// MaxKept is the most versions of one file that may be kept forever. Marking another is refused.
+	MaxKept int `yaml:"max_kept"`
+}
+
 // BlobsConfig controls the removal of file contents that nothing refers to any more.
 type BlobsConfig struct {
 	// DeleteGrace is how long an unreferenced blob is kept before its file is removed. It is the
@@ -239,6 +261,8 @@ func Defaults() *Config {
 		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
 		Copy:            CopyConfig{MaxNodes: 200000},
 		Sharing:         SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
+		Trash:           TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
+		Versions:        VersionsConfig{MaxCount: 100, MaxAge: Duration(30 * 24 * time.Hour), MaxKept: 200},
 		Links:           LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
 		Tokens:          TokensConfig{MaxTTL: Duration(time.Hour)},
 		Upload: UploadConfig{
@@ -373,6 +397,18 @@ func (c *Config) Validate() error {
 	}
 	if c.Sharing.MaxExpiry < 0 {
 		bad("sharing.max_expiry is negative; use 0 for no cap")
+	}
+	if c.Trash.Retention <= 0 {
+		bad("trash.retention must be positive")
+	}
+	if c.Versions.MaxCount < 0 {
+		bad("versions.max_count is negative; use 0 for no count limit")
+	}
+	if c.Versions.MaxAge < 0 {
+		bad("versions.max_age is negative; use 0 for no age limit")
+	}
+	if c.Versions.MaxKept <= 0 {
+		bad("versions.max_kept must be positive")
 	}
 	if c.Upload.BodyTimeout <= 0 {
 		bad("upload.body_timeout must be positive")

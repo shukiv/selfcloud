@@ -47,7 +47,8 @@ func TestDeletedContentIsCollectedAfterGrace(t *testing.T) {
 	acc, key := newAccount(t, s, admin, "Acme")
 	f := newFolder(t, s, key, acc.ID, "Docs")
 	a := putNode(t, s, key, f.ID, "/a.txt", "one")
-	wantStatus(t, call(t, s, "DELETE", "/api/v1/nodes/"+a.ID, key, nil), 204)
+	// A permanent delete: a plain delete would only move the file to the trash, where it stays.
+	wantStatus(t, call(t, s, "DELETE", "/api/v1/nodes/"+a.ID+"?permanent=true", key, nil), 204)
 
 	sw := sweeper(s, 24*time.Hour)
 	now := store.Now()
@@ -100,8 +101,9 @@ func TestCopyKeepsContentAlive(t *testing.T) {
 	}
 }
 
-// TestFolderDeleteAndReplaceLeaveContentToCollector checks that deleting a folder, and replacing a
-// file's contents, both leave the old blobs to the collector, which then removes them.
+// TestFolderDeleteAndReplaceLeaveContentToCollector checks that deleting a folder leaves its blobs to the
+// collector, and that replacing a file's contents keeps the old content as a version: its blob is still
+// referenced, so the collector leaves it alone.
 func TestFolderDeleteAndReplaceLeaveContentToCollector(t *testing.T) {
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
@@ -125,11 +127,12 @@ func TestFolderDeleteAndReplaceLeaveContentToCollector(t *testing.T) {
 
 	sw := sweeper(s, 0)
 	res, err := sw.Once(context.Background(), store.Now())
-	if err != nil || res.Orphaned != 3 || res.Removed != 3 {
+	// The folder's two files are orphaned. The replaced content v1 is a version, so it is not.
+	if err != nil || res.Orphaned != 2 || res.Removed != 2 {
 		t.Fatalf("pass = %+v, %v", res, err)
 	}
-	if n := blobFiles(t, s); n != 2 {
-		t.Fatalf("files after pass = %d, want 2", n)
+	if n := blobFiles(t, s); n != 3 {
+		t.Fatalf("files after pass = %d, want 3 (keep.txt, the version v1, and v2)", n)
 	}
 	if got := rawCall(t, s, "GET", "/api/v1/nodes/"+keep.ID+"/content", key, "", nil); got.Body.String() != "k" {
 		t.Errorf("surviving file = %q", got.Body.String())

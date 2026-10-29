@@ -520,6 +520,12 @@ hour per account, and `mail.requests.target`, 5 an hour per address it goes to. 
 request is still recorded and listed, and only its mail is skipped. A burst of requests therefore cannot
 use up the mail a user needs to sign in.
 
+Each requesting user also has an allowance of its own, `mail.requests.requester`: three requests an hour, charged
+once per request, before any of its mail goes out. A request to a node with five managers mails all five. A request
+over the allowance is recorded and listed, and mails nobody. One user asking over and over therefore uses up only its
+own allowance. It takes several users to use up `mail.requests.account`, and a user's request is never silenced by
+another user's flood.
+
 A decision stores the role it granted, so a listing shows what was actually given. A denial mail says
 that an item was involved and does not name it.
 
@@ -560,8 +566,10 @@ and, if not, why:
 
 A group of 50 members or fewer mails each of its active members. A larger group mails nobody, which keeps
 one share from sending a flood of mail. The person who makes the change is never mailed about it. Each
-send takes one unit from the same mail budget that verification mail uses (`mail.account` and
-`mail.target`), so share mail and verification mail draw on one limit. The `/grants` alias routes never
+send takes one unit from its own buckets, `mail.share.account` (60 an hour per account) and `mail.share.target`
+(10 an hour per address), so sharing cannot use up the mail a user needs to sign in: verification and reset mail
+draw on `mail.account` and `mail.target` alone. When a bucket is empty the share is still made; only its mail is
+skipped, and the reply says `notified: false` with `reason: mail_budget`. The `/grants` alias routes never
 send mail. Mail never includes file contents, and a
 name is stripped of line breaks before it reaches a mail header, so a name cannot add headers.
 
@@ -573,6 +581,92 @@ is viewer and `write` is editor. Listing shows viewer and commenter as `read`, a
 editor and manager as `write`. Only a member can hold a grant; an owner is refused. A personal
 folder has no grants and answers `not_found`. Migration 0009 turned every grant into such a
 permission, so existing shares keep working.
+
+### Trash
+
+A delete moves the node to the trash. `DELETE /nodes/{nod}` still needs editor. The node keeps its contents,
+its permissions and its usage. Only the node itself is marked, with `trashed_at` and `trashed_by`. Its subtree
+is trashed through the ancestor walk, so it carries no marks of its own. Its name key becomes a reserved value
+that a name can never produce, so a new item may take the name at once; the original key is kept, for a restore.
+
+A trashed node, and everything below it, answers `not_found` on every route a normal caller uses: stat, list,
+content, uploads into it, moves, copies, links (including signed links made before the trash), permissions,
+`/shared`, jobs, transfers and delegated tokens. The rule sits in the one ancestor walk that access reads
+(`nodeAccessWith`), and in each recheck inside a transaction, so no route can forget it. A copy never carries a
+trashed node, and an access request for one is not recorded.
+
+Trashed items count toward usage and quota. Only a purge takes them off. Open uploads aimed at a directory in a
+trashed subtree are deleted and their reservations released, as deleting that directory did before. A file that a
+move or copy replaces with `on_conflict=replace` goes to the trash too, rather than being deleted: it is a
+different node from the one that takes its place, and a restore can still reach it.
+
+**Restore.** `POST /nodes/{nod}/restore` brings a trashed node back. The caller must be the one that trashed it, or
+hold the manager role on it; the account key may restore anything. The role is worked out as if the node were not
+trashed. The caller must also hold editor on the destination, the original parent. If that parent is gone or is
+itself in the trash, the node goes to the root of its folder, which needs editor too; without it the answer is
+`conflict`. A name the destination now has is taken by renaming, as a copy is: "name (1).ext". Audited as
+`node.restore`.
+
+**Permanent delete.** `DELETE /nodes/{nod}?permanent=true` deletes a live node at once, and needs manager.
+`DELETE /trash/{nod}` purges a node already in the trash, with the same role. `POST /trash/empty`, with an optional
+`folder`, purges every trashed item the caller manages. It purges at most 1000 items per call, and examines at most
+5000 trash roots, the ones it cannot purge included. It replies `{"purged": n, "more": bool}`, with `more` true when it
+stopped early, and the client calls again until `more` is false. Each purge is audited as `node.purge`, and takes the item's bytes off usage, its
+versions included. The blobs are left for the collector.
+
+**Listing.** `GET /trash` lists the explicit trash roots the caller may restore: those it trashed, and those it
+manages. An account key sees all of them. A delegated token sees only what lies inside its folders and node scope.
+An owner does not see another user's personal-folder trash. Each item is the node, with `trashed_at`,
+`trashed_by`, `original_parent_id` and `purge_at`.
+
+**Retention.** `trash.retention` (default 30 days) is how long an item waits in the trash. The sweep purges the
+roots trashed longer ago than that, in bounded batches, under the system actor. `purge_at` is `trashed_at` plus
+the retention. The purge checks that inside its own transaction, against the row as it is then, so an item restored and
+trashed again after the listing is not purged.
+
+### Versions
+
+Whenever a file's content is replaced, the content it loses is kept as a version. That covers `PUT` content, an
+upload completing with `on_conflict=replace` onto an existing file, and a restore of a version. A version keeps the
+blob, size, hash and ETag of that content, when it was first written and by whom, and when and by whom it was
+replaced.
+
+Versions count toward usage and quota. A replacement therefore grows usage by the full size of the new content, and
+the quota check uses that size, not the difference. A restore of a version grows usage by that version's size: the
+chosen version stays in the history with its row, label and keep_forever, and its bytes then count as the file's
+content as well. The quota is checked for that growth. A completed upload that replaces a file is counted the same way,
+once: its reservation becomes the new bytes in one step.
+
+Pruning keeps the number of versions bounded. `versions.max_count` (default 100) limits the versions a file keeps
+that are not kept forever; the oldest go first, and a replacement that adds a version applies the limit at once.
+`versions.max_age` (default 30 days) removes a version that has been replaced longer ago than that, and the sweep
+applies it. A version kept forever (`keep_forever`) is never pruned, and does not count toward `max_count`. Each
+pruned version comes off usage, and its blob is collected later, like any other unreferenced blob.
+
+`versions.max_kept` (default 200) caps how many versions of one file may be kept forever. Marking one more answers
+`conflict`, with the limit in `details`; unmarking one frees a place. A restore does not add to the count, since the
+version it makes current keeps whatever mark it had.
+
+Copies do not copy versions. Deleting a file for good deletes its versions and takes their bytes off usage.
+
+The routes are: the list, `GET /nodes/{nod}/versions`, which starts with the current content (`current: true`,
+with the id `current`) and then the earlier versions, newest first (viewer); the download,
+`GET /nodes/{nod}/versions/{ver}/content`, which follows the content route in its ranges, validators and
+disposition, and honours the no-download rule (viewer); `PATCH` on a version, which sets `label` (at most 100
+characters) and `keep_forever` (editor); the restore, `POST /nodes/{nod}/versions/{ver}/restore`, which makes the
+version current with a new ETag, keeps the content it replaces as a version, keeps the chosen version in the history,
+and needs `If-Match` with the current ETag as a content replace does (contributor); and `DELETE` on a version, which takes its bytes off usage and cannot
+be used on the current content, answered `conflict` (editor). Every version route is refused on a trashed node,
+checks its role again inside its transaction, and is audited with the folder's user for a personal folder.
+
+A version's blob is referenced by its row, so the collector keeps it while the version exists.
+
+### Undo
+
+The server has no undo API. A client undoes a delete with a restore, which the trash makes possible until the
+retention ends. It undoes a move or a rename with the inverse call. The move and rename routes take no `If-Match`:
+a client that must know nothing changed in between reads the node and compares its `etag`, which the content
+routes require. The undo toast of the web interface (slice k) is built on these calls.
 
 ### Accepted limits
 
@@ -651,7 +745,16 @@ Files                                      any caller, limited to what it may re
   POST   /nodes/{nod}/move                 {folder, parent | path, name, on_conflict: fail | rename | replace}
   POST   /nodes/{nod}/copy                 same; read on the source, write on the target; 202 and a job
                                            above 10,000 nodes, too_large above copy.max_nodes
-  DELETE /nodes/{nod}                      a directory is always deleted with its contents
+  DELETE /nodes/{nod}                      to the trash (editor); ?permanent=true deletes for good (manager)
+  POST   /nodes/{nod}/restore              restore a trashed node: its trasher or a manager, and editor on the parent
+  GET    /trash                            the trashed items the caller may restore; ?folder=, paged, newest first
+  POST   /trash/empty                      purge the trashed items the caller manages, at most 1000; ?folder=
+  DELETE /trash/{nod}                      purge one trashed item for good (manager)
+  GET    /nodes/{nod}/versions             the current content, then the earlier versions (viewer)
+  GET    /nodes/{nod}/versions/{ver}/content   an earlier version's contents (viewer; HEAD too)
+  PATCH  /nodes/{nod}/versions/{ver}      label, keep_forever (editor)
+  POST   /nodes/{nod}/versions/{ver}/restore   make it current; If-Match (contributor)
+  DELETE /nodes/{nod}/versions/{ver}      delete an earlier version (editor)
   GET    /nodes/{nod}/content              download: Range, If-Range, ETag, Last-Modified, ?disposition=inline
   PUT    /nodes/{nod}/content              replace a small file; If-Match required
   POST   /nodes/{nod}/links                signed download link {ttl, disposition}
@@ -817,7 +920,8 @@ Vite, compiled into the binary, so Node is needed only to build it.
 | `permissions` | node_id, account_id, subject_kind (`user` or `group`), subject_id, role (viewer, commenter, contributor, editor, manager), created_at, created_by, expires_at (null: no expiry) |
 | `access_requests` | id (`arq_`), account_id, node_id, user_id, role (viewer, commenter or editor), message (at most 500 characters), status (pending, approved, denied), created_at, decided_at, decided_by; at most one pending row per node and user |
 | `hidden_folders` | user_id, folder_id, created_at; primary key (user_id, folder_id). A user's own list of hidden team spaces, which changes no access |
-| `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors) |
+| `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors), trashed_at and trashed_by (set on a trash root only), trashed_name_key (the name key before the trash) |
+| `versions` | id (`ver_`), account_id, node_id, blob_id, size, sha256, etag, mime_type, created_at and created_by (when that content was first written), replaced_at and replaced_by, label (at most 100 characters), keep_forever (0 or 1); indexed by (node_id, created_at) |
 | `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
 | `uploads` | id, account_id, target (folder_id, parent_id or dir_path, parents, name, name_key, on_conflict, mime_type), length, durable_offset, hash_state, blob_id, created_by, created_kind, expires_at |
 | `wopi_locks` | node_id, lock_id, expires_at |
@@ -853,6 +957,14 @@ cannot leak into another's results. Tests check this for each endpoint.
   hours ago, audits each removal as `permission.expired`, and leaves the 24 hours as a grace period so
   the audit trail shows when access ended. Reads already ignore an expired permission, so the sweep
   only tidies rows and never changes what a user may reach.
+- **Trash**: each sweep purges up to 200 explicit trash roots trashed longer than `trash.retention` (default 30
+  days), one per transaction, adjusting usage and writing a `node.purge` entry under the system actor. The rest
+  waits for a later pass.
+- **Versions**: each sweep prunes up to 200 nodes' versions: non-kept versions beyond `versions.max_count`
+  (default 100; `0` means no limit), and those replaced more than `versions.max_age` ago (default 30 days; `0`
+  means no limit). Each pruned version comes off usage. The replacements prune the count limit as they go.
+- **Recount**: `selfcloud admin recount-usage` counts versions in used bytes, and trashed items as files, since
+  they still count toward usage until they are purged.
 - **Logs**: JSON through `log/slog`, one line per request with its request ID. Passwords, keys,
   tokens, signed-link tokens and file contents never reach the log.
 - **Client IP**: taken from `X-Forwarded-For` or a named header such as `CF-Connecting-IP` only
@@ -992,3 +1104,7 @@ Decided on approval:
     downloads, signed links and copies, and leaves inline viewing where the type allows it. The
     access-request POST always answers 202, whatever the node. The team-space link setting,
     allow_links, is off by default, and does nothing until slice o.
+21. **Trash and versions** (2026-10-28, slice m): soft delete with `trash.retention` 30 days; trashed items count
+    toward quota; versions kept on every content replace, pruned at 100 or 30 days unless kept forever, counting
+    toward quota; no server undo API. A restore needs the trasher or a manager, and editor on the original parent.
+    Admins never reach contents, so no admin can restore: an account key does it.

@@ -88,32 +88,38 @@ func TestQuotaRefusesSmallFileOverQuota(t *testing.T) {
 	wantStatus(t, writeFile(t, s, key, f.ID, "/c.bin", strings.Repeat("c", 40)), 201)
 }
 
-func TestQuotaPutGrowsOnlyAndShrinkAlwaysPasses(t *testing.T) {
-	s, admin, key, accID, f := quotaSetup(t, 100)
+// TestQuotaReplaceCountsNewContentInFull: a replacement keeps the old content as a version, which counts
+// toward the quota, so the new content counts in full. A replacement is not a difference any more: it needs
+// its whole size free, even when it is smaller than what it replaces.
+func TestQuotaReplaceCountsNewContentInFull(t *testing.T) {
+	s, admin, key, accID, f := quotaSetup(t, 200)
 	n := nodeOf(t, writeFile(t, s, key, f.ID, "/a.bin", strings.Repeat("a", 60)))
 	put := func(body, etag string) *httptest.ResponseRecorder {
 		return rawCall(t, s, "PUT", "/api/v1/nodes/"+n.ID+"/content", key, body, map[string]string{"If-Match": etag})
 	}
-	rec := put(strings.Repeat("b", 90), n.ETag) // grows to 90 of 100
+	rec := put(strings.Repeat("b", 90), n.ETag) // the 60 bytes become a version: 60 + 90 = 150 of 200
 	wantStatus(t, rec, 200)
 	etag := decode[nodeJSON](t, rec).ETag
-	wantError(t, put(strings.Repeat("c", 101), etag), 507, apierr.QuotaExceeded)
-	if u := usageOf(t, s, key, accID); u.UsedBytes != 90 {
+	if u := usageOf(t, s, key, accID); u.UsedBytes != 150 {
+		t.Fatalf("usage after replace = %+v, want 150 (the version and the file)", u)
+	}
+	// The next 60 needs 60 free, and only 50 are.
+	quotaDetails(t, put(strings.Repeat("c", 60), etag), apierr.QuotaExceeded, 60, 50, "quota")
+	if u := usageOf(t, s, key, accID); u.UsedBytes != 150 {
 		t.Fatalf("a refused PUT changed usage: %+v", u)
 	}
-	// Lowering the quota below usage is allowed; the file stays and only growth is refused.
-	wantStatus(t, call(t, s, "PATCH", "/api/v1/accounts/"+accID, admin, map[string]any{"quota_bytes": 5}), 200)
-	rec = put(strings.Repeat("d", 3), etag) // shrinks
-	wantStatus(t, rec, 200)
-	etag = decode[nodeJSON](t, rec).ETag
-	quotaDetails(t, put(strings.Repeat("e", 9), etag), apierr.QuotaExceeded, 6, 2, "quota")
-	wantStatus(t, rawCall(t, s, "DELETE", "/api/v1/nodes/"+n.ID, key, "", nil), 204)
+	// Lowering the quota below usage keeps the file, and a replacement then needs its full size free: a
+	// smaller one is refused too, since it adds a version of what it replaces.
+	wantStatus(t, call(t, s, "PATCH", "/api/v1/accounts/"+accID, admin, map[string]any{"quota_bytes": 100}), 200)
+	quotaDetails(t, put(strings.Repeat("d", 3), etag), apierr.QuotaExceeded, 3, 0, "quota")
+	// A permanent delete takes the file and its version off the usage.
+	wantStatus(t, rawCall(t, s, "DELETE", "/api/v1/nodes/"+n.ID+"?permanent=true", key, "", nil), 204)
 	if u := usageOf(t, s, key, accID); u.UsedBytes != 0 || u.Files != 0 {
-		t.Errorf("usage after delete = %+v", u)
+		t.Errorf("usage after permanent delete = %+v", u)
 	}
 }
 
-func TestQuotaCopyCountsInFullAndNetsDisplacedFile(t *testing.T) {
+func TestQuotaCopyCountsInFullAndDisplacedStaysInTrash(t *testing.T) {
 	s, _, key, accID, f := quotaSetup(t, 100)
 	a := nodeOf(t, writeFile(t, s, key, f.ID, "/a.bin", strings.Repeat("a", 50)))
 	nodeOf(t, writeFile(t, s, key, f.ID, "/b.bin", strings.Repeat("b", 40))) // used 90
@@ -122,10 +128,11 @@ func TestQuotaCopyCountsInFullAndNetsDisplacedFile(t *testing.T) {
 	}
 	// A plain copy counts in full: 50 more would reach 140.
 	quotaDetails(t, copyTo(map[string]any{"name": "c.bin"}), apierr.QuotaExceeded, 50, 10, "quota")
-	// Copied over b.bin, the copy displaces 40 and adds 50: a net 10, which fits exactly.
-	wantStatus(t, copyTo(map[string]any{"name": "b.bin", "on_conflict": "replace"}), 201)
-	if u := usageOf(t, s, key, accID); u.UsedBytes != 100 || u.Files != 2 {
-		t.Errorf("usage after net copy = %+v; want 100 bytes, 2 files", u)
+	// Copied over b.bin, the copy displaces b.bin, which goes to the trash and keeps its 40 bytes in usage.
+	// So the copy's 50 still needs 50 free, and is refused.
+	quotaDetails(t, copyTo(map[string]any{"name": "b.bin", "on_conflict": "replace"}), apierr.QuotaExceeded, 50, 10, "quota")
+	if u := usageOf(t, s, key, accID); u.UsedBytes != 90 || u.Files != 2 {
+		t.Errorf("usage after refused copies = %+v; want 90 bytes, 2 files", u)
 	}
 }
 

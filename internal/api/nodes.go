@@ -710,10 +710,20 @@ func storeNameErr(err error) error {
 	return err
 }
 
-// handleDeleteNode removes a file, or a folder with everything in it. The blobs are left for the
-// collector. The usage counters come down in the same transaction.
+// handleDeleteNode deletes a file, or a folder with everything in it. By default the node goes to the trash:
+// it keeps its contents, its permissions and its usage, and a restore brings it back until trash.retention
+// purges it. With permanent=true it is deleted at once, which needs manager, since it cannot be undone. The
+// blobs are left for the collector; usage comes down only for a permanent delete.
 func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) error {
-	n, err := s.nodeOf(r, r.PathValue("nod"), store.RoleEditor)
+	permanent, err := permanentParam(r)
+	if err != nil {
+		return err
+	}
+	need := store.RoleEditor
+	if permanent {
+		need = store.RoleManager
+	}
+	n, err := s.nodeOf(r, r.PathValue("nod"), need)
 	if err != nil {
 		return err
 	}
@@ -731,24 +741,13 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			return err
 		}
-		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleEditor); err != nil {
+		if _, err := requireNodeRole(ctx, tx, p, cur.ID, need); err != nil {
 			return err
 		}
-		files, bytes, err := tx.SubtreeFiles(ctx, n.AccountID, n.ID)
-		if err != nil {
-			return err
+		if permanent {
+			return s.purgeIn(r, tx, cur)
 		}
-		if err := tx.DeleteNode(ctx, n.AccountID, n.ID); errors.Is(err, store.ErrNotFound) {
-			return nodeNotFound()
-		} else if err != nil {
-			return err
-		}
-		// A delete only shrinks usage, so it is never refused for quota.
-		if err := tx.AdjustUsage(ctx, n.AccountID, store.UsageChange{Bytes: -bytes, Files: -files}); err != nil {
-			return err
-		}
-		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "node.delete", n.ID,
-			map[string]any{"kind": n.Kind, "name": n.Name, "files": files, "bytes": bytes}, n.FolderID))
+		return s.trashIn(r, tx, cur, p.ID)
 	})
 	if err != nil {
 		return err
@@ -806,13 +805,17 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		prev := cur.Size
+		// The replacement counts in full. The old content is kept as a version, which still counts toward
+		// the quota, so the growth is the new size, not the difference (design section 8, Versions).
+		if err := s.applyUsage(ctx, tx, cur.AccountID, store.UsageChange{Bytes: c.Size}); err != nil {
+			return err
+		}
+		if err := s.keepVersion(ctx, tx, cur, p.ID, store.Now()); err != nil {
+			return err
+		}
 		cur.BlobID, cur.Size, cur.MimeType, cur.ETag, cur.SHA256 = c.ID, c.Size, mt, newETag(), c.SHA256
 		cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
 		if err := tx.UpdateNode(ctx, cur); err != nil {
-			return err
-		}
-		// Only the growth of the file counts against the quota: a smaller replacement always passes.
-		if err := s.applyUsage(ctx, tx, cur.AccountID, store.UsageChange{Bytes: c.Size - prev}); err != nil {
 			return err
 		}
 		out = cur

@@ -367,6 +367,15 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 	if !s.links.verify(payload, mac, n.ETag) {
 		return linkNotFound()
 	}
+	// Trashing a file does not change its ETag, so the link's MAC still checks. A link to a file in the trash
+	// is refused here, so the link stops working the moment the file is trashed.
+	self, above, err := s.store.TrashState(ctx, n.AccountID, n.ID)
+	if err != nil {
+		return err
+	}
+	if self || above {
+		return linkNotFound()
+	}
 	if !time.Now().Before(time.Unix(c.exp, 0)) {
 		return apierr.New(apierr.LinkExpired, "the link has expired; ask for a new one")
 	}

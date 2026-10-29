@@ -333,6 +333,15 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 	if err != nil {
 		return err
 	}
+	// The versions of the folder's files go with them, and their bytes count toward usage.
+	var versionBytes int64
+	err = tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(v.size), 0) FROM versions v
+		JOIN nodes n ON n.id = v.node_id WHERE n.folder_id = ? AND v.account_id = ?`,
+		folderID, accountID).Scan(&versionBytes)
+	if err != nil {
+		return err
+	}
+	bytes += versionBytes
 	// The foreign keys delete two sets of uploads with the folder, so their reservations go here
 	// too: those made in the folder, and those whose target directory is now in it. A directory
 	// moved in from another folder keeps the uploads aimed at it, and they still name that folder.

@@ -239,10 +239,11 @@ func truncateBytes(s string, max int) string {
 	return s[:cut]
 }
 
-// applyReplace removes the file a transfer displaces, inside the transaction, and returns it. Its
-// contents are left for the collector, which finds them unreferenced. It returns nil when the
-// transfer displaces nothing. The caller takes the displaced file's usage off as part of the
-// transfer's net change (see replacedUsage).
+// applyReplace moves the file a transfer displaces to the trash, inside the transaction, and returns it. It
+// returns nil when the transfer displaces nothing. A move or copy with on_conflict=replace does not version
+// the displaced file: it is a different node from the one that takes its place, so it goes to the trash
+// instead, where a restore can still reach it. It stays in usage there, so the transfer's usage does not
+// change for it.
 // requireReplaceRole is the check a replace needs on the file it displaces: editor on that file, inside
 // the write's transaction. Contributor may place a file in a directory but may not overwrite one, so a
 // replace with only contributor is forbidden. A file the caller does not reach is not_found.
@@ -254,24 +255,15 @@ func requireReplaceRole(ctx context.Context, tx *store.Tx, p *auth.Principal, pl
 	return err
 }
 
-func applyReplace(ctx context.Context, tx *store.Tx, plan *transferPlan) (*store.Node, error) {
+func applyReplace(ctx context.Context, tx *store.Tx, plan *transferPlan, by string) (*store.Node, error) {
 	if plan.replaced == nil {
 		return nil, nil
 	}
 	old := plan.replaced
-	if err := tx.DeleteNode(ctx, old.AccountID, old.ID); err != nil {
+	if err := tx.TrashNode(ctx, old.AccountID, old.ID, by, store.Now()); err != nil {
 		return nil, err
 	}
 	return old, nil
-}
-
-// replacedUsage is the usage change of the file a transfer displaces: its size and count come off.
-// It is zero when nothing was displaced.
-func replacedUsage(replaced *store.Node) store.UsageChange {
-	if replaced == nil {
-		return store.UsageChange{}
-	}
-	return store.UsageChange{Bytes: -replaced.Size, Files: -1}
 }
 
 // copyTree makes the copy of src's tree in the target place of plan. The copy of src gets rootID;
@@ -380,12 +372,9 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		if err := requireReplaceRole(ctx, tx, p, plan); err != nil {
 			return err
 		}
-		replaced, err := applyReplace(ctx, tx, plan)
+		// Moving a displaced file to the trash keeps its bytes in usage, so a move never changes usage.
+		replaced, err := applyReplace(ctx, tx, plan, p.ID)
 		if err != nil {
-			return err
-		}
-		// A move never grows usage: displacing a file only shrinks it, so this is never refused.
-		if err := tx.AdjustUsage(ctx, cur.AccountID, replacedUsage(replaced)); err != nil {
 			return err
 		}
 		folderChanged := plan.folderID != cur.FolderID
@@ -423,7 +412,7 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		}
 		out = cur
 		if replaced != nil {
-			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.delete", replaced.ID,
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.trash", replaced.ID,
 				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": cur.ID}, srcFolder, plan.folderID)); err != nil {
 				return err
 			}
@@ -538,7 +527,7 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		if err := requireReplaceRole(ctx, tx, p, plan); err != nil {
 			return err
 		}
-		replaced, err := applyReplace(ctx, tx, plan)
+		replaced, err := applyReplace(ctx, tx, plan, p.ID)
 		if err != nil {
 			return err
 		}
@@ -550,10 +539,8 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		// The copies count in full, and what they displace comes off. Only the net growth is checked.
-		change := replacedUsage(replaced)
-		change.Bytes += bytes
-		change.Files += files
+		// The copies count in full. What they displace stays in usage, in the trash, so only the copies count.
+		change := store.UsageChange{Bytes: bytes, Files: files}
 		if err := s.applyUsage(ctx, tx, cur.AccountID, change); err != nil {
 			return err
 		}
@@ -561,7 +548,7 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if replaced != nil {
-			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.delete", replaced.ID,
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.trash", replaced.ID,
 				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": rootID}, cur.FolderID, plan.folderID)); err != nil {
 				return err
 			}
@@ -691,7 +678,7 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		if err := requireReplaceRole(ctx, tx, p, plan); err != nil {
 			return err
 		}
-		replaced, err := applyReplace(ctx, tx, plan)
+		replaced, err := applyReplace(ctx, tx, plan, p.ID)
 		if err != nil {
 			return err
 		}
@@ -703,14 +690,12 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		if err != nil {
 			return err
 		}
-		change := replacedUsage(replaced)
-		change.Bytes += bytes
-		change.Files += files
+		change := store.UsageChange{Bytes: bytes, Files: files}
 		if err := s.applyUsage(ctx, tx, job.AccountID, change); err != nil {
 			return err
 		}
 		if replaced != nil {
-			if err := tx.InsertAudit(ctx, auditAs(p, job.AccountID, "node.delete", replaced.ID,
+			if err := tx.InsertAudit(ctx, auditAs(p, job.AccountID, "node.trash", replaced.ID,
 				map[string]any{"kind": replaced.Kind, "name": replaced.Name, "replaced_by": pl.Root}, src.FolderID, plan.folderID)); err != nil {
 				return err
 			}

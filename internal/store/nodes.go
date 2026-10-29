@@ -40,6 +40,12 @@ type Node struct {
 	NoDownload bool
 	// EditorsCanShare lets editors set permissions on this node and its subtree, up to editor.
 	EditorsCanShare bool
+	// TrashedAt is set on an explicit trash root only: the node that was deleted. Nodes below it are
+	// trashed through the ancestor walk, so they have no mark of their own. TrashedBy is the actor that
+	// trashed it, and TrashedNameKey is the name key it had before, for a restore.
+	TrashedAt      *time.Time
+	TrashedBy      string
+	TrashedNameKey string
 }
 
 // IsRoot reports whether n is a folder's root.
@@ -48,7 +54,8 @@ func (n *Node) IsRoot() bool { return n.ParentID == "" }
 // nodeSelect reads a node with its blob's hash. Callers add a WHERE clause.
 const nodeSelect = `SELECT n.id, n.account_id, n.folder_id, n.parent_id, n.name, n.name_key, n.kind,
 	n.size, n.mime_type, n.blob_id, COALESCE(b.sha256, ''), n.etag, n.created_at, n.modified_at,
-	n.created_by, n.modified_by, n.owner_id, n.no_download, n.editors_can_share
+	n.created_by, n.modified_by, n.owner_id, n.no_download, n.editors_can_share,
+	n.trashed_at, n.trashed_by, n.trashed_name_key
 	FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id AND b.account_id = n.account_id`
 
 const nodeCols = `id, account_id, folder_id, parent_id, name, name_key, kind, size, mime_type, blob_id,
@@ -59,9 +66,10 @@ func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	var parent, blob sql.NullString
 	var created, modified int64
 	var noDownload, editorsCanShare int64
+	var trashed sql.NullInt64
 	err := row.Scan(&n.ID, &n.AccountID, &n.FolderID, &parent, &n.Name, &n.NameKey, &n.Kind, &n.Size,
 		&n.MimeType, &blob, &n.SHA256, &n.ETag, &created, &modified, &n.CreatedBy, &n.ModifiedBy, &n.OwnerID,
-		&noDownload, &editorsCanShare)
+		&noDownload, &editorsCanShare, &trashed, &n.TrashedBy, &n.TrashedNameKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -74,6 +82,7 @@ func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	n.ModifiedAt = fromMillis(modified)
 	n.NoDownload = noDownload == 1
 	n.EditorsCanShare = editorsCanShare == 1
+	n.TrashedAt = fromNullMillis(trashed)
 	return &n, nil
 }
 
@@ -118,7 +127,7 @@ func (tx *Tx) Child(ctx context.Context, accountID, parentID, key string) (*Node
 
 // Children lists the children of a directory of accountID in name-key order, one page at a time.
 func (s *Store) Children(ctx context.Context, accountID, parentID string, p Page) ([]*Node, string, error) {
-	query := nodeSelect + " WHERE n.account_id = ? AND n.parent_id = ?"
+	query := nodeSelect + " WHERE n.account_id = ? AND n.parent_id = ? AND n.trashed_at IS NULL"
 	args := []any{accountID, parentID}
 	if p.Cursor != "" {
 		parts, err := decodeCursor(p.Cursor, 2)
@@ -155,12 +164,14 @@ func (s *Store) Children(ctx context.Context, accountID, parentID string, p Page
 }
 
 // Subtree returns node id of accountID and its descendants, parents before children, so that
-// copies can be made in this order.
+// copies can be made in this order. Trashed descendants are left out: a copy never carries what was
+// deleted. The node itself is included whatever its trash state, since the caller has checked it.
 func (tx *Tx) Subtree(ctx context.Context, accountID, id string) ([]*Node, error) {
 	rows, err := tx.q.QueryContext(ctx, `WITH RECURSIVE sub(nid, depth) AS (
 		SELECT id, 0 FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
-		SELECT c.id, sub.depth + 1 FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
+		SELECT c.id, sub.depth + 1 FROM nodes c JOIN sub ON c.parent_id = sub.nid
+		WHERE c.account_id = ? AND c.trashed_at IS NULL
 	)
 	`+nodeSelect+` JOIN sub ON sub.nid = n.id
 		WHERE n.account_id = ? ORDER BY sub.depth, n.name_key, n.id`,
@@ -181,15 +192,18 @@ func (tx *Tx) Subtree(ctx context.Context, accountID, id string) ([]*Node, error
 }
 
 // SubtreeFiles counts the files under node id of accountID, the node itself included, and their
-// total size. Usage is taken off by these numbers when the subtree goes.
+// total size, versions included: the bytes a version holds count toward usage, and they go when the
+// file does. Usage is taken off by these numbers when the subtree goes.
 func (tx *Tx) SubtreeFiles(ctx context.Context, accountID, id string) (files, bytes int64, err error) {
 	err = tx.q.QueryRowContext(ctx, `WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
 		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
 	)
-	SELECT COUNT(*), COALESCE(SUM(n.size), 0) FROM sub JOIN nodes n ON n.id = sub.nid
-		WHERE n.account_id = ? AND n.kind = 'file'`, accountID, id, accountID, accountID).Scan(&files, &bytes)
+	SELECT (SELECT COUNT(*) FROM sub JOIN nodes n ON n.id = sub.nid WHERE n.account_id = ? AND n.kind = 'file'),
+		(SELECT COALESCE(SUM(n.size), 0) FROM sub JOIN nodes n ON n.id = sub.nid WHERE n.account_id = ? AND n.kind = 'file')
+		+ (SELECT COALESCE(SUM(v.size), 0) FROM versions v WHERE v.account_id = ? AND v.node_id IN (SELECT nid FROM sub))`,
+		accountID, id, accountID, accountID, accountID, accountID).Scan(&files, &bytes)
 	return files, bytes, err
 }
 
@@ -200,7 +214,7 @@ func (s *Store) SubtreeSize(ctx context.Context, accountID, id string, limit int
 	err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM (WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
-		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
+		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ? AND c.trashed_at IS NULL
 	)
 	SELECT nid FROM sub LIMIT ?)`, accountID, id, accountID, limit).Scan(&n)
 	return n, err
@@ -333,7 +347,8 @@ func (tx *Tx) InsertBlob(ctx context.Context, b *Blob) error {
 // once deleteAfter has passed. It returns how many it marked. Running it again marks nothing new.
 func (tx *Tx) OrphanUnreferenced(ctx context.Context, deleteAfter time.Time) (int64, error) {
 	res, err := tx.q.ExecContext(ctx, `UPDATE blobs SET state = 'orphan', delete_after = ?
-		WHERE state = 'live' AND NOT EXISTS (SELECT 1 FROM nodes WHERE nodes.blob_id = blobs.id)`,
+		WHERE state = 'live' AND NOT EXISTS (SELECT 1 FROM nodes WHERE nodes.blob_id = blobs.id)
+		AND NOT EXISTS (SELECT 1 FROM versions WHERE versions.blob_id = blobs.id)`,
 		millis(deleteAfter))
 	if err != nil {
 		return 0, err
@@ -369,7 +384,8 @@ func (s *Store) DueBlobs(ctx context.Context, now time.Time, limit int) ([]*Blob
 // reports whether a row was removed; false means the blob was referenced again and must stay.
 func (tx *Tx) DeleteOrphan(ctx context.Context, accountID, blobID string) (bool, error) {
 	res, err := tx.q.ExecContext(ctx, `DELETE FROM blobs WHERE account_id = ? AND id = ? AND state = 'orphan'
-		AND NOT EXISTS (SELECT 1 FROM nodes WHERE nodes.blob_id = blobs.id)`, accountID, blobID)
+		AND NOT EXISTS (SELECT 1 FROM nodes WHERE nodes.blob_id = blobs.id)
+		AND NOT EXISTS (SELECT 1 FROM versions WHERE versions.blob_id = blobs.id)`, accountID, blobID)
 	if err != nil {
 		return false, err
 	}

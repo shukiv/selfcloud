@@ -96,11 +96,19 @@ func (s *Server) shareMail(ctx context.Context, p *auth.Principal, n *store.Node
 	item := mailText(itemName(n, f))
 	link := s.nodeLink(n.ID)
 	note := cleanNote(message)
-	return s.sendEach(ctx, p, users, func(u *store.User) error { return s.checkMailBudget(n.AccountID, u.Email) },
+	return s.sendEach(ctx, p, users, func(u *store.User) error { return s.shareBudget(n.AccountID, u.Email) },
 		func(u *store.User) (string, string, error) {
 			return s.templates.Render("share", u.Locale, shareData{Actor: actor, Item: item,
 				Role: mail.RoleLabel(u.Locale, role), Link: link, Message: note})
 		})
+}
+
+// shareBudget charges one share mail to its own buckets, not the verification buckets. A sharer who
+// uses up the share allowance therefore cannot stop a user from signing in: verification and reset mail
+// draw on mail.account and mail.target alone. When a bucket is empty the share still happens; only its
+// mail is skipped, and the reply says so.
+func (s *Server) shareBudget(accountID, address string) error {
+	return s.chargeAll(charge{"mail.share.account", accountID}, charge{"mail.share.target", emailKey(address)})
 }
 
 // activeRecipients returns the users a change reaches, and a reason when none can be mailed. Only

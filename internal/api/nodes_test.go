@@ -329,7 +329,7 @@ func TestRenameMoveCopyDelete(t *testing.T) {
 
 	// Delete: a folder takes its files off the usage; the root cannot be deleted.
 	beforeDel := usageOf(t, s, key, acc.ID)
-	wantStatus(t, call(t, s, "DELETE", node+tree.ID, key, nil), 204)
+	wantStatus(t, call(t, s, "DELETE", node+tree.ID+"?permanent=true", key, nil), 204)
 	afterDel := usageOf(t, s, key, acc.ID)
 	if beforeDel.UsedFiles-afterDel.UsedFiles != 2 || beforeDel.UsedBytes-afterDel.UsedBytes != 3 {
 		t.Errorf("usage after deleting tree: %+v -> %+v", beforeDel, afterDel)
@@ -376,7 +376,8 @@ func TestContentReadAndWrite(t *testing.T) {
 	wantError(t, rawCall(t, s, "PUT", nodes, key, "x", map[string]string{"If-Match": doc.ETag}),
 		412, apierr.PreconditionFailed)
 	after := usageOf(t, s, key, acc.ID)
-	if after.UsedBytes-before.UsedBytes != 9 || after.UsedFiles != before.UsedFiles {
+	// The new content counts in full, and the old content is kept as a version, which counts too.
+	if after.UsedBytes-before.UsedBytes != 11 || after.UsedFiles != before.UsedFiles {
 		t.Errorf("usage after write: %+v -> %+v", before, after)
 	}
 
@@ -519,7 +520,7 @@ func TestNodesAreAudited(t *testing.T) {
 	for _, e := range log.Items {
 		seen[e.Action] = true
 	}
-	for _, want := range []string{"node.create", "node.rename", "node.move", "node.copy", "node.write", "node.delete"} {
+	for _, want := range []string{"node.create", "node.rename", "node.move", "node.copy", "node.write", "node.trash"} {
 		if !seen[want] {
 			t.Errorf("no %s in the audit log", want)
 		}

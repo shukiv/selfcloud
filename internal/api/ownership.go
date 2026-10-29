@@ -126,6 +126,11 @@ func (s *Server) handleTransferOwnership(w http.ResponseWriter, r *http.Request)
 		if err := tx.SetSubtreeFolder(ctx, n.AccountID, cur.ID, dest.ID); err != nil {
 			return err
 		}
+		// The caller manages the recipient's My files, not this subtree, so it cannot leave editors able to
+		// share here: the flag comes off the moved item and everything below it.
+		if err := tx.ClearSubtreeEditorsCanShare(ctx, n.AccountID, cur.ID); err != nil {
+			return err
+		}
 		// The previous owner keeps editor on what it gave away. A role it already holds there is not
 		// lowered, so a grant above editor stays.
 		if prev != "" {

@@ -408,6 +408,12 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
+			// A directory in the trash cannot scope a token: the token would reach nothing there.
+			if self, above, err := tx.TrashState(ctx, accID, dir.ID); err != nil {
+				return err
+			} else if self || above {
+				return notFound("node")
+			}
 			if dir.Kind != store.KindDir {
 				return apierr.New(apierr.InvalidRequest, "node must be a directory")
 			}

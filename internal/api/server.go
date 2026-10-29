@@ -79,6 +79,10 @@ type Server struct {
 	handler  http.Handler
 	// copySyncNodes is the largest copy made in the request; see syncCopyNodes.
 	copySyncNodes int
+	// emptyTrashLimit is the most roots one empty-trash call purges; see handleEmptyTrash. A test lowers it.
+	emptyTrashLimit int
+	// trashScanLimit is the most trash roots one listing or empty-trash call examines; see trashScanMax.
+	trashScanLimit int
 	// beforeWrite is a test hook, run before a mutating request takes the write lock. Nil in
 	// production.
 	beforeWrite func()
@@ -214,6 +218,11 @@ func New(opts Options) (*Server, error) {
 			// sign in: per account, and per address the mail goes to.
 			"mail.requests.account": newLimiterRate(20, time.Hour),
 			"mail.requests.target":  newLimiterRate(5, time.Hour),
+			// Each requesting user has its own allowance of request mail, so one user cannot use up the account's.
+			"mail.requests.requester": newLimiterRate(3, time.Hour),
+			// Share mail has buckets of its own too, so sharing cannot spend the mail a user needs to sign in.
+			"mail.share.account": newLimiterRate(60, time.Hour),
+			"mail.share.target":  newLimiterRate(10, time.Hour),
 			// Starting uploads, per caller: each one reserves disk, so a flood of them is refused.
 			"upload.create": newLimiter(60),
 			// Minting delegated tokens, per account key: each is a credential, so a flood is refused.
@@ -230,6 +239,8 @@ func New(opts Options) (*Server, error) {
 	s.jobs.Handle(jobAccountDelete, s.runAccountDelete)
 	s.jobs.Handle(jobCopyNode, s.runCopyJob)
 	s.copySyncNodes = syncCopyNodes
+	s.emptyTrashLimit = emptyTrashMax
+	s.trashScanLimit = trashScanMax
 	s.freeBytes = fsutil.FreeBytes
 	s.uploadSlots = map[string]*uploadSlot{}
 	s.uploadSlotWait = 5 * time.Second
@@ -332,6 +343,17 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/access-requests", handle: s.handleListPendingAccessRequests, auth: true},
 		{method: http.MethodPost, path: "/api/v1/access-requests/{arq}/approve", handle: s.handleApproveAccessRequest, auth: true},
 		{method: http.MethodPost, path: "/api/v1/access-requests/{arq}/deny", handle: s.handleDenyAccessRequest, auth: true},
+
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/restore", handle: s.handleRestoreNode, auth: true},
+		{method: http.MethodGet, path: "/api/v1/trash", handle: s.handleListTrash, auth: true},
+		{method: http.MethodPost, path: "/api/v1/trash/empty", handle: s.handleEmptyTrash, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/trash/{nod}", handle: s.handlePurgeTrashed, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/versions", handle: s.handleListVersions, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/versions/{ver}/content", handle: s.handleGetVersionContent, auth: true},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/versions/{ver}/content", handle: s.handleGetVersionContent, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}/versions/{ver}", handle: s.handleUpdateVersion, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/versions/{ver}/restore", handle: s.handleRestoreVersion, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/versions/{ver}", handle: s.handleDeleteVersion, auth: true},
 
 		// A signed link carries its own authority: no credential, and no cookie is read.
 		{method: http.MethodGet, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},
@@ -450,7 +472,8 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	sweepDone := make(chan struct{})
 	sw := sweep.New(sweep.Options{Store: s.store, Blobs: s.blobs, DeleteGrace: s.cfg.Blobs.DeleteGrace.D(),
 		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
-		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), Logger: s.log})
+		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
+		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(), Logger: s.log})
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
 
 	var serveErr error

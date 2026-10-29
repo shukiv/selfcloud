@@ -119,6 +119,12 @@ func (s *Server) handleCreateAccessRequest(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			return err
 		}
+		// A node in the trash does not exist for this purpose: nothing is recorded, as for a missing node.
+		if self, above, err := tx.TrashState(ctx, n.AccountID, n.ID); err != nil {
+			return err
+		} else if self || above {
+			return nil
+		}
 		f, err := tx.Folder(ctx, n.AccountID, n.FolderID)
 		if err != nil {
 			return err
@@ -200,6 +206,10 @@ func (s *Server) mailManagers(ctx context.Context, p *auth.Principal, n *store.N
 	item := mailText(itemName(n, f))
 	link := s.nodeLink(n.ID)
 	note := cleanNote(req.Message)
+	// The requester's own bucket is charged once per request. Over its budget, the request mails nobody.
+	if len(users) == 0 || s.requesterBudget(p.UserID) != nil {
+		return
+	}
 	s.sendEach(ctx, p, users, s.requestBudget(n.AccountID), func(u *store.User) (string, string, error) {
 		return s.templates.Render("access_request", u.Locale, shareData{Actor: actor, Item: item,
 			Role: mail.RoleLabel(u.Locale, req.Role), Link: link, Message: note})
@@ -447,6 +457,13 @@ func (s *Server) requestBudget(accountID string) func(*store.User) error {
 	return func(u *store.User) error {
 		return s.chargeAll(charge{"mail.requests.account", accountID}, charge{"mail.requests.target", emailKey(u.Email)})
 	}
+}
+
+// requesterBudget charges the requesting user's own bucket once per request, before any of its mail goes
+// out: three requests an hour are mailed in full, and a fourth is recorded but not mailed. So one user
+// asking over and over cannot use up the account's bucket and silence the others.
+func (s *Server) requesterBudget(requesterID string) error {
+	return s.chargeAll(charge{"mail.requests.requester", requesterID})
 }
 
 // mailDecision tells the requester the outcome. An approval names the item, since the requester now has

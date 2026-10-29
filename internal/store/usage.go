@@ -56,16 +56,18 @@ func (tx *Tx) usage(ctx context.Context, accountID string) (Usage, error) {
 	return u, err
 }
 
-// RecountAccount recomputes an account's counters from the rows they count: used_bytes and used_files
-// from its file nodes, reserved_bytes from its unfinished uploads. It returns the counters before and
+// RecountAccount recomputes an account's counters from the rows they count: used_bytes from its file
+// nodes and its versions, used_files from its file nodes, and reserved_bytes from its unfinished uploads. It returns the counters before and
 // after. Call it in a transaction of its own, per account.
 func (tx *Tx) RecountAccount(ctx context.Context, accountID string) (before, after Usage, err error) {
 	before, err = tx.usage(ctx, accountID)
 	if err != nil {
 		return before, after, err
 	}
-	err = tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0), COUNT(*) FROM nodes
-		WHERE account_id = ? AND kind = 'file'`, accountID).Scan(&after.Bytes, &after.Files)
+	err = tx.q.QueryRowContext(ctx, `SELECT (SELECT COALESCE(SUM(size), 0) FROM nodes
+			WHERE account_id = ? AND kind = 'file') + (SELECT COALESCE(SUM(size), 0) FROM versions WHERE account_id = ?),
+		(SELECT COUNT(*) FROM nodes WHERE account_id = ? AND kind = 'file')`,
+		accountID, accountID, accountID).Scan(&after.Bytes, &after.Files)
 	if err != nil {
 		return before, after, err
 	}

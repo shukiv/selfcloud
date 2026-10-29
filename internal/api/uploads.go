@@ -1059,12 +1059,19 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 		if plan.replaced != nil {
 			n := plan.replaced
 			prev := n.Size
+			// The replaced content is kept as a version. Its new content counts in full, and the
+			// reservation taken at creation already checked it against the quota. Below, DeleteUpload
+			// releases that reservation and the usage takes the bytes, so the net change is zero.
+			delta = cur.Length
+			if err := s.keepVersion(ctx, tx, n, p.ID, now); err != nil {
+				return err
+			}
 			n.BlobID, n.Size, n.MimeType, n.ETag, n.SHA256 = cur.BlobID, cur.Length, cur.MimeType, newETag(), digest
 			n.ModifiedAt, n.ModifiedBy = now, p.ID
 			if err := tx.UpdateNode(ctx, n); err != nil {
 				return storeNameErr(err)
 			}
-			out, action, delta = n, "node.write", cur.Length-prev
+			out, action = n, "node.write"
 			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, action, n.ID,
 				map[string]any{"size": cur.Length, "previous_size": prev, "upload": cur.ID}, cur.FolderID)); err != nil {
 				return err
@@ -1084,9 +1091,10 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 				return err
 			}
 		}
-		// Completion turns the reservation into usage, so it never grows the quota and is not checked
-		// against it: DeleteUpload releases the reservation, and the usage takes the bytes. A quota
-		// lowered while the upload was going does not strand a file that has been written in full.
+		// Completion turns the reservation into usage, for a new file and for a replacement alike: DeleteUpload
+		// releases the reservation and the usage takes the bytes in the same transaction. Nothing is checked
+		// against the quota here. The reservation was checked when the upload was created, so a quota lowered
+		// while the upload was going does not strand a file that has been written in full.
 		if err := tx.DeleteUpload(ctx, cur.AccountID, cur.ID); err != nil {
 			return err
 		}

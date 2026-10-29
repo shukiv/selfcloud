@@ -99,13 +99,13 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Trash, deleted after 30 days; restore; empty trash | New (m): `trash.retention`, default 30 days |
-| Delete permanently, skipping the trash | New (m): editors with the right setting; API flag |
-| Admin restore of deleted content | New (m): admins and owners restore within the window |
-| Version history for every file | New (m): blobs never change, so a version is an old blob kept |
-| Keep forever, name a version, restore a version | New (m) |
-| Automatic pruning (100 versions or 30 days) | New (m): settable; kept versions count toward quota |
-| Undo for move, rename and delete | New (m/k): undo toast backed by the trash and the change log |
+| Trash, deleted after 30 days; restore; empty trash | Built (m): `trash.retention`, default 30 days |
+| Delete permanently, skipping the trash | Built (m): needs manager, not an editor, and the API flag is `?permanent=true` |
+| Admin restore of deleted content | Built (m) as a restore by the one who trashed the item or a manager; admins never reach contents, so an account key restores |
+| Version history for every file | Built (m): blobs never change, so a version is an old blob kept |
+| Keep forever, name a version, restore a version | Built (m) |
+| Automatic pruning (100 versions or 30 days) | Built (m): `versions.max_count` and `versions.max_age`; kept versions count toward quota |
+| Undo for move, rename and delete | Built (m): the trash and the restore calls; the undo toast is slice k, and there is no change log |
 
 ## 7. Search
 
@@ -148,7 +148,7 @@ space ("My files"), and a group can hold users.
 | Per-user quota inside an account | New (p) |
 | Storage page with the largest files | New (p) |
 | Over-quota behaviour | Have (h): reads and deletes work, writes are refused |
-| Kept versions and trash count toward quota | New (m) |
+| Kept versions and trash count toward quota | Built (m) |
 
 ## 11. Web interface
 
@@ -178,7 +178,7 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Files, permissions, revisions, comments and team-space APIs | Have for files (e). New (m, n, r) for the rest |
+| Files, permissions, revisions, comments and team-space APIs | Have for files (e). Permissions and team spaces (n1, n2) and revisions and trash (m) are built. Comments are New (r) |
 | Changes feed (what changed since a token) | New (t): for sync clients and API clients |
 | Push notifications | Planned (j): webhooks |
 | Export to other formats | New (s) |

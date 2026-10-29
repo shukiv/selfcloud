@@ -269,3 +269,34 @@ func TestTokenTTLBounds(t *testing.T) {
 		}
 	}
 }
+
+// TestTrashAndVersionSettings: the trash keeps items for 30 days and the versions keep 100 per file for 30 days,
+// both settable from the environment, and the invalid values are refused.
+func TestTrashAndVersionSettings(t *testing.T) {
+	c, err := Load("", env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Trash.Retention.D() != 30*24*time.Hour || c.Versions.MaxCount != 100 || c.Versions.MaxAge.D() != 30*24*time.Hour ||
+		c.Versions.MaxKept != 200 {
+		t.Errorf("defaults = %+v %+v", c.Trash, c.Versions)
+	}
+	c, err = Load("", env(map[string]string{"SELFCLOUD_TRASH_RETENTION": "72h", "SELFCLOUD_VERSIONS_MAX_COUNT": "5",
+		"SELFCLOUD_VERSIONS_MAX_AGE": "0s"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Trash.Retention.D() != 72*time.Hour || c.Versions.MaxCount != 5 || c.Versions.MaxAge != 0 {
+		t.Errorf("set = %+v %+v", c.Trash, c.Versions)
+	}
+	for name, vars := range map[string]map[string]string{
+		"zero retention":   {"SELFCLOUD_TRASH_RETENTION": "0s"},
+		"negative count":   {"SELFCLOUD_VERSIONS_MAX_COUNT": "-1"},
+		"negative max age": {"SELFCLOUD_VERSIONS_MAX_AGE": "-1h"},
+		"zero max kept":    {"SELFCLOUD_VERSIONS_MAX_KEPT": "0"},
+	} {
+		if _, err := Load("", env(vars)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

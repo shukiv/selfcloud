@@ -207,11 +207,16 @@ func TestReplaceFileOverFile(t *testing.T) {
 		t.Fatalf("moved = %+v", moved)
 	}
 	wantError(t, call(t, m.s, "GET", "/api/v1/nodes/"+old.ID, m.key, nil), 404, apierr.NotFound)
+	// The displaced file went to the trash, where it keeps its bytes in usage.
+	if after := usageOf(t, m.s, m.key, m.acc.ID); after.UsedBytes != before.UsedBytes || after.UsedFiles != before.UsedFiles {
+		t.Errorf("usage before %+v, after the replace %+v; the trash keeps it", before, after)
+	}
+	// Purging it from the trash takes it off the usage, and its contents are then the collector's.
+	wantStatus(t, call(t, m.s, "DELETE", "/api/v1/trash/"+old.ID, m.key, nil), 204)
 	after := usageOf(t, m.s, m.key, m.acc.ID)
 	if before.UsedFiles-after.UsedFiles != 1 || before.UsedBytes-after.UsedBytes != int64(len("old contents")) {
-		t.Errorf("usage before %+v, after %+v", before, after)
+		t.Errorf("usage before %+v, after the purge %+v", before, after)
 	}
-	// The displaced contents are unreferenced now, so the collector removes them.
 	if _, err := sweeper(m.s, 0).Once(context.Background(), store.Now()); err != nil {
 		t.Fatal(err)
 	}

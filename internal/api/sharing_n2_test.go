@@ -1077,3 +1077,161 @@ func TestAccessRequestOnAnotherUsersPersonalFolderMailsItsOwner(t *testing.T) {
 		t.Errorf("requests on the file = %+v, want one from bob", list.Items)
 	}
 }
+
+// TestTransferClearsEditorsCanShare: an item moved into the recipient's My files loses editors_can_share,
+// with everything below it. The caller manages the recipient's files, not the item, so the flag does not
+// come along.
+func TestTransferClearsEditorsCanShare(t *testing.T) {
+	fx := newSharingFixture(t)
+	annPF := fx.personalFolder(t, fx.annSess)
+	bobPF := fx.personalFolder(t, fx.bobSess)
+	docs := fx.sessionDir(t, fx.annSess, annPF, "/docs")
+	file := fx.sessionFile(t, fx.annSess, annPF, "/docs/a.txt", "alpha")
+	fx.flag(t, docs.ID, map[string]any{"editors_can_share": true})
+	fx.flag(t, file.ID, map[string]any{"editors_can_share": true})
+
+	wantStatus(t, callSession(t, fx.s, fx.annSess, "POST", "/api/v1/nodes/"+docs.ID+"/transfer-ownership",
+		map[string]any{"to": fx.bob.ID}), 200)
+
+	if n := fx.nodeOf(t, docs.ID); n.FolderID != bobPF || n.EditorsCanShare {
+		t.Errorf("moved directory folder %q editors_can_share %v, want bob's folder and false", n.FolderID, n.EditorsCanShare)
+	}
+	if n := fx.nodeOf(t, file.ID); n.EditorsCanShare {
+		t.Error("the file below the moved directory kept editors_can_share")
+	}
+}
+
+// TestDeleteUserTransferClearsEditorsCanShare: the files a deleted user hands over lose editors_can_share,
+// since the deleting owner does not manage the recipient's My files.
+func TestDeleteUserTransferClearsEditorsCanShare(t *testing.T) {
+	fx := newSharingFixture(t)
+	annPF := fx.personalFolder(t, fx.annSess)
+	bobPF := fx.personalFolder(t, fx.bobSess)
+	notes := fx.sessionDir(t, fx.annSess, annPF, "/notes")
+	fx.flag(t, notes.ID, map[string]any{"editors_can_share": true})
+
+	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.ann.ID+"?transfer_to="+fx.bob.ID,
+		fx.key, nil), 204)
+
+	var dir *nodeJSON
+	children := fx.childrenOf(t, fx.rootOf(t, bobPF))
+	for i := range children {
+		if children[i].Name == "ann@example.com (files)" {
+			dir = &children[i]
+		}
+	}
+	if dir == nil {
+		t.Fatalf("bob's My files hold %v, want a directory for ann", namesOf(children))
+	}
+	if n := fx.nodeOf(t, notes.ID); n.EditorsCanShare {
+		t.Error("the moved directory kept editors_can_share")
+	}
+}
+
+// TestShareBurstLeavesVerificationMailWorking: shares have buckets of their own. Thirty shares, each to a
+// different active user, would use up the account's verification allowance under the shared budget. They
+// do not, so a new user still gets its verification mail.
+func TestShareBurstLeavesVerificationMailWorking(t *testing.T) {
+	fx := newSharingFixture(t)
+	for i := 0; i < 10; i++ {
+		m := newMember(t, fx, fmt.Sprintf("m%d@example.com", i))
+		for j := 0; j < 3; j++ {
+			wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+fx.deep.ID+"/permissions/"+m.user.ID, fx.key,
+				map[string]any{"role": "viewer"}), 200)
+		}
+	}
+	base := len(fx.sent(t))
+	rec := call(t, fx.s, "POST", "/api/v1/accounts/"+fx.acc.ID+"/users", fx.key,
+		map[string]any{"email": "newcomer@example.com", "verification": "email"})
+	wantStatus(t, rec, 201)
+	msgs := fx.sent(t)[base:]
+	if len(msgs) != 1 || msgs[0].To != "newcomer@example.com" {
+		t.Fatalf("verification mail after the share burst = %+v, want one to newcomer", msgs)
+	}
+}
+
+// TestShareToOneUserStopsMailingAtItsBucket: a share mails the subject at most ten times an hour. Later
+// shares still happen, and say so: notified is false with the reason mail_budget.
+func TestShareToOneUserStopsMailingAtItsBucket(t *testing.T) {
+	fx := newSharingFixture(t)
+	for i := 0; i < 11; i++ {
+		rec := call(t, fx.s, "PUT", "/api/v1/nodes/"+fx.deep.ID+"/permissions/"+fx.bob.ID, fx.key,
+			map[string]any{"role": "viewer", "message": "hi"})
+		wantStatus(t, rec, 200)
+		notice := decode[setPermissionJSON](t, rec)
+		if i < 10 && !notice.Notified {
+			t.Fatalf("share %d not mailed: reason %q", i+1, notice.Reason)
+		}
+		if i == 10 && (notice.Notified || notice.Reason != "mail_budget") {
+			t.Errorf("share 11: notified %v reason %q, want false and mail_budget", notice.Notified, notice.Reason)
+		}
+	}
+}
+
+// TestRequestFloodFromOneUserStopsMailing: one requester gets three request mails an hour. Its further
+// requests are recorded and listed, but not mailed, and another user's request still mails the managers.
+func TestRequestFloodFromOneUserStopsMailing(t *testing.T) {
+	fx := newSharingFixture(t)
+	dan := newMember(t, fx, "dan@example.com")
+	fx.grant(t, fx.rootOf(t, fx.fld.ID), dan.user.ID, "manager")
+	nodes := []nodeJSON{fx.deep, fx.sib,
+		putNode(t, fx.s, fx.key, fx.fld.ID, "/a/c/y.txt", "y"),
+		putNode(t, fx.s, fx.key, fx.fld.ID, "/a/c/z.txt", "z")}
+	base := len(fx.sent(t))
+	for _, n := range nodes {
+		wantStatus(t, callSession(t, fx.s, fx.annSess, "POST", "/api/v1/nodes/"+n.ID+"/access-requests",
+			map[string]any{"role": "viewer"}), 202)
+	}
+	if got := len(fx.sent(t)) - base; got != 3 {
+		t.Fatalf("mails for ann's four requests = %d, want 3", got)
+	}
+	list := decode[listResponse[accessRequestJSON]](t, call(t, fx.s, "GET",
+		"/api/v1/nodes/"+nodes[3].ID+"/access-requests", fx.key, nil))
+	if len(list.Items) != 1 || list.Items[0].UserID != fx.ann.ID {
+		t.Errorf("the fourth request was not recorded: %+v", list.Items)
+	}
+
+	base = len(fx.sent(t))
+	wantStatus(t, callSession(t, fx.s, fx.bobSess, "POST", "/api/v1/nodes/"+nodes[2].ID+"/access-requests",
+		map[string]any{"role": "viewer"}), 202)
+	if got := len(fx.sent(t)) - base; got != 1 {
+		t.Errorf("bob's request mails = %d, want 1", got)
+	}
+}
+
+// TestRequesterBudgetIsChargedOncePerRequest: a request to a node with five managers mails all five, since the
+// requester's bucket is charged once for the request, not once per manager. Ann's fourth request in the hour
+// is recorded and mails nobody.
+func TestRequesterBudgetIsChargedOncePerRequest(t *testing.T) {
+	fx := newSharingFixture(t)
+	root := fx.rootOf(t, fx.fld.ID)
+	for i := 0; i < 5; i++ {
+		m := newMember(t, fx, fmt.Sprintf("manager%d@example.com", i))
+		fx.grant(t, root, m.user.ID, "manager")
+	}
+	nodes := []nodeJSON{fx.deep, fx.sib,
+		putNode(t, fx.s, fx.key, fx.fld.ID, "/a/c/y.txt", "y"),
+		putNode(t, fx.s, fx.key, fx.fld.ID, "/a/c/z.txt", "z")}
+	base := len(fx.sent(t))
+	for i, n := range nodes {
+		wantStatus(t, callSession(t, fx.s, fx.annSess, "POST", "/api/v1/nodes/"+n.ID+"/access-requests",
+			map[string]any{"role": "viewer"}), 202)
+		got := len(fx.sent(t)) - base
+		base = len(fx.sent(t))
+		switch i {
+		case 0, 1, 2:
+			if got != 5 {
+				t.Errorf("request %d mailed %d managers, want all five", i+1, got)
+			}
+		case 3:
+			if got != 0 {
+				t.Errorf("the fourth request in the hour mailed %d, want nobody", got)
+			}
+		}
+	}
+	list := decode[listResponse[accessRequestJSON]](t, call(t, fx.s, "GET",
+		"/api/v1/nodes/"+nodes[3].ID+"/access-requests", fx.key, nil))
+	if len(list.Items) != 1 || list.Items[0].UserID != fx.ann.ID {
+		t.Errorf("the fourth request was not recorded: %+v", list.Items)
+	}
+}

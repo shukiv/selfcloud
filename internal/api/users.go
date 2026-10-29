@@ -542,6 +542,11 @@ func (s *Server) moveDeletedFiles(ctx context.Context, tx *store.Tx, r *http.Req
 	if err := tx.MoveFolderContents(ctx, accountID, pf.ID, dest.ID, dir.ID, recipient.ID); err != nil {
 		return err
 	}
+	// The deleting owner does not manage the recipient's My files, so editors_can_share does not come with
+	// the files: the flag comes off everything moved into the new directory.
+	if err := tx.ClearSubtreeEditorsCanShare(ctx, accountID, dir.ID); err != nil {
+		return err
+	}
 	// The entry names no file, and it is not private to the recipient, so owners can see that a move was
 	// made. The directory's name stays out of the audit log.
 	return tx.InsertAudit(ctx, s.auditEntry(r, accountID, "user.files_moved", u.ID,

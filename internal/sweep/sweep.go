@@ -37,7 +37,13 @@ type Options struct {
 	// UploadMaxLifetime is upload.max_lifetime: an upload is expired this long after it was created,
 	// whatever its activity. Zero means defaultUploadMaxLifetime.
 	UploadMaxLifetime time.Duration
-	Logger            *slog.Logger
+	// TrashRetention is trash.retention: a deleted item is purged once it has been in the trash this long.
+	// Zero means defaultTrashRetention.
+	TrashRetention time.Duration
+	// VersionsMaxCount and VersionsMaxAge are versions.max_count and versions.max_age. Zero means no limit.
+	VersionsMaxCount int
+	VersionsMaxAge   time.Duration
+	Logger           *slog.Logger
 }
 
 // permissionGrace is how long an expired permission keeps its row. A permission grants nothing once it
@@ -47,6 +53,16 @@ const permissionGrace = 24 * time.Hour
 // accessRequestRetention is how long a decided access request is kept. It is kept for a month so the
 // people who decided and the requester can still see what was asked, and then it is removed.
 const accessRequestRetention = 30 * 24 * time.Hour
+
+// defaultTrashRetention is trash.retention's default, used when none is given.
+const defaultTrashRetention = 30 * 24 * time.Hour
+
+// trashBatch is how many trashed items one pass purges at most, so a large trash is emptied over passes
+// and never holds the write lock for long.
+const trashBatch = 200
+
+// versionBatch is how many nodes one pass prunes versions on at most.
+const versionBatch = 200
 
 // defaultUploadExpiry is upload.expiry's default, used when none is given.
 const defaultUploadExpiry = 24 * time.Hour
@@ -62,6 +78,9 @@ type Sweeper struct {
 	interval     time.Duration
 	uploadExpiry time.Duration
 	maxLifetime  time.Duration
+	trashKeep    time.Duration
+	versionCount int
+	versionAge   time.Duration
 	log          *slog.Logger
 }
 
@@ -77,8 +96,12 @@ func New(o Options) *Sweeper {
 	if o.UploadMaxLifetime <= 0 {
 		o.UploadMaxLifetime = defaultUploadMaxLifetime
 	}
+	if o.TrashRetention <= 0 {
+		o.TrashRetention = defaultTrashRetention
+	}
 	return &Sweeper{st: o.Store, blobs: o.Blobs, grace: o.DeleteGrace, interval: o.Interval,
-		uploadExpiry: o.UploadExpiry, maxLifetime: o.UploadMaxLifetime, log: log}
+		uploadExpiry: o.UploadExpiry, maxLifetime: o.UploadMaxLifetime, trashKeep: o.TrashRetention,
+		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, log: log}
 }
 
 // Result counts what one pass did.
@@ -93,6 +116,8 @@ type Result struct {
 	UploadFiles    int   // resumable upload files with no row, removed
 	Permissions    int   // permissions expired more than permissionGrace ago, removed and audited
 	AccessRequests int64 // decided access requests older than accessRequestRetention, removed
+	Purged         int   // trashed items past trash.retention, purged with their contents
+	Versions       int   // versions past versions.max_count or versions.max_age, pruned
 }
 
 // Run sweeps at once and then every interval, until ctx is cancelled.
@@ -135,6 +160,12 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 		return res, err
 	}
 	if res.UploadFiles, err = w.blobs.RemoveOrphanUploads(now.Add(-w.uploadExpiry), w.uploadRowExists); err != nil {
+		return res, err
+	}
+	if res.Purged, err = w.purgeTrash(ctx, now); err != nil {
+		return res, err
+	}
+	if res.Versions, err = w.pruneVersions(ctx, now); err != nil {
 		return res, err
 	}
 	err = w.st.Write(ctx, func(tx *store.Tx) error {
