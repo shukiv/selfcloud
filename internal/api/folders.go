@@ -538,7 +538,9 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 		writeJSON(w, http.StatusOK, out)
 		return nil
 	}
-	if p.Token != nil {
+	// A folder-list token lists its own folders. An all-reachable token falls through to the user's own
+	// listing below, then has its roles capped.
+	if p.Token != nil && !p.Token.All {
 		// A token names at most tokenMaxFolders folders, so they are listed in one page, each at the
 		// role folderAccess gives the token.
 		for _, fid := range p.Token.Folders {
@@ -618,6 +620,28 @@ func (s *Server) handleMyFolders(w http.ResponseWriter, r *http.Request) error {
 	// An empty listing is an empty array, never null: clients read items as a list.
 	if out.Items == nil {
 		out.Items = []folderAccessJSON{}
+	}
+	if p.Token != nil {
+		// An all-reachable token lists the folders its user reaches, judged as every other route judges
+		// the token: folderAccessWith applies the token's node scope and its role cap, and a folder the
+		// token cannot reach is left out, as a folder-list token leaves out one it cannot reach.
+		var kept []folderAccessJSON
+		for _, it := range out.Items {
+			f, role, err := folderAccessWith(ctx, s.store, p, it.ID)
+			if err != nil {
+				if apierr.From(err).Code == apierr.NotFound {
+					continue
+				}
+				return err
+			}
+			item := folderAccessOf(f, role)
+			item.Hidden = it.Hidden
+			kept = append(kept, item)
+		}
+		out.Items = kept
+		if out.Items == nil {
+			out.Items = []folderAccessJSON{} // an empty listing is an empty array, never null
+		}
 	}
 	if err := s.fillMyRoots(ctx, p.AccountID, &out); err != nil {
 		return err

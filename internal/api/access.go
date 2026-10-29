@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"slices"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
@@ -95,7 +94,7 @@ func nodeAccessIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeI
 	if err != nil {
 		return nil, "", err
 	}
-	if p.Token != nil && !slices.Contains(p.Token.Folders, n.FolderID) {
+	if p.Token != nil && !p.Token.Reaches(n.FolderID) {
 		return nil, "", nodeNotFound()
 	}
 	self, above, err := rd.TrashState(ctx, p.AccountID, nodeID)
@@ -297,7 +296,7 @@ func writeAnchor(ctx context.Context, rd accessReader, p *auth.Principal, folder
 	if err := callerCheck(p); err != nil {
 		return nil, nil, err
 	}
-	if p.Token != nil && !slices.Contains(p.Token.Folders, folderID) {
+	if p.Token != nil && !p.Token.Reaches(folderID) {
 		return nil, nil, notFound("folder")
 	}
 	f, err := rd.Folder(ctx, p.AccountID, folderID)

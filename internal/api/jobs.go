@@ -34,6 +34,15 @@ func toJobJSON(j *store.Job) jobJSON {
 // started without managing the account. A token sees nothing outside its folders, so a token may
 // read only a job queued under a token whose folders are all in its own list: the copy's source
 // and destination were in those folders.
+//
+// An all-reachable token names no folders, so the subset rule cannot be checked for it here. The
+// rule is therefore strict on both sides:
+//   - a job queued by an all-reachable token is read only by an all-reachable token of the same
+//     user with the same node scope (an exact match, so a confined token does not read an
+//     unconfined job, and the reverse);
+//   - a job queued by a folder-list token is read only by a folder-list token, under the subset and
+//     node rules above; an all-reachable token does not read it, because that would need the
+//     user's reach, which this check does not compute.
 func queuedBy(job *store.Job, p *auth.Principal) bool {
 	if p == nil || job.Payload == "" || p.AccountID != job.AccountID {
 		return false
@@ -52,6 +61,9 @@ func queuedBy(job *store.Job, p *auth.Principal) bool {
 	}
 	if pl.Actor.Token == nil {
 		return false
+	}
+	if p.Token.All || pl.Actor.Token.All {
+		return p.Token.All && pl.Actor.Token.All && p.Token.Node == pl.Actor.Token.Node
 	}
 	for _, f := range pl.Actor.Token.Folders {
 		if !slices.Contains(p.Token.Folders, f) {

@@ -12,7 +12,6 @@ import (
 	"mime"
 	"net/http"
 	"path"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -398,7 +397,7 @@ func (s *Server) handleListPathChildren(w http.ResponseWriter, r *http.Request) 
 		return err
 	}
 	fld := r.PathValue("fld")
-	if p.Token != nil && !slices.Contains(p.Token.Folders, fld) {
+	if p.Token != nil && !p.Token.Reaches(fld) {
 		return notFound("folder")
 	}
 	segs, err := parsePath(r.URL.Query().Get("path"))

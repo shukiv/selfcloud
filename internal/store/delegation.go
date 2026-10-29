@@ -22,6 +22,9 @@ type Delegation struct {
 	UserFound       bool // the user exists in the account
 	UserRole        string
 	UserStatus      string
+	// UserTokensNotBefore is the user's own cut-off: the user's tokens issued at or before it are
+	// void. Zero when the user was never revoked, and when there is no user.
+	UserTokensNotBefore time.Time
 }
 
 // Delegation reads the state of the account, of the key keyID and of the user userID, in one
@@ -45,15 +48,16 @@ func delegation(ctx context.Context, q querier, accountID, keyID, userID string)
 		tnb                          int64
 		keyAccount, role, userStatus sql.NullString
 		keyRevoked, keyExpires       sql.NullInt64
+		userTnb                      sql.NullInt64
 	)
 	err := q.QueryRowContext(ctx, `SELECT a.status, a.tokens_not_before,
 			k.account_id, k.revoked_at, k.expires_at,
-			u.role, u.status
+			u.role, u.status, u.tokens_not_before
 		FROM accounts a
 		LEFT JOIN api_keys k ON k.id = ? AND k.account_id = a.id
 		LEFT JOIN users u ON u.id = ? AND u.account_id = a.id
 		WHERE a.id = ?`, keyID, userID, accountID).Scan(&d.AccountStatus, &tnb,
-		&keyAccount, &keyRevoked, &keyExpires, &role, &userStatus)
+		&keyAccount, &keyRevoked, &keyExpires, &role, &userStatus, &userTnb)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -67,5 +71,8 @@ func delegation(ctx context.Context, q querier, accountID, keyID, userID string)
 	d.UserFound = role.Valid
 	d.UserRole = role.String
 	d.UserStatus = userStatus.String
+	if userTnb.Valid {
+		d.UserTokensNotBefore = fromMillis(userTnb.Int64)
+	}
 	return &d, nil
 }

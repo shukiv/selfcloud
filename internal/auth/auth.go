@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"slices"
 	"strings"
 	"time"
 )
@@ -62,7 +63,11 @@ type Principal struct {
 // as the account key that minted it. It never manages anything, and it reaches only Folders, at
 // most at Write.
 type TokenScope struct {
-	Folders  []string  `json:"folders"`
+	Folders []string `json:"folders"`
+	// All is set for a token that names no folders: it reaches every folder its user reaches, and
+	// Folders is empty. Only a token with a user may be All. The user's own access decides what it
+	// reaches; the token adds only its role cap. A token without the field keeps its folder list.
+	All      bool      `json:"all,omitempty"`
 	Node     string    `json:"node,omitempty"` // a directory of one of Folders; "" for the whole folders
 	Write    bool      `json:"write"`          // false: read only
 	Audience string    `json:"audience"`       // "api"; the only audience in use
@@ -71,6 +76,12 @@ type TokenScope struct {
 	// ExpiresAt bounds anything the token creates that outlives the request, such as a signed link.
 	// A queued job does not check it: the job was authorised when it was queued.
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// Reaches reports whether the token may reach folder folderID at all. An All token reaches every
+// folder, so the caller's own access check decides; a folder-list token reaches only its list.
+func (t *TokenScope) Reaches(folderID string) bool {
+	return t.All || slices.Contains(t.Folders, folderID)
 }
 
 // IsAdmin reports whether p is an installation admin: an admin key, or a signed-in admin user.

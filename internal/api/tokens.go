@@ -97,17 +97,20 @@ func deriveTokenKey(secret []byte) (tokenKey, error) {
 
 // tokenPayload is what a token says. Its fields are short, as the token travels in a header.
 type tokenPayload struct {
-	Version    int      `json:"v"`
-	KeyID      string   `json:"kid"` // the signing key that made the MAC
-	AccountID  string   `json:"acc"`
-	UserID     string   `json:"usr"` // "" when the token acts as the minting key
-	MintedBy   string   `json:"key"` // the account key that minted the token
-	Folders    []string `json:"fld"`
-	Node       string   `json:"nod,omitempty"` // a directory the token is confined to; "" for whole folders
-	Permission string   `json:"perm"`          // read or write
-	Audience   string   `json:"aud"`
-	IssuedAt   int64    `json:"iat"` // Unix milliseconds
-	ExpiresAt  int64    `json:"exp"` // Unix milliseconds
+	Version   int      `json:"v"`
+	KeyID     string   `json:"kid"` // the signing key that made the MAC
+	AccountID string   `json:"acc"`
+	UserID    string   `json:"usr"` // "" when the token acts as the minting key
+	MintedBy  string   `json:"key"` // the account key that minted the token
+	Folders   []string `json:"fld"`
+	// All is set for a token that names no folders and reaches every folder its user reaches. It
+	// needs a user. A token without the field is a folder-list token, as every token minted before.
+	All        bool   `json:"all,omitempty"`
+	Node       string `json:"nod,omitempty"` // a directory the token is confined to; "" for whole folders
+	Permission string `json:"perm"`          // read or write
+	Audience   string `json:"aud"`
+	IssuedAt   int64  `json:"iat"` // Unix milliseconds
+	ExpiresAt  int64  `json:"exp"` // Unix milliseconds
 }
 
 // valid reports whether the fields have the shape a token minted here has. It is checked after the
@@ -119,7 +122,13 @@ func (pl tokenPayload) valid() bool {
 	if pl.UserID != "" && !id.Valid("usr", pl.UserID) {
 		return false
 	}
-	if len(pl.Folders) == 0 || len(pl.Folders) > tokenMaxFolders {
+	// An all-reachable token acts as a user and names no folders. Requiring the user keeps the
+	// key-mode role, manager, out of reach of this scope even with a tampered payload.
+	if pl.All {
+		if pl.UserID == "" || len(pl.Folders) != 0 {
+			return false
+		}
+	} else if len(pl.Folders) == 0 || len(pl.Folders) > tokenMaxFolders {
 		return false
 	}
 	for _, f := range pl.Folders {
@@ -237,6 +246,7 @@ func (s *Server) authenticateToken(ctx context.Context, tok string) (*auth.Princ
 func principalOfToken(pl tokenPayload, d *store.Delegation) *auth.Principal {
 	scope := &auth.TokenScope{
 		Folders:   pl.Folders,
+		All:       pl.All,
 		Node:      pl.Node,
 		Write:     pl.Permission == permWrite,
 		Audience:  pl.Audience,
@@ -276,6 +286,11 @@ func callerLive(p *auth.Principal, d *store.Delegation, now time.Time) bool {
 	if p.Token != nil && !p.Token.IssuedAt.After(d.TokensNotBefore) {
 		return false
 	}
+	// A token that acts as a user is also ended by that user's own cut-off, which revoking the user
+	// moves. The user's sessions and the account's other tokens are not.
+	if p.Kind == auth.KindUser && p.Token != nil && !p.Token.IssuedAt.After(d.UserTokensNotBefore) {
+		return false
+	}
 	if callerKeyID(p) != "" {
 		if !d.KeyFound || d.KeyRevokedAt != nil || (d.KeyExpiresAt != nil && !now.Before(*d.KeyExpiresAt)) {
 			return false
@@ -290,7 +305,8 @@ func callerLive(p *auth.Principal, d *store.Delegation, now time.Time) bool {
 // tokenRequest is the body of POST /accounts/{acc}/tokens. Unknown fields are refused.
 type tokenRequest struct {
 	User        string   `json:"user"`        // optional: act as this user of the account
-	Folders     []string `json:"folders"`     // 1 to 32 folders of the account
+	All         bool     `json:"all"`         // with user, reach every folder the user reaches; no folders
+	Folders     []string `json:"folders"`     // 1 to 32 folders of the account; not with all
 	Permissions string   `json:"permissions"` // read (the default) or write
 	TTL         *int64   `json:"ttl"`         // seconds; the default is 15 minutes
 	Audience    string   `json:"audience"`    // api (the default)
@@ -326,7 +342,7 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	folders, write, ttl, err := s.checkTokenRequest(in)
+	folders, all, write, ttl, err := s.checkTokenRequest(in)
 	if err != nil {
 		return err
 	}
@@ -338,6 +354,7 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 		UserID:     in.User,
 		MintedBy:   p.ID,
 		Folders:    folders,
+		All:        all,
 		Permission: permRead,
 		Audience:   tokenAudience,
 		IssuedAt:   now.UnixMilli(),
@@ -368,6 +385,7 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 			return apierr.New(apierr.NotFound, "no such account")
 		}
 		target := accID
+		var user *store.User
 		if in.User != "" {
 			target = in.User
 			u, err := tx.User(ctx, accID, in.User)
@@ -383,6 +401,7 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 			case store.UserDisabled:
 				return apierr.New(apierr.UserDisabled, "the user is disabled")
 			}
+			user = u
 		}
 		for _, f := range folders {
 			if _, err := tx.Folder(ctx, accID, f); errors.Is(err, store.ErrNotFound) {
@@ -402,7 +421,7 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 			pl.Node = dir.ID
 		case in.Node != "":
 			dir, err := tx.Node(ctx, accID, in.Node)
-			if errors.Is(err, store.ErrNotFound) || (err == nil && !slices.Contains(folders, dir.FolderID)) {
+			if errors.Is(err, store.ErrNotFound) || (err == nil && !all && !slices.Contains(folders, dir.FolderID)) {
 				return notFound("node")
 			}
 			if err != nil {
@@ -417,6 +436,16 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 			if dir.Kind != store.KindDir {
 				return apierr.New(apierr.InvalidRequest, "node must be a directory")
 			}
+			// An all-reachable token names no folder, so the directory must be one the user reaches
+			// now. The same check every request makes decides it.
+			if all {
+				if _, _, err := nodeAccessWith(ctx, tx, userPrincipal(accID, user), dir.ID); err != nil {
+					if apierr.From(err).Code == apierr.NotFound {
+						return notFound("node")
+					}
+					return err
+				}
+			}
 			pl.Node = dir.ID
 		}
 		token, err := s.tokens.sign(pl)
@@ -425,7 +454,7 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 		}
 		out = tokenJSON{Token: token, ExpiresAt: time.UnixMilli(pl.ExpiresAt).UTC()}
 		return tx.InsertAudit(ctx, s.auditEntry(r, accID, "token.mint", target, map[string]any{
-			"user": in.User, "folders": folders, "node": pl.Node, "permissions": pl.Permission,
+			"user": in.User, "folders": folders, "all": all, "node": pl.Node, "permissions": pl.Permission,
 			"audience": pl.Audience, "expires_at": out.ExpiresAt.Format(time.RFC3339),
 		}))
 	})
@@ -482,26 +511,36 @@ func (s *Server) tokenDirByPath(ctx context.Context, tx *store.Tx, accID, folder
 	return dir, nil
 }
 
-// checkTokenRequest validates a mint request. It returns the folders with duplicates removed, the
-// permission, and the lifetime. A lifetime above tokens.max_ttl is refused, not shortened, as for
-// signed links, so a client never gets less than it asked for without knowing it.
-func (s *Server) checkTokenRequest(in tokenRequest) (folders []string, write bool, ttl time.Duration, err error) {
+// checkTokenRequest validates a mint request. It returns the folders with duplicates removed, whether
+// the token is all-reachable, the permission, and the lifetime. "all": true with a user, and no folders,
+// makes the token all-reachable: it names no folder, and the user's own access decides what it reaches.
+// Otherwise folders are required, 1 to 32. A lifetime above tokens.max_ttl is refused, not shortened, as for signed links,
+// so a client never gets less than it asked for without knowing it.
+func (s *Server) checkTokenRequest(in tokenRequest) (folders []string, all, write bool, ttl time.Duration, err error) {
 	if in.User != "" {
 		if err := validID("usr", in.User); err != nil {
-			return nil, false, 0, err
+			return nil, false, false, 0, err
 		}
 	}
+	// All-reachable is asked for, never inferred from an empty folder list: an empty list by mistake
+	// must not widen the token.
+	all = in.All
 	switch {
+	case all && in.User == "":
+		return nil, false, false, 0, apierr.New(apierr.InvalidRequest, "all needs a user: name the user the token acts as")
+	case all && len(in.Folders) > 0:
+		return nil, false, false, 0, apierr.New(apierr.InvalidRequest, "all names every folder the user reaches; leave folders out")
+	case all:
 	case len(in.Folders) == 0:
-		return nil, false, 0, apierr.New(apierr.InvalidRequest, "folders must name at least one folder")
+		return nil, false, false, 0, apierr.New(apierr.InvalidRequest, "folders must name at least one folder")
 	case len(in.Folders) > tokenMaxFolders:
-		return nil, false, 0, apierr.Newf(apierr.InvalidRequest, "a token may name at most %d folders", tokenMaxFolders).
+		return nil, false, false, 0, apierr.Newf(apierr.InvalidRequest, "a token may name at most %d folders", tokenMaxFolders).
 			With("max_folders", tokenMaxFolders)
 	}
 	seen := map[string]bool{}
 	for _, f := range in.Folders {
 		if err := validID("fld", f); err != nil {
-			return nil, false, 0, err
+			return nil, false, false, 0, err
 		}
 		if !seen[f] {
 			seen[f] = true
@@ -513,28 +552,67 @@ func (s *Server) checkTokenRequest(in tokenRequest) (folders []string, write boo
 	case permWrite:
 		write = true
 	default:
-		return nil, false, 0, apierr.New(apierr.InvalidRequest, "permissions must be read or write")
+		return nil, false, false, 0, apierr.New(apierr.InvalidRequest, "permissions must be read or write")
 	}
 	switch in.Audience {
 	case "", tokenAudience:
 	case "wopi":
-		return nil, false, 0, apierr.New(apierr.InvalidRequest, "wopi tokens are not available until the office-editing slice")
+		return nil, false, false, 0, apierr.New(apierr.InvalidRequest, "wopi tokens are not available until the office-editing slice")
 	default:
-		return nil, false, 0, apierr.New(apierr.InvalidRequest, "audience must be api")
+		return nil, false, false, 0, apierr.New(apierr.InvalidRequest, "audience must be api")
 	}
 	ttl = tokenDefaultTTL
 	if in.TTL != nil {
 		maxTTL := s.cfg.Tokens.MaxTTL.D()
 		if *in.TTL < int64(tokenMinTTL/time.Second) {
-			return nil, false, 0, apierr.Newf(apierr.InvalidRequest, "ttl must be at least %d seconds", int64(tokenMinTTL/time.Second))
+			return nil, false, false, 0, apierr.Newf(apierr.InvalidRequest, "ttl must be at least %d seconds", int64(tokenMinTTL/time.Second))
 		}
 		if *in.TTL > int64(maxTTL/time.Second) {
-			return nil, false, 0, apierr.Newf(apierr.InvalidRequest, "ttl may be at most %d seconds", int64(maxTTL/time.Second)).
+			return nil, false, false, 0, apierr.Newf(apierr.InvalidRequest, "ttl may be at most %d seconds", int64(maxTTL/time.Second)).
 				With("max_ttl_seconds", int64(maxTTL/time.Second))
 		}
 		ttl = time.Duration(*in.TTL) * time.Second
 	}
-	return folders, write, ttl, nil
+	return folders, all, write, ttl, nil
+}
+
+// userPrincipal is the caller a token for user usr of account accID stands for, as the access rules see
+// it. It carries no token scope, so the rules judge the user's own access alone.
+func userPrincipal(accID string, u *store.User) *auth.Principal {
+	return &auth.Principal{Kind: auth.KindUser, ID: u.ID, AccountID: accID, UserID: u.ID, Role: u.Role}
+}
+
+// handleRevokeUserTokens ends every delegated token of one user of the account, issued up to now. The
+// user's sessions and the account's other tokens are not affected. The cut-off only moves forward, as for
+// the account-wide revoke. The account key or a person who manages the account may do this, as they may
+// revoke the whole account; a token may not.
+func (s *Server) handleRevokeUserTokens(w http.ResponseWriter, r *http.Request) error {
+	acc, err := s.writableAccount(r)
+	if err != nil {
+		return err
+	}
+	usr := r.PathValue("usr")
+	var cut time.Time
+	ctx := r.Context()
+	s.atWrite()
+	err = s.store.Write(ctx, func(tx *store.Tx) error {
+		// The time is read inside the transaction, as for the account-wide revoke.
+		var err error
+		cut, err = tx.RevokeUserTokens(ctx, acc.ID, usr, store.Now())
+		if errors.Is(err, store.ErrNotFound) {
+			return notFound("user")
+		}
+		if err != nil {
+			return err
+		}
+		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.tokens_revoke", usr,
+			map[string]any{"user": usr, "tokens_not_before": cut.Format(time.RFC3339Nano)}))
+	})
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]time.Time{"tokens_not_before": cut})
+	return nil
 }
 
 // handleRevokeTokens ends every token issued up to now, for the whole account. The account's cut-off

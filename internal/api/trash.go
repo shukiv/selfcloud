@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -74,7 +73,7 @@ func trashFolderParam(r *http.Request, p *auth.Principal) (string, error) {
 	if err := validID("fld", fld); err != nil {
 		return "", err
 	}
-	if p.Token != nil && !slices.Contains(p.Token.Folders, fld) {
+	if p.Token != nil && !p.Token.Reaches(fld) {
 		return "", notFound("folder")
 	}
 	return fld, nil

@@ -342,3 +342,30 @@ func (s *Store) PeopleCounts(ctx context.Context, accountID string) (active, pen
 	}
 	return active, pending, rows.Err()
 }
+
+// RevokeUserTokens ends every delegated token of user id issued up to now. The user's cut-off moves
+// to now, or stays where it is when it is already later, so it only moves forward: a revoke that
+// commits after a later one keeps the later cut-off. It reads and writes inside tx and returns the
+// cut-off now in force. It returns ErrNotFound when accountID has no such user.
+func (tx *Tx) RevokeUserTokens(ctx context.Context, accountID, id string, now time.Time) (time.Time, error) {
+	clause, cargs := accountClause(accountID)
+	var cur int64
+	err := tx.q.QueryRowContext(ctx, "SELECT tokens_not_before FROM users WHERE id = ? AND "+clause,
+		append([]any{id}, cargs...)...).Scan(&cur)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, ErrNotFound
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	cut := now
+	if fromMillis(cur).After(now) {
+		cut = fromMillis(cur)
+	}
+	err = rowsAffected(tx.q.ExecContext(ctx, `UPDATE users SET tokens_not_before = ? WHERE id = ? AND `+clause,
+		append([]any{millis(cut), id}, cargs...)...))
+	if err != nil {
+		return time.Time{}, err
+	}
+	return cut, nil
+}
