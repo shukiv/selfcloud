@@ -31,11 +31,16 @@ type Upload struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	ExpiresAt     time.Time
+	// The fields below belong to uploads through a drop link (slice o3). The name and email are what the
+	// visitor typed. VisitorID is the visitor the upload belongs to; it is "" for any other upload.
+	UploaderName  string
+	UploaderEmail string
+	VisitorID     string
 }
 
 const uploadCols = `id, account_id, folder_id, parent_id, dir_path, parents, name, name_key, on_conflict,
 	mime_type, sha256, length, durable_offset, hash_state, blob_id, created_by, created_kind,
-	created_at, updated_at, expires_at`
+	created_at, updated_at, expires_at, uploader_name, uploader_email, visitor_id`
 
 func scanUpload(row interface{ Scan(...any) error }) (*Upload, error) {
 	var u Upload
@@ -45,7 +50,7 @@ func scanUpload(row interface{ Scan(...any) error }) (*Upload, error) {
 	var created, updated, expires int64
 	err := row.Scan(&u.ID, &u.AccountID, &u.FolderID, &parent, &u.DirPath, &parents, &u.Name, &u.NameKey,
 		&u.OnConflict, &u.MimeType, &u.SHA256, &u.Length, &u.DurableOffset, &state, &u.BlobID,
-		&u.CreatedBy, &u.CreatedKind, &created, &updated, &expires)
+		&u.CreatedBy, &u.CreatedKind, &created, &updated, &expires, &u.UploaderName, &u.UploaderEmail, &u.VisitorID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -76,10 +81,11 @@ func (tx *Tx) Upload(ctx context.Context, accountID, id string) (*Upload, error)
 // InsertUpload adds an upload.
 func (tx *Tx) InsertUpload(ctx context.Context, u *Upload) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO uploads (`+uploadCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.ID, u.AccountID, u.FolderID, nullString(u.ParentID), u.DirPath, boolInt(u.Parents), u.Name, u.NameKey,
 		u.OnConflict, u.MimeType, u.SHA256, u.Length, u.DurableOffset, u.HashState, u.BlobID, u.CreatedBy,
-		u.CreatedKind, millis(u.CreatedAt), millis(u.UpdatedAt), millis(u.ExpiresAt))
+		u.CreatedKind, millis(u.CreatedAt), millis(u.UpdatedAt), millis(u.ExpiresAt), u.UploaderName,
+		u.UploaderEmail, u.VisitorID)
 	return err
 }
 
@@ -100,7 +106,7 @@ func (tx *Tx) RecordUploadProgress(ctx context.Context, accountID, id string, fr
 // Completion does not come here: it moves the reservation into usage itself (see completeUpload).
 func (tx *Tx) DeleteUpload(ctx context.Context, accountID, id string) error {
 	var length int64
-	err := tx.q.QueryRowContext(ctx, "SELECT length FROM uploads WHERE account_id = ? AND id = ?",
+	err := tx.q.QueryRowContext(ctx, "SELECT CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE account_id = ? AND id = ?",
 		accountID, id).Scan(&length)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
@@ -142,7 +148,7 @@ func (s *Store) ExpiredUploads(ctx context.Context, now, createdBefore time.Time
 func (tx *Tx) DeleteExpiredUpload(ctx context.Context, accountID, id string, now, createdBefore time.Time) (bool, error) {
 	const expired = "account_id = ? AND id = ? AND (expires_at <= ? OR created_at <= ?)"
 	var length int64
-	err := tx.q.QueryRowContext(ctx, "SELECT length FROM uploads WHERE "+expired,
+	err := tx.q.QueryRowContext(ctx, "SELECT CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE "+expired,
 		accountID, id, millis(now), millis(createdBefore)).Scan(&length)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -162,12 +168,32 @@ func (tx *Tx) DeleteExpiredUpload(ctx context.Context, accountID, id string, now
 	return true, tx.AdjustUsage(ctx, accountID, UsageChange{Reserved: -length})
 }
 
-// CountOpenUploads counts the unfinished uploads a caller holds in an account.
+// CountOpenUploads counts the unfinished uploads a caller holds in an account. A drop link is the caller of its
+// visitors' uploads, so this counts the link's uploads, whoever sent them.
 func (tx *Tx) CountOpenUploads(ctx context.Context, accountID, createdBy, createdKind string) (int, error) {
 	var n int
 	err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM uploads
 		WHERE account_id = ? AND created_by = ? AND created_kind = ?`, accountID, createdBy, createdKind).Scan(&n)
 	return n, err
+}
+
+// UploadsCreatedBy lists the unfinished uploads a caller made in an account, inside the transaction.
+func (tx *Tx) UploadsCreatedBy(ctx context.Context, accountID, createdBy, createdKind string) ([]*Upload, error) {
+	rows, err := tx.q.QueryContext(ctx, "SELECT "+uploadCols+" FROM uploads WHERE account_id = ? AND created_by = ? AND created_kind = ?",
+		accountID, createdBy, createdKind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Upload
+	for rows.Next() {
+		u, err := scanUpload(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 // CountAccountUploads counts the unfinished uploads of an account, whoever made them.
@@ -183,14 +209,26 @@ func (s *Store) UnwrittenBytes(ctx context.Context, accountID string) (mine, tot
 	return unwrittenBytes(ctx, s.r, accountID)
 }
 
+// DropBytesHeld is the bytes an account's drop visitors have sent and not yet completed: the bytes on disk
+// for them, as their uploads hold them. Drop uploads are the link's, not the account's, so the account's share of
+// the disk counts them here, not in UnwrittenBytes.
+func (s *Store) DropBytesHeld(ctx context.Context, accountID string) (int64, error) {
+	var n int64
+	err := s.r.QueryRowContext(ctx, `SELECT COALESCE(SUM(durable_offset), 0) FROM uploads
+		WHERE account_id = ? AND visitor_id != ''`, accountID).Scan(&n)
+	return n, err
+}
+
 // UnwrittenBytes is Store.UnwrittenBytes inside a transaction, so it sees uploads made in it.
 func (tx *Tx) UnwrittenBytes(ctx context.Context, accountID string) (mine, total int64, err error) {
 	return unwrittenBytes(ctx, tx.q, accountID)
 }
 
 func unwrittenBytes(ctx context.Context, q querier, accountID string) (mine, total int64, err error) {
+	// A drop upload reserves only the bytes it has received, and its disk is charged as they arrive, so it has
+	// no unwritten bytes to hold back (slice o3, reserve as received).
 	err = q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN account_id = ? THEN length - durable_offset END), 0),
-		COALESCE(SUM(length - durable_offset), 0) FROM uploads`, accountID).Scan(&mine, &total)
+		COALESCE(SUM(length - durable_offset), 0) FROM uploads WHERE visitor_id = ''`, accountID).Scan(&mine, &total)
 	return mine, total, err
 }
 

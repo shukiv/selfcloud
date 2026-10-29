@@ -278,3 +278,28 @@ describe('sending pieces', () => {
     expect(get(U.uploads)[0].error?.code).toBe('checksum_mismatch');
   });
 });
+
+describe('a drop link transport', () => {
+  it('a drop upload is done when its last piece is taken, though the server names no node to a visitor', async () => {
+    const file = new File(['hello world'], 'a.txt', { lastModified: LM });
+    let list: Array<{ status: string; nodeID: string | null }> = [];
+    const m = new U.UploadManager(() => Date.now(), {
+      bearer: () => 'scl_visitor',
+      metadata: () => ({ name: 'a.txt' }),
+      fresh: async () => {},
+      sink: (items) => {
+        list = items;
+      },
+    });
+    stubFetch((method) =>
+      method === 'POST'
+        ? new Response(null, { status: 201, headers: { Location: '/api/v1/uploads/upl_drop' } })
+        : new Response(null, { status: 204 }),
+    );
+    FakeXHR.replies = [{ status: 204, headers: { 'Upload-Offset': '11' } }];
+
+    m.add([{ file, target: { folder: '' } }]);
+    await vi.waitFor(() => expect(list[0]?.status).toBe('done'));
+    expect(list[0].nodeID).toBeNull();
+  });
+});

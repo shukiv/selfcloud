@@ -1460,6 +1460,19 @@ paths:
         `too_many_uploads` (429) with `details.scope` (`caller` or `account`). Creation is also
         rate limited per caller, at 60 a minute, and answers `rate_limited` (429).
 
+        Drop links: a drop link's visitor (its `scl_` credential, `upload_only`) may create uploads
+        too. The visitor's `folder`, `parent`, `path`, `parents`, `on_conflict` and `mime_type` are
+        ignored, not refused: the file lands in the link's directory, and a name clash is renamed.
+        `name` is the file name. `uploader_name` and `uploader_email` are optional unless the link asks
+        for them. A drop upload reserves nothing up front except that `upload.max_file_size` caps the
+        declared length; it holds only the bytes it has received, and each piece is checked against the
+        quota and the disk for the bytes it brings (owner's decision, 2026-10-29). When the account cannot
+        take a drop visitor's bytes, the answer is one generic `quota_exceeded` (507) with the message
+        "this link cannot take the file now" and no `details`: no numbers and no scope, whatever the
+        refusal was. A drop link that is paused (its switch off, a members-only space, or a trashed node)
+        answers `not_found`, and keeps the visitor's upload until its normal expiry, so the visitor can
+        resume when the link is back. A link that is deleted, expired or reset ends the upload.
+
         Quota: creation reserves the declared length against the account. The account's used
         bytes, its reserved bytes and this length must fit in `quota_bytes`, or the answer is
         `quota_exceeded` (507) with `details.scope` `quota`. An account with no quota may hold at
@@ -1568,7 +1581,10 @@ paths:
         `Upload-Offset` must equal the server's offset, or the answer is `upload_offset_mismatch`
         with `details.offset`. The body goes at that offset and is synced before the offset moves.
         A piece over `Selfcloud-Max-Chunk-Size` is `chunk_too_large`; one that would pass the
-        declared length is `too_large`. With `Upload-Checksum`, a piece that does not match is
+        declared length is `too_large`. For a drop link's visitor, a piece that the account's quota or
+        the disk cannot take is the generic `quota_exceeded` of creation, and the bytes already received
+        are kept, so the visitor can resume. A visitor's completing piece does not carry
+        `Selfcloud-Node-ID`. With `Upload-Checksum`, a piece that does not match is
         `checksum_mismatch` (460) and nothing is kept. When the body stops early the bytes that
         arrived are kept and the request fails, so HEAD gives the resume point.
 
@@ -1982,8 +1998,17 @@ paths:
         where `editors_can_share` allows editors to share. It gives the viewer role only, needs an end
         date (30 days by default, 365 days at most), may carry a password, and needs the account's
         `public_links` switch on, and `allow_links` on a team space. Its URL works for anyone who holds
-        it, without a session. Drop links (`upload_only: true`) are not available yet and are refused
-        with `invalid_request`. A delegated token gets `forbidden`.
+        it, without a session.
+
+        A drop link (`upload_only: true`, audience `anyone`, no role) lets a visitor upload files into
+        the node, a directory, and nothing else. It needs the same rights and switches as an anyone
+        link, and must end: `expires_at` may be left out (30 days by default), `null` is refused, and
+        the longest is 365 days (or `sharing.max_expiry` when that is lower). It may carry a password,
+        a title (up to 100 characters), a message (up to 1000) and two switches: `ask_name` makes the
+        visitor give a name and email, and `notify` mails the creator, at most once an hour, how many
+        files arrived. One drop link is allowed per node, beside its access link; a second is
+        `conflict` with `reason: exists`. A drop link is never an organisation link, and a path that
+        is not a directory is `invalid_request`. A delegated token gets `forbidden`.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -2091,7 +2116,7 @@ paths:
                 password: { type: string, maxLength: 256, description: "The link's password, for an anyone link that has one." }
       responses:
         "200":
-          description: "An organisation link: `node_id`. An anyone link: `token`, `expires_at`, `link` and `node`."
+          description: "An organisation link: `node_id`. An anyone link: `token`, `expires_at`, `link` and `node`. A drop link: `token`, `expires_at` and `upload_only: true`, and no node or link."
           content:
             application/json:
               schema:
@@ -2102,6 +2127,7 @@ paths:
                   expires_at: { type: string, format: date-time, description: "An anyone link: when the credential ends." }
                   link: { $ref: "#/components/schemas/ShareLink" }
                   node: { type: string, description: "An anyone link: the node the link opens." }
+                  upload_only: { type: boolean, description: "A drop link: the credential may upload into the link's directory and nothing else." }
         "401":
           description: An anyone link with a password, and no password or the wrong one. `details.reason` is `password_required` or `password_wrong`.
           content:
@@ -2131,6 +2157,32 @@ paths:
                 properties:
                   token: { type: string }
                   expires_at: { type: string, format: date-time }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/share/info:
+    get:
+      tags: [Sharing]
+      operationId: getShareInfo
+      summary: What a drop link's visitor is shown
+      description: |
+        The bearer is a drop link's visitor credential (`scl_`). The answer is the owner's title and
+        message, whether a name and email are asked for, the link's end, and the largest file the
+        account takes. A dead link is `not_found`. An access link's credential, a key or a token gets
+        `forbidden` with `reason: link_route`.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The drop link's page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [title, message, ask_name, expires_at, max_file_size]
+                properties:
+                  title: { type: string }
+                  message: { type: string }
+                  ask_name: { type: boolean }
+                  expires_at: { type: string, format: date-time }
+                  max_file_size: { type: integer, description: The account's upload.max_file_size, in bytes. }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/sharing-policy:
     parameters:
@@ -3268,7 +3320,12 @@ components:
         id: { type: string, description: A shl_ ID. }
         node_id: { type: string }
         audience: { type: string, enum: [organisation, anyone] }
-        role: { type: string, enum: [viewer, commenter, contributor, editor], description: The role a visitor holds on the node and below. }
+        role: { type: string, description: "The role a visitor holds on the node and below: viewer, commenter, contributor or editor. Empty for a drop link." }
+        upload_only: { type: boolean, description: "A drop link: its visitors upload into the node and reach nothing else." }
+        title: { type: string, description: "A drop link's title, shown to its visitors." }
+        message: { type: string, description: "A drop link's message, shown to its visitors." }
+        ask_name: { type: boolean, description: "A drop link asks its visitors for a name and an email." }
+        notify: { type: boolean, description: "Sharers only, on a drop link: the creator is mailed when files arrive." }
         expires_at: { type: [string, "null"], format: date-time }
         created_at: { type: string, format: date-time }
         inherited_from:
@@ -3294,11 +3351,15 @@ components:
       properties:
         audience: { type: string, enum: [organisation, anyone] }
         role: { type: string, enum: [viewer, commenter, contributor, editor], description: "Defaults to viewer. An anyone link gives viewer only." }
-        upload_only: { type: boolean, description: "Drop links are not available yet; true is refused." }
+        upload_only: { type: boolean, description: "A drop link: uploads into a directory only. Needs audience anyone and no role." }
+        title: { type: string, maxLength: 100, description: "Drop links only. One line; line breaks are removed." }
+        message: { type: string, maxLength: 1000, description: "Drop links only. One line; line breaks are removed." }
+        ask_name: { type: boolean, description: "Drop links only. The visitor must give a name and an email." }
+        notify: { type: boolean, description: "Drop links only. Mail the creator, at most once an hour, when files arrive." }
         expires_at:
           type: [string, "null"]
           format: date-time
-          description: "An anyone link ends: the default is 30 days from now, and the longest is 365 days (and sharing.max_expiry when that is set). An organisation link may have no end."
+          description: "An anyone link ends: the default is 30 days from now, and the longest is 365 days (and sharing.max_expiry when that is set). An organisation link may have no end. A drop link must end: null is refused."
         password:
           type: string
           minLength: 8
@@ -3311,8 +3372,12 @@ components:
       properties:
         audience: { type: string, enum: [organisation, anyone], description: "Switching to anyone gives the viewer role and, when the link has no end, the default end. Switching to organisation clears the password and ends the anyone visitors." }
         role: { type: string, enum: [viewer, commenter, contributor, editor] }
-        upload_only: { type: boolean }
-        expires_at: { type: [string, "null"], format: date-time, description: "Absent keeps the expiry; null clears it, which an anyone link refuses." }
+        upload_only: { type: boolean, description: "Must match the link: a link does not change into a drop link or back." }
+        title: { type: string, maxLength: 100, description: "Drop links only." }
+        message: { type: string, maxLength: 1000, description: "Drop links only." }
+        ask_name: { type: boolean, description: "Drop links only." }
+        notify: { type: boolean, description: "Drop links only." }
+        expires_at: { type: [string, "null"], format: date-time, description: "Absent keeps the expiry; null clears it, which an anyone or a drop link refuses." }
         password:
           type: string
           maxLength: 256
@@ -3554,8 +3619,8 @@ components:
         | checksum_mismatch | 460 | Piece failed its Upload-Checksum. |
         | internal | 500 | Server fault; quote request_id. |
         | unavailable | 503 | Shutting down or in maintenance; see Retry-After. |
-        | quota_exceeded | 507 | The write would take the account past its quota, or past its reservation cap when it has no quota. `required_bytes`, `available_bytes`, `scope` (`quota`, `account_reservations`). |
-        | storage_full | 507 | The disk cannot hold the open uploads, or this account's share of them. `required_bytes`, `available_bytes`, `scope` (`server`, `account`). |
+        | quota_exceeded | 507 | The write would take the account past its quota, or past its reservation cap when it has no quota. `required_bytes`, `available_bytes`, `scope` (`quota`, `account_reservations`). For a drop link's visitor: the same code with the message "this link cannot take the file now" and no details. |
+        | storage_full | 507 | The disk cannot hold the open uploads, or this account's share of them. `required_bytes`, `available_bytes`, `scope` (`server`, `account`). For a drop link's visitor: `quota_exceeded` with the generic message, as above. |
       enum:
         - invalid_request
         - invalid_path

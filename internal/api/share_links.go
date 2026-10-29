@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
@@ -47,6 +49,13 @@ type shareLinkJSON struct {
 	Paused        *bool      `json:"paused,omitempty"`
 	// PasswordSet says whether an anyone link has a password. The password itself is never shown.
 	PasswordSet *bool `json:"password_set,omitempty"`
+	// UploadOnly marks a drop link: its role is "" and it takes uploads only. Title, Message, AskName and Notify
+	// belong to drop links and are "" or false on others. Notify is shown to the creator's side only.
+	UploadOnly bool   `json:"upload_only"`
+	Title      string `json:"title"`
+	Message    string `json:"message"`
+	AskName    bool   `json:"ask_name"`
+	Notify     bool   `json:"notify"`
 }
 
 // shareLinkCreated is the answer to a new link or a reset: the link, and its URL. The URL is the only
@@ -67,7 +76,8 @@ type sharingPolicyJSON struct {
 // caller sees the sharer-only fields.
 func toShareLinkJSON(l *store.ShareLink, v *store.ShareLinkView, node string, sharer bool) shareLinkJSON {
 	j := shareLinkJSON{ID: l.ID, NodeID: l.NodeID, Audience: l.Audience, Role: l.Role,
-		ExpiresAt: l.ExpiresAt, CreatedAt: l.CreatedAt}
+		ExpiresAt: l.ExpiresAt, CreatedAt: l.CreatedAt, UploadOnly: l.UploadOnly, Title: l.Title,
+		Message: l.Message, AskName: l.AskName}
 	if l.NodeID != node {
 		from := l.NodeID
 		j.InheritedFrom = &from
@@ -75,6 +85,7 @@ func toShareLinkJSON(l *store.ShareLink, v *store.ShareLinkView, node string, sh
 	if sharer {
 		by := l.CreatedBy
 		j.CreatedBy = &by
+		j.Notify = l.Notify
 		if v != nil {
 			paused := v.Paused
 			j.Paused = &paused
@@ -117,15 +128,65 @@ func shareLinkCaller(r *http.Request) (*auth.Principal, error) {
 	return p, nil
 }
 
-// checkLinkShape refuses what slice o2 does not build yet, drop links, and checks the audience's name.
+// checkLinkShape checks an audience's name, and that a drop link is an anyone link: a drop link takes uploads from
+// whoever holds its secret, so it is never an organisation link.
 func checkLinkShape(audience string, uploadOnly bool) error {
 	switch {
-	case uploadOnly:
-		return apierr.New(apierr.InvalidRequest, "drop links are not available yet")
 	case audience != store.AudienceOrganisation && audience != store.AudienceAnyone:
 		return apierr.New(apierr.InvalidRequest, "audience must be organisation or anyone")
+	case uploadOnly && audience != store.AudienceAnyone:
+		return apierr.New(apierr.InvalidRequest, "a drop link is a link that anyone can open")
 	}
 	return nil
+}
+
+// Limits on a drop link's text. Line breaks are not kept: a title or message is one line in the page and in a mail.
+const (
+	dropTitleMax   = 100
+	dropMessageMax = 1000
+)
+
+// cleanLine makes a user's text one plain line, and trims it. Every control character (Unicode category Cc, which
+// includes the line breaks, tabs and NUL) and the Unicode line and paragraph separators become a space: a line break
+// in a title, message or name would start a new line in the page or a header in a mail, and the others would do the
+// same in a log or a viewer (slice o3, item 7). A CR LF pair is one line break, so it becomes one space.
+func cleanLine(v string) string {
+	v = strings.ReplaceAll(v, "\r\n", " ")
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return ' '
+		}
+		return r
+	}, v))
+}
+
+// dropText checks a drop link's title and message after cleanLine: the title is at most 100 characters and the message at
+// most 1000.
+func dropText(title, message string) (string, string, error) {
+	title, message = cleanLine(title), cleanLine(message)
+	if utf8.RuneCountInString(title) > dropTitleMax {
+		return "", "", apierr.Newf(apierr.InvalidRequest, "title may be at most %d characters", dropTitleMax)
+	}
+	if utf8.RuneCountInString(message) > dropMessageMax {
+		return "", "", apierr.Newf(apierr.InvalidRequest, "message may be at most %d characters", dropMessageMax)
+	}
+	return title, message, nil
+}
+
+// expiryField reads an expires_at field: absent (set nil, null false), null (null true), or a time (set). A
+// drop link refuses null, since it must end.
+func expiryField(raw json.RawMessage) (set *time.Time, null bool, err error) {
+	if len(raw) == 0 {
+		return nil, false, nil
+	}
+	if string(raw) == "null" {
+		return nil, true, nil
+	}
+	var at time.Time
+	if err := json.Unmarshal(raw, &at); err != nil {
+		return nil, false, apierr.New(apierr.InvalidRequest, "expires_at must be a time, or null")
+	}
+	return &at, false, nil
 }
 
 // checkLinkRole refuses a role a link may not give: manager, or a name that is no role.
@@ -213,47 +274,74 @@ func linkPolicyRefusal(f *store.Folder, n *store.Node) error {
 }
 
 // handleCreateShareLink makes the node's link. The caller shares the node (mayShare) and may not give a role
-// above its own. A node has one access link; a second one is a conflict. An anyone link needs the manager of
-// the node, the account's switch, a viewer role and an end date. The secret is returned here, once.
+// above its own. A node has one access link and one drop link; a second of a kind is a conflict. An anyone link
+// and a drop link need the manager of the node, the account's switch, and an end date. A drop link is for a
+// directory, takes no role, and carries its title, message and visitor settings. The secret is returned here, once.
 func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) error {
 	p, err := shareLinkCaller(r)
 	if err != nil {
 		return err
 	}
 	var in struct {
-		Audience   string     `json:"audience"`
-		Role       string     `json:"role"`
-		UploadOnly bool       `json:"upload_only"`
-		ExpiresAt  *time.Time `json:"expires_at"`
-		Password   string     `json:"password"`
+		Audience   string          `json:"audience"`
+		Role       string          `json:"role"`
+		UploadOnly bool            `json:"upload_only"`
+		ExpiresAt  json.RawMessage `json:"expires_at"`
+		Password   string          `json:"password"`
+		Title      string          `json:"title"`
+		Message    string          `json:"message"`
+		AskName    bool            `json:"ask_name"`
+		Notify     bool            `json:"notify"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
+	if in.UploadOnly && in.Audience == "" {
+		in.Audience = store.AudienceAnyone
+	}
 	if err := checkLinkShape(in.Audience, in.UploadOnly); err != nil {
-		return err
-	}
-	if in.Role == "" {
-		in.Role = store.RoleViewer
-	}
-	if err := checkLinkRole(in.Role); err != nil {
 		return err
 	}
 	now := time.Now()
 	anyone := in.Audience == store.AudienceAnyone
-	expires := in.ExpiresAt
+	expires, expiryNull, err := expiryField(in.ExpiresAt)
+	if err != nil {
+		return err
+	}
+	title, message, err := dropText(in.Title, in.Message)
+	if err != nil {
+		return err
+	}
+	if !in.UploadOnly && (title != "" || message != "" || in.AskName || in.Notify) {
+		return apierr.New(apierr.InvalidRequest, "title, message, ask_name and notify belong to a drop link")
+	}
+	if in.UploadOnly {
+		if in.Role != "" {
+			return apierr.New(apierr.InvalidRequest, "a drop link gives no role; it takes uploads only")
+		}
+		if expiryNull {
+			return apierr.New(apierr.InvalidRequest, "a drop link needs an end date")
+		}
+	} else {
+		if in.Role == "" {
+			in.Role = store.RoleViewer
+		}
+		if err := checkLinkRole(in.Role); err != nil {
+			return err
+		}
+	}
 	if anyone {
-		if in.Role != store.RoleViewer {
+		if !in.UploadOnly && in.Role != store.RoleViewer {
 			return apierr.New(apierr.InvalidRequest, "a link that anyone can open gives the viewer role only")
 		}
-		if expires, err = s.anyoneExpiry(in.ExpiresAt, now); err != nil {
+		if expires, err = s.anyoneExpiry(expires, now); err != nil {
 			return err
 		}
 	} else {
 		if in.Password != "" {
 			return apierr.New(apierr.InvalidRequest, "only a link that anyone can open has a password")
 		}
-		if err := s.checkExpiry(in.ExpiresAt, now); err != nil {
+		if err := s.checkExpiry(expires, now); err != nil {
 			return err
 		}
 	}
@@ -279,7 +367,10 @@ func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) e
 		if anyone && own != store.RoleManager {
 			return managerRequired()
 		}
-		if store.RoleRank(in.Role) > store.RoleRank(own) {
+		if in.UploadOnly && n.Kind != store.KindDir {
+			return apierr.New(apierr.InvalidRequest, "a drop link is for a directory")
+		}
+		if !in.UploadOnly && store.RoleRank(in.Role) > store.RoleRank(own) {
 			return apierr.New(apierr.Forbidden, "you may not give a link a role above your own")
 		}
 		f, err := tx.Folder(ctx, n.AccountID, n.FolderID)
@@ -301,19 +392,24 @@ func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) e
 		var hash []byte
 		secret, hash = auth.NewToken()
 		link = &store.ShareLink{ID: id.New("shl"), AccountID: n.AccountID, NodeID: n.ID,
-			Audience: in.Audience, Role: in.Role, SecretHash: hash, PasswordHash: passwordHash, ExpiresAt: expires,
-			CredentialsAt: now, CreatedBy: p.ID, CreatedKind: creatorKind(p), CreatedAt: now,
-			UpdatedBy: p.ID, UpdatedKind: creatorKind(p), UpdatedAt: now}
+			Audience: in.Audience, UploadOnly: in.UploadOnly, SecretHash: hash, PasswordHash: passwordHash,
+			ExpiresAt: expires, CredentialsAt: now, CreatedBy: p.ID, CreatedKind: creatorKind(p), CreatedAt: now,
+			UpdatedBy: p.ID, UpdatedKind: creatorKind(p), UpdatedAt: now, Title: title, Message: message,
+			AskName: in.AskName, Notify: in.Notify}
+		if !in.UploadOnly {
+			link.Role = in.Role
+		}
 		if err := tx.InsertShareLink(ctx, link); errors.Is(err, store.ErrConflict) {
+			if in.UploadOnly {
+				return apierr.New(apierr.Conflict, "this item already has a drop link; change that one instead").
+					With("reason", "exists")
+			}
 			return apierr.New(apierr.Conflict, "this item already has a link; change that one instead").
 				With("reason", "exists")
 		} else if err != nil {
 			return err
 		}
-		details := map[string]any{"audience": link.Audience, "role": link.Role}
-		if link.ExpiresAt != nil {
-			details["expires_at"] = link.ExpiresAt.UTC().Format(time.RFC3339)
-		}
+		details := linkDetails(link)
 		if anyone {
 			details["password_set"] = passwordHash != ""
 		}
@@ -325,6 +421,25 @@ func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) e
 	writeJSON(w, http.StatusCreated, shareLinkCreated{
 		Link: toShareLinkJSON(link, &store.ShareLinkView{ShareLink: *link}, link.NodeID, true), URL: s.shareURL(secret)})
 	return nil
+}
+
+// linkDetails is what a link's audit entry says about it: its audience, role, upload_only, its end, and for a drop
+// link its title and the switches. Never the secret, the password, or an uploader's email.
+func linkDetails(l *store.ShareLink) map[string]any {
+	details := map[string]any{"audience": l.Audience, "upload_only": l.UploadOnly}
+	if l.Role != "" {
+		details["role"] = l.Role
+	}
+	if l.ExpiresAt != nil {
+		details["expires_at"] = l.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if l.UploadOnly {
+		details["title"] = l.Title
+		details["message_set"] = l.Message != ""
+		details["ask_name"] = l.AskName
+		details["notify"] = l.Notify
+	}
+	return details
 }
 
 // handleListShareLinks lists the links on a node and on its ancestors, the node's own first. A sharer
@@ -348,7 +463,8 @@ func (s *Server) handleListShareLinks(w http.ResponseWriter, r *http.Request) er
 	out := listResponse[shareLinkJSON]{Items: []shareLinkJSON{}}
 	for _, v := range views {
 		if !sharer {
-			if v.Paused {
+			// A drop link is shown to the people who manage it only: a member learns nothing of it.
+			if v.Paused || v.UploadOnly {
 				continue
 			}
 			if v.NodeID != n.ID {
@@ -411,7 +527,8 @@ func changeShareLink(ctx context.Context, tx *store.Tx, p *auth.Principal, linkI
 // handleUpdateShareLink changes a link: its audience, role, expiry or password. An absent field keeps its value;
 // expires_at null clears the expiry, which an anyone link refuses. Switching to anyone gives the viewer role and,
 // when the link has none, an end date; switching to organisation clears the password and ends the anyone visitors.
-// A new password, or a removed one, ends the visitors' credentials issued before it.
+// A new password, or a removed one, ends the visitors' credentials issued before it. A drop link keeps its audience
+// and has no role; its title, message, ask_name and notify may change, and it must keep an end date.
 func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) error {
 	p, err := shareLinkCaller(r)
 	if err != nil {
@@ -423,12 +540,13 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 		UploadOnly *bool           `json:"upload_only"`
 		ExpiresAt  json.RawMessage `json:"expires_at"`
 		Password   *string         `json:"password"`
+		Title      *string         `json:"title"`
+		Message    *string         `json:"message"`
+		AskName    *bool           `json:"ask_name"`
+		Notify     *bool           `json:"notify"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
-	}
-	if in.UploadOnly != nil && *in.UploadOnly {
-		return checkLinkShape(store.AudienceOrganisation, true)
 	}
 	if in.Audience != nil {
 		if err := checkLinkShape(*in.Audience, false); err != nil {
@@ -440,13 +558,21 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 			return err
 		}
 	}
-	var expires *time.Time
-	clearExpiry := false
-	if in.ExpiresAt != nil {
-		if string(in.ExpiresAt) == "null" {
-			clearExpiry = true
-		} else if err := json.Unmarshal(in.ExpiresAt, &expires); err != nil || expires == nil {
-			return apierr.New(apierr.InvalidRequest, "expires_at must be a time, or null")
+	expires, clearExpiry, err := expiryField(in.ExpiresAt)
+	if err != nil {
+		return err
+	}
+	var title, message string
+	if in.Title != nil || in.Message != nil {
+		t, m := "", ""
+		if in.Title != nil {
+			t = *in.Title
+		}
+		if in.Message != nil {
+			m = *in.Message
+		}
+		if title, message, err = dropText(t, m); err != nil {
+			return err
 		}
 	}
 	ctx := r.Context()
@@ -462,12 +588,25 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 		return notFound("link")
 	}
 	now := time.Now()
-	var out *store.ShareLink
+	var (
+		out      *store.ShareLink
+		released []*store.Upload
+	)
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		l, n, own, err := changeShareLink(ctx, tx, p, linkID)
 		if err != nil {
 			return err
+		}
+		if in.UploadOnly != nil && *in.UploadOnly != l.UploadOnly {
+			return apierr.New(apierr.InvalidRequest, "a link cannot change between a drop link and an access link")
+		}
+		if l.UploadOnly {
+			if (in.Audience != nil && *in.Audience != store.AudienceAnyone) || in.Role != nil {
+				return apierr.New(apierr.InvalidRequest, "a drop link keeps its audience and has no role")
+			}
+		} else if in.Title != nil || in.Message != nil || in.AskName != nil || in.Notify != nil {
+			return apierr.New(apierr.InvalidRequest, "title, message, ask_name and notify belong to a drop link")
 		}
 		orig := l.Audience
 		final := orig
@@ -537,6 +676,24 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 			l.Role = *in.Role
 			details["role"] = l.Role
 		}
+		if l.UploadOnly {
+			if in.Title != nil {
+				l.Title = title
+				details["title"] = title
+			}
+			if in.Message != nil {
+				l.Message = message
+				details["message_set"] = message != ""
+			}
+			if in.AskName != nil {
+				l.AskName = *in.AskName
+				details["ask_name"] = l.AskName
+			}
+			if in.Notify != nil {
+				l.Notify = *in.Notify
+				details["notify"] = l.Notify
+			}
+		}
 		switch {
 		case final != orig:
 			// A change of audience ends every visitor and every earlier copy's credentials, and the visits of
@@ -555,12 +712,21 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 				l.PasswordHash = passwordHash
 			}
 		case anyone && newPassword:
-			// A new password, or none, ends the visitors' credentials issued before it.
+			// A new password, or none, ends the visitors' credentials issued before it, and with them a drop
+			// link's open uploads.
 			l.PasswordHash = passwordHash
 			l.CredentialsAt = now
+			ups, err := s.releaseDropUploads(r, tx, l)
+			if err != nil {
+				return err
+			}
+			released = ups
 		}
 		if anyone {
 			details["password_set"] = l.PasswordHash != ""
+		}
+		if l.UploadOnly {
+			details["upload_only"] = true
 		}
 		l.UpdatedBy, l.UpdatedKind, l.UpdatedAt = p.ID, creatorKind(p), now
 		if err := tx.UpdateShareLink(ctx, l); err != nil {
@@ -571,6 +737,9 @@ func (s *Server) handleUpdateShareLink(w http.ResponseWriter, r *http.Request) e
 	})
 	if err != nil {
 		return err
+	}
+	for _, up := range released {
+		s.discardUploadFile(up)
 	}
 	writeJSON(w, http.StatusOK, toShareLinkJSON(out, &store.ShareLinkView{ShareLink: *out}, out.NodeID, true))
 	return nil
@@ -590,8 +759,9 @@ func (s *Server) handleResetShareLink(w http.ResponseWriter, r *http.Request) er
 	}
 	ctx := r.Context()
 	var (
-		out    *store.ShareLink
-		secret string
+		out      *store.ShareLink
+		secret   string
+		released []*store.Upload
 	)
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
@@ -607,11 +777,21 @@ func (s *Server) handleResetShareLink(w http.ResponseWriter, r *http.Request) er
 		if err := tx.UpdateShareLink(ctx, l); err != nil {
 			return err
 		}
+		// The old credentials die with the reset, so the visitors' open uploads die with them.
+		ups, err := s.releaseDropUploads(r, tx, l)
+		if err != nil {
+			return err
+		}
+		released = ups
 		out = l
-		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "link.reset", l.ID, nil, n.FolderID))
+		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "link.reset", l.ID,
+			map[string]any{"upload_only": l.UploadOnly}, n.FolderID))
 	})
 	if err != nil {
 		return err
+	}
+	for _, up := range released {
+		s.discardUploadFile(up)
 	}
 	writeJSON(w, http.StatusCreated, shareLinkCreated{
 		Link: toShareLinkJSON(out, &store.ShareLinkView{ShareLink: *out}, out.NodeID, true), URL: s.shareURL(secret)})
@@ -632,6 +812,7 @@ func (s *Server) handleDeleteShareLink(w http.ResponseWriter, r *http.Request) e
 		return notFound("link")
 	}
 	ctx := r.Context()
+	var released []*store.Upload
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		l, err := tx.ShareLink(ctx, p.AccountID, linkID)
@@ -663,11 +844,19 @@ func (s *Server) handleDeleteShareLink(w http.ResponseWriter, r *http.Request) e
 		if err := tx.DeleteShareLink(ctx, p.AccountID, l.ID); err != nil {
 			return err
 		}
+		ups, err := s.releaseDropUploads(r, tx, l)
+		if err != nil {
+			return err
+		}
+		released = ups
 		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "link.delete", l.ID,
-			map[string]any{"audience": l.Audience, "role": l.Role}, n.FolderID))
+			map[string]any{"audience": l.Audience, "role": l.Role, "upload_only": l.UploadOnly}, n.FolderID))
 	})
 	if err != nil {
 		return err
+	}
+	for _, up := range released {
+		s.discardUploadFile(up)
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil

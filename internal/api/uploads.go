@@ -183,6 +183,13 @@ type uploadTarget struct {
 // minRole on that directory. One aimed at a path needs it on the deepest directory that exists on
 // the path, since the rest is created under that one. The folder check is folded into both.
 func uploadAccess(ctx context.Context, rd accessReader, p *auth.Principal, up *store.Upload, minRole string) error {
+	if p != nil && p.Kind == auth.KindShareLink {
+		// A visitor of an access link uploads nowhere; a drop link's visitor uploads into its own directory only.
+		if !isDrop(p) {
+			return notFound("upload")
+		}
+		return dropUploadAccess(ctx, rd, p, up)
+	}
 	if up.ParentID != "" {
 		_, err := requireNodeRole(ctx, rd, p, up.ParentID, minRole)
 		return err
@@ -300,6 +307,10 @@ func (s *Server) ownedUpload(r *http.Request, p *auth.Principal, uplID string) (
 		return nil, err
 	}
 	if up.CreatedBy != p.ID || up.CreatedKind != string(p.Kind) {
+		return nil, notFound("upload")
+	}
+	// Every visitor of a drop link shares its principal, so the upload's visitor must be this one.
+	if isDrop(p) && (p.Link.VisitorID == "" || up.VisitorID != p.Link.VisitorID) {
 		return nil, notFound("upload")
 	}
 	now := store.Now()
@@ -441,6 +452,10 @@ func (s *Server) recordPiece(ctx context.Context, p *auth.Principal, up *store.U
 			}
 			return err
 		}
+		if isDrop(p) {
+			// A drop upload reserves the bytes it has received, in the transaction that records them.
+			return s.applyUsage(ctx, tx, up.AccountID, store.UsageChange{Reserved: to - from})
+		}
 		return nil
 	})
 	if err != nil {
@@ -467,11 +482,19 @@ func (s *Server) uploadParentTx(r *http.Request, tx *store.Tx, p *auth.Principal
 	ctx := r.Context()
 	if up.ParentID != "" {
 		n, err := tx.Node(ctx, up.AccountID, up.ParentID)
-		if errors.Is(err, store.ErrNotFound) || (err == nil && n.FolderID != up.FolderID) {
+		if errors.Is(err, store.ErrNotFound) {
 			return nil, notFound("parent")
 		}
 		if err != nil {
 			return nil, err
+		}
+		if n.FolderID != up.FolderID {
+			if !isDrop(p) {
+				return nil, notFound("parent")
+			}
+			// A drop link's directory was moved to another folder since the upload began: the file lands
+			// where the directory is now, so a finished transfer is not lost to the move.
+			up.FolderID = n.FolderID
 		}
 		if n.Kind != store.KindDir {
 			return nil, apierr.New(apierr.InvalidRequest, "the parent is a file, not a directory")
@@ -603,8 +626,12 @@ func (s *Server) checkDiskNow(ctx context.Context, accountID string) error {
 
 // reserveTx reserves an upload's declared length, inside tx, the transaction that inserted it: the
 // disk must hold the account's share and the whole pool, and the account's quota (or its reservation
-// cap) must allow the length. A refusal rolls the whole creation back.
+// cap) must allow the length. A refusal rolls the whole creation back. A drop upload reserves nothing
+// here: it holds the bytes it receives, as they arrive (see recordPiece).
 func (s *Server) reserveTx(ctx context.Context, tx *store.Tx, up *store.Upload) error {
+	if up.VisitorID != "" {
+		return nil
+	}
 	usable, ok, err := s.diskUsable()
 	if err != nil {
 		return err
@@ -640,13 +667,36 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	tgt, err := readTarget(meta)
+	p := principalOf(r)
+	ctx := r.Context()
+	// A drop link's visitor is charged its own limits, before any read of the database. Its uploads are not
+	// charged to the generic per-caller limit, which would trip before the drop limits and hide their answer.
+	if isDrop(p) {
+		if err := s.chargeAll(charge{"drop.ip", addressKey(r)}, charge{"drop.link", p.ID}); err != nil {
+			return err
+		}
+	}
+	var (
+		tgt   *uploadTarget
+		state *store.ShareLinkState
+	)
+	if isDrop(p) {
+		tgt, state, err = s.dropTarget(ctx, p, meta)
+	} else {
+		tgt, err = readTarget(meta)
+	}
 	if err != nil {
 		return err
 	}
 	sum, err := parseChecksum(r.Header.Get("Upload-Checksum"))
 	if err != nil {
 		return err
+	}
+	var uploader struct{ name, email string }
+	if isDrop(p) {
+		if uploader.name, uploader.email, err = uploaderFields(meta, state.Link.AskName); err != nil {
+			return err
+		}
 	}
 	withBody := isUploadBody(r)
 	if withBody {
@@ -657,17 +707,20 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 			return err
 		}
 	}
-	p := principalOf(r)
-	ctx := r.Context()
-	if err := s.rateLimit("upload.create", string(p.Kind)+":"+p.ID); err != nil {
-		return err
+	if !isDrop(p) {
+		if err := s.rateLimit("upload.create", string(p.Kind)+":"+p.ID); err != nil {
+			return err
+		}
 	}
 	now := store.Now()
 	up := &store.Upload{ID: id.New("upl"), AccountID: p.AccountID, FolderID: tgt.folder,
 		ParentID: tgt.parent, DirPath: tgt.dirPath, Parents: tgt.parents, Name: tgt.name, NameKey: tgt.nameKey,
 		OnConflict: tgt.onConflict, MimeType: mimeOf(tgt.mime, tgt.name), SHA256: tgt.sha, Length: length,
 		BlobID: id.New("blb"), CreatedBy: p.ID, CreatedKind: string(p.Kind), CreatedAt: now, UpdatedAt: now,
-		ExpiresAt: s.uploadDeadline(now, now)}
+		ExpiresAt: s.uploadDeadline(now, now), UploaderName: uploader.name, UploaderEmail: uploader.email}
+	if isDrop(p) {
+		up.VisitorID = p.Link.VisitorID
+	}
 	if err := uploadAccess(ctx, s.store, p, up, store.RoleContributor); err != nil {
 		return err
 	}
@@ -693,7 +746,14 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 		if err := uploadAccess(ctx, tx, p, up, store.RoleContributor); err != nil {
 			return err
 		}
-		if n, err := tx.CountOpenUploads(ctx, up.AccountID, p.ID, string(p.Kind)); err != nil {
+		if isDrop(p) {
+			// The link's own cap, across its visitors, in place of the caller's.
+			if n, err := tx.CountOpenUploads(ctx, up.AccountID, p.ID, string(p.Kind)); err != nil {
+				return err
+			} else if n >= dropMaxOpen {
+				return tooManyUploads("link", dropMaxOpen)
+			}
+		} else if n, err := tx.CountOpenUploads(ctx, up.AccountID, p.ID, string(p.Kind)); err != nil {
 			return err
 		} else if n >= s.cfg.Upload.MaxOpenPerPrincipal {
 			return tooManyUploads("caller", s.cfg.Upload.MaxOpenPerPrincipal)
@@ -709,8 +769,11 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 		if err := s.reserveTx(ctx, tx, up); err != nil {
 			return err
 		}
-		return tx.InsertAudit(ctx, s.auditEntry(r, up.AccountID, "upload.create", up.ID,
-			map[string]any{"folder": up.FolderID, "name": up.Name, "length": up.Length}, up.FolderID))
+		details := map[string]any{"folder": up.FolderID, "name": up.Name, "length": up.Length}
+		if isDrop(p) {
+			details["via"] = "share_link"
+		}
+		return tx.InsertAudit(ctx, s.auditEntry(r, up.AccountID, "upload.create", up.ID, details, up.FolderID))
 	})
 	if err != nil {
 		s.discardUploadFile(up)
@@ -725,7 +788,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 		err = s.appendChunk(w, r, p, up, sum)
 		release()
 		if err != nil {
-			return s.dropFailedCreation(r, p, up, err)
+			return s.dropFailedCreation(r, p, up, dropRefusal(p, err))
 		}
 	}
 	if up.DurableOffset == up.Length {
@@ -735,7 +798,10 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 			markAwaiting(w, up, err)
 			return err
 		}
-		w.Header().Set(nodeHeader, node.ID)
+		if !isDrop(p) {
+			// A visitor is not told the new node's ID: the link's creator sees the file, not the visitor.
+			w.Header().Set(nodeHeader, node.ID)
+		}
 	}
 	h := w.Header()
 	h.Set("Location", s.cfg.PublicURL+"/api/v1/uploads/"+up.ID)
@@ -815,8 +881,15 @@ func (s *Server) appendChunk(w http.ResponseWriter, r *http.Request, p *auth.Pri
 		return err
 	}
 	chunkCap := min(maxChunk, remaining)
-	// The piece's bytes are already in the reservation the disk check counts, so none are added.
-	if err := s.checkDiskNow(ctx, up.AccountID); err != nil {
+	// The piece's bytes are already in the reservation the disk check counts, so none are added. A drop upload
+	// reserves nothing ahead, so its piece must fit the disk and the quota now, for the bytes it brings.
+	if isDrop(p) {
+		release, err := s.admitDropPiece(ctx, up, pieceBytes(r, chunkCap))
+		if err != nil {
+			return err
+		}
+		defer release()
+	} else if err := s.checkDiskNow(ctx, up.AccountID); err != nil {
 		return err
 	}
 	h, err := restoreHash(up.HashState, start)
@@ -885,7 +958,8 @@ func (s *Server) appendChunk(w http.ResponseWriter, r *http.Request, p *auth.Pri
 		}
 		expires := s.uploadDeadline(up.CreatedAt, store.Now())
 		if err := s.recordPiece(ctx, p, up, f, start, cw.off, state, expires); err != nil {
-			return err
+			_ = f.Truncate(start) // a failed truncate is repaired before the next piece
+			return dropRefusal(p, err)
 		}
 	}
 	if copyErr != nil {
@@ -948,7 +1022,7 @@ func (s *Server) handlePatchUpload(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if err := uploadAccess(r.Context(), s.store, p, up, store.RoleContributor); err != nil {
-		return err
+		return s.dropEnded(r, p, up, err)
 	}
 	if offset != up.DurableOffset {
 		return apierr.Newf(apierr.UploadOffsetMismatch, "Upload-Offset is %d; the upload is at %d", offset,
@@ -956,7 +1030,7 @@ func (s *Server) handlePatchUpload(w http.ResponseWriter, r *http.Request) error
 	}
 	if up.DurableOffset < up.Length {
 		if err := s.appendChunk(w, r, p, up, sum); err != nil {
-			return err
+			return s.dropEnded(r, p, up, dropRefusal(p, err))
 		}
 	} else if r.ContentLength > 0 {
 		return tooLargeUpload(0)
@@ -965,9 +1039,12 @@ func (s *Server) handlePatchUpload(w http.ResponseWriter, r *http.Request) error
 		node, err := s.completeUpload(r, p, up, nil)
 		if err != nil {
 			markAwaiting(w, up, err)
-			return err
+			return s.dropEnded(r, p, up, err)
 		}
-		w.Header().Set(nodeHeader, node.ID)
+		if !isDrop(p) {
+			// A visitor is not told the new node's ID: the link's creator sees the file, not the visitor.
+			w.Header().Set(nodeHeader, node.ID)
+		}
 	}
 	w.Header().Set("Upload-Offset", strconv.FormatInt(up.DurableOffset, 10))
 	w.Header().Set("Upload-Expires", up.ExpiresAt.UTC().Format(http.TimeFormat))
@@ -1082,14 +1159,35 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 				Name: plan.name, NameKey: plan.key, Kind: store.KindFile, Size: cur.Length, MimeType: cur.MimeType,
 				BlobID: cur.BlobID, ETag: newETag(), SHA256: digest, CreatedAt: now, ModifiedAt: now,
 				CreatedBy: p.ID, ModifiedBy: p.ID}
+			details := map[string]any{"kind": store.KindFile, "name": n.Name, "parent": parent.ID, "size": cur.Length,
+				"upload": cur.ID}
+			link, dropLink := (*store.ShareLink)(nil), isDrop(p)
+			if dropLink {
+				// A file a visitor sent belongs to the link's creator, as a file the creator made would; an account key
+				// creator owns it as the key does. The visitor's name and email are recorded, not verified.
+				if link, err = tx.ShareLink(ctx, cur.AccountID, p.ID); err != nil {
+					return err
+				}
+				// The owner the store gives the node on insert: a personal folder's user, else the link's creator.
+				f, err := tx.Folder(ctx, cur.AccountID, cur.FolderID)
+				if err != nil {
+					return err
+				}
+				n.OwnerID = dropNodeOwner(f, link.CreatedBy)
+				details["via"] = "share_link"
+				details["uploader_name"], details["uploader_email"] = cur.UploaderName, cur.UploaderEmail
+			}
 			if err := tx.InsertNode(ctx, n); err != nil {
 				return storeNameErr(err)
 			}
 			out, action, delta, files = n, "node.create", cur.Length, 1
-			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, action, n.ID,
-				map[string]any{"kind": store.KindFile, "name": n.Name, "parent": parent.ID, "size": cur.Length,
-					"upload": cur.ID}, cur.FolderID)); err != nil {
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, action, n.ID, details, cur.FolderID)); err != nil {
 				return err
+			}
+			if dropLink && link.Notify {
+				if err := tx.AddDropFile(ctx, cur.AccountID, link.ID); err != nil {
+					return err
+				}
 			}
 		}
 		// Completion turns the reservation into usage, for a new file and for a replacement alike: DeleteUpload
@@ -1181,7 +1279,7 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) erro
 		return s.removeUploadTx(r, tx, up, "terminated")
 	})
 	if err != nil {
-		return err
+		return s.dropEnded(r, p, up, err)
 	}
 	s.discardUploadFile(up)
 	w.WriteHeader(http.StatusNoContent)

@@ -82,20 +82,38 @@ function csrfHeaders(): Record<string, string> {
   return csrf ? { 'X-CSRF-Token': csrf } : {};
 }
 
+// Bearer gives the credential of one request. A visitor who opened a link that anyone can open has no cookie:
+// the page passes a getter, which is read again for every request, so a credential renewed during a long upload
+// is the one sent. A getter that answers null sends no credential at all.
+export type Bearer = () => string | null;
+
+// requestAuth is what a request carries to authenticate. With a bearer it sends that and no cookie; without one
+// it is the signed-in user's session, cookie and CSRF token, as before.
+export function requestAuth(bearer?: Bearer): { credentials: RequestCredentials; headers: Record<string, string> } {
+  if (!bearer) return { credentials: 'same-origin', headers: csrfHeaders() };
+  const token = bearer();
+  return { credentials: 'omit', headers: token ? { Authorization: `Bearer ${token}` } : {} };
+}
+
 // createUpload starts an upload of length bytes and returns its path. The server refuses a name that is
 // taken under fail with conflict, which the caller turns into a question.
-export async function createUpload(length: number, meta: Record<string, string | undefined>): Promise<string> {
+export async function createUpload(
+  length: number,
+  meta: Record<string, string | undefined>,
+  bearer?: Bearer,
+): Promise<string> {
+  const auth = requestAuth(bearer);
   let res: Response;
   try {
     res = await fetch(UPLOADS, {
       method: 'POST',
-      credentials: 'same-origin',
+      credentials: auth.credentials,
       cache: 'no-store',
       headers: {
         'Tus-Resumable': TUS_VERSION,
         'Upload-Length': String(length),
         'Upload-Metadata': encodeMetadata(meta),
-        ...csrfHeaders(),
+        ...auth.headers,
       },
     });
   } catch {
@@ -120,14 +138,15 @@ export interface UploadHead {
 }
 
 // headOffset asks how far an upload got, for resuming.
-export async function headOffset(path: string): Promise<UploadHead> {
+export async function headOffset(path: string, bearer?: Bearer): Promise<UploadHead> {
+  const auth = requestAuth(bearer);
   let res: Response;
   try {
     res = await fetch(path, {
       method: 'HEAD',
-      credentials: 'same-origin',
+      credentials: auth.credentials,
       cache: 'no-store',
-      headers: { 'Tus-Resumable': TUS_VERSION },
+      headers: { 'Tus-Resumable': TUS_VERSION, ...auth.headers },
     });
   } catch {
     throw new ApiError(0, 'network', {}, 0);
@@ -155,18 +174,19 @@ export function sendChunk(
   onProgress: (sent: number) => void,
   track: (xhr: XMLHttpRequest) => void,
   checksum: string | null = null,
+  bearer?: Bearer,
 ): Promise<ChunkResult> {
   return new Promise<ChunkResult>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     track(xhr);
+    const auth = requestAuth(bearer);
     xhr.open('PATCH', path, true);
-    xhr.withCredentials = true;
+    xhr.withCredentials = auth.credentials === 'same-origin';
     xhr.setRequestHeader('Tus-Resumable', TUS_VERSION);
     xhr.setRequestHeader('Upload-Offset', String(offset));
     xhr.setRequestHeader('Content-Type', 'application/offset+octet-stream');
     if (checksum) xhr.setRequestHeader('Upload-Checksum', `sha256 ${checksum}`);
-    const csrf = currentCsrf();
-    if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
+    for (const [k, v] of Object.entries(auth.headers)) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded);
     };
@@ -203,12 +223,13 @@ export class AbortedError extends Error {
 }
 
 // deleteUpload drops an upload on the server, which frees its reservation.
-export async function deleteUpload(path: string): Promise<void> {
+export async function deleteUpload(path: string, bearer?: Bearer): Promise<void> {
+  const auth = requestAuth(bearer);
   const res = await fetch(path, {
     method: 'DELETE',
-    credentials: 'same-origin',
+    credentials: auth.credentials,
     cache: 'no-store',
-    headers: { 'Tus-Resumable': TUS_VERSION, ...csrfHeaders() },
+    headers: { 'Tus-Resumable': TUS_VERSION, ...auth.headers },
   });
   if (!res.ok && res.status !== 404) throw await refused(res);
 }

@@ -83,7 +83,7 @@ space ("My files"), and a group can hold users.
 | Email when something is shared with you | Built (n2): in the seven languages, with a `notify` switch |
 | Pending invitations list | Have: pending users. Built (n2): `subject_status` and `subject_name` in the permission listing, for managers and account keys. Built (k3): the share dialog shows an "Invited" badge |
 | Sharing limited to trusted domains (admin) | New (u): per-account allowlist for public links and invitations |
-| Extra beyond Drive: password and expiry on public links, upload-only drop folders | Expiry built in o1 for organisation links, optional. Anyone links: expiry and password built in o2; drop folders in o3. Off by default |
+| Extra beyond Drive: password and expiry on public links, upload-only drop folders | Expiry built in o1 for organisation links, optional. Anyone links: expiry and password built in o2. Drop folders ("Request files") built in o3: upload-only, with an end date, an optional password, a title and message, and an optional name and email. Off by default |
 
 ## 5. Team spaces (Drive's "shared drives")
 

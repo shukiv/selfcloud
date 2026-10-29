@@ -16,6 +16,7 @@ import {
   sendChunk,
   UPLOAD_PATH,
   UploadError,
+  type Bearer,
   type ChunkResult,
 } from './tus';
 
@@ -56,6 +57,24 @@ export interface UploadTarget {
   parent?: string;
   path?: string;
   parents?: boolean;
+  // uploader is what a visitor typed for a drop link, copied when the file is queued so a later edit of the
+  // form does not change the files already queued. It is never set for the signed-in user's uploads.
+  uploader?: { name: string; email: string };
+}
+
+// Transport changes how a manager reaches the server. The signed-in user's manager has none. A visitor of a drop
+// link has one: its credential is read for every request, its metadata is its own, and its list is the page's,
+// not the tray's.
+export interface Transport {
+  // bearer gives the credential of each request; null sends none.
+  bearer: Bearer;
+  // metadata is the Upload-Metadata of a new upload.
+  metadata(it: { name: string; target: UploadTarget }): Record<string, string | undefined>;
+  // fresh runs before each piece. force asks for a renewal even when the credential is not near its end.
+  // It throws when the credential cannot be renewed.
+  fresh(force: boolean): Promise<void>;
+  // sink receives the list of this manager's uploads, each time it changes.
+  sink(items: UploadItem[], conflict: string | null): void;
 }
 
 export interface UploadItem {
@@ -206,7 +225,18 @@ export class UploadManager {
   };
   private guarded = false;
 
-  constructor(private now: () => number = () => Date.now()) {}
+  constructor(
+    private now: () => number = () => Date.now(),
+    private transport: Transport | null = null,
+  ) {}
+
+  // halt stops every upload this manager runs, and aborts the pieces in flight. A page that leaves uses it.
+  halt(): void {
+    for (const rt of this.runtime.values()) {
+      rt.stop = true;
+      rt.xhr?.abort();
+    }
+  }
 
   setChunkSize(bytes: number): void {
     if (Number.isFinite(bytes) && bytes >= 1024) this.chunkSize = Math.floor(bytes);
@@ -325,7 +355,7 @@ export class UploadManager {
     this.forget(id);
     if (it.url) {
       try {
-        await deleteUpload(it.url);
+        await deleteUpload(it.url, this.transport?.bearer);
       } catch {
         // The server drops it at its expiry anyway.
       }
@@ -423,8 +453,11 @@ export class UploadManager {
   }
 
   private publish(): void {
-    uploads.set(this.items);
-    conflictAsk.set(this.conflict.asking);
+    if (this.transport) this.transport.sink(this.items, this.conflict.asking);
+    else {
+      uploads.set(this.items);
+      conflictAsk.set(this.conflict.asking);
+    }
     this.syncGuard();
   }
 
@@ -445,7 +478,7 @@ export class UploadManager {
     const it = this.find(id);
     this.forget(id);
     this.dismiss(id);
-    if (it?.url) void deleteUpload(it.url).catch(() => undefined);
+    if (it?.url) void deleteUpload(it.url, this.transport?.bearer).catch(() => undefined);
   }
 
   private forget(id: number): void {
@@ -479,7 +512,7 @@ export class UploadManager {
     void this.limiter.run(() => this.drive(id));
   }
 
-  private finish(id: number, nodeID: string): void {
+  private finish(id: number, nodeID: string | null): void {
     this.update(id, { status: 'done', offset: this.find(id)?.size ?? 0, nodeID, speed: 0, error: null });
     this.forget(id);
     this.runtime.delete(id);
@@ -526,15 +559,8 @@ export class UploadManager {
       if (!it.url) {
         this.update(id, { status: 'uploading' });
         const head = await headFingerprint(file);
-        const url = await createUpload(file.size, {
-          folder: it.target.folder,
-          parent: it.target.parent,
-          path: it.target.parent ? undefined : (it.target.path ?? '/'),
-          parents: it.target.parents ? 'true' : undefined,
-          name: it.name,
-          on_conflict: it.onConflict,
-          mime_type: it.mime || undefined,
-        });
+        if (this.transport) await this.transport.fresh(false);
+        const url = await createUpload(file.size, this.metadataOf(it), this.transport?.bearer);
         this.update(id, { url, head });
         const cur = this.find(id);
         if (cur) this.remember(cur);
@@ -551,8 +577,22 @@ export class UploadManager {
 
   // syncOffset asks the server how far an upload got. It answers false when the upload is waiting for a name
   // (or all its bytes are in), and the caller sends nothing more.
+  // metadataOf is the Upload-Metadata of a new upload: the signed-in user's, or the transport's.
+  private metadataOf(it: UploadItem): Record<string, string | undefined> {
+    if (this.transport) return this.transport.metadata(it);
+    return {
+      folder: it.target.folder,
+      parent: it.target.parent,
+      path: it.target.parent ? undefined : (it.target.path ?? '/'),
+      parents: it.target.parents ? 'true' : undefined,
+      name: it.name,
+      on_conflict: it.onConflict,
+      mime_type: it.mime || undefined,
+    };
+  }
+
   private async syncOffset(id: number, url: string, size: number): Promise<boolean> {
-    const head = await headOffset(url);
+    const head = await headOffset(url, this.transport?.bearer);
     if (head.state === AWAITING || head.offset >= size) {
       this.awaitName(id);
       return false;
@@ -578,6 +618,14 @@ export class UploadManager {
       const piece = file.slice(from, to);
       const checksum = await sha256Base64(piece);
       if (rt.stop) return;
+      if (this.transport) {
+        try {
+          await this.transport.fresh(false);
+        } catch (err) {
+          this.failed(id, err);
+          return;
+        }
+      }
       rt.lastAt = this.now();
       rt.lastOffset = from;
       let res: ChunkResult;
@@ -589,6 +637,7 @@ export class UploadManager {
           (sent) => this.progress(id, from + sent),
           (xhr) => (rt.xhr = xhr),
           checksum,
+          this.transport?.bearer,
         );
       } catch (err) {
         rt.xhr = null;
@@ -596,6 +645,17 @@ export class UploadManager {
         if (err instanceof UploadError && err.status === 409 && err.state === AWAITING) {
           this.awaitName(id, err);
           return;
+        }
+        if (err instanceof ApiError && err.status === 401 && this.transport) {
+          // The credential ended while the piece was in flight: renew it, then ask where the upload got to.
+          try {
+            await this.transport.fresh(true);
+          } catch (renewErr) {
+            this.failed(id, renewErr);
+            return;
+          }
+          if (!(await this.syncOffset(id, it.url, file.size))) return;
+          continue;
         }
         if (err instanceof UploadError && err.status === 460 && !rt.resent) {
           // The piece did not match its checksum. Once, the offset is read again and the piece is sent again.
@@ -619,6 +679,12 @@ export class UploadManager {
       rt.resent = false;
       if (res.nodeID) {
         this.finish(id, res.nodeID);
+        return;
+      }
+      // A drop link's visitor is never told the new file's node, so the last piece taken is the end of its upload:
+      // a drop upload always takes a free name and never waits for one.
+      if (this.transport && res.offset >= file.size) {
+        this.finish(id, null);
         return;
       }
       this.update(id, { offset: res.offset, speed: this.speedFor(rt, res.offset) });

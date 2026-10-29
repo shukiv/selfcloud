@@ -121,7 +121,7 @@ func TestLinkCreateFollowsMayShare(t *testing.T) {
 }
 
 func TestLinkRefusesWhatIsNotBuiltYet(t *testing.T) {
-	// Drop links are still a later slice. Anyone links are built in o2; see share_open_test.go.
+	// A drop link is an anyone link: an organisation drop link is refused (see share_drop_test.go).
 	fx := newLinkFixture(t)
 	for _, body := range []map[string]any{
 		{"audience": "organisation", "upload_only": true},

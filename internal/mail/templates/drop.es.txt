@@ -1,0 +1,7 @@
+Subject: {{if eq .Count 1}}Llegó un archivo a {{.Folder}}{{else}}Llegaron {{.Count}} archivos a {{.Folder}}{{end}}
+
+{{if eq .Count 1}}Llegó un archivo a {{.Folder}} a través de un enlace que creaste.{{else}}Llegaron {{.Count}} archivos a {{.Folder}} a través de un enlace que creaste.{{end}}
+
+{{.Link}}
+
+Si no esperabas este mensaje, puedes ignorarlo.

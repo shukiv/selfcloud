@@ -31,6 +31,8 @@ type anyoneFixture struct {
 func newAnyoneFixture(t *testing.T) *anyoneFixture {
 	t.Helper()
 	fx := newLinkFixture(t)
+	// The production delay on an over-budget link is 2 s; a test that needs it sets its own.
+	fx.s.guard.slowdown = 20 * time.Millisecond
 	setPolicy(t, fx.s, fx.key, fx.acc.ID, true)
 	return &anyoneFixture{linkFixture: fx}
 }
@@ -294,11 +296,13 @@ func TestWrongPasswordsSlowTheLinkWithoutRefusingIt(t *testing.T) {
 		fx.s.guard.linkFails[link.ID] = append(fx.s.guard.linkFails[link.ID], now)
 	}
 	fx.s.guard.mu.Unlock()
-	// The right password still opens the link, after the delay.
+	// The right password still opens the link, after the delay. The delay is shortened for the test; the bound checked is
+	// the one in force.
+	fx.s.guard.slowdown = 200 * time.Millisecond
 	start := time.Now()
 	fx.visitAnyone(t, secret, password)
-	if d := time.Since(start); d < passwordSlowdown {
-		t.Errorf("attempt took %v, want at least %v", d, passwordSlowdown)
+	if d := time.Since(start); d < fx.s.guard.slowdown {
+		t.Errorf("attempt took %v, want at least %v", d, fx.s.guard.slowdown)
 	}
 }
 
@@ -730,6 +734,8 @@ func TestPasswordChecksOfALinkRunOneAtATime(t *testing.T) {
 		fx.s.guard.linkFails[link.ID] = append(fx.s.guard.linkFails[link.ID], now)
 	}
 	fx.s.guard.mu.Unlock()
+	// The turn is held through the slowdown, so two checks run one after the other take two slowdowns at least.
+	fx.s.guard.slowdown = 200 * time.Millisecond
 	start := time.Now()
 	done := make(chan struct{}, 2)
 	for i := 0; i < 2; i++ {
@@ -742,8 +748,8 @@ func TestPasswordChecksOfALinkRunOneAtATime(t *testing.T) {
 	}
 	<-done
 	<-done
-	if d := time.Since(start); d < 3500*time.Millisecond {
-		t.Errorf("two concurrent wrong guesses took %v, want them serialised (at least 3.5s)", d)
+	if d := time.Since(start); d < 2*fx.s.guard.slowdown {
+		t.Errorf("two concurrent wrong guesses took %v, want them serialised (at least %v)", d, 2*fx.s.guard.slowdown)
 	}
 }
 

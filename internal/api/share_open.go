@@ -53,6 +53,8 @@ type shareGuard struct {
 	lastSweep   time.Time
 	// slotWait bounds the wait for a link's password check turn; passwordSlotWait in production, lower in a test.
 	slotWait time.Duration
+	// slowdown is the delay an attempt on an over-budget link takes; passwordSlowdown in production, lower in a test.
+	slowdown time.Duration
 }
 
 // linkSlot is the turn a link's password check takes. ch holds one token while a check runs; users counts the
@@ -67,7 +69,7 @@ type linkSlot struct {
 func newShareGuard() *shareGuard {
 	return &shareGuard{ipFails: map[string][]time.Time{}, lockedUntil: map[string]time.Time{},
 		linkFails: map[string][]time.Time{}, lastAudit: map[string]time.Time{}, linkSlots: map[string]*linkSlot{},
-		slotWait: passwordSlotWait}
+		slotWait: passwordSlotWait, slowdown: passwordSlowdown}
 }
 
 // lockLink takes the password check's turn on a link, and returns the func that gives it back. Only one check runs
@@ -86,7 +88,7 @@ func (g *shareGuard) lockLink(ctx context.Context, linkID, ipKey string) (func()
 	if sl.addrs[ipKey] {
 		g.mu.Unlock()
 		return nil, apierr.New(apierr.RateLimited, "a password check from this address is already running on this link").
-			Retry(passwordSlowdown)
+			Retry(g.slowdown)
 	}
 	sl.addrs[ipKey] = true
 	sl.users++
@@ -259,10 +261,13 @@ func passwordAccepted(p string) bool {
 
 // anyoneOpenAnswer is the answer to a good open: the visitor's credential, when it ends, the link and its node.
 type anyoneOpenAnswer struct {
-	Token     string        `json:"token"`
-	ExpiresAt time.Time     `json:"expires_at"`
-	Link      shareLinkJSON `json:"link"`
-	Node      string        `json:"node"`
+	Token     string         `json:"token"`
+	ExpiresAt time.Time      `json:"expires_at"`
+	Link      *shareLinkJSON `json:"link,omitempty"`
+	Node      string         `json:"node,omitempty"`
+	// UploadOnly is set for a drop link: the visitor may upload into the link's directory and nothing else. Such
+	// an answer names no node and no link, so the visitor learns no directory ID.
+	UploadOnly bool `json:"upload_only,omitempty"`
 }
 
 // openAnyoneLink opens a link that anyone can open for a visitor who holds its secret, and the password when the
@@ -348,8 +353,13 @@ func (s *Server) openAnyoneLink(w http.ResponseWriter, r *http.Request, st *stor
 		if err != nil {
 			return err
 		}
-		out = anyoneOpenAnswer{Token: tok, ExpiresAt: exp, Node: cur.Link.NodeID,
-			Link: toShareLinkJSON(&cur.Link, nil, cur.Link.NodeID, false)}
+		out = anyoneOpenAnswer{Token: tok, ExpiresAt: exp}
+		if cur.Link.UploadOnly {
+			out.UploadOnly = true
+		} else {
+			link := toShareLinkJSON(&cur.Link, nil, cur.Link.NodeID, false)
+			out.Node, out.Link = cur.Link.NodeID, &link
+		}
 		// The open itself is always written above; its audit entry is written at most once per throttleAuditGap for
 		// the link, so a link opened often does not fill the log.
 		if !s.guard.auditDue("open|"+cur.Link.ID, at) {
@@ -374,10 +384,10 @@ func (s *Server) slowIfOverBudget(ctx context.Context, linkID string) error {
 		return nil
 	}
 	select {
-	case <-time.After(passwordSlowdown):
+	case <-time.After(s.guard.slowdown):
 		return nil
 	case <-ctx.Done():
-		return apierr.New(apierr.RateLimited, "too many attempts; try again later").Retry(passwordSlowdown)
+		return apierr.New(apierr.RateLimited, "too many attempts; try again later").Retry(s.guard.slowdown)
 	}
 }
 
@@ -445,7 +455,7 @@ func (s *Server) handleRenewShareCredential(w http.ResponseWriter, r *http.Reque
 		if !p.Link.IssuedAt.After(st.Link.CredentialsAt) {
 			return notFound("link")
 		}
-		tok, exp, err = s.renewShareCredential(st, p.Link.IssuedAt, now)
+		tok, exp, err = s.renewShareCredential(st, p.Link.IssuedAt, now, p.Link.VisitorID)
 		return err
 	})
 	if err != nil {
@@ -453,5 +463,45 @@ func (s *Server) handleRenewShareCredential(w http.ResponseWriter, r *http.Reque
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"token": tok, "expires_at": exp})
+	return nil
+}
+
+// dropInfo is what a drop link's visitor is shown: the owner's title and message, whether a name and email are asked
+// for, when the link ends, and the largest file it takes.
+type dropInfo struct {
+	Title       string    `json:"title"`
+	Message     string    `json:"message"`
+	AskName     bool      `json:"ask_name"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	MaxFileSize int64     `json:"max_file_size"`
+}
+
+// handleShareInfo answers a drop link's visitor what the drop page shows. Only a drop credential reaches it (the
+// route admits drop credentials alone). The link is read now, so a dead link answers not_found at once.
+func (s *Server) handleShareInfo(w http.ResponseWriter, r *http.Request) error {
+	p := principalOf(r)
+	if p == nil || p.Kind != auth.KindShareLink || p.Link == nil || !p.Link.UploadOnly {
+		return apierr.New(apierr.Forbidden, "info is for a drop link's visitor").With("reason", "link_route")
+	}
+	ctx := r.Context()
+	st, err := s.store.ShareLinkStateByID(ctx, p.AccountID, p.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return notFound("link")
+	}
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	if !shareOpenable(st, now) || !p.Link.IssuedAt.After(st.Link.CredentialsAt) {
+		return notFound("link")
+	}
+	if self, above, err := s.store.TrashState(ctx, p.AccountID, st.Link.NodeID); err != nil {
+		return err
+	} else if self || above {
+		return notFound("link")
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, dropInfo{Title: st.Link.Title, Message: st.Link.Message, AskName: st.Link.AskName,
+		ExpiresAt: *st.Link.ExpiresAt, MaxFileSize: int64(s.cfg.Upload.MaxFileSize)})
 	return nil
 }

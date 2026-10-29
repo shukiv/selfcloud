@@ -332,7 +332,7 @@ func (tx *Tx) DeleteNode(ctx context.Context, accountID, id string) error {
 		UNION ALL
 		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
 	)
-	SELECT COALESCE(SUM(length), 0) FROM uploads WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub)`,
+	SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub)`,
 		accountID, id, accountID, accountID).Scan(&reserved)
 	if err != nil {
 		return err

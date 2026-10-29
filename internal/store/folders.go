@@ -345,7 +345,7 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 	// The foreign keys delete two sets of uploads with the folder, so their reservations go here
 	// too: those made in the folder, and those whose target directory is now in it. A directory
 	// moved in from another folder keeps the uploads aimed at it, and they still name that folder.
-	err = tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(length), 0) FROM uploads
+	err = tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads
 		WHERE account_id = ? AND (folder_id = ? OR parent_id IN (SELECT id FROM nodes WHERE folder_id = ?))`,
 		accountID, folderID, folderID).Scan(&reserved)
 	if err != nil {

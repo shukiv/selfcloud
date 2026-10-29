@@ -187,6 +187,26 @@ Only one `PATCH` per upload runs at a time; a second gets `409`. Parallel pieces
 (the tus `concatenation` extension) can come later if a single stream proves too slow.
 Small files can also be written in one request (section 9).
 
+**Uploads through a drop link (o3).** A visitor of a drop link (section 8) uploads with the same protocol,
+under its own bearer credential. The visitor names no folder and no directory: the server places the file in
+the link's directory, ignores `folder`, `parent`, `on_conflict` and `mime_type`, refuses `path` and `parents`, and
+renames a clash, so the visitor learns no name. The content type comes from the file name. The visitor's
+`uploader_name` and `uploader_email` are optional unless the link asks for them; they are stored on the upload, and
+the completed file's `node.create` entry names them with `via: share_link`. The limits are the account's quota,
+`upload.max_file_size` and the rate limits of section 8, and at most 20 unfinished uploads per link.
+
+A drop upload holds only the bytes it has received (owner's decision of 2026-10-29, "Reserve as received"). Creation
+reserves nothing: `upload.max_file_size` still caps the declared length, but no bytes are reserved until they arrive.
+Each piece checks the quota and the disk for the bytes it brings, charges them, and is refused when they do not fit,
+keeping the bytes already received, so the visitor can resume once space frees. Other uploads keep their up-front
+reservation. The refusal a visitor gets is the one in section 8 (`quota_exceeded`, no numbers).
+
+Every write of such an upload checks the link as it is then. A link that is truly gone for the visitor's credential
+(deleted, expired, or reset after the credential was issued) ends the upload at once, and its bytes are released. A
+link that is only paused (its switch off, a members-only space, or the node trashed) answers `not_found` and keeps the
+upload until its normal expiry, so turning the switch back on lets the visitor resume. A directory moved to another
+folder takes the finished transfer where it now is.
+
 ## 6. Fast-path IO
 
 | Operation | Method | Effect |
@@ -244,6 +264,10 @@ Only an account key of the same account may mint. An installation admin, a signe
 *Signed links.* A signed link is a capability that no revocation reaches, so a link made with a token may not outlive the token: its default and longest lifetime are cut to what the token has left, and a longer `ttl` is refused with that limit in `details.max_ttl_seconds`.
 
 *Visitor credentials (share links, slice o2).* A visitor who opens a link that anyone can open holds a credential, `scl_` followed by base64url(payload JSON), a `.`, and base64url(HMAC-SHA256 of the payload bytes). The payload holds the version, the signing key ID, the account, the link, the node, and the issue and expiry times in Unix milliseconds. Its MAC key is derived from the signing key by HKDF-SHA256 under the label `selfcloud share credential v1`, so it is never a token's or a link's. It lives 15 minutes; `POST /share/renew` swaps a live one for a fresh one. A credential is not a user, a key or a token: it reaches only the routes that allow it (the table in section 8), and every other route refuses it with `forbidden`, `reason: link_route`. Its role and its link's state are read from the database on every request, in one read: a credential issued before the link's `credentials_at` (a reset or a password change), a deleted, paused, trashed or expired link, a team space that pauses it, or a suspended account is refused at once with `not_found`. A forged, malformed or expired credential is `unauthenticated`.
+A drop link's credential also carries a visitor ID (`vid`), made at open and kept across renewals; its uploads carry
+it, and no other visitor of the link reaches them. Its role is read as none, and its `upload_only` flag is read from
+the link's row, never from the payload. A drop credential reaches only the drop routes of section 8, and an access
+credential reaches none of them.
 
 *Known gaps, all-reachable tokens.* `GET /folders` leaves out the user's hidden team spaces, as the user's own session does by default, and `?hidden=true` answers an empty list for every token. A hidden space is still reachable by its ID, since hiding changes nothing about access. A signed link made with a token is not ended by a revocation (see *Revocation*).
 
@@ -704,8 +728,8 @@ built on these calls.
 ### Share links
 
 A share link gives access to a file or a folder without a permission row. Slice o1 builds organisation
-links, and slice o2 builds links that anyone can open. Drop folders (o3) come later; the table and the
-routes already carry their columns.
+links, slice o2 builds links that anyone can open, and slice o3 builds drop links (below). The table and the
+routes carry every column the links need.
 
 - **The link.** A row of `share_links` (section 11): one access link per node, so `UNIQUE (node_id,
   upload_only)`; an audience (`organisation` or `anyone`); a role (viewer, commenter, contributor or
@@ -824,6 +848,58 @@ routes already carry their columns.
   was stored, and comes back to the page with the secret still waiting. A dead link's fragment is dropped too. A
   link that anyone can open keeps its fragment in the address, so a reload opens it again. The team-space switch "Allow links" is live.
 
+- **Drop links (o3).** A drop link (`upload_only`) lets whoever holds its secret upload files into one directory,
+  and nothing else. It is an anyone link with no role, one per node beside the node's access link (`UNIQUE (node_id,
+  upload_only)`). Its rules are those of an anyone link, with these differences:
+  - **Who and where.** Only the node's manager may make, change, reset or delete it: never an editor through
+    `editors_can_share`, never a role held through a link, never a delegated token. It is for a directory only.
+    It needs the account's `public_links` switch, and `allow_links` on a team space; a members-only space admits it
+    on its root only; in My files the switch alone decides.
+  - **It must end (decision 9 of the owner, 2026-10-29).** Its end is 30 days from creation by default, at most 365
+    days, and lower when `sharing.max_expiry` is lower. `expires_at: null` is refused. Reset and password changes
+    work as for anyone links.
+  - **Anonymous only (decision 10).** Audience `anyone`. There is no members-only drop link.
+  - **Limits (decision 3).** No per-link size or count caps. The account quota, `upload.max_file_size`, the rate
+    limits (per address 30 uploads an hour, `drop.ip`; per link 300 an hour, `drop.link`) and at most 20 unfinished
+    uploads per link (across its visitors, `too_many_uploads` with `scope: link`) are the only limits.
+  - **Bytes held (owner's decision, 2026-10-29).** A drop upload holds only the bytes it has received (section 5).
+  - **Refusals (item 2).** When the account's quota or the disk cannot take a drop visitor's bytes, the visitor gets
+    one generic answer: `quota_exceeded`, with the message "this link cannot take the file now". It carries no
+    numbers and no scope, and it is the same for a full quota and a full disk. The owner keeps the detail in the
+    audit log.
+  - **Visitor.** `POST /share/open` answers `{token, expires_at, upload_only: true}` and names no node or link. The
+    visitor's credential is marked upload only; it reaches `POST /uploads`, `HEAD`, `PATCH` and `DELETE /uploads/{upl}`,
+    `GET /share/info` (`{title, message, ask_name, expires_at, max_file_size}`) and `POST /share/renew`. It reaches no
+    node: `GET`, listings, content, signed links, permissions and links answer `link_route`, and the node access walk
+    answers `not_found` for it. A commit is never needed, since a drop upload takes a free name.
+  - **Visitors are kept apart.** Every visitor of one link shares the link's principal, so each upload records its
+    visitor's ID, and `HEAD`, `PATCH` and `DELETE` of another visitor's upload answer `not_found`.
+  - **Owner.** A file a visitor sends is owned as the creator's files are: by the creator user, or by the account key
+    when the key made the link (the same owner a key-made node gets). A file in a personal folder belongs to the
+    folder's user, as the store gives every node there. The upload's `created_by` is the link's ID. The completing
+    piece does not send the new node's ID to the visitor (`Selfcloud-Node-ID` is for the owner's requests only).
+  - **Notification.** When `notify` is on, the creator user (never an account key) is mailed at most once an hour
+    per link: "N files arrived in {folder}", in the seven languages, from the `mail.drop.account` and
+    `mail.drop.target` budgets. Files that arrive inside the hour are counted, and mailed once the hour ends, by a
+    loop that runs every minute. The creator gets no mail if it is no longer an active user or no longer a manager of
+    the item; its files are then not reported again. A mail that does not go (a send error or a refused budget) gives
+    its files back to the count, and the link is not tried again for an hour, so a failing mail server is not hit
+    every minute.
+  - **Audit.** `link.create`, `link.update`, `link.reset` and `link.delete` carry `upload_only` and the drop fields
+    that changed; never the secret, the password or an uploader's email. `upload.create` and `node.create` carry
+    `via: share_link`; `node.create` also carries the uploader's name and email. A drop link's opens use the same
+    throttle as an anyone link's.
+  - **Uploader fields.** The name and email a visitor types are visitor-supplied and unverified. Before they are
+    stored or audited, every control character (Unicode category Cc, including line breaks and NUL) and the Unicode
+    line and paragraph separators (U+2028, U+2029) become a space (a CR LF pair becomes one space), and the ends are
+    trimmed. The email must then be a
+    bare address (`net/mail`). They are kept in the audit log as long as that log is kept, as the entries are.
+  - **Route allowlist.** A route admits a visitor by kind: `link` for an access link, `drop` for a drop link. A route
+    with neither refuses both, so a route added later is closed to both. The route-table walk checks both allowlists.
+  - **A drop link's `role` is empty** in the API; `upload_only` says what it is.
+  - **Deleting or resetting a link ends its open uploads.** Both release the uploads' rows, bytes and files in the
+    transaction that changes the link, not at the visitor's next request.
+
 ### Accepted limits
 
 These were reviewed in the slice n1 security review and accepted for now. They have no code of their own.
@@ -874,6 +950,20 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   anyone keeps its secret, as decided: a URL that members already hold opens it for anyone from then on. When an
   address map is full (100000 keys), a new address is not recorded, and an audit entry for a key that finds no room
   is not written; that is the cost of bounding the maps.
+- **Drop links (o3).** Drop uploads are not scanned for viruses until slice u. Their received bytes fill the account's
+  quota and disk until the uploads complete or expire: the per-address and per-link limits cap abuse, and do not stop
+  it. A leaked drop link accepts uploads until it expires or is deleted. A drop upload can stop partway: when the
+  account fills, its next piece is refused and the bytes it already has are kept, so it resumes only after space
+  frees (owner's decision, 2026-10-29). A paused link (its switch off, a members-only space, or a trashed node) keeps
+  its visitors' uploads until their normal expiry, and answers `not_found` meanwhile. Trashing a directory does not end
+  its drop uploads; deleting the directory for good does. A visitor's name and email are typed, never verified, are
+  visible in the audit log as long as that log is kept, and nothing is mailed to them. The owner's mail is at most one
+  an hour per link, so a burst of files is reported in one mail with a count, not one by one.
+  A zero-length drop upload completes at creation: it takes no quota and no disk, and is bounded only by the
+  `drop.ip` and `drop.link` rate limits (its file is an empty file in the link's directory). A link that expires
+  releases its open uploads when the next visitor request arrives or at each upload's own expiry, whichever is first.
+  Pieces in flight count against the quota and the disk together, and a drop link's visitors are held to
+  `upload.max_disk_share_percent` as other uploads are.
 
 ## 9. API outline
 
@@ -931,6 +1021,7 @@ Files                                      any caller, limited to what it may re
   DELETE /share-links/{shl}                ends the link and its visits at once (204)
   POST   /share/open                       {secret, password}: a signed-in member opens an organisation link ({node_id}); anyone opens an anyone link ({token, expires_at, link, node}); not_found for every dead link
   POST   /share/renew                      bearer scl_: a live visitor credential, renewed ({token, expires_at})
+  GET    /share/info                       bearer scl_ of a drop link: {title, message, ask_name, expires_at, max_file_size}
   GET|PATCH /accounts/{acc}/sharing-policy {public_links} (answers {public_links, anyone_links}): the account's switch for links that anyone can open, and how many such links it has (owner or key)
   POST   /nodes/{nod}/access-requests      {role, message}: ask for a role (users only); always 202, with no body
   GET    /nodes/{nod}/access-requests      the requests on a node (manager, or editor where editors_can_share allows)
@@ -1347,13 +1438,13 @@ the not-found view.
 | `group_members` | group_id, user_id, created_at |
 | `permissions` | node_id, account_id, subject_kind (`user` or `group`), subject_id, role (viewer, commenter, contributor, editor, manager), created_at, created_by, expires_at (null: no expiry) |
 | `access_requests` | id (`arq_`), account_id, node_id, user_id, role (viewer, commenter or editor), message (at most 500 characters), status (pending, approved, denied), created_at, decided_at, decided_by; at most one pending row per node and user |
-| `share_links` | id (`shl_`), account_id, node_id (cascade), audience (`organisation` or `anyone`), role (viewer, commenter, contributor or editor; null for a drop link), upload_only (0 or 1), secret_hash (SHA-256, unique), password_hash (argon2id; anyone links only, null otherwise), expires_at (null: no end), credentials_at (the secret's issue time), created_by and created_kind, created_at, updated_by, updated_kind, updated_at; unique (node_id, upload_only) |
+| `share_links` | id (`shl_`), account_id, node_id (cascade), audience (`organisation` or `anyone`), role (viewer, commenter, contributor or editor; null for a drop link), upload_only (0 or 1), secret_hash (SHA-256, unique), password_hash (argon2id; anyone links only, null otherwise), expires_at (null: no end), credentials_at (the secret's issue time), created_by and created_kind, created_at, updated_by, updated_kind, updated_at; unique (node_id, upload_only). Drop fields (o3): title (100 characters), message (1000), ask_name, notify, unreported_files (files not yet mailed), notified_at (the last mail, null before the first) |
 | `share_link_visits` | link_id (cascade), user_id (cascade), visited_at; primary key (link_id, user_id). A member's recorded open of a link; it counts only from `credentials_at` on |
 | `hidden_folders` | user_id, folder_id, created_at; primary key (user_id, folder_id). A user's own list of hidden team spaces, which changes no access |
 | `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors), trashed_at and trashed_by (set on a trash root only), trashed_name_key (the name key before the trash) |
 | `versions` | id (`ver_`), account_id, node_id, blob_id, size, sha256, etag, mime_type, created_at and created_by (when that content was first written), replaced_at and replaced_by, label (at most 100 characters), keep_forever (0 or 1); indexed by (node_id, created_at) |
 | `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
-| `uploads` | id, account_id, target (folder_id, parent_id or dir_path, parents, name, name_key, on_conflict, mime_type), length, durable_offset, hash_state, blob_id, created_by, created_kind, expires_at |
+| `uploads` | id, account_id, target (folder_id, parent_id or dir_path, parents, name, name_key, on_conflict, mime_type), length, durable_offset, hash_state, blob_id, created_by, created_kind, expires_at; uploader_name (100), uploader_email (254) and visitor_id, for uploads through a drop link (o3) |
 | `wopi_locks` | node_id, lock_id, expires_at |
 | `webhooks`, `webhook_deliveries` | endpoint (url, secret encrypted, events); outbox (event, payload, attempts, next_attempt_at, status, last_error) |
 | `jobs` | id, account_id, kind, status, progress, error |
@@ -1601,3 +1692,44 @@ Decided on approval:
       the link ends the attack. The bounds are the 10 seconds, the one-per-address rule and the lockout, not a count
       of the whole queue.
 
+
+    Slice o3 (drop folders), 2026-10-29. The owner's decisions 9 and 10 (below) and decision 3 apply.
+    - Decision 9: a drop link must end, 30 days by default and 365 at most, lower when `sharing.max_expiry` is lower.
+      Omitting `expires_at` takes the default; `null` is refused.
+    - Decision 10: a drop link is anonymous only (audience `anyone`), and needs `public_links`.
+    - Decision 3: no per-link byte or file caps; the account quota, `upload.max_file_size`, the rate limits and the 20
+      open uploads per link are all there is.
+
+    Interpretations made in o3, for review (the owner has not decided them):
+    - A drop link's open answer carries `upload_only: true` and no `node` or `link`, so the visitor learns no directory
+      ID. The proposal's answer shape is kept for access links.
+    - A drop link's `role` is `""` in the API, not `null`, as the access links' field is a string.
+    - A drop link's `title` and `message` reach a visitor only through `GET /share/info`. Listings show a drop link to
+      its sharers alone, and a member of the account never sees it.
+    - A drop upload's `folder`, `parent`, `on_conflict` and `mime_type` are ignored, not refused, so a visitor cannot
+      learn from an error whether a directory exists.
+    - `GET /share/info` answers the link's own end as `expires_at`, not the credential's.
+    - The creator's notice counts the files that arrived, and is sent by a loop that runs every minute, rather than by
+      the sweep. The loop claims the count before mailing and gives it back if the mail does not go, so a failed send
+      is not lost. A failed send or a refused budget also sets the link's last mail to the failed try, so the link is
+      tried again an hour later, not on the next run.
+    - A visitor's upload ends, its row and reservation released, when its link is truly gone for the visitor's
+      credential: deleted, expired, or reset after the credential was issued. Deleting or resetting the link does it in
+      the same transaction. A paused link (switch off, members-only, node trashed) and any `not_found` that is not from
+      the link's state answers `not_found` and keeps the upload until its normal expiry, so resuming works once the
+      link is back. A credential refused only for its own 15-minute expiry ends nothing.
+    - A directory moved to another folder does not destroy a finished transfer: the file lands where the directory now
+      is.
+
+    Owner's decision, 2026-10-29, "Reserve as received" (the security review of o3, item M1): a drop upload holds only
+    the bytes it has received. Each piece checks and charges the quota and the disk for the bytes it brings, and is
+    refused with the generic answer of section 8 when they do not fit, keeping the bytes already received.
+    `upload.max_file_size` still caps the declared length at creation. Other uploads keep their up-front reservation.
+    The accepted limit this leaves (a drop upload can stop partway when the account fills) is in section 8.
+    - Trashing a directory keeps its drop uploads (they are paused, not dead); the permanent delete of the directory
+      still removes them. This follows the paused-link rule above.
+    - The per-link `upload.create` limit (60 a minute) does not apply to drop uploads; the drop limits do.
+    - The uploader's name and email are stored with a line break replaced by a space. The email must be a bare
+      address (`net/mail`), and is not verified.
+    - The `mail.drop.*` budgets are 60 an hour per account and 10 an hour per address, as share mail's are.
+    - A drop link is hidden from listings for every caller who is not a sharer, the same as a paused link.

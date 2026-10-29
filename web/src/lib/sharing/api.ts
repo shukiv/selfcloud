@@ -5,6 +5,7 @@ import { api } from '../api';
 import type { Page, Node, Role } from '../files/types';
 import type { AccessRequest, DirectoryEntry, Permission, SetPermissionReply } from '../files/types';
 import type { ShareLink, ShareLinkCreated } from './links';
+import type { DropInfo } from './drop';
 
 export function listPermissions(nod: string): Promise<{ items: Permission[] }> {
   return api<{ items: Permission[] }>('GET', `/api/v1/nodes/${nod}/permissions`);
@@ -113,6 +114,12 @@ export interface ShareLinkBody {
   password?: string;
 }
 
+// createDropLink makes the drop link of a directory (Request files): the link that anyone can send files into. Its
+// body is built by dropCreateBody, and the answer carries the URL, which is shown once.
+export function createDropLink(nod: string, body: Record<string, unknown>): Promise<ShareLinkCreated> {
+  return api<ShareLinkCreated>('POST', `/api/v1/nodes/${nod}/share-links`, { body });
+}
+
 // updateShareLink changes a link. An absent field keeps its value; expires_at null clears it (refused for an
 // anyone link); password "" removes the password of an anyone link. Switching audience keeps the secret.
 export function updateShareLink(shl: string, body: ShareLinkUpdate): Promise<ShareLink> {
@@ -124,6 +131,11 @@ export interface ShareLinkUpdate {
   role?: Role;
   expires_at?: string | null;
   password?: string;
+}
+
+// updateDropLink changes a drop link: its end, its text, its two switches and, when given, its password.
+export function updateDropLink(shl: string, body: Record<string, unknown>): Promise<ShareLink> {
+  return api<ShareLink>('PATCH', `/api/v1/share-links/${shl}`, { body });
 }
 
 // resetShareLink gives a link a new secret. The old URL stops working.
@@ -139,7 +151,7 @@ export function deleteShareLink(shl: string): Promise<void> {
 // An anyone link answers a bearer credential for the visit and the node it opens.
 export type OpenedLink =
   | { node_id: string }
-  | { token: string; expires_at: string; link: ShareLink; node: string };
+  | { token: string; expires_at: string; upload_only?: boolean; link?: ShareLink; node?: string };
 
 // openShareLink opens a link from its secret. A password is sent only when the visitor gave one.
 export function openShareLink(secret: string, password?: string): Promise<OpenedLink> {
@@ -178,6 +190,12 @@ export function visitorLink(
     // No ttl: the server gives the longest life the visitor's credential has left.
     body: { disposition },
   });
+}
+
+// visitorInfo reads what a drop link says to its visitor: its title and message, whether it asks for a name, when it
+// ends and the largest file it takes. Only a drop credential reaches it.
+export function visitorInfo(token: string): Promise<DropInfo> {
+  return api<DropInfo>('GET', '/api/v1/share/info', visitorOpts(token));
 }
 
 function visitorOpts(token: string): { headers: Record<string, string>; noRedirect: true } {

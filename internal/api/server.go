@@ -61,7 +61,9 @@ type Server struct {
 	mailer    mail.Sender // nil when mail is not configured
 	templates *mail.Templates
 	limits    map[string]*limiter // rate limiters by "endpoint.dimension"
-	pwFails   passwordFails       // wrong current passwords, per session, for POST /me/password
+	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (round 2, item 1).
+	dropFlight dropFlight
+	pwFails    passwordFails // wrong current passwords, per session, for POST /me/password
 	// origin is public_url's scheme and host. Browsers send it as Origin, and unsafe requests
 	// made with a session must carry it.
 	origin string
@@ -128,9 +130,11 @@ type route struct {
 	// secretPath marks a path that carries a credential, such as a signed link. The access log
 	// records the route pattern instead of the path.
 	secretPath bool
-	// link admits a visitor credential (a link that anyone can open). A route without it refuses such a
-	// credential, so a route added later fails closed. Only the routes a visitor may use set it.
+	// link admits the credential of a visitor to an access link (a link that anyone can open). drop admits
+	// the credential of a drop link's visitor. A route without the flag that matches the credential refuses
+	// it, so a route added later fails closed. Each kind reaches only its own routes.
 	link bool
+	drop bool
 }
 
 // New builds a Server.
@@ -245,6 +249,9 @@ func New(opts Options) (*Server, error) {
 			// Share mail has buckets of its own too, so sharing cannot spend the mail a user needs to sign in.
 			"mail.share.account": newLimiterRate(60, time.Hour),
 			"mail.share.target":  newLimiterRate(10, time.Hour),
+			// The mail a drop link sends its creator about arriving files has buckets of its own, as share mail does.
+			"mail.drop.account": newLimiterRate(60, time.Hour),
+			"mail.drop.target":  newLimiterRate(10, time.Hour),
 			// Starting uploads, per caller: each one reserves disk, so a flood of them is refused.
 			"upload.create": newLimiter(60),
 			// Minting delegated tokens, per account key: each is a credential, so a flood is refused.
@@ -252,6 +259,9 @@ func New(opts Options) (*Server, error) {
 			// Opening a share link is a secret lookup, so it is limited per client address.
 			"share.open.ip":   newLimiter(30),
 			"share.open.user": newLimiter(60),
+			// Uploads through a drop link: 30 an hour per client address, and 300 an hour per link across its visitors.
+			"drop.ip":   newLimiterRate(30, time.Hour),
+			"drop.link": newLimiterRate(300, time.Hour),
 			// Signed links: creation per principal; serving per client address, generous enough
 			// for a player seeking through a video.
 			"links.create": newLimiter(120),
@@ -395,7 +405,9 @@ func (s *Server) routes() []route {
 		// Opening a link checks its own credential: the handler answers a dead link the same way for every caller.
 		{method: http.MethodPost, path: "/api/v1/share/open", handle: s.handleOpenShareLink},
 		// Renewing a visitor credential: the credential itself is the caller.
-		{method: http.MethodPost, path: "/api/v1/share/renew", handle: s.handleRenewShareCredential, auth: true, link: true},
+		{method: http.MethodPost, path: "/api/v1/share/renew", handle: s.handleRenewShareCredential, auth: true, link: true, drop: true},
+		// What a drop link's visitor may upload, and what the drop page shows: the credential is the caller.
+		{method: http.MethodGet, path: "/api/v1/share/info", handle: s.handleShareInfo, auth: true, drop: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleGetSharingPolicy, auth: true},
 		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleUpdateSharingPolicy, auth: true},
 		{method: http.MethodGet, path: "/api/v1/directory", handle: s.handleDirectory, auth: true},
@@ -422,10 +434,12 @@ func (s *Server) routes() []route {
 		{method: http.MethodHead, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},
 
 		{method: http.MethodOptions, path: "/api/v1/uploads", handle: s.handleUploadOptions},
-		{method: http.MethodPost, path: "/api/v1/uploads", handle: s.handleCreateUpload, auth: true},
-		{method: http.MethodHead, path: "/api/v1/uploads/{upl}", handle: s.handleHeadUpload, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/uploads/{upl}", handle: s.handlePatchUpload, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/uploads/{upl}", handle: s.handleDeleteUpload, auth: true},
+		// Uploads admit a drop link's visitor. The access link's visitor is refused on each of them. A drop link
+		// has no commit: its uploads take a free name, so none waits for one.
+		{method: http.MethodPost, path: "/api/v1/uploads", handle: s.handleCreateUpload, auth: true, drop: true},
+		{method: http.MethodHead, path: "/api/v1/uploads/{upl}", handle: s.handleHeadUpload, auth: true, drop: true},
+		{method: http.MethodPatch, path: "/api/v1/uploads/{upl}", handle: s.handlePatchUpload, auth: true, drop: true},
+		{method: http.MethodDelete, path: "/api/v1/uploads/{upl}", handle: s.handleDeleteUpload, auth: true, drop: true},
 		{method: http.MethodPost, path: "/api/v1/uploads/{upl}/commit", handle: s.handleCommitUpload, auth: true},
 	}
 	rs = append(rs, route{method: http.MethodGet, path: logoPath, handle: s.handleLogo})
@@ -466,12 +480,16 @@ func (s *Server) wrap(rt route) http.Handler {
 				p, sess, err = s.authenticate(r)
 			}
 			if err != nil {
+				if rt.drop && apierr.From(err).Code == apierr.NotFound {
+					s.endDroppedUploadOnDeadLink(r)
+				}
 				s.writeError(w, r, err)
 				return
 			}
-			// A visitor's credential reaches only the routes that admit it. Any other route refuses it, so a
-			// route added later is closed to visitors unless it says otherwise.
-			if p != nil && p.Kind == auth.KindShareLink && !rt.link {
+			// A visitor's credential reaches only the routes that admit its kind. An access link's visitor needs
+			// a route with link, a drop link's visitor one with drop. Any other route refuses it, so a route added
+			// later is closed to visitors unless it says otherwise.
+			if p != nil && p.Kind == auth.KindShareLink && !admitsVisitor(rt, p.Link) {
 				s.writeError(w, r, apierr.New(apierr.Forbidden,
 					"a link that anyone can open does not reach this").With("reason", "link_route"))
 				return
@@ -485,6 +503,19 @@ func (s *Server) wrap(rt route) http.Handler {
 			s.writeError(w, r, err)
 		}
 	})
+}
+
+// admitsVisitor reports whether route rt admits the visitor credential described by l: the drop route flag for a
+// drop link's visitor, the link flag for any other visitor. A visitor without a scope is refused.
+func admitsVisitor(rt route, l *auth.LinkScope) bool {
+	switch {
+	case l == nil:
+		return false
+	case l.UploadOnly:
+		return rt.drop
+	default:
+		return rt.link
+	}
 }
 
 // Handler returns the server's HTTP handler.
@@ -545,6 +576,8 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
 		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(), Logger: s.log})
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
+	noticeDone := make(chan struct{})
+	go func() { defer close(noticeDone); s.runDropNotices(jobsCtx) }()
 
 	var serveErr error
 	select {
@@ -553,7 +586,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	}
 	s.draining.Store(true)
 	stopJobs() // an interrupted job is run again on the next start
-	defer func() { <-jobsDone; <-sweepDone }()
+	defer func() { <-jobsDone; <-sweepDone; <-noticeDone }()
 	s.log.Info("shutting down", "timeout", s.cfg.ShutdownTimeout.String())
 
 	shCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout.D())

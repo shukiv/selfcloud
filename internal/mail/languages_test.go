@@ -38,12 +38,14 @@ var wantFields = map[string][]string{
 	PurposeShare:          {"Actor", "Item", "Link", "Message", "Role"},
 	PurposeAccessRequest:  {"Actor", "Item", "Link", "Message", "Role"},
 	PurposeAccessDecision: {"Actor", "Item", "Link", "Role"},
+	PurposeDrop:           {"Count", "Folder", "Link"},
 }
 
 // mailData carries every field any purpose uses, so one value can render each template.
 type mailData struct {
-	URL, ExpiresAt, Actor, Item, Role, Link, Message string
-	Approved                                         bool
+	URL, ExpiresAt, Actor, Item, Role, Link, Message, Folder string
+	Count                                                    int
+	Approved                                                 bool
 }
 
 // TestEveryPurposeInEveryLanguage checks that each purpose has a template in all seven languages,

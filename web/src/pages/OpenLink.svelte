@@ -9,6 +9,7 @@
   import { forgetSecret, peekSecret, secretFromAddress, stashSecret } from '../lib/sharing/links';
   import { outcomeOf, renewDelay, visitStep, type VisitStep } from '../lib/sharing/anyone';
   import PublicBrowse from '../components/share/PublicBrowse.svelte';
+  import DropPage from '../components/share/DropPage.svelte';
 
   // OpenLink opens the address /s#secret. The secret is read from the fragment, or from this tab's session
   // storage when a sign-in sent the visitor here. The server decides what the link is:
@@ -19,7 +20,8 @@
   // A dead link gets the one message, and the fragment is dropped from the address. A signed-out visitor who hits
   // one is sent to sign in, with the secret kept in session storage, as the organisation link needs. An
   // organisation link leaves the address for its item, so its secret leaves the address too.
-  type Bearer = { token: string; expiresAt: string; root: string };
+  // uploadOnly is set for a drop link: the page then shows the drop page, which never lists the folder.
+  type Bearer = { token: string; expiresAt: string; root: string; uploadOnly: boolean };
 
   let step = $state<VisitStep | 'working'>('working');
   let password = $state('');
@@ -27,6 +29,8 @@
   // secret is kept in memory for the length of the visit, so an ended credential can be opened again.
   let secret = '';
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // renewing is the renewal in flight, if any, so the timer and a refused upload do not renew twice.
+  let renewing: Promise<boolean> | null = null;
 
   onMount(() => {
     const fromAddress = secretFromAddress(window.location.hash);
@@ -57,7 +61,12 @@
         go(`/n/${res.node_id}`, { replace: true });
         return;
       }
-      bearer = { token: res.token, expiresAt: res.expires_at, root: res.node };
+      bearer = {
+        token: res.token,
+        expiresAt: res.expires_at,
+        root: res.node ?? '',
+        uploadOnly: res.upload_only === true,
+      };
       step = 'bearer';
       schedule();
     } catch (err) {
@@ -107,18 +116,30 @@
   }
 
   // renewNow swaps the credential for a new one. When that is refused, the link is opened again from the secret,
-  // which may ask for the password.
-  async function renewNow(): Promise<void> {
-    if (bearer === null) return;
+  // which may ask for the password. It answers whether a credential is held afterwards. Calls made while one is in
+  // flight share it.
+  function renewNow(): Promise<boolean> {
+    if (renewing === null) {
+      renewing = doRenew().finally(() => {
+        renewing = null;
+      });
+    }
+    return renewing;
+  }
+
+  async function doRenew(): Promise<boolean> {
+    if (bearer === null) return false;
     const old = bearer.token;
     try {
       const res = await renewShareLink(old);
-      if (bearer === null || bearer.token !== old) return;
+      if (bearer === null || bearer.token !== old) return bearer !== null;
       bearer = { ...bearer, token: res.token, expiresAt: res.expires_at };
       schedule();
+      return true;
     } catch {
       bearer = null;
       await attempt('');
+      return bearer !== null;
     }
   }
 
@@ -165,6 +186,13 @@
       <button type="submit" class="btn primary">{translate($lang, 'share.open.submit')}</button>
     </div>
   </form>
+{:else if step === 'bearer' && bearer !== null && bearer.uploadOnly}
+  <DropPage
+    bearer={() => bearer?.token ?? null}
+    expiresAt={() => bearer?.expiresAt ?? ''}
+    onrenew={renewNow}
+    {onlost}
+  />
 {:else if step === 'bearer' && bearer !== null}
   <PublicBrowse token={bearer.token} root={bearer.root} {onlost} />
 {:else if step === 'limited'}

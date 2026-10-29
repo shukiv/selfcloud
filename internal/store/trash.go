@@ -127,7 +127,9 @@ func (s *Store) ExpiredTrash(ctx context.Context, cutoff time.Time, limit int) (
 // DropUploadsUnder deletes the unfinished uploads whose target directory lies in the subtree of node id,
 // releases their reservations in the same transaction, and returns how many it deleted. Trashing a
 // directory ends them as deleting it does: the directory they were aimed at is no longer in place. The
-// temporary files they left behind are collected later, as orphans.
+// temporary files they left behind are collected later, as orphans. A drop upload is left alone: its
+// visitor's link is only paused by the trash, and the upload resumes if the directory is restored (slice o3).
+// Deleting the directory for good ends drop uploads too (DeleteNode, nodes.go).
 func (tx *Tx) DropUploadsUnder(ctx context.Context, accountID, id string) (int64, error) {
 	var reserved, count int64
 	const sub = `WITH RECURSIVE sub(nid) AS (
@@ -135,14 +137,14 @@ func (tx *Tx) DropUploadsUnder(ctx context.Context, accountID, id string) (int64
 		UNION ALL
 		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
 	)`
-	err := tx.q.QueryRowContext(ctx, sub+` SELECT COUNT(*), COALESCE(SUM(length), 0) FROM uploads
-		WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub)`,
+	err := tx.q.QueryRowContext(ctx, sub+` SELECT COUNT(*), COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads
+		WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub) AND visitor_id = ''`,
 		accountID, id, accountID, accountID).Scan(&count, &reserved)
 	if err != nil || count == 0 {
 		return 0, err
 	}
 	if _, err := tx.q.ExecContext(ctx, sub+` DELETE FROM uploads
-		WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub)`,
+		WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub) AND visitor_id = ''`,
 		accountID, id, accountID, accountID); err != nil {
 		return 0, err
 	}

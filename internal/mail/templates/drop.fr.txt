@@ -1,0 +1,7 @@
+Subject: {{if eq .Count 1}}Un fichier est arrivé dans {{.Folder}}{{else}}{{.Count}} fichiers sont arrivés dans {{.Folder}}{{end}}
+
+{{if eq .Count 1}}Un fichier est arrivé dans {{.Folder}} par un lien que vous avez créé.{{else}}{{.Count}} fichiers sont arrivés dans {{.Folder}} par un lien que vous avez créé.{{end}}
+
+{{.Link}}
+
+Si vous n'attendiez pas ce message, vous pouvez l'ignorer.

@@ -89,12 +89,18 @@ type credentialPayload struct {
 	NodeID    string `json:"nod"`
 	IssuedAt  int64  `json:"iat"`
 	ExpiresAt int64  `json:"exp"`
+	// VisitorID is set only for a drop link's credential: the visitor it was made for, kept across renewals.
+	// Its own field, not the link's, so a credential for an access link never carries one.
+	VisitorID string `json:"vid,omitempty"`
 }
 
 // valid reports whether the fields have the shape a credential made here has. It runs after the MAC.
 func (pl credentialPayload) valid() bool {
 	if pl.Version != shareCredentialVer || !id.Valid("acc", pl.AccountID) || !id.Valid("shl", pl.LinkID) ||
 		!id.Valid("nod", pl.NodeID) {
+		return false
+	}
+	if pl.VisitorID != "" && !id.Valid("vis", pl.VisitorID) {
 		return false
 	}
 	ttl := shareCredentialTTL.Milliseconds()
@@ -215,26 +221,41 @@ func (s *Server) authenticateShare(ctx context.Context, cred string) (*auth.Prin
 	if !credentialLive(st, pl, now) {
 		return nil, notFound("link")
 	}
-	// An anyone link gives the viewer role, whatever its row says: the row is read here for the link's state only.
-	return &auth.Principal{Kind: auth.KindShareLink, ID: st.Link.ID, AccountID: st.Link.AccountID,
-		Link: &auth.LinkScope{Node: st.Link.NodeID, Role: store.RoleViewer, IssuedAt: time.UnixMilli(pl.IssuedAt),
-			ExpiresAt: time.UnixMilli(pl.ExpiresAt)}}, nil
+	// The visitor of an access link gets the viewer role, whatever the row says is clamped here. A drop link's
+	// visitor has no role: it reaches no node. Both come from the row, never from the payload.
+	scope := &auth.LinkScope{Node: st.Link.NodeID, Role: store.RoleViewer, UploadOnly: st.Link.UploadOnly,
+		IssuedAt: time.UnixMilli(pl.IssuedAt), ExpiresAt: time.UnixMilli(pl.ExpiresAt)}
+	if st.Link.UploadOnly {
+		if pl.VisitorID == "" {
+			return nil, errBadCredential
+		}
+		scope.Role, scope.VisitorID = "", pl.VisitorID
+	} else if pl.VisitorID != "" {
+		return nil, errBadCredential
+	}
+	return &auth.Principal{Kind: auth.KindShareLink, ID: st.Link.ID, AccountID: st.Link.AccountID, Link: scope}, nil
 }
 
 // issueShareCredential signs a fresh credential for the link st describes. It is issued at now, or one
 // millisecond after the link's credentials_at when that is later, so a credential made in the very millisecond
-// of a reset is not already void. It returns the credential and when it ends.
+// of a reset is not already void. A drop link's credential is for a new visitor, whose ID it carries from now on.
+// It returns the credential and when it ends.
 func (s *Server) issueShareCredential(st *store.ShareLinkState, now time.Time) (string, time.Time, error) {
 	iat := time.UnixMilli(now.UnixMilli())
 	if !iat.After(st.Link.CredentialsAt) {
 		iat = st.Link.CredentialsAt.Add(time.Millisecond)
 	}
-	return s.signShareCredential(st, iat)
+	visitor := ""
+	if st.Link.UploadOnly {
+		visitor = id.New("vis")
+	}
+	return s.signShareCredential(st, iat, visitor)
 }
 
-// renewShareCredential signs the renewal of a presented credential, issued at now. It never moves the issue time
-// forward past the link's credentials_at: a renewal the reset overtook is refused by the caller, not clamped.
-func (s *Server) renewShareCredential(st *store.ShareLinkState, presented, now time.Time) (string, time.Time, error) {
+// renewShareCredential signs the renewal of a presented credential, issued at now, for the same visitor. It never
+// moves the issue time forward past the link's credentials_at: a renewal the reset overtook is refused by the
+// caller, not clamped.
+func (s *Server) renewShareCredential(st *store.ShareLinkState, presented, now time.Time, visitor string) (string, time.Time, error) {
 	iat := time.UnixMilli(now.UnixMilli())
 	if !iat.After(presented) {
 		iat = time.UnixMilli(presented.UnixMilli())
@@ -242,14 +263,14 @@ func (s *Server) renewShareCredential(st *store.ShareLinkState, presented, now t
 	if !iat.After(st.Link.CredentialsAt) {
 		return "", time.Time{}, notFound("link")
 	}
-	return s.signShareCredential(st, iat)
+	return s.signShareCredential(st, iat, visitor)
 }
 
-// signShareCredential signs a credential for the link st describes, issued at iat.
-func (s *Server) signShareCredential(st *store.ShareLinkState, iat time.Time) (string, time.Time, error) {
+// signShareCredential signs a credential for the link st describes, issued at iat, for visitor ("" for none).
+func (s *Server) signShareCredential(st *store.ShareLinkState, iat time.Time, visitor string) (string, time.Time, error) {
 	exp := iat.Add(shareCredentialTTL)
 	tok, err := s.shares.sign(credentialPayload{Version: shareCredentialVer, KeyID: s.shares.current.kid,
 		AccountID: st.Link.AccountID, LinkID: st.Link.ID, NodeID: st.Link.NodeID,
-		IssuedAt: iat.UnixMilli(), ExpiresAt: exp.UnixMilli()})
+		IssuedAt: iat.UnixMilli(), ExpiresAt: exp.UnixMilli(), VisitorID: visitor})
 	return tok, exp, err
 }

@@ -22,6 +22,8 @@
   import Dialog from '../Dialog.svelte';
   import PeopleCombobox from './PeopleCombobox.svelte';
   import GeneralAccess from './GeneralAccess.svelte';
+  import RequestFiles from './RequestFiles.svelte';
+  import { canRequestFiles } from '../../lib/sharing/drop';
 
   // ShareDialog shows who has access to an item, and changes it as far as the caller may. The server checks every
   // change; the dialog only shows what the caller's role allows. A person below manager sees only its own rows
@@ -310,6 +312,10 @@
     {/if}
 
     <GeneralAccess {node} {cap} onchanged={onchanged} onopen={onclose} />
+
+    {#if node.kind === 'dir' && canRequestFiles($session?.publicLinks === true, cap)}
+      <RequestFiles {node} {cap} onchanged={onchanged} />
+    {/if}
 
     <section aria-labelledby="share-people">
       <h3 id="share-people" class="section-title">{manager ? translate($lang, 'share.people') : translate($lang, 'share.yourRows')}</h3>

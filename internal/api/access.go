@@ -30,6 +30,7 @@ type accessReader interface {
 	EffectiveRank(ctx context.Context, accountID, nodeID, userID string) (int, error)
 	PermissionRank(ctx context.Context, accountID, nodeID, userID string) (int, error)
 	IsWithin(ctx context.Context, accountID, id, ancestor string) (bool, error)
+	ShareLinkStateByID(ctx context.Context, accountID, id string) (*store.ShareLinkState, error)
 	RootNode(ctx context.Context, accountID, folderID string) (*store.Node, error)
 	Child(ctx context.Context, accountID, parentID, key string) (*store.Node, error)
 	TrashState(ctx context.Context, accountID, id string) (self, above bool, err error)
@@ -143,9 +144,13 @@ func nodeRoleIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeID 
 
 	if p.Kind == auth.KindShareLink {
 		// A visitor of a link that anyone can open reaches the link's node and everything below it, at the link's
-		// role, and nothing else: no permission, group or implicit rule applies to it.
+		// role, and nothing else: no permission, group or implicit rule applies to it. A drop link's visitor reaches
+		// no node at all: it uploads into the link's directory (see uploadAccess).
 		if p.Link == nil {
 			return nil, "", apierr.New(apierr.Unauthenticated, "the credential is not valid")
+		}
+		if p.Link.UploadOnly {
+			return nil, "", nodeNotFound()
 		}
 		within, err := rd.IsWithin(ctx, p.AccountID, nodeID, p.Link.Node)
 		if err != nil {

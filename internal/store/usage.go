@@ -71,7 +71,7 @@ func (tx *Tx) RecountAccount(ctx context.Context, accountID string) (before, aft
 	if err != nil {
 		return before, after, err
 	}
-	err = tx.q.QueryRowContext(ctx, "SELECT COALESCE(SUM(length), 0) FROM uploads WHERE account_id = ?",
+	err = tx.q.QueryRowContext(ctx, "SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads WHERE account_id = ?",
 		accountID).Scan(&after.Reserved)
 	if err != nil {
 		return before, after, err
@@ -92,7 +92,7 @@ func (s *Store) UsageTotals(ctx context.Context) (used, reserved int64, err erro
 // the unfinished uploads. They agree unless the counters have drifted; the sweep compares them.
 func (tx *Tx) ReservationTotals(ctx context.Context) (counted, declared int64, err error) {
 	err = tx.q.QueryRowContext(ctx, `SELECT (SELECT COALESCE(SUM(reserved_bytes), 0) FROM accounts),
-		(SELECT COALESCE(SUM(length), 0) FROM uploads)`).Scan(&counted, &declared)
+		(SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads)`).Scan(&counted, &declared)
 	return counted, declared, err
 }
 

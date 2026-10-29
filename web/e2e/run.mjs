@@ -136,6 +136,8 @@ async function main() {
   server.stderr.on('data', (d) => (serverLog += d));
   let browser = null;
   let page = null;
+  // passed is set at the very end, so a wait that times out, which throws, also prints the logs below.
+  let passed = false;
   try {
     await waitForServer(base);
     await api(base, 'POST', '/api/v1/auth/verify', null, { token: adminToken, password: ADMIN.password });
@@ -264,7 +266,7 @@ async function main() {
     check(page.errors.length === 0, `no console errors or policy violations (${page.errors.join(' | ') || 'none'})`);
     check(page.expectedConflicts.length === 1, `exactly one upload met a taken name, and was asked about it (${page.expectedConflicts.length})`);
     check(page.expectedSignInRefusals.length === 1, `the used sign-in link was refused once, on the second visit (${page.expectedSignInRefusals.length})`);
-    check(page.expectedDeadLinks.length === 3, `the three dead links were refused once each: signed out before sign-in, removed, and deleted (${page.expectedDeadLinks.length})`);
+    check(page.expectedDeadLinks.length === 4, `the four dead links were refused once each: a signed-out open of a members' link, a removed link, a deleted anyone link and a deleted drop link (${page.expectedDeadLinks.length})`);
     check(page.expectedPasswordRefusals.length === 2, `the password link was refused twice: asked for, then a wrong one (${page.expectedPasswordRefusals.length})`);
     check(page.expectedSwitchPrompts.length === 2, `the two links for another user were each asked about, on a browser signed in as another (${page.expectedSwitchPrompts.length})`);
     check(page.expectedMissing.length >= 2, `the not-found views asked for access, and the browser logged their 404s (${page.expectedMissing.length})`);
@@ -273,6 +275,7 @@ async function main() {
     check(foreign.length === 0, `every request is same-origin (${foreign.length} foreign: ${foreign.join(' ')})`);
     console.log(`requests seen: ${page.requests.length}, all on ${base}`);
     console.log('e2e passed');
+    passed = true;
   } finally {
     page?.close();
     browser?.kill();
@@ -282,7 +285,10 @@ async function main() {
       await new Promise((r) => setTimeout(r, 200));
       await rm(dir, { recursive: true, force: true });
     }
-    if (results.some((r) => !r.ok)) console.error(serverLog);
+    if (!passed || results.some((r) => !r.ok)) {
+      console.error(serverLog);
+      if (page?.errors?.length) console.error(`browser errors: ${page.errors.join(' | ')}`);
+    }
   }
 }
 
@@ -608,6 +614,7 @@ async function linkChecks(page, { base, accountID, accountKey }) {
   await page.waitFor(`!!document.querySelector('.alert') && document.querySelector('.alert').textContent.includes("doesn't work")`, 15000);
   check(true, 'the removed link shows the one message a dead link gets');
   await anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans });
+  await dropLinkChecks(page, { base, accountID, accountKey, fld, plans });
 }
 
 // anyoneLinkChecks: the owner turns on links that anyone can open, and makes one on Plans with a password. A
@@ -699,6 +706,86 @@ async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans 
   await page.goto(url);
   await page.waitFor(`!!document.querySelector('.alert') && document.querySelector('.alert').textContent.includes("doesn't work")`, 15000);
   check(true, 'a deleted link that anyone can open shows the one dead-link message');
+}
+
+// dropLinkChecks: the owner asks for files in Plans (Request files, with a name), a signed-out visitor sends two
+// files into it, one of them named like a file already there, and sees no listing of the folder. The owner sees both
+// files and turns the link off. The visitor who opens the dead link is signed in, as the anyone-link checks above
+// do: a signed-out visitor to a dead link is sent to sign in, by design.
+async function dropLinkChecks(page, { base, accountID, accountKey, fld, plans }) {
+  await rawPut(base, `/api/v1/folders/${fld}/files?path=%2FPlans%2Freport.txt`, accountKey, 'old report\n');
+
+  await signOut(page);
+  await signIn(page, OWNER);
+  await navigateTo(page, `/files/${fld}`);
+  await rowAppears(page, 'Plans');
+  await selectRow(page, 'Plans');
+  await clickButton(page, 'Share');
+  await page.waitFor(`!!document.getElementById('share-request-files')`);
+  // Turning Request files on makes the link; the name request is then saved on it.
+  await page.evaluate(`(() => { const box = document.querySelector('section.request label.toggle input'); box.click(); return true; })()`);
+  await page.waitFor(`!!document.querySelector('section.request .made input')`, 15000);
+  const url = await page.evaluate(`document.querySelector('section.request .made input').value`);
+  check(url.startsWith(base + '/s#') && url.slice(base.length + 3).length === 43, 'the owner turns on Request files and gets a link');
+  await page.evaluate(`(() => { const l = [...document.querySelectorAll('section.request label.toggle')].find((x) => x.textContent.includes('Ask for name')); l.querySelector('input').click(); return true; })()`);
+  await clickButton(page, 'Save');
+  await page.waitFor(`document.querySelector('section.request .hint[role="status"]')?.textContent.includes('Saved')`, 15000);
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+
+  // A signed-out visitor opens the link: it asks for a name and an email, and offers no listing of the folder.
+  await signOut(page);
+  await page.goto(url);
+  await page.waitFor(`!!document.getElementById('drop-name')`, 15000);
+  const nameLabel = await page.evaluate(`document.querySelector('label[for="drop-name"]').textContent`);
+  check(nameLabel === 'Your name', 'a signed-out visitor sees the name field as required');
+  await setInput(page, 'drop-name', 'Vera Visitor');
+  await setInput(page, 'drop-email', 'vera@example.com');
+  for (const [name, body] of [['report.txt', 'new report\n'], ['brief.txt', 'the brief\n']]) {
+    await page.evaluate(`(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([${q(body)}], ${q(name)}, { type: 'text/plain' }));
+      const input = document.querySelector('.dropzone input[type="file"]');
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`);
+  }
+  await page.waitFor(
+    `[...document.querySelectorAll('.rows li .muted')].filter((x) => x.textContent === 'Sent').length === 2`,
+    30000,
+  );
+  const visit = await page.evaluate(`[...document.querySelectorAll('.rows li .name')].map((x) => x.textContent)`);
+  check(JSON.stringify(visit) === JSON.stringify(['report.txt', 'brief.txt']), `the visitor sees only the two files it sent (${visit.join(', ')})`);
+  const listed = await page.evaluate(`!!document.querySelector('.crumbs') || [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Plans')`);
+  check(listed === false, 'the visitor sees no listing of the folder');
+
+  // The owner sees both files, and the one whose name was taken arrived renamed.
+  await signOut(page);
+  await signIn(page, OWNER);
+  await navigateTo(page, `/files/${fld}`);
+  await rowAppears(page, 'Plans');
+  await openRow(page, 'Plans');
+  await rowAppears(page, 'brief.txt');
+  await rowAppears(page, 'report (1).txt');
+  check(true, 'the owner sees both files; the clashing name arrived as report (1).txt');
+
+  // The owner turns Request files off: the link stops working at once.
+  await navigateTo(page, `/files/${fld}`);
+  await rowAppears(page, 'Plans');
+  await selectRow(page, 'Plans');
+  await clickButton(page, 'Share');
+  await page.waitFor(`!!document.getElementById('share-request-files')`);
+  await page.evaluate(`(() => { document.querySelector('section.request label.toggle input').click(); return true; })()`);
+  await page.waitFor(`!document.getElementById('drop-expires')`, 15000);
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+
+  await signOut(page);
+  await signIn(page, MEMBER);
+  await page.goto(url);
+  await page.waitFor(`!!document.querySelector('.alert') && document.querySelector('.alert').textContent.includes("doesn't work")`, 15000);
+  check(true, 'a deleted drop link shows the one dead-link message');
 }
 
 // signOut signs out through the account menu, as a person would.

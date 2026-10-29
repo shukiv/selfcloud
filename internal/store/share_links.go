@@ -31,7 +31,8 @@ type ShareLink struct {
 	AccountID     string
 	NodeID        string
 	Audience      string
-	Role          string // viewer, commenter, contributor or editor
+	Role          string // viewer, commenter, contributor or editor; "" for a drop link
+	UploadOnly    bool   // a drop link: uploads into NodeID and nothing else (slice o3)
 	SecretHash    []byte
 	PasswordHash  string
 	ExpiresAt     *time.Time
@@ -42,6 +43,15 @@ type ShareLink struct {
 	UpdatedBy     string
 	UpdatedKind   string
 	UpdatedAt     time.Time
+	// The fields below belong to drop links. Title and Message are shown to the visitor. AskName makes the
+	// visitor give a name and email. Notify mails the creator the files that arrive: UnreportedFiles counts the
+	// files not yet mailed, and NotifiedAt is when the last mail went (nil before the first).
+	Title           string
+	Message         string
+	AskName         bool
+	Notify          bool
+	UnreportedFiles int
+	NotifiedAt      *time.Time
 }
 
 // ShareLinkView is a link as a listing shows it: the link, how many members hold a live visit to it, and
@@ -54,36 +64,52 @@ type ShareLinkView struct {
 
 const shareLinkCols = `sl.id, sl.account_id, sl.node_id, sl.audience, sl.role, sl.secret_hash, sl.password_hash,
 	sl.expires_at, sl.credentials_at, sl.created_by, sl.created_kind, sl.created_at, sl.updated_by, sl.updated_kind,
-	sl.updated_at`
+	sl.updated_at, sl.upload_only, sl.title, sl.message, sl.ask_name, sl.notify, sl.unreported_files, sl.notified_at`
 
-// scanShareLinkInto reads the columns of shareLinkCols into l, and returns the nullable ones it needs.
-func scanShareLinkInto(row interface{ Scan(...any) error }, l *ShareLink) (role sql.NullString, err error) {
-	var password sql.NullString
-	var expires sql.NullInt64
-	var credentials, created, updated int64
-	err = row.Scan(&l.ID, &l.AccountID, &l.NodeID, &l.Audience, &role, &l.SecretHash, &password, &expires,
-		&credentials, &l.CreatedBy, &l.CreatedKind, &created, &l.UpdatedBy, &l.UpdatedKind, &updated)
+// linkRow holds the columns of shareLinkCols as the database gives them, before they become a ShareLink.
+type linkRow struct {
+	role, password       sql.NullString
+	expires, notified    sql.NullInt64
+	credentials, created int64
+	updated              int64
+	uploadOnly, askName  int64
+	notify, unreported   int64
+}
+
+// scanLinkRow reads the columns of shareLinkCols into l, through row. extra are destinations for the columns a
+// query puts after them.
+func scanLinkRow(row interface{ Scan(...any) error }, l *ShareLink, extra ...any) error {
+	var r linkRow
+	dest := []any{&l.ID, &l.AccountID, &l.NodeID, &l.Audience, &r.role, &l.SecretHash, &r.password, &r.expires,
+		&r.credentials, &l.CreatedBy, &l.CreatedKind, &r.created, &l.UpdatedBy, &l.UpdatedKind, &r.updated,
+		&r.uploadOnly, &l.Title, &l.Message, &r.askName, &r.notify, &r.unreported, &r.notified}
+	err := row.Scan(append(dest, extra...)...)
 	if err != nil {
-		return role, err
+		return err
 	}
-	l.PasswordHash = password.String
-	l.ExpiresAt = fromNullMillis(expires)
-	l.CredentialsAt = fromMillis(credentials)
-	l.CreatedAt = fromMillis(created)
-	l.UpdatedAt = fromMillis(updated)
-	return role, nil
+	l.Role = r.role.String
+	l.UploadOnly = r.uploadOnly == 1
+	l.PasswordHash = r.password.String
+	l.ExpiresAt = fromNullMillis(r.expires)
+	l.CredentialsAt = fromMillis(r.credentials)
+	l.CreatedAt = fromMillis(r.created)
+	l.UpdatedAt = fromMillis(r.updated)
+	l.AskName = r.askName == 1
+	l.Notify = r.notify == 1
+	l.UnreportedFiles = int(r.unreported)
+	l.NotifiedAt = fromNullMillis(r.notified)
+	return nil
 }
 
 func scanShareLink(row interface{ Scan(...any) error }) (*ShareLink, error) {
 	var l ShareLink
-	role, err := scanShareLinkInto(row, &l)
+	err := scanLinkRow(row, &l)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	l.Role = role.String
 	return &l, nil
 }
 
@@ -103,15 +129,16 @@ const linkLiveSQL = `sl.audience = 'organisation' AND sl.role IS NOT NULL
 	AND ln.trashed_at IS NULL AND ` + linkPolicySQL
 
 // InsertShareLink adds l. A second link of the same kind on a node is ErrConflict: a node has one
-// access link.
+// access link and one drop link.
 func (tx *Tx) InsertShareLink(ctx context.Context, l *ShareLink) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO share_links (id, account_id, node_id, audience, role, upload_only,
 		secret_hash, password_hash, expires_at, credentials_at, created_by, created_kind, created_at, updated_by,
-		updated_kind, updated_at)
-		VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.AccountID, l.NodeID, l.Audience, l.Role, l.SecretHash, nullString(l.PasswordHash),
-		nullMillis(l.ExpiresAt), millis(l.CredentialsAt), l.CreatedBy, l.CreatedKind, millis(l.CreatedAt),
-		l.UpdatedBy, l.UpdatedKind, millis(l.UpdatedAt))
+		updated_kind, updated_at, title, message, ask_name, notify, unreported_files, notified_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+		l.ID, l.AccountID, l.NodeID, l.Audience, nullString(l.Role), boolInt(l.UploadOnly), l.SecretHash,
+		nullString(l.PasswordHash), nullMillis(l.ExpiresAt), millis(l.CredentialsAt), l.CreatedBy, l.CreatedKind,
+		millis(l.CreatedAt), l.UpdatedBy, l.UpdatedKind, millis(l.UpdatedAt), l.Title, l.Message,
+		boolInt(l.AskName), boolInt(l.Notify))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -144,10 +171,12 @@ func (s *Store) ShareLinkBySecretHash(ctx context.Context, hash []byte) (*ShareL
 // last changer. A reset is an update with a new SecretHash and CredentialsAt.
 func (tx *Tx) UpdateShareLink(ctx context.Context, l *ShareLink) error {
 	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE share_links SET audience = ?, role = ?, expires_at = ?,
-		secret_hash = ?, password_hash = ?, credentials_at = ?, updated_by = ?, updated_kind = ?, updated_at = ?
+		secret_hash = ?, password_hash = ?, credentials_at = ?, updated_by = ?, updated_kind = ?, updated_at = ?,
+		title = ?, message = ?, ask_name = ?, notify = ?
 		WHERE account_id = ? AND id = ?`,
-		l.Audience, l.Role, nullMillis(l.ExpiresAt), l.SecretHash, nullString(l.PasswordHash), millis(l.CredentialsAt),
-		l.UpdatedBy, l.UpdatedKind, millis(l.UpdatedAt), l.AccountID, l.ID))
+		l.Audience, nullString(l.Role), nullMillis(l.ExpiresAt), l.SecretHash, nullString(l.PasswordHash),
+		millis(l.CredentialsAt), l.UpdatedBy, l.UpdatedKind, millis(l.UpdatedAt), l.Title, l.Message,
+		boolInt(l.AskName), boolInt(l.Notify), l.AccountID, l.ID))
 }
 
 // DeleteShareLinkVisits removes the visits to a link. An anyone link has none, so a link that changes to
@@ -180,27 +209,16 @@ const shareLinkStateSQL = `SELECT ` + shareLinkCols + `,
 func scanShareLinkState(row interface{ Scan(...any) error }) (*ShareLinkState, error) {
 	var (
 		st                                         ShareLinkState
-		role, password                             sql.NullString
-		expires                                    sql.NullInt64
-		credentials, created, updated              int64
 		trashed, root, allow, members, publicLinks int64
 	)
-	l := &st.Link
-	err := row.Scan(&l.ID, &l.AccountID, &l.NodeID, &l.Audience, &role, &l.SecretHash, &password, &expires,
-		&credentials, &l.CreatedBy, &l.CreatedKind, &created, &l.UpdatedBy, &l.UpdatedKind, &updated,
-		&st.FolderID, &trashed, &root, &st.FolderKind, &allow, &members, &st.AccountStatus, &publicLinks)
+	err := scanLinkRow(row, &st.Link, &st.FolderID, &trashed, &root, &st.FolderKind, &allow, &members,
+		&st.AccountStatus, &publicLinks)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	l.Role = role.String
-	l.PasswordHash = password.String
-	l.ExpiresAt = fromNullMillis(expires)
-	l.CredentialsAt = fromMillis(credentials)
-	l.CreatedAt = fromMillis(created)
-	l.UpdatedAt = fromMillis(updated)
 	st.NodeTrashed = trashed == 1
 	st.NodeIsRoot = root == 1
 	st.AllowLinks = allow == 1
@@ -258,21 +276,9 @@ func (s *Store) ChainShareLinks(ctx context.Context, accountID, nodeID string, n
 	for rows.Next() {
 		var v ShareLinkView
 		var paused int64
-		var role, password sql.NullString
-		var expires sql.NullInt64
-		var credentials, created, updated int64
-		err := rows.Scan(&v.ID, &v.AccountID, &v.NodeID, &v.Audience, &role, &v.SecretHash, &password, &expires,
-			&credentials, &v.CreatedBy, &v.CreatedKind, &created, &v.UpdatedBy, &v.UpdatedKind, &updated,
-			&v.Visitors, &paused)
-		if err != nil {
+		if err := scanLinkRow(rows, &v.ShareLink, &v.Visitors, &paused); err != nil {
 			return nil, err
 		}
-		v.Role = role.String
-		v.PasswordHash = password.String
-		v.ExpiresAt = fromNullMillis(expires)
-		v.CredentialsAt = fromMillis(credentials)
-		v.CreatedAt = fromMillis(created)
-		v.UpdatedAt = fromMillis(updated)
 		v.Paused = paused == 1
 		out = append(out, &v)
 	}
@@ -335,4 +341,62 @@ func (s *Store) CountAnyoneLinks(ctx context.Context, accountID string, now time
 func (tx *Tx) SetSharingPolicy(ctx context.Context, accountID string, publicLinks bool, at time.Time) error {
 	return rowsAffected(tx.q.ExecContext(ctx, "UPDATE accounts SET public_links = ?, updated_at = ? WHERE id = ?",
 		boolInt(publicLinks), millis(at), accountID))
+}
+
+// AddDropFile counts one file that arrived through a drop link, for the creator's next mail.
+func (tx *Tx) AddDropFile(ctx context.Context, accountID, linkID string) error {
+	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE share_links SET unreported_files = unreported_files + 1
+		WHERE account_id = ? AND id = ? AND upload_only = 1`, accountID, linkID))
+}
+
+// DueDropNotices lists up to limit drop links whose creator is owed a mail at now: the link asks to notify, files
+// have arrived that no mail reported, and the last mail went an hour ago or none did.
+func (s *Store) DueDropNotices(ctx context.Context, now time.Time, limit int) ([]*ShareLink, error) {
+	rows, err := s.r.QueryContext(ctx, `SELECT `+shareLinkCols+` FROM share_links sl
+		WHERE sl.upload_only = 1 AND sl.notify = 1 AND sl.unreported_files > 0
+		AND (sl.notified_at IS NULL OR sl.notified_at <= ?)
+		ORDER BY sl.id LIMIT ?`, millis(now.Add(-time.Hour)), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*ShareLink
+	for rows.Next() {
+		l, err := scanShareLink(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// ClaimDropNotice takes the files a drop link has not reported, and marks the mail as sent at now. It returns the
+// count taken and the link's previous notified_at, so a mail that does not go can be given back with
+// RestoreDropNotice. A link with nothing to report takes nothing.
+func (tx *Tx) ClaimDropNotice(ctx context.Context, accountID, linkID string, now time.Time) (int, *time.Time, error) {
+	var (
+		count    int
+		notified sql.NullInt64
+	)
+	err := tx.q.QueryRowContext(ctx, `SELECT unreported_files, notified_at FROM share_links
+		WHERE account_id = ? AND id = ? AND upload_only = 1`, accountID, linkID).Scan(&count, &notified)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil, ErrNotFound
+	}
+	if err != nil || count == 0 {
+		return 0, nil, err
+	}
+	prev := fromNullMillis(notified)
+	err = rowsAffected(tx.q.ExecContext(ctx, `UPDATE share_links SET unreported_files = 0, notified_at = ?
+		WHERE account_id = ? AND id = ?`, millis(now), accountID, linkID))
+	return count, prev, err
+}
+
+// RestoreDropNotice gives back what ClaimDropNotice took, when its mail did not go: the count is reported again.
+// The mail time is set to notifiedAt, the failed try, so the link is due again an hour later, not on the next run.
+// Files that arrived since the claim stay counted too.
+func (tx *Tx) RestoreDropNotice(ctx context.Context, accountID, linkID string, count int, notifiedAt *time.Time) error {
+	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE share_links SET unreported_files = unreported_files + ?,
+		notified_at = ? WHERE account_id = ? AND id = ?`, count, nullMillis(notifiedAt), accountID, linkID))
 }

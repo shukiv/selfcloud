@@ -1,0 +1,7 @@
+Subject: {{if eq .Count 1}}Chegou um arquivo em {{.Folder}}{{else}}Chegaram {{.Count}} arquivos em {{.Folder}}{{end}}
+
+{{if eq .Count 1}}Chegou um arquivo em {{.Folder}} por um link que você criou.{{else}}Chegaram {{.Count}} arquivos em {{.Folder}} por um link que você criou.{{end}}
+
+{{.Link}}
+
+Se você não esperava esta mensagem, pode ignorá-la.

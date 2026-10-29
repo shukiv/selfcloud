@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { encodeMetadata, locationPath, parseError, sendChunk } from './tus';
+import { createUpload, encodeMetadata, locationPath, parseError, requestAuth, sendChunk } from './tus';
 
 describe('tus metadata', () => {
   it('writes key and base64 value pairs, leaving out empty keys', () => {
@@ -131,5 +131,32 @@ describe('a piece on the wire', () => {
     vi.stubGlobal('XMLHttpRequest', FakeXHR);
     await sendChunk('/api/v1/uploads/upl_1', 0, new Blob(['abc']), () => {}, () => {}, null);
     expect(FakeXHR.sent[0].headers['Upload-Checksum']).toBeUndefined();
+  });
+});
+
+describe('the bearer of a visitor', () => {
+  it('sends the bearer and no cookie, and the session otherwise', () => {
+    expect(requestAuth(() => 'scl_abc')).toEqual({ credentials: 'omit', headers: { Authorization: 'Bearer scl_abc' } });
+    expect(requestAuth(() => null)).toEqual({ credentials: 'omit', headers: {} });
+    expect(requestAuth()).toMatchObject({ credentials: 'same-origin' });
+  });
+
+  it('reads the bearer again for each request, so a renewed credential is the one sent', async () => {
+    let token = 'scl_first';
+    const seen: string[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      seen.push(String((init.headers as Record<string, string>).Authorization));
+      return new Response(null, { status: 201, headers: { Location: '/api/v1/uploads/upl_1' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await createUpload(10, { name: 'a.txt' }, () => token);
+      token = 'scl_renewed';
+      await createUpload(10, { name: 'b.txt' }, () => token);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(seen).toEqual(['Bearer scl_first', 'Bearer scl_renewed']);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: 'omit' });
   });
 });

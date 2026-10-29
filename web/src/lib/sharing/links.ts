@@ -13,10 +13,18 @@ export interface ShareLink {
   id: string;
   node_id: string;
   audience: 'organisation' | 'anyone';
-  role: Role;
+  // role is '' for a drop link: it gives no role, only the upload.
+  role: Role | '';
   expires_at: string | null;
   created_at: string;
   inherited_from: string | null;
+  // upload_only marks a drop link (Request files): anyone may send files into the directory, and see nothing.
+  upload_only?: boolean;
+  // title, message, ask_name and notify are the drop fields. The server sends them for a drop link only.
+  title?: string;
+  message?: string;
+  ask_name?: boolean;
+  notify?: boolean;
   created_by?: string;
   visitors?: number;
   paused?: boolean;
@@ -40,13 +48,20 @@ export function linkRoleOptions(cap: Role | null): Role[] {
 }
 
 // ownLink is the link on the node itself, or null when it has none.
+// A drop link is not the access link: it has its own section of the dialog, so these two skip it.
 export function ownLink(links: ShareLink[], nodeID: string): ShareLink | null {
-  return links.find((l) => l.node_id === nodeID && (l.inherited_from ?? null) === null) ?? null;
+  return links.find((l) => !l.upload_only && l.node_id === nodeID && (l.inherited_from ?? null) === null) ?? null;
 }
 
-// inheritedLinks are the links above the node that the caller may see, which the dialog shows as inherited.
+// ownDrop is the drop link on the node itself, or null when it has none.
+export function ownDrop(links: ShareLink[], nodeID: string): ShareLink | null {
+  return links.find((l) => l.upload_only === true && l.node_id === nodeID && (l.inherited_from ?? null) === null) ?? null;
+}
+
+// inheritedLinks are the access links above the node that the caller may see, which the dialog shows as
+// inherited. Drop links are left out: they give no role to show.
 export function inheritedLinks(links: ShareLink[], nodeID: string): ShareLink[] {
-  return links.filter((l) => l.node_id !== nodeID || (l.inherited_from ?? null) !== null);
+  return links.filter((l) => !l.upload_only && (l.node_id !== nodeID || (l.inherited_from ?? null) !== null));
 }
 
 // secretPattern is the shape of a secret the server issues: 32 random bytes in unpadded base64url.

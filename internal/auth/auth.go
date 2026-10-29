@@ -74,6 +74,12 @@ type Principal struct {
 type LinkScope struct {
 	Node string
 	Role string
+	// UploadOnly is set for a drop link's visitor: it reaches no node, and may only upload into Node. It is read
+	// from the link's row on every request.
+	UploadOnly bool
+	// VisitorID tells one visitor of a drop link from another: a visitor's uploads carry it, and no other visitor
+	// reaches them. It is "" for a visitor of an access link.
+	VisitorID string
 	// IssuedAt is when the presented visitor credential was issued. A renewal checks it against the link's
 	// current credentials_at, read again in the renewal's own write.
 	IssuedAt  time.Time

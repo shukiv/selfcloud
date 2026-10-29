@@ -30,6 +30,7 @@ const (
 	PurposeShare          = "share"
 	PurposeAccessRequest  = "access_request"
 	PurposeAccessDecision = "access_decision"
+	PurposeDrop           = "drop"
 )
 
 // Purposes lists every purpose. Every one needs an English template, and the filename pattern for
@@ -40,6 +41,7 @@ var Purposes = []string{
 	PurposeShare,
 	PurposeAccessRequest,
 	PurposeAccessDecision,
+	PurposeDrop,
 }
 
 // ReadSecretFile returns the contents of a file holding a secret, without the final line break.
