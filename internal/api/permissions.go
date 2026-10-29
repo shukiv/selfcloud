@@ -163,9 +163,10 @@ func mayShare(ctx context.Context, rd sharingReader, n *store.Node, role string)
 }
 
 // requireSharer checks, inside tx, that the caller may set permissions on a node (see mayShare). It
-// returns the node and the role the caller holds there, which bounds what it may grant.
+// returns the node and the role the caller holds there by permission, which bounds what it may grant. A link
+// role does not count here (see nodeSharingAccess).
 func requireSharer(ctx context.Context, tx *store.Tx, p *auth.Principal, nodeID string) (*store.Node, string, error) {
-	n, role, err := nodeAccessWith(ctx, tx, p, nodeID)
+	n, role, err := nodeSharingAccess(ctx, tx, p, nodeID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -215,7 +216,7 @@ func checkMembersOnly(ctx context.Context, tx *store.Tx, f *store.Folder, n *sto
 		}
 		ok = err == nil
 	} else {
-		rank, err := tx.EffectiveRank(ctx, n.AccountID, root.ID, subj)
+		rank, err := tx.PermissionRank(ctx, n.AccountID, root.ID, subj)
 		if err != nil {
 			return err
 		}
@@ -397,10 +398,11 @@ func (s *Server) checkSubject(ctx context.Context, tx *store.Tx, accountID, kind
 	return nil
 }
 
-// checkGrantRole refuses a role above the caller's own on the node. An account key holds manager, so
-// it grants any role.
+// checkGrantRole refuses a role above the caller's own on the node, its own being the permission role
+// (nodeSharingAccess), so a link never bounds or enables a grant. An account key holds manager, so it
+// grants any role.
 func checkGrantRole(ctx context.Context, rd accessReader, p *auth.Principal, nodeID, role string) error {
-	_, own, err := nodeAccessWith(ctx, rd, p, nodeID)
+	_, own, err := nodeSharingAccess(ctx, rd, p, nodeID)
 	if err != nil {
 		return err
 	}

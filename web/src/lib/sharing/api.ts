@@ -4,6 +4,7 @@
 import { api } from '../api';
 import type { Page, Node, Role } from '../files/types';
 import type { AccessRequest, DirectoryEntry, Permission, SetPermissionReply } from '../files/types';
+import type { ShareLink, ShareLinkCreated } from './links';
 
 export function listPermissions(nod: string): Promise<{ items: Permission[] }> {
   return api<{ items: Permission[] }>('GET', `/api/v1/nodes/${nod}/permissions`);
@@ -87,4 +88,42 @@ export function transferOwnership(nod: string, to: string): Promise<void> {
 export function sharingMaxExpiryDays(info: { sharing_max_expiry_days?: unknown }): number {
   const n = info.sharing_max_expiry_days;
   return typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : 0;
+}
+
+// listShareLinks reads the links on a node and on its ancestors, the node's own first.
+export function listShareLinks(nod: string): Promise<{ items: ShareLink[] }> {
+  return api<{ items: ShareLink[] }>('GET', `/api/v1/nodes/${nod}/share-links`);
+}
+
+// createShareLink makes the node's organisation link. expires_at is optional, an RFC 3339 time. The
+// answer carries the URL, which is shown once.
+export function createShareLink(
+  nod: string,
+  body: { role: Role; expires_at?: string },
+): Promise<ShareLinkCreated> {
+  return api<ShareLinkCreated>('POST', `/api/v1/nodes/${nod}/share-links`, {
+    body: { audience: 'organisation', ...body },
+  });
+}
+
+// updateShareLink changes a link's role, or its expiry: null clears it, an absent field keeps it.
+export function updateShareLink(
+  shl: string,
+  body: { role?: Role; expires_at?: string | null },
+): Promise<ShareLink> {
+  return api<ShareLink>('PATCH', `/api/v1/share-links/${shl}`, { body });
+}
+
+// resetShareLink gives a link a new secret. The old URL stops working.
+export function resetShareLink(shl: string): Promise<ShareLinkCreated> {
+  return api<ShareLinkCreated>('POST', `/api/v1/share-links/${shl}/reset`);
+}
+
+export function deleteShareLink(shl: string): Promise<void> {
+  return api<void>('DELETE', `/api/v1/share-links/${shl}`);
+}
+
+// openShareLink opens a link for the signed-in member, and answers the node it opens.
+export function openShareLink(secret: string): Promise<{ node_id: string }> {
+  return api<{ node_id: string }>('POST', '/api/v1/share/open', { body: { secret } });
 }

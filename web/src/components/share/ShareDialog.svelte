@@ -21,6 +21,7 @@
   import { dateInputValue, expiryFromInput, expiryLimit, maxExpiryDays } from '../../lib/sharing/limits';
   import Dialog from '../Dialog.svelte';
   import PeopleCombobox from './PeopleCombobox.svelte';
+  import GeneralAccess from './GeneralAccess.svelte';
 
   // ShareDialog shows who has access to an item, and changes it as far as the caller may. The server checks every
   // change; the dialog only shows what the caller's role allows. A person below manager sees only its own rows
@@ -307,6 +308,8 @@
     {#if !manager}
       <p class="own-access">{translate($lang, 'share.yourAccess', { role: translate($lang, `role.${node.role ?? 'viewer'}`) })}</p>
     {/if}
+
+    <GeneralAccess {node} {cap} onchanged={onchanged} onopen={onclose} />
 
     <section aria-labelledby="share-people">
       <h3 id="share-people" class="section-title">{manager ? translate($lang, 'share.people') : translate($lang, 'share.yourRows')}</h3>

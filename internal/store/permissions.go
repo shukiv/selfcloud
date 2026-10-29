@@ -106,14 +106,25 @@ const subjectPredicate = `((pm.subject_kind = 'user' AND pm.subject_id = ?)
 // milliseconds.
 const liveClause = `(pm.expires_at IS NULL OR pm.expires_at > ?)`
 
-// effectiveRank is the highest rank a user holds on a node through permissions: the max over the
-// node and each of its ancestors, root included, of the permissions the user holds directly or
-// through a group. Nodes have no stored path, so the ancestors come from a recursive walk up
-// parent_id. Implicit rules (owner and manager of a personal folder) are not here; the access code
-// adds them.
-func effectiveRank(ctx context.Context, q querier, accountID, nodeID, userID string) (int, error) {
+// effectiveRank is the highest rank a user holds on a node through permissions and, when links is set,
+// through organisation links it has opened: the max over the node and each of its ancestors, root
+// included. Nodes have no stored path, so the ancestors come from a recursive walk up parent_id.
+// Implicit rules (owner and manager of a personal folder) are not here; the access code adds them.
+// A link counts only while linkLiveSQL holds (share_links.go).
+func effectiveRank(ctx context.Context, q querier, accountID, nodeID, userID string, links bool) (int, error) {
 	if userID == "" {
 		return 0, nil
+	}
+	// The arguments follow the order of the placeholders in the query text.
+	args := []any{accountID, nodeID, accountID, accountID, userID, userID, nowMillis()}
+	branch := ""
+	if links {
+		branch = ` UNION ALL SELECT sl.role AS role FROM chain c
+			JOIN share_links sl ON sl.node_id = c.id AND sl.account_id = ?
+			JOIN share_link_visits v ON v.link_id = sl.id AND v.user_id = ?
+			JOIN nodes ln ON ln.id = sl.node_id JOIN folders lf ON lf.id = ln.folder_id
+			WHERE ` + linkLiveSQL
+		args = append(args, accountID, userID, nowMillis())
 	}
 	var rank int
 	err := q.QueryRowContext(ctx, `WITH RECURSIVE chain(id, parent) AS (
@@ -121,26 +132,39 @@ func effectiveRank(ctx context.Context, q querier, accountID, nodeID, userID str
 			UNION ALL
 			SELECT p.id, p.parent_id FROM nodes p JOIN chain c ON p.id = c.parent WHERE p.account_id = ?
 		)
-		SELECT COALESCE(MAX(`+fmt.Sprintf(roleRankSQL, "pm.role")+`), 0)
-		FROM chain c JOIN permissions pm ON pm.node_id = c.id AND pm.account_id = ?
-		WHERE `+subjectPredicate+` AND `+liveClause,
-		accountID, nodeID, accountID, accountID, userID, userID, nowMillis()).Scan(&rank)
+		SELECT COALESCE(MAX(`+fmt.Sprintf(roleRankSQL, "src.role")+`), 0) FROM (
+			SELECT pm.role AS role FROM chain c JOIN permissions pm ON pm.node_id = c.id AND pm.account_id = ?
+			WHERE `+subjectPredicate+` AND `+liveClause+branch+`
+		) src`, args...).Scan(&rank)
 	return rank, err
 }
 
 // nowMillis is the current time in the form the expiry column stores.
 func nowMillis() int64 { return time.Now().UnixMilli() }
 
-// EffectiveRank returns the rank of the highest permission userID holds on nodeID of accountID,
-// through its own ancestry, or 0 for none. Read with the store, outside a transaction.
+// EffectiveRank returns the rank of the highest role userID holds on nodeID of accountID, through
+// permissions and organisation links it has opened, along its ancestry; 0 for none. Read with the store,
+// outside a transaction.
 func (s *Store) EffectiveRank(ctx context.Context, accountID, nodeID, userID string) (int, error) {
-	return effectiveRank(ctx, s.r, accountID, nodeID, userID)
+	return effectiveRank(ctx, s.r, accountID, nodeID, userID, true)
+}
+
+// PermissionRank is Store.EffectiveRank without organisation links: only permissions, direct or through a
+// group, count. Sharing and deciding use it, since a link never gives those.
+func (s *Store) PermissionRank(ctx context.Context, accountID, nodeID, userID string) (int, error) {
+	return effectiveRank(ctx, s.r, accountID, nodeID, userID, false)
 }
 
 // EffectiveRank is Store.EffectiveRank read inside the transaction, so a check made there sees the
-// permissions and group memberships as they are then.
+// permissions, links and group memberships as they are then.
 func (tx *Tx) EffectiveRank(ctx context.Context, accountID, nodeID, userID string) (int, error) {
-	return effectiveRank(ctx, tx.q, accountID, nodeID, userID)
+	return effectiveRank(ctx, tx.q, accountID, nodeID, userID, true)
+}
+
+// PermissionRank is EffectiveRank without share links: only the permissions a user holds, directly or
+// through a group, count. Members-only checks use it, since a member is one who holds a permission.
+func (tx *Tx) PermissionRank(ctx context.Context, accountID, nodeID, userID string) (int, error) {
+	return effectiveRank(ctx, tx.q, accountID, nodeID, userID, false)
 }
 
 // IsWithin reports whether node id of accountID is ancestor itself or lies below it. It is the
@@ -149,19 +173,29 @@ func (s *Store) IsWithin(ctx context.Context, accountID, id, ancestor string) (b
 	return isWithin(ctx, s.r, accountID, id, ancestor)
 }
 
-// ChildRanks returns, for the children of parentID that hold a permission of their own, the rank
-// of the highest permission userID holds on each, direct or through a group. Children without one
-// are absent. A listing takes it once for the whole directory, then takes the parent's rank against
-// each child's own.
+// ChildRanks returns, for the children of parentID that hold a permission or an organisation link the
+// user has opened, the rank of the highest of those held by userID on each, direct or through a group.
+// Children without one are absent. A listing takes it once for the whole directory, then takes the
+// parent's rank against each child's own.
 func (s *Store) ChildRanks(ctx context.Context, accountID, parentID, userID string) (map[string]int, error) {
 	if userID == "" {
 		return map[string]int{}, nil
 	}
-	rows, err := s.r.QueryContext(ctx, `SELECT pm.node_id, MAX(`+fmt.Sprintf(roleRankSQL, "pm.role")+`)
-		FROM permissions pm JOIN nodes c ON c.id = pm.node_id
-		WHERE c.account_id = ? AND c.parent_id = ? AND `+subjectPredicate+` AND `+liveClause+`
-		GROUP BY pm.node_id`,
-		accountID, parentID, userID, userID, nowMillis())
+	// Arguments follow the placeholders in the query text: the permissions branch, then the links branch.
+	rows, err := s.r.QueryContext(ctx, `SELECT src.node_id, MAX(`+fmt.Sprintf(roleRankSQL, "src.role")+`)
+		FROM (
+			SELECT pm.node_id AS node_id, pm.role AS role FROM permissions pm JOIN nodes c ON c.id = pm.node_id
+			WHERE c.account_id = ? AND c.parent_id = ? AND `+subjectPredicate+` AND `+liveClause+`
+			UNION ALL
+			SELECT sl.node_id AS node_id, sl.role AS role FROM share_links sl
+			JOIN nodes ln ON ln.id = sl.node_id
+			JOIN folders lf ON lf.id = ln.folder_id
+			JOIN share_link_visits v ON v.link_id = sl.id AND v.user_id = ?
+			WHERE sl.account_id = ? AND ln.parent_id = ? AND `+linkLiveSQL+`
+		) src
+		GROUP BY src.node_id`,
+		accountID, parentID, userID, userID, nowMillis(),
+		userID, accountID, parentID, nowMillis())
 	if err != nil {
 		return nil, err
 	}
@@ -333,22 +367,29 @@ type SharedNode struct {
 	Rank   int
 }
 
-// SharedNodes lists the nodes of accountID that userID holds a permission on, one page at a time,
-// in node ID order. It leaves out the user's own personal folder, the team spaces a user reaches at
-// the root (every team space when owner is set), and any node whose folder root the user reaches
-// through a permission of its own. Those nodes are reached already, so listing them again would
-// only repeat them.
+// SharedNodes lists the nodes of accountID that userID holds a permission on, or has opened an
+// organisation link to, one page at a time, in node ID order. It leaves out the user's own personal
+// folder, the team spaces a user reaches at the root (every team space when owner is set), and any node
+// whose folder root the user reaches through a permission of its own. Those nodes are reached already,
+// so listing them again would only repeat them. A link the user has opened under the root of such a node
+// is still listed here, though reached already; the list then repeats it, and nothing is granted twice.
 func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner bool, p Page) ([]SharedNode, string, error) {
-	where := []string{"pm.account_id = ?", subjectPredicate, liveClause,
+	where := []string{"n.account_id = ?",
 		"NOT (f.kind = 'personal' AND f.owner_user_id = ?)",
 		`NOT EXISTS (SELECT 1 FROM permissions rp JOIN nodes rn ON rn.id = rp.node_id
-			WHERE rn.folder_id = n.folder_id AND rn.parent_id IS NULL AND rp.account_id = pm.account_id
+			WHERE rn.folder_id = n.folder_id AND rn.parent_id IS NULL AND rp.account_id = n.account_id
 			AND ((rp.subject_kind = 'user' AND rp.subject_id = ?)
 				OR (rp.subject_kind = 'group' AND rp.subject_id IN (
 					SELECT gm.group_id FROM group_members gm JOIN groups g ON g.id = gm.group_id
-					WHERE gm.user_id = ? AND g.account_id = pm.account_id)))
+					WHERE gm.user_id = ? AND g.account_id = n.account_id)))
 			AND (rp.expires_at IS NULL OR rp.expires_at > ?))`}
-	args := []any{accountID, userID, userID, nowMillis(), userID, userID, userID, nowMillis()}
+	// The arguments follow the placeholders in the query text: the permissions branch (account, then
+	// the subject twice and the time), the links branch (user, account, time), then the outer filters
+	// (account, owner, the root-reach subject twice, the time).
+	now := nowMillis()
+	args := []any{accountID, userID, userID, now,
+		userID, accountID, now,
+		accountID, userID, userID, userID, now}
 	if owner {
 		where = append(where, "f.kind <> 'team'")
 	}
@@ -357,16 +398,25 @@ func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner
 		if err != nil {
 			return nil, "", err
 		}
-		where = append(where, "pm.node_id > ?")
+		where = append(where, "src.node_id > ?")
 		args = append(args, parts[0])
 	}
 	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, `SELECT pm.node_id, MAX(`+fmt.Sprintf(roleRankSQL, "pm.role")+`)
-		FROM permissions pm
-		JOIN nodes n ON n.id = pm.node_id
+	rows, err := s.r.QueryContext(ctx, `SELECT src.node_id, MAX(`+fmt.Sprintf(roleRankSQL, "src.role")+`)
+		FROM (
+			SELECT pm.node_id AS node_id, pm.role AS role FROM permissions pm
+			WHERE pm.account_id = ? AND `+subjectPredicate+` AND `+liveClause+`
+			UNION ALL
+			SELECT sl.node_id AS node_id, sl.role AS role FROM share_links sl
+			JOIN nodes ln ON ln.id = sl.node_id
+			JOIN folders lf ON lf.id = ln.folder_id
+			JOIN share_link_visits v ON v.link_id = sl.id AND v.user_id = ?
+			WHERE sl.account_id = ? AND `+linkLiveSQL+`
+		) src
+		JOIN nodes n ON n.id = src.node_id
 		JOIN folders f ON f.id = n.folder_id
 		WHERE `+strings.Join(where, " AND ")+`
-		GROUP BY pm.node_id ORDER BY pm.node_id LIMIT ?`, args...)
+		GROUP BY src.node_id ORDER BY src.node_id LIMIT ?`, args...)
 	if err != nil {
 		return nil, "", err
 	}

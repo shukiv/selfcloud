@@ -82,10 +82,10 @@
       </span>
     </label>
     <label class="switch">
-      <input type="checkbox" checked={false} disabled />
+      <input type="checkbox" checked={values.allow_links} disabled={busy} onchange={(e) => save('allow_links', (e.currentTarget as HTMLInputElement).checked)} />
       <span>
         <span class="label">{translate($lang, 'space.links')}</span>
-        <span class="hint">{translate($lang, 'space.linksLater')}</span>
+        <span class="hint">{translate($lang, 'space.linksHint')}</span>
       </span>
     </label>
   </div>

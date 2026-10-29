@@ -511,7 +511,7 @@ since its owner is its only manager.
 | `members_only` | A permission below the root may name only a user or group that already holds a permission on the root, directly or through a group the user is in. Anything else is `conflict` (409). |
 | `sharing_managers_only` | Only managers may set or remove permissions below the root. It overrides `editors_can_share`. |
 | `no_download_for_viewers` | The no-download rule applies to every node in the space, whatever each node's own flag says. |
-| `allow_links` | Stored only. It is meant to allow organisation and public links in the space, but it does nothing yet: slice o enforces it. Off by default. |
+| `allow_links` | Allows organisation links in the space (slice o1, see Share links). Off by default. Turning it off pauses the space's links at once, and turning it on revives them. |
 
 ### Hidden spaces
 
@@ -699,6 +699,68 @@ so its `etag` comes from its record (its ID and `modified_at`); a directory's to
 move or a flag change, but not when something is added inside it. The undo toast of the web interface (slice k2) is
 built on these calls.
 
+### Share links
+
+A share link gives access to a file or a folder without a permission row. Slice o1 builds organisation
+links. Links that anyone can open (o2) and drop folders (o3) come later; the table and the routes already
+carry their columns.
+
+- **The link.** A row of `share_links` (section 11): one access link per node, so `UNIQUE (node_id,
+  upload_only)`; an audience (`organisation` or `anyone`); a role (viewer, commenter, contributor or
+  editor, never manager, default viewer); an optional expiry; the SHA-256 hash of a 256-bit secret; and
+  `credentials_at`, the time the current secret was issued. The URL is `{public_url}/s#{secret}`. The
+  secret sits in the fragment, so no server, proxy or `Referer` sees it. It is shown once, in the answer
+  that makes the link and in the answer to a reset. Listings and the audit log never hold it. Reset gives the
+  same row a new secret, and `credentials_at` moves forward.
+- **Not a permission.** A link never appears in `GET /nodes/{nod}/permissions`. Opening it takes a signed-in
+  session of the link's own account (the cookie's Origin and CSRF rules apply; a token, an admin, a key and
+  a signed-out visitor are refused as dead). `POST /share/open` then records a visit in `share_link_visits`
+  and answers the node. The visit gives the link's role on that node and everything below, through the rank
+  queries that the access code already runs (`EffectiveRank`, `ChildRanks` and `SharedNodes`). A visitor keeps
+  a higher role of its own, since inheritance only adds. The visitor's access is read on every request: a
+  deleted link has no visit left, and the other ways of ending a link are checked in the same query.
+  A role held through a link opens the content; it never shares, decides requests or makes links. The
+  rights to share, decide and grant are read from permissions, groups and the implicit rule only (`nodeSharingAccess`):
+  a link editor gets `forbidden` on a permission change, a link, a link change or delete (unless it created
+  the link), and on approving or denying a request.
+- **The expiry of a link.** An organisation link may have no end date even when the space sets
+  `sharing.max_expiry`: the expiry check allows an empty expiry, so that setting does not reach links in o1.
+- **When a visit stops counting.** At once, when the link is expired; when it is reset after the visit (a
+  visit before `credentials_at` no longer counts, so members open the new URL again); when its node or an
+  ancestor is trashed (the access walk, section 8, Trash); and when the team space's policy pauses it. The
+  visit is kept, so a link that is turned back on revives its members (an accepted limit, below). A visit
+  counts only after the credentials it used were made: a visit at the same instant as a reset does not count.
+- **Who may.** Creating, changing, resetting and deleting a link needs the right the caller has to share the
+  node (`mayShare`: a manager, or an editor where `editors_can_share` allows and the space does not keep
+  sharing for managers). The role may not be above the caller's own, and a change may not touch a link above
+  the caller's role. The link's creator may always delete it, while it still reaches the node. A delegated
+  token is refused on every link route. A caller that does not reach the node gets `not_found`.
+- **Policy.** A team space needs `allow_links`, and with `members_only` a link is allowed on the space's root
+  only, both at creation and at each use. A personal folder (My files) always allows an organisation link. The
+  refusals are `forbidden` with `reason: links_off` and `conflict` with `reason: members_only`. A second link on
+  a node is `conflict` with `reason: exists`.
+- **The account switch.** `accounts.public_links` (off by default) is set by the account's owner or key, with
+  `GET` and `PATCH /accounts/{acc}/sharing-policy`. It has no effect until o2, which enforces it for links that
+  anyone can open. It is audited as `account.sharing_policy`.
+- **Listing.** `GET /nodes/{nod}/share-links` lists the links on the node and above it, the node's own first,
+  each with `inherited_from`. A sharer (a manager, or an account key) sees every live link with its creator,
+  its visitor count and whether policy pauses it. Anyone else sees only the live links on nodes it reaches.
+  Expired links are not listed.
+- **Open answers.** Every dead link gives one answer: `not_found`. That covers a missing link, an expired,
+  deleted, paused, trashed or reset one, another account's, and every caller that is not a signed-in member of
+  the link's account. The route checks its own session, so its answer comes from the handler and not from the
+  router's 401. `POST /share/open` is limited per client address (30 a minute, `share.open.ip`) and per member
+  (60 a minute, `share.open.user`), after the session is read. The open re-reads the link inside its write, so a
+  link deleted or reset between the two reads is the same `not_found`.
+- **Audit.** `link.create`, `link.update`, `link.reset`, `link.delete`, `link.open` (a member's first visit, or
+  one more than 24 hours after its last) and `account.sharing_policy`. Each names the link's ID, never its secret or URL. An entry about an item in My
+  files is private to that folder's user, as every entry about a personal folder is.
+- **Web.** The share dialog's "General access" section makes and changes the link, and shows its URL once
+  (with "Get a new link" to replace it). A member who opens `/s#secret` is taken to the item. The page reads the
+  secret from the fragment at start-up and moves it into this tab's session storage, which it clears once the
+  open is made or fails, or ten minutes after it was captured. A signed-out visitor goes to sign-in, and comes back to the page with the secret still
+  waiting. The team-space switch "Allow links" is live.
+
 ### Accepted limits
 
 These were reviewed in the slice n1 security review and accepted for now. They have no code of their own.
@@ -731,6 +793,14 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   `GET /directory`, 20 at a time and rate limited. That is the purpose of the directory: a share dialog
   must name the people it shares with. Delegated tokens cannot search it. An account setting to keep
   plain members out of it is not built.
+- **Per-address open limit (o1, L3).** `share.open.ip` is charged before the session check, so members behind
+  one NAT or proxy share its budget. The per-member limit `share.open.user` does not change that: it caps one
+  member, not a crowd behind an address.
+- **Share links, organisation (o1).** A member who has opened an organisation link keeps the access it gives
+  until the link is deleted, paused, reset, expired or trashed. Nothing else ends it. Turning a team space's
+  `allow_links` back on revives its paused links, since their visits are kept. The secret is shown once: a
+  lost URL is replaced with "Get a new link", which also ends the old copies. A link's members are everyone
+  who holds the account's sign-in, so the link is only as private as the account's membership.
 
 ## 9. API outline
 
@@ -782,6 +852,12 @@ Files                                      any caller, limited to what it may re
   GET    /nodes/{nod}/children             list a directory by ID (sort, paging); each child carries the caller's role
   GET    /nodes/{nod}/permissions          the permissions on a node and above it (viewer on the node)
   PUT|DELETE /nodes/{nod}/permissions/{subject}   {role, expires_at, notify, message}: a usr_ or grp_ subject; manager on the node, or an editor where editors_can_share allows; expires_at is in the future and within sharing.max_expiry
+  GET|POST /nodes/{nod}/share-links        POST {audience, role, expires_at}: the node's organisation link, shown with its URL once (201); GET lists the links on the node and above it
+  PATCH  /share-links/{shl}                {role, expires_at}: change a link; null clears the expiry
+  POST   /share-links/{shl}/reset          a new secret, with the new URL (201); the old copies stop
+  DELETE /share-links/{shl}                ends the link and its visits at once (204)
+  POST   /share/open                       {secret}: a signed-in member of the account opens the link; answers {node_id}, or not_found for every dead link
+  GET|PATCH /accounts/{acc}/sharing-policy {public_links}: the account's switch for links that anyone can open (owner or key)
   POST   /nodes/{nod}/access-requests      {role, message}: ask for a role (users only); always 202, with no body
   GET    /nodes/{nod}/access-requests      the requests on a node (manager, or editor where editors_can_share allows)
   GET    /access-requests                  the pending requests the caller may decide (the oldest 5,000 in the account)
@@ -1039,13 +1115,21 @@ adds a rule: the server checks every change, and the screens only show what the 
   and, for a manager of the space's root, Space settings. Hidden spaces are read into their own store, and only
   when "Show hidden spaces" is on, so the move and copy pickers still list only what the caller shows. Space
   settings change `members_only`, `sharing_managers_only` and `no_download_for_viewers` one switch at a time;
-  "Allow links" is shown disabled with "Available later", since slice o enforces it.
+  "Allow links" is live from slice o1 (it was shown disabled until then).
 - **No download.** Under a space whose `no_download_for_viewers` is on, the browser hides its own Download
   buttons from a viewer or commenter, as it does for a node's own flag. The server still refuses the download,
   so the button is a convenience, not the rule.
 - **Uploads into a shared directory.** A directory shared with a person whose folder root that person cannot
   reach takes files by its ID, so a contributor there can upload. Folders are made, and folder uploads placed,
   by path from the root, so those stay off in that view.
+
+*Share links (o1).* The share dialog's "General access" section, above the people, shows Restricted or "Anyone in
+{account}". Choosing the account's link shows the role and the optional end date, and "Create link" makes it; the
+URL is shown once, with "Copy link", and "Get a new link" replaces it. A paused link says "Paused by policy". The
+links that reach the item from above are listed, with "Open the parent". The role list stops at editor. The
+`/s` page (`PUBLIC_VIEWS`) shows nothing but the outcome: it opens the item for a signed-in member, sends a
+signed-out visitor to sign in and back, and shows the one message a dead link gets, "This link doesn't work. It
+may have expired or been turned off." It has no app shell.
 
 *Known gaps (k3).* An editor sees the add form only where the node's own `editors_can_share` is on: the
 flag of an ancestor is not visible from the node, so an editor sharing through an ancestor's switch does not
@@ -1179,16 +1263,18 @@ the not-found view.
 
 | Table | Main fields |
 |---|---|
-| `accounts` | id, external_id, name, status, quota_bytes, used_bytes, used_files, reserved_bytes, tokens_not_before |
+| `accounts` | id, external_id, name, status, quota_bytes, used_bytes, used_files, reserved_bytes, tokens_not_before, public_links (0 or 1; off by default) |
 | `api_keys` | id, account_id (null for admin keys), name, prefix, hash, expires_at, revoked_at, last_used_at |
 | `users` | id, account_id, external_id, email, display_name, locale, role, status, password_hash, totp_secret (encrypted), verified_at, tokens_not_before |
 | `verifications` | id, user_id, purpose (verify, reset), token_hash, expires_at, used_at |
 | `sessions` | id_hash, user_id, created_at, last_seen_at, expires_at, ip, user_agent |
-| `folders` | id, account_id, external_id, name, name_key, kind (`team` or `personal`), owner_user_id (personal only; at most one personal folder per user), members_only, sharing_managers_only, no_download_for_viewers, allow_links (0 or 1; team spaces only, personal folders keep them 0) |
+| `folders` | id, account_id, external_id, name, name_key, kind (`team` or `personal`), owner_user_id (personal only; at most one personal folder per user), members_only, sharing_managers_only, no_download_for_viewers, allow_links (0 or 1; team spaces only, personal folders keep them 0; read by the share-link rules) |
 | `groups` | id, account_id, external_id, name, name_key, created_at, updated_at |
 | `group_members` | group_id, user_id, created_at |
 | `permissions` | node_id, account_id, subject_kind (`user` or `group`), subject_id, role (viewer, commenter, contributor, editor, manager), created_at, created_by, expires_at (null: no expiry) |
 | `access_requests` | id (`arq_`), account_id, node_id, user_id, role (viewer, commenter or editor), message (at most 500 characters), status (pending, approved, denied), created_at, decided_at, decided_by; at most one pending row per node and user |
+| `share_links` | id (`shl_`), account_id, node_id (cascade), audience (`organisation` or `anyone`), role (viewer, commenter, contributor or editor; null for a drop link), upload_only (0 or 1), secret_hash (SHA-256, unique), password_hash (null until o2), expires_at (null: no end), credentials_at (the secret's issue time), created_by and created_kind, created_at, updated_by, updated_kind, updated_at; unique (node_id, upload_only) |
+| `share_link_visits` | link_id (cascade), user_id (cascade), visited_at; primary key (link_id, user_id). A member's recorded open of a link; it counts only from `credentials_at` on |
 | `hidden_folders` | user_id, folder_id, created_at; primary key (user_id, folder_id). A user's own list of hidden team spaces, which changes no access |
 | `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors), trashed_at and trashed_by (set on a trash root only), trashed_name_key (the name key before the trash) |
 | `versions` | id (`ver_`), account_id, node_id, blob_id, size, sha256, etag, mime_type, created_at and created_by (when that content was first written), replaced_at and replaced_by, label (at most 100 characters), keep_forever (0 or 1); indexed by (node_id, created_at) |
@@ -1291,7 +1377,7 @@ Each slice ships with tests and leaves the server runnable.
 | n2 | Sharing v2: access expiry, no-download, the "editors can share" switch, ownership transfer, team-space restrictions and hiding, access requests, share emails |
 | m | Trash, version history, keep forever, restore, undo |
 | k | Web interface, in the seven languages, with right-to-left layout for Arabic and Hebrew |
-| o | Organisation-wide and public links (off by default), link expiry and password, drop folders |
+| o | Organisation and public links (off by default), link policy, drop folders. In four parts: o1 organisation links and the policy (built), o2 links that anyone can open, o3 drop folders, o4 the sweep and bulk delete |
 | p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page |
 | q | Search: filters, label search, full text and OCR within size limits |
 | r | Comments, mentions, activity pane, notifications, who-viewed |
@@ -1381,3 +1467,29 @@ Decided on approval:
 22. **Web interface** (2026-10-29): Svelte 5 SPA in `web/`, embedded with `go:embed` (through `web/embed.go`);
     built in four parts, k1 to k4; strict CSP with no inline code; errors shown by code, never the server's
     text; installation branding only (`ui.brand`), per-tenant branding later.
+23. **Share links, slice o** (2026-10-29, owner's decisions, which override the proposal where they differ):
+    - Anyone links grant viewer only (commenter comes with slice r).
+    - Anyone links must expire: 30 days by default, 365 at most. Organisation links may have no end date,
+      capped by `sharing.max_expiry` when that is set.
+    - Drop folders have no per-link limits beyond the account quota, `upload.max_file_size` and the rate limits
+      (30 uploads an hour per address, 300 an hour per link, at most 20 open uploads per link).
+    - Anyone and drop links need manager. Editors cannot make them, even where `editors_can_share` is on.
+      Organisation links follow `mayShare`.
+    - An organisation link is a recorded visit (`share_link_visits`), never a permission row. Pausing or
+      deleting the link ends the access at once.
+    - Links are allowed in My files: organisation links always; anyone and drop links when
+      `accounts.public_links` is on.
+    - The secret is stored hashed and shown once, at creation or reset. "Get a new link" replaces it.
+    - Slice o is built in four parts, o1 to o4, each reviewed and pushed on its own.
+
+    Interpretations made in o1, for review (the owner has not decided them):
+    - A visit made before `credentials_at` does not count, so a reset ends the access of the old copies until
+      each member opens the new URL. A reset keeps the recorded visits.
+    - While policy pauses a link, its changes and resets are refused and only deletion is allowed, so a
+      setting that is off cannot be used to change a link.
+    - `GET /nodes/{nod}/share-links` leaves out expired links. The sweep that removes them is in o4.
+    - `POST /share/open` is limited to 30 a minute per address (`share.open.ip`). The proposal sets that limit,
+      in its section 3, under o2.
+    - The conflict answers carry a `reason` (`exists`, `members_only`) for the dialog to name the cause.
+    - Organisation links take no password in o1; the field is refused as unknown.
+

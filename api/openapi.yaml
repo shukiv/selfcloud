@@ -38,6 +38,11 @@ tags:
       Roles on any file or folder, inherited downward. A user or a group holds a role on a node,
       and reaches the node and everything below it at that role or a higher one. Inheritance only
       adds: a permission deeper down never lowers the role above it.
+  - name: Sharing
+    description: |
+      Share links. A link gives access to a file or a folder without a permission row: an organisation
+      link opens for members of the account. A link is never listed as a permission, and visits are
+      recorded so that the access ends the moment the link is deleted or paused.
   - name: Groups
     description: Named sets of users of one account. A permission may name a group.
   - name: Admins
@@ -1931,6 +1936,180 @@ paths:
               schema: { $ref: "#/components/schemas/SignedLink" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/nodes/{nod}/share-links:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Sharing]
+      operationId: listShareLinks
+      summary: List the share links that reach a node
+      description: |
+        The links on the node and on its ancestors, the node's own first; `inherited_from` says
+        where a link sits. A manager of the node and an account key see every live link, with
+        `created_by`, `visitors` and `paused`. Anyone else with a role on the node sees the live
+        links on the nodes it reaches, without those three fields. A delegated token gets `forbidden`.
+        No link's secret or URL is ever listed.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The links that reach the node.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareLinkList" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Sharing]
+      operationId: createShareLink
+      summary: Make a link to a node
+      description: |
+        Makes the node's organisation link: members of the account who open it get the role
+        `role` on the node and everything below. The caller must share the node (a manager, or an
+        editor where `editors_can_share` allows it) and may not give a role above its own. A node
+        has one organisation link. The team space must allow links (`allow_links`); with
+        `members_only` a link is allowed on the space's root only. A personal folder (My files)
+        always allows an organisation link. `expires_at` is optional and capped at `sharing.max_expiry`
+        when that is set. The secret is shown in `url`, here and on reset, and nowhere else.
+
+        Links that anyone can open, and drop links, are not available yet: `audience: anyone` and
+        `upload_only: true` are refused with `invalid_request`. A delegated token gets `forbidden`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShareLinkCreate" }
+      responses:
+        "201":
+          description: The link and its URL.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareLinkCreated" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/share-links/{shl}:
+    parameters:
+      - $ref: "#/components/parameters/shl"
+    patch:
+      tags: [Sharing]
+      operationId: updateShareLink
+      summary: Change a link's role or expiry
+      description: |
+        The caller must share the link's node and hold at least the link's role. A link above the
+        caller's own role is `forbidden`, and so is a role above the caller's own. An absent
+        `expires_at` keeps the expiry, and `null` clears it. A link whose team space pauses it
+        (`allow_links` off, or members_only below the root) is `forbidden` with `reason: links_off`
+        until the policy allows it again.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShareLinkUpdate" }
+      responses:
+        "200":
+          description: The link as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareLink" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Sharing]
+      operationId: deleteShareLink
+      summary: Delete a link
+      description: |
+        The link's creator may always delete it, while it still reaches the node. Anyone else must
+        share the node and may not remove a link above its own role. The members who opened the link
+        lose its access at once, since their visits go with it.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Deleted. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/share-links/{shl}/reset:
+    parameters:
+      - $ref: "#/components/parameters/shl"
+    post:
+      tags: [Sharing]
+      operationId: resetShareLink
+      summary: Give a link a new secret
+      description: |
+        The old URL stops working. A visit made before the reset no longer counts, so members open
+        the new URL to get in again. The new URL is returned here, once. Same rights as a change.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "201":
+          description: The link and its new URL.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareLinkCreated" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/share/open:
+    post:
+      tags: [Sharing]
+      operationId: openShareLink
+      summary: Open a link (a signed-in member)
+      description: |
+        The page at `{public_url}/s` sends the secret taken from the URL fragment. A signed-in user
+        of the link's account gets `{node_id}` and the visit is recorded, so the node and its
+        contents are shared with it from then on. Every other caller gets `not_found`: no session, a
+        session of another account, an installation admin, a credential in the `Authorization`
+        header, a missing link, and a link that is expired, deleted, paused, reset since the visit,
+        or trashed. The session check uses the cookie's `Origin` and `X-CSRF-Token` rules.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              additionalProperties: false
+              properties:
+                secret: { type: string, description: The secret from the URL fragment. }
+      responses:
+        "200":
+          description: The node the link opens.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [node_id]
+                properties:
+                  node_id: { type: string }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/sharing-policy:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Sharing]
+      operationId: getSharingPolicy
+      summary: Read the account's sharing policy
+      description: The account's switch for links that anyone can open. Off by default.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SharingPolicy" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Sharing]
+      operationId: updateSharingPolicy
+      summary: Set the account's sharing policy
+      description: |
+        Turning `public_links` off pauses every link that anyone can open, at once; turning it on
+        revives them. The account's owner or key may change it. Audited as `account.sharing_policy`.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SharingPolicy" }
+      responses:
+        "200":
+          description: The policy as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SharingPolicy" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{nod}/permissions:
     parameters:
       - $ref: "#/components/parameters/nod"
@@ -2550,6 +2729,11 @@ components:
       in: path
       required: true
       schema: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    shl:
+      name: shl
+      in: path
+      required: true
+      schema: { type: string, example: shl_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     nod:
       name: nod
       in: path
@@ -3016,6 +3200,66 @@ components:
           type: string
           enum: [pending, active, disabled]
           description: A user subject's status. Shown to a manager or an account key only.
+
+    ShareLink:
+      type: object
+      required: [id, node_id, audience, role, created_at, inherited_from]
+      properties:
+        id: { type: string, description: A shl_ ID. }
+        node_id: { type: string }
+        audience: { type: string, enum: [organisation, anyone] }
+        role: { type: string, enum: [viewer, commenter, contributor, editor], description: The role a visitor holds on the node and below. }
+        expires_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        inherited_from:
+          type: [string, "null"]
+          description: The node the link sits on, when that is not the node asked about. Null on the node itself.
+        created_by: { type: string, description: "Sharers only: the user or account key that made the link." }
+        visitors: { type: integer, description: "Sharers only: members who hold a live visit to the link." }
+        paused: { type: boolean, description: "Sharers only: true while policy pauses the link, so it grants nothing." }
+
+    ShareLinkList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ShareLink" }
+
+    ShareLinkCreate:
+      type: object
+      required: [audience]
+      additionalProperties: false
+      properties:
+        audience: { type: string, enum: [organisation, anyone], description: "Only organisation is available yet." }
+        role: { type: string, enum: [viewer, commenter, contributor, editor], description: Defaults to viewer. }
+        upload_only: { type: boolean, description: "Drop links are not available yet; true is refused." }
+        expires_at: { type: [string, "null"], format: date-time }
+
+    ShareLinkUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        audience: { type: string, enum: [organisation, anyone] }
+        role: { type: string, enum: [viewer, commenter, contributor, editor] }
+        upload_only: { type: boolean }
+        expires_at: { type: [string, "null"], format: date-time, description: Absent keeps the expiry; null clears it. }
+
+    ShareLinkCreated:
+      type: object
+      required: [link, url]
+      properties:
+        link: { $ref: "#/components/schemas/ShareLink" }
+        url:
+          type: string
+          description: The address that opens the link, with the secret in its fragment. Shown here only.
+
+    SharingPolicy:
+      type: object
+      required: [public_links]
+      additionalProperties: false
+      properties:
+        public_links: { type: boolean, description: Links that anyone can open are allowed in the account. }
 
     PermissionSet:
       type: object

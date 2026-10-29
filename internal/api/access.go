@@ -28,6 +28,7 @@ type accessReader interface {
 	Node(ctx context.Context, accountID, id string) (*store.Node, error)
 	User(ctx context.Context, accountID, id string) (*store.User, error)
 	EffectiveRank(ctx context.Context, accountID, nodeID, userID string) (int, error)
+	PermissionRank(ctx context.Context, accountID, nodeID, userID string) (int, error)
 	IsWithin(ctx context.Context, accountID, id, ancestor string) (bool, error)
 	RootNode(ctx context.Context, accountID, folderID string) (*store.Node, error)
 	Child(ctx context.Context, accountID, parentID, key string) (*store.Node, error)
@@ -81,6 +82,34 @@ func nodeAccessWith(ctx context.Context, rd accessReader, p *auth.Principal, nod
 // the restore then falls back to the folder root. The role is worked out as if nothing were trashed, since
 // permissions are kept in the trash. Every other route passes withTrash false, and gets not_found.
 func nodeAccessIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeID string, withTrash bool) (*store.Node, string, error) {
+	n, role, err := nodeRoleIn(ctx, rd, p, nodeID, withTrash, true)
+	if err != nil {
+		return nil, "", err
+	}
+	if store.RoleRank(role) == 0 {
+		return nil, "", nodeNotFound()
+	}
+	return n, role, nil
+}
+
+// nodeSharingAccess returns the node the caller reaches, as nodeAccessWith does, and the role it may use to
+// share or decide: only what its permissions, groups and implicit rule give, never an organisation link. A
+// role held through a link opens the content; it does not share, decide requests or make links (the design's
+// Share links section). The role is "" when only a link gives access, so the caller is refused there.
+func nodeSharingAccess(ctx context.Context, rd accessReader, p *auth.Principal, nodeID string) (*store.Node, string, error) {
+	if _, _, err := nodeAccessWith(ctx, rd, p, nodeID); err != nil {
+		return nil, "", err
+	}
+	n, role, err := nodeRoleIn(ctx, rd, p, nodeID, false, false)
+	if err != nil {
+		return nil, "", err
+	}
+	return n, role, nil
+}
+
+// nodeRoleIn is the walk nodeAccessIn makes. It returns the node and the role without the not_found check on
+// a zero role, so callers can decide what a zero role means. links says whether organisation links count.
+func nodeRoleIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeID string, withTrash, links bool) (*store.Node, string, error) {
 	if p == nil {
 		return nil, "", apierr.New(apierr.Unauthenticated, "credentials are required")
 	}
@@ -129,7 +158,12 @@ func nodeAccessIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeI
 			return nil, "", apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
 		}
 		role = implicitRole(f, u)
-		rank, err := rd.EffectiveRank(ctx, p.AccountID, nodeID, u.ID)
+		var rank int
+		if links {
+			rank, err = rd.EffectiveRank(ctx, p.AccountID, nodeID, u.ID)
+		} else {
+			rank, err = rd.PermissionRank(ctx, p.AccountID, nodeID, u.ID)
+		}
 		if err != nil {
 			return nil, "", err
 		}
@@ -151,9 +185,6 @@ func nodeAccessIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeI
 		if store.RoleRank(role) > store.RoleRank(tokenRoleCap(p.Token)) {
 			role = tokenRoleCap(p.Token)
 		}
-	}
-	if store.RoleRank(role) == 0 {
-		return nil, "", nodeNotFound()
 	}
 	return n, role, nil
 }

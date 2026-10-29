@@ -134,7 +134,7 @@ func (s *Server) handleTransferOwnership(w http.ResponseWriter, r *http.Request)
 		// The previous owner keeps editor on what it gave away. A role it already holds there is not
 		// lowered, so a grant above editor stays.
 		if prev != "" {
-			held, err := tx.EffectiveRank(ctx, n.AccountID, cur.ID, prev)
+			held, err := tx.PermissionRank(ctx, n.AccountID, cur.ID, prev)
 			if err != nil {
 				return err
 			}

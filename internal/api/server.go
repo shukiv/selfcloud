@@ -236,6 +236,9 @@ func New(opts Options) (*Server, error) {
 			"upload.create": newLimiter(60),
 			// Minting delegated tokens, per account key: each is a credential, so a flood is refused.
 			"tokens.mint": newLimiter(60),
+			// Opening a share link is a secret lookup, so it is limited per client address.
+			"share.open.ip":   newLimiter(30),
+			"share.open.user": newLimiter(60),
 			// Signed links: creation per principal; serving per client address, generous enough
 			// for a player seeking through a video.
 			"links.create": newLimiter(120),
@@ -371,6 +374,15 @@ func (s *Server) routes() []route {
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true},
 		{method: http.MethodGet, path: "/api/v1/shared", handle: s.handleSharedWithMe, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleCreateShareLink, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleListShareLinks, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/share-links/{shl}", handle: s.handleUpdateShareLink, auth: true},
+		{method: http.MethodPost, path: "/api/v1/share-links/{shl}/reset", handle: s.handleResetShareLink, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/share-links/{shl}", handle: s.handleDeleteShareLink, auth: true},
+		// Opening a link checks its own credential: the handler answers a dead link the same way for every caller.
+		{method: http.MethodPost, path: "/api/v1/share/open", handle: s.handleOpenShareLink},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleGetSharingPolicy, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleUpdateSharingPolicy, auth: true},
 		{method: http.MethodGet, path: "/api/v1/directory", handle: s.handleDirectory, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/transfer-ownership", handle: s.handleTransferOwnership, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleCreateAccessRequest, auth: true},

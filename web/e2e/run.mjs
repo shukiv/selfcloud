@@ -258,11 +258,13 @@ async function main() {
     // A sign-in link: the account's key makes one for the member, the browser opens it and lands signed in.
     await signInLinkChecks(page, { base, accountID, accountKey, memberID, teamA });
     await switchChecks(page, { base, accountID, accountKey });
+    await linkChecks(page, { base, accountID, accountKey });
 
     // Policy: no console error, no CSP violation, no request to another origin.
     check(page.errors.length === 0, `no console errors or policy violations (${page.errors.join(' | ') || 'none'})`);
     check(page.expectedConflicts.length === 1, `exactly one upload met a taken name, and was asked about it (${page.expectedConflicts.length})`);
     check(page.expectedSignInRefusals.length === 1, `the used sign-in link was refused once, on the second visit (${page.expectedSignInRefusals.length})`);
+    check(page.expectedDeadLinks.length === 1, `the removed link was refused once, and its page showed the one message (${page.expectedDeadLinks.length})`);
     check(page.expectedSwitchPrompts.length === 2, `the two links for another user were each asked about, on a browser signed in as another (${page.expectedSwitchPrompts.length})`);
     check(page.expectedMissing.length >= 2, `the not-found views asked for access, and the browser logged their 404s (${page.expectedMissing.length})`);
     // A data: URL is inline, not a request: Chrome draws the calendar icon of a date input from one.
@@ -393,7 +395,6 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   await rowAppears(page, 'greeting.txt');
   check(true, 'rename works');
   await clickButton(page, 'Undo');
-  await new Promise((r) => setTimeout(r, 1500));
   await rowAppears(page, 'hello.txt');
   await rowGone(page, 'greeting.txt');
   check(true, 'undo puts the name back');
@@ -530,6 +531,78 @@ async function switchChecks(page, { base, accountID, accountKey }) {
   await page.waitFor(`location.pathname.startsWith('/files') && !!document.querySelector('.topbar')`, 15000);
   const switched = await page.evaluate(`document.querySelector('.user-menu > button').textContent`);
   check(switched.includes(OWNER.name), `Switch signs the browser in as the owner (${switched.trim()})`);
+}
+
+// linkChecks: a share link, end to end. The owner makes an organisation link on a directory in a team space that
+// allows links, through the share dialog, and copies its URL once. Signed out, the browser opens the URL: the page
+// strips the secret from the address and sends the visitor to sign-in, which returns it to the link page. The member
+// is then in the directory, lists it under Shared with me, and the owner removes the link with Restricted. The
+// same URL is then refused, and the member loses the directory.
+async function linkChecks(page, { base, accountID, accountKey }) {
+  const fld = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'Link Hall' })).id;
+  await api(base, 'PATCH', `/api/v1/folders/${fld}/settings`, accountKey, { allow_links: true });
+  const plans = await api(base, 'POST', `/api/v1/folders/${fld}/directories`, accountKey, { path: '/Plans', parents: false });
+  await rawPut(base, `/api/v1/folders/${fld}/files?path=%2FPlans%2Fbrief.txt`, accountKey, 'the brief\n');
+
+  // The owner shares Plans through an organisation link, and copies the URL the dialog shows once.
+  if (await page.evaluate(`!!document.querySelector('.topbar')`)) await signOut(page);
+  else await page.goto(base + '/login');
+  await signIn(page, OWNER);
+  await page.waitFor(`!!document.querySelector('.teams a[href="/files/${fld}"]')`);
+  await page.evaluate(`document.querySelector('.teams a[href="/files/${fld}"]').click(), true`);
+  await page.waitFor(`location.pathname === '/files/${fld}'`);
+  await rowAppears(page, 'Plans');
+  await selectRow(page, 'Plans');
+  await clickButton(page, 'Share');
+  await page.waitFor(`!!document.getElementById('share-general')`);
+  await page.evaluate(`document.querySelector('input[name="share-general-access"][value="organisation"]').click(), true`);
+  await clickButton(page, 'Create link');
+  await page.waitFor(`!!document.querySelector('.made input')`);
+  const url = await page.evaluate(`document.querySelector('.made input').value`);
+  check(url.startsWith(base + '/s#') && url.slice(base.length + 3).length === 43, 'the owner makes an organisation link, and the dialog shows its URL once');
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+
+  // Signed out, the URL leaves the secret out of the address and sends the visitor to sign in.
+  await signOut(page);
+  await page.goto(url);
+  await page.waitFor(`location.pathname === '/login' && !!document.getElementById('login-email')`);
+  const stripped = await page.evaluate(`location.hash === '' && location.pathname === '/login'`);
+  check(stripped, 'the link page strips the secret from the address, and sends a signed-out visitor to sign in');
+  await signIn(page, MEMBER);
+  // The item's own address opens its folder with the item selected.
+  await page.waitFor(`location.pathname.endsWith('/${plans.id}') && !location.hash`);
+  check(true, 'a member opens the link, and lands on the item it names, with no secret in the address');
+  const kept = await page.evaluate(`sessionStorage.getItem('selfcloud.share.secret')`);
+  check(kept === null, 'the secret is gone from session storage once used');
+  await navigateTo(page, '/shared');
+  await page.waitFor(`location.pathname === '/shared' && !!document.querySelector('.shared a[href="/n/${plans.id}"]')`);
+  check(true, 'the item the link opened is listed under Shared with me');
+
+  // The owner removes the link with Restricted. The member loses the item at once, and the URL no longer opens it.
+  await signOut(page);
+  await signIn(page, OWNER);
+  await page.waitFor(`!!document.querySelector('.teams a[href="/files/${fld}"]')`);
+  await page.evaluate(`document.querySelector('.teams a[href="/files/${fld}"]').click(), true`);
+  await page.waitFor(`location.pathname === '/files/${fld}'`);
+  await rowAppears(page, 'Plans');
+  await selectRow(page, 'Plans');
+  await clickButton(page, 'Share');
+  await page.waitFor(`!!document.querySelector('input[name="share-general-access"][value="restricted"]')`);
+  await page.evaluate(`document.querySelector('input[name="share-general-access"][value="restricted"]').click(), true`);
+  await page.waitFor(`document.querySelector('input[name="share-general-access"][value="restricted"]').checked`);
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+  check(true, 'the owner removes the link with Restricted');
+
+  await signOut(page);
+  await signIn(page, MEMBER);
+  await navigateTo(page, '/shared');
+  await page.waitFor(`location.pathname === '/shared' && !document.querySelector('.shared a[href="/n/${plans.id}"]')`);
+  check(true, 'the member loses the item when the link is removed');
+  await page.goto(url);
+  await page.waitFor(`!!document.querySelector('.alert') && document.querySelector('.alert').textContent.includes("doesn't work")`, 15000);
+  check(true, 'the removed link shows the one message a dead link gets');
 }
 
 // signOut signs out through the account menu, as a person would.
@@ -826,6 +899,8 @@ async function sharingChecks(page, { base, dir, accountID, accountKey, memberID,
   await selectRow(page, 'Board');
   await clickButton(page, 'Share');
   await page.waitFor(`!!document.getElementById('share-who')`);
+  // The people list loads after the dialog opens; the member's row is there once the list is.
+  await page.waitFor(`!!document.getElementById(${q(`role-${memberID}`)})`);
   await page.evaluate(
     `(() => { const el = document.getElementById(${q(`role-${memberID}`)}); el.value = 'editor'; el.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`,
   );

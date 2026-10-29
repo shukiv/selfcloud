@@ -136,8 +136,10 @@ func (s *Server) handleCreateAccessRequest(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			return err
 		}
+		// A role held only through a share link is not counted: it ends with the link, so its holder may
+		// still ask for a lasting one.
 		role := implicitRole(f, u)
-		rank, err := tx.EffectiveRank(ctx, n.AccountID, n.ID, u.ID)
+		rank, err := tx.PermissionRank(ctx, n.AccountID, n.ID, u.ID)
 		if err != nil {
 			return err
 		}
@@ -226,7 +228,11 @@ func (s *Server) handleListNodeAccessRequests(w http.ResponseWriter, r *http.Req
 	if p.Token != nil {
 		return apierr.New(apierr.Forbidden, "a delegated token cannot list access requests")
 	}
-	n, role, err := s.nodeAccess(r, r.PathValue("nod"))
+	nodeID := r.PathValue("nod")
+	if !id.Valid("nod", nodeID) {
+		return nodeNotFound()
+	}
+	n, role, err := nodeSharingAccess(r.Context(), s.store, p, nodeID)
 	if err != nil {
 		return err
 	}
@@ -281,7 +287,7 @@ func (s *Server) handleListPendingAccessRequests(w http.ResponseWriter, r *http.
 		if len(out.Items) == page.Limit {
 			break
 		}
-		n, role, err := nodeAccessWith(ctx, s.store, p, ar.NodeID)
+		n, role, err := nodeSharingAccess(ctx, s.store, p, ar.NodeID)
 		if apierr.From(err).Code == apierr.NotFound {
 			continue
 		}
@@ -314,7 +320,7 @@ func decideAccessRequest(ctx context.Context, tx *store.Tx, p *auth.Principal, a
 	if err != nil {
 		return nil, nil, nil, "", err
 	}
-	n, role, err := nodeAccessWith(ctx, tx, p, req.NodeID)
+	n, role, err := nodeSharingAccess(ctx, tx, p, req.NodeID)
 	if apierr.From(err).Code == apierr.NotFound {
 		return nil, nil, nil, "", notFound("access request")
 	}
@@ -428,7 +434,7 @@ func (s *Server) raiseRole(ctx context.Context, tx *store.Tx, p *auth.Principal,
 	if u.Status != store.UserActive {
 		return apierr.New(apierr.Conflict, "the requester is not an active user")
 	}
-	held, err := tx.EffectiveRank(ctx, n.AccountID, n.ID, userID)
+	held, err := tx.PermissionRank(ctx, n.AccountID, n.ID, userID)
 	if err != nil {
 		return err
 	}

@@ -42,14 +42,14 @@ var corsExposedHeaders = strings.Join([]string{
 // browser shows the request as blocked. Any other request from such an origin is served as usual
 // and gets no CORS headers; the browser then hides the answer from the page.
 //
-// Signed links and the content origin are left alone: they carry their own authority, and nothing
-// in them needs a cross-origin page.
+// Signed links, the content origin and the share-link open route are left alone: they carry their own
+// authority, and nothing in them needs a cross-origin page.
 func (s *Server) cors(next http.Handler) http.Handler {
 	if len(s.corsAllowed) == 0 {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.onContentHost(r) || isLinkPath(r.URL.Path) {
+		if s.onContentHost(r) || isLinkPath(r.URL.Path) || strings.HasPrefix(r.URL.Path, "/api/v1/share/") {
 			next.ServeHTTP(w, r)
 			return
 		}

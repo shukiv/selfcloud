@@ -70,6 +70,8 @@ export class Page {
     this.expectedConflicts = [];
     // expectedMissing lists the node lookups answered 404 on purpose (a node the caller cannot reach).
     this.expectedMissing = [];
+    // expectedDeadLinks lists the share link opens answered 404 on purpose (a link that no longer works).
+    this.expectedDeadLinks = [];
     // expectedSignInRefusals lists the sign-in link redeems answered 400 on purpose (a used link).
     this.expectedSignInRefusals = [];
     // expectedSwitchPrompts lists the sign-in link redeems answered 409 on purpose (a browser signed in as another user).
@@ -134,6 +136,14 @@ export class Page {
         this.expectedMissing.push(p.entry.url);
         return;
       }
+      // A share link that no longer works is answered 404 when it is opened, and the browser logs it. The page shows
+      // the one message a dead link gets, so the test counts these answers and checks that they came from that page.
+      const expectedDeadLink =
+        p.entry.source === 'network' && /\/api\/v1\/share\/open$/.test(p.entry.url ?? '') && /status of 404/.test(p.entry.text);
+      if (expectedDeadLink) {
+        this.expectedDeadLinks.push(p.entry.url);
+        return;
+      }
       // A sign-in link used a second time is answered 400, and the browser logs it. The page shows the expired
       // message then, so the test counts this answer and checks that it came from the second visit.
       const expectedSignInRefusal =
@@ -167,8 +177,13 @@ export class Page {
 
   // setFiles puts files into the file input the selector names, as a person would pick them.
   async setFiles(selector, files) {
-    const { root } = await this.send('DOM.getDocument', { depth: -1 });
-    const { nodeId } = await this.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    // The input appears once the page has drawn its toolbar, so the lookup waits for it.
+    let nodeId = 0;
+    for (let i = 0; i < 100 && !nodeId; i++) {
+      const { root } = await this.send('DOM.getDocument', { depth: -1 });
+      ({ nodeId } = await this.send('DOM.querySelector', { nodeId: root.nodeId, selector }));
+      if (!nodeId) await new Promise((r) => setTimeout(r, 100));
+    }
     if (!nodeId) throw new Error(`no file input for ${selector}`);
     await this.send('DOM.setFileInputFiles', { nodeId, files });
   }
