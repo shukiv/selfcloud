@@ -40,6 +40,7 @@
     { href: '/manage/people', label: 'nav.people' },
     { href: '/manage/groups', label: 'nav.groups' },
     { href: '/manage/spaces', label: 'nav.spaces' },
+    { href: '/manage/links', label: 'nav.links' },
     { href: '/manage/audit', label: 'nav.audit' },
   ];
 

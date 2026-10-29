@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { api, ApiError } from './api';
-import { clearSession, setMe, setSignedIn } from './session';
+import { beginSignOut, clearSession, endSignOut, setMe, setSignedIn } from './session';
 import type { Brand } from './brand';
 import type { Me, SignedIn, SignedInLink } from './types';
 import { sharingMaxExpiryDays } from './sharing/api';
@@ -86,10 +86,21 @@ export function setLocale(locale: string): Promise<Me> {
   return api<Me>('PATCH', '/api/v1/me', { body: { locale } });
 }
 
+// SIGN_OUT_TIMEOUT_MS bounds the sign-out call. The session is cleared either way, so a call that hangs must not hold the
+// app's other requests back for longer than this.
+export const SIGN_OUT_TIMEOUT_MS = 10_000;
+
 export async function signOut(): Promise<void> {
+  beginSignOut();
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), SIGN_OUT_TIMEOUT_MS);
   try {
-    await api<void>('POST', '/api/v1/auth/logout', {});
+    await api<void>('POST', '/api/v1/auth/logout', { allowWhileSigningOut: true, signal: ctl.signal });
+  } catch {
+    // The session is ended on this side whatever the server said, so a failed or timed-out call is not an error here.
   } finally {
+    clearTimeout(timer);
     clearSession();
+    endSignOut();
   }
 }

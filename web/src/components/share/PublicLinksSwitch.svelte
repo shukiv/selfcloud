@@ -4,6 +4,7 @@
   import { lang, translate, translatePlural } from '../../lib/i18n';
   import { failureText } from '../../lib/manage/failure';
   import { getSharingPolicy, setSharingPolicy } from '../../lib/sharing/api';
+  import DeletePublicLinks from './DeletePublicLinks.svelte';
 
   // PublicLinksSwitch is the account's switch for links that anyone can open. Turning it off pauses those
   // links at once; turning it on makes them work again. The owner and the installation admin both use it.
@@ -72,6 +73,7 @@
     </label>
     <p class="hint">{translate($lang, 'policy.publicLinksHint')}</p>
     <p class="hint">{translatePlural($lang, 'policy.anyoneLinks', anyoneLinks)}</p>
+    <DeletePublicLinks account={account} count={anyoneLinks} ondone={() => void load()} />
   {/if}
 </section>
 

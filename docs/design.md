@@ -775,6 +775,22 @@ routes carry every column the links need.
   each with `inherited_from`. A sharer (a manager, or an account key) sees every live link with its creator,
   its visitor count and whether policy pauses it. Anyone else sees only the live links on nodes it reaches.
   Expired links are not listed.
+- **Account list and bulk delete (o4).** `GET /accounts/{acc}/share-links` lists every live link of the account, oldest
+  first, with its audience, role or drop, end, `paused`, `password_set`, creator, visitor count for organisation links,
+  folder (a team space's name, or a personal folder's owner), and the item's name and path. It takes `?audience=` and
+  `?kind=access|drop`, pages with a cursor, and is open to the owner's session, the account key and an installation admin
+  (managed-account rules: a member and a token get `not_found`). Decision 11 of the owner (2026-10-29) applies: an owner
+  sees the items in other members' My files without their name or path, and may still delete those links; an admin sees
+  no item name or path at all; the account key sees every item. `POST /accounts/{acc}/share-links/delete-public` deletes
+  every anyone link of the account, access and drop links alike, releases their open uploads, audits each link as
+  `link.delete` in its folder and one `link.delete_public` entry with the count, and answers `{deleted}`. The web asks for
+  confirmation first; the route does not.
+  - `DELETE /share-links/{shl}` now also lets the owner's session and the account key delete any link of the account,
+    including one in a member's My files and one on a trashed item. Members keep the old rule, and an admin uses the bulk
+    delete only.
+  - A child of a folder listing carries `has_link` when it has a link the caller may know of: every live link for a sharer
+    (a manager or the account key), and for anyone else the access links the team space's policy lets through and the anyone
+    links while the switch is on. A visitor never gets it. One query reads a listing's links; no query is made per row.
 - **Links that anyone can open (o2).** The audience `anyone` is a link whose secret opens it for whoever holds
   it, with no session. It gives the viewer role only, and it always ends: 30 days by default, 365 days at most,
   and `sharing.max_expiry` lowers both when it is set. Making, changing, resetting or deleting one needs the
@@ -965,6 +981,11 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   Pieces in flight count against the quota and the disk together, and a drop link's visitors are held to
   `upload.max_disk_share_percent` as other uploads are.
 
+- **Share links, the owner's list (o4).** Decision 11 lets an owner see, for a link in another member's My files, its
+  audience, role, end, paused and password state, its creator, its visitor count and the folder's owner, but not the
+  item's name or path. The owner may delete it. The account key sees the names. An admin sees no item name or path. A
+  link that ended less than 24 hours ago keeps its row until the sweep removes it; it is refused at use and not listed.
+
 ## 9. API outline
 
 Everything below is under `/api/v1`. The full contract will be an OpenAPI 3 document at
@@ -1023,6 +1044,8 @@ Files                                      any caller, limited to what it may re
   POST   /share/renew                      bearer scl_: a live visitor credential, renewed ({token, expires_at})
   GET    /share/info                       bearer scl_ of a drop link: {title, message, ask_name, expires_at, max_file_size}
   GET|PATCH /accounts/{acc}/sharing-policy {public_links} (answers {public_links, anyone_links}): the account's switch for links that anyone can open, and how many such links it has (owner or key)
+  GET    /accounts/{acc}/share-links ?audience=organisation|anyone&kind=access|drop&limit=&cursor=  every live link of the account, with its item and folder (owner, key or admin; o4)
+  POST   /accounts/{acc}/share-links/delete-public  deletes every anyone link of the account, access and drop; answers {deleted} (owner, key or admin; o4)
   POST   /nodes/{nod}/access-requests      {role, message}: ask for a role (users only); always 202, with no body
   GET    /nodes/{nod}/access-requests      the requests on a node (manager, or editor where editors_can_share allows)
   GET    /access-requests                  the pending requests the caller may decide (the oldest 5,000 in the account)
@@ -1296,6 +1319,13 @@ links that reach the item from above are listed, with "Open the parent". The rol
 signed-out visitor to sign in and back, and shows the one message a dead link gets, "This link doesn't work. It
 may have expired or been turned off." It has no app shell.
 
+*Links and the badge (o4).* Manage has a Links page (`/manage/links`) for the owner: the account's live links with
+filters for audience and kind, a page at a time, each link's item, folder, creator, state and visitors, a per-row delete
+with its confirmation, and "Delete all public links", which names the number of anyone links before it deletes them. An
+item in another member's My files shows "Item in {member}'s My files" and no name. The Overview's switch and the admin
+tenant Overview offer the same "Delete all public links" action. The file list shows a small link badge on an item with
+`has_link`, with a label for screen readers; the badge comes from the listing and costs no request per row.
+
 *Known gaps (k3).* An editor sees the add form only where the node's own `editors_can_share` is on: the
 flag of an ancestor is not visible from the node, so an editor sharing through an ancestor's switch does not
 see the form (the server would allow it). The share dialog cannot open on a team space's root: the listing
@@ -1478,6 +1508,11 @@ cannot leak into another's results. Tests check this for each endpoint.
   hours ago, audits each removal as `permission.expired`, and leaves the 24 hours as a grace period so
   the audit trail shows when access ended. Reads already ignore an expired permission, so the sweep
   only tidies rows and never changes what a user may reach.
+- **Expired share links (o4)**: the sweep removes each share link whose `expires_at` passed more than 24 hours ago, up to 200
+  links a pass. Each removal is one transaction: its visits go with the link, any open uploads of a drop link are deleted
+  with their reservations, the link is audited as `link.expired` in its folder (under the system actor, private as every
+  personal entry is), and the uploads' files are removed after the commit. A link that ended less than a day ago keeps its
+  row and answers `not_found` from the moment it ends, as before; a second pass finds nothing more to do.
 - **Trash**: each sweep purges up to 200 explicit trash roots trashed longer than `trash.retention` (default 30
   days), one per transaction, adjusting usage and writing a `node.purge` entry under the system actor. The rest
   waits for a later pass.
@@ -1542,7 +1577,7 @@ Each slice ships with tests and leaves the server runnable.
 | n2 | Sharing v2: access expiry, no-download, the "editors can share" switch, ownership transfer, team-space restrictions and hiding, access requests, share emails |
 | m | Trash, version history, keep forever, restore, undo |
 | k | Web interface, in the seven languages, with right-to-left layout for Arabic and Hebrew |
-| o | Organisation and public links (off by default), link policy, drop folders. In four parts: o1 organisation links and the policy (built), o2 links that anyone can open, o3 drop folders, o4 the sweep and bulk delete |
+| o | Organisation and public links (off by default), link policy, drop folders. In four parts: o1 organisation links and the policy (built), o2 links that anyone can open (built), o3 drop folders (built), o4 the sweep, the account-wide list and bulk delete (built) |
 | p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page |
 | q | Search: filters, label search, full text and OCR within size limits |
 | r | Comments, mentions, activity pane, notifications, who-viewed |
@@ -1646,13 +1681,16 @@ Decided on approval:
       `accounts.public_links` is on.
     - The secret is stored hashed and shown once, at creation or reset. "Get a new link" replaces it.
     - Slice o is built in four parts, o1 to o4, each reviewed and pushed on its own.
+    - Owner's decision 11 (2026-10-29, for o4): the owner's account-wide link list hides the item's name and path for links
+      on items in other members' My files. The owner may still delete those links one by one, and "Delete all public links"
+      includes them. Links in the owner's own My files show normally.
 
     Interpretations made in o1, for review (the owner has not decided them):
     - A visit made before `credentials_at` does not count, so a reset ends the access of the old copies until
       each member opens the new URL. A reset keeps the recorded visits.
     - While policy pauses a link, its changes and resets are refused and only deletion is allowed, so a
       setting that is off cannot be used to change a link.
-    - `GET /nodes/{nod}/share-links` leaves out expired links. The sweep that removes them is in o4.
+    - `GET /nodes/{nod}/share-links` leaves out expired links. The sweep that removes them is built in o4 (below).
     - `POST /share/open` is limited to 30 a minute per address (`share.open.ip`). The proposal sets that limit,
       in its section 3, under o2.
     - The conflict answers carry a `reason` (`exists`, `members_only`) for the dialog to name the cause.
@@ -1677,8 +1715,7 @@ Decided on approval:
     - Visits and credentials are compared in whole milliseconds, since the store keeps milliseconds. An o1 visit
       made in the same millisecond as its link's creation was not counted; o2 fixes that comparison.
     - The policy answers `anyone_links`, the number of anyone links that have not expired, live or paused, and the
-      switch shows it. Not built in o2: the owner's "Delete all public links" control on the policy page; the
-      account-wide list and bulk delete come in o4.
+      switch shows it. The owner's "Delete all public links" control and the account-wide list were built in o4.
     - The per-address limits and lockouts of `/share/open` count an IPv6 client by its /64. The other limits still
       count one address each.
 
@@ -1733,3 +1770,29 @@ Decided on approval:
       address (`net/mail`), and is not verified.
     - The `mail.drop.*` budgets are 60 an hour per account and 10 an hour per address, as share mail's are.
     - A drop link is hidden from listings for every caller who is not a sharer, the same as a paused link.
+
+    Slice o4 (the sweep, the account-wide list and bulk delete), 2026-10-29. Decision 11 of the owner (below).
+    - Decision 11: the owner's account-wide list shows links on items in other members' My files without the item's name or
+      path (`hidden`, with `item_name` and `item_path` null). The owner may delete them one by one, and "Delete all public
+      links" includes them. Links in the owner's own My files, and in team spaces, show normally.
+
+    Interpretations made in o4, for review (the owner has not decided them):
+    - An account key sees every item's name and path, as it reads the audit log and every file. Only the owner session
+      is held to decision 11, and only an admin sees no item name or path at all.
+    - An admin uses the bulk delete only. The per-link delete refuses an admin, since an admin reads no item and the
+      owner's list is what it would delete from. The bulk route accepts it, as the owner's session and the key do.
+    - The owner's session and the account key delete any link of the account, whatever node it sits on (a trashed item
+      too), without reaching the node. A member keeps the old rule, and gets not_found for a link it does not reach.
+    - `GET /accounts/{acc}/share-links` and `POST /accounts/{acc}/share-links/delete-public` answer a member and a token
+      `not_found`, as the sharing-policy and audit routes do, not `forbidden`.
+    - A listing shows a link on a trashed item, its own or an ancestor's, with `paused` true.
+    - The bulk delete removes every anyone link, ended or not. Its confirmation count is `anyone_links` from the policy,
+      which leaves out the ended links: a confirmed count may therefore be lower than the number deleted.
+    - The sweep takes links that ended more than 24 hours ago, one transaction each. It deletes a drop link's open
+      uploads with their reservations, and audits each upload as `upload.delete` with the reason `link_expired`.
+    - The account-wide list names the creator by its display name, or by its email when it has no display name.
+    - `has_link` is shown to a sharer for any live link (drop links included), and to anyone else only for the links its
+      own listing would show. It is never shown to a visitor.
+    - The o1 gap (a) is repaired: a team space is listed under Team spaces when a member has opened an organisation link on
+      its root, at the link's role, as a permission on the root lists it. The o1 gap (b) was not reproduced at the API: a
+      node reached by a permission and a link is listed once, since the query groups by node.

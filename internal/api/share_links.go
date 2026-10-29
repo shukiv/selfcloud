@@ -822,23 +822,34 @@ func (s *Server) handleDeleteShareLink(w http.ResponseWriter, r *http.Request) e
 		if err != nil {
 			return err
 		}
-		n, own, err := nodeSharingAccess(ctx, tx, p, l.NodeID)
-		if err != nil {
-			return err
-		}
-		if l.CreatedBy != p.ID {
-			ok, err := mayShare(ctx, tx, n, own)
+		var n *store.Node
+		if p.ManagesAccount(p.AccountID) {
+			// An owner session or the account key may delete any link of the account, including one on a member's
+			// My files, which the owner cannot reach (decision 11, 2026-10-29). The node is read, not reached, so a
+			// link on a trashed item can still be removed from the list.
+			if n, err = tx.Node(ctx, p.AccountID, l.NodeID); err != nil {
+				return err
+			}
+		} else {
+			var own string
+			n, own, err = nodeSharingAccess(ctx, tx, p, l.NodeID)
 			if err != nil {
 				return err
 			}
-			if !ok {
-				return roleTooLow(store.RoleManager)
-			}
-			if store.RoleRank(l.Role) > store.RoleRank(own) {
-				return apierr.New(apierr.Forbidden, "you may not remove a link above your own role")
-			}
-			if l.Audience == store.AudienceAnyone && own != store.RoleManager {
-				return managerRequired()
+			if l.CreatedBy != p.ID {
+				ok, err := mayShare(ctx, tx, n, own)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return roleTooLow(store.RoleManager)
+				}
+				if store.RoleRank(l.Role) > store.RoleRank(own) {
+					return apierr.New(apierr.Forbidden, "you may not remove a link above your own role")
+				}
+				if l.Audience == store.AudienceAnyone && own != store.RoleManager {
+					return managerRequired()
+				}
 			}
 		}
 		if err := tx.DeleteShareLink(ctx, p.AccountID, l.ID); err != nil {

@@ -73,7 +73,7 @@ space ("My files"), and a group can hold users.
 | Roles: viewer, commenter, editor, owner | Built (n1): viewer, commenter, contributor, editor, manager. Drive's "content manager" is `editor` in the API; owners of the account hold manager on team spaces |
 | Share a single file, or any folder at any depth | Built (n1): permissions on any node, inherited downward, additive only |
 | Share with a group | Built (n1): account groups, with members of any role; removing a member revokes at once |
-| Link sharing: restricted, organisation, anyone with the link | Restricted, organisation and anyone-with-the-link links built (o1, o2): an organisation link opens for members of the account; an anyone link opens for whoever holds it, viewer only, with an end date and an optional password |
+| Link sharing: restricted, organisation, anyone with the link | Restricted, organisation and anyone-with-the-link links built (o1, o2): an organisation link opens for members of the account; an anyone link opens for whoever holds it, viewer only, with an end date and an optional password. Manage > Links lists and deletes them (o4), and the file list shows a link badge |
 | People outside the organisation open "anyone" links without an account | Built (o2): the link's secret opens it for anyone, with a password when set. Visitors use a 15-minute credential, and are kept to the link's subtree |
 | Access expiry for a person | Built (n1, n2): `expires_at` is filtered at every read (n1). The API sets it, with a maximum from `sharing.max_expiry` (n2). Built (k3): the share dialog sets an end date, capped by `sharing_max_expiry_days` from `GET /info`, and shows it |
 | Stop viewers and commenters from downloading, copying or printing | Built (n2): downloads, signed links and copies are refused for viewers and commenters. It does not stop viewing: the content still shows in the browser, and a viewer can copy what it sees. This deters, it does not secure |
@@ -83,7 +83,7 @@ space ("My files"), and a group can hold users.
 | Email when something is shared with you | Built (n2): in the seven languages, with a `notify` switch |
 | Pending invitations list | Have: pending users. Built (n2): `subject_status` and `subject_name` in the permission listing, for managers and account keys. Built (k3): the share dialog shows an "Invited" badge |
 | Sharing limited to trusted domains (admin) | New (u): per-account allowlist for public links and invitations |
-| Extra beyond Drive: password and expiry on public links, upload-only drop folders | Expiry built in o1 for organisation links, optional. Anyone links: expiry and password built in o2. Drop folders ("Request files") built in o3: upload-only, with an end date, an optional password, a title and message, and an optional name and email. Off by default |
+| Extra beyond Drive: password and expiry on public links, upload-only drop folders | Expiry built in o1 for organisation links, optional. Anyone links: expiry and password built in o2. Drop folders ("Request files") built in o3: upload-only, with an end date, an optional password, a title and message, and an optional name and email. Off by default. Built in o4: an owner's list of every link in the account, with "Delete all public links"; ended links are swept a day after they end |
 
 ## 5. Team spaces (Drive's "shared drives")
 
@@ -198,7 +198,7 @@ come **before** k.
 | n2 | Sharing v2 (built, see the rows marked Built (n2) above): access expiry, no-download, "editors can share", ownership transfer, team-space restrictions and hiding, access requests, share emails | Medium |
 | m | Trash, version history, keep forever, restore, undo | Medium |
 | k | Web interface (as planned, on the new model). Complete after k4. k3 (built): the sharing interface: share dialog, Shared with me, access requests, hidden spaces, space settings, and the account directory search (`GET /directory`). k4 (built): owner pages (overview, people, groups, team spaces, audit log) and installation admin pages (tenants, tenant tabs, admins, installation facts), with the owner guard and list filters in the API. Known gaps: design section 10 | Large |
-| o | Organisation and public links, link expiry and password, drop folders, admin policy | Medium |
+| o | Organisation and public links, link expiry and password, drop folders, admin policy. Built in four parts: o1 to o4 | Medium |
 | p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page | Medium |
 | q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |
 | r | Comments, mentions, activity pane, notifications, who-viewed | Medium |

@@ -22,6 +22,8 @@ export interface Node {
   editors_can_share: boolean;
   created_by?: string;
   owner_id?: string;
+  // has_link is set when the item carries a share link the caller may know of (the children listing only).
+  has_link?: boolean;
 }
 
 export interface TrashItem extends Node {

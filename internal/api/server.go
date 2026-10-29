@@ -410,6 +410,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/share/info", handle: s.handleShareInfo, auth: true, drop: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleGetSharingPolicy, auth: true},
 		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleUpdateSharingPolicy, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/share-links", handle: s.handleListAccountShareLinks, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/share-links/delete-public", handle: s.handleDeletePublicShareLinks, auth: true},
 		{method: http.MethodGet, path: "/api/v1/directory", handle: s.handleDirectory, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/transfer-ownership", handle: s.handleTransferOwnership, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleCreateAccessRequest, auth: true},

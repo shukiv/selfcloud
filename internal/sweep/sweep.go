@@ -119,6 +119,7 @@ type Result struct {
 	AccessRequests int64 // decided access requests older than accessRequestRetention, removed
 	Purged         int   // trashed items past trash.retention, purged with their contents
 	Versions       int   // versions past versions.max_count or versions.max_age, pruned
+	Links          int   // share links that ended more than a day ago, removed with their open uploads
 }
 
 // Run sweeps at once and then every interval, until ctx is cancelled.
@@ -168,6 +169,9 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 		return res, err
 	}
 	if res.Versions, err = w.pruneVersions(ctx, now); err != nil {
+		return res, err
+	}
+	if res.Links, err = w.expireShareLinks(ctx, now); err != nil {
 		return res, err
 	}
 	err = w.st.Write(ctx, func(tx *store.Tx) error {

@@ -99,6 +99,18 @@
   {/if}
 {/snippet}
 
+{#snippet linkBadge(n: Node)}
+  {#if n.has_link}
+    <span class="link-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+      </svg>
+      <span class="sr-only">{$tr('files.linkBadge')}</span>
+    </span>
+  {/if}
+{/snippet}
+
 {#snippet roleText(n: Node)}
   {#if n.role}{$tr(`role.${n.role}`)}{/if}
 {/snippet}
@@ -151,6 +163,7 @@
         <div class="cell name-cell" role="gridcell">
           <Icon kind={kindOf(n)} size={22} />
           {@render nameField(n)}
+          {@render linkBadge(n)}
           {#if renameID === n.id && renameError}
             <p class="field-error" id="rename-error">{renameError}</p>
           {/if}
@@ -202,6 +215,7 @@
         {:else}
           <bdi class="name">{n.name}</bdi>
         {/if}
+        {@render linkBadge(n)}
         <span class="muted small">{sizeOf(n)}</span>
       </div>
     {/each}
@@ -216,6 +230,13 @@
     border-radius: var(--radius-md);
     background: var(--color-surface);
     outline: none;
+  }
+
+  .link-badge {
+    display: inline-flex;
+    margin-inline-start: var(--space-2);
+    color: var(--color-muted-foreground);
+    vertical-align: middle;
   }
 
   .row {

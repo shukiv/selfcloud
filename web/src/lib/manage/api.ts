@@ -5,6 +5,7 @@
 import { api } from '../api';
 import type { Page } from '../files/types';
 import type { AuditEntry } from '../audit/sentence';
+import { linkListQuery, type AccountLinkPage, type LinkFilter } from './links';
 import type {
   Account,
   ApiKey,
@@ -194,6 +195,18 @@ export function renameSpace(id: string, fld: string, name: string): Promise<Spac
 
 export function deleteSpace(id: string, fld: string): Promise<void> {
   return api<void>('DELETE', `${acc(id)}/folders/${fld}`);
+}
+
+// listAccountLinks reads one page of the account's links that anyone can open or that take uploads, with the
+// owner's filters. The server answers a member with not_found.
+export function listAccountLinks(id: string, filter: LinkFilter, cursor: string | undefined, limit: number): Promise<AccountLinkPage> {
+  return api<AccountLinkPage>('GET', `${acc(id)}/share-links${linkListQuery(filter, cursor, limit)}`);
+}
+
+// deleteAllPublicLinks deletes every link that anyone can open, and every drop link, of the account. It answers
+// how many it deleted. Links that only people in the account can open stay.
+export function deleteAllPublicLinks(id: string): Promise<{ deleted: number }> {
+  return api<{ deleted: number }>('POST', `${acc(id)}/share-links/delete-public`);
 }
 
 export function auditLog(

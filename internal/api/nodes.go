@@ -139,6 +139,9 @@ type nodeJSON struct {
 	// The interface shows "you" when one is the signed-in user.
 	CreatedBy string `json:"created_by"`
 	OwnerID   string `json:"owner_id"`
+	// HasLink is set on a child of a listing that carries a link the caller may know of (design section 8): every live
+	// link for a sharer, and the access links that policy lets through for anyone else. Visitors never see it.
+	HasLink bool `json:"has_link,omitempty"`
 }
 
 // nodeJSONFor is toNodeJSON as the caller may see it. A visitor of a link that anyone can open sees no user IDs,
@@ -380,14 +383,59 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 	}
 	cap := callerRankCap(p)
 	base := min(store.RoleRank(role), cap)
+	links, err := s.childLinkBadges(ctx, dir, p, role)
+	if err != nil {
+		return err
+	}
 	out := listResponse[nodeJSON]{Items: []nodeJSON{}, NextCursor: next}
 	for _, k := range kids {
 		j := nodeJSONFor(p, k)
 		j.Role = store.RoleOfRank(max(base, min(ranks[k.ID], cap)))
+		j.HasLink = links[k.ID]
 		out.Items = append(out.Items, j)
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// childLinkBadges says which children of dir show a link badge to the caller. A visitor of a link sees none. A sharer
+// (a manager, or the account key) sees a badge for every live link, drop links included, as its link list does. Anyone
+// else sees a badge only for the links its listing would show: access links that the team space's policy lets through,
+// and anyone links while the account's switch is on. Children are never a folder's root, so members_only admits none.
+// One query reads the links of the listing and one reads the folder's policy.
+func (s *Server) childLinkBadges(ctx context.Context, dir *store.Node, p *auth.Principal, role string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if p.Kind == auth.KindShareLink {
+		return out, nil
+	}
+	kinds, err := s.store.ChildLinkKinds(ctx, dir.AccountID, dir.ID, time.Now())
+	if err != nil || len(kinds) == 0 {
+		return out, err
+	}
+	// A delegated token never manages links, whoever it acts for: an account key's token is a key in every other
+	// check, so the token is tested first.
+	sharer := p.Token == nil && seesFullChain(p, role)
+	var orgOK, anyoneOK bool
+	if !sharer {
+		f, err := s.store.Folder(ctx, dir.AccountID, dir.FolderID)
+		if err != nil {
+			return nil, err
+		}
+		orgOK = (f.Kind == store.KindPersonal || f.AllowLinks) && !f.MembersOnly
+		if anyoneOK, err = s.store.SharingPolicy(ctx, dir.AccountID); err != nil {
+			return nil, err
+		}
+		anyoneOK = anyoneOK && orgOK
+	}
+	for node, k := range kinds {
+		switch {
+		case sharer:
+			out[node] = k.Organisation || k.Anyone || k.Drop
+		default:
+			out[node] = (k.Organisation && orgOK) || (k.Anyone && anyoneOK)
+		}
+	}
+	return out, nil
 }
 
 func (s *Server) handleListNodeChildren(w http.ResponseWriter, r *http.Request) error {

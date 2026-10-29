@@ -29,6 +29,30 @@ export function setMe(me: Me): void {
   session.set({ user: me.user, account: me.account, csrf: me.csrf_token, publicLinks: me.public_links === true });
 }
 
+// sessionKey names the session a request was made under: its person and its CSRF token. It is '' with no session.
+// A change of person or of token (a sign-out, then a sign-in) gives a new key.
+export function sessionKey(s: Session | null): string {
+  return s ? `${s.user.id}\n${s.csrf}` : '';
+}
+
+// ending counts the sign-outs under way. The session is still set while a sign-out call is in flight, so a request a
+// page starts then would be sent under a session the server is ending, and be answered 401. api refuses those requests
+// while the count is above zero, except the sign-out call itself. A counter, not a flag: two sign-outs overlap, and
+// the first to finish must not clear the second's guard.
+let ending = 0;
+
+export function beginSignOut(): void {
+  ending++;
+}
+
+export function endSignOut(): void {
+  ending = Math.max(0, ending - 1);
+}
+
+export function signingOut(): boolean {
+  return ending > 0;
+}
+
 export function clearSession(): void {
   session.set(null);
 }

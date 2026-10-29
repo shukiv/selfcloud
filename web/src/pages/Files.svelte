@@ -5,7 +5,7 @@
   import { ApiError } from '../lib/apiError';
   import { go, location } from '../lib/router';
   import { lang, tr, translatePlural } from '../lib/i18n';
-  import { session } from '../lib/session';
+  import { session, signingOut } from '../lib/session';
   import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from '../lib/files/folders';
   import {
     childrenPage,
@@ -195,6 +195,9 @@
 
   async function load(): Promise<void> {
     const my = ++loadToken;
+    // Signing out ends the session before the page leaves. The address change that follows must not read the
+    // listing with no session: the server would answer 401 for a request the person has already left.
+    if (get(session) === null) return;
     const r = parseFilesPath($location.path);
     missingNodeID = r?.kind === 'dir' ? r.dir : undefined;
     if (!r || r.kind === 'node') {
@@ -240,7 +243,8 @@
       status = 'ready';
       await applyQuery(page.items);
     } catch (err) {
-      if (my !== loadToken) return;
+      // A listing cut short by a sign-out is not an error to show: the page is leaving.
+      if (my !== loadToken || signingOut()) return;
       if (err instanceof ApiError && err.code === 'not_found') {
         status = 'missing';
         return;
@@ -270,7 +274,7 @@
 
   // reload reads the first page again, keeping the place, and drops selected items that are gone.
   async function reload(): Promise<void> {
-    if (!here) return;
+    if (!here || get(session) === null) return;
     try {
       const page = await childrenPage(here.folder, here.dir?.id ?? null);
       items = page.items;
@@ -279,7 +283,7 @@
       const keep = sel.ids.filter((id) => present.has(id));
       sel = { ids: keep, anchor: null, focus: null, anchorID: null, focusID: keep.length ? sel.focusID : null };
     } catch (err) {
-      notice = fileErrorText(err, $lang);
+      if (!signingOut()) notice = fileErrorText(err, $lang);
     }
   }
 

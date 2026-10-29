@@ -31,6 +31,7 @@
   import ManageGroups from './pages/manage/Groups.svelte';
   import ManageSpaces from './pages/manage/Spaces.svelte';
   import ManageAudit from './pages/manage/Audit.svelte';
+  import ManageLinks from './pages/manage/Links.svelte';
   import AdminTenants from './pages/admin/Tenants.svelte';
   import AdminTenant from './pages/admin/Tenant.svelte';
   import AdminAdmins from './pages/admin/Admins.svelte';
@@ -202,6 +203,8 @@
         <ManageGroups />
       {:else if target.section === 'spaces'}
         <ManageSpaces />
+      {:else if target.section === 'links'}
+        <ManageLinks />
       {:else}
         <ManageAudit />
       {/if}

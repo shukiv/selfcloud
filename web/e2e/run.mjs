@@ -615,6 +615,7 @@ async function linkChecks(page, { base, accountID, accountKey }) {
   check(true, 'the removed link shows the one message a dead link gets');
   await anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans });
   await dropLinkChecks(page, { base, accountID, accountKey, fld, plans });
+  await publicLinksDeleteAllChecks(page, { base, accountID, accountKey, fld });
 }
 
 // anyoneLinkChecks: the owner turns on links that anyone can open, and makes one on Plans with a password. A
@@ -786,6 +787,43 @@ async function dropLinkChecks(page, { base, accountID, accountKey, fld, plans })
   await page.goto(url);
   await page.waitFor(`!!document.querySelector('.alert') && document.querySelector('.alert').textContent.includes("doesn't work")`, 15000);
   check(true, 'a deleted drop link shows the one dead-link message');
+}
+
+// publicLinksDeleteAllChecks: the account has an anyone link and a drop link (made here through the account key) and an
+// organisation link. The owner opens Manage > Links, sees the two public links and the organisation link, and uses
+// "Delete all public links", confirming the count. Both public links stop working; the organisation link stays.
+async function publicLinksDeleteAllChecks(page, { base, accountID, accountKey, fld }) {
+  const dir = async (path) => (await api(base, 'POST', `/api/v1/folders/${fld}/directories`, accountKey, { path, parents: false })).id;
+  const [pub, inbox, shared] = [await dir('/Public'), await dir('/Inbox'), await dir('/Shared')];
+  const anyone = await api(base, 'POST', `/api/v1/nodes/${pub}/share-links`, accountKey, { audience: 'anyone', role: 'viewer' });
+  const drop = await api(base, 'POST', `/api/v1/nodes/${inbox}/share-links`, accountKey, { upload_only: true, title: 'Send us files' });
+  const org = await api(base, 'POST', `/api/v1/nodes/${shared}/share-links`, accountKey, { audience: 'organisation', role: 'viewer' });
+  const secrets = [anyone.url, drop.url].map((u) => u.slice(u.indexOf('#') + 1));
+
+  await signOut(page);
+  await signIn(page, OWNER);
+  await navigateTo(page, '/manage/links');
+  await page.waitFor(`location.pathname === '/manage/links' && [...document.querySelectorAll('.item-name')].some((x) => x.textContent === 'Shared')`, 15000);
+  const names = await page.evaluate(`[...document.querySelectorAll('.item-name')].map((x) => x.textContent)`);
+  check(['Public', 'Inbox', 'Shared'].every((n) => names.includes(n)), `Manage > Links lists the anyone link, the drop link and the organisation link (${names.join(', ')})`);
+
+  const before = (await api(base, 'GET', `/api/v1/accounts/${accountID}/sharing-policy`, accountKey)).anyone_links;
+  await clickButton(page, 'Delete all public links');
+  await page.waitFor(`!!document.querySelector('[role="dialog"]') && document.querySelector('[role="dialog"]').textContent.includes(${q(`${before} link`)})`, 15000);
+  check(true, `the confirmation names the count of public links (${before})`);
+  await page.evaluate(`(() => { const b = [...document.querySelectorAll('[role="dialog"] button')].find((x) => x.textContent.trim() === 'Delete all public links' && !x.disabled); if (!b) return false; b.click(); return true; })()`);
+  await page.waitFor(`[...document.querySelectorAll('[role="status"]')].some((x) => x.textContent.includes(${q(`${before} public link`)}))`, 15000);
+  await page.waitFor(`![...document.querySelectorAll('.item-name')].some((x) => x.textContent === 'Public' || x.textContent === 'Inbox') && [...document.querySelectorAll('.item-name')].some((x) => x.textContent === 'Shared')`, 15000);
+  check(true, 'Delete all public links removes the public links from the list and keeps the organisation link');
+
+  const policy = await api(base, 'GET', `/api/v1/accounts/${accountID}/sharing-policy`, accountKey);
+  check(policy.anyone_links === 0, `no link that anyone can open is left (anyone_links ${policy.anyone_links})`);
+  for (const secret of secrets) {
+    const res = await fetch(base + '/api/v1/share/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret }) });
+    check(res.status === 404, `a deleted public link no longer opens (${res.status})`);
+  }
+  const kept = await api(base, 'GET', `/api/v1/nodes/${shared}/share-links`, accountKey);
+  check(kept.items.some((l) => l.audience === 'organisation' && l.id === org.link.id), 'the organisation link stays');
 }
 
 // signOut signs out through the account menu, as a person would.

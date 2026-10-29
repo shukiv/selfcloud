@@ -90,6 +90,7 @@
 
   {#if account}
     <PublicLinksSwitch {account} />
+    <p class="hint"><a href="/manage/links">{translate($lang, 'links.openList')}</a></p>
   {/if}
 
   {#if fresh}

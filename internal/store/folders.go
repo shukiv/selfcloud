@@ -197,10 +197,16 @@ type ReachedFolder struct {
 // directly or through a group, one page at a time. A team space an owner reaches without a
 // permission is not listed here; the caller adds those. Expired permissions are left out.
 func (s *Store) RootReachedFolders(ctx context.Context, accountID, userID string, hide HideFilter, p Page) ([]ReachedFolder, string, error) {
+	// A team space is listed when the user holds a permission on its root, or has opened an organisation link on the
+	// root (its visit counts as a role there, as it does for a node below the root; see effectiveRank).
 	args := []any{accountID, userID, userID, nowMillis()}
-	cond := `f.account_id = ? AND f.kind = 'team' AND EXISTS (
+	cond := `f.account_id = ? AND f.kind = 'team' AND (EXISTS (
 		SELECT 1 FROM nodes r JOIN permissions pm ON pm.node_id = r.id
-		WHERE r.folder_id = f.id AND r.parent_id IS NULL AND ` + subjectPredicate + ` AND ` + liveClause + `)`
+		WHERE r.folder_id = f.id AND r.parent_id IS NULL AND ` + subjectPredicate + ` AND ` + liveClause + `)
+		OR EXISTS (SELECT 1 FROM share_links sl JOIN share_link_visits v ON v.link_id = sl.id AND v.user_id = ?
+		JOIN nodes ln ON ln.id = sl.node_id JOIN folders lf ON lf.id = ln.folder_id
+		WHERE ln.folder_id = f.id AND ln.parent_id IS NULL AND sl.account_id = f.account_id AND ` + linkLiveSQL + `))`
+	args = append(args, userID, nowMillis())
 	hideSQL, hargs := hideCond("f.", hide)
 	cond += hideSQL
 	args = append(args, hargs...)
@@ -210,7 +216,7 @@ func (s *Store) RootReachedFolders(ctx context.Context, accountID, userID string
 	}
 	out := make([]ReachedFolder, 0, len(folders))
 	for _, f := range folders {
-		rank, err := s.rootRank(ctx, f.ID, userID)
+		rank, err := s.rootRank(ctx, f.AccountID, f.ID, userID)
 		if err != nil {
 			return nil, "", err
 		}
@@ -262,12 +268,19 @@ func (s *Store) pageFoldersAliased(ctx context.Context, cond string, args []any,
 
 // rootRank is the highest rank of the live permissions userID holds on a folder's root, direct or
 // through a group.
-func (s *Store) rootRank(ctx context.Context, folderID, userID string) (int, error) {
+func (s *Store) rootRank(ctx context.Context, accountID, folderID, userID string) (int, error) {
 	var rank int
-	err := s.r.QueryRowContext(ctx, `SELECT COALESCE(MAX(`+fmt.Sprintf(roleRankSQL, "pm.role")+`), 0)
-		FROM nodes r JOIN permissions pm ON pm.node_id = r.id
-		WHERE r.folder_id = ? AND r.parent_id IS NULL AND `+subjectPredicate+` AND `+liveClause,
-		folderID, userID, userID, nowMillis()).Scan(&rank)
+	err := s.r.QueryRowContext(ctx, `SELECT COALESCE(MAX(src.r), 0) FROM (
+			SELECT `+fmt.Sprintf(roleRankSQL, "pm.role")+` AS r
+			FROM nodes r JOIN permissions pm ON pm.node_id = r.id
+			WHERE r.folder_id = ? AND r.parent_id IS NULL AND `+subjectPredicate+` AND `+liveClause+`
+			UNION ALL
+			SELECT `+fmt.Sprintf(roleRankSQL, "sl.role")+` AS r
+			FROM share_links sl JOIN share_link_visits v ON v.link_id = sl.id AND v.user_id = ?
+			JOIN nodes ln ON ln.id = sl.node_id JOIN folders lf ON lf.id = ln.folder_id
+			WHERE ln.folder_id = ? AND ln.parent_id IS NULL AND sl.account_id = ? AND `+linkLiveSQL+`
+		) src`,
+		folderID, userID, userID, nowMillis(), userID, folderID, accountID, nowMillis()).Scan(&rank)
 	return rank, err
 }
 

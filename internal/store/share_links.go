@@ -6,6 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -399,4 +401,217 @@ func (tx *Tx) ClaimDropNotice(ctx context.Context, accountID, linkID string, now
 func (tx *Tx) RestoreDropNotice(ctx context.Context, accountID, linkID string, count int, notifiedAt *time.Time) error {
 	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE share_links SET unreported_files = unreported_files + ?,
 		notified_at = ? WHERE account_id = ? AND id = ?`, count, nullMillis(notifiedAt), accountID, linkID))
+}
+
+// ExpiredShareLinks lists up to limit links that ended at or before cutoff, in order of their end and then their ID,
+// after the position (afterMillis, afterID): the first page starts with afterMillis below any end and afterID "". The
+// sweep walks the list by this position, so a link it cannot remove is passed over rather than read again.
+func (s *Store) ExpiredShareLinks(ctx context.Context, cutoff time.Time, afterMillis int64, afterID string, limit int) ([]*ShareLink, error) {
+	rows, err := s.r.QueryContext(ctx, `SELECT `+shareLinkCols+` FROM share_links sl
+		WHERE sl.expires_at IS NOT NULL AND sl.expires_at <= ?
+		AND (sl.expires_at > ? OR (sl.expires_at = ? AND sl.id > ?))
+		ORDER BY sl.expires_at, sl.id LIMIT ?`,
+		millis(cutoff), afterMillis, afterMillis, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*ShareLink
+	for rows.Next() {
+		l, err := scanShareLink(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// AccountLink is a link as the account's list shows it: the link, its node and the node's folder, who made it, how
+// many members have opened it, and whether it is paused: policy pauses it, or its node or an ancestor is in the trash.
+type AccountLink struct {
+	ShareLink
+	Visitors      int
+	Paused        bool
+	NodeName      string
+	FolderID      string
+	FolderKind    string
+	FolderName    string // the team space's name; "" for a personal folder
+	FolderOwnerID string // the owner of a personal folder; "" for a team space
+	FolderOwner   string // that owner's display name
+	CreatorName   string // the creating user's display name; "" when an account key made it
+}
+
+// AccountLinkFilter narrows the account's list: an audience ("" for both), and whether drop links or access links
+// are listed (kind: "" for both, "drop", or "access").
+type AccountLinkFilter struct {
+	Audience string
+	Kind     string
+}
+
+// AccountShareLinks lists the account's live links, one page at a time, oldest first. A link that ended is left out,
+// as a listing leaves it out, even while the sweep still keeps its row.
+func (s *Store) AccountShareLinks(ctx context.Context, accountID string, now time.Time, f AccountLinkFilter, p Page) ([]*AccountLink, string, error) {
+	where := []string{"sl.account_id = ?", "(sl.expires_at IS NULL OR sl.expires_at > ?)"}
+	args := []any{accountID, millis(now)}
+	if f.Audience != "" {
+		where = append(where, "sl.audience = ?")
+		args = append(args, f.Audience)
+	}
+	switch f.Kind {
+	case "drop":
+		where = append(where, "sl.upload_only = 1")
+	case "access":
+		where = append(where, "sl.upload_only = 0")
+	}
+	if p.Cursor != "" {
+		parts, err := decodeCursor(p.Cursor, 2)
+		if err != nil {
+			return nil, "", err
+		}
+		ms, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return nil, "", ErrBadCursor
+		}
+		where = append(where, "(sl.created_at, sl.id) > (?, ?)")
+		args = append(args, ms, parts[1])
+	}
+	args = append(args, p.Limit+1)
+	rows, err := s.r.QueryContext(ctx, `SELECT `+shareLinkCols+`,
+			ln.name, lf.id, lf.kind, lf.name, COALESCE(lf.owner_user_id, ''), COALESCE(NULLIF(ou.display_name, ''), ou.email, ''),
+			COALESCE(NULLIF(cu.display_name, ''), cu.email, ''),
+			(SELECT COUNT(*) FROM share_link_visits v WHERE v.link_id = sl.id AND v.visited_at > sl.credentials_at),
+			NOT ((sl.audience = 'organisation' OR ac.public_links = 1) AND `+linkPolicySQL+`)
+				OR ln.trashed_at IS NOT NULL
+				OR EXISTS (WITH RECURSIVE up(id, parent) AS (
+					SELECT ln.id, ln.parent_id UNION ALL
+					SELECT p.id, p.parent_id FROM nodes p JOIN up ON p.id = up.parent)
+					SELECT 1 FROM up JOIN nodes t ON t.id = up.id WHERE t.trashed_at IS NOT NULL)
+		FROM share_links sl
+		JOIN nodes ln ON ln.id = sl.node_id
+		JOIN folders lf ON lf.id = ln.folder_id
+		JOIN accounts ac ON ac.id = sl.account_id
+		LEFT JOIN users ou ON ou.id = lf.owner_user_id
+		LEFT JOIN users cu ON cu.id = sl.created_by AND sl.created_kind = 'user'
+		WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY sl.created_at, sl.id LIMIT ?`, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	var out []*AccountLink
+	for rows.Next() {
+		var (
+			l      AccountLink
+			paused int64
+		)
+		if err := scanLinkRow(rows, &l.ShareLink, &l.NodeName, &l.FolderID, &l.FolderKind, &l.FolderName,
+			&l.FolderOwnerID, &l.FolderOwner, &l.CreatorName, &l.Visitors, &paused); err != nil {
+			return nil, "", err
+		}
+		l.Paused = paused == 1
+		out = append(out, &l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(out) > p.Limit {
+		out = out[:p.Limit]
+		last := out[len(out)-1]
+		next = encodeCursor(strconv.FormatInt(millis(last.CreatedAt), 10), last.ID)
+	}
+	return out, next, nil
+}
+
+// NodePathNames returns the names from the folder's root down to nodeID, the root left out: a path of names. A node
+// with no path above the root returns nil.
+func (s *Store) NodePathNames(ctx context.Context, accountID, nodeID string) ([]string, error) {
+	rows, err := s.r.QueryContext(ctx, `WITH RECURSIVE up(id, parent, name, depth) AS (
+			SELECT id, parent_id, name, 0 FROM nodes WHERE account_id = ? AND id = ?
+			UNION ALL
+			SELECT p.id, p.parent_id, p.name, up.depth + 1 FROM nodes p JOIN up ON p.id = up.parent WHERE p.account_id = ?
+		)
+		SELECT name FROM up WHERE parent IS NOT NULL ORDER BY depth DESC`, accountID, nodeID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// AnyoneShareLink is the minimum a bulk delete needs of an anyone link: its ID, node, and the node's folder.
+type AnyoneShareLink struct {
+	ID       string
+	NodeID   string
+	FolderID string
+}
+
+// AnyoneShareLinks lists every link of the account that anyone can open, access and drop links alike, ended or not.
+func (tx *Tx) AnyoneShareLinks(ctx context.Context, accountID string) ([]AnyoneShareLink, error) {
+	rows, err := tx.q.QueryContext(ctx, `SELECT sl.id, sl.node_id, ln.folder_id FROM share_links sl
+		JOIN nodes ln ON ln.id = sl.node_id WHERE sl.account_id = ? AND sl.audience = ? ORDER BY sl.created_at, sl.id`,
+		accountID, AudienceAnyone)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AnyoneShareLink
+	for rows.Next() {
+		var l AnyoneShareLink
+		if err := rows.Scan(&l.ID, &l.NodeID, &l.FolderID); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// LinkKinds says which kinds of live link a node carries: an organisation link, an anyone link, or a drop link.
+type LinkKinds struct {
+	Organisation bool
+	Anyone       bool
+	Drop         bool
+}
+
+// ChildLinkKinds returns, for each child of parentID that carries a live link, the kinds it carries. Ended links are
+// left out. Policy is not read here: the caller decides what a non-sharer may be told. One query serves a whole listing.
+func (s *Store) ChildLinkKinds(ctx context.Context, accountID, parentID string, now time.Time) (map[string]LinkKinds, error) {
+	rows, err := s.r.QueryContext(ctx, `SELECT sl.node_id, sl.audience, sl.upload_only FROM share_links sl
+		JOIN nodes n ON n.id = sl.node_id
+		WHERE n.account_id = ? AND n.parent_id = ? AND (sl.expires_at IS NULL OR sl.expires_at > ?)`,
+		accountID, parentID, millis(now))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]LinkKinds{}
+	for rows.Next() {
+		var (
+			node, audience string
+			drop           int64
+		)
+		if err := rows.Scan(&node, &audience, &drop); err != nil {
+			return nil, err
+		}
+		k := out[node]
+		switch {
+		case drop == 1:
+			k.Drop = true
+		case audience == AudienceAnyone:
+			k.Anyone = true
+		default:
+			k.Organisation = true
+		}
+		out[node] = k
+	}
+	return out, rows.Err()
 }

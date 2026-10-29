@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ApiError } from './apiError';
-import { clearSession, currentCsrf } from './session';
+import { clearSession, currentCsrf, session, sessionKey, signingOut } from './session';
+import { get } from 'svelte/store';
 import { go, signInURL } from './router';
 
 export { ApiError } from './apiError';
@@ -13,6 +14,10 @@ export interface RequestOptions {
   // noRedirect is for calls where a 401 is an answer, not an expired session: the start-up check,
   // and the sign-in and link pages themselves.
   noRedirect?: boolean;
+  // allowWhileSigningOut is for the sign-out call itself; every other request is refused while a sign-out runs.
+  allowWhileSigningOut?: boolean;
+  // signal aborts the request when it fires (a sign-out gives its call a time limit).
+  signal?: AbortSignal;
 }
 
 export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -31,14 +36,25 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
     if (csrf) headers['X-CSRF-Token'] = csrf;
   }
 
+  // The session the request is made under. A request sent while signed in that is answered 401 after the session
+  // has ended (a sign-out, or a sign-in as someone else) is a stale answer: it must not clear the session that
+  // now exists, nor send the person to sign-in from the page they have moved on to. A request sent with no session
+  // is left to the app's own guard, which sends a signed-out person to sign-in.
+  const issued = sessionKey(get(session));
+
+  // A sign-out is under way: no other request is sent, since it would reach the server after the session ended.
+  if (signingOut() && !opts.allowWhileSigningOut) {
+    throw new ApiError(0, 'signing_out', {}, 0);
+  }
+
   let res: Response;
   try {
-    res = await fetch(path, { method, headers, body, credentials: 'same-origin', cache: 'no-store' });
+    res = await fetch(path, { method, headers, body, credentials: 'same-origin', cache: 'no-store', signal: opts.signal });
   } catch {
     throw new ApiError(0, 'network', {}, 0);
   }
 
-  if (res.status === 401 && !opts.noRedirect) {
+  if (res.status === 401 && !opts.noRedirect && issued !== '' && sessionKey(get(session)) === issued) {
     clearSession();
     go(signInURL(), { replace: true });
   }
