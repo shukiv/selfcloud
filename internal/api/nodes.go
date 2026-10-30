@@ -139,6 +139,11 @@ type nodeJSON struct {
 	// The interface shows "you" when one is the signed-in user.
 	CreatedBy string `json:"created_by"`
 	OwnerID   string `json:"owner_id"`
+	// CreatedByName and OwnerName are the display names of those two users, for a caller of the account that reaches
+	// the node: a stat and a listing carry them (addPeopleNames). A user with no name, a deleted user, and a link
+	// visitor get none, and the interface then shows no row, never the ID.
+	CreatedByName string `json:"created_by_name,omitempty"`
+	OwnerName     string `json:"owner_name,omitempty"`
 	// HasLink is set on a child of a listing that carries a link the caller may know of (design section 8): every live
 	// link for a sharer, and the access links that policy lets through for anyone else. Visitors never see it.
 	HasLink bool `json:"has_link,omitempty"`
@@ -160,6 +165,42 @@ func nodeJSONFor(p *auth.Principal, n *store.Node) nodeJSON {
 		}
 	}
 	return out
+}
+
+// peopleNamesSeen reports whether p may learn the display names of the people who made and own a node of accountID:
+// a signed-in member or owner of that account, a token acting for one, and the account's key. An installation admin,
+// a link visitor and a caller of another account get none.
+func peopleNamesSeen(p *auth.Principal, accountID string) bool {
+	if p == nil || accountID == "" || p.AccountID != accountID {
+		return false
+	}
+	return p.Kind == auth.KindAccountKey || p.Kind == auth.KindUser
+}
+
+// addPeopleNames sets the names of the creator and the owner of each item, for a caller peopleNamesSeen admits. One
+// query names the whole list, whatever its length.
+func (s *Server) addPeopleNames(ctx context.Context, p *auth.Principal, accountID string, items ...*nodeJSON) error {
+	if len(items) == 0 || !peopleNamesSeen(p, accountID) {
+		return nil
+	}
+	var ids []string
+	seen := map[string]bool{}
+	for _, it := range items {
+		for _, id := range []string{it.CreatedBy, it.OwnerID} {
+			if id != "" && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	names, err := s.store.UserNames(ctx, accountID, ids)
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		it.CreatedByName, it.OwnerName = names[it.CreatedBy], names[it.OwnerID]
+	}
+	return nil
 }
 
 func toNodeJSON(n *store.Node) nodeJSON {
@@ -352,6 +393,9 @@ func (s *Server) handleStatNode(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	out := nodeJSONFor(p, n)
 	out.Role = role
+	if err := s.addPeopleNames(r.Context(), p, n.AccountID, &out); err != nil {
+		return err
+	}
 	if p.Kind == auth.KindUser {
 		if err := s.withStarred(r, p.UserID, []*nodeJSON{&out}); err != nil {
 			return err
@@ -404,13 +448,18 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 		j.HasLink = links[k.ID]
 		out.Items = append(out.Items, j)
 	}
-	if p.Kind == auth.KindUser && len(out.Items) > 0 {
+	if len(out.Items) > 0 {
 		ptrs := make([]*nodeJSON, len(out.Items))
 		for i := range out.Items {
 			ptrs[i] = &out.Items[i]
 		}
-		if err := s.withStarred(r, p.UserID, ptrs); err != nil {
+		if err := s.addPeopleNames(ctx, p, dir.AccountID, ptrs...); err != nil {
 			return err
+		}
+		if p.Kind == auth.KindUser {
+			if err := s.withStarred(r, p.UserID, ptrs); err != nil {
+				return err
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

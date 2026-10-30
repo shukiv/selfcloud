@@ -963,6 +963,7 @@
   "storage.limitHintDefault": "Vide ou 0 : pas de limite par défaut.",
   "storage.limitInvalid": "Saisissez une quantité positive, 0 pour sans limite, ou laissez vide.",
   "storage.reservedLine": "Réservé par les envois non terminés : {size}.",
+  "files.err.quotaAccount": "Le compte n'a plus d'espace. Libérez de l'espace ou demandez au titulaire du compte d'augmenter la limite.",
   "files.err.quotaUser": "Votre limite de stockage est atteinte. Libérez de l'espace ou demandez au titulaire du compte d'augmenter votre limite.",
   "files.scope.user": "votre limite de stockage",
   "storage.fileCount_zero": "{count} fichiers",

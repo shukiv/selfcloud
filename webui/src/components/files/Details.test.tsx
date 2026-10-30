@@ -50,6 +50,22 @@ describe("Details", () => {
     expect(screen.queryByText("Owner")).toBeNull();
   });
 
+  it("shows the display name the API gives for another person, and never their ID", () => {
+    render(<Details node={file({ created_by: "u3", owner_id: "u3", created_by_name: "Ann Example", owner_name: "Ann Example" })} canVersions={false} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={vi.fn()} />);
+    const drawer = document.querySelector('[data-testid="details"]') as HTMLElement;
+    expect(drawer.textContent).toContain("Ann Example");
+    expect(drawer.textContent).not.toContain("u3");
+  });
+
+  it("leaves out another person's row when the API gives no name, and never shows the ID", () => {
+    render(<Details node={file({ created_by: "u3", owner_id: "u4" })} canVersions={false} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={vi.fn()} />);
+    const drawer = document.querySelector('[data-testid="details"]') as HTMLElement;
+    expect(drawer.textContent).not.toContain("u3");
+    expect(drawer.textContent).not.toContain("u4");
+    expect(screen.queryByText("Created by")).toBeNull();
+    expect(screen.queryByText("Owner")).toBeNull();
+  });
+
   it("shows Account key for a key's ID, not the key itself", () => {
     render(<Details node={file({ created_by: "key_aaaaaaaa", owner_id: undefined })} canVersions={false} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={vi.fn()} />);
     const drawer = document.querySelector('[data-testid="details"]') as HTMLElement;

@@ -963,6 +963,7 @@
   "storage.limitHintDefault": "Empty or 0: no default limit.",
   "storage.limitInvalid": "Enter an amount as a positive number, 0 for no limit, or leave it empty.",
   "storage.reservedLine": "Reserved by unfinished uploads: {size}.",
+  "files.err.quotaAccount": "The account is out of space. Free some space or ask the account owner to raise the limit.",
   "files.err.quotaUser": "Your storage limit is full. Free some space or ask the account owner to raise your limit.",
   "files.scope.user": "your storage limit",
   "storage.fileCount_zero": "{count} files",

@@ -6,7 +6,7 @@ import { useT, useLang } from "../../lib/i18n";
 import { session } from "../../lib/session";
 import { useStore } from "../../lib/store";
 import { formatBytes, formatDate } from "../../lib/files/format";
-import { personLabel } from "../../lib/files/people";
+import { detailsPersonLabel } from "../../lib/files/people";
 import { kindOf } from "../../lib/files/kind";
 import type { Node } from "../../lib/files/types";
 import Icon from "./Icon";
@@ -33,7 +33,7 @@ export default function Details({
   const me = useStore(session);
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
 
-  const who = (id: string | undefined): string | null => personLabel(id, me, t);
+  const who = (id: string | undefined, name: string | undefined): string | null => detailsPersonLabel(id, name, me, t);
 
   async function copyHash() {
     try {
@@ -73,19 +73,19 @@ export default function Details({
         <dd style={DD}>{formatDate(node.modified_at, lang)}</dd>
         <dt>{t("files.details.created")}</dt>
         <dd style={DD}>{formatDate(node.created_at, lang)}</dd>
-        {who(node.created_by) && (
+        {who(node.created_by, node.created_by_name) && (
           <>
             <dt>{t("files.details.createdBy")}</dt>
             <dd style={DD}>
-              <bdi>{who(node.created_by)}</bdi>
+              <bdi>{who(node.created_by, node.created_by_name)}</bdi>
             </dd>
           </>
         )}
-        {who(node.owner_id) && (
+        {who(node.owner_id, node.owner_name) && (
           <>
             <dt>{t("files.details.owner")}</dt>
             <dd style={DD}>
-              <bdi>{who(node.owner_id)}</bdi>
+              <bdi>{who(node.owner_id, node.owner_name)}</bdi>
             </dd>
           </>
         )}

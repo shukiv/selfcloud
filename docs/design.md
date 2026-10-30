@@ -137,7 +137,8 @@ woven into each step.
    `Location` is an absolute URL built from `public_url`, because browsers may talk to
    Selfcloud directly from another origin. The server checks the caller's permission,
    the name, `upload.max_file_size` (default 100 GiB) and the quota: *used + reserved + length*
-   must fit, or the reply is `quota_exceeded`. It then reserves `length` bytes against the
+   must fit, or the reply is `quota_exceeded`, with its numbers only to the callers section 8
+   names. It then reserves `length` bytes against the
    account and creates the upload file. The disk is checked at the same moment, so a full disk
    fails now with `storage_full`, not after 80 GB have been sent: every open upload's unwritten
    bytes must fit in the usable space (free space less `storage.min_free`), and one account's
@@ -939,7 +940,10 @@ an installation admin set both: `PATCH /accounts/{acc}/users/{usr}` with `quota_
   user's limit would be passed.
 - **Who learns the numbers.** A `quota_exceeded` refusal with `details.scope` `user` carries `required_bytes` and
   `available_bytes` only to the user the folder belongs to, and to the account key. Anyone else (a contributor in a
-  member's My files) gets the refusal with no numbers. A drop visitor gets the one generic refusal of section 8.
+  member's My files) gets the refusal with no numbers. A drop visitor gets the one generic refusal of section 8. The
+  account's own refusal (scope `quota` or `account_reservations`) carries its numbers and its scope only to an account
+  owner in a session, an installation admin and the account key. A member, a link or drop visitor and every delegated
+  token (including one acting for an owner) get the same code with no details.
 - **Moves and transfers.** A move across folders moves the subtree's bytes, files and reservations with it, and the
   destination user's limit is checked. An ownership transfer out of one My files into another is checked the same way.
   Deleting a user with `transfer_to` moves its files and is never refused.
@@ -1276,7 +1280,7 @@ status:
 | `checksum_mismatch` | 460 | Piece failed its `Upload-Checksum` (status as tus defines). |
 | `internal` | 500 | Server fault; the `request_id` finds it in the log. |
 | `unavailable` | 503 | Shutting down or in maintenance; retry after `Retry-After`. |
-| `quota_exceeded` | 507 | Account quota. `required_bytes`, `available_bytes`; `scope` is `quota`, or `account_reservations` for the unfinished-upload cap of an account with no quota. |
+| `quota_exceeded` | 507 | Account quota. `required_bytes`, `available_bytes`; `scope` is `quota`, or `account_reservations` for the unfinished-upload cap of an account with no quota. These details go only to the callers section 8 names; any other caller gets the code with no details. |
 | `storage_full` | 507 | The server's disk is full. `scope` is `server`, or `account` when the account holds its share of the disk in unfinished uploads. |
 
 Messages are English. Clients translate by code; `details` gives them the numbers to fill in.
@@ -2038,20 +2042,28 @@ Decided on approval:
       files; they see team-space files by name. Members see their own largest files. Admins see totals only.
     - Home is the landing page at `/`; My files stays at `/files`.
     - Slice p is built in five parts, p1 to p5, each reviewed and pushed on its own, p1 first.
-    Interpretations made in p1, for review (the owner has not decided them):
     - A reservation counts against the folder of its upload's target directory, and a move of a directory moves the
       uploads aimed into it. Migration 0017 brings any earlier upload into line with its directory. This departs from
       the slice p proposal's "released from the folder the upload row names": the rows now follow their directories.
       The consequence: an upload aimed at a directory that moved across folders now completes into the directory's new
       folder, under the upload creator's access check there. Before, a non-drop upload failed with `not_found` at
-      completion.
+      completion. (Owner's decision, 2026-10-30.)
+    - The account's own refusal (`quota_exceeded`, scope `quota` or `account_reservations`) carries its numbers only to
+      an installation admin, the account key, and an account owner in a session. A member, a link or drop visitor, and
+      every delegated token (including one acting for an owner) get the same refusal with no details and no number.
+      (Owner's decision, 2026-10-30; the token and scope details were accepted with it.)
+    - A stat and a child listing carry `created_by_name` and `owner_name` for a caller of the account who reaches the
+      node: the account key, a member or owner in a session, or a token acting for one. An installation admin, a link or
+      drop visitor, a caller of another account, a deleted user, and a user with no display name get none. A listing
+      names its page with one query. The interface shows no row for a missing name, never the ID. (Owner's decision,
+      2026-10-30; who gets no name was accepted with it.)
+    - The sign-in headline stays "Your files. / Your server. / Anywhere." (Owner's decision, 2026-10-30.)
+    Interpretations made in p1, for review (the owner has not decided them):
     - The caller's own meter (`GET /me` `storage`) counts its My files and their reservations against its own limit. It
       does not count team spaces, and it shows no account figure.
     - The admin's storage view lists the team spaces' totals, with no names, and no personal folders or members.
     - Largest files sort by the file's own size, then by ID. Versions are shown beside each file, not added to the sort.
     - A file counts as in the trash when it sits below a trashed item.
-    - The account's own refusal (scope `quota`, `account_reservations`) still shows its numbers to any caller, as it did
-      before p1. Only the user's refusal (scope `user`) hides them.
     - A drop piece checks its user's limit with the in-flight drop bytes of the whole account (conservative: a piece
       can be refused when only another folder's pieces would fill the limit).
     - The folder detail reads the folder's own counters, not a walk of its tree (this closes the k4 gap).

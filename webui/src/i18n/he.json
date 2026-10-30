@@ -963,6 +963,7 @@
   "storage.limitHintDefault": "ריק או 0: אין מכסת ברירת מחדל.",
   "storage.limitInvalid": "הזינו כמות חיובית, 0 ללא הגבלה, או השאירו ריק.",
   "storage.reservedLine": "שמור להעלאות שלא הסתיימו: {size}.",
+  "files.err.quotaAccount": "אין מספיק מקום בחשבון. פנו מקום, או בקשו מבעל החשבון להגדיל את המכסה.",
   "files.err.quotaUser": "מכסת האחסון שלכם מלאה. פנו מקום, או בקשו מבעל החשבון להגדיל אותה.",
   "files.scope.user": "מכסת האחסון שלכם",
   "storage.fileCount_zero": "{count} קבצים",

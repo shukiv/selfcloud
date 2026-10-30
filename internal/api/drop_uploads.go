@@ -315,7 +315,8 @@ func (s *Server) checkDropPiece(ctx context.Context, up *store.Upload, bytes, fl
 	if err != nil {
 		return err
 	}
-	if err := s.checkQuota(acc, store.UsageChange{Reserved: bytes + flightAcc}); err != nil {
+	// A drop visitor is no caller who learns the account's numbers, so the principal is nil.
+	if err := s.checkQuota(nil, up.AccountID, acc, store.UsageChange{Reserved: bytes + flightAcc}); err != nil {
 		return err
 	}
 	// A drop into a personal folder is charged to its user, so that user's limit applies too. The visitor learns

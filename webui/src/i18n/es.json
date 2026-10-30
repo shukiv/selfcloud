@@ -963,6 +963,7 @@
   "storage.limitHintDefault": "Vacío o 0: sin límite predeterminado.",
   "storage.limitInvalid": "Escriba una cantidad como número positivo, 0 para sin límite, o déjela vacía.",
   "storage.reservedLine": "Reservado por subidas sin terminar: {size}.",
+  "files.err.quotaAccount": "La cuenta no tiene espacio. Libere espacio o pida al titular de la cuenta que aumente el límite.",
   "files.err.quotaUser": "Su límite de almacenamiento está lleno. Libere espacio o pida al titular de la cuenta que aumente su límite.",
   "files.scope.user": "su límite de almacenamiento",
   "storage.fileCount_zero": "{count} archivos",

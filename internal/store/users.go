@@ -120,6 +120,36 @@ func (tx *Tx) UserByID(ctx context.Context, id string) (*User, error) {
 	return getUser(ctx, tx.q, "id = ?", id)
 }
 
+// UserNames returns the display names of the users of accountID among ids, in one query. An ID of another account, a
+// deleted user, and a user with no display name are left out of the map. Its placeholders are the only text the
+// query adds; every ID is an argument.
+func (s *Store) UserNames(ctx context.Context, accountID string, ids []string) (map[string]string, error) {
+	names := map[string]string{}
+	if accountID == "" || len(ids) == 0 {
+		return names, nil
+	}
+	marks := make([]string, len(ids))
+	args := []any{accountID}
+	for i, id := range ids {
+		marks[i] = "?"
+		args = append(args, id)
+	}
+	rows, err := s.r.QueryContext(ctx, "SELECT id, display_name FROM users WHERE account_id = ? AND display_name <> ''"+
+		" AND id IN ("+strings.Join(marks, ",")+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		names[id] = name
+	}
+	return names, rows.Err()
+}
+
 // UserByEmail returns the user of accountID with the given email key.
 func (tx *Tx) UserByEmail(ctx context.Context, accountID, emailKey string) (*User, error) {
 	return userIn(ctx, tx.q, accountID, "email_key = ?", emailKey)

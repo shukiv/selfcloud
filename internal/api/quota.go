@@ -31,22 +31,51 @@ const (
 )
 
 // checkQuota refuses c when it grows the account past its quota, or when it reserves past the cap
-// of an account that has no quota. acc is the account's state before c.
-func (s *Server) checkQuota(acc *store.Account, c store.UsageChange) error {
+// of an account that has no quota. acc is the account's state before c; p is the caller (see
+// accountQuotaSeen for who learns the numbers).
+func (s *Server) checkQuota(p *auth.Principal, accountID string, acc *store.Account, c store.UsageChange) error {
 	growth := c.Bytes + c.Reserved
 	if growth > 0 && acc.QuotaBytes > 0 {
 		held := acc.UsedBytes + acc.ReservedBytes
 		if held+growth > acc.QuotaBytes {
-			return quotaRefusal(growth, max(0, acc.QuotaBytes-held), scopeQuota)
+			return accountRefusal(p, accountID, growth, max(0, acc.QuotaBytes-held), scopeQuota)
 		}
 	}
 	if c.Reserved > 0 && acc.QuotaBytes == 0 {
 		limit := int64(s.cfg.Upload.MaxReservedPerAccount)
 		if acc.ReservedBytes+c.Reserved > limit {
-			return quotaRefusal(c.Reserved, max(0, limit-acc.ReservedBytes), scopeReservations)
+			return accountRefusal(p, accountID, c.Reserved, max(0, limit-acc.ReservedBytes), scopeReservations)
 		}
 	}
 	return nil
+}
+
+// accountQuotaSeen reports whether the numbers of the account's own refusal may go to p: an installation admin, the
+// account's key, and the account's owner in a session. A delegated token never learns them, even when it acts for an
+// owner, and neither does a member, a visitor of a link, or a caller of another account.
+func accountQuotaSeen(p *auth.Principal, accountID string) bool {
+	if p == nil || p.Token != nil {
+		return false
+	}
+	if p.IsAdmin() {
+		return true
+	}
+	switch p.Kind {
+	case auth.KindAccountKey:
+		return p.AccountID == accountID
+	case auth.KindUser:
+		return p.Role == auth.RoleOwner && p.AccountID == accountID
+	}
+	return false
+}
+
+// accountRefusal is the account's refusal for a caller: the numbers when accountQuotaSeen allows them, and otherwise
+// the same code with no details and no number at all.
+func accountRefusal(p *auth.Principal, accountID string, required, available int64, scope string) error {
+	if !accountQuotaSeen(p, accountID) {
+		return apierr.New(apierr.QuotaExceeded, "the account's storage limit would be passed")
+	}
+	return quotaRefusal(required, available, scope)
 }
 
 // quotaRefusal is the 507 for a change that does not fit: the bytes it needs and the bytes free.
@@ -139,7 +168,7 @@ func (s *Server) checkUsage(ctx context.Context, tx *store.Tx, p *auth.Principal
 		g.Reserved += part.Change.Reserved
 		growth[part.FolderID] = g
 	}
-	if err := s.checkQuota(acc, net); err != nil {
+	if err := s.checkQuota(p, accountID, acc, net); err != nil {
 		return err
 	}
 	for _, f := range folders {

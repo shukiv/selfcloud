@@ -350,6 +350,65 @@ func TestUploadPastLifetimeRefused(t *testing.T) {
 	wantError(t, headUpload(t, s, key, upl), 410, apierr.UploadExpired)
 }
 
+// refusedForAccount checks the account's own refusal. withNumbers: the numbers and the scope must be the ones given.
+// Without them, the refusal may carry no details at all and no number in its body, so the caller learns nothing of
+// the account's space or of how its quota is set.
+func refusedForAccount(t *testing.T, rec *httptest.ResponseRecorder, withNumbers bool, required, available int64) {
+	t.Helper()
+	e := wantError(t, rec, 507, apierr.QuotaExceeded)
+	if withNumbers {
+		if e.Details["required_bytes"] != float64(required) || e.Details["available_bytes"] != float64(available) ||
+			e.Details["scope"] != scopeQuota {
+			t.Errorf("details = %v; want required %d, available %d, scope %s", e.Details, required, available, scopeQuota)
+		}
+		return
+	}
+	if len(e.Details) != 0 {
+		t.Errorf("the caller may not see the account's numbers, yet details = %v", e.Details)
+	}
+	if shownNumbers(rec.Body.String()) {
+		t.Errorf("the refusal shows a number to a caller who may not see one: %s", rec.Body.String())
+	}
+}
+
+// TestAccountQuotaNumbersGoToOwnerAndKeyOnly: the account's own refusal shows its numbers to an account owner and to
+// the account key. A member and a token acting for a member get the same refusal with no numbers.
+func TestAccountQuotaNumbersGoToOwnerAndKeyOnly(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID, fx.admin, map[string]any{"quota_bytes": 100}), 200)
+	a := nodeOf(t, writeFile(t, fx.s, fx.key, fx.fld.ID, "/a.bin", bytesOf(60)))
+	filesAt := func(name string) string { return "/api/v1/folders/" + fx.fld.ID + "/files?path=/" + name + ".bin" }
+	owner := ownerSession(t, &p1Fixture{sharingFixture: fx}, "owner@example.com")
+	refusedForAccount(t, rawSession(t, fx.s, owner, "POST", filesAt("owner"), bytesOf(50), nil), true, 50, 33)
+	refusedForAccount(t, writeFile(t, fx.s, fx.key, fx.fld.ID, "/key.bin", bytesOf(50)), true, 50, 33)
+
+	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+fx.rootOf(t, fx.fld.ID)+"/permissions/"+fx.ann.ID, fx.key,
+		map[string]any{"role": "contributor"}), 200)
+	refusedForAccount(t, rawSession(t, fx.s, fx.annSess, "POST", filesAt("member"), bytesOf(50), nil), false, 0, 0)
+
+	tok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"user": fx.ann.ID,
+		"folders": []string{fx.fld.ID}, "permissions": "write"})
+	refusedForAccount(t, rawCall(t, fx.s, "POST", filesAt("token"), tok, bytesOf(50), nil), false, 0, 0)
+	// A tus creation and a copy by the token meet the same refusal.
+	refusedForAccount(t, createUpload(t, fx.s, tok, 50, md("folder", fx.fld.ID, "name", "t.bin")), false, 0, 0)
+	refusedForAccount(t, call(t, fx.s, "POST", "/api/v1/nodes/"+a.ID+"/copy", tok, map[string]any{"name": "t-copy.bin"}),
+		false, 0, 0)
+}
+
+// TestAccountQuotaDropVisitorGetsNoScopeOrNumbers: a drop visitor's piece over the account's quota gets the one
+// generic refusal, with neither a scope nor a number.
+func TestAccountQuotaDropVisitorGetsNoScopeOrNumbers(t *testing.T) {
+	t.Parallel()
+	fx := newDropFixture(t)
+	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID, fx.admin, map[string]any{"quota_bytes": 100}), 200)
+	wantStatus(t, writeFile(t, fx.s, fx.key, fx.fld.ID, "/a.bin", bytesOf(60)), 201)
+	dir := mkdirs(t, fx.s, fx.key, fx.fld.ID, "/drop")
+	_, secret := fx.makeDrop(t, dir.ID, nil)
+	tok := fx.visitDrop(t, secret, "")
+	refusedForAccount(t, dropUpload(t, fx.s, tok, "x.bin", bytesOf(50), nil), false, 0, 0)
+}
+
 // TestUsageMetricsReportTotals: the installation gauges sum every account.
 func TestUsageMetricsReportTotals(t *testing.T) {
 	t.Parallel()

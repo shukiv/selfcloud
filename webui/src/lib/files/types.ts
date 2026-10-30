@@ -22,6 +22,10 @@ export interface Node {
   editors_can_share: boolean;
   created_by?: string;
   owner_id?: string;
+  // created_by_name and owner_name are the display names of those two people, sent to a caller of the account that
+  // reaches the node (a stat or a listing). Absent when the API gives no name.
+  created_by_name?: string;
+  owner_name?: string;
   // has_link is set when the item carries a share link the caller may know of (the children listing only).
   has_link?: boolean;
   // starred is set for a signed-in caller (the caller's own star); absent for keys, admins and link visitors.

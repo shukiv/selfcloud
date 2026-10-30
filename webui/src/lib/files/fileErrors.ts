@@ -44,6 +44,10 @@ function quotaText(err: ApiError, lang: Lang): string {
   const scope = typeof err.details.scope === 'string' ? err.details.scope : 'server';
   // A person's own limit names no numbers unless the caller may see them (the charged person or the account key).
   if (scope === 'user' && err.details.available_bytes === undefined) return translate(lang, 'files.err.quotaUser');
+  // The account's own refusal gives no numbers to a member, a token or a visitor, and no scope either.
+  if (err.code === 'quota_exceeded' && err.details.available_bytes === undefined) {
+    return translate(lang, 'files.err.quotaAccount');
+  }
   const scopeKey = SCOPES.includes(scope) ? `files.scope.${scope}` : 'files.scope.server';
   const available = Number(err.details.available_bytes ?? 0);
   const required = Number(err.details.required_bytes ?? 0);

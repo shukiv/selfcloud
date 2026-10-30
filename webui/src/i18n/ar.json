@@ -963,6 +963,7 @@
   "storage.limitHintDefault": "فارغ أو 0: لا يوجد حد افتراضي.",
   "storage.limitInvalid": "أدخلوا مقدارًا موجبًا، أو 0 لدون حد، أو اتركوا الحقل فارغًا.",
   "storage.reservedLine": "محجوز للرفعات غير المكتملة: {size}.",
+  "files.err.quotaAccount": "مساحة الحساب ممتلئة. أفرغوا بعض المساحة، أو اطلبوا من مالك الحساب رفع الحد.",
   "files.err.quotaUser": "حدّ تخزينكم ممتلئ. أفرغوا بعض المساحة أو اطلبوا من مالك الحساب رفع الحد.",
   "files.scope.user": "حدّ تخزينكم",
   "storage.fileCount_zero": "لا ملفات",

@@ -28,4 +28,11 @@ describe('fileErrorText for a person limit', () => {
   it('keeps the account wording for an account refusal', () => {
     expect(fileErrorText(refused({ scope: 'quota', required_bytes: 1000, available_bytes: 0 }), 'en')).toContain('your quota');
   });
+
+  it('names no numbers and no scope when the account refusal gives none to a member', () => {
+    const text = fileErrorText(refused({}), 'en');
+    expect(text).toBe('The account is out of space. Free some space or ask the account owner to raise the limit.');
+    expect(text).not.toMatch(/\d/);
+    expect(text).not.toContain('the server');
+  });
 });

@@ -13,3 +13,17 @@ export function personLabel(id: string | null | undefined, viewer: Viewer | null
   if (id.startsWith("key_")) return t("files.details.accountKey");
   return null;
 }
+
+// detailsPersonLabel is personLabel for Details, which also takes the display name the node reply carries for another
+// person of the account (created_by_name, owner_name). The API sends a name only to a caller who reaches the node, so
+// the name is shown as it is; with no name, the row is left out, as personLabel leaves it.
+export function detailsPersonLabel(
+  id: string | null | undefined,
+  name: string | null | undefined,
+  viewer: Viewer | null,
+  t: (key: string) => string,
+): string | null {
+  const label = personLabel(id, viewer, t);
+  if (label !== null) return label;
+  return name?.trim() || null;
+}

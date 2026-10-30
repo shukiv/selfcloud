@@ -963,6 +963,7 @@
   "storage.limitHintDefault": "Vazio ou 0: sem limite predefinido.",
   "storage.limitInvalid": "Escreva uma quantidade positiva, 0 para sem limite, ou deixe vazio.",
   "storage.reservedLine": "Reservado por envios não concluídos: {size}.",
+  "files.err.quotaAccount": "A conta está sem espaço. Liberte espaço ou peça ao titular da conta que aumente o limite.",
   "files.err.quotaUser": "O seu limite de armazenamento está cheio. Liberte espaço ou peça ao titular da conta que aumente o seu limite.",
   "files.scope.user": "o seu limite de armazenamento",
   "storage.fileCount_zero": "{count} ficheiros",
