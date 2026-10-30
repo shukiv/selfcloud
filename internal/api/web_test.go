@@ -141,7 +141,7 @@ func TestInfoBrand(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	body := rec.Body.String()
 	for _, want := range []string{
-		`"brand":{"name":"Selfcloud","accent":"#2563EB","logo_url":null}`,
+		`"brand":{"name":"Selfcloud","accent":"#053D8E","logo_url":null}`,
 		`"password_min_length":8`,
 	} {
 		if !strings.Contains(body, want) {
@@ -159,6 +159,9 @@ func TestInfoBrand(t *testing.T) {
 	body = serveRaw(t, s, http.MethodGet, "/api/v1/info").Body.String()
 	if !strings.Contains(body, `"brand":{"name":"Acme Drive","accent":"#0F766E","logo_url":"/brand/logo"}`) {
 		t.Errorf("info = %s", body)
+	}
+	if strings.Contains(body, "palette") || strings.Contains(body, "sidebar") {
+		t.Errorf("info names tokens nobody set: %s", body)
 	}
 	if strings.Contains(body, logo) || strings.Contains(body, t.TempDir()) {
 		t.Errorf("info leaks the logo path: %s", body)
@@ -211,5 +214,26 @@ func TestLinkResponsesKeepTheirPolicy(t *testing.T) {
 	}
 	if v := got.Header().Get("X-Frame-Options"); v != "" {
 		t.Errorf("link has X-Frame-Options = %q", v)
+	}
+}
+
+// TestInfoBrandTokens: /info carries only the palette and sidebar tokens the installation sets.
+func TestInfoBrandTokens(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, func(c *config.Config) {
+		c.UI.Brand.Palette.Dark = config.BrandTokens{AccentFill: "#1E3A8A"}
+		c.UI.Brand.Sidebar = config.BrandSidebar{Active: "#FECC00"}
+	})
+	body := serveRaw(t, s, http.MethodGet, "/api/v1/info").Body.String()
+	for _, want := range []string{
+		`"palette":{"dark":{"accent_fill":"#1E3A8A"}}`,
+		`"sidebar":{"active":"#FECC00"}`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("info = %s, want %s", body, want)
+		}
+	}
+	if strings.Contains(body, `"light"`) || strings.Contains(body, `"bg"`) {
+		t.Errorf("info names unset tokens: %s", body)
 	}
 }

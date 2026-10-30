@@ -51,8 +51,15 @@ func newTestServerWith(t *testing.T, mailer mail.Sender, mutate ...func(*config.
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.limitClock = frozenLimitClock
 	return s
 }
+
+// frozenLimitInstant is the time every test server's rate limiters read: a fixed instant, so no bucket
+// refills while a test runs.
+var frozenLimitInstant = time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+
+func frozenLimitClock() time.Time { return frozenLimitInstant }
 
 func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
 	t.Helper()

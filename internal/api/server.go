@@ -27,7 +27,6 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 	"github.com/shukiv/selfcloud/internal/sweep"
 	"github.com/shukiv/selfcloud/internal/web"
-	webassets "github.com/shukiv/selfcloud/web"
 )
 
 // sweepInterval is how often housekeeping runs: blob removal, expired sessions and tokens.
@@ -61,6 +60,8 @@ type Server struct {
 	mailer    mail.Sender // nil when mail is not configured
 	templates *mail.Templates
 	limits    map[string]*limiter // rate limiters by "endpoint.dimension"
+	// limitClock is the time the rate limiters read. Production keeps time.Now; tests freeze it.
+	limitClock func() time.Time
 	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (round 2, item 1).
 	dropFlight dropFlight
 	pwFails    passwordFails // wrong current passwords, per session, for POST /me/password
@@ -197,6 +198,7 @@ func New(opts Options) (*Server, error) {
 		contentHost = canonicalHost(cu.Host, cu.Scheme)
 	}
 	s := &Server{
+		limitClock:    time.Now,
 		cfg:           cfg,
 		log:           log,
 		store:         opts.Store,
@@ -297,7 +299,8 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	if cfg.UI.Enabled {
-		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL}); err != nil {
+		files, styles := uiAssets()
+		if s.ui, err = web.New(files, web.Options{ContentURL: cfg.ContentURL, Styles: styles}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}
 	}
@@ -309,6 +312,9 @@ func New(opts Options) (*Server, error) {
 	// Unmatched requests go to the web interface when it serves them; anything else, the JSON 404.
 	mux.Handle("/", s.wrap(route{path: "unmatched", handle: s.handleUnmatched}))
 	s.handler = s.observe(s.drain(s.cors(s.contentGate(mux))))
+	for _, w := range cfg.UI.Brand.ContrastWarnings() {
+		log.Warn("brand colours fall short of the contrast the text needs; the config is kept", "detail", w)
+	}
 	return s, nil
 }
 

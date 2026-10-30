@@ -1,7 +1,8 @@
 # Selfcloud design system (master)
 
 > When building a page, check `design-system/selfcloud/pages/<page>.md` first. Its rules
-> override this file; otherwise this file applies.
+> override this file; otherwise this file applies. The pages' token names are the Svelte build's
+> (`--color-*`) until the flip; read them through the table below.
 
 Generated with the ui-ux-pro-max skill on 2026-10-28 (category: File Manager & Transfer; dials:
 variance 3, motion 3, density 7), then corrected for this product. Each correction is marked
@@ -20,87 +21,77 @@ variance 3, motion 3, density 7), then corrected for this product. Each correcti
 
 ## Colour tokens
 
-Components use tokens only, never raw hex. Light and dark sets share names; `prefers-color-scheme`
-picks one unless the user chose a theme.
+The React interface (`webui/src/theme/tokens.ts`) is the source. Components take their colours from
+the Ant Design token set that the theme builds from these values, or from the palette hook; nothing
+paints a raw hex value. Light and dark sets share names. The theme follows the device unless the
+user chose one (key `selfcloud.theme`).
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `--color-background` | `#F8FAFC` | `#0B1120` | Page |
-| `--color-surface` | `#FFFFFF` | `#111827` | Panels, tables, dialogs |
-| `--color-foreground` | `#0F172A` | `#E2E8F0` | Body text |
-| `--color-muted` | `#F1F5F9` | `#1E293B` | Hover rows, secondary surfaces |
-| `--color-muted-foreground` | `#475569` | `#94A3B8` | Secondary text (≥ 4.5:1 on both surfaces) |
-| `--color-border` | `#E2E8F0` | `#1E293B` | Dividers (decorative) |
-| `--color-input-border` | `#7C8BA1` | `#64748B` | Form-control outlines (≥ 3:1, WCAG 1.4.11) |
-| `--color-primary` | `#2563EB` | `#60A5FA` | Primary actions, links, selection |
-| `--color-on-primary` | `#FFFFFF` | `#0B1120` | Text on primary (5.2:1 / 7.9:1) |
-| `--color-primary-soft` | `#EFF6FF` | `#172554` | Selected rows, active nav |
-| `--color-accent` | `#D97706` | `#F59E0B` | File-type tint and highlights only, never text on white |
-| `--color-danger` | `#DC2626` | `#F87171` | Destructive actions |
-| `--color-on-danger` | `#FFFFFF` | `#0B1120` | |
-| `--color-success-bg` / `-fg` | `#DCFCE7` / `#166534` | `#052E16` / `#86EFAC` | Badges: Active, Can edit |
-| `--color-warning-bg` / `-fg` | `#FEF3C7` / `#92400E` | `#451A03` / `#FCD34D` | Badges: Pending, quota near full |
-| `--color-ring` | `#2563EB` | `#60A5FA` | Focus ring |
+| `page` | `#EDF0F6` | `#071531` | Page, layout ground |
+| `card` | `#FFFFFF` | `#0D2142` | Panels, tables, dialogs |
+| `line` / `line2` | `#DFE6F0` / `#CAD8EE` | `#1C2E4B` / `#34445E` | Dividers / control outlines |
+| `text` / `text2` | `#0D2142` / `#34445E` | `#FFFFFF` / `#C3CFDF` | Body text / secondary text |
+| `muted` / `faint` | `#5A6B85` / `#75869F` | `#96A6BD` / `#75869F` | Secondary text (muted) / hints only |
+| `accent` | `#053D8E` | `#7097D0` | Glyphs, links, selection outline |
+| `accentFill` (+ `Hover`, `Active`) | `#053D8E` | `#2A5AA6` | Ground under white text (primary button) |
+| `accentText` | `#053D8E` | `#A9C1E6` | Accent-coloured text on the card |
+| `accentSoft` (+ `Hover`) | `#EBF0F6` | `#1B3256` | Selected rows, active items |
+| `accentBorder` (+ `Hover`) | `#CAD8EE` | `#34445E` | Focus-adjacent borders |
+| `success`, `warning`, `danger` | `#059669`, `#F59E0B`, `#E11D48` | `#34D399`, `#F59E0B`, `#FB7185` | Glyphs, bars, fills |
+| `successText`, `warningText`, `dangerText` | `#047857`, `#B45309`, `#BE123C` | `#34D399`, `#FECC00`, `#FB7185` | Text in a status colour |
+| `*Soft`, `*Border` (per status) | see `tokens.ts` | see `tokens.ts` | Status grounds and outlines |
 
-**Changed:** the generated palette used amber `#D97706` with white text for the primary button
-(about 3.2:1, below AA). Primary actions are blue; amber is a tint for file icons only.
-**Changed:** the generated input border `#E2E8F0` was 1.2:1 against white; form controls need
-3:1, hence `--color-input-border`. **Changed:** added the dark set, absent from the output.
+**Sidebar.** The brand blue in both modes: `bg` `#053D8E`, `text` `#FFFFFF`, `caption` `#A9C1E6`,
+`active` `#FECC00` (the active page's pill), `onActive` `#0D2142`.
 
-**Branding.** The operator's accent replaces `--color-primary` (and its dark twin) in each theme where it reaches 3:1 against that theme's page background (`--color-background`, checked separately for light and dark). A theme where it fails keeps the default primary. `--color-on-primary` is black or white, whichever has the higher contrast; it always reaches 4.5:1.
+**Branding.** The operator sets tokens in `ui.brand.palette` (per theme) and `ui.brand.sidebar`, each
+`#rrggbb`. An unset token keeps the default. `ui.brand.accent` alone derives the accent family
+(`@ant-design/colors`). Explicit tokens win over the derived ones. An accent whose contrast is under
+3:1 against a theme's page colour is not used in that theme, and the default stays.
+
+**Contrast.** Text 4.5:1 and UI parts 3:1 in both themes. White text sits on `accentFill`, never on
+`accent`, which is too light for it in dark mode.
 
 ## Typography
 
-**Changed:** the generated output imported Inter from Google Fonts. Fonts are **self-hosted**:
-bundled as woff2 inside the binary, so the UI makes no third-party requests and works on a LAN
-without internet.
-
-| Script | Family | Package (bundled by Vite) |
-|---|---|---|
-| Latin, Latin-ext, Cyrillic, Greek | Inter Variable | `@fontsource-variable/inter` |
-| Hebrew | Noto Sans Hebrew Variable | `@fontsource-variable/noto-sans-hebrew` |
-| Arabic | Noto Sans Arabic Variable | `@fontsource-variable/noto-sans-arabic` |
-
-All three are under the SIL Open Font License 1.1; ship the licence text with the binary. Each
-face is split by `unicode-range`, so a page downloads only the scripts it shows. `font-display:
-swap`.
+**Changed:** the React interface uses the system font stack. The
+self-hosted Inter and Noto faces stay in the Svelte build until the flip (decision 25), then go.
+Arabic and Hebrew text falls back to the system's own faces.
 
 ```css
---font-sans: "Inter Variable", "Noto Sans Hebrew Variable", "Noto Sans Arabic Variable",
-             system-ui, sans-serif;
---font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; /* IDs and keys only */
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+             "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+             "Noto Color Emoji";
 ```
 
 | Token | Size / line-height | Weight | Use |
 |---|---|---|---|
-| `--text-xs` | 12px / 16px | 500 | Badges, table meta (never body text) |
-| `--text-sm` | 14px / 20px | 400 | Tables, secondary text |
-| `--text-base` | 16px / 24px | 400 | Body, inputs (16px stops iOS zoom) |
-| `--text-lg` | 18px / 28px | 600 | Section titles |
-| `--text-xl` | 24px / 32px | 600 | Page titles |
+| caption | 12px / 16px | 500 | Badges, table meta (never body text) |
+| small | 14px / 22px | 400 | Tables, secondary text |
+| body | 14px / 22px (16px in inputs) | 400 | Body; inputs at 16px stop iOS zoom |
+| section | 16px / 24px | 600 | Card titles |
+| page | 24px / 32px | 600 | Page titles |
 
-Arabic pages raise line-height by about 15% (`:lang(ar)`). Sizes, counts and dates use
-`font-variant-numeric: tabular-nums` so columns line up.
+Arabic pages raise line-height by about 15%. Sizes, counts and dates use
+`font-variant-numeric: tabular-nums`.
 
 ## Space, shape, elevation
 
-Spacing on a 4px grid: `--space-1` 4px, `-2` 8px, `-3` 12px, `-4` 16px, `-6` 24px, `-8` 32px,
-`-12` 48px. Radius: `--radius-sm` 6px (inputs, buttons), `--radius-md` 10px (panels, dialogs),
-`--radius-full` (badges, avatars). Elevation: none for panels (borders instead); `--shadow-pop`
-`0 8px 24px rgb(15 23 42 / 0.12)` for menus, dialogs and the upload tray only.
-
-**Changed:** the generated cards had `cursor: pointer`, hover lift (`translateY`) and a medium
-shadow. Panels here are not clickable cards; they are flat with a 1px border.
+Spacing on a 4px grid. Radius is 4px everywhere, the logo's corner: buttons, inputs, tags, menus,
+cards. Circles stay circles (avatars, status dots, switches, progress bars). Elevation: panels have
+a border and no shadow; menus, dialogs and the upload tray take the palette's `shadow`.
 
 ## Layout
 
-- **App shell.** Top bar (brand, search, primary action, user menu). Side navigation 240px at
-  ≥ 1024px, an icon rail at 768–1023px, a drawer below 768px. Content max-width 1280px.
-- **Phone (< 768px).** One column, tables become two-line lists, primary action as a floating
-  button at the inline-end bottom corner, bottom sheets instead of side drawers.
-- Breakpoints: 375, 768, 1024, 1440. No horizontal page scroll at any width; `min-height: 100dvh`.
-- **Changed:** the generated page pattern ("Product Demo + Features", a landing page) does not
-  apply; Selfcloud has no marketing pages.
+- **Shell.** A Sider with the brand, the account card and the sections, 264px wide, folding to an
+  88px rail (`selfcloud.navRail`). Below the `lg` breakpoint (992px) the sidebar is a Drawer,
+  placed on the reading side (left in LTR, right in RTL).
+- **Top bar.** Language and theme controls, the account menu; the sidebar's fold control at
+  desktop width.
+- **Auth pages.** From md (768px) up, a split screen: a left half on the fill-quaternary tone with the brand, a 64px gap, a three-line headline (800 weight, 40px, line-height 1.18; lines one and two in heading colour, line three in the primary colour) and a 16px tagline in secondary text (max 380px); a right half on the card colour that centres the form. Below md only the form shows, with the brand above the card. The language and theme controls sit below the form. Nothing on these pages links out.
+- Breakpoints: 375, 768, 992, 1200. No horizontal page scroll at any width; tables scroll inside
+  their card.
 
 ## Right-to-left and languages
 
@@ -124,18 +115,19 @@ right-to-left match.
   (both right to left).
 - The language comes from `?lang=` on the link, then the user's `locale`, then
   `Accept-Language`, then English. Changing it in the picker saves it with `PATCH /me`.
-- Strings live in `web/src/i18n/<code>.json`, one flat catalogue per language with the same
+- Strings live in `webui/src/i18n/<code>.json`, one flat catalogue per language with the same
   keys. A missing key shows the English text; a test fails if any key is missing from any
-  catalogue, or a placeholder differs between languages.
+  catalogue, or a placeholder differs between languages. Plural keys end in `_one`, `_two`,
+  `_few`, `_many`, `_other` and `_zero`, as i18next expects.
 - Hebrew addresses the reader in the plural imperative, so no text assumes a gender:
   "התחברו", "העלו קבצים", "בחרו סיסמה"; never "התחבר" or "התחברי".
-- Plurals use `Intl.PluralRules`: Arabic has six plural forms and Russian three, so a
-  catalogue entry with a count holds every form its language needs.
+- Plurals follow the CLDR rules: Arabic has six plural forms and Russian three, so a catalogue
+  entry with a count holds every form its language needs.
 
 ## Motion
 
 **Changed:** the generated GSAP scroll reveal is dropped; an app should not animate content
-in on scroll. Use Svelte's built-in transitions, `|local` on lists.
+in on scroll. Use the components' own transitions (Ant Design's motion), and nothing on lists.
 
 - 120ms for hover and press, 180ms for menus and dialogs (enter), 120ms on exit.
 - Easing `cubic-bezier(0.2, 0, 0, 1)`. Animate opacity and transform only.
@@ -144,12 +136,11 @@ in on scroll. Use Svelte's built-in transitions, `|local` on lists.
 
 ## Components (shared)
 
-- **Button:** primary (filled), secondary (outline, `--color-input-border`), ghost, danger.
+- **Button:** primary (filled), secondary (outline), ghost, danger. Antd `Button` with the theme.
   Height 40px desktop, 44px on touch; icon buttons have a 44×44 hit area and an `aria-label`.
-- **Focus:** `outline: 2px solid var(--color-ring); outline-offset: 2px` on every interactive
-  element; never removed.
+- **Focus:** the focus ring of the theme (`accent`) on every interactive element; never removed.
 - **Inputs:** a visible label above, helper text below, the error below the field, in
-  `--color-danger` with an icon, and announced. Placeholders are examples, never labels.
+  the danger colour with an icon, and announced. Placeholders are examples, never labels.
 - **Badges:** text plus colour, never colour alone: "Active", "Pending invite", "Disabled",
   "Suspended", "Can view", "Can edit".
 - **Access control (segmented):** two options, "Can view" and "Can edit", with one line
@@ -165,7 +156,8 @@ in on scroll. Use Svelte's built-in transitions, `|local` on lists.
 - **Usage meter:** a bar with "37.2 GB of 50 GB used". It turns warning at 80% and danger at 95%,
   and the text says so too.
 - **Empty states:** one sentence on what goes here and the one action that fills it.
-- **Icons:** Lucide (ISC licence), as inline SVG at 20px with a 1.75 stroke. No emoji.
+- **Icons:** Lucide (ISC licence) only, 20px, stroke 1.75 to 2. No `@ant-design/icons` imports,
+  no emoji.
 
 ## Anti-patterns
 
@@ -173,8 +165,10 @@ in on scroll. Use Svelte's built-in transitions, `|local` on lists.
 - Hover-only actions (every row action is also in a keyboard-reachable menu).
 - Drag-and-drop as the only way to upload or move. An Upload button and "Move to…" always exist
   (WCAG 2.5.7).
-- Physical left/right in CSS; un-isolated user text in mixed-direction pages.
+- Physical left/right in CSS or style objects; un-isolated user text in mixed-direction pages.
 - Third-party requests of any kind: fonts, icons, analytics, CDNs.
+- Inline `<style>`, inline `style` attributes set as text, inline script, `dangerouslySetInnerHTML`:
+  the content policy blocks them, and the React build's source check refuses them.
 - Layout shift on hover; spinners for more than 1s without saying what is happening.
 
 ## Pre-delivery checklist

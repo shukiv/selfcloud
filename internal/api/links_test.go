@@ -456,6 +456,7 @@ func newTestServerOn(t *testing.T, first *Server) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.limitClock = frozenLimitClock
 	return s
 }
 

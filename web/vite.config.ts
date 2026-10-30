@@ -10,6 +10,9 @@ const api = process.env.SELFCLOUD_API ?? 'http://127.0.0.1:8080';
 export default defineConfig({
   plugins: [svelte()],
   publicDir: 'public',
+  // The Go server replaces this placeholder with a fresh nonce on every HTML response
+  // (internal/web: cspNoncePlaceholder). Must match the value there.
+  html: { cspNonce: '__SELFCLOUD_CSP_NONCE__' },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

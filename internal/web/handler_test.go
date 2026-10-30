@@ -3,6 +3,8 @@
 package web
 
 import (
+	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -237,4 +239,197 @@ func TestSharePageIsNotReferredOrIndexed(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/plain") {
 		t.Errorf("robots.txt Content-Type = %q", got)
 	}
+}
+
+// nonceFiles is a build whose index carries the placeholder where Vite writes it: the meta tag and a
+// script tag.
+func nonceFiles() fstest.MapFS {
+	files := testFiles()
+	files["index.html"] = &fstest.MapFile{Data: []byte(`<!doctype html><meta property="csp-nonce" nonce="__SELFCLOUD_CSP_NONCE__">` +
+		`<script type="module" nonce="__SELFCLOUD_CSP_NONCE__" src="/assets/app-abc123.js"></script><title>app</title>`)}
+	return files
+}
+
+// nonceIn returns the nonce of the page's meta tag, the first nonce attribute in the body.
+func nonceIn(t *testing.T, body string) string {
+	t.Helper()
+	const attr = `nonce="`
+	i := strings.Index(body, attr)
+	if i < 0 {
+		t.Fatalf("no nonce in the page: %q", body)
+	}
+	rest := body[i+len(attr):]
+	j := strings.Index(rest, `"`)
+	if j < 0 {
+		t.Fatalf("unterminated nonce in the page: %q", body)
+	}
+	return rest[:j]
+}
+
+// TestPageCarriesAFreshNonce: each response to the page has its own nonce, the one in the page is the
+// one in the policy, and the placeholder is never sent.
+func TestPageCarriesAFreshNonce(t *testing.T) {
+	h := newTestHandler(t, nonceFiles(), Options{Styles: StylesEnforce})
+	first := get(t, h, http.MethodGet, "/")
+	second := get(t, h, http.MethodGet, "/")
+	n1, n2 := nonceIn(t, first.Body.String()), nonceIn(t, second.Body.String())
+	if n1 == n2 || len(n1) < 20 {
+		t.Errorf("nonces %q and %q: want two different, long nonces", n1, n2)
+	}
+	if strings.Contains(first.Body.String(), "__SELFCLOUD_CSP_NONCE__") {
+		t.Errorf("the placeholder was served: %q", first.Body.String())
+	}
+	if !strings.Contains(first.Header().Get("Content-Security-Policy"), "style-src 'self' 'nonce-"+n1+"'") {
+		t.Errorf("policy %q lacks the page's nonce %q", first.Header().Get("Content-Security-Policy"), n1)
+	}
+	if got := first.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+}
+
+// TestReportModeReportsTheNoncePolicy: the Svelte build enforces the policy it always had, and the
+// nonce policy goes out as report-only, with the page's nonce.
+func TestReportModeReportsTheNoncePolicy(t *testing.T) {
+	h := newTestHandler(t, nonceFiles(), Options{})
+	rec := get(t, h, http.MethodGet, "/")
+	nonce := nonceIn(t, rec.Body.String())
+	enforced := rec.Header().Get("Content-Security-Policy")
+	if enforced != "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "+
+		"media-src 'self'; font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" {
+		t.Errorf("enforced policy changed: %q", enforced)
+	}
+	report := rec.Header().Get("Content-Security-Policy-Report-Only")
+	if !strings.Contains(report, "style-src 'self' 'nonce-"+nonce+"';") {
+		t.Errorf("report-only policy %q lacks the page's nonce", report)
+	}
+}
+
+// TestEnforceModeEnforcesTheNoncePolicy: the React build sends the nonce policy as the enforced one,
+// and no report-only header.
+func TestEnforceModeEnforcesTheNoncePolicy(t *testing.T) {
+	h := newTestHandler(t, nonceFiles(), Options{Styles: StylesEnforce})
+	rec := get(t, h, http.MethodGet, "/")
+	nonce := nonceIn(t, rec.Body.String())
+	if got := rec.Header().Get("Content-Security-Policy"); !strings.Contains(got, "style-src 'self' 'nonce-"+nonce+"';") {
+		t.Errorf("enforced policy %q lacks the page's nonce", got)
+	}
+	if got := rec.Header().Get("Content-Security-Policy-Report-Only"); got != "" {
+		t.Errorf("report-only header sent in enforce mode: %q", got)
+	}
+}
+
+// TestEnforceRefusesAStaleIndex: an index without the placeholder comes from a build that predates
+// the nonce, so the enforcing handler will not start with it.
+func TestEnforceRefusesAStaleIndex(t *testing.T) {
+	if _, err := New(testFiles(), Options{Styles: StylesEnforce}); err == nil || !strings.Contains(err.Error(), "placeholder") {
+		t.Errorf("stale index accepted: %v", err)
+	}
+	if _, err := New(testFiles(), Options{}); err != nil {
+		t.Errorf("report mode refused a stale index: %v", err)
+	}
+	if _, err := New(unbuiltFiles(), Options{Styles: StylesEnforce}); err != nil {
+		t.Errorf("enforce mode refused a build with no index: %v", err)
+	}
+}
+
+// TestAssetsAndHeadCarryThePolicy: assets get the policy with no nonce, and HEAD on the page gets
+// the page's headers with no body.
+func TestAssetsAndHeadCarryThePolicy(t *testing.T) {
+	h := newTestHandler(t, nonceFiles(), Options{Styles: StylesEnforce})
+	asset := get(t, h, http.MethodGet, "/assets/app-abc123.js")
+	if strings.Contains(asset.Header().Get("Content-Security-Policy"), "nonce-") {
+		t.Errorf("asset policy carries a nonce: %q", asset.Header().Get("Content-Security-Policy"))
+	}
+	head := get(t, h, http.MethodHead, "/")
+	if head.Body.Len() != 0 || !strings.Contains(head.Header().Get("Content-Security-Policy"), "'nonce-") {
+		t.Errorf("HEAD: body=%d csp=%q", head.Body.Len(), head.Header().Get("Content-Security-Policy"))
+	}
+}
+
+// TestNoReportWithoutAPlaceholder: a build with no placeholder has no nonce to report, so report
+// mode sends no report-only header.
+func TestNoReportWithoutAPlaceholder(t *testing.T) {
+	h := newTestHandler(t, testFiles(), Options{})
+	if got := get(t, h, http.MethodGet, "/").Header().Get("Content-Security-Policy-Report-Only"); got != "" {
+		t.Errorf("report-only header without a nonce: %q", got)
+	}
+}
+
+// TestClientRoutesGetAFreshNoncedPage (M1): a client-route fallback is the page too, so it carries
+// its own nonce, the placeholder is never sent, it is not cached, and the nonce policy is sent.
+func TestClientRoutesGetAFreshNoncedPage(t *testing.T) {
+	for _, mode := range []StyleMode{StylesReport, StylesEnforce} {
+		h := newTestHandler(t, nonceFiles(), Options{Styles: mode})
+		for _, target := range []string{"/files/x/y", "/s/abc"} {
+			first := get(t, h, http.MethodGet, target)
+			second := get(t, h, http.MethodGet, target)
+			n1, n2 := nonceIn(t, first.Body.String()), nonceIn(t, second.Body.String())
+			if n1 == n2 {
+				t.Errorf("mode %v %s: both responses carry nonce %q", mode, target, n1)
+			}
+			if strings.Contains(first.Body.String(), "__SELFCLOUD_CSP_NONCE__") {
+				t.Errorf("mode %v %s: the placeholder was served", mode, target)
+			}
+			if got := first.Header().Get("Cache-Control"); got != "no-store" {
+				t.Errorf("mode %v %s: Cache-Control = %q, want no-store", mode, target, got)
+			}
+			policy := first.Header().Get("Content-Security-Policy")
+			report := first.Header().Get("Content-Security-Policy-Report-Only")
+			if mode == StylesEnforce {
+				if !strings.Contains(policy, "style-src 'self' 'nonce-"+n1+"';") || report != "" {
+					t.Errorf("mode %v %s: enforced policy %q, report-only %q", mode, target, policy, report)
+				}
+			} else if !strings.Contains(report, "style-src 'self' 'nonce-"+n1+"';") {
+				t.Errorf("mode %v %s: report-only policy %q lacks nonce %q", mode, target, report, n1)
+			}
+		}
+	}
+}
+
+// TestNonceIsTwentyFourBase64Characters (L1): a nonce is 16 random bytes, base64-encoded: exactly 24
+// characters that decode back to 16 bytes.
+func TestNonceIsTwentyFourBase64Characters(t *testing.T) {
+	h := newTestHandler(t, nonceFiles(), Options{Styles: StylesEnforce})
+	n := nonceIn(t, get(t, h, http.MethodGet, "/").Body.String())
+	raw, err := base64.StdEncoding.DecodeString(n)
+	if len(n) != 24 || err != nil || len(raw) != 16 {
+		t.Errorf("nonce %q: want 24 base64 characters for 16 bytes (decode err %v, %d bytes)", n, err, len(raw))
+	}
+}
+
+// TestNonceSourceFailureIsAServerError (L1): when the random source fails, the page is not sent with
+// no nonce or a repeated one; the answer is a 500 and no page body.
+func TestNonceSourceFailureIsAServerError(t *testing.T) {
+	old := nonceReader
+	nonceReader = failingReader{}
+	t.Cleanup(func() { nonceReader = old })
+	h := newTestHandler(t, nonceFiles(), Options{Styles: StylesEnforce})
+	rec := get(t, h, http.MethodGet, "/")
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status %d, want 500 when the nonce source fails", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "<title>") {
+		t.Errorf("the page was served without a nonce: %q", rec.Body.String())
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("entropy exhausted") }
+
+// TestRangeRequestGetsTheWholePage (L4): the page is served whole, whatever the Range header asks;
+// it is never a partial answer with a nonce.
+func TestRangeRequestGetsTheWholePage(t *testing.T) {
+	h := newTestHandler(t, nonceFiles(), Options{Styles: StylesEnforce})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Range", "bytes=0-10")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d for a Range request, want 200 with the whole page", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "<title>app</title>") {
+		t.Errorf("partial body: %q", rec.Body.String())
+	}
+	nonceIn(t, rec.Body.String())
 }

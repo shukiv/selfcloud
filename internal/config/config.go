@@ -268,6 +268,38 @@ type BrandConfig struct {
 	// LogoFile optionally names a PNG or SVG file, read at start (at most 256 KiB). Its path is
 	// never sent to clients; they get the URL /brand/logo instead.
 	LogoFile string `yaml:"logo_file"`
+	// Palette overrides colour tokens of the default look, one set per theme. An unset token keeps
+	// the default; the interface derives the rest of the accent family from Accent.
+	Palette BrandPalette `yaml:"palette"`
+	// Sidebar overrides the sidebar's colours. An unset token keeps the default.
+	Sidebar BrandSidebar `yaml:"sidebar"`
+}
+
+// BrandPalette holds the token overrides for each theme.
+type BrandPalette struct {
+	Light BrandTokens `yaml:"light"`
+	Dark  BrandTokens `yaml:"dark"`
+}
+
+// BrandTokens are the accent tokens one theme may override, each as #rrggbb. Their names are the
+// token names of the web interface's design system, in snake case.
+type BrandTokens struct {
+	Accent           string `yaml:"accent"`
+	AccentFill       string `yaml:"accent_fill"`
+	AccentFillHover  string `yaml:"accent_fill_hover"`
+	AccentFillActive string `yaml:"accent_fill_active"`
+	AccentText       string `yaml:"accent_text"`
+	AccentSoft       string `yaml:"accent_soft"`
+	AccentBorder     string `yaml:"accent_border"`
+}
+
+// BrandSidebar holds the sidebar's colour overrides, each as #rrggbb.
+type BrandSidebar struct {
+	Bg       string `yaml:"bg"`
+	Text     string `yaml:"text"`
+	Caption  string `yaml:"caption"`
+	Active   string `yaml:"active"`
+	OnActive string `yaml:"on_active"`
 }
 
 // Defaults returns the configuration used when nothing is set.
@@ -312,7 +344,7 @@ func Defaults() *Config {
 			IdleTimeout: Duration(168 * time.Hour),
 			MaxAge:      Duration(720 * time.Hour),
 		},
-		UI:   UIConfig{Enabled: true, Brand: BrandConfig{Name: "Selfcloud", Accent: "#2563EB"}},
+		UI:   UIConfig{Enabled: true, Brand: BrandConfig{Name: "Selfcloud", Accent: "#053D8E"}},
 		Mail: MailConfig{SMTPPort: 587, SMTPTLS: "starttls"},
 		RateLimit: RateLimitConfig{
 			PerIPPerMinute:    10,
@@ -664,6 +696,33 @@ func (b BrandConfig) validate() error {
 	}
 	if !accentPattern.MatchString(b.Accent) {
 		return fmt.Errorf("accent %q is not a colour as #rrggbb", b.Accent)
+	}
+	colours := []struct{ key, value string }{
+		{"palette.light.accent", b.Palette.Light.Accent},
+		{"palette.light.accent_fill", b.Palette.Light.AccentFill},
+		{"palette.light.accent_fill_hover", b.Palette.Light.AccentFillHover},
+		{"palette.light.accent_fill_active", b.Palette.Light.AccentFillActive},
+		{"palette.light.accent_text", b.Palette.Light.AccentText},
+		{"palette.light.accent_soft", b.Palette.Light.AccentSoft},
+		{"palette.light.accent_border", b.Palette.Light.AccentBorder},
+		{"palette.dark.accent", b.Palette.Dark.Accent},
+		{"palette.dark.accent_fill", b.Palette.Dark.AccentFill},
+		{"palette.dark.accent_fill_hover", b.Palette.Dark.AccentFillHover},
+		{"palette.dark.accent_fill_active", b.Palette.Dark.AccentFillActive},
+		{"palette.dark.accent_text", b.Palette.Dark.AccentText},
+		{"palette.dark.accent_soft", b.Palette.Dark.AccentSoft},
+		{"palette.dark.accent_border", b.Palette.Dark.AccentBorder},
+		{"sidebar.bg", b.Sidebar.Bg},
+		{"sidebar.text", b.Sidebar.Text},
+		{"sidebar.caption", b.Sidebar.Caption},
+		{"sidebar.active", b.Sidebar.Active},
+		{"sidebar.on_active", b.Sidebar.OnActive},
+	}
+	for _, c := range colours {
+		// An empty token keeps the default; any other value must be a colour.
+		if c.value != "" && !accentPattern.MatchString(c.value) {
+			return fmt.Errorf("%s %q is not a colour as #rrggbb", c.key, c.value)
+		}
 	}
 	if b.LogoFile != "" {
 		switch strings.ToLower(filepath.Ext(b.LogoFile)) {

@@ -7,3 +7,6 @@ node_modules/
 # The build output is never committed. Only dist/.gitignore is, so the Go embed compiles before a build.
 /web/dist/*
 !/web/dist/.gitignore
+# The React interface's build output, as web/dist above.
+/webui/dist/*
+!/webui/dist/.gitignore

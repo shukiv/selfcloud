@@ -1317,6 +1317,13 @@ and follow-the-system themes. It works at phone width. The stack is TypeScript, 
 (`web/`). Node is needed only to build it. The web interface is built in four parts: **k1**
 (foundation and the auth pages), **k2** (file browser), **k3** (sharing) and **k4** (admin pages).
 
+*React interface (slice v).* A second interface is built beside the Svelte one, in `webui/`, with React 18,
+Ant Design 5 and React Router 7 (decision 25). It is selected by the `reactui` build tag (`internal/api/ui_assets_reactui.go`),
+so the default binary still embeds `web/dist`. Until the flip at the end of slice v the two share the server's
+routes, headers and branding; the React build enforces the nonce policy and the Svelte build reports it. Part v1 holds
+the theme, the branding (`ui.brand.palette`, `ui.brand.sidebar`, which `/api/v1/info` returns when they are set), the
+nonce, the languages, the app gate, the shell and the auth pages; each other route shows a "not yet" page in the shell.
+
 *File browser (k2).* The routes: `/files` opens My files (the caller's `personal_folder_id`); `/files/{fld}` a folder's
 root; `/files/{fld}/{dir}` a directory, which must belong to that folder; `/n/{nod}` resolves a node: a file opens its
 preview in its folder (`?preview=`), a directory opens its parent with the directory selected (`?select=`). Anything the
@@ -1697,6 +1704,10 @@ Each slice ships with tests and leaves the server runnable.
 | o4 | The sweep of ended links, the account-wide link list, Delete all public links, the link badge | Built |
 | p1 | Per-user quota (charged by folder) and the storage pages (decision 24) | Built |
 | p2 | Starred, Recent and Home | Built |
+| v1 | React web interface beside the Svelte one (`webui/`, section 10): Vite, React 18 with Ant Design 5, React Router 7; the theme and the brand palette and sidebar; the CSP nonce, reported by the Svelte build and enforced by the React build; the seven languages; the app gate, shell and auth pages | Built |
+| v2 | React file browser: Files, NodeLink and Trash, the `files/*` components, uploads, undo | Planned |
+| v3 | React sharing interface: Shared, Requests, OpenLink and the share components | Planned |
+| v4 | React rest: Home, Starred, Recent, Storage, owner and installation admin pages; then the flip, which removes the Svelte app and moves `webui/` to `web/` | Planned |
 | p3 | Shortcuts, folder colours and descriptions | Planned |
 | p4 | Labels: typed fields the owner defines | Planned |
 | p5 | The OpenAPI file, the design record and a security review of slice p | Planned |
@@ -1710,7 +1721,7 @@ Each slice ships with tests and leaves the server runnable.
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Planned |
 | t2 | Approvals | Planned |
 
-Slices are listed in build order; the letters keep their first meaning, and a slice named with a 2 (c2, i2, t2) follows up the slice of that letter. A slice built in parts (k, o, p) has a row for each part, each reviewed and pushed on its own. Status is Built, Building or Planned. Slices m to u come from
+Slices are listed in build order; the letters keep their first meaning, and a slice named with a 2 (c2, i2, t2) follows up the slice of that letter. A slice built in parts (k, o, p, v) has a row for each part, each reviewed and pushed on its own. Status is Built, Building or Planned. Slices m to u come from
 the Google Drive parity plan in `feature-parity.md` (approved 2026-10-28). An API client can switch
 over once slices a to i work. Slice n1 keeps the `/grants` routes working, mapping `read` to viewer
 and `write` to editor, so a client that switched after i keeps working. Slice n was split in two
@@ -1730,7 +1741,7 @@ Decided on approval:
 5. **On-disk layout**: blobs by ID (section 4).
 6. **Delegated tokens**: Selfcloud mints them through the API.
 7. **PostgreSQL**: added after slice i. *Scheduled 2026-10-29: slice pg, before slice q (section 14).*
-8. **Web interface stack**: Svelte.
+8. **Web interface stack**: Svelte. *Replaced 2026-10-30 by decision 25.*
 9. **Hierarchy** (2026-10-28): admin, then tenants, then sub-accounts (section 8). Admins can
    also be users who sign in, not only API keys.
 10. **Office editor** (2026-10-28): Collabora Online, through WOPI (section 10). No headless
@@ -1788,7 +1799,8 @@ Decided on approval:
     Admins never reach contents, so no admin can restore: an account key does it.
 22. **Web interface** (2026-10-29): Svelte 5 SPA in `web/`, embedded with `go:embed` (through `web/embed.go`);
     built in four parts, k1 to k4; strict CSP with no inline code; errors shown by code, never the server's
-    text; installation branding only (`ui.brand`), per-tenant branding later.
+    text; installation branding only (`ui.brand`), per-tenant branding later. *Amended 2026-10-30 by decision 25:
+    the Svelte build stays until the flip at the end of slice v, and its policy is reported, not enforced, for the nonce.*
 23. **Share links, slice o** (2026-10-29, owner's decisions, which override the proposal where they differ):
     - Anyone links grant viewer only (commenter comes with slice r).
     - Anyone links must expire: 30 days by default, 365 at most. Organisation links may have no end date,
@@ -1979,3 +1991,22 @@ Decided on approval:
     - The sweep's Recent limits (30 days, 500 per user) are constants, not settings.
     - Both new tables cascade from accounts, users and nodes, as the other tables do. Purging a node or deleting a user
       therefore removes its stars and recent entries with no extra code.
+25. **React web interface, slice v** (2026-10-30, owner's decisions). It replaces decision 8, and amends decision 22.
+    - Stack: React 18.3 and Ant Design 5.29, pinned exactly, with TanStack Query, React Router 7 (the router is
+      built on `react-router-dom`), i18next and lucide icons. Node is needed only
+      to build.
+    - The look is the default one: a blue sidebar with a yellow active pill, radius 4, and the palette in `webui/src/theme/tokens.ts`. The
+      default accent is `#053D8E`. Branding overrides named tokens (`ui.brand.palette` and `ui.brand.sidebar`), and
+      the accent alone derives the rest of the family.
+    - Fonts: the system stack. The self-hosted Inter and Noto faces stay in the Svelte
+      build until the flip, then go.
+    - Strict CSP with a per-request nonce. The page carries a nonce in its meta tag and on its script and link tags;
+      the policy's `style-src` allows that nonce. The Svelte build reports this policy as
+      `Content-Security-Policy-Report-Only` and enforces today's policy. The React build enforces it from its first
+      build, and its tests fail on any violation. At the flip, the nonce policy is enforced for everyone and the
+      option that selects the mode is removed. The report-only reports stay in the browser console: there is no
+      report endpoint, and none is added until the flip shows a need for one.
+    - The React build runs beside the Svelte one, selected by the `reactui` build tag. Until the flip there is no
+      runtime switch and no new endpoint.
+    - The flip, at the end of slice v: the Svelte app is removed and `webui/` takes the `web/` paths, so the Makefile,
+      Dockerfile, CI and the catalogue tests keep their paths.

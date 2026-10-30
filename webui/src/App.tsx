@@ -1,0 +1,204 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Navigate, useLocation } from "react-router-dom";
+import { Spin, ConfigProvider } from "antd";
+import type { Locale } from "antd/es/locale";
+import { loadInfo, loadMe } from "./lib/auth";
+import { applyBrand, brand, passwordMinLength } from "./lib/brand";
+import { go, signInURL } from "./lib/router";
+import { afterSignIn } from "./lib/next";
+import { isAdmin, session } from "./lib/session";
+import { homeFor, mayOpen, targetOf } from "./lib/routes";
+import type { User } from "./lib/types";
+import { antdLocaleOf, directionOf, matchLang, setLang, useLang, useT, type Lang } from "./lib/i18n";
+import { PREF_LANG, readPref } from "./lib/prefs";
+import { get, useStore } from "./lib/store";
+import Shell from "./components/Shell";
+import AuthLayout from "./components/AuthLayout";
+import NotYet from "./components/NotYet";
+import LoginPage from "./pages/LoginPage";
+import ForgotPage from "./pages/ForgotPage";
+import ResetPage from "./pages/ResetPage";
+import VerifyPage from "./pages/VerifyPage";
+import SignInPage from "./pages/SignInPage";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
+import NotFoundPage from "./pages/NotFoundPage";
+
+// The views are the address's pages, read the way the Svelte build reads them, so both interfaces
+// agree on what an address means.
+type View =
+  | "login" | "verify" | "reset" | "forgot" | "sign-in" | "share-link"
+  | "home" | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage"
+  | "manage" | "admin" | "change-password" | "notfound";
+
+const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "forgot", "sign-in", "share-link"];
+
+export function viewFor(path: string): View {
+  if (path === "/") return "home";
+  if (path === "/files" || path.startsWith("/files/")) return "files";
+  if (path.startsWith("/n/")) return "node";
+  const target = targetOf(path);
+  if (target !== null) return target.area;
+  switch (path) {
+    case "/login": return "login";
+    case "/verify": return "verify";
+    case "/reset": return "reset";
+    case "/forgot": return "forgot";
+    case "/sign-in": return "sign-in";
+    case "/s": return "share-link";
+    case "/shared": return "shared";
+    case "/starred": return "starred";
+    case "/recent": return "recent";
+    case "/requests": return "requests";
+    case "/trash": return "trash";
+    case "/storage": return "storage";
+    case "/change-password": return "change-password";
+    default: return "notfound";
+  }
+}
+
+// chooseLang applies the first of: ?lang=, the signed-in person's language, this browser's saved
+// choice, the browser's languages, English.
+function chooseLang(account: { user: { locale: string } } | null): void {
+  const fromQuery = matchLang(new URLSearchParams(window.location.search).get("lang"));
+  const fromAccount = account ? matchLang(account.user.locale) : null;
+  const saved = matchLang(readPref(PREF_LANG));
+  const fromBrowser = navigator.languages.map((tag) => matchLang(tag)).find((l) => l !== null) ?? null;
+  void setLang(fromQuery ?? fromAccount ?? saved ?? fromBrowser ?? "en");
+}
+
+// interceptLinks keeps in-app links inside the app: a same-origin link changes the page without a reload.
+// Anything that leaves the site, or asks for a new tab, is left to the browser.
+function interceptLinks(event: MouseEvent) {
+  if (event.defaultPrevented || event.button !== 0) return;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const target = event.target as Element | null;
+  const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null | undefined;
+  if (!anchor || anchor.target || anchor.hasAttribute("download")) return;
+  const url = new URL(anchor.href);
+  if (url.origin !== window.location.origin) return;
+  if (url.hash && url.pathname === window.location.pathname) return;
+  event.preventDefault();
+  go(url.pathname + url.search + url.hash);
+}
+
+function Loading() {
+  const { t } = useT();
+  return (
+    <div role="status" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
+      <Spin tip={t("app.loading")} size="large" />
+    </div>
+  );
+}
+
+// Boot loads the installation's brand and password rule, the signed-in person if there is one, and
+// chooses the language, before anything else is drawn.
+export function Boot({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
+  const started = useRef(false);
+  // Links are listened to in their own effect: StrictMode runs an effect twice, and the boot below
+  // must not run twice, since a failed second run would leave the page unready.
+  useEffect(() => {
+    document.addEventListener("click", interceptLinks);
+    return () => document.removeEventListener("click", interceptLinks);
+  }, []);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void (async () => {
+      let info: Awaited<ReturnType<typeof loadInfo>> | null = null;
+      try {
+        info = await loadInfo();
+      } catch {
+        info = null;
+      }
+      applyBrand(info?.brand ?? get(brand));
+      passwordMinLength.set(info?.passwordMinLength ?? 8);
+      const me = await loadMe().catch(() => null);
+      chooseLang(me);
+      setReady(true);
+    })();
+  }, []);
+  if (!ready) return <Loading />;
+  return <>{children}</>;
+}
+
+// Directionality follows the language: antd's locale and direction for the current one.
+export function Direction({ children }: { children: ReactNode }) {
+  const lang = useLang();
+  const [locale, setLocale] = useState<Locale | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void antdLocaleOf(lang).then((l) => {
+      if (live) setLocale(l);
+    });
+    return () => {
+      live = false;
+    };
+  }, [lang]);
+  const dir = directionOf(lang as Lang);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = dir;
+  }, [lang, dir]);
+  return (
+    <ConfigProvider locale={locale} direction={dir}>
+      {children}
+    </ConfigProvider>
+  );
+}
+
+// The public pages a signed-out visitor may see; the shell and its pages need a session.
+function Public({ view }: { view: View }) {
+  switch (view) {
+    case "login": return <LoginPage />;
+    case "verify": return <VerifyPage />;
+    case "reset": return <ResetPage />;
+    case "forgot": return <ForgotPage />;
+    case "sign-in": return <SignInPage />;
+    case "share-link": return <AuthLayout><NotYet /></AuthLayout>;
+    default: return <AuthLayout><NotFoundPage /></AuthLayout>;
+  }
+}
+
+// Gate decides what the address shows: a public page, the shell with its page, or a redirect.
+export function Gate() {
+  const loc = useLocation();
+  const me = useStore(session);
+  const path = loc.pathname;
+  const search = loc.search;
+  const view = viewFor(path);
+  const signedIn = me !== null;
+
+  if (view === "login" && signedIn) {
+    return <Navigate to={afterSignIn(new URLSearchParams(search).get("next"))} replace />;
+  }
+  if (view === "notfound" ? !signedIn : PUBLIC_VIEWS.includes(view)) {
+    return <Public view={view} />;
+  }
+  if (!signedIn) {
+    return <Navigate to={signInURL(path + search)} replace />;
+  }
+  if (path === "/" && isAdmin(me.user)) {
+    return <Navigate to={homeFor(me.user)} replace />;
+  }
+  return <Shell>{signedPage(view, path, me.user)}</Shell>;
+}
+
+// signedPage is the page inside the shell. The pages not built yet show their placeholder, and an
+// address the person may not open is the not-found page.
+function signedPage(view: View, path: string, user: User): ReactNode {
+  const target = targetOf(path);
+  switch (view) {
+    case "change-password": return <ChangePasswordPage />;
+    case "notfound": return <NotFoundPage />;
+    case "manage":
+    case "admin":
+      return target !== null && mayOpen(target, user) ? <NotYet /> : <NotFoundPage />;
+    case "storage":
+      return user.role === "admin" ? <NotFoundPage /> : <NotYet />;
+    default:
+      return <NotYet />;
+  }
+}

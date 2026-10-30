@@ -6,7 +6,11 @@ package web
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -34,36 +38,79 @@ const notBuiltPage = `<!doctype html>
 // unknown API path still gets the JSON 404.
 var reserved = []string{"/api", "/wopi", "/brand", "/metrics", "/healthz", "/readyz"}
 
+// cspNoncePlaceholder is the text the build writes where the nonce goes: the Vite option
+// html.cspNonce in the web interfaces' vite.config.ts sets it, in the page's meta tag and on its
+// script and link tags. The server replaces every occurrence with a fresh nonce per response.
+const cspNoncePlaceholder = "__SELFCLOUD_CSP_NONCE__"
+
+// StyleMode says how the style rule of the HTML page is sent.
+type StyleMode int
+
+const (
+	// StylesReport enforces the policy as it has always been, and sends the nonce policy as
+	// Content-Security-Policy-Report-Only: the browser reports what the nonce policy would refuse.
+	StylesReport StyleMode = iota
+	// StylesEnforce enforces the nonce policy on the HTML page. An index.html without the
+	// placeholder is an error, because it comes from a build that predates the nonce.
+	StylesEnforce
+)
+
 // Options configure a Handler.
 type Options struct {
 	// ContentURL is content_url, or empty. Its origin is allowed for images, video, audio and frames,
 	// because file previews load from it.
 	ContentURL string
+	// Styles says how the page's style rule is sent. The zero value is StylesReport.
+	Styles StyleMode
 }
 
 // Handler serves the built files of the web interface.
 type Handler struct {
 	files fs.FS
-	csp   string
+	// origins are the extra sources of the policy (the content origin), or empty.
+	origins string
+	styles  StyleMode
+	// index is index.html split at the nonce placeholder, or nil when the build has none. Joining
+	// the parts with a nonce gives the page for that response.
+	index []string
 }
 
 // New returns a handler for files. The build's index.html is served at "/" and for client routes.
 // A build without one (dist/ holds only its .gitignore) serves the not-built page instead.
 func New(files fs.FS, opts Options) (*Handler, error) {
-	imgSrc, frameSrc, mediaSrc := "", "", ""
+	origins := ""
 	if opts.ContentURL != "" {
 		u, err := url.Parse(opts.ContentURL)
 		if err != nil || u.Scheme == "" || u.Host == "" {
 			return nil, fmt.Errorf("web: content URL %q has no origin", opts.ContentURL)
 		}
-		origin := u.Scheme + "://" + u.Host
-		imgSrc, frameSrc, mediaSrc = " "+origin, " "+origin, " "+origin
+		origins = " " + u.Scheme + "://" + u.Host
 	}
-	csp := "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:" + imgSrc +
-		"; media-src 'self'" + mediaSrc +
-		"; font-src 'self'; connect-src 'self'; frame-src 'self'" + frameSrc +
+	h := &Handler{files: files, origins: origins, styles: opts.Styles}
+	data, err := fs.ReadFile(files, "index.html")
+	if err == nil {
+		parts := strings.Split(string(data), cspNoncePlaceholder)
+		switch {
+		case len(parts) > 1:
+			h.index = parts
+		case opts.Styles == StylesEnforce:
+			return nil, errors.New("web: index.html has no CSP nonce placeholder; rebuild the web interface")
+		}
+	}
+	return h, nil
+}
+
+// policy returns the content policy. With no nonce it is the policy the interface has always sent;
+// with one, style-src also allows the inline styles that carry that nonce.
+func (h *Handler) policy(nonce string) string {
+	style := "'self'"
+	if nonce != "" {
+		style += " 'nonce-" + nonce + "'"
+	}
+	return "default-src 'self'; script-src 'self'; style-src " + style + "; img-src 'self' data: blob:" + h.origins +
+		"; media-src 'self'" + h.origins +
+		"; font-src 'self'; connect-src 'self'; frame-src 'self'" + h.origins +
 		"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
-	return &Handler{files: files, csp: csp}, nil
 }
 
 // robotsTxt keeps crawlers away from the pages that open share links. The pages also answer with
@@ -130,7 +177,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	hd := w.Header()
-	hd.Set("Content-Security-Policy", h.csp)
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("Referrer-Policy", "same-origin")
 	hd.Set("X-Frame-Options", "DENY")
@@ -143,6 +189,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if missingAsset {
 		// A build asset that is not there is a stale or mistyped reference; answering with the app
 		// page would hide that behind a script or style that fails to parse.
+		hd.Set("Content-Security-Policy", h.policy(""))
 		hd.Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
 		return
@@ -156,8 +203,48 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		hd.Set("Cache-Control", "no-cache")
 	}
+	if name == "index.html" && h.index != nil && err == nil {
+		// The page is built per response: a fresh nonce, drawn from the system's random source.
+		nonce, nerr := newNonce()
+		if nerr != nil {
+			http.Error(w, "web: cannot draw a CSP nonce", http.StatusInternalServerError)
+			return
+		}
+		data = []byte(strings.Join(h.index, nonce))
+		h.setPagePolicy(hd, nonce)
+	} else {
+		// Any other file, a build without a placeholder, and the not-built page: the plain policy.
+		hd.Set("Content-Security-Policy", h.policy(""))
+	}
 	hd.Set("Content-Type", contentType(name))
+	if name == "index.html" {
+		// The page is always sent whole: a partial answer would carry a nonce that the policy never saw.
+		r.Header.Del("Range")
+	}
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
+}
+
+// setPagePolicy sends the nonce policy: enforced under StylesEnforce; under StylesReport the plain
+// policy is enforced and the nonce policy is reported only.
+func (h *Handler) setPagePolicy(hd http.Header, nonce string) {
+	if h.styles == StylesEnforce {
+		hd.Set("Content-Security-Policy", h.policy(nonce))
+		return
+	}
+	hd.Set("Content-Security-Policy", h.policy(""))
+	hd.Set("Content-Security-Policy-Report-Only", h.policy(nonce))
+}
+
+// nonceReader is the random source of nonces. Tests replace it to make the source fail.
+var nonceReader io.Reader = rand.Reader
+
+// newNonce draws 16 random bytes and returns them base64-encoded, as a CSP nonce.
+func newNonce() (string, error) {
+	var b [16]byte
+	if _, err := io.ReadFull(nonceReader, b[:]); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b[:]), nil
 }
 
 var contentTypes = map[string]string{

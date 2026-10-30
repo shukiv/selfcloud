@@ -7,3 +7,5 @@ data
 docs
 web/node_modules
 web/dist
+webui/node_modules
+webui/dist

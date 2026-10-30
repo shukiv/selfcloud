@@ -133,6 +133,7 @@ func reopen(t *testing.T, s *Server) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s2.limitClock = frozenLimitClock
 	return s2
 }
 

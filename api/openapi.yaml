@@ -3903,11 +3903,42 @@ components:
         accent:
           type: string
           pattern: "^#[0-9a-fA-F]{6}$"
-          description: The primary colour, as #rrggbb.
-          example: "#2563EB"
+          description: The primary colour, as #rrggbb. The web interface derives the accent family from it, unless a token below is set.
+          example: "#053D8E"
         logo_url:
           type: [string, "null"]
           description: The logo's URL (`/brand/logo`), or null when the installation has none. The file's path is never sent.
+        palette:
+          type: object
+          description: The colour tokens the installation overrides, one set per theme. Absent when it overrides none; a theme with no override is absent too. Each token is #rrggbb.
+          properties:
+            light: { $ref: "#/components/schemas/BrandTokens" }
+            dark: { $ref: "#/components/schemas/BrandTokens" }
+        sidebar:
+          type: object
+          description: The sidebar's colours that the installation overrides, as #rrggbb. Absent when it overrides none.
+          properties:
+            bg: { $ref: "#/components/schemas/Hex" }
+            text: { $ref: "#/components/schemas/Hex" }
+            caption: { $ref: "#/components/schemas/Hex" }
+            active: { $ref: "#/components/schemas/Hex" }
+            on_active: { $ref: "#/components/schemas/Hex" }
+
+    Hex:
+      type: string
+      pattern: "^#[0-9a-fA-F]{6}$"
+
+    BrandTokens:
+      type: object
+      description: The accent tokens one theme overrides, each as #rrggbb.
+      properties:
+        accent: { $ref: "#/components/schemas/Hex" }
+        accent_fill: { $ref: "#/components/schemas/Hex" }
+        accent_fill_hover: { $ref: "#/components/schemas/Hex" }
+        accent_fill_active: { $ref: "#/components/schemas/Hex" }
+        accent_text: { $ref: "#/components/schemas/Hex" }
+        accent_soft: { $ref: "#/components/schemas/Hex" }
+        accent_border: { $ref: "#/components/schemas/Hex" }
 
     Limits:
       type: object

@@ -44,10 +44,10 @@ func newLimiterRate(burst int, window time.Duration) *limiter {
 		buckets: map[string]*bucket{}}
 }
 
-// allow takes one token for key. When none is left it returns rate_limited with the time until
-// the next one, and takes nothing.
-func (l *limiter) allow(key string) error {
-	_, err := l.reserve(key, time.Now())
+// allow takes one token for key at the time now. When none is left it returns rate_limited with the
+// time until the next one, and takes nothing.
+func (l *limiter) allow(now time.Time, key string) error {
+	_, err := l.reserve(key, now)
 	return err
 }
 
@@ -91,7 +91,7 @@ func (l *limiter) sweep(now time.Time) {
 // "endpoint.email". The check runs before any database lookup or password hash, so a flood costs
 // little.
 func (s *Server) rateLimit(name, key string) error {
-	return s.limits[name].allow(key)
+	return s.limits[name].allow(s.limitClock(), key)
 }
 
 // charge names one limiter and the key to charge in it.
@@ -103,7 +103,7 @@ type charge struct {
 // chargeAll takes one token from each named bucket, or from none. If any bucket is empty, the tokens
 // already taken are given back, so a refused request spends nothing from the others.
 func (s *Server) chargeAll(charges ...charge) error {
-	now := time.Now()
+	now := s.limitClock()
 	var held []*rate.Reservation
 	for _, c := range charges {
 		res, err := s.limits[c.name].reserve(c.key, now)

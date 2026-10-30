@@ -1,0 +1,165 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* A reset and the few rules antd does not give: the page margin, the system font stack the
+   interface uses, the skip link, and tables that scroll inside their card. Layout and colour
+   come from the theme. */
+html,
+body {
+  margin: 0;
+  max-width: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: 8px;
+  top: -100px;
+  z-index: 100;
+  padding: 8px 12px;
+  background: #ffffff;
+  color: #0d2142;
+}
+
+.skip-link:focus {
+  top: 8px;
+}
+
+.ant-table-wrapper {
+  overflow-x: auto;
+}
+
+/* The sign-in layout: split from md (768px) up, the form alone below it. */
+.auth-layout {
+  display: flex;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.auth-side {
+  display: none;
+}
+
+.auth-side-inner {
+  display: flex;
+  flex-direction: column;
+  max-width: 460px;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-brand-name {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.auth-gap {
+  height: 64px;
+}
+
+.auth-headline {
+  font-weight: 800;
+  font-size: 40px;
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+}
+
+.auth-tagline {
+  margin-top: 28px;
+  max-width: 380px;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.auth-form {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 32px 16px;
+  box-sizing: border-box;
+}
+
+.auth-form-brand {
+  display: flex;
+}
+
+.auth-width {
+  width: 100%;
+  max-width: 440px;
+  box-sizing: border-box;
+}
+
+.auth-card {
+  padding: 24px;
+}
+
+.auth-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+@media (min-width: 768px) {
+  .auth-side {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1 1 0;
+    min-width: 0;
+    padding-block: 56px;
+    padding-inline: 64px;
+    box-sizing: border-box;
+  }
+
+  .auth-form-brand {
+    display: none;
+  }
+
+  .auth-form {
+    padding-inline: 24px;
+  }
+}
+
+/* The sidebar's menu scrolls inside the sider with a thin scrollbar in the sidebar's colours. The brand
+   stays at the top and the rail toggle stays at the bottom. */
+.shell-menu {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+}
+
+/* The desktop sidebar is a column: the brand and menu take the height that is left, and the rail
+   toggle at the bottom keeps its place. */
+.shell-sider {
+  box-sizing: border-box;
+}
+
+.shell-sider > .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.shell-sider-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}

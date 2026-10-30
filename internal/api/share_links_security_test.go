@@ -215,8 +215,7 @@ func TestOpenIsLimitedPerUser(t *testing.T) {
 	_, url := fx.makeLink(t, fx.b.ID, "viewer")
 	secret := secretOf(t, url)
 	fx.s.limits["share.open.ip"] = newLimiter(1000)
-	// The bucket refills a token a second, and a slow run (-race) refills during the opens, so the test does
-	// not count on exactly sixty: it allows at least sixty, then wants the refusal.
+	// The test clock is frozen, so the bucket holds exactly sixty opens and refuses the sixty-first.
 	opens := 0
 	for ; ; opens++ {
 		rec := fx.open(t, fx.annSess, secret)
@@ -229,7 +228,7 @@ func TestOpenIsLimitedPerUser(t *testing.T) {
 			t.Fatal("no refusal after 500 opens by one member")
 		}
 	}
-	if opens < 60 {
-		t.Errorf("refused after %d opens, want at least the burst of 60", opens)
+	if opens != 60 {
+		t.Errorf("refused after %d opens, want exactly the burst of 60", opens)
 	}
 }

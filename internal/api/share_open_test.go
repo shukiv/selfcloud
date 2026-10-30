@@ -672,15 +672,12 @@ func TestAnyoneCreateRefusedByTeamPolicy(t *testing.T) {
 	}
 }
 
-// The limiter holds 30 opens a minute per address and refills at 0.5 a second. The test does not
-// count on wall-clock speed: a slow run refills tokens while it works, so it checks the bound the
-// limiter promises. The first 30 opens pass, a 429 arrives, and the opens let through never exceed
-// 30 plus what the elapsed time refills.
+// The limiter holds 30 opens a minute per address. The test clock is frozen, so exactly the first 30
+// opens pass and the 31st is refused.
 func TestOpenIsRateLimitedPerAddress(t *testing.T) {
 	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
-	start := time.Now()
 	admitted := 0
 	var last *httptest.ResponseRecorder
 	for i := 0; i < 200; i++ {
@@ -694,12 +691,8 @@ func TestOpenIsRateLimitedPerAddress(t *testing.T) {
 		admitted++
 	}
 	wantError(t, last, 429, apierr.RateLimited)
-	if admitted < 30 {
-		t.Fatalf("admitted %d opens before the 429, want at least the burst of 30", admitted)
-	}
-	refilled := int(time.Since(start).Seconds() * 0.5)
-	if admitted > 30+refilled+1 {
-		t.Fatalf("admitted %d opens in %v, the limit allows %d", admitted, time.Since(start), 30+refilled+1)
+	if admitted != 30 {
+		t.Fatalf("admitted %d opens before the 429, want exactly the burst of 30", admitted)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	apispec "github.com/shukiv/selfcloud/api"
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/fsutil"
 	"github.com/shukiv/selfcloud/internal/version"
 )
@@ -94,10 +95,37 @@ type infoLimits struct {
 }
 
 // infoBrand is the installation's look. The logo is a URL, never the file's path on the host.
+// Palette and Sidebar carry only the tokens the installation sets; the rest are the defaults.
 type infoBrand struct {
-	Name    string  `json:"name"`
-	Accent  string  `json:"accent"`
-	LogoURL *string `json:"logo_url"`
+	Name    string       `json:"name"`
+	Accent  string       `json:"accent"`
+	LogoURL *string      `json:"logo_url"`
+	Palette *infoPalette `json:"palette,omitempty"`
+	Sidebar *infoSidebar `json:"sidebar,omitempty"`
+}
+
+// infoPalette holds the set tokens for each theme; a theme with none set is omitted.
+type infoPalette struct {
+	Light *infoTokens `json:"light,omitempty"`
+	Dark  *infoTokens `json:"dark,omitempty"`
+}
+
+type infoTokens struct {
+	Accent           string `json:"accent,omitempty"`
+	AccentFill       string `json:"accent_fill,omitempty"`
+	AccentFillHover  string `json:"accent_fill_hover,omitempty"`
+	AccentFillActive string `json:"accent_fill_active,omitempty"`
+	AccentText       string `json:"accent_text,omitempty"`
+	AccentSoft       string `json:"accent_soft,omitempty"`
+	AccentBorder     string `json:"accent_border,omitempty"`
+}
+
+type infoSidebar struct {
+	Bg       string `json:"bg,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Caption  string `json:"caption,omitempty"`
+	Active   string `json:"active,omitempty"`
+	OnActive string `json:"on_active,omitempty"`
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) error {
@@ -120,12 +148,53 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) error {
 
 // brandInfo describes the brand; the logo URL is set only when there is a logo.
 func (s *Server) brandInfo() infoBrand {
-	b := infoBrand{Name: s.cfg.UI.Brand.Name, Accent: s.cfg.UI.Brand.Accent}
+	brand := s.cfg.UI.Brand
+	b := infoBrand{
+		Name:    brand.Name,
+		Accent:  brand.Accent,
+		Palette: infoPaletteOf(brand.Palette),
+		Sidebar: infoSidebarOf(brand.Sidebar),
+	}
 	if s.logo != nil {
 		u := logoPath
 		b.LogoURL = &u
 	}
 	return b
+}
+
+// infoPaletteOf returns the palette's set tokens, or nil when neither theme sets one.
+func infoPaletteOf(p config.BrandPalette) *infoPalette {
+	light, dark := infoTokensOf(p.Light), infoTokensOf(p.Dark)
+	if light == nil && dark == nil {
+		return nil
+	}
+	return &infoPalette{Light: light, Dark: dark}
+}
+
+// infoTokensOf returns the set tokens of one theme, or nil when it sets none.
+func infoTokensOf(t config.BrandTokens) *infoTokens {
+	out := infoTokens{
+		Accent:           t.Accent,
+		AccentFill:       t.AccentFill,
+		AccentFillHover:  t.AccentFillHover,
+		AccentFillActive: t.AccentFillActive,
+		AccentText:       t.AccentText,
+		AccentSoft:       t.AccentSoft,
+		AccentBorder:     t.AccentBorder,
+	}
+	if out == (infoTokens{}) {
+		return nil
+	}
+	return &out
+}
+
+// infoSidebarOf returns the sidebar's set colours, or nil when it sets none.
+func infoSidebarOf(sb config.BrandSidebar) *infoSidebar {
+	out := infoSidebar{Bg: sb.Bg, Text: sb.Text, Caption: sb.Caption, Active: sb.Active, OnActive: sb.OnActive}
+	if out == (infoSidebar{}) {
+		return nil
+	}
+	return &out
 }
 
 // logoPath is the URL of the logo. It is served whether or not the web interface is.
