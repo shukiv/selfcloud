@@ -622,6 +622,7 @@
   "usage.danger": "ممتلئ تقريبًا تمامًا",
   "usage.label": "التخزين المستخدم",
   "usage.loading": "جارٍ تحميل الاستخدام…",
+  "usage.failed": "تعذّرت قراءة الاستخدام.",
   "tenant.new.open": "مستأجر جديد",
   "tenant.new.title": "مستأجر جديد",
   "tenant.new.name": "الاسم",

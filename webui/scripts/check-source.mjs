@@ -32,6 +32,10 @@ const staticModals = new Set(['confirm', 'info', 'success', 'error', 'warning'])
 // which only lists destinations and closes on a click.
 const maskExempt = { file: 'components/Shell.tsx', tag: 'Drawer' };
 
+// The native controls the antd ones replace. A test may name them; the shipped code may not use them.
+const NATIVE_TAGS = new Set(['select', 'option', 'details', 'summary']);
+const NATIVE_INPUT_TYPES = new Set(['radio', 'checkbox']);
+
 // astProblems finds what a line rule cannot: a .message read anywhere in a catch clause (whatever the
 // variable is called) or in a .catch callback, and the antd statics.
 function astProblems(name, text) {
@@ -60,6 +64,19 @@ function astProblems(name, text) {
         const attrs = node.attributes.properties;
         const kept = attrs.some((a) => ts.isJsxAttribute(a) && a.name.text === 'maskClosable' && a.initializer && ts.isJsxExpression(a.initializer) && a.initializer.expression?.kind === ts.SyntaxKind.FalseKeyword);
         if (!kept) out.push([at(node), `<${tag}> needs maskClosable={false}`]);
+      }
+    }
+    // A native form control, disclosure or option list is not styled by the theme and does not match antd's look. The
+    // interface uses the antd controls (Select, Radio.Group, Checkbox, Collapse); a native date input is the one exception.
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText(sf);
+      if (NATIVE_TAGS.has(tag)) out.push([at(node), `native <${tag}>; use the antd control (Select, Radio.Group, Checkbox, Collapse)`]);
+      if (tag === 'input') {
+        for (const a of node.attributes.properties) {
+          if (ts.isJsxAttribute(a) && a.name.text === 'type' && a.initializer && ts.isStringLiteral(a.initializer) && NATIVE_INPUT_TYPES.has(a.initializer.text)) {
+            out.push([at(node), `native <input type="${a.initializer.text}">; use the antd Radio or Checkbox`]);
+          }
+        }
       }
     }
     if (ts.isPropertyAccessExpression(node)) {

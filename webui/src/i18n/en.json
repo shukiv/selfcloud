@@ -622,6 +622,7 @@
   "usage.danger": "Almost full",
   "usage.label": "Storage used",
   "usage.loading": "Loading usage…",
+  "usage.failed": "Usage could not be read.",
   "tenant.new.open": "New tenant",
   "tenant.new.title": "New tenant",
   "tenant.new.name": "Name",

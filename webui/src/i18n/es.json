@@ -622,6 +622,7 @@
   "usage.danger": "Casi lleno del todo",
   "usage.label": "Almacenamiento usado",
   "usage.loading": "Cargando uso…",
+  "usage.failed": "No se pudo leer el uso.",
   "tenant.new.open": "Nuevo cliente",
   "tenant.new.title": "Nuevo cliente",
   "tenant.new.name": "Nombre",

@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "../../lib/session";
+import { queryKey } from "../../lib/query";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import TenantOverview from "./TenantOverview";
 import { account, signedAs, usage } from "../../test/adminFixtures";
@@ -63,6 +64,23 @@ describe("tenant overview", () => {
   });
 
   // A refresh that fails keeps the figures that were read, and says so (not a silent stale page).
+  // The tenants list reads each row's usage under the usage key, so a new limit must mark that tenant's usage stale.
+  it("a saved limit invalidates the tenant's usage (guard: usage key invalidated on save)", async () => {
+    stubFetch((c) => (c.method === "PATCH" ? { status: 200, body: account({ quota_bytes: 7_000_000_000 }) } : routes(c)));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    render(
+      <QueryClientProvider client={qc}>
+        <TenantOverview account={account()} onChanged={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Storage limit: 5 GB.");
+    fireEvent.click(screen.getByRole("button", { name: "Change limit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Amount" }), { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save limit" }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: queryKey("usage", "acc_1") }));
+  });
+
   it("a failed refresh keeps the figures on screen and shows the error (guard: error shown on refresh)", async () => {
     let broken = false;
     stubFetch((c) => (c.url.endsWith("/usage") && broken ? fail(500, "internal") : routes(c)));

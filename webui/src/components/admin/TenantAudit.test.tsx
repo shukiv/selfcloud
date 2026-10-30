@@ -32,7 +32,10 @@ describe("tenant audit log", () => {
     const { calls } = stubFetch((c: Call) => (c.url.includes("/audit") ? { status: 200, body: { items: [] } } : { status: 200, body: { items: [] } }));
     renderAudit();
     await screen.findByText("Nothing recorded yet.");
-    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), { target: { value: "key.revoke" } });
+    const selector = document.getElementById("tenant-audit-action")!.closest(".ant-select")!.querySelector(".ant-select-selector") as HTMLElement;
+    fireEvent.mouseDown(selector);
+    const options = await screen.findAllByText("key.revoke", { selector: ".ant-select-item-option-content" });
+    fireEvent.click(options[options.length - 1]);
     await waitFor(() => expect(calls.some((c) => c.url.includes("action=key.revoke"))).toBe(true));
   });
 });

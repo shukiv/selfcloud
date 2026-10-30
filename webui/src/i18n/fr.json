@@ -622,6 +622,7 @@
   "usage.danger": "Quasiment plein",
   "usage.label": "Stockage utilisé",
   "usage.loading": "Chargement de l’utilisation…",
+  "usage.failed": "Impossible de lire l’utilisation.",
   "tenant.new.open": "Nouveau locataire",
   "tenant.new.title": "Nouveau locataire",
   "tenant.new.name": "Nom",

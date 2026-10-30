@@ -622,6 +622,7 @@
   "usage.danger": "Почти полностью заполнено",
   "usage.label": "Занятое хранилище",
   "usage.loading": "Загрузка…",
+  "usage.failed": "Не удалось прочитать использование.",
   "tenant.new.open": "Новый арендатор",
   "tenant.new.title": "Новый арендатор",
   "tenant.new.name": "Название",

@@ -622,6 +622,7 @@
   "usage.danger": "כמעט מלא לגמרי",
   "usage.label": "אחסון בשימוש",
   "usage.loading": "טוען שימוש…",
+  "usage.failed": "לא ניתן לקרוא את השימוש.",
   "tenant.new.open": "לקוח חדש",
   "tenant.new.title": "לקוח חדש",
   "tenant.new.name": "שם",

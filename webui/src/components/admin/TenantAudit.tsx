@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button } from "antd";
+import { Alert, Button, Select } from "antd";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -44,14 +44,15 @@ export default function TenantAudit({ account }: { account: string }) {
         <h2 style={sectionTitle}>{t("tenant.audit.title")}</h2>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
           <label htmlFor="tenant-audit-action">{t("audit.filter")}</label>
-          <select id="tenant-audit-action" value={action} onChange={(e) => setAction(e.target.value)} style={{ maxInlineSize: "100%" }}>
-            <option value="">{t("audit.allActions")}</option>
-            {AUDIT_ACTIONS.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
+          <Select
+            id="tenant-audit-action"
+            value={action}
+            onChange={(v: string) => setAction(v)}
+            // Every action is in the list: the virtual list would draw only the first few.
+            virtual={false}
+            style={{ minWidth: 200, maxInlineSize: "100%" }}
+            options={[{ value: "", label: t("audit.allActions") }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))]}
+          />
         </div>
       </div>
 

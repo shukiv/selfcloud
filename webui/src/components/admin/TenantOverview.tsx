@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Checkbox, Input } from "antd";
+import { Alert, Button, Checkbox, Input, Select } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -77,6 +77,8 @@ export default function TenantOverview({ account, onChanged }: { account: Accoun
         setEditing(false);
         onChanged(updated);
         void qc.invalidateQueries({ queryKey: overviewKey });
+        // The tenants list reads this usage too: its row shows the new limit once it is read again.
+        void qc.invalidateQueries({ queryKey: queryKey("usage", account.id) });
       } catch (err) {
         if (changed()) return;
         setError(failureText(err, lang));
@@ -130,15 +132,17 @@ export default function TenantOverview({ account, onChanged }: { account: Accoun
                     onChange={(e) => setAmount(e.target.value)}
                     style={{ flex: "1 1 auto", minWidth: 0 }}
                   />
-                  <select
+                  <Select
                     value={unit}
                     disabled={noLimit}
                     aria-label={t("tenant.new.limitUnit")}
-                    onChange={(e) => setUnit(e.target.value as LimitUnit)}
-                  >
-                    <option value="GB">GB</option>
-                    <option value="TB">TB</option>
-                  </select>
+                    onChange={(v: LimitUnit) => setUnit(v)}
+                    style={{ width: 96 }}
+                    options={[
+                      { value: "GB", label: "GB" },
+                      { value: "TB", label: "TB" },
+                    ]}
+                  />
                 </div>
                 <Checkbox checked={noLimit} onChange={(e) => setNoLimit(e.target.checked)}>
                   {t("tenant.new.noLimit")}

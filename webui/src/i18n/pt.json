@@ -622,6 +622,7 @@
   "usage.danger": "Quase totalmente cheio",
   "usage.label": "Armazenamento utilizado",
   "usage.loading": "A carregar a utilização…",
+  "usage.failed": "Não foi possível ler a utilização.",
   "tenant.new.open": "Novo cliente",
   "tenant.new.title": "Novo cliente",
   "tenant.new.name": "Nome",

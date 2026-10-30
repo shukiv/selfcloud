@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Input, Modal } from "antd";
+import { Alert, Button, Input, Modal, Radio } from "antd";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -214,14 +214,15 @@ function AdminsView() {
             </div>
             <fieldset style={{ display: "grid", gap: 8, margin: 0, padding: 0, border: 0 }}>
               <legend>{t("tenant.new.how")}</legend>
-              <label>
-                <input type="radio" name="admin-how" value="email" checked={how === "email"} onChange={() => setHow("email")} />{" "}
-                <span>{t("tenant.new.howEmail")}</span>
-              </label>
-              <label>
-                <input type="radio" name="admin-how" value="link" checked={how === "link"} onChange={() => setHow("link")} />{" "}
-                <span>{t("tenant.new.howLink")}</span>
-              </label>
+              <Radio.Group
+                name="admin-how"
+                value={how}
+                onChange={(e) => setHow(e.target.value as "email" | "link")}
+                options={[
+                  { value: "email", label: t("tenant.new.howEmail") },
+                  { value: "link", label: t("tenant.new.howLink") },
+                ]}
+              />
             </fieldset>
             {formError !== null && <Alert type="error" showIcon role="alert" message={formError} />}
             <div style={foot}>

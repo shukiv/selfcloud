@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { ConfigProvider, theme as antdTheme } from "antd";
 import type { ThemeConfig } from "antd";
 import { readPref, writePref, PREF_THEME } from "../lib/prefs";
@@ -208,6 +208,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const toggle = useCallback(() => setPref(mode === "dark" ? "light" : "dark"), [mode, setPref]);
 
   const antd = useMemo(() => antdTokens(mode, palette, sidebar), [mode, palette, sidebar]);
+  const linkColour = antd.token?.colorLink;
+
+  // The plain links of the page (the stylesheet's a rule) take the antd link token, so they match the antd links in both modes.
+  useLayoutEffect(() => {
+    if (typeof linkColour === "string") document.documentElement.style.setProperty("--link-colour", linkColour);
+  }, [linkColour]);
   const state = useMemo<ThemeState>(
     () => ({ mode, pref, palette, sidebar, setPref, toggle }),
     [mode, pref, palette, sidebar, setPref, toggle],

@@ -23,7 +23,8 @@ export async function change(next: Lang) {
   }
 }
 
-export default function LangSwitcher() {
+// compact is the phone top bar: the icon alone, the name kept in aria-label.
+export default function LangSwitcher({ compact = false }: { compact?: boolean }) {
   const { t } = useT();
   const current = useLang();
   const items: MenuProps["items"] = LANGUAGES.map((code) => ({
@@ -37,7 +38,7 @@ export default function LangSwitcher() {
       trigger={["click"]}
     >
       <Button type="text" data-testid="language" icon={<Languages size={18} strokeWidth={1.75} />} aria-label={t("lang.label")}>
-        {NATIVE_NAMES[current]}
+        {compact ? null : NATIVE_NAMES[current]}
       </Button>
     </Dropdown>
   );

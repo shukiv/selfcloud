@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Input, Modal } from "antd";
+import { Alert, Button, Input, Modal, Select } from "antd";
 import { useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
 import { sessionChanged } from "../../lib/session";
@@ -66,12 +66,17 @@ export default function NewKey({
         </div>
         <div style={field}>
           <label htmlFor="new-key-expires">{t("keys.new.expires")}</label>
-          <select id="new-key-expires" value={expires} onChange={(e) => setExpires(e.target.value as ExpiryChoice)}>
-            <option value="never">{t("keys.expires.never")}</option>
-            <option value="30">{t("keys.expires.30")}</option>
-            <option value="90">{t("keys.expires.90")}</option>
-            <option value="365">{t("keys.expires.365")}</option>
-          </select>
+          <Select
+            id="new-key-expires"
+            value={expires}
+            onChange={(v: ExpiryChoice) => setExpires(v)}
+            options={[
+              { value: "never", label: t("keys.expires.never") },
+              { value: "30", label: t("keys.expires.30") },
+              { value: "90", label: t("keys.expires.90") },
+              { value: "365", label: t("keys.expires.365") },
+            ]}
+          />
         </div>
         {error !== null && <Alert type="error" showIcon role="alert" message={error} />}
         <div style={foot}>

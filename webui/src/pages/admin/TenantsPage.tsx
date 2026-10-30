@@ -134,7 +134,22 @@ function TenantsView() {
 
   const menuFor = (a: Account) => ({
     items: [
-      { key: "open", label: t("tenants.open"), onClick: () => go(`/admin/tenants/${a.id}`) },
+      {
+        // A real link: a middle click or a modified click opens the tenant in a new tab, as the browser does for a link.
+        key: "open",
+        label: (
+          <a
+            href={`/admin/tenants/${a.id}`}
+            onClick={(e) => {
+              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              go(`/admin/tenants/${a.id}`);
+            }}
+          >
+            {t("tenants.open")}
+          </a>
+        ),
+      },
       {
         key: "suspend",
         label: a.status === "suspended" ? t("tenant.resume") : t("tenant.suspend"),
@@ -215,7 +230,13 @@ function TenantsView() {
                   </StatusTag>
                 </div>
                 <div style={{ flex: "2 1 220px", minWidth: 180 }}>
-                  {u ? <UsageMeter used={u.used_bytes} quota={u.quota_bytes} /> : <span style={muted}>{t("usage.loading")}</span>}
+                  {u ? (
+                    <UsageMeter used={u.used_bytes} quota={u.quota_bytes} />
+                  ) : usages[i]?.isError ? (
+                    <span style={muted}>{t("usage.failed")}</span>
+                  ) : (
+                    <span style={muted}>{t("usage.loading")}</span>
+                  )}
                 </div>
                 <div>
                   <time dateTime={a.created_at} title={formatDate(a.created_at, lang)}>

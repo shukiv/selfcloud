@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Checkbox, Input, Modal } from "antd";
+import { Alert, Button, Checkbox, Collapse, Input, Modal, Radio, Select } from "antd";
 import { useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
 import { sessionChanged } from "../../lib/session";
@@ -104,15 +104,17 @@ export default function NewTenant({
               onChange={(e) => setAmount(e.target.value)}
               style={{ flex: "1 1 auto", minWidth: 0 }}
             />
-            <select
+            <Select
               value={unit}
               disabled={noLimit}
               aria-label={t("tenant.new.limitUnit")}
-              onChange={(e) => setUnit(e.target.value as LimitUnit)}
-            >
-              <option value="GB">GB</option>
-              <option value="TB">TB</option>
-            </select>
+              onChange={(v: LimitUnit) => setUnit(v)}
+              style={{ width: 96 }}
+              options={[
+                { value: "GB", label: "GB" },
+                { value: "TB", label: "TB" },
+              ]}
+            />
           </div>
           <Checkbox checked={noLimit} onChange={(e) => setNoLimit(e.target.checked)}>
             {t("tenant.new.noLimit")}
@@ -131,25 +133,34 @@ export default function NewTenant({
           </div>
           <fieldset style={fieldset}>
             <legend>{t("tenant.new.how")}</legend>
-            <label>
-              <input type="radio" name="how" value="email" checked={how === "email"} onChange={() => setHow("email")} />{" "}
-              <span>{t("tenant.new.howEmail")}</span>
-            </label>
-            <label>
-              <input type="radio" name="how" value="link" checked={how === "link"} onChange={() => setHow("link")} />{" "}
-              <span>{t("tenant.new.howLink")}</span>
-            </label>
+            <Radio.Group
+              name="how"
+              value={how}
+              onChange={(e) => setHow(e.target.value as "email" | "link")}
+              options={[
+                { value: "email", label: t("tenant.new.howEmail") },
+                { value: "link", label: t("tenant.new.howLink") },
+              ]}
+            />
           </fieldset>
         </fieldset>
 
-        <details>
-          <summary>{t("tenant.new.advanced")}</summary>
-          <div style={field}>
-            <label htmlFor="new-tenant-external">{t("tenant.new.externalId")}</label>
-            <Input id="new-tenant-external" autoComplete="off" value={externalId} onChange={(e) => setExternalId(e.target.value)} />
-            <p style={{ margin: 0, fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t("tenant.new.externalHint")}</p>
-          </div>
-        </details>
+        <Collapse
+          ghost
+          items={[
+            {
+              key: "advanced",
+              label: t("tenant.new.advanced"),
+              children: (
+                <div style={field}>
+                  <label htmlFor="new-tenant-external">{t("tenant.new.externalId")}</label>
+                  <Input id="new-tenant-external" autoComplete="off" value={externalId} onChange={(e) => setExternalId(e.target.value)} />
+                  <p style={{ margin: 0, fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t("tenant.new.externalHint")}</p>
+                </div>
+              ),
+            },
+          ]}
+        />
 
         {error !== null && <Alert type="error" showIcon role="alert" message={error} />}
         <div style={foot}>

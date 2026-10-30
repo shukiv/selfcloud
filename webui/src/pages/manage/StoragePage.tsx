@@ -173,7 +173,7 @@ function StorageView() {
                 <tbody>
                   {people.map((p) => (
                     <tr key={p.id}>
-                      <th scope="row" style={{ textAlign: "start", fontWeight: 500, padding: "8px 12px", verticalAlign: "top" }}>
+                      <th scope="row" style={{ textAlign: "start", fontWeight: 500, verticalAlign: "top" }}>
                         <bdi>{personLabel(p)}</bdi>
                         {p.email && p.email !== personLabel(p) && (
                           <>
@@ -184,14 +184,14 @@ function StorageView() {
                           </>
                         )}
                       </th>
-                      <td style={{ textAlign: "end", whiteSpace: "nowrap", padding: "8px 12px" }}>{formatBytes(heldBytes(p), lang)}</td>
-                      <td style={{ padding: "8px 12px" }}>
+                      <td style={{ textAlign: "end", whiteSpace: "nowrap" }}>{formatBytes(heldBytes(p), lang)}</td>
+                      <td>
                         {limitText(p)}
                         {p.quota_bytes === null && (
                           <span style={{ color: "var(--ant-color-text-secondary)" }}> · {t("storage.followsDefault")}</span>
                         )}
                       </td>
-                      <td style={{ textAlign: "end", padding: "8px 12px" }}>
+                      <td style={{ textAlign: "end" }}>
                         <Button size="small" onClick={() => setEditingPerson(p)}>
                           {t("storage.change")}
                           <span className="sr-only">: {personLabel(p)}</span>
@@ -231,13 +231,13 @@ function StorageView() {
                 <tbody>
                   {folders.map((f) => (
                     <tr key={f.id}>
-                      <th scope="row" style={{ textAlign: "start", fontWeight: 500, padding: "8px 12px" }}>
+                      <th scope="row" style={{ textAlign: "start", fontWeight: 500 }}>
                         <bdi>{f.name ?? ""}</bdi>
                       </th>
-                      <td style={{ textAlign: "end", whiteSpace: "nowrap", padding: "8px 12px" }}>
+                      <td style={{ textAlign: "end", whiteSpace: "nowrap" }}>
                         {formatBytes(f.used_bytes + f.reserved_bytes, lang)}
                       </td>
-                      <td style={{ textAlign: "end", whiteSpace: "nowrap", padding: "8px 12px" }}>
+                      <td style={{ textAlign: "end", whiteSpace: "nowrap" }}>
                         {tp("storage.fileCount", f.used_files)}
                       </td>
                     </tr>
@@ -277,7 +277,7 @@ function StorageView() {
             <tbody>
               {rows.map((f) => (
                 <tr key={f.id}>
-                  <th scope="row" style={{ textAlign: "start", fontWeight: 500, padding: "8px 12px" }}>
+                  <th scope="row" style={{ textAlign: "start", fontWeight: 500 }}>
                     <bdi>{f.name}</bdi>
                     {f.in_trash && (
                       <span style={{ marginInlineStart: 8 }}>
@@ -285,11 +285,11 @@ function StorageView() {
                       </span>
                     )}
                   </th>
-                  <td style={{ padding: "8px 12px" }}>
+                  <td>
                     <bdi>{f.folder_name}</bdi>
                   </td>
-                  <td style={{ textAlign: "end", whiteSpace: "nowrap", padding: "8px 12px" }}>{formatBytes(f.size, lang)}</td>
-                  <td style={{ padding: "8px 12px" }}>
+                  <td style={{ textAlign: "end", whiteSpace: "nowrap" }}>{formatBytes(f.size, lang)}</td>
+                  <td>
                     <time dateTime={f.modified_at}>{formatDate(f.modified_at, lang)}</time>
                   </td>
                 </tr>

@@ -55,6 +55,21 @@ describe("LangSwitcher", () => {
     await waitFor(() => expect(window.localStorage.getItem("selfcloud.lang")).toBe("he"));
   });
 
+  // At phone width the top bar has no room for the language's name: the control is the icon, and its name stays "Language"
+  // (guard: the compact prop, which the top bar passes at phone width).
+  it("at phone width shows the icon only and keeps its accessible name", () => {
+    render(
+      <ThemeProvider>
+        <Direction>
+          <LangSwitcher compact />
+        </Direction>
+      </ThemeProvider>,
+    );
+    const control = screen.getByRole("button", { name: "Language" });
+    expect(control.getAttribute("data-testid")).toBe("language");
+    expect(control.textContent?.trim()).toBe("");
+  });
+
   // The choice is called directly here: reopening the menu in one test races the popup's closing animation.
   it("saves the choice to the account when signed in", async () => {
     session.set(signedIn());

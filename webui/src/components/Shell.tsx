@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { keepInView } from "./menuScroll";
 import { Alert as AntdAlert, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Space, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
 import { Clock, FolderOpen, House, Inbox, Share2, Star, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
@@ -194,6 +195,22 @@ export default function Shell({ children }: { children: ReactNode }) {
     setSettingsFor(null);
     setShellError(null);
   }, [sessionID]);
+  // The sidebar's menu scrolls inside the sider. When the address moves to a page below the fold, its item is brought into
+  // view inside the menu alone, so the page does not move.
+  useEffect(() => {
+    const follow = () => {
+      const menu = document.querySelector<HTMLElement>(".shell-sider .shell-menu");
+      const item = menu?.querySelector<HTMLElement>(".ant-menu-item-selected");
+      if (menu && item) keepInView(menu, item);
+    };
+    follow();
+    // The menu's height is settled by the sider's flex column after the first paint, so the scroll follows each resize of the box.
+    const menu = document.querySelector<HTMLElement>(".shell-sider .shell-menu");
+    if (!menu || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(follow);
+    observer.observe(menu);
+    return () => observer.disconnect();
+  }, [location.pathname, collapsed, isMobile]);
   useEffect(() => {
     if (admin) return;
     const stale = sessionChanged();
@@ -397,7 +414,7 @@ export default function Shell({ children }: { children: ReactNode }) {
           </a>
           {admin && <span style={{ color: token.colorTextSecondary, whiteSpace: "nowrap" }}>{t("admin.badge")}</span>}
           <Space size={isMobile ? 4 : "middle"} style={{ marginInlineStart: "auto" }}>
-            <LangSwitcher />
+            <LangSwitcher compact={isMobile} />
             {!isMobile && <ThemeToggle />}
             {me && (
               <Dropdown

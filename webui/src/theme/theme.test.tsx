@@ -41,6 +41,22 @@ describe("ThemeProvider", () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.documentElement.removeAttribute("data-theme");
+    document.documentElement.style.removeProperty("--link-colour");
+  });
+
+  // A plain link takes the antd colorLink token of the mode in effect (guard: the --link-colour write in ThemeProvider).
+  it.each([
+    ["light", LIGHT],
+    ["dark", DARK],
+  ] as const)("a plain link is painted in the %s link colour", (mode, palette) => {
+    window.localStorage.setItem("selfcloud.theme", mode);
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    const want = antdTokens(mode, palette, SIDEBAR).token!.colorLink as string;
+    expect(document.documentElement.style.getPropertyValue("--link-colour").toUpperCase()).toBe(want.toUpperCase());
   });
 
   it("starts on the system choice and writes the choice it is given", () => {

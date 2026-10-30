@@ -93,6 +93,31 @@ describe("a failed read", () => {
   });
 });
 
+describe("a row's usage and its actions", () => {
+  // A row whose usage cannot be read stops saying it is loading, and says so in a short line (guard: usageFailed).
+  it("a usage that fails shows a short failure text in its row, not the loading text", async () => {
+    stubFetch((c) => {
+      if (path(c).pathname === "/api/v1/accounts") return { status: 200, body: { items: [account()] } };
+      return fail(500, "internal", { text: "SERVER-SECRET-TEXT" });
+    });
+    renderPage();
+    const list = await screen.findByRole("list", { name: "Tenants" });
+    expect(await within(list).findByText("Usage could not be read.")).toBeTruthy();
+    expect(within(list).queryByText("Loading usage…")).toBeNull();
+    expect(document.body.textContent).not.toContain("SERVER-SECRET-TEXT");
+  });
+
+  // "Open" is a real link in the row's menu, so a middle click opens the tenant in a new tab (guard: an anchor, not a button).
+  it("Open in the row's menu is a link to the tenant", async () => {
+    stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [account()] } } : { status: 200, body: usage() }));
+    renderPage();
+    await screen.findByText("Acme Ltd");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Acme Ltd" }));
+    const open = await screen.findByRole("menuitem", { name: "Open" });
+    expect(open.querySelector("a")?.getAttribute("href")).toBe("/admin/tenants/acc_1");
+  });
+});
+
 describe("a change of person while a change is out", () => {
   it("the answer to a suspend that arrives after the person changed is not shown (guard: sessionChanged in confirmSuspend)", async () => {
     let release!: (a: { status: number; body?: unknown }) => void;
