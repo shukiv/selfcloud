@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it, vi } from 'vitest';
-import { get } from 'svelte/store';
+import { get } from '../store';
 import {
   canRequestFiles,
   cleanLine,

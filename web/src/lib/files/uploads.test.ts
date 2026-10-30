@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { get } from 'svelte/store';
+import { get } from '../store';
 import { headFingerprint, sha256Base64 } from './digest';
 
 // The upload manager reads window.localStorage and writes beforeunload, so the module is loaded after a

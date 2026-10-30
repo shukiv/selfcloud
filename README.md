@@ -30,10 +30,9 @@ cd web && npm run dev # Vite on :5173, forwarding /api and /brand to a server on
 ```
 
 Start the server (`./bin/selfcloud serve`) first. Set `SELFCLOUD_API` to point the dev server
-somewhere else. `npm run check` runs svelte-check, the source checks and the unit tests (the React
-interface in `webui/` has its own `npm run check`, with the TypeScript compiler in place of svelte-check);
-`make e2e` builds the binary and runs the browser smoke test. It needs Chrome or Chromium, found
-on `PATH` or named by `SELFCLOUD_E2E_BROWSER`.
+somewhere else. `npm run check` runs the TypeScript compiler, the source checks, the licence and key
+checks and the unit tests; `make e2e` builds the binary and runs the browser smoke test. It needs
+Chrome or Chromium, found on `PATH` or named by `SELFCLOUD_E2E_BROWSER`.
 
 Or with Docker:
 
@@ -98,7 +97,7 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `admin_key_file` | none | File holding an admin key to add on start. |
 | `ui.enabled` | `true` | Serve the web interface at `/`. With `false`, the API alone runs; `/` is the JSON 404. |
 | `ui.brand.name` | `Selfcloud` | Product name in the web interface and `/api/v1/info`. Up to 64 characters. |
-| `ui.brand.accent` | `#053D8E` | Primary colour, as `#rrggbb`. The React interface derives its accent family from it. |
+| `ui.brand.accent` | `#053D8E` | Primary colour, as `#rrggbb`. The web interface derives its accent family from it. |
 | `ui.brand.palette.light` / `.dark` | none | Colour tokens of each theme (`accent`, `accent_fill`, `accent_fill_hover`, `accent_fill_active`, `accent_text`, `accent_soft`, `accent_border`), each `#rrggbb`. Unset tokens keep the default. |
 | `ui.brand.sidebar` | none | Sidebar colours (`bg`, `text`, `caption`, `active`, `on_active`), each `#rrggbb`. Unset ones keep the default. |
 | `ui.brand.logo_file` | none | A PNG or SVG logo, at most 256 KiB, read at start and served at `/brand/logo`. Installation-wide only. |
@@ -109,12 +108,11 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 ```sh
 make check   # gofmt, go vet, tests with the race detector
 make web     # the web interface build (Node 22)
-make web-react  # the React web interface build (webui/); needed by build-react and e2e-react
 make e2e     # the browser smoke test (needs Chrome or Chromium)
-cd web && npm run check   # svelte-check, source checks, unit tests
+cd web && npm run check   # TypeScript, source checks, licence and key checks, unit tests
 ```
 
-CI runs `npm run check` and `npm run build` in `web/` and in `webui/`, then the Go checks.
+CI runs `npm run check` and `npm run build` in `web/`, then the Go checks.
 
 The upload benchmark pushes 1 GiB through the resumable-upload routes in 64 MiB pieces and reports
 MB/s. It writes about 1 GiB to a temporary directory, so point `TMPDIR` at a disk with room:
@@ -125,10 +123,9 @@ TMPDIR=/path/with/space go test ./internal/api -run '^$' -bench BenchmarkUpload 
 
 ## Dependency licences
 
-Code that reaches the browser (runtime packages, and the browser runtime of Svelte, all of which go
-into `web/dist/`, or the packages of the React interface, into `webui/dist/`) must be MIT, ISC, BSD or
-OFL. Build-time packages may also be Apache-2.0, MPL-2.0, MIT-0, CC0-1.0 or BlueOak-1.0.0 (test-runner
-packages only; none of them reaches the browser). `npm run check` in `web/` and in `webui/`
+Code that reaches the browser (the runtime packages of the web interface, which go into `web/dist/`)
+must be MIT, ISC, BSD or OFL. Build-time packages may also be Apache-2.0, MPL-2.0, MIT-0, CC0-1.0 or
+BlueOak-1.0.0 (test-runner packages only; none of them reaches the browser). `npm run check` in `web/`
 enforces this by reading each package's licence from `node_modules`.
 
 ## Licence

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ApiError } from './apiError';
-import { safeNext } from './next';
+import { afterSignIn } from './next';
+import type { User } from './types';
 
 // tokenFromFragment reads the sign-in token from a URL fragment such as "#token=...". It returns ""
 // when there is none.
@@ -16,9 +17,9 @@ export function looksLikeToken(s: string): boolean {
 }
 
 // signInTarget is the page a sign-in opens: the path the server gave, checked again here, or the
-// home page of files when that path is not usable or is the root.
-export function signInTarget(next: string | null | undefined): string {
-  const path = safeNext(next ?? '');
+// home page of files when that path is not usable or is the root. An admin's root is its own home.
+export function signInTarget(next: string | null | undefined, user?: User): string {
+  const path = afterSignIn(next ?? '', user);
   return path === '/' ? '/files' : path;
 }
 

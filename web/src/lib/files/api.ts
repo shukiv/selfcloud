@@ -2,6 +2,8 @@
 
 // The file routes the browser calls. Each returns what the server answers, or throws an ApiError.
 import { api, ApiError } from '../api';
+import { get } from '../store';
+import { session } from '../session';
 import type { Page, FolderAccess, Job, Node, SignedLink, TrashItem, Version } from './types';
 
 // Every list is read in pages of this size.
@@ -24,7 +26,14 @@ async function listAll<T>(path: string, maxPages = 40): Promise<T[]> {
 
 // myFolders reads the team spaces the caller reaches, and its personal folder. Hidden spaces are left out,
 // unless hidden asks for only those.
-export function myFolders(hidden = false): Promise<FolderAccess[]> {
+// needSession refuses a read that would go out with no session: one still running when the person signed out.
+// The server would answer 401 to it, and nothing is wanted from it.
+function needSession(): void {
+  if (get(session) === null) throw new ApiError(0, 'signed_out', {}, 0);
+}
+
+export async function myFolders(hidden = false): Promise<FolderAccess[]> {
+  needSession();
   return listAll<FolderAccess>(hidden ? '/api/v1/folders?hidden=true' : '/api/v1/folders');
 }
 
@@ -33,13 +42,15 @@ export function getMe(): Promise<{ personal_folder_id: string | null }> {
 }
 
 // childrenPage reads one page of a directory's children. A null dir reads the folder's root.
-export function childrenPage(folder: string, dir: string | null, cursor?: string): Promise<Page<Node>> {
+export async function childrenPage(folder: string, dir: string | null, cursor?: string): Promise<Page<Node>> {
+  needSession();
   const c = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
   if (dir) return api<Page<Node>>('GET', `/api/v1/nodes/${dir}/children?limit=${PAGE}${c}`);
   return api<Page<Node>>('GET', `/api/v1/folders/${folder}/children?path=%2F&limit=${PAGE}${c}`);
 }
 
-export function statNode(nod: string): Promise<Node> {
+export async function statNode(nod: string): Promise<Node> {
+  needSession();
   return api<Node>('GET', `/api/v1/nodes/${nod}`);
 }
 

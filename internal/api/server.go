@@ -28,6 +28,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/sweep"
 	"github.com/shukiv/selfcloud/internal/web"
 	"github.com/shukiv/selfcloud/internal/webhook"
+	webassets "github.com/shukiv/selfcloud/web"
 )
 
 // sweepInterval is how often housekeeping runs: blob removal, expired sessions and tokens.
@@ -307,8 +308,7 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	if cfg.UI.Enabled {
-		files, styles := uiAssets()
-		if s.ui, err = web.New(files, web.Options{ContentURL: cfg.ContentURL, Styles: styles}); err != nil {
+		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}
 	}

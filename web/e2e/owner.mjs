@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The owner, member and installation admin checks of the React build (parts v4). Their check texts are the Svelte
-// build's (web/e2e/run.mjs), word for word, so the two PASS lists agree. The helpers of run.mjs come in as h, with the
-// mail sink and waitForMail. Selectors follow the React DOM: antd alerts (.ant-alert), the Modal of Recent's Clear
-// confirmation (.ant-modal), and the ids the pages keep from Svelte.
+// The owner, member and installation admin checks (part v4). Their check texts are those of the Svelte suite this
+// one replaced, word for word, so the PASS lists before and after the flip agree. The helpers of run.mjs come in as h,
+// with the mail sink and waitForMail. Selectors follow the React DOM: antd alerts (.ant-alert), the Modal of Recent's
+// Clear confirmation (.ant-modal), and the ids the pages keep from Svelte.
 
 const q = (v) => JSON.stringify(v);
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;

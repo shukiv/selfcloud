@@ -1,8 +1,8 @@
 # Selfcloud design system (master)
 
 > When building a page, check `design-system/selfcloud/pages/<page>.md` first. Its rules
-> override this file; otherwise this file applies. The pages' token names are the Svelte build's
-> (`--color-*`) until the flip; read them through the table below.
+> override this file; otherwise this file applies. Where a page names a colour token, it means the
+> token of the table below (`page` is the ground that the Svelte build called `--color-background`).
 
 Generated with the ui-ux-pro-max skill on 2026-10-28 (category: File Manager & Transfer; dials:
 variance 3, motion 3, density 7), then corrected for this product. Each correction is marked
@@ -21,7 +21,7 @@ variance 3, motion 3, density 7), then corrected for this product. Each correcti
 
 ## Colour tokens
 
-The React interface (`webui/src/theme/tokens.ts`) is the source. Components take their colours from
+The web interface (`web/src/theme/tokens.ts`) is the source. Components take their colours from
 the Ant Design token set that the theme builds from these values, or from the palette hook; nothing
 paints a raw hex value. Light and dark sets share names. The theme follows the device unless the
 user chose one (key `selfcloud.theme`).
@@ -55,9 +55,8 @@ user chose one (key `selfcloud.theme`).
 
 ## Typography
 
-**Changed:** the React interface uses the system font stack. The
-self-hosted Inter and Noto faces stay in the Svelte build until the flip (decision 25), then go.
-Arabic and Hebrew text falls back to the system's own faces.
+**Changed:** the interface uses the system font stack and ships no font files (decision 25). Arabic
+and Hebrew text falls back to the system's own faces.
 
 ```css
 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
@@ -115,7 +114,7 @@ right-to-left match.
   (both right to left).
 - The language comes from `?lang=` on the link, then the user's `locale`, then
   `Accept-Language`, then English. Changing it in the picker saves it with `PATCH /me`.
-- Strings live in `webui/src/i18n/<code>.json`, one flat catalogue per language with the same
+- Strings live in `web/src/i18n/<code>.json`, one flat catalogue per language with the same
   keys. A missing key shows the English text; a test fails if any key is missing from any
   catalogue, or a placeholder differs between languages. Plural keys end in `_one`, `_two`,
   `_few`, `_many`, `_other` and `_zero`, as i18next expects.
@@ -168,7 +167,7 @@ in on scroll. Use the components' own transitions (Ant Design's motion), and not
 - Physical left/right in CSS or style objects; un-isolated user text in mixed-direction pages.
 - Third-party requests of any kind: fonts, icons, analytics, CDNs.
 - Inline `<style>`, inline `style` attributes set as text, inline script, `dangerouslySetInnerHTML`:
-  the content policy blocks them, and the React build's source check refuses them.
+  the content policy blocks them, and the build's source check refuses them.
 - Layout shift on hover; spinners for more than 1s without saying what is happening.
 
 ## Pre-delivery checklist

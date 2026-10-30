@@ -12,19 +12,17 @@ import (
 	"testing"
 )
 
-// catalogueSet is one source tree's catalogues: the Svelte build's, which keeps "x.one" plural keys,
-// and the React build's, which keeps "x_one" (i18next's form). Both are checked until the flip, when
-// the Svelte one goes.
+// catalogueSet is one source tree's catalogues. The web interface keeps "x_one" plural keys, i18next's
+// form.
 type catalogueSet struct {
 	name string
 	dir  string
-	// sep joins a plural key to its category: "." in the Svelte catalogues, "_" in the React ones.
+	// sep joins a plural key to its category: "_".
 	sep string
 }
 
 var catalogueSets = []catalogueSet{
-	{name: "svelte", dir: "../../web/src/i18n", sep: "."},
-	{name: "react", dir: "../../webui/src/i18n", sep: "_"},
+	{name: "web", dir: "../../web/src/i18n", sep: "_"},
 }
 
 var languages = []string{"en", "es", "fr", "pt", "ru", "ar", "he"}

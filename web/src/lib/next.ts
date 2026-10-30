@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { homeFor } from './routes';
+import type { User } from './types';
+
 const ORIGIN = 'http://selfcloud.invalid';
+const SIGN_IN_PATH = '/login';
 const MAX_LENGTH = 2048;
 
 // safeNext returns the path a sign-in should go to. Only a path on this site is accepted: it starts
@@ -23,4 +27,18 @@ export function safeNext(raw: string | null | undefined): string {
   } catch {
     return '/';
   }
+}
+
+// afterSignIn is where a signed-in person goes from a sign-in page: safeNext, except that a path
+// back to the sign-in page goes home. Without this, /login?next=/login sends a signed-in person to
+// the sign-in page again, and then home only because the second hop has no next. Home is the
+// person's own home (homeFor): an admin's is the tenants list. The sign-in goes there in one step;
+// going to "/" first and letting the gate send an admin on was a second navigation that could be
+// lost, and the page stayed blank (v4a).
+export function afterSignIn(raw: string | null | undefined, user?: User): string {
+  const path = safeNext(raw);
+  // Only the sign-in page itself (with a query or a trailing slash): /login-help is an ordinary path.
+  const onSignIn = path === SIGN_IN_PATH || path.startsWith(SIGN_IN_PATH + '?') || path.startsWith(SIGN_IN_PATH + '/');
+  if (onSignIn) return homeFor(user);
+  return path === '/' ? homeFor(user) : path;
 }

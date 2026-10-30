@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/shukiv/selfcloud/internal/version.Version=$(VERSION)
 
-.PHONY: build web test check docker e2e web-react build-react e2e-react
+.PHONY: build web test check docker e2e
 
 # The web interface is built first: the Go build embeds web/dist.
 build: web
@@ -10,14 +10,6 @@ build: web
 # Only the web interface. Needs Node 22 and npm. Writes web/dist, which the Go build embeds.
 web:
 	cd web && npm ci && npm run build
-
-# The React web interface (webui/), built beside the Svelte one until the flip. The Go build with
-# the reactui tag embeds webui/dist.
-web-react:
-	cd webui && npm ci && npm run build
-
-build-react: web-react
-	CGO_ENABLED=0 go build -tags reactui -trimpath -ldflags "$(LDFLAGS)" -o bin/selfcloud-react ./cmd/selfcloud
 
 test:
 	go test ./...
@@ -36,7 +28,3 @@ docker:
 # SELFCLOUD_E2E_BROWSER.
 e2e: build
 	cd web && node e2e/run.mjs
-
-# The same smoke test against the React build. It needs the same browser as e2e.
-e2e-react: build-react
-	cd webui && SELFCLOUD_BIN=$(CURDIR)/bin/selfcloud-react node e2e/run.mjs

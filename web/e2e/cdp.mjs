@@ -55,7 +55,8 @@ export async function launchBrowser(binary, profileDir) {
 }
 
 // Page is one tab. It records what the policy tests need: console errors, uncaught exceptions,
-// security-policy log entries, and every request's URL.
+// security-policy log entries, and every request's URL. Every violation of the content policy,
+// enforced or report-only, is recorded as an error, so a run with one fails.
 export class Page {
   constructor(wsUrl) {
     this.ws = new WebSocket(wsUrl);
@@ -64,22 +65,12 @@ export class Page {
     this.listeners = new Map();
     this.errors = [];
     this.requests = [];
-    // sent records each request's method and URL, so the test can count the pieces of an upload.
+    // sent records each request's method and URL, so a test can count the pieces of an upload.
     this.sent = [];
-    // expectedConflicts lists the upload creations answered 409 on purpose (a name taken).
-    this.expectedConflicts = [];
-    // expectedMissing lists the node lookups answered 404 on purpose (a node the caller cannot reach).
-    this.expectedMissing = [];
-    // expectedQuotaRefusals lists the upload creations answered 507 on purpose (a person over its own limit).
-    this.expectedQuotaRefusals = [];
-    // expectedDeadLinks lists the share link opens answered 404 on purpose (a link that no longer works).
-    this.expectedDeadLinks = [];
-    // expectedPasswordRefusals lists the share link opens answered 401 on purpose: a password asked for, or a wrong one.
-    this.expectedPasswordRefusals = [];
-    // expectedSignInRefusals lists the sign-in link redeems answered 400 on purpose (a used link).
-    this.expectedSignInRefusals = [];
-    // expectedSwitchPrompts lists the sign-in link redeems answered 409 on purpose (a browser signed in as another user).
-    this.expectedSwitchPrompts = [];
+    // expectedAnswers maps a name the run chose to the URLs of the failed requests it caused on
+    // purpose (for example a 401 for a wrong password). The browser logs each failed request; the
+    // run counts these and checks that they came from the step it ran.
+    this.expectedAnswers = new Map();
     this.opened = new Promise((resolve, reject) => {
       this.ws.onopen = resolve;
       this.ws.onerror = () => reject(new Error('cannot open the page socket'));
@@ -110,7 +101,9 @@ export class Page {
     return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
   }
 
-  async start() {
+  // start takes the answers the run expects: each is { name, matches(entry) }. A failed request that
+  // matches is counted under name in expectedAnswers and is not reported as an error.
+  async start(expected = []) {
     await this.opened;
     this.on('Runtime.exceptionThrown', (p) => {
       this.errors.push(`uncaught: ${p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text}`);
@@ -120,69 +113,15 @@ export class Page {
     });
     this.on('Log.entryAdded', (p) => {
       if (p.entry.level !== 'error') return;
-      // The start-up check asks GET /api/v1/me before anyone signs in, and the server answers 401.
-      // The browser logs every failed request, so that one expected answer is not counted.
-      const expectedProbe =
-        p.entry.source === 'network' && /\/api\/v1\/me$/.test(p.entry.url ?? '') && /status of 401/.test(p.entry.text);
-      // An upload whose name is taken is answered 409, and the browser logs it. The interface asks what to do
-      // then, so the test counts these answers and checks that there is exactly the one it caused.
-      const expectedConflict =
-        p.entry.source === 'network' && /\/api\/v1\/uploads$/.test(p.entry.url ?? '') && /status of 409/.test(p.entry.text);
-      if (expectedConflict) {
-        this.expectedConflicts.push(p.entry.url);
-        return;
-      }
-      // An upload that would take a person over its own limit is answered 507, and the browser logs it. The
-      // interface shows the refusal, so the test counts these answers and checks that they came from that upload.
-      const expectedQuotaRefusal =
-        p.entry.source === 'network' && /\/api\/v1\/uploads$/.test(p.entry.url ?? '') && /status of 507/.test(p.entry.text);
-      if (expectedQuotaRefusal) {
-        this.expectedQuotaRefusals.push(p.entry.url);
-        return;
-      }
-      // A node the caller cannot reach answers 404, and the browser logs it. The not-found view asks for access
-      // then, so the test counts these answers and checks that they came from the views it opened.
-      const expectedMissing =
-        p.entry.source === 'network' && /\/api\/v1\/nodes\/[a-z0-9_]+$/.test(p.entry.url ?? '') && /status of 404/.test(p.entry.text);
-      if (expectedMissing) {
-        this.expectedMissing.push(p.entry.url);
-        return;
-      }
-      // A share link that no longer works is answered 404 when it is opened, and the browser logs it. The page shows
-      // the one message a dead link gets, so the test counts these answers and checks that they came from that page.
-      const expectedDeadLink =
-        p.entry.source === 'network' && /\/api\/v1\/share\/open$/.test(p.entry.url ?? '') && /status of 404/.test(p.entry.text);
-      if (expectedDeadLink) {
-        this.expectedDeadLinks.push(p.entry.url);
-        return;
-      }
-      // A link that anyone can open asks for its password, and a wrong one is refused; the browser logs both 401s.
-      // The page shows the form, and the message for a wrong password, so the test counts these answers.
-      const expectedPasswordRefusal =
-        p.entry.source === 'network' && /\/api\/v1\/share\/open$/.test(p.entry.url ?? '') && /status of 401/.test(p.entry.text);
-      if (expectedPasswordRefusal) {
-        this.expectedPasswordRefusals.push(p.entry.url);
-        return;
-      }
-      // A sign-in link used a second time is answered 400, and the browser logs it. The page shows the expired
-      // message then, so the test counts this answer and checks that it came from the second visit.
-      const expectedSignInRefusal =
-        p.entry.source === 'network' && /\/api\/v1\/auth\/sign-in-link$/.test(p.entry.url ?? '') && /status of 400/.test(p.entry.text);
-      if (expectedSignInRefusal) {
-        this.expectedSignInRefusals.push(p.entry.url);
-        return;
-      }
-      // A browser signed in as another user is asked before a link switches it, and the browser logs the 409.
-      // The page shows the question then, so the test counts these answers.
-      const expectedSwitchPrompt =
-        p.entry.source === 'network' && /\/api\/v1\/auth\/sign-in-link$/.test(p.entry.url ?? '') && /status of 409/.test(p.entry.text);
-      if (expectedSwitchPrompt) {
-        this.expectedSwitchPrompts.push(p.entry.url);
+      const hit = expected.find(({ matches }) => matches(p.entry));
+      if (hit) {
+        const list = this.expectedAnswers.get(hit.name) ?? [];
+        this.expectedAnswers.set(hit.name, [...list, p.entry.url]);
         return;
       }
       // The last requests before the error show what the page was doing when it happened.
       const before = this.sent.slice(-4).map((r) => `${r.method} ${r.url.replace(/^https?:\/\/[^/]+/, '')}`).join(' ; ');
-      if (!expectedProbe) this.errors.push(`log(${p.entry.source}): ${p.entry.text} ${p.entry.url ?? ''} [after: ${before}]`);
+      this.errors.push(`log(${p.entry.source}): ${p.entry.text} ${p.entry.url ?? ''} [after: ${before}]`);
     });
     this.on('Network.requestWillBeSent', (p) => {
       this.requests.push(p.request.url);
@@ -193,6 +132,14 @@ export class Page {
     await this.send('Network.enable');
     await this.send('Page.enable');
     await this.send('DOM.enable');
+    // Every page this tab loads reports its content-policy violations as console errors, which the
+    // run then counts. Both the enforced and the report-only policy are covered: a report-only
+    // violation is still a gap to close before the flip.
+    await this.send('Page.addScriptToEvaluateOnNewDocument', {
+      source:
+        "document.addEventListener('securitypolicyviolation', (e) => console.error(" +
+        "'content policy violation (' + (e.disposition || 'enforce') + '): ' + e.violatedDirective + ' ' + e.blockedURI + ' at ' + e.sourceFile + ':' + e.lineNumber + ':' + e.columnNumber));",
+    });
   }
 
   // setFiles puts files into the file input the selector names, as a person would pick them.
@@ -206,6 +153,34 @@ export class Page {
     }
     if (!nodeId) throw new Error(`no file input for ${selector}`);
     await this.send('DOM.setFileInputFiles', { nodeId, files });
+  }
+
+  // setInput types a value into a React-controlled input. React ignores a plain `el.value =`
+  // assignment, so the value goes in through the native setter, and an input event follows.
+  async setInput(selector, value) {
+    await this.evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error('no element for ' + ${JSON.stringify(selector)});
+      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)});
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+  }
+
+  // pickOption opens the antd Select that the selector names and clicks the option with the text.
+  async pickOption(selector, text) {
+    await this.evaluate(`(() => {
+      const root = document.querySelector(${JSON.stringify(selector)});
+      if (!root) throw new Error('no select for ' + ${JSON.stringify(selector)});
+      root.querySelector('.ant-select-selector')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    })()`);
+    await this.waitFor(
+      `[...document.querySelectorAll('.ant-select-item-option')].some((o) => o.textContent.trim() === ${JSON.stringify(text)})`,
+    );
+    await this.evaluate(`(() => {
+      const option = [...document.querySelectorAll('.ant-select-item-option')].find((o) => o.textContent.trim() === ${JSON.stringify(text)});
+      option.click();
+    })()`);
   }
 
   async goto(url) {

@@ -33,12 +33,12 @@ function node(over: Partial<Node> & { id: string; name: string }): Node {
 
 describe('format', () => {
   it('names sizes with decimal units and the language of the interface', () => {
-    expect(formatBytes(0, 'en')).toBe('0 byte');
+    expect(formatBytes(0, 'en')).toBe('0 bytes');
     expect(formatBytes(1500, 'en')).toMatch(/1\.5\s*kB/i);
     expect(formatBytes(2_500_000_000, 'en')).toMatch(/2\.5\s*GB/);
     // The decimal separator follows the language: French writes 2,5.
     expect(formatBytes(2_500_000_000, 'fr')).toMatch(/2,5/);
-    expect(formatBytes(-5, 'en')).toBe('0 byte');
+    expect(formatBytes(-5, 'en')).toBe('0 bytes');
   });
 
   it('formats dates in the language, and an unparsable date as empty', () => {

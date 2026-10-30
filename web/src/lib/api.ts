@@ -2,7 +2,7 @@
 
 import { ApiError } from './apiError';
 import { clearSession, currentCsrf, session, sessionKey, signingOut } from './session';
-import { get } from 'svelte/store';
+import { get } from './store';
 import { go, signInURL } from './router';
 
 export { ApiError } from './apiError';

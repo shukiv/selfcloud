@@ -39,29 +39,15 @@ const notBuiltPage = `<!doctype html>
 var reserved = []string{"/api", "/wopi", "/brand", "/metrics", "/healthz", "/readyz"}
 
 // cspNoncePlaceholder is the text the build writes where the nonce goes: the Vite option
-// html.cspNonce in the web interfaces' vite.config.ts sets it, in the page's meta tag and on its
+// html.cspNonce in the web interface's vite.config.ts sets it, in the page's meta tag and on its
 // script and link tags. The server replaces every occurrence with a fresh nonce per response.
 const cspNoncePlaceholder = "__SELFCLOUD_CSP_NONCE__"
-
-// StyleMode says how the style rule of the HTML page is sent.
-type StyleMode int
-
-const (
-	// StylesReport enforces the policy as it has always been, and sends the nonce policy as
-	// Content-Security-Policy-Report-Only: the browser reports what the nonce policy would refuse.
-	StylesReport StyleMode = iota
-	// StylesEnforce enforces the nonce policy on the HTML page. An index.html without the
-	// placeholder is an error, because it comes from a build that predates the nonce.
-	StylesEnforce
-)
 
 // Options configure a Handler.
 type Options struct {
 	// ContentURL is content_url, or empty. Its origin is allowed for images, video, audio and frames,
 	// because file previews load from it.
 	ContentURL string
-	// Styles says how the page's style rule is sent. The zero value is StylesReport.
-	Styles StyleMode
 }
 
 // Handler serves the built files of the web interface.
@@ -69,14 +55,14 @@ type Handler struct {
 	files fs.FS
 	// origins are the extra sources of the policy (the content origin), or empty.
 	origins string
-	styles  StyleMode
 	// index is index.html split at the nonce placeholder, or nil when the build has none. Joining
 	// the parts with a nonce gives the page for that response.
 	index []string
 }
 
 // New returns a handler for files. The build's index.html is served at "/" and for client routes.
-// A build without one (dist/ holds only its .gitignore) serves the not-built page instead.
+// A build without one (dist/ holds only its .gitignore) serves the not-built page instead. An index
+// without the nonce placeholder comes from a stale build, and is refused.
 func New(files fs.FS, opts Options) (*Handler, error) {
 	origins := ""
 	if opts.ContentURL != "" {
@@ -86,22 +72,20 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		}
 		origins = " " + u.Scheme + "://" + u.Host
 	}
-	h := &Handler{files: files, origins: origins, styles: opts.Styles}
+	h := &Handler{files: files, origins: origins}
 	data, err := fs.ReadFile(files, "index.html")
 	if err == nil {
 		parts := strings.Split(string(data), cspNoncePlaceholder)
-		switch {
-		case len(parts) > 1:
-			h.index = parts
-		case opts.Styles == StylesEnforce:
+		if len(parts) == 1 {
 			return nil, errors.New("web: index.html has no CSP nonce placeholder; rebuild the web interface")
 		}
+		h.index = parts
 	}
 	return h, nil
 }
 
-// policy returns the content policy. With no nonce it is the policy the interface has always sent;
-// with one, style-src also allows the inline styles that carry that nonce.
+// policy returns the content policy. With no nonce it is the policy for assets and the not-built
+// page; with one, style-src also allows the inline styles that carry that nonce.
 func (h *Handler) policy(nonce string) string {
 	style := "'self'"
 	if nonce != "" {
@@ -211,9 +195,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data = []byte(strings.Join(h.index, nonce))
-		h.setPagePolicy(hd, nonce)
+		hd.Set("Content-Security-Policy", h.policy(nonce))
 	} else {
-		// Any other file, a build without a placeholder, and the not-built page: the plain policy.
+		// Any other file and the not-built page: the policy with no nonce.
 		hd.Set("Content-Security-Policy", h.policy(""))
 	}
 	hd.Set("Content-Type", contentType(name))
@@ -222,17 +206,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Header.Del("Range")
 	}
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
-}
-
-// setPagePolicy sends the nonce policy: enforced under StylesEnforce; under StylesReport the plain
-// policy is enforced and the nonce policy is reported only.
-func (h *Handler) setPagePolicy(hd http.Header, nonce string) {
-	if h.styles == StylesEnforce {
-		hd.Set("Content-Security-Policy", h.policy(nonce))
-		return
-	}
-	hd.Set("Content-Security-Policy", h.policy(""))
-	hd.Set("Content-Security-Policy-Report-Only", h.policy(nonce))
 }
 
 // nonceReader is the random source of nonces. Tests replace it to make the source fail.

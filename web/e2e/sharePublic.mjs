@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The anyone-link, drop-link and link checks of the React build (sharing interface, part v3). The check texts are the
-// same as in web/e2e/run.mjs, word for word, so the two PASS lists agree for this part. The helpers of run.mjs are
+// The anyone-link, drop-link and link checks (sharing interface, part v3). The check texts are those of the Svelte
+// suite, word for word, so the PASS lists before and after the flip agree for this part. The helpers of run.mjs are
 // passed in as h (h.check, h.api, h.signIn, h.signOut, h.navigateTo, h.setInput, h.OWNER, h.MEMBER, and the rest).
 // Selectors follow the React DOM: antd alerts (.ant-alert), the share dialog's ids and names, and the visitor page's
 // classes (.rows, .crumbs, .public-preview, .dropzone).

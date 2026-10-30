@@ -1,17 +1,101 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Fails when the source breaks the rules of the design system and of the strict content policy:
-// physical left and right in layout, raw HTML injection, and inline style attributes (which the
-// policy blocks). Run by npm run check.
+// Fails when the source breaks the design rules or the strict content policy: physical left and
+// right in layout, raw HTML injection, element style attributes, inline script or style, the antd
+// options that need an inline style, icon imports from the wrong package, and reading error
+// messages (the interface shows codes, never server text). Run by npm run check.
 import { readdir, readFile } from 'node:fs/promises';
 import { join, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const root = fileURLToPath(new URL('../src/', import.meta.url));
 
-// Physical properties and values. The leading group keeps "copyright:" and "data-left:" from matching.
-const physical = /(margin|padding|border)-(left|right)\b|(^|[^\w-])(left|right)\s*:|text-align:\s*(left|right)\b/;
-const rawHTML = /\{@html\b|\binnerHTML\b|\bouterHTML\b|\binsertAdjacentHTML\b|\bdocument\.write\b/;
-const inlineStyle = /(^|\s)style\s*=\s*["{]/;
+const rules = [
+  // Physical properties, in CSS and in style objects. Logical ones: insetInlineStart, marginInlineEnd.
+  [/(margin|padding|border)-(left|right)\b|(^|[^\w-])(left|right)\s*:|text-align:\s*(left|right)\b/, 'physical left/right in CSS; use a logical property'],
+  [/\b(margin|padding|border)(Left|Right)\b|\btextAlign\s*:\s*['"](left|right)['"]/, 'physical left/right in a style object; use a logical property'],
+  [/<style[\s>]|<style\s*$/, 'JSX <style> element; put the rule in a stylesheet'],
+  [/dangerouslySetInnerHTML|\binnerHTML\b|\bouterHTML\b|\binsertAdjacentHTML\b|\bdocument\.write\b/, 'raw HTML injection is not allowed'],
+  [/setAttribute\(\s*['"](style|on[a-z]*)['"]/, 'setting a style or event attribute is not allowed'],
+  [/setAttributeNS\([^)]*['"](style|on[a-z]*)['"]/, 'setting a style or event attribute is not allowed'],
+  [/\bautoSize\b|\bWatermark\b/, 'antd autoSize and Watermark write style attributes, which the policy blocks'],
+  [/from\s+['"]@ant-design\/icons(\/[^'"]*)?['"]/, 'import icons from lucide-react, not @ant-design/icons'],
+  [/(?<![\w.])(err|error|e)\.message\b/, 'read an error code, never the server text'],
+];
+
+// The antd statics (message, notification, Modal.confirm and the rest) render outside the app's
+// ConfigProvider, so they get no nonce and no theme. The app uses App.useApp() for them.
+const antdStatics = 'the antd static API renders outside the theme and the nonce; use App.useApp()';
+const staticModals = new Set(['confirm', 'info', 'success', 'error', 'warning']);
+// Every dialog and drawer in the source keeps maskClosable={false}: a click outside a dialog must never answer it
+// (a form, a secret, or a question about the session). The one named exception is the navigation drawer in Shell.tsx,
+// which only lists destinations and closes on a click.
+const maskExempt = { file: 'components/Shell.tsx', tag: 'Drawer' };
+
+// The native controls the antd ones replace. A test may name them; the shipped code may not use them.
+const NATIVE_TAGS = new Set(['select', 'option', 'details', 'summary']);
+const NATIVE_INPUT_TYPES = new Set(['radio', 'checkbox']);
+
+// astProblems finds what a line rule cannot: a .message read anywhere in a catch clause (whatever the
+// variable is called) or in a .catch callback, and the antd statics.
+function astProblems(name, text) {
+  const kind = name.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, kind);
+  const at = (node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+  const out = [];
+  const staticNames = new Set();
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !st.importClause) continue;
+    const spec = st.moduleSpecifier.text;
+    if (spec !== 'antd' || !st.importClause.namedBindings || !ts.isNamedImports(st.importClause.namedBindings)) continue;
+    for (const el of st.importClause.namedBindings.elements) {
+      if (el.name.text === 'message' || el.name.text === 'notification') {
+        staticNames.add(el.name.text);
+        out.push([at(st), antdStatics]);
+      }
+    }
+  }
+  // A click on the mask behind a file dialog must not answer it: Svelte's dialogs closed on Escape only.
+  const visit = (node, inCatch) => {
+    if (ts.isCatchClause(node)) inCatch = true;
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText(sf);
+      if ((tag === 'Modal' || tag === 'Drawer') && !(name === maskExempt.file && tag === maskExempt.tag)) {
+        const attrs = node.attributes.properties;
+        const kept = attrs.some((a) => ts.isJsxAttribute(a) && a.name.text === 'maskClosable' && a.initializer && ts.isJsxExpression(a.initializer) && a.initializer.expression?.kind === ts.SyntaxKind.FalseKeyword);
+        if (!kept) out.push([at(node), `<${tag}> needs maskClosable={false}`]);
+      }
+    }
+    // A native form control, disclosure or option list is not styled by the theme and does not match antd's look. The
+    // interface uses the antd controls (Select, Radio.Group, Checkbox, Collapse); a native date input is the one exception.
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText(sf);
+      if (NATIVE_TAGS.has(tag)) out.push([at(node), `native <${tag}>; use the antd control (Select, Radio.Group, Checkbox, Collapse)`]);
+      if (tag === 'input') {
+        for (const a of node.attributes.properties) {
+          if (ts.isJsxAttribute(a) && a.name.text === 'type' && a.initializer && ts.isStringLiteral(a.initializer) && NATIVE_INPUT_TYPES.has(a.initializer.text)) {
+            out.push([at(node), `native <input type="${a.initializer.text}">; use the antd Radio or Checkbox`]);
+          }
+        }
+      }
+    }
+    if (ts.isPropertyAccessExpression(node)) {
+      if (node.name.text === 'message' && inCatch) out.push([at(node), 'read an error code, never the server text']);
+      if (ts.isIdentifier(node.expression) && node.expression.text === 'Modal' && staticModals.has(node.name.text)) {
+        out.push([at(node), antdStatics]);
+      }
+      if (ts.isIdentifier(node.expression) && staticNames.has(node.expression.text)) out.push([at(node), antdStatics]);
+    }
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'catch') {
+      for (const arg of node.arguments) {
+        if ((ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) && arg.body) visit(arg.body, true);
+      }
+    }
+    ts.forEachChild(node, (child) => visit(child, inCatch));
+  };
+  visit(sf, false);
+  return out;
+}
 
 async function files(dir) {
   const out = [];
@@ -26,16 +110,19 @@ async function files(dir) {
 const problems = [];
 for (const path of await files(root)) {
   const ext = extname(path);
-  if (!['.svelte', '.ts', '.css'].includes(ext)) continue;
+  if (!['.ts', '.tsx', '.css'].includes(ext)) continue;
   const name = relative(root, path);
+  // Tests may name the forms they refuse; the rules below apply to the code that ships.
+  const testing = /\.test\.tsx?$/.test(name);
   const lines = (await readFile(path, 'utf8')).split('\n');
+  if (!testing && ext !== '.css') {
+    for (const [line, why] of astProblems(name, lines.join('\n'))) problems.push(`${name}:${line}: ${why}`);
+  }
   lines.forEach((line, i) => {
-    const where = `${name}:${i + 1}`;
-    if (physical.test(line)) problems.push(`${where}: physical left/right; use a logical property`);
-    if (rawHTML.test(line)) problems.push(`${where}: raw HTML injection is not allowed`);
-    if (ext === '.svelte' && inlineStyle.test(line)) {
-      problems.push(`${where}: inline style attribute; the content policy blocks it`);
+    for (const [re, why] of rules) {
+      if (re.test(line)) problems.push(`${name}:${i + 1}: ${why}`);
     }
+    if (!testing && /javascript:/i.test(line)) problems.push(`${name}:${i + 1}: javascript: URL`);
   });
 }
 

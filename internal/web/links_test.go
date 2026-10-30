@@ -14,9 +14,9 @@ import (
 
 // TestDefaultMailLinksOpenAPage: the verification and reset links that mails carry by default must
 // land on a page the web interface has, or a user who clicks one sees "not found". The client
-// routes are read from the router in web/src/App.svelte.
+// routes are read from the router in web/src/App.tsx.
 func TestDefaultMailLinksOpenAPage(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "App.svelte"))
+	src, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "App.tsx"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestDefaultMailLinksOpenAPage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if !strings.Contains(string(src), "case '"+u.Path+"':") {
+		if !strings.Contains(string(src), `case "`+u.Path+`":`) {
 			t.Errorf("%s link %q opens %s, which the web interface has no page for", name, tmpl, u.Path)
 		}
 		if u.RawQuery != "" || !strings.HasPrefix(u.Fragment, "token=") {

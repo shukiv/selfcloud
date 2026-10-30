@@ -1,7 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, expect, it } from 'vitest';
-import { directionOf, matchLang, translate, translatePlural } from './i18n';
+import { beforeAll, describe, expect, it } from 'vitest';
+import {
+  chooseLang,
+  directionOf,
+  loadLang,
+  LANGUAGES,
+  matchLang,
+  setLang,
+  translate,
+  translatePlural,
+} from './i18n';
+
+beforeAll(async () => {
+  for (const l of LANGUAGES) await loadLang(l);
+});
 
 describe('matchLang', () => {
   it('takes an exact tag, then its base language', () => {
@@ -74,5 +87,26 @@ describe('translatePlural', () => {
   it('fills the count, and the English singular', () => {
     expect(translatePlural('en', 'error.rateLimited', 1)).toBe('Too many attempts. Try again in 1 minute.');
     expect(translatePlural('en', 'error.rateLimited', 3)).toBe('Too many attempts. Try again in 3 minutes.');
+  });
+});
+
+describe('chooseLang', () => {
+  it('takes the query first, then the person, then the saved choice, then the browser', () => {
+    expect(chooseLang({ query: 'fr', userLocale: 'he', saved: 'ru', browser: ['es'] })).toBe('fr');
+    expect(chooseLang({ query: null, userLocale: 'he', saved: 'ru', browser: ['es'] })).toBe('he');
+    expect(chooseLang({ saved: 'ru', browser: ['es'] })).toBe('ru');
+    expect(chooseLang({ browser: ['xx', 'pt-BR'] })).toBe('pt');
+    expect(chooseLang({})).toBe('en');
+  });
+});
+
+describe('setLang', () => {
+  it('loads the language, then sets the document direction and language', async () => {
+    await setLang('he');
+    expect(document.documentElement.lang).toBe('he');
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(translate('he', 'login.submit')).toBe('התחברו');
+    await setLang('en');
+    expect(document.documentElement.dir).toBe('ltr');
   });
 });

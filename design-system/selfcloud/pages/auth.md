@@ -6,7 +6,7 @@ Overrides `MASTER.md` for the pages a person sees before they are signed in. API
 
 ## Layout
 
-- No app shell. One centred panel, max-width 400px, on `--color-background`; the operator's logo
+- No app shell. One centred panel, max-width 400px, on the `page` colour token; the operator's logo
   and product name above it, a language picker and a theme toggle below it.
 - At < 768px the panel fills the width with a 16px gutter and no border.
 - Every page has one `<h1>` and one primary button. Enter submits.

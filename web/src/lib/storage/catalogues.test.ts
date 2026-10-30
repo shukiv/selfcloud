@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, expect, it } from 'vitest';
-import { LANGUAGES, translate, translatePlural, type Lang } from '../i18n';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { loadLang, LANGUAGES, translate, translatePlural, type Lang } from '../i18n';
 import en from '../../i18n/en.json';
 import es from '../../i18n/es.json';
 import fr from '../../i18n/fr.json';
@@ -9,6 +9,10 @@ import pt from '../../i18n/pt.json';
 import ru from '../../i18n/ru.json';
 import ar from '../../i18n/ar.json';
 import he from '../../i18n/he.json';
+
+beforeAll(async () => {
+  for (const l of LANGUAGES) await loadLang(l);
+});
 
 const CATALOGUES: Record<Lang, Record<string, string>> = { en, es, fr, pt, ru, ar, he };
 
@@ -35,7 +39,7 @@ describe('storage catalogues', () => {
     for (const l of LANGUAGES) {
       for (const k of KEYS) expect(CATALOGUES[l][k], `${l} ${k}`).toBeTypeOf('string');
       for (const c of PLURAL_CATEGORIES) {
-        expect(CATALOGUES[l][`storage.fileCount.${c}`], `${l} fileCount.${c}`).toBeTypeOf('string');
+        expect(CATALOGUES[l][`storage.fileCount_${c}`], `${l} fileCount_${c}`).toBeTypeOf('string');
       }
     }
   });

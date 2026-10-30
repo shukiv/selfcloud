@@ -55,7 +55,7 @@ HTTP (net/http, Go 1.22+ routing patterns)
 The web interface is a client of the public API like any other; it has no private endpoints.
 
 **Repository layout** (*proposed*): `cmd/selfcloud`, `internal/{config,store,blob,auth,api,tus,mail,webhook,wopi,audit,web}`,
-`web/` (UI source in Svelte 5 with Vite; `web/embed.go` embeds the built files, since Go's `embed` cannot
+`web/` (UI source in React 18 with Vite; `web/embed.go` embeds the built files, since Go's `embed` cannot
 reach outside a package's directory; `internal/web` serves them), `api/openapi.yaml`, `client/` (Go
 client, its own module), `docs/`.
 
@@ -1356,14 +1356,16 @@ the README gives a Docker Compose example of the two together.
 and password set-up, password reset, TOTP set-up, the file browser (upload with progress and resume,
 download, preview of images, PDF, video and text, new folder, rename, move, copy, delete, text
 editing, opening in the office editor), and owner screens for users, folders and grants. Light, dark
-and follow-the-system themes. It works at phone width. The stack is TypeScript, Svelte 5 and Vite
-(`web/`). Node is needed only to build it. The web interface is built in four parts: **k1**
-(foundation and the auth pages), **k2** (file browser), **k3** (sharing) and **k4** (admin pages).
+and follow-the-system themes. It works at phone width. The stack is TypeScript, React 18 with Ant Design 5,
+React Router 7 and Vite (`web/`), since the flip (decision 25). Node is needed only to build it. The first
+interface was built in four Svelte parts: **k1** (foundation and the auth pages), **k2** (file browser),
+**k3** (sharing) and **k4** (admin pages). Slice v rebuilt it in React, and the Svelte app was removed at the flip.
 
-*React interface (slice v).* A second interface is built beside the Svelte one, in `webui/`, with React 18,
-Ant Design 5 and React Router 7 (decision 25). It is selected by the `reactui` build tag (`internal/api/ui_assets_reactui.go`),
-so the default binary still embeds `web/dist`. Until the flip at the end of slice v the two share the server's
-routes, headers and branding; the React build enforces the nonce policy and the Svelte build reports it. Part v1 holds
+*React interface (slice v).* The React interface was built beside the Svelte one, in `webui/`, with React 18,
+Ant Design 5 and React Router 7 (decision 25), and was selected by the `reactui` build tag until the flip. Until
+the flip the two shared the server's routes, headers and branding; the React build enforced the nonce policy and
+the Svelte build reported it. After the flip (slice v4b) the React tree is `web/`, the only interface; the
+paragraphs of slices v1 to v4a name `webui/` as it was then. Part v1 holds
 the theme, the branding (`ui.brand.palette`, `ui.brand.sidebar`, which `/api/v1/info` returns when they are set), the
 nonce, the languages, the app gate, the shell and the auth pages; each other route shows a "not yet" page in the shell.
 
@@ -1462,7 +1464,7 @@ reports how many failed.
 *Sharing (k3).* The sharing interface is built on the sharing model of section 8. Nothing here
 adds a rule: the server checks every change, and the screens only show what the caller's role allows.
 
-- **Share dialog** (`web/src/components/share/ShareDialog.svelte`). Opened from the selection bar
+- **Share dialog** (`web/src/components/share/ShareDialog.tsx`). Opened from the selection bar
   ("Share") and the details panel ("Share", where the caller may share, and "Who has access"). It
   lists the permissions from `GET /nodes/{nod}/permissions`: the name (or "You"), the email or group,
   the role, "from <name>" when the ancestor it sits on is readable (else "from a parent folder"), the
@@ -1542,8 +1544,8 @@ request waits, so a manager who is not an owner sees it after a request arrives,
 does that first and then the Go build, which embeds `web/dist` (`web/embed.go`, `internal/web`).
 Only `web/dist/.gitignore` is committed; `web/dist/` is otherwise build output and is not tracked. `embed.go`
 embeds `all:dist`, so the Go build compiles with no Node at all, but serves no interface until `make web` has run.
-CI runs `npm ci`, `npm run check` (svelte-check with no errors or warnings, a source check and the
-unit tests) and `npm run build` (which checks the built files) before the Go steps, so the Go tests
+CI runs `npm ci`, `npm run check` (the TypeScript compiler with no errors, the source, licence and key checks,
+and the unit tests) and `npm run build` (which checks the built files) before the Go steps, so the Go tests
 run against the real build. The Dockerfile has a Node stage whose `dist/` is copied into the Go stage.
 `make e2e` runs the browser smoke test (section 10, *Smoke test*).
 
@@ -1552,15 +1554,16 @@ run against the real build. The Dockerfile has a Node stage whose `dist/` is cop
 it. An unmatched API path still gets the JSON 404: the web interface never answers under `/api/`.
 A name that starts with a dot is never served. Hashed files under `assets/` get
 `Cache-Control: public, max-age=31536000, immutable`; `index.html` and the fallback get
-`Cache-Control: no-store`. Every UI response carries a strict policy:
+`Cache-Control: no-store`. Every UI response is enforced under a strict policy, and no option turns it off or
+reports it (decision 25). The HTML page's `style-src` carries a fresh nonce per response, `'self' 'nonce-<n>'`,
+which the build writes on its style and meta tags. Every other UI response carries:
 `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self';
 connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`, with
 the origin of `content_url` added to `img-src` and `frame-src` when it is set. Also `nosniff`,
 `Referrer-Policy: same-origin` and `X-Frame-Options: DENY`. These headers are set only on UI responses;
 content, link and API responses keep their own policies (section 9). The build emits no inline script
-or style: CSS is in files, and the module preload polyfill, an inline script, is off. Fonts are
-self-hosted (`@fontsource-variable`, OFL licence texts in `web/public/licenses`), so no request leaves
-the origin.
+or style: CSS is in files, and the module preload polyfill, an inline script, is off. The interface ships
+no font files: it uses the system font stack (decision 25), so no request leaves the origin.
 
 *Branding.* Installation-wide only: `ui.brand.name` (default `Selfcloud`), `ui.brand.accent` (a colour as
 `#rrggbb`, default `#2563EB`) and `ui.brand.logo_file` (a PNG or SVG, read at start, at most 256 KiB).
@@ -1839,8 +1842,8 @@ Each slice ships with tests and leaves the server runnable.
 | v2 | React file browser: Files, NodeLink and Trash, the `files/*` components, uploads, undo | Built |
 | v3 | React sharing interface: Shared, Requests, OpenLink, the public browse and drop pages, the share dialog and its parts, hidden spaces and space settings | Built |
 | v4a | React rest: Home, Starred, Recent, Storage, the owner pages (Manage) and the installation admin pages (Admin) | Built |
-| v4b | The flip: removes the Svelte app and moves `webui/` to `web/` | Planned |
-| p3 | Shortcuts, folder colours and descriptions (decision 24). The Go part is built, with migration 0019 (the `nodes` rebuild); the pages follow in React after the `webui/` to `web/` rename | Built (Go part) |
+| v4b | The flip: removes the Svelte app, moves `webui/` to `web/` (the only interface), drops the `reactui` tag and the report-only mode so the nonce policy is enforced for everyone, and drops the self-hosted fonts for the system stack | Built |
+| p3 | Shortcuts, folder colours and descriptions (decision 24). The Go part is built, with migration 0019 (the `nodes` rebuild); the pages follow in React | Built (Go part) |
 | p4 | Labels: typed fields the owner defines | Planned |
 | p5 | The OpenAPI file, the design record and a security review of slice p | Planned |
 | pg | PostgreSQL as an option for the metadata store (decision 7). It lands before q, whose full-text search gains from it | Planned |
@@ -1933,7 +1936,8 @@ Decided on approval:
 22. **Web interface** (2026-10-29): Svelte 5 SPA in `web/`, embedded with `go:embed` (through `web/embed.go`);
     built in four parts, k1 to k4; strict CSP with no inline code; errors shown by code, never the server's
     text; installation branding only (`ui.brand`), per-tenant branding later. *Amended 2026-10-30 by decision 25:
-    the Svelte build stays until the flip at the end of slice v, and its policy is reported, not enforced, for the nonce.*
+    the Svelte build stayed until the flip at the end of slice v, and its policy was reported, not enforced, for the nonce.
+    Replaced at the flip (slice v4b) by decision 25: the Svelte app is removed.*
 23. **Share links, slice o** (2026-10-29, owner's decisions, which override the proposal where they differ):
     - Anyone links grant viewer only (commenter comes with slice r).
     - Anyone links must expire: 30 days by default, 365 at most. Organisation links may have no end date,
@@ -2230,8 +2234,8 @@ Decided on approval:
     - The look is the default one: a blue sidebar with a yellow active pill, radius 4, and the palette in `webui/src/theme/tokens.ts`. The
       default accent is `#053D8E`. Branding overrides named tokens (`ui.brand.palette` and `ui.brand.sidebar`), and
       the accent alone derives the rest of the family.
-    - Fonts: the system stack. The self-hosted Inter and Noto faces stay in the Svelte
-      build until the flip, then go.
+    - Fonts: the system stack. The self-hosted Inter and Noto faces stayed in the Svelte
+      build until the flip, when they went with it.
     - Strict CSP with a per-request nonce. The page carries a nonce in its meta tag and on its script and link tags;
       the policy's `style-src` allows that nonce. The Svelte build reports this policy as
       `Content-Security-Policy-Report-Only` and enforces today's policy. The React build enforces it from its first
@@ -2308,6 +2312,23 @@ Decided on approval:
         sign-in (v4a, found by the e2e suite). Svelte has the same two steps but no role-specific home.
       - An installation admin does not read the requests count, which the server refuses for an admin (403). Svelte
         skips the read for admins too.
+    - *Slice v4b, the flip (done; the flip steps above are now the state of the tree).*
+      - The Svelte app is removed. `webui/` is `web/`, and its Go package is `web` (`web/embed.go`). The `reactui`
+        build tag and `internal/api/ui_assets.go` and `ui_assets_reactui.go` are gone; `internal/api/server.go`
+        embeds `web/dist` directly.
+      - One content policy: enforced for every installation, with a fresh nonce on the HTML page. `web.Options` has no
+        style option, `StyleMode` and the `Content-Security-Policy-Report-Only` header are gone, and `web.New` refuses an
+        index without the nonce placeholder (a stale build). No config key chose the mode.
+      - Fonts: the system stack only. The Inter and Noto faces and their OFL licence texts went with the Svelte tree. OFL
+        stays in the licence rule's allowed list for code that may ship later; no font ships now.
+      - Makefile: `make web`, `make build` and `make e2e` drive the one interface; `web-react`, `build-react` and
+        `e2e-react` are gone. CI runs one web job (check and build) and the Go steps.
+      - The e2e suite is the React one, now in `web/e2e`. Its 136 checks are unchanged; only comments moved. Every
+        Svelte check description is in it when parenthetical values are ignored. The accent check writes its value as
+        `rgb(...)` in the React suite, where the Svelte one wrote the hex colour.
+      - For review: `web/scripts/convert-catalogues.mjs`, the one-shot conversion of the Svelte catalogues, is deleted.
+        Comments in components and tests that say "as Svelte does" are kept as the record of the behaviour they match.
+        The paragraphs of slices k1 to v4a still describe the Svelte app and the `webui/` paths of their time.
 26. **Webhook endpoints, slice j1** (2026-10-30, the owner approved slice j's proposal with every recommendation (a)).
     Decisions and interpretations:
     - **Rotation and the old secret: decided.** The old secret stays valid for 24 hours, as the approved proposal

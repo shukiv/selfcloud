@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The share dialog's end-to-end checks for the React interface: sharingChecks and publicLinksDeleteAllChecks.
-// Each check description is the one web/e2e/run.mjs gives, word for word, so the two PASS lists match for this part.
+// Each check description is the one the Svelte suite gave, word for word, so the PASS lists match for this part.
 // The helpers take the page and the run's own values through ctx, so this file does not depend on run.mjs.
 // ctx: { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail, fld }
-// page.base must be the server's address, as the webui run sets it for signIn.
+// page.base must be the server's address, as run.mjs sets it for signIn.
 
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -64,7 +64,7 @@ async function navigateTo(page, path) {
   );
 }
 
-// signOut and signIn use the account menu the React shell draws (data-testid), as the webui e2e suite does.
+// signOut and signIn use the account menu the React shell draws (data-testid), as the e2e suite does.
 async function signOut(page) {
   // A signed-out visitor on a public page has no account menu: the shell is opened first, through a link click
   // (as run.mjs does). A visitor who is not signed in has nothing to sign out of.
