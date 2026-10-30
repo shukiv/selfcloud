@@ -39,6 +39,17 @@ export default defineConfig({
     assetsInlineLimit: 0,
     // The module preload polyfill is an inline script, which the policy forbids.
     modulePreload: { polyfill: false },
+    // The library core (React, the router, the query client, i18next) goes into one vendor chunk, so the chunk
+    // that holds the antd pieces both the shell and the lazy pages use stays under the 120 KB budget (decision 25).
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@remix-run|@tanstack|i18next|react-i18next)[\\/]/.test(id)) return "vendor";
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     proxy: {

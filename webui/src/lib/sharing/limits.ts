@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { writable } from '../store';
+import { userWritable } from '../store';
 
 // maxExpiryDays is the longest a share may run, in whole days, from GET /info. 0 means no cap.
-export const maxExpiryDays = writable(0);
+export const maxExpiryDays = userWritable(0);
 
 // expiryLimit is the latest date a share may end on, counted from now, or null when there is no cap.
 export function expiryLimit(days: number, now: Date): Date | null {

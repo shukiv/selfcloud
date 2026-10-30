@@ -7,7 +7,8 @@
 //
 // Run with make e2e-react, which builds the binary with the reactui tag and the interface first.
 import { execFile, spawn } from 'node:child_process';
-import { access, constants, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, constants, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +42,16 @@ const EXPECTED = [
     name: 'used sign-in link',
     matches: (e) =>
       e.source === 'network' && /\/api\/v1\/auth\/sign-in-link$/.test(e.url ?? '') && /status of 400\b/.test(e.text ?? ''),
+  },
+  // The upload that meets a taken name is refused once, and asked about; the connection the run drops is refused
+  // by the browser while it is down.
+  {
+    name: 'taken name',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/uploads$/.test(e.url ?? '') && /status of 409\b/.test(e.text ?? ''),
+  },
+  {
+    name: 'dropped connection',
+    matches: (e) => e.source === 'network' && /ERR_INTERNET_DISCONNECTED/.test(e.text ?? ''),
   },
 ];
 
@@ -122,6 +133,249 @@ async function signOut(page) {
   await page.waitFor(`location.pathname === '/login' && !!document.getElementById('login-email')`, 15000);
 }
 
+// rawPut uploads a small file as the account key, for setup the browser does not do.
+async function rawPut(base, path, key, body, type = 'text/plain') {
+  const res = await fetch(base + path, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': type },
+    body,
+  });
+  if (!res.ok) throw new Error(`POST ${path}: ${res.status} ${await res.text()}`);
+}
+
+// rowSel selects the listing row of the item with this name.
+const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
+
+// clickMenu clicks the sidebar entry with exactly this text, once it is on the page.
+async function clickMenu(page, text) {
+  await page.waitFor(
+    `(() => { const i = [...document.querySelectorAll('[role="menuitem"]')].find((x) => x.textContent.trim() === ${q(text)}); if (!i) return false; i.click(); return true; })()`,
+    10000,
+  );
+}
+
+// clickButton clicks the enabled button whose text is exactly text, once it is on the page.
+async function clickButton(page, text) {
+  await page.waitFor(
+    `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`,
+    10000,
+  );
+}
+
+// rowAppears and rowGone wait for a row of the listing.
+async function rowAppears(page, name, timeout = 15000) {
+  await page.waitFor(`!!document.querySelector(${q(rowSel(name))})`, timeout);
+}
+
+async function rowGone(page, name, timeout = 15000) {
+  await page.waitFor(`!document.querySelector(${q(rowSel(name))})`, timeout);
+}
+
+// selectRow clicks a row and moves focus to it, as a person would.
+async function selectRow(page, name) {
+  await rowAppears(page, name);
+  await page.evaluate(`(() => { const el = document.querySelector(${q(rowSel(name))}); el.focus(); el.click(); return true; })()`);
+}
+
+// openRow opens a folder or a preview by double click.
+async function openRow(page, name) {
+  await rowAppears(page, name);
+  await page.evaluate(`document.querySelector(${q(rowSel(name))}).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })), true`);
+}
+
+// press sends a key to the element the selector names, as the page's own key handlers see it.
+async function press(page, selector, key) {
+  await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); el.focus(); el.dispatchEvent(new KeyboardEvent('keydown', { key: ${q(key)}, bubbles: true })); return true; })()`);
+}
+
+// buttonTexts lists the text of every button on the page.
+async function buttonTexts(page) {
+  return page.evaluate(`[...document.querySelectorAll('button')].map((b) => b.textContent.trim())`);
+}
+
+// sizeCell reads the size column of a row: the check box is the first cell, the name the second.
+const sizeCell = (name) => `document.querySelector(${q(rowSel(name))}).querySelectorAll('td')[2].textContent.trim()`;
+
+// chooseLanguage picks a language from the language menu of the top bar.
+async function chooseLanguage(page, name) {
+  await clickOn(page, '[data-testid="language"]');
+  await clickText(page, '.ant-dropdown-menu-item', name);
+}
+
+// fileBrowserChecks is the file browser's end-to-end path, as the member signed in. Its check descriptions are the
+// Svelte build's (web/e2e/run.mjs), word for word, so the two PASS lists match for this part.
+async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
+  const small = join(dir, 'hello.txt');
+  const bigPath = join(dir, 'big.bin');
+  // The replacement has the same name as the file it replaces, in a folder of its own.
+  await mkdir(join(dir, 'second'), { recursive: true });
+  const replacement = join(dir, 'second', 'hello.txt');
+  const png = join(dir, 'pic.png');
+  await writeFile(small, 'hello from the e2e\n');
+  await writeFile(replacement, 'a second version, longer than the first one\n');
+  await writeFile(bigPath, randomBytes(3 * 1024 * 1024));
+  await writeFile(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64'));
+  const UPLOAD = '[role="toolbar"] input[type="file"]:not([webkitdirectory])';
+
+  // The language is English for this part.
+  await chooseLanguage(page, 'English');
+  await page.waitFor(`document.documentElement.lang === 'en'`);
+
+  // My files opens the personal folder; then Team A, where the member can edit.
+  await clickMenu(page, 'My files');
+  await page.waitFor(`/^\\/files\\/fld_/.test(location.pathname)`);
+  check(true, 'My files opens the personal folder');
+  await clickMenu(page, 'Team A');
+  await page.waitFor(`location.pathname === '/files/${teamA}'`);
+  await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Team A' && [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Upload files')`);
+  const buttons = await buttonTexts(page);
+  check(buttons.includes('New folder') && buttons.includes('Upload files'), `an editor sees New folder and Upload files (${JSON.stringify(buttons)})`);
+
+  // New folder, with the server's name checks.
+  await clickButton(page, 'New folder');
+  await page.waitFor(`!!document.getElementById('newfolder-name')`);
+  await page.setInput('#newfolder-name', 'Reports');
+  await page.evaluate(`document.querySelector('#newfolder-name').form.requestSubmit(), true`);
+  await rowAppears(page, 'Reports');
+  check(true, 'a new folder is created and listed');
+
+  // Open it. Upload a small file, then the 3 MiB file, which must go up in pieces.
+  await openRow(page, 'Reports');
+  await page.waitFor(`location.pathname.split('/').length === 4`);
+  await page.setFiles(UPLOAD, [small]);
+  await rowAppears(page, 'hello.txt');
+  check(true, 'a small file uploads and is listed');
+
+  const before = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length;
+  await page.setFiles(UPLOAD, [bigPath]);
+  await rowAppears(page, 'big.bin', 30000);
+  const pieces = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length - before;
+  check(pieces >= 3, `the 3 MiB file went up in ${pieces} pieces of 1 MiB`);
+
+  // Rename, then undo the rename.
+  await selectRow(page, 'hello.txt');
+  await press(page, rowSel('hello.txt'), 'F2');
+  await page.waitFor(`!!document.querySelector('input.rename')`);
+  await page.setInput('input.rename', 'greeting.txt');
+  await press(page, 'input.rename', 'Enter');
+  await rowAppears(page, 'greeting.txt');
+  check(true, 'rename works');
+  await clickButton(page, 'Undo');
+  await rowAppears(page, 'hello.txt');
+  await rowGone(page, 'greeting.txt');
+  check(true, 'undo puts the name back');
+
+  // Delete, then undo the delete.
+  await selectRow(page, 'hello.txt');
+  await press(page, rowSel('hello.txt'), 'Delete');
+  await clickButton(page, 'Move to trash');
+  await rowGone(page, 'hello.txt');
+  await clickButton(page, 'Undo');
+  await rowAppears(page, 'hello.txt');
+  check(true, 'delete goes to the trash and undo brings it back');
+
+  // Delete again, then restore from the trash.
+  await selectRow(page, 'hello.txt');
+  await press(page, rowSel('hello.txt'), 'Delete');
+  await clickButton(page, 'Move to trash');
+  await rowGone(page, 'hello.txt');
+  await clickMenu(page, 'Trash');
+  await page.waitFor(`location.pathname === '/trash' && [...document.querySelectorAll('.trash-item .name')].some((n) => n.textContent.includes('hello.txt'))`);
+  await page.evaluate(`(() => { const item = [...document.querySelectorAll('.trash-item')].find((li) => li.textContent.includes('hello.txt')); [...item.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Restore').click(); return true; })()`);
+  await page.waitFor(`document.querySelector('.ant-alert-success') && document.querySelector('.ant-alert-success').textContent.includes('hello.txt')`);
+  check(true, 'the trash restores a deleted file');
+  await page.evaluate(`history.back(), true`);
+  await page.waitFor(`location.pathname === '/files/${teamA}/' + location.pathname.split('/')[3]`);
+  await rowAppears(page, 'hello.txt');
+
+  // Replace the content by uploading under the same name: the batch question says replace, and the old
+  // content is kept as a version.
+  await selectRow(page, 'hello.txt');
+  await page.evaluate(`(window.__oldSize = ${sizeCell('hello.txt')}, true)`);
+  await page.setFiles(UPLOAD, [replacement]);
+  await clickButton(page, 'Replace it');
+  await page.waitFor(`(() => { const r = document.querySelector(${q(rowSel('hello.txt'))}); return !!r && ${sizeCell('hello.txt')} !== window.__oldSize; })()`, 20000);
+  check(true, 'an upload with replace replaces the content');
+
+  // Versions: the old content is listed, and restoring it makes it current again.
+  await selectRow(page, 'hello.txt');
+  await clickButton(page, 'Versions');
+  await page.waitFor(`document.querySelectorAll('[data-testid="version"]').length >= 2`);
+  await clickButton(page, 'Restore this version');
+  await page.waitFor(`document.body.textContent.includes('Restored.')`);
+  await page.waitFor(`(() => { const r = document.querySelector(${q(rowSel('hello.txt'))}); return !!r && ${sizeCell('hello.txt')} === window.__oldSize; })()`, 20000);
+  check(true, 'restoring an earlier version makes it current again');
+  // The drawer's own X is the only close control (Versions has no footer button).
+  await page.waitFor(`(() => { const b = document.querySelector('[data-testid="versions"] .ant-drawer-close'); if (!b) return false; b.click(); return true; })()`, 10000);
+  await page.waitFor(`!document.querySelector('[data-testid="versions"]')`);
+
+  // An image opens in the preview, loaded from a short signed link.
+  await page.setFiles(UPLOAD, [png]);
+  await rowAppears(page, 'pic.png');
+  await selectRow(page, 'pic.png');
+  await press(page, rowSel('pic.png'), 'Enter');
+  await page.waitFor(`(() => { const i = document.querySelector('[data-testid="preview"] img'); return !!i && i.complete && i.naturalWidth > 0; })()`, 15000);
+  check(true, 'an image opens in the preview');
+  await clickButton(page, 'Close');
+  await page.waitFor(`!document.querySelector('[data-testid="preview"]')`);
+
+  // Hebrew: the list turns right to left and the actions are translated.
+  await chooseLanguage(page, 'עברית');
+  await page.waitFor(`document.documentElement.dir === 'rtl' && [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'העלו קבצים')`);
+  const rtlRows = await page.evaluate(`!!document.querySelector('.ant-table') && getComputedStyle(document.querySelector('.ant-table')).direction === 'rtl' || document.documentElement.dir === 'rtl'`);
+  check(rtlRows, 'in Hebrew the list is right to left and the actions are translated');
+  await chooseLanguage(page, 'English');
+  await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Upload files')`);
+
+  // A viewer of Team B: no rename, no delete, no upload.
+  await clickMenu(page, 'Team B');
+  await page.waitFor(`location.pathname === '/files/${teamB}'`);
+  await rowAppears(page, 'readme.txt');
+  await selectRow(page, 'readme.txt');
+  const viewer = await buttonTexts(page);
+  for (const hidden of ['New folder', 'Upload files', 'Upload folder', 'Rename', 'Delete']) {
+    check(!viewer.includes(hidden), `a viewer of Team B has no ${hidden}`);
+  }
+  check(viewer.includes('Download'), 'a viewer of Team B can download');
+}
+
+// fileBrowserExtraChecks covers what the Svelte suite does not: a connection that drops in the middle of an upload,
+// starring from the listing, and the listing at phone width. Its descriptions are the React suite's own.
+async function fileBrowserExtraChecks(page, { dir, teamA }) {
+  const UPLOAD = '[role="toolbar"] input[type="file"]:not([webkitdirectory])';
+  const resumable = join(dir, 'resume.bin');
+  await writeFile(resumable, randomBytes(3 * 1024 * 1024));
+  await clickMenu(page, 'Team A');
+  await page.waitFor(`location.pathname === '/files/${teamA}' && !!document.querySelector('[role="toolbar"]')`);
+  const sentBefore = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length;
+  await page.setFiles(UPLOAD, [resumable]);
+  // The connection drops once the first piece has gone up, and comes back a moment later.
+  for (let i = 0; i < 300 && page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length <= sentBefore; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
+  await new Promise((r) => setTimeout(r, 1500));
+  await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  // The tray reports the failure; Retry sends the rest of the file from the offset the server has, not from the start.
+  await page.waitFor(`document.querySelector('[data-testid="upload-tray"]')?.innerText.includes('resume.bin failed to upload.')`, 60000);
+  const beforeRetry = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length;
+  await clickButton(page, 'Retry');
+  await rowAppears(page, 'resume.bin', 60000);
+  const afterRetry = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length - beforeRetry;
+  check(afterRetry >= 1 && afterRetry <= 2, `an interrupted upload resumes and finishes, sending ${afterRetry} of its 3 pieces after the retry`);
+
+  await page.waitFor(`!!document.querySelector(${q(rowSel('Reports'))})`);
+  await page.evaluate(`(() => { const b = document.querySelector(${q(rowSel('Reports'))}).querySelector('button[aria-pressed]'); b.click(); return true; })()`);
+  await page.waitFor(`document.querySelector(${q(rowSel('Reports'))}).querySelector('button[aria-pressed]').getAttribute('aria-pressed') === 'true'`, 10000);
+  check(true, 'a file can be starred from the listing');
+
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+  await page.waitFor(`document.querySelectorAll('.ant-table-thead th').length === 3`, 10000);
+  const overflow = await page.evaluate(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
+  check(overflow <= 0, `at phone width the listing keeps the name and the size, and the page does not scroll sideways (overflow ${overflow}px)`);
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+}
+
 // menuTexts lists the entries of the sidebar menu, open or in the drawer.
 const menuTexts = (page) => page.evaluate(`[...document.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent.trim())`);
 
@@ -141,6 +395,10 @@ async function main() {
       'rate_limit:',
       '  per_ip_per_minute: 1000',
       '  per_email_per_minute: 1000',
+      // Pieces are 1 MiB, so the 3 MiB file below must go up in several requests. The temporary directory
+      // may be small, so the free-space floor is kept low (the default is 1 GiB).
+      'upload:',
+      '  max_chunk_size: "1MiB"',
       'storage:',
       '  min_free: "1MiB"',
       'ui:',
@@ -187,6 +445,10 @@ async function main() {
     }
     const teamA = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'Team A' })).id;
     await api(base, 'PUT', `/api/v1/accounts/${accountID}/folders/${teamA}/grants/${memberID}`, accountKey, { level: 'write' });
+    // Team B: the member only reads it, and it holds one file.
+    const teamB = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'Team B' })).id;
+    await api(base, 'PUT', `/api/v1/accounts/${accountID}/folders/${teamB}/grants/${memberID}`, accountKey, { level: 'read' });
+    await rawPut(base, `/api/v1/folders/${teamB}/files?path=%2Freadme.txt`, accountKey, 'read me\n');
 
     const launched = await launchBrowser(await findBrowser(), join(dir, 'chrome-profile'));
     browser = launched.proc;
@@ -253,7 +515,9 @@ async function main() {
     await signIn(page, MEMBER);
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
-    await page.goto(base + '/files');
+    await fileBrowserChecks(page, { base, dir, teamA, teamB });
+    await fileBrowserExtraChecks(page, { dir, teamA });
+    await page.goto(base + '/storage');
     await page.waitFor(`document.body.textContent.includes('Coming soon')`);
     check(true, 'a page not built yet shows its placeholder inside the shell');
 
@@ -281,6 +545,8 @@ async function main() {
     // Policy: no console error and no content-policy violation (the nonce policy is enforced here),
     // and no request to another origin.
     check(page.errors.length === 0, `no console errors or policy violations (${page.errors.join(' | ') || 'none'})`);
+    check(page.expectedAnswers.get('taken name')?.length === 1, 'exactly one upload met a taken name, and was asked about it');
+    check(page.expectedAnswers.get('dropped connection')?.length >= 1, 'the connection the run dropped was refused while it was down, and counted');
     check(page.expectedAnswers.get('start-up probe')?.length >= 1, 'the start-up probe of an anonymous visitor was refused, and counted');
     check(page.expectedAnswers.get('used sign-in link')?.length === 1, 'the used sign-in link was refused once, on the second visit');
     const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:'));

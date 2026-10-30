@@ -27,6 +27,8 @@ const rules = [
 // ConfigProvider, so they get no nonce and no theme. The app uses App.useApp() for them.
 const antdStatics = 'the antd static API renders outside the theme and the nonce; use App.useApp()';
 const staticModals = new Set(['confirm', 'info', 'success', 'error', 'warning']);
+// The file-browser views: their dialogs and drawers keep maskClosable={false}.
+const fileDialogScope = /^(components\/files\/|pages\/(Files|Trash|NodeLink)Page\.tsx$)/;
 
 // astProblems finds what a line rule cannot: a .message read anywhere in a catch clause (whatever the
 // variable is called) or in a .catch callback, and the antd statics.
@@ -47,8 +49,18 @@ function astProblems(name, text) {
       }
     }
   }
+  // A click on the mask behind a file dialog must not answer it: Svelte's dialogs closed on Escape only.
+  const fileScope = fileDialogScope.test(name);
   const visit = (node, inCatch) => {
     if (ts.isCatchClause(node)) inCatch = true;
+    if (fileScope && (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))) {
+      const tag = node.tagName.getText(sf);
+      if (tag === 'Modal' || tag === 'Drawer') {
+        const attrs = node.attributes.properties;
+        const kept = attrs.some((a) => ts.isJsxAttribute(a) && a.name.text === 'maskClosable' && a.initializer && ts.isJsxExpression(a.initializer) && a.initializer.expression?.kind === ts.SyntaxKind.FalseKeyword);
+        if (!kept) out.push([at(node), `<${tag}> in a file-browser view needs maskClosable={false}`]);
+      }
+    }
     if (ts.isPropertyAccessExpression(node)) {
       if (node.name.text === 'message' && inCatch) out.push([at(node), 'read an error code, never the server text']);
       if (ts.isIdentifier(node.expression) && node.expression.text === 'Modal' && staticModals.has(node.name.text)) {

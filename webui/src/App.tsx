@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { Spin, ConfigProvider } from "antd";
 import type { Locale } from "antd/es/locale";
@@ -25,6 +25,11 @@ import VerifyPage from "./pages/VerifyPage";
 import SignInPage from "./pages/SignInPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import NotFoundPage from "./pages/NotFoundPage";
+
+// Pages beyond the shell and the auth pages load on first use, so the first load of sign-in stays small.
+const FilesPage = lazy(() => import("./pages/FilesPage"));
+const NodeLinkPage = lazy(() => import("./pages/NodeLinkPage"));
+const TrashPage = lazy(() => import("./pages/TrashPage"));
 
 // The views are the address's pages, read the way the Svelte build reads them, so both interfaces
 // agree on what an address means.
@@ -82,6 +87,15 @@ function interceptLinks(event: MouseEvent) {
   if (url.hash && url.pathname === window.location.pathname) return;
   event.preventDefault();
   go(url.pathname + url.search + url.hash);
+}
+
+function PageLoading() {
+  const { t } = useT();
+  return (
+    <div role="status" style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
+      <Spin tip={t("app.loading")} />
+    </div>
+  );
 }
 
 function Loading() {
@@ -186,7 +200,11 @@ export function Gate() {
   if (path === "/" && isAdmin(me.user)) {
     return <Navigate to={homeFor(me.user)} replace />;
   }
-  return <Shell>{signedPage(view, path, me.user)}</Shell>;
+  return (
+    <Shell>
+      <Suspense fallback={<PageLoading />}>{signedPage(view, path, me.user)}</Suspense>
+    </Shell>
+  );
 }
 
 // signedPage is the page inside the shell. The pages not built yet show their placeholder, and an
@@ -195,6 +213,9 @@ function signedPage(view: View, path: string, user: User): ReactNode {
   const target = targetOf(path);
   switch (view) {
     case "change-password": return <ChangePasswordPage />;
+    case "files": return <FilesPage />;
+    case "node": return <NodeLinkPage />;
+    case "trash": return <TrashPage />;
     case "notfound": return <NotFoundPage />;
     case "manage":
     case "admin":

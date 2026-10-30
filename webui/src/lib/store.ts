@@ -29,6 +29,22 @@ function changed(a: unknown, b: unknown): boolean {
   return a !== b || (typeof a === 'object' && a !== null) || typeof a === 'function';
 }
 
+// userResets holds a reset for every store that carries one person's data. resetUserStores runs them when the
+// session changes, so the next person on the tab never sees the last one's spaces, storage or requests.
+const userResets: Array<() => void> = [];
+
+// userWritable is writable for data that belongs to the signed-in person. It is emptied on every change of session.
+export function userWritable<T>(initial: T): Writable<T> {
+  const store = writable(initial);
+  userResets.push(() => store.set(initial));
+  return store;
+}
+
+// resetUserStores empties every store made with userWritable.
+export function resetUserStores(): void {
+  for (const reset of userResets) reset();
+}
+
 export function writable<T>(initial: T): Writable<T> {
   let value = initial;
   const subs = new Set<Subscriber<T>>();

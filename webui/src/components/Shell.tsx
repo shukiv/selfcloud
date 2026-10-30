@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button, Drawer, Dropdown, Grid, Layout, Menu, Space, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
-import { Clock, FolderOpen, House, Inbox, Share2, Star, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, UserRound } from "lucide-react";
+import { Clock, FolderOpen, House, Inbox, Share2, Star, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useT, useLang, directionOf } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { brand } from "../lib/brand";
 import { flash, isAdmin, isOwner, session } from "../lib/session";
+import { folders, loadFolders } from "../lib/files/folders";
+import type { FolderAccess } from "../lib/files/types";
 import { signOut } from "../lib/auth";
 import { readPref, writePref } from "../lib/prefs";
 import { useSidebar } from "../theme/theme";
@@ -17,6 +19,7 @@ import Alert from "./Alert";
 import LangSwitcher from "./LangSwitcher";
 import Sentence from "./Sentence";
 import ThemeToggle from "./ThemeToggle";
+import UploadTray from "./UploadTray";
 
 // Below this width (the antd `lg` breakpoint, 992px) the sidebar is a drawer.
 const SIDE_WIDTH = 264;
@@ -39,7 +42,7 @@ interface NavSection {
   items: NavItem[];
 }
 
-function navFor(admin: boolean, owner: boolean, t: (k: string) => string): NavSection[] {
+function navFor(admin: boolean, owner: boolean, t: (k: string) => string, teams: FolderAccess[]): NavSection[] {
   if (admin) {
     return [
       {
@@ -62,6 +65,13 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string): NavSe
   ];
   if (owner) main.push({ key: "/requests", label: t("nav.requests"), icon: icon(Inbox) });
   const sections: NavSection[] = [{ items: main }];
+  // The team spaces the caller reaches are listed under the main entries; a hidden one is not listed.
+  if (teams.length > 0) {
+    sections.push({
+      section: t("nav.teams"),
+      items: teams.map((f) => ({ key: `/files/${f.id}`, label: f.name, icon: icon(FolderOpen) })),
+    });
+  }
   if (owner) {
     sections.push({
       section: t("nav.manage"),
@@ -104,7 +114,12 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   const admin = isAdmin(me?.user);
   const owner = isOwner(me?.user);
-  const sections = navFor(admin, owner, t);
+  const folderList = useStore(folders);
+  const teams = admin ? [] : folderList.filter((f) => f.kind === "team");
+  useEffect(() => {
+    if (!admin) void loadFolders().catch(() => undefined);
+  }, [admin]);
+  const sections = navFor(admin, owner, t, teams);
   const items: MenuProps["items"] = sections.flatMap((s, i) =>
     s.section
       ? [{ type: "group" as const, key: `group-${i}`, label: s.section, children: menuLeaves(s.items) }]
@@ -197,8 +212,8 @@ export default function Shell({ children }: { children: ReactNode }) {
           <Button
             type="text"
             onClick={toggleRail}
-            aria-label={collapsed ? t("nav.show") : t("nav.hide")}
-            icon={collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            aria-label={collapsed ? t("nav.show") : t("nav.hide")} data-testid="rail-toggle"
+            icon={collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
             style={{ color: sidebar.text, marginTop: 8, width: "100%" }}
           />
         </Layout.Sider>
@@ -269,6 +284,7 @@ export default function Shell({ children }: { children: ReactNode }) {
           )}
           {children}
         </Layout.Content>
+        <UploadTray />
       </Layout>
     </Layout>
   );

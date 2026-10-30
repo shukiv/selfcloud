@@ -1324,6 +1324,54 @@ routes, headers and branding; the React build enforces the nonce policy and the 
 the theme, the branding (`ui.brand.palette`, `ui.brand.sidebar`, which `/api/v1/info` returns when they are set), the
 nonce, the languages, the app gate, the shell and the auth pages; each other route shows a "not yet" page in the shell.
 
+*React file browser (slice v2).* The browser is in `webui/`, with the routes and rules of the Svelte one (the k2 paragraph
+above). `pages/FilesPage.tsx`, `pages/TrashPage.tsx` and `pages/NodeLinkPage.tsx` load with `React.lazy`. The listing
+(`components/files/Listing.tsx`) is an antd Table in list view, with the row checkbox column, and a set of tiles in grid view.
+Both views share one keyboard model: `lib/files/keys.ts` maps a key to an action, and the selection itself stays in
+`lib/files/selection.ts`. The other parts are `Breadcrumbs`, `Details` (a Drawer), `Preview` (a full-window Modal),
+`Versions` (a Drawer), `PickDestination` (a Modal with a lazy Tree), `Conflict`, `Icon` (lucide), `UploadTray` and
+`UndoToast`. The tray is mounted in the shell, as the Svelte shell mounts it. Uploads run through the unchanged
+`UploadManager` and tus client, and the manager is never started from an effect. Team spaces are listed under the main
+navigation. Not in this part, and left to v3: the share dialog, the Share button, "Who has access", and the access
+request on a not-found view. The Svelte preview has no text editing, so the React one has none either.
+
+*React file browser, slice v2 fixes.* Where the React browser behaves differently from the Svelte one, the change is
+deliberate and listed here.
+- Dialogs and drawers (Conflict, pick destination, Preview, Details, Versions, the purge confirmation, and the new-folder
+  and delete dialogs) close on Escape and on their own close control, not on a click outside them (`maskClosable={false}`,
+  as Svelte's dialogs closed on Escape only). `scripts/check-source.mjs` fails a Modal or Drawer without it in the
+  file-browser views.
+- The listing draws every row, with no virtual window. Svelte had none, and a virtual window lost keyboard focus past the
+  rendered rows. The cost is on the carry list, not fixed here.
+- Row checkboxes are out of the tab order. Enter and Space on a checkbox belong to the checkbox, and the arrow keys still
+  move the selection. The header box that selects all is kept.
+- Sizes write bytes in full ("9 bytes", in each language's plural); the larger units stay short ("2 kB").
+- Details and Versions keep only the drawer's X. The footer and header Close buttons are removed.
+- People are named, not numbered. Details and the Trash line show the signed-in person's own name, "Account key" for an
+  account key's ID, and leave out a row for another user, since the node answers give no name for that user. Svelte
+  showed the raw IDs; the React build never shows them. Names for other users would need a change to the node JSON in
+  the Go code, which is not made here.
+- Trash looks up each place once, and only the places that arrive with a new page. Restore and purge refresh the
+  listings, the places and the trash, and a visit reads the trash again. A rename of a directory refreshes its place, so
+  the breadcrumbs and the title read the new name.
+- A failed load-more keeps the listing and shows the failure as the notice. The full-page error with "Try again" appears
+  only when no listing has loaded.
+- A sign-out or a sign-in as someone else empties the query cache and every store that holds a person's data: the
+  folders, the hidden folders, the storage figures, the pending requests and the share limits.
+- Preview loads a link only when it is http, https or same-origin; any other scheme shows the error. Its PDF frame has no
+  `sandbox` attribute, because Chrome's PDF viewer shows nothing inside a sandboxed frame (checked in Chrome 2026-10-30
+  with a probe page that failed under `sandbox` and showed the file without it).
+- A file dropped on a dialog or on Preview starts no upload. The upload tray is not shown when no upload or conflict is
+  waiting, and it is a region named by an h2 heading.
+- The page's grid keeps each row at its own height. A short folder used to stretch the breadcrumb and the toolbar apart;
+  an empty folder had 111 px between them, and the rows now sit at 16 px (the grid gap). The selection bar still pushes
+  the listing down, and the toolbar does not move.
+- The document title is restored when the person leaves the page.
+- A file read sends nothing without a session. A read still running when the person signs out (the place lookup, a
+  page of children, a node, the folder list) is refused on this side and not sent, since the server would answer 401.
+  The folder lists are read only inside a session, so a sign-out does not start a read either. The e2e check for
+  console errors failed on this in some runs before the change, and passed in all four runs after it.
+
 *File browser (k2).* The routes: `/files` opens My files (the caller's `personal_folder_id`); `/files/{fld}` a folder's
 root; `/files/{fld}/{dir}` a directory, which must belong to that folder; `/n/{nod}` resolves a node: a file opens its
 preview in its folder (`?preview=`), a directory opens its parent with the directory selected (`?select=`). Anything the
@@ -1705,7 +1753,7 @@ Each slice ships with tests and leaves the server runnable.
 | p1 | Per-user quota (charged by folder) and the storage pages (decision 24) | Built |
 | p2 | Starred, Recent and Home | Built |
 | v1 | React web interface beside the Svelte one (`webui/`, section 10): Vite, React 18 with Ant Design 5, React Router 7; the theme and the brand palette and sidebar; the CSP nonce, reported by the Svelte build and enforced by the React build; the seven languages; the app gate, shell and auth pages | Built |
-| v2 | React file browser: Files, NodeLink and Trash, the `files/*` components, uploads, undo | Planned |
+| v2 | React file browser: Files, NodeLink and Trash, the `files/*` components, uploads, undo | Built |
 | v3 | React sharing interface: Shared, Requests, OpenLink and the share components | Planned |
 | v4 | React rest: Home, Starred, Recent, Storage, owner and installation admin pages; then the flip, which removes the Svelte app and moves `webui/` to `web/` | Planned |
 | p3 | Shortcuts, folder colours and descriptions | Planned |
@@ -2010,3 +2058,16 @@ Decided on approval:
       runtime switch and no new endpoint.
     - The flip, at the end of slice v: the Svelte app is removed and `webui/` takes the `web/` paths, so the Makefile,
       Dockerfile, CI and the catalogue tests keep their paths.
+    - *Slice v2, for review.* These are the interpretations the file browser needed. They are not in the owner's decisions,
+      so each is marked for review.
+      - The React bundle splits the library core (React, the router, the query client, i18next) into one `vendor`
+        chunk with `manualChunks`. Without it the chunk that holds the shared antd pieces is 184 KB gzip, over the
+        120 KB budget. This reverses the "no manualChunks" measure of section 8 for the library core only, not for antd.
+      - The first-load budget is 330 KB gzip, and it is the measure. It is the total of the JavaScript files that
+        `index.html` names at once (its module scripts and its modulepreload links), and `webui/scripts/check-dist.mjs`
+        computes and enforces it on every build. The first build with the vendor split comes to 313.0 KB across 6 files.
+        The entry budget (290 KB) and the per-chunk budget (120 KB) stay. The earlier measure, "entry plus static imports
+        at 250 KB", is retired. The 330 KB figure is set here: section 8 has no first-load budget.
+      - The share actions are hidden, not disabled, so a viewer or editor never sees a control that v3 will own.
+      - Alt+ArrowUp moves focus up a row, as the Svelte listing does (the arrow case matches first). Backspace goes to the
+        parent folder. Kept as it is, not changed.

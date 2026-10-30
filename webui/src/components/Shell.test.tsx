@@ -101,7 +101,8 @@ describe("Shell", () => {
     try {
       signIn("member");
       renderShell("/files");
-      fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+      // The upload tray has a "Hide" button of its own, so the rail toggle is found by its test id.
+      fireEvent.click(screen.getByTestId("rail-toggle"));
       expect(window.localStorage.getItem("selfcloud.navRail")).toBe("1");
       const sider = await waitFor(() => {
         const el = document.querySelector<HTMLElement>(".ant-layout-sider-collapsed");

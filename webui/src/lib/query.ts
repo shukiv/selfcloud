@@ -3,7 +3,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { ApiError } from './apiError';
 import { sessionKey, session } from './session';
-import { get } from './store';
+import { get, resetUserStores } from './store';
 
 // The query client for every read. A 4xx answer is final, so it is never retried; a network
 // failure or a 5xx answer is retried once. Data is fresh for 30 seconds, and a window focus does
@@ -41,6 +41,17 @@ export function clearOnSessionChange(client: QueryClient): () => void {
     if (next !== key) {
       key = next;
       client.clear();
+      resetUserStores();
     }
   });
+}
+
+// treeKeys are the reads that show the place a person is in: a listing, the place's own name and path, the trash
+// and the links a node opens from. A change anywhere refreshes all of them, so no page shows what another changed.
+const treeKeys = ['children', 'place', 'trash', 'node-link'];
+
+// refreshTree marks every read of the tree stale for the session that is signed in. An active read refetches at once.
+export function refreshTree(client: QueryClient): Promise<unknown> {
+  const key = sessionKey(get(session));
+  return Promise.all(treeKeys.map((k) => client.invalidateQueries({ queryKey: [key, k] })));
 }

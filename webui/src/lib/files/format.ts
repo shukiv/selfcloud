@@ -15,7 +15,8 @@ export function formatBytes(bytes: number, lang: string): string {
   return new Intl.NumberFormat(lang, {
     style: 'unit',
     unit: UNITS[i],
-    unitDisplay: 'short',
+    // Bytes are written in full ("9 bytes"); the larger units keep their short form ("2 kB").
+    unitDisplay: i === 0 ? 'long' : 'short',
     maximumFractionDigits: digits,
   }).format(v);
 }
