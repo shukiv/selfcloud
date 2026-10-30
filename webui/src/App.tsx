@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { Spin, ConfigProvider } from "antd";
 import type { Locale } from "antd/es/locale";
+import enUS from "antd/locale/en_US";
 import { loadInfo, loadMe } from "./lib/auth";
 import { applyBrand, brand, passwordMinLength } from "./lib/brand";
 import { go, signInURL } from "./lib/router";
@@ -127,7 +128,9 @@ export function Boot({ children }: { children: ReactNode }) {
 // Directionality follows the language: antd's locale and direction for the current one.
 export function Direction({ children }: { children: ReactNode }) {
   const lang = useLang();
-  const [locale, setLocale] = useState<Locale | undefined>(undefined);
+  // Never undefined: antd adds its locale provider around the page only when it has a locale, so a locale that
+  // arrives later would remount the page and lose what it holds.
+  const [locale, setLocale] = useState<Locale>(enUS);
   useEffect(() => {
     let live = true;
     void antdLocaleOf(lang).then((l) => {
