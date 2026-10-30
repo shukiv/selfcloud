@@ -217,6 +217,15 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 			w.log.Warn("upload reservations disagree with the uploads; run selfcloud admin recount-usage",
 				"reserved_bytes", counted, "upload_bytes", declared)
 		}
+		// The account's counters are the sum of its folders' (slice p1). A difference is reported, never repaired.
+		drift, err := tx.CounterDrift(ctx, 100)
+		if err != nil {
+			return err
+		}
+		if len(drift) > 0 {
+			w.log.Warn("account usage counters disagree with their folders; run selfcloud admin recount-usage",
+				"accounts", len(drift), "first", drift[0])
+		}
 		return nil
 	})
 	return res, err

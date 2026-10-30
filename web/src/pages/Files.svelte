@@ -5,7 +5,7 @@
   import { ApiError } from '../lib/apiError';
   import { go, location } from '../lib/router';
   import { lang, tr, translatePlural } from '../lib/i18n';
-  import { session, signingOut } from '../lib/session';
+  import { session, sessionChanged, signingOut } from '../lib/session';
   import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from '../lib/files/folders';
   import {
     childrenPage,
@@ -196,7 +196,10 @@
   async function load(): Promise<void> {
     const my = ++loadToken;
     // Signing out ends the session before the page leaves. The address change that follows must not read the
-    // listing with no session: the server would answer 401 for a request the person has already left.
+    // listing with no session: the server would answer 401 for a request the person has already left. The session
+    // is checked again after every await, because a sign-out can finish while one of them is in flight.
+    const changed = sessionChanged();
+    const stale = () => my !== loadToken || changed();
     if (get(session) === null) return;
     const r = parseFilesPath($location.path);
     missingNodeID = r?.kind === 'dir' ? r.dir : undefined;
@@ -209,7 +212,7 @@
     try {
       if (r.kind === 'my') {
         const me = await getMe();
-        if (my !== loadToken) return;
+        if (stale()) return;
         if (!me.personal_folder_id) {
           status = 'missing';
           return;
@@ -220,28 +223,32 @@
       }
       if (!personalID) {
         personalID = (await getMe().catch(() => null))?.personal_folder_id ?? null;
+        if (stale()) return;
       }
       let list = get(folders).length > 0 ? get(folders) : await loadFolders().catch(() => []);
+      if (stale()) return;
       // A hidden space is not in the visible list, but it is still reached, so its name is read here.
       if (!list.some((f) => f.id === r.folder)) {
         list = [...list, ...(await loadHiddenFolders().catch(() => []))];
+        if (stale()) return;
       }
       const dirID = r.kind === 'dir' ? r.dir : null;
       const where = await locate(r.folder, dirID, list);
-      if (my !== loadToken) return;
+      if (stale()) return;
       if (!where) {
         status = 'missing';
         return;
       }
+      if (stale()) return;
       const page = await childrenPage(r.folder, dirID);
-      if (my !== loadToken) return;
+      if (stale()) return;
       here = where;
       items = page.items;
       cursor = page.next_cursor;
       sel = { ...EMPTY, anchorID: null, focusID: null };
       errorMsg = '';
       status = 'ready';
-      await applyQuery(page.items);
+      await applyQuery(page.items, changed);
     } catch (err) {
       // A listing cut short by a sign-out is not an error to show: the page is leaving.
       if (my !== loadToken || signingOut()) return;
@@ -256,13 +263,14 @@
 
   // applyQuery honours ?select= (highlight an item) and ?preview= (open a file's preview), as a node link
   // does. A node past the first page is looked for on the pages after it.
-  async function applyQuery(first: Node[]): Promise<void> {
+  async function applyQuery(first: Node[], changed: () => boolean): Promise<void> {
     const q = new URLSearchParams($location.search);
     const want = q.get('preview') ?? q.get('select');
     if (!want) return;
     let found = first.find((n) => n.id === want);
     for (let guard = 0; !found && cursor && guard < 40; guard++) {
       const page = await childrenPage(here!.folder, here!.dir?.id ?? null, cursor);
+      if (changed()) return;
       items = [...items, ...page.items];
       cursor = page.next_cursor;
       found = page.items.find((n) => n.id === want);
@@ -275,8 +283,10 @@
   // reload reads the first page again, keeping the place, and drops selected items that are gone.
   async function reload(): Promise<void> {
     if (!here || get(session) === null) return;
+    const changed = sessionChanged();
     try {
       const page = await childrenPage(here.folder, here.dir?.id ?? null);
+      if (changed()) return;
       items = page.items;
       cursor = page.next_cursor;
       const present = new Set(page.items.map((n) => n.id));
@@ -290,8 +300,10 @@
   async function loadMore(): Promise<void> {
     if (!here || !cursor || loadingMore) return;
     loadingMore = true;
+    const changed = sessionChanged();
     try {
       const page = await childrenPage(here.folder, here.dir?.id ?? null, cursor);
+      if (changed()) return;
       items = [...items, ...page.items];
       cursor = page.next_cursor;
     } catch (err) {

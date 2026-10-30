@@ -26,10 +26,12 @@
   import Files from './pages/Files.svelte';
   import NodeLink from './pages/NodeLink.svelte';
   import Trash from './pages/Trash.svelte';
+  import Storage from './pages/Storage.svelte';
   import ManageOverview from './pages/manage/Overview.svelte';
   import ManagePeople from './pages/manage/People.svelte';
   import ManageGroups from './pages/manage/Groups.svelte';
   import ManageSpaces from './pages/manage/Spaces.svelte';
+  import ManageStorage from './pages/manage/Storage.svelte';
   import ManageAudit from './pages/manage/Audit.svelte';
   import ManageLinks from './pages/manage/Links.svelte';
   import AdminTenants from './pages/admin/Tenants.svelte';
@@ -49,6 +51,7 @@
     | 'shared'
     | 'requests'
     | 'trash'
+    | 'storage'
     | 'manage'
     | 'admin'
     | 'change-password'
@@ -84,6 +87,8 @@
         return 'requests';
       case '/trash':
         return 'trash';
+      case '/storage':
+        return 'storage';
       case '/change-password':
         return 'change-password';
       default:
@@ -194,6 +199,8 @@
       <Requests />
     {:else if view === 'trash'}
       <Trash />
+    {:else if view === 'storage' && $session?.user.role !== 'admin'}
+      <Storage />
     {:else if view === 'manage' && target?.area === 'manage' && mayOpen(target, $session?.user)}
       {#if target.section === 'overview'}
         <ManageOverview />
@@ -203,6 +210,8 @@
         <ManageGroups />
       {:else if target.section === 'spaces'}
         <ManageSpaces />
+      {:else if target.section === 'storage'}
+        <ManageStorage />
       {:else if target.section === 'links'}
         <ManageLinks />
       {:else}

@@ -322,6 +322,91 @@ paths:
               schema: { $ref: "#/components/schemas/Usage" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/accounts/{acc}/storage-policy:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Accounts]
+      operationId: getStoragePolicy
+      summary: The default storage limit for each user
+      description: Owner, account key or admin. 0 is no limit, which is the default.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoragePolicy" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Accounts]
+      operationId: updateStoragePolicy
+      summary: Set the default storage limit for each user
+      description: |
+        Owner, account key or admin. A user with its own limit keeps it. Audited as `account.storage_policy`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StoragePolicy" }
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoragePolicy" }
+        "400": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/storage:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Accounts]
+      operationId: getAccountStorage
+      summary: Storage totals of the account, its folders and its users
+      description: |
+        Owner, account key or admin. The account key and owners also get `users`, paged by use
+        (`users_limit`, `users_cursor`), and the folders with names. An owner's folders are the team spaces only, and
+        its users carry totals only: no file name of a member's My files is ever sent. An admin gets the account and the
+        team spaces' totals, with no names and no users.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - { name: users_limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: users_cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The totals.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountStorage" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/storage/largest:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Accounts]
+      operationId: getAccountLargestFiles
+      summary: The largest files of the account
+      description: |
+        Owner: the largest files of the team spaces, by name; `folder` must be a team space. The account key: any folder,
+        or all of them. Admin: refused. An owner never sees a file of a member's My files.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - { name: folder, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of files, largest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LargeFiles" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/accounts/{acc}/keys:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -1299,6 +1384,24 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Me" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/me/storage/largest:
+    get:
+      tags: [Auth]
+      operationId: getMyLargestFiles
+      summary: The largest files in the signed-in user's My files
+      description: Session only. Each file carries `in_trash` and `versions_bytes`.
+      security: [{ session: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of files, largest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LargeFiles" }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/me/password:
@@ -3848,6 +3951,71 @@ components:
           items: { $ref: "#/components/schemas/Account" }
         next_cursor: { type: string, description: Absent on the last page. }
 
+    StoragePolicy:
+      type: object
+      required: [user_quota_bytes]
+      properties:
+        user_quota_bytes: { type: integer, format: int64, minimum: 0, description: The default limit for each user; 0 is none. }
+    AccountStorage:
+      type: object
+      required: [account, folders]
+      properties:
+        account:
+          type: object
+          required: [used_bytes, reserved_bytes, quota_bytes, available_bytes, user_quota_bytes]
+          properties:
+            used_bytes: { type: integer, format: int64 }
+            reserved_bytes: { type: integer, format: int64 }
+            quota_bytes: { type: [integer, "null"], format: int64 }
+            available_bytes: { type: [integer, "null"], format: int64 }
+            user_quota_bytes: { type: integer, format: int64, description: The default limit for each user; 0 is none. }
+        folders:
+          type: array
+          items:
+            type: object
+            required: [id, kind, used_bytes, used_files, reserved_bytes]
+            properties:
+              id: { type: string }
+              name: { type: string, description: Absent for an admin. }
+              kind: { type: string, enum: [team, personal] }
+              used_bytes: { type: integer, format: int64 }
+              used_files: { type: integer, format: int64 }
+              reserved_bytes: { type: integer, format: int64 }
+        users:
+          type: array
+          description: Owner and key only, heaviest first. A member's file names are never sent.
+          items:
+            type: object
+            required: [id, display_name, email, status, used_bytes, reserved_bytes, quota_bytes, effective_quota_bytes]
+            properties:
+              id: { type: string }
+              display_name: { type: string }
+              email: { type: string }
+              status: { type: string }
+              used_bytes: { type: integer, format: int64 }
+              reserved_bytes: { type: integer, format: int64 }
+              quota_bytes: { type: [integer, "null"], format: int64 }
+              effective_quota_bytes: { type: [integer, "null"], format: int64 }
+        users_next_cursor: { type: string, description: Present when another page follows. }
+    LargeFiles:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, name, size, versions_bytes, in_trash, modified_at]
+            properties:
+              id: { type: string }
+              folder_id: { type: string, description: Account listing only. }
+              folder_name: { type: string, description: Account listing only. }
+              name: { type: string }
+              size: { type: integer, format: int64 }
+              versions_bytes: { type: integer, format: int64 }
+              in_trash: { type: boolean }
+              modified_at: { type: string, format: date-time }
+        next_cursor: { type: string, description: Present when another page follows. }
     Usage:
       type: object
       required: [quota_bytes, used_bytes, reserved_bytes, available_bytes, files, folders, used_files, users_active, users_pending]
@@ -4107,6 +4275,12 @@ components:
         role: { type: string, enum: [owner, member] }
         external_id: { type: string, maxLength: 255, description: An empty string clears it. }
         status: { type: string, enum: [active, disabled] }
+        quota_bytes:
+          type: [integer, "null"]
+          minimum: 0
+          description: |
+            The user's own limit on its My files. null follows the account's default; 0 is no limit. An absent field
+            is left as it is.
 
     UserList:
       type: object
@@ -4288,6 +4462,15 @@ components:
             id: { type: string }
             name: { type: string }
         csrf_token: { type: string }
+        storage:
+          description: The caller's own My files against its limit. Absent for an installation admin.
+          type: object
+          required: [used_bytes, reserved_bytes, quota_bytes, available_bytes]
+          properties:
+            used_bytes: { type: integer, format: int64 }
+            reserved_bytes: { type: integer, format: int64 }
+            quota_bytes: { type: [integer, "null"], format: int64, description: The user's limit; null when there is none. }
+            available_bytes: { type: [integer, "null"], format: int64, description: The limit less used and reserved, not below 0; null when there is none. }
         personal_folder_id:
           type: [string, "null"]
           description: The caller's "My files" folder. Null for an installation admin.

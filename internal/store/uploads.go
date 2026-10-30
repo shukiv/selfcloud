@@ -105,9 +105,10 @@ func (tx *Tx) RecordUploadProgress(ctx context.Context, accountID, id string, fr
 //
 // Completion does not come here: it moves the reservation into usage itself (see completeUpload).
 func (tx *Tx) DeleteUpload(ctx context.Context, accountID, id string) error {
+	var folder string
 	var length int64
-	err := tx.q.QueryRowContext(ctx, "SELECT CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE account_id = ? AND id = ?",
-		accountID, id).Scan(&length)
+	err := tx.q.QueryRowContext(ctx, "SELECT folder_id, CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE account_id = ? AND id = ?",
+		accountID, id).Scan(&folder, &length)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -118,7 +119,7 @@ func (tx *Tx) DeleteUpload(ctx context.Context, accountID, id string) error {
 		accountID, id)); err != nil {
 		return err
 	}
-	return tx.AdjustUsage(ctx, accountID, UsageChange{Reserved: -length})
+	return tx.AdjustUsage(ctx, accountID, folder, UsageChange{Reserved: -length})
 }
 
 // ExpiredUploads lists up to limit uploads that have expired by now: their expiry is not after now,
@@ -147,9 +148,10 @@ func (s *Store) ExpiredUploads(ctx context.Context, now, createdBefore time.Time
 // did. An upload a request refreshed in the meantime is left alone.
 func (tx *Tx) DeleteExpiredUpload(ctx context.Context, accountID, id string, now, createdBefore time.Time) (bool, error) {
 	const expired = "account_id = ? AND id = ? AND (expires_at <= ? OR created_at <= ?)"
+	var folder string
 	var length int64
-	err := tx.q.QueryRowContext(ctx, "SELECT CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE "+expired,
-		accountID, id, millis(now), millis(createdBefore)).Scan(&length)
+	err := tx.q.QueryRowContext(ctx, "SELECT folder_id, CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE "+expired,
+		accountID, id, millis(now), millis(createdBefore)).Scan(&folder, &length)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -165,7 +167,7 @@ func (tx *Tx) DeleteExpiredUpload(ctx context.Context, accountID, id string, now
 	if err != nil || n == 0 {
 		return false, err
 	}
-	return true, tx.AdjustUsage(ctx, accountID, UsageChange{Reserved: -length})
+	return true, tx.AdjustUsage(ctx, accountID, folder, UsageChange{Reserved: -length})
 }
 
 // CountOpenUploads counts the unfinished uploads a caller holds in an account. A drop link is the caller of its

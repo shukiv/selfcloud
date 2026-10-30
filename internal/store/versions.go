@@ -179,7 +179,11 @@ func (tx *Tx) PruneVersions(ctx context.Context, accountID, nodeID string, maxCo
 		bytes += c.size
 	}
 	if bytes > 0 {
-		if err := tx.AdjustUsage(ctx, accountID, UsageChange{Bytes: -bytes}); err != nil {
+		folder, err := tx.NodeFolder(ctx, accountID, nodeID)
+		if err != nil {
+			return removed, bytes, err
+		}
+		if err := tx.AdjustUsage(ctx, accountID, folder, UsageChange{Bytes: -bytes}); err != nil {
 			return removed, bytes, err
 		}
 	}

@@ -18,6 +18,9 @@
   import LangSwitch from './LangSwitch.svelte';
   import ThemeSwitch from './ThemeSwitch.svelte';
   import SpaceSettings from './share/SpaceSettings.svelte';
+  import UsageMeter from './UsageMeter.svelte';
+  import { heldBytes } from '../lib/storage/logic';
+  import { myStorage, refreshMyStorage } from '../lib/storage/api';
 
   let { children }: { children: Snippet } = $props();
 
@@ -40,6 +43,7 @@
     { href: '/manage/people', label: 'nav.people' },
     { href: '/manage/groups', label: 'nav.groups' },
     { href: '/manage/spaces', label: 'nav.spaces' },
+    { href: '/manage/storage', label: 'nav.manageStorage' },
     { href: '/manage/links', label: 'nav.links' },
     { href: '/manage/audit', label: 'nav.audit' },
   ];
@@ -52,6 +56,7 @@
           { href: '/files', label: 'nav.files' },
           { href: '/shared', label: 'nav.shared' },
           { href: '/trash', label: 'nav.trash' },
+          { href: '/storage', label: 'nav.storage' },
           ...(owner || ($pendingRequests ?? 0) > 0 ? [{ href: '/requests', label: 'nav.requests' }] : []),
         ],
   );
@@ -62,6 +67,7 @@
     if (admin) return;
     void loadFolders().catch(() => undefined);
     void refreshPendingRequests();
+    void refreshMyStorage().catch(() => undefined);
   });
   let teams = $derived(admin ? [] : $folders.filter((f) => f.kind === 'team'));
   let hiddenTeams = $derived($hiddenFolders.filter((f) => f.kind === 'team'));
@@ -186,6 +192,11 @@
         </li>
       {/each}
     </ul>
+    {#if !admin && $myStorage}
+      <div class="nav-meter">
+        <UsageMeter used={heldBytes($myStorage)} quota={$myStorage.quota_bytes} />
+      </div>
+    {/if}
     {#if owner}
       <h2 class="nav-title">{$tr('nav.manage')}</h2>
       <ul>
@@ -339,6 +350,12 @@
     color: var(--color-warning-fg);
     background: var(--color-warning-bg);
     border-radius: var(--radius-full);
+  }
+
+  .nav-meter {
+    margin-block: var(--space-3);
+    padding-inline: var(--space-3);
+    font-size: var(--text-sm);
   }
 
   .nav-title {

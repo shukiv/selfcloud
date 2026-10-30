@@ -70,6 +70,8 @@ export class Page {
     this.expectedConflicts = [];
     // expectedMissing lists the node lookups answered 404 on purpose (a node the caller cannot reach).
     this.expectedMissing = [];
+    // expectedQuotaRefusals lists the upload creations answered 507 on purpose (a person over its own limit).
+    this.expectedQuotaRefusals = [];
     // expectedDeadLinks lists the share link opens answered 404 on purpose (a link that no longer works).
     this.expectedDeadLinks = [];
     // expectedPasswordRefusals lists the share link opens answered 401 on purpose: a password asked for, or a wrong one.
@@ -128,6 +130,14 @@ export class Page {
         p.entry.source === 'network' && /\/api\/v1\/uploads$/.test(p.entry.url ?? '') && /status of 409/.test(p.entry.text);
       if (expectedConflict) {
         this.expectedConflicts.push(p.entry.url);
+        return;
+      }
+      // An upload that would take a person over its own limit is answered 507, and the browser logs it. The
+      // interface shows the refusal, so the test counts these answers and checks that they came from that upload.
+      const expectedQuotaRefusal =
+        p.entry.source === 'network' && /\/api\/v1\/uploads$/.test(p.entry.url ?? '') && /status of 507/.test(p.entry.text);
+      if (expectedQuotaRefusal) {
+        this.expectedQuotaRefusals.push(p.entry.url);
         return;
       }
       // A node the caller cannot reach answers 404, and the browser logs it. The not-found view asks for access

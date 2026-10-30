@@ -25,7 +25,7 @@ func newUploadRow(t *testing.T, s *Store, accountID, folderID, dirID string, len
 		if err := tx.InsertUpload(ctx, u); err != nil {
 			return err
 		}
-		return tx.AdjustUsage(ctx, accountID, UsageChange{Reserved: length})
+		return tx.AdjustUsage(ctx, accountID, folderID, UsageChange{Reserved: length})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -50,11 +50,12 @@ func TestAdjustUsageNeverGoesNegative(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	acc := newAccountRow(t, s, "A")
+	f := newFolderRow(t, s, acc, "Docs", "docs")
 	if err := s.Write(ctx, func(tx *Tx) error {
-		if err := tx.AdjustUsage(ctx, acc, UsageChange{Bytes: 10, Files: 1, Reserved: 5}); err != nil {
+		if err := tx.AdjustUsage(ctx, acc, f.ID, UsageChange{Bytes: 10, Files: 1, Reserved: 5}); err != nil {
 			return err
 		}
-		return tx.AdjustUsage(ctx, acc, UsageChange{Bytes: -100, Files: -5, Reserved: -50})
+		return tx.AdjustUsage(ctx, acc, f.ID, UsageChange{Bytes: -100, Files: -5, Reserved: -50})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +64,7 @@ func TestAdjustUsageNeverGoesNegative(t *testing.T) {
 	}
 	// A single counter going negative is clamped on its own, and the others still move.
 	if err := s.Write(ctx, func(tx *Tx) error {
-		return tx.AdjustUsage(ctx, acc, UsageChange{Bytes: 7, Files: 2, Reserved: -1})
+		return tx.AdjustUsage(ctx, acc, f.ID, UsageChange{Bytes: 7, Files: 2, Reserved: -1})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +150,7 @@ func TestDeleteNodeReleasesUploadsBelowIt(t *testing.T) {
 	if got := usageRow(t, s, acc).Reserved; got != 500 {
 		t.Fatalf("reserved = %d; want 500", got)
 	}
-	if err := s.Write(ctx, func(tx *Tx) error { return tx.DeleteNode(ctx, acc, dir.ID) }); err != nil {
+	if err := s.Write(ctx, func(tx *Tx) error { _, _, err := tx.PurgeNode(ctx, acc, dir.ID); return err }); err != nil {
 		t.Fatal(err)
 	}
 	if got := usageRow(t, s, acc).Reserved; got != 100 {
@@ -209,7 +210,7 @@ func TestDeleteFolderReleasesUploadsInDirsMovedIn(t *testing.T) {
 		if err := tx.UpdateNode(ctx, dir); err != nil {
 			return err
 		}
-		return tx.SetSubtreeFolder(ctx, acc, dir.ID, g.ID)
+		return tx.MoveSubtree(ctx, acc, dir.ID, f.ID, g.ID)
 	}); err != nil {
 		t.Fatal(err)
 	}

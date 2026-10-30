@@ -14,6 +14,7 @@ describe('targetOf', () => {
     expect(targetOf('/manage/people')).toEqual({ area: 'manage', section: 'people' });
     expect(targetOf('/manage/groups/')).toEqual({ area: 'manage', section: 'groups' });
     expect(targetOf('/manage/spaces')).toEqual({ area: 'manage', section: 'spaces' });
+    expect(targetOf('/manage/storage')).toEqual({ area: 'manage', section: 'storage' });
     expect(targetOf('/manage/audit')).toEqual({ area: 'manage', section: 'audit' });
   });
 

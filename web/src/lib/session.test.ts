@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { beginSignOut, endSignOut, sessionKey, signingOut, type Session } from './session';
+import { session } from './session';
+import { beginSignOut, endSignOut, sessionChanged, sessionKey, signingOut, type Session } from './session';
 
 // signedIn returns a session for a person with the given token.
 function signedIn(userID: string, csrf: string): Session {
@@ -56,5 +57,24 @@ describe('the sign-out guard counts sign-outs', () => {
     beginSignOut();
     expect(signingOut()).toBe(true);
     endSignOut();
+  });
+});
+
+describe('sessionChanged', () => {
+  it('reports nothing while the same session stays, and a sign-out', () => {
+    session.set(signedIn('usr_a', 'tok-1'));
+    const changed = sessionChanged();
+    expect(changed()).toBe(false);
+    session.set(null);
+    expect(changed()).toBe(true);
+    session.set(null);
+  });
+
+  it('reports a sign-in as someone else, or with a new token, as a change', () => {
+    session.set(signedIn('usr_a', 'tok-1'));
+    const changed = sessionChanged();
+    session.set(signedIn('usr_b', 'tok-2'));
+    expect(changed()).toBe(true);
+    session.set(null);
   });
 });

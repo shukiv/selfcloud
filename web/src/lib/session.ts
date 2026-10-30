@@ -35,6 +35,14 @@ export function sessionKey(s: Session | null): string {
   return s ? `${s.user.id}\n${s.csrf}` : '';
 }
 
+// sessionChanged starts watching the session. The function it returns reports whether the session has since ended
+// or changed (a sign-out, or a sign-in as someone else, or with a new token). A page's async load checks it after each
+// await, so it never sends a request under a session that has gone.
+export function sessionChanged(): () => boolean {
+  const started = sessionKey(get(session));
+  return () => sessionKey(get(session)) !== started;
+}
+
 // ending counts the sign-outs under way. The session is still set while a sign-out call is in flight, so a request a
 // page starts then would be sent under a session the server is ending, and be answered 401. api refuses those requests
 // while the count is above zero, except the sign-out call itself. A counter, not a flag: two sign-outs overlap, and

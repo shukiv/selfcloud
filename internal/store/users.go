@@ -48,18 +48,22 @@ type User struct {
 	VerifiedAt   *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	// QuotaBytes is the user's own storage limit on its personal folder. nil follows the account's default;
+	// 0 means no limit; a positive value is the limit.
+	QuotaBytes *int64
 }
 
 const userCols = `id, account_id, external_id, email, email_key, display_name, locale, role, status,
-	password_hash, verified_at, created_at, updated_at`
+	password_hash, verified_at, created_at, updated_at, quota_bytes`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var acc, ext, pw sql.NullString
 	var verified sql.NullInt64
 	var created, updated int64
+	var quota sql.NullInt64
 	err := row.Scan(&u.ID, &acc, &ext, &u.Email, &u.EmailKey, &u.DisplayName, &u.Locale,
-		&u.Role, &u.Status, &pw, &verified, &created, &updated)
+		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -72,6 +76,10 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	u.VerifiedAt = fromNullMillis(verified)
 	u.CreatedAt = fromMillis(created)
 	u.UpdatedAt = fromMillis(updated)
+	if quota.Valid {
+		q := quota.Int64
+		u.QuotaBytes = &q
+	}
 	return &u, nil
 }
 
@@ -208,10 +216,10 @@ func (s *Store) queryUsers(ctx context.Context, query string, args []any) ([]*Us
 // account.
 func (tx *Tx) InsertUser(ctx context.Context, u *User) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO users (`+userCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.ID, nullString(u.AccountID), nullString(u.ExternalID), u.Email, u.EmailKey, u.DisplayName, u.Locale,
 		u.Role, u.Status, nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.CreatedAt),
-		millis(u.UpdatedAt))
+		millis(u.UpdatedAt), nullInt(u.QuotaBytes))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -219,14 +227,14 @@ func (tx *Tx) InsertUser(ctx context.Context, u *User) error {
 }
 
 // UpdateUser writes the mutable fields of u: name, locale, role, external ID, status, password,
-// verification time and update time. The email is fixed once the user exists. It returns
+// verification time, storage limit and update time. The email is fixed once the user exists. It returns
 // ErrNotFound if the user is not in the account, and ErrConflict if the external ID is taken.
 func (tx *Tx) UpdateUser(ctx context.Context, u *User) error {
 	clause, cargs := accountClause(u.AccountID)
 	args := append([]any{nullString(u.ExternalID), u.DisplayName, u.Locale, u.Role, u.Status,
-		nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.UpdatedAt), u.ID}, cargs...)
+		nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.UpdatedAt), nullInt(u.QuotaBytes), u.ID}, cargs...)
 	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE users SET external_id = ?, display_name = ?,
-		locale = ?, role = ?, status = ?, password_hash = ?, verified_at = ?, updated_at = ?
+		locale = ?, role = ?, status = ?, password_hash = ?, verified_at = ?, updated_at = ?, quota_bytes = ?
 		WHERE id = ? AND `+clause, args...))
 	if isUniqueViolation(err) {
 		return ErrConflict
@@ -368,4 +376,12 @@ func (tx *Tx) RevokeUserTokens(ctx context.Context, accountID, id string, now ti
 		return time.Time{}, err
 	}
 	return cut, nil
+}
+
+// nullInt is a nullable integer column: nil stores NULL.
+func nullInt(v *int64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
 }

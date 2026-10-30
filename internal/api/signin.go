@@ -580,6 +580,8 @@ type meResponse struct {
 	User      userJSON    `json:"user"`
 	Account   *accountRef `json:"account"` // null for an installation admin
 	CSRFToken string      `json:"csrf_token"`
+	// Storage is the caller's My files against its limit. Absent for an installation admin.
+	Storage *storageJSON `json:"storage,omitempty"`
 	// PersonalFolderID is the caller's "My files" folder. Null for an installation admin.
 	PersonalFolderID *string `json:"personal_folder_id"`
 	// PublicLinks is the account's switch for links that anyone can open. False for an installation admin.
@@ -631,6 +633,11 @@ func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
 		if err == nil {
 			out.PersonalFolderID = &pf.ID
 		}
+		st, err := s.myStorage(r, u.AccountID, pfOrNil(pf, err))
+		if err != nil {
+			return meResponse{}, err
+		}
+		out.Storage = &st
 	}
 	return out, nil
 }

@@ -10,6 +10,7 @@
   import type { Account, Usage } from '../../lib/manage/types';
   import UsageMeter from '../UsageMeter.svelte';
   import PublicLinksSwitch from '../share/PublicLinksSwitch.svelte';
+  import { accountStorage, type AccountStorage } from '../../lib/storage/api';
 
   // TenantOverview: the tenant's usage and counts, and its storage limit, which an admin changes here.
   let {
@@ -21,6 +22,8 @@
   } = $props();
 
   let figures = $state<Usage | null>(null);
+  // storage is the account's totals and its default limit per person; an admin gets the account block only.
+  let storage = $state<AccountStorage | null>(null);
   let spaceCount = $state(0);
   let error = $state<string | null>(null);
   let editing = $state(false);
@@ -35,9 +38,14 @@
 
   async function load() {
     try {
-      const [u, spaces] = await Promise.all([usage(account.id), collectAll((c) => listSpaces(account.id, c))]);
+      const [u, spaces, st] = await Promise.all([
+        usage(account.id),
+        collectAll((c) => listSpaces(account.id, c)),
+        accountStorage(account.id),
+      ]);
       figures = u;
       spaceCount = spaces.items.length;
+      storage = st;
     } catch (err) {
       error = failureText(err, $lang);
     }
@@ -88,6 +96,14 @@
   <section class="panel-plain" aria-labelledby="tenant-usage">
     <h2 id="tenant-usage">{translate($lang, 'tenant.overview.usage')}</h2>
     <UsageMeter used={figures.used_bytes} quota={figures.quota_bytes} />
+    {#if storage}
+      <p class="hint">{translate($lang, 'storage.reservedLine', { size: formatBytes(storage.account.reserved_bytes, $lang) })}</p>
+      <p class="hint">
+        {storage.account.user_quota_bytes === 0
+          ? translate($lang, 'storage.defaultNone')
+          : translate($lang, 'storage.defaultLine', { size: formatBytes(storage.account.user_quota_bytes, $lang) })}
+      </p>
+    {/if}
 
     <div class="limit-line">
       <p>

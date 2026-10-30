@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/mail"
@@ -28,17 +29,30 @@ type userJSON struct {
 	Role        string     `json:"role"`
 	Status      string     `json:"status"`
 	VerifiedAt  *time.Time `json:"verified_at"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	// QuotaBytes is the user's own limit on its My files: null when it follows the account's default.
+	QuotaBytes *int64    `json:"quota_bytes"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 func toUserJSON(u *store.User) userJSON {
 	out := userJSON{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Locale: u.Locale, Role: u.Role,
-		Status: u.Status, VerifiedAt: u.VerifiedAt, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt}
+		Status: u.Status, VerifiedAt: u.VerifiedAt, QuotaBytes: u.QuotaBytes, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt}
 	if u.ExternalID != "" {
 		out.ExternalID = &u.ExternalID
 	}
 	return out
+}
+
+// userDetailJSON is a user as GET and PATCH on one user answer it: with the limit that applies to it.
+type userDetailJSON struct {
+	userJSON
+	// EffectiveQuotaBytes is the limit that applies: its own, or the account's default. null: no limit.
+	EffectiveQuotaBytes *int64 `json:"effective_quota_bytes"`
+}
+
+func toUserDetailJSON(u *store.User, acc *store.Account) userDetailJSON {
+	return userDetailJSON{userJSON: toUserJSON(u), EffectiveQuotaBytes: effectiveQuota(u, acc)}
 }
 
 // userResponse is a user, with the verification made for it when one was.
@@ -278,7 +292,7 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toUserJSON(u))
+	writeJSON(w, http.StatusOK, toUserDetailJSON(u, acc))
 	return nil
 }
 
@@ -295,8 +309,15 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 		Role        *string `json:"role"`
 		ExternalID  *string `json:"external_id"` // "" clears it
 		Status      *string `json:"status"`      // active or disabled
+		// QuotaBytes is the user's own limit on its My files: null follows the account's default, 0 is no limit.
+		// It is read raw, so an absent field is told apart from null.
+		QuotaBytes json.RawMessage `json:"quota_bytes"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
+		return err
+	}
+	quota, quotaGiven, err := quotaRaw(in.QuotaBytes)
+	if err != nil {
 		return err
 	}
 	ctx := r.Context()
@@ -351,6 +372,10 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 			}
 			changed["external_id"] = u.ExternalID
 		}
+		if quotaGiven {
+			u.QuotaBytes = quota
+			changed["quota_bytes"] = quota
+		}
 		if in.Status != nil {
 			switch *in.Status {
 			case store.UserActive:
@@ -385,7 +410,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toUserJSON(out))
+	writeJSON(w, http.StatusOK, toUserDetailJSON(out, acc))
 	return nil
 }
 

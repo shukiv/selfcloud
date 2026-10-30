@@ -304,11 +304,52 @@ func (tx *Tx) UpdateNode(ctx context.Context, n *Node) error {
 	return err
 }
 
-// SetSubtreeFolder moves every node under id, id included, into folderID. Folder membership is
-// stored on each node, so a move across folders must rewrite the whole subtree. Moved into a personal
-// folder, the subtree becomes its user's; moved into a team space, the owners stay as they were.
-func (tx *Tx) SetSubtreeFolder(ctx context.Context, accountID, id, folderID string) error {
-	_, err := tx.q.ExecContext(ctx, `WITH RECURSIVE sub(nid) AS (
+// SubtreeUsage is what the subtree under id holds in usage: its files with their versions, and the
+// reservations of the uploads aimed into it. A move or a removal of the subtree takes exactly these.
+func (tx *Tx) SubtreeUsage(ctx context.Context, accountID, id string) (UsageChange, error) {
+	files, bytes, err := tx.SubtreeFiles(ctx, accountID, id)
+	if err != nil {
+		return UsageChange{}, err
+	}
+	var reserved int64
+	err = tx.q.QueryRowContext(ctx, `WITH RECURSIVE sub(nid) AS (
+		SELECT id FROM nodes WHERE account_id = ? AND id = ?
+		UNION ALL
+		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
+	)
+	SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads
+		WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub)`,
+		accountID, id, accountID, accountID).Scan(&reserved)
+	if err != nil {
+		return UsageChange{}, err
+	}
+	return UsageChange{Bytes: bytes, Files: files, Reserved: reserved}, nil
+}
+
+// MoveSubtree moves every node under id, id included, from fromFolder into toFolder. Folder membership is
+// stored on each node, so a move across folders rewrites the whole subtree. The uploads aimed into the subtree
+// move with it, and so do their reservations and the subtree's usage: the two folders' counters change by
+// SubtreeUsage, and the account's do not. Moved into a personal folder, the subtree becomes its user's;
+// moved into a team space, the owners stay as they were. The caller checks the destination's limit first
+// (SubtreeUsage gives the growth) and has already set the moved node's own fields.
+func (tx *Tx) MoveSubtree(ctx context.Context, accountID, id, fromFolder, toFolder string) error {
+	if fromFolder == toFolder {
+		return nil
+	}
+	c, err := tx.SubtreeUsage(ctx, accountID, id)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.q.ExecContext(ctx, `WITH RECURSIVE sub(nid) AS (
+		SELECT id FROM nodes WHERE account_id = ? AND id = ?
+		UNION ALL
+		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
+	)
+	UPDATE uploads SET folder_id = ? WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub)`,
+		accountID, id, accountID, toFolder, accountID); err != nil {
+		return err
+	}
+	if _, err := tx.q.ExecContext(ctx, `WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
 		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
@@ -316,34 +357,21 @@ func (tx *Tx) SetSubtreeFolder(ctx context.Context, accountID, id, folderID stri
 	UPDATE nodes SET folder_id = ?,
 		owner_id = COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), owner_id)
 		WHERE account_id = ? AND id IN (SELECT nid FROM sub)`,
-		accountID, id, accountID, folderID, folderID, accountID)
-	return err
+		accountID, id, accountID, toFolder, toFolder, accountID); err != nil {
+		return err
+	}
+	return tx.MoveUsage(ctx, accountID, fromFolder, toFolder, c)
 }
 
-// DeleteNode removes a node and, through the foreign key, everything below it. The caller takes
-// the file usage off first, with SubtreeFiles. Blobs are not touched: the collector finds them.
-//
-// An upload whose target directory is in the subtree is deleted by the foreign key too, so its
-// reservation is released here, in the same transaction, from the same rows.
-func (tx *Tx) DeleteNode(ctx context.Context, accountID, id string) error {
-	var reserved int64
-	err := tx.q.QueryRowContext(ctx, `WITH RECURSIVE sub(nid) AS (
-		SELECT id FROM nodes WHERE account_id = ? AND id = ?
-		UNION ALL
-		SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.nid WHERE c.account_id = ?
-	)
-	SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub)`,
-		accountID, id, accountID, accountID).Scan(&reserved)
-	if err != nil {
-		return err
+// NodeFolder returns the folder that node id of accountID is in. ErrNotFound if there is no such node.
+func (tx *Tx) NodeFolder(ctx context.Context, accountID, id string) (string, error) {
+	var folder string
+	err := tx.q.QueryRowContext(ctx, "SELECT folder_id FROM nodes WHERE account_id = ? AND id = ?",
+		accountID, id).Scan(&folder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
 	}
-	if err := rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM nodes WHERE account_id = ? AND id = ?", accountID, id)); err != nil {
-		return err
-	}
-	if reserved == 0 {
-		return nil
-	}
-	return tx.AdjustUsage(ctx, accountID, UsageChange{Reserved: -reserved})
+	return folder, err
 }
 
 // Blob is a stored file's contents.

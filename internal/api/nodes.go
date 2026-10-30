@@ -646,7 +646,8 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		// The quota is checked here, in the transaction that makes the file.
-		if err := s.applyUsage(ctx, tx, f.AccountID, store.UsageChange{Bytes: c.Size, Files: 1}); err != nil {
+		if err := s.applyUsage(ctx, tx, p, f.AccountID, store.FolderChange{FolderID: f.ID,
+			Change: store.UsageChange{Bytes: c.Size, Files: 1}}); err != nil {
 			return err
 		}
 		out = n
@@ -908,7 +909,8 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 		prev := cur.Size
 		// The replacement counts in full. The old content is kept as a version, which still counts toward
 		// the quota, so the growth is the new size, not the difference (design section 8, Versions).
-		if err := s.applyUsage(ctx, tx, cur.AccountID, store.UsageChange{Bytes: c.Size}); err != nil {
+		if err := s.applyUsage(ctx, tx, p, cur.AccountID, store.FolderChange{FolderID: cur.FolderID,
+			Change: store.UsageChange{Bytes: c.Size}}); err != nil {
 			return err
 		}
 		if err := s.keepVersion(ctx, tx, cur, p.ID, store.Now()); err != nil {

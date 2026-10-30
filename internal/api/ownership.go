@@ -116,6 +116,7 @@ func (s *Server) handleTransferOwnership(w http.ResponseWriter, r *http.Request)
 				return err
 			}
 		}
+		from := cur.FolderID
 		cur.FolderID, cur.ParentID = plan.folderID, root.ID
 		cur.Name, cur.NameKey = plan.name, plan.key
 		cur.OwnerID = to.ID
@@ -123,7 +124,11 @@ func (s *Server) handleTransferOwnership(w http.ResponseWriter, r *http.Request)
 		if err := tx.UpdateNode(ctx, cur); err != nil {
 			return storeNameErr(err)
 		}
-		if err := tx.SetSubtreeFolder(ctx, n.AccountID, cur.ID, dest.ID); err != nil {
+		// The bytes of the item and its subtree move to the recipient's My files, and its limit is checked first.
+		if err := s.checkMoveUsage(ctx, tx, p, n.AccountID, cur.ID, from, dest.ID); err != nil {
+			return err
+		}
+		if err := tx.MoveSubtree(ctx, n.AccountID, cur.ID, from, dest.ID); err != nil {
 			return err
 		}
 		// The caller manages the recipient's My files, not this subtree, so it cannot leave editors able to

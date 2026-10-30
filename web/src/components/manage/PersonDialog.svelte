@@ -1,12 +1,15 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { lang, translate } from '../../lib/i18n';
   import { formatDate } from '../../lib/files/format';
   import { rank } from '../../lib/files/roles';
   import type { Permission, Role } from '../../lib/files/types';
   import { listPermissions } from '../../lib/sharing/api';
-  import { auditLog, listGroupMembers, listGroups, listSpaces } from '../../lib/manage/api';
+  import { auditLog, getPerson, listGroupMembers, listGroups, listSpaces } from '../../lib/manage/api';
+  import { formatBytes } from '../../lib/files/format';
+  import { setPersonLimit } from '../../lib/storage/api';
+  import LimitEditor from '../storage/LimitEditor.svelte';
   import { collectAll } from '../../lib/manage/paging';
   import { personLabel, statusTone } from '../../lib/manage/people';
   import { failureText } from '../../lib/manage/failure';
@@ -42,19 +45,43 @@
   let activity = $state<Array<AuditEntry & { id: string; time: string }>>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  // limit is the person's own storage limit as the server reads it: quota_bytes null follows the account default.
+  let limit = $state<Pick<Person, 'quota_bytes' | 'effective_quota_bytes'>>(
+    untrack(() => ({ quota_bytes: person.quota_bytes ?? null, effective_quota_bytes: person.effective_quota_bytes ?? null })),
+  );
+  let editingLimit = $state(false);
+  let limitNotice = $state<string | null>(null);
 
   onMount(() => {
     void load();
   });
 
+  // saveLimit sets the person's limit and reads the person again, so the dialog shows what the server applies.
+  async function saveLimit(value: number | null) {
+    await setPersonLimit(account, person.id, value);
+    const p = await getPerson(account, person.id);
+    limit = { quota_bytes: p.quota_bytes ?? null, effective_quota_bytes: p.effective_quota_bytes ?? null };
+    editingLimit = false;
+    limitNotice = translate($lang, 'storage.limitSaved');
+  }
+
+  function limitLine(): string {
+    if (limit.effective_quota_bytes === null || limit.effective_quota_bytes === undefined) {
+      return translate($lang, 'storage.noLimit');
+    }
+    return formatBytes(limit.effective_quota_bytes, $lang);
+  }
+
   async function load() {
     loading = true;
     try {
-      const [gs, fs, log] = await Promise.all([
+      const [gs, fs, log, self] = await Promise.all([
         collectAll((c) => listGroups(account, c)),
         collectAll((c) => listSpaces(account, c)),
         auditLog(account, { actor: person.id, limit: 10 }),
+        getPerson(account, person.id),
       ]);
+      limit = { quota_bytes: self.quota_bytes ?? null, effective_quota_bytes: self.effective_quota_bytes ?? null };
       const inGroup = new Map<string, string>();
       for (const g of gs.items) {
         const members = await collectAll((c) => listGroupMembers(account, g.id, c));
@@ -107,6 +134,28 @@
     {#if error}
       <p class="alert error" role="alert">{error}</p>
     {/if}
+    <section id="person-limit" aria-labelledby="person-limit-title">
+      <h3 id="person-limit-title">{translate($lang, 'storage.limit')}</h3>
+      {#if limitNotice}<p class="alert success" role="status">{limitNotice}</p>{/if}
+      {#if editingLimit}
+        <LimitEditor
+          current={limit.quota_bytes ?? null}
+          allowDefault={true}
+          onsave={saveLimit}
+          oncancel={() => (editingLimit = false)}
+        />
+      {:else}
+        <div class="limit-line">
+          <p>
+            {limitLine()}
+            {#if limit.quota_bytes === null}<span class="muted"> · {translate($lang, 'storage.followsDefault')}</span>{/if}
+          </p>
+          <button type="button" class="btn secondary small" onclick={() => { limitNotice = null; editingLimit = true; }}>
+            {translate($lang, 'storage.change')}
+          </button>
+        </div>
+      {/if}
+    </section>
     {#if loading}
       <p role="status">{translate($lang, 'app.loading')}</p>
     {:else}
@@ -191,5 +240,17 @@
   .muted {
     margin: 0;
     color: var(--color-muted-foreground);
+  }
+
+  .limit-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .limit-line p {
+    margin: 0;
   }
 </style>

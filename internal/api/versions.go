@@ -286,7 +286,8 @@ func (s *Server) handleRestoreVersion(w http.ResponseWriter, r *http.Request) er
 		// The chosen version keeps its row, label and keep_forever: it is now the file's content as well as a
 		// version, so its bytes count twice and usage grows by its size, checked like a content replace. The
 		// content it replaces is kept as a version.
-		if err := s.applyUsage(ctx, tx, cur.AccountID, store.UsageChange{Bytes: v.Size}); err != nil {
+		if err := s.applyUsage(ctx, tx, p, cur.AccountID, store.FolderChange{FolderID: cur.FolderID,
+			Change: store.UsageChange{Bytes: v.Size}}); err != nil {
 			return err
 		}
 		if err := s.keepVersion(ctx, tx, cur, p.ID, store.Now()); err != nil {
@@ -343,7 +344,7 @@ func (s *Server) handleDeleteVersion(w http.ResponseWriter, r *http.Request) err
 		if err := tx.DeleteVersion(ctx, cur.AccountID, v); err != nil {
 			return err
 		}
-		if err := tx.AdjustUsage(ctx, cur.AccountID, store.UsageChange{Bytes: -v.Size}); err != nil {
+		if err := tx.AdjustUsage(ctx, cur.AccountID, cur.FolderID, store.UsageChange{Bytes: -v.Size}); err != nil {
 			return err
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.version.delete", cur.ID,

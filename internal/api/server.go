@@ -96,6 +96,10 @@ type Server struct {
 	// beforeWrite is a test hook, run before a mutating request takes the write lock. Nil in
 	// production.
 	beforeWrite func()
+
+	// afterPieceWrite is a test hook, run once a piece's bytes are written to its file and before they are recorded.
+	// Nil in production.
+	afterPieceWrite func(uploadID string)
 	// uploadSlots holds the PATCH slot of each upload with a piece or a delete in progress; see
 	// takeUploadSlot. uploadSlotWait is how long a request waits for a slot before it gives up.
 	uploadSlotMu   sync.Mutex
@@ -408,6 +412,11 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/share/renew", handle: s.handleRenewShareCredential, auth: true, link: true, drop: true},
 		// What a drop link's visitor may upload, and what the drop page shows: the credential is the caller.
 		{method: http.MethodGet, path: "/api/v1/share/info", handle: s.handleShareInfo, auth: true, drop: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage-policy", handle: s.handleGetStoragePolicy, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/storage-policy", handle: s.handleUpdateStoragePolicy, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage", handle: s.handleAccountStorage, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage/largest", handle: s.handleAccountLargest, auth: true},
+		{method: http.MethodGet, path: "/api/v1/me/storage/largest", handle: s.handleMyLargest, session: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleGetSharingPolicy, auth: true},
 		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleUpdateSharingPolicy, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/share-links", handle: s.handleListAccountShareLinks, auth: true},

@@ -454,7 +454,8 @@ func (s *Server) recordPiece(ctx context.Context, p *auth.Principal, up *store.U
 		}
 		if isDrop(p) {
 			// A drop upload reserves the bytes it has received, in the transaction that records them.
-			return s.applyUsage(ctx, tx, up.AccountID, store.UsageChange{Reserved: to - from})
+			return s.applyUsage(ctx, tx, p, up.AccountID, store.FolderChange{FolderID: up.FolderID,
+				Change: store.UsageChange{Reserved: to - from}})
 		}
 		return nil
 	})
@@ -628,7 +629,7 @@ func (s *Server) checkDiskNow(ctx context.Context, accountID string) error {
 // disk must hold the account's share and the whole pool, and the account's quota (or its reservation
 // cap) must allow the length. A refusal rolls the whole creation back. A drop upload reserves nothing
 // here: it holds the bytes it receives, as they arrive (see recordPiece).
-func (s *Server) reserveTx(ctx context.Context, tx *store.Tx, up *store.Upload) error {
+func (s *Server) reserveTx(ctx context.Context, tx *store.Tx, p *auth.Principal, up *store.Upload) error {
 	if up.VisitorID != "" {
 		return nil
 	}
@@ -645,7 +646,8 @@ func (s *Server) reserveTx(ctx context.Context, tx *store.Tx, up *store.Upload) 
 			return err
 		}
 	}
-	return s.applyUsage(ctx, tx, up.AccountID, store.UsageChange{Reserved: up.Length})
+	return s.applyUsage(ctx, tx, p, up.AccountID, store.FolderChange{FolderID: up.FolderID,
+		Change: store.UsageChange{Reserved: up.Length}})
 }
 
 // handleCreateUpload starts an upload (tus creation). The body may carry the first piece
@@ -742,6 +744,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 	}
 	// The disk, the quota and the reservation are checked in the transaction that inserts the upload,
 	// so two creations cannot both pass on the same space.
+	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		if err := uploadAccess(ctx, tx, p, up, store.RoleContributor); err != nil {
 			return err
@@ -763,10 +766,22 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 		} else if n >= s.cfg.Upload.MaxOpenPerAccount {
 			return tooManyUploads("account", s.cfg.Upload.MaxOpenPerAccount)
 		}
+		// The directory's folder is read here, in the transaction that writes the row: a move since the check above
+		// must not leave the upload in the folder the directory left. Such a creation is refused, as a missing
+		// directory is, so no row is written that could never complete.
+		if up.ParentID != "" {
+			parent, err := tx.Node(ctx, up.AccountID, up.ParentID)
+			if errors.Is(err, store.ErrNotFound) || (err == nil && parent.FolderID != up.FolderID) {
+				return notFound("parent")
+			}
+			if err != nil {
+				return err
+			}
+		}
 		if err := tx.InsertUpload(ctx, up); err != nil {
 			return err
 		}
-		if err := s.reserveTx(ctx, tx, up); err != nil {
+		if err := s.reserveTx(ctx, tx, p, up); err != nil {
 			return err
 		}
 		details := map[string]any{"folder": up.FolderID, "name": up.Name, "length": up.Length}
@@ -924,6 +939,9 @@ func (s *Server) appendChunk(w http.ResponseWriter, r *http.Request, p *auth.Pri
 	buf := uploadBufs.Get().(*[]byte)
 	defer uploadBufs.Put(buf)
 	_, copyErr := io.CopyBuffer(cw, io.LimitReader(r.Body, chunkCap), *buf)
+	if s.afterPieceWrite != nil {
+		s.afterPieceWrite(up.ID)
+	}
 
 	// A body longer than the cap is refused, not cut short.
 	if copyErr == nil && cw.off-start == chunkCap {
@@ -1197,7 +1215,7 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 		if err := tx.DeleteUpload(ctx, cur.AccountID, cur.ID); err != nil {
 			return err
 		}
-		if err := tx.AdjustUsage(ctx, cur.AccountID, store.UsageChange{Bytes: delta, Files: files}); err != nil {
+		if err := tx.AdjustUsage(ctx, cur.AccountID, cur.FolderID, store.UsageChange{Bytes: delta, Files: files}); err != nil {
 			return err
 		}
 		// The last step before commit: the file moves only once every check and insert has passed.

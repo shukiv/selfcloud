@@ -129,7 +129,7 @@ func (s *Store) ExpiredTrash(ctx context.Context, cutoff time.Time, limit int) (
 // directory ends them as deleting it does: the directory they were aimed at is no longer in place. The
 // temporary files they left behind are collected later, as orphans. A drop upload is left alone: its
 // visitor's link is only paused by the trash, and the upload resumes if the directory is restored (slice o3).
-// Deleting the directory for good ends drop uploads too (DeleteNode, nodes.go).
+// Deleting the directory for good ends drop uploads too (PurgeNode).
 func (tx *Tx) DropUploadsUnder(ctx context.Context, accountID, id string) (int64, error) {
 	var reserved, count int64
 	const sub = `WITH RECURSIVE sub(nid) AS (
@@ -143,31 +143,39 @@ func (tx *Tx) DropUploadsUnder(ctx context.Context, accountID, id string) (int64
 	if err != nil || count == 0 {
 		return 0, err
 	}
+	folder, err := tx.NodeFolder(ctx, accountID, id)
+	if err != nil {
+		return 0, err
+	}
 	if _, err := tx.q.ExecContext(ctx, sub+` DELETE FROM uploads
 		WHERE account_id = ? AND parent_id IN (SELECT nid FROM sub) AND visitor_id = ''`,
 		accountID, id, accountID, accountID); err != nil {
 		return 0, err
 	}
-	if err := tx.AdjustUsage(ctx, accountID, UsageChange{Reserved: -reserved}); err != nil {
+	if err := tx.AdjustUsage(ctx, accountID, folder, UsageChange{Reserved: -reserved}); err != nil {
 		return 0, err
 	}
 	return count, nil
 }
 
 // PurgeNode permanently deletes node id of accountID and everything below it, its versions included. The
-// usage of the files and of their versions comes off in the same transaction, and so do the reservations
-// of uploads aimed into the subtree (DeleteNode does that). Blobs are left for the collector. It returns
-// the files and bytes that went.
+// usage of the files and of their versions comes off in the same transaction, and so do the reservations of
+// the uploads aimed into the subtree, which the foreign keys delete with it. Blobs are left for the collector.
+// It returns the files and bytes that went.
 func (tx *Tx) PurgeNode(ctx context.Context, accountID, id string) (files, bytes int64, err error) {
-	files, bytes, err = tx.SubtreeFiles(ctx, accountID, id)
+	folder, err := tx.NodeFolder(ctx, accountID, id)
 	if err != nil {
 		return 0, 0, err
 	}
-	if err := tx.DeleteNode(ctx, accountID, id); err != nil {
+	c, err := tx.SubtreeUsage(ctx, accountID, id)
+	if err != nil {
 		return 0, 0, err
 	}
-	if err := tx.AdjustUsage(ctx, accountID, UsageChange{Bytes: -bytes, Files: -files}); err != nil {
+	if err := rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM nodes WHERE account_id = ? AND id = ?", accountID, id)); err != nil {
 		return 0, 0, err
 	}
-	return files, bytes, nil
+	if err := tx.AdjustUsage(ctx, accountID, folder, UsageChange{Bytes: -c.Bytes, Files: -c.Files, Reserved: -c.Reserved}); err != nil {
+		return 0, 0, err
+	}
+	return c.Files, c.Bytes, nil
 }

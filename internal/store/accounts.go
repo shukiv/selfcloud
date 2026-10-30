@@ -20,11 +20,13 @@ const (
 
 // Account is a tenant: it owns users, folders and files, and has a storage quota.
 type Account struct {
-	ID              string
-	ExternalID      string // the client's own reference; "" when unset
-	Name            string
-	Status          string
-	QuotaBytes      int64 // 0 = unlimited
+	ID         string
+	ExternalID string // the client's own reference; "" when unset
+	Name       string
+	Status     string
+	QuotaBytes int64 // 0 = unlimited
+	// UserQuotaBytes is the limit each user gets when its own limit follows the account default; 0 = none.
+	UserQuotaBytes  int64
 	UsedBytes       int64
 	UsedFiles       int64
 	ReservedBytes   int64
@@ -34,14 +36,14 @@ type Account struct {
 }
 
 const accountCols = `id, external_id, name, status, quota_bytes, used_bytes, used_files,
-	reserved_bytes, tokens_not_before, created_at, updated_at`
+	reserved_bytes, tokens_not_before, created_at, updated_at, user_quota_bytes`
 
 func scanAccount(row interface{ Scan(...any) error }) (*Account, error) {
 	var a Account
 	var ext sql.NullString
 	var tnb, created, updated int64
 	err := row.Scan(&a.ID, &ext, &a.Name, &a.Status, &a.QuotaBytes, &a.UsedBytes, &a.UsedFiles,
-		&a.ReservedBytes, &tnb, &created, &updated)
+		&a.ReservedBytes, &tnb, &created, &updated, &a.UserQuotaBytes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -146,9 +148,9 @@ func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) (
 // InsertAccount adds a. It returns ErrConflict if the external ID is taken.
 func (tx *Tx) InsertAccount(ctx context.Context, a *Account) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO accounts (`+accountCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, nullString(a.ExternalID), a.Name, a.Status, a.QuotaBytes, a.UsedBytes, a.UsedFiles,
-		a.ReservedBytes, millis(a.TokensNotBefore), millis(a.CreatedAt), millis(a.UpdatedAt))
+		a.ReservedBytes, millis(a.TokensNotBefore), millis(a.CreatedAt), millis(a.UpdatedAt), a.UserQuotaBytes)
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}

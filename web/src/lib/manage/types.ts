@@ -38,6 +38,8 @@ export interface Person {
   verified_at: string | null;
   created_at: string;
   updated_at: string;
+  quota_bytes?: number | null;
+  effective_quota_bytes?: number | null;
 }
 
 // The one-time link a verification gives (method link). url is shown once and never stored.

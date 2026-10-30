@@ -189,6 +189,30 @@ func (tx *Tx) MoveFolderContents(ctx context.Context, accountID, fromFolder, toF
 	if err != nil {
 		return err
 	}
+	// The contents' usage moves with them: their files and versions, and the reservations of the uploads aimed
+	// into them. The root's own uploads stay in the source folder, with its counters, until it is deleted.
+	var c UsageChange
+	if err := tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN n.kind = 'file' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN n.kind = 'file' THEN n.size ELSE 0 END), 0)
+		FROM nodes n WHERE n.account_id = ? AND n.folder_id = ? AND n.parent_id IS NOT NULL`,
+		accountID, fromFolder).Scan(&c.Files, &c.Bytes); err != nil {
+		return err
+	}
+	var versionBytes int64
+	if err := tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(v.size), 0) FROM versions v
+		JOIN nodes n ON n.id = v.node_id WHERE n.account_id = ? AND n.folder_id = ? AND n.parent_id IS NOT NULL`,
+		accountID, fromFolder).Scan(&versionBytes); err != nil {
+		return err
+	}
+	c.Bytes += versionBytes
+	if err := tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0)
+		FROM uploads WHERE account_id = ? AND folder_id = ? AND parent_id IS NOT NULL AND parent_id <> ?`,
+		accountID, fromFolder, root.ID).Scan(&c.Reserved); err != nil {
+		return err
+	}
+	if err := tx.MoveUsage(ctx, accountID, fromFolder, toFolder, c); err != nil {
+		return err
+	}
 	if _, err := tx.q.ExecContext(ctx, `UPDATE uploads SET folder_id = ?
 		WHERE account_id = ? AND folder_id = ? AND parent_id IS NOT NULL AND parent_id <> ?`,
 		toFolder, accountID, fromFolder, root.ID); err != nil {

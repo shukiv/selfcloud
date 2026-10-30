@@ -355,12 +355,10 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 		return err
 	}
 	bytes += versionBytes
-	// The foreign keys delete two sets of uploads with the folder, so their reservations go here
-	// too: those made in the folder, and those whose target directory is now in it. A directory
-	// moved in from another folder keeps the uploads aimed at it, and they still name that folder.
-	err = tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads
-		WHERE account_id = ? AND (folder_id = ? OR parent_id IN (SELECT id FROM nodes WHERE folder_id = ?))`,
-		accountID, folderID, folderID).Scan(&reserved)
+	// An upload belongs to the folder of the directory it is aimed at (its folder_id), so the foreign keys
+	// delete exactly the folder's uploads with it, and their reservations go here too.
+	err = tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0)
+		FROM uploads WHERE account_id = ? AND folder_id = ?`, accountID, folderID).Scan(&reserved)
 	if err != nil {
 		return err
 	}
@@ -369,7 +367,8 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 	if err != nil {
 		return err
 	}
-	return tx.AdjustUsage(ctx, accountID, UsageChange{Bytes: -bytes, Files: -files, Reserved: -reserved})
+	// The folder's counters went with its row; the account loses its share.
+	return tx.adjustAccount(ctx, accountID, UsageChange{Bytes: -bytes, Files: -files, Reserved: -reserved})
 }
 
 // CountFolderEntries returns how many files and directories a folder holds below its root. A

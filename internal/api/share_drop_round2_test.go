@@ -209,17 +209,18 @@ func TestDropPiecesInFlightCountAcrossAccounts(t *testing.T) {
 	fx := newDropFixture(t)
 	fx.s.freeBytes = func(string) (uint64, error) { return 6, nil }
 	fx.s.cfg.Upload.MaxDiskSharePercent = 100
-	other, _ := newAccount(t, fx.s, fx.admin, "Other")
+	other, otherKey := newAccount(t, fx.s, fx.admin, "Other")
+	otherFld := newFolder(t, fx.s, otherKey, other.ID, "Docs")
 	ctx := context.Background()
-	release, err := fx.s.admitDropPiece(ctx, &store.Upload{ID: "upl_a", AccountID: fx.acc.ID}, 4)
+	release, err := fx.s.admitDropPiece(ctx, &store.Upload{ID: "upl_a", AccountID: fx.acc.ID, FolderID: fx.fld.ID}, 4)
 	if err != nil {
 		t.Fatalf("the first piece was refused: %v", err)
 	}
-	if _, err := fx.s.admitDropPiece(ctx, &store.Upload{ID: "upl_b", AccountID: other.ID}, 4); err == nil {
+	if _, err := fx.s.admitDropPiece(ctx, &store.Upload{ID: "upl_b", AccountID: other.ID, FolderID: otherFld.ID}, 4); err == nil {
 		t.Error("a second account's piece passed while the first account's 4 bytes were in flight on a 6-byte disk")
 	}
 	release()
-	again, err := fx.s.admitDropPiece(ctx, &store.Upload{ID: "upl_b", AccountID: other.ID}, 4)
+	again, err := fx.s.admitDropPiece(ctx, &store.Upload{ID: "upl_b", AccountID: other.ID, FolderID: otherFld.ID}, 4)
 	if err != nil {
 		t.Errorf("after the first piece was released, the second was refused: %v", err)
 	}

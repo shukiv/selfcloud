@@ -399,8 +399,12 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		if err := tx.UpdateNode(ctx, cur); err != nil {
 			return storeNameErr(err)
 		}
-		if folderChanged && cur.Kind == store.KindDir {
-			if err := tx.SetSubtreeFolder(ctx, cur.AccountID, cur.ID, plan.folderID); err != nil {
+		if folderChanged {
+			// The subtree's bytes and reservations move with it; the destination user's limit is checked first.
+			if err := s.checkMoveUsage(ctx, tx, p, cur.AccountID, cur.ID, srcFolder, plan.folderID); err != nil {
+				return err
+			}
+			if err := tx.MoveSubtree(ctx, cur.AccountID, cur.ID, srcFolder, plan.folderID); err != nil {
 				return err
 			}
 		}
@@ -547,7 +551,7 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		}
 		// The copies count in full. What they displace stays in usage, in the trash, so only the copies count.
 		change := store.UsageChange{Bytes: bytes, Files: files}
-		if err := s.applyUsage(ctx, tx, cur.AccountID, change); err != nil {
+		if err := s.applyUsage(ctx, tx, p, cur.AccountID, store.FolderChange{FolderID: plan.folderID, Change: change}); err != nil {
 			return err
 		}
 		if out, err = tx.Node(ctx, cur.AccountID, rootID); err != nil {
@@ -697,7 +701,7 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 			return err
 		}
 		change := store.UsageChange{Bytes: bytes, Files: files}
-		if err := s.applyUsage(ctx, tx, job.AccountID, change); err != nil {
+		if err := s.applyUsage(ctx, tx, p, job.AccountID, store.FolderChange{FolderID: plan.folderID, Change: change}); err != nil {
 			return err
 		}
 		if replaced != nil {

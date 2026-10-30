@@ -240,10 +240,12 @@ func (s *Server) handleGetFolder(w http.ResponseWriter, r *http.Request) error {
 	if err := s.fillRootNodeIDs(r.Context(), acc.ID, 1, func(int) *folderJSON { return &out.folderJSON }); err != nil {
 		return err
 	}
-	// The totals of the tree are counted here only: a list of folders would count every tree in it.
-	if out.Files, out.Bytes, err = s.store.SubtreeTotals(r.Context(), acc.ID, out.RootNodeID); err != nil {
+	// The folder's own counters hold the totals of its tree (slice p1), so the detail does not walk the tree.
+	u, err := s.store.FolderUsage(r.Context(), acc.ID, f.ID)
+	if err != nil {
 		return err
 	}
+	out.Files, out.Bytes = u.Files, u.Bytes
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

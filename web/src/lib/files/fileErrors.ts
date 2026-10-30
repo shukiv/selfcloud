@@ -42,6 +42,8 @@ const FILE_KEYS: Record<string, string> = {
 // quotaText names the scope that is full and the numbers: the space left and the space the request needs.
 function quotaText(err: ApiError, lang: Lang): string {
   const scope = typeof err.details.scope === 'string' ? err.details.scope : 'server';
+  // A person's own limit names no numbers unless the caller may see them (the charged person or the account key).
+  if (scope === 'user' && err.details.available_bytes === undefined) return translate(lang, 'files.err.quotaUser');
   const scopeKey = SCOPES.includes(scope) ? `files.scope.${scope}` : 'files.scope.server';
   const available = Number(err.details.available_bytes ?? 0);
   const required = Number(err.details.required_bytes ?? 0);
@@ -53,4 +55,4 @@ function quotaText(err: ApiError, lang: Lang): string {
   });
 }
 
-const SCOPES = ['quota', 'account', 'account_reservations', 'server'];
+const SCOPES = ['quota', 'user', 'account', 'account_reservations', 'server'];

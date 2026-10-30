@@ -54,7 +54,7 @@ space ("My files"), and a group can hold users.
 | Drive feature | Selfcloud |
 |---|---|
 | Nested folders | Have |
-| Personal space ("My Drive") | Built (n1): "My files" per user, made with the user. Counts against the account quota; per-user quota is slice p |
+| Personal space ("My Drive") | Built (n1): "My files" per user, made with the user. Counts against the account quota and the user's own limit (built, p1); team spaces count against the account only |
 | Team spaces ("Shared drives") | Have in effect: the account's top-level folders. Built (n1): role tiers on the root, and owners as managers. Settings built (n2) |
 | Starred | New (p) |
 | Recent | New (p): from views and edits |
@@ -145,8 +145,8 @@ space ("My files"), and a group can hold users.
 | Drive feature | Selfcloud |
 |---|---|
 | Storage quota | Have (h): per account |
-| Per-user quota inside an account | New (p) |
-| Storage page with the largest files | New (p) |
+| Per-user quota inside an account | Built (p1): each user's limit, with an account default; no default out of the box |
+| Storage page with the largest files | Built (p1): a storage page for every user; Manage > Storage for owners |
 | Over-quota behaviour | Have (h): reads and deletes work, writes are refused |
 | Kept versions and trash count toward quota | Built (m) |
 
@@ -201,7 +201,7 @@ come **before** k.
 | c2 | Sign-in links for trusted clients (built, after k) | Small |
 | i2 | Delegated tokens: per-user revoke and the all-reachable scope (built, after k) | Small |
 | o | Organisation and public links, link expiry and password, drop folders, admin policy. Built in four parts: o1 to o4 | Medium |
-| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts (p1 being built): p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels, p5 OpenAPI, design record and security review | Medium |
+| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts (p1 built): p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels, p5 OpenAPI, design record and security review | Medium |
 | pg | PostgreSQL as an option for the metadata store (design decision 7), before q | Medium |
 | q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |
 | r | Comments, mentions, activity pane, notifications, who-viewed | Medium |

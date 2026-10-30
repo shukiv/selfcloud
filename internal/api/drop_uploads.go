@@ -318,6 +318,15 @@ func (s *Server) checkDropPiece(ctx context.Context, up *store.Upload, bytes, fl
 	if err := s.checkQuota(acc, store.UsageChange{Reserved: bytes + flightAcc}); err != nil {
 		return err
 	}
+	// A drop into a personal folder is charged to its user, so that user's limit applies too. The visitor learns
+	// nothing of it: dropRefusal gives the one generic answer.
+	st, err := s.store.QuotaStateOf(ctx, up.AccountID, up.FolderID)
+	if err != nil {
+		return err
+	}
+	if err := s.checkUserLimit(nil, up.AccountID, st, bytes+flightAcc); err != nil {
+		return err
+	}
 	usable, ok, err := s.diskUsable()
 	if err != nil || !ok {
 		return err

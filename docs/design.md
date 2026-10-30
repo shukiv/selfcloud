@@ -195,6 +195,11 @@ renames a clash, so the visitor learns no name. The content type comes from the 
 the completed file's `node.create` entry names them with `via: share_link`. The limits are the account's quota,
 `upload.max_file_size` and the rate limits of section 8, and at most 20 unfinished uploads per link.
 
+**Storage limits (p1).** An upload's reservation, and each byte it writes, count against the folder its upload names
+(the folder of the directory it is aimed at). The account quota checks them as before; a personal folder's user's limit
+checks them too (section 8, Storage limits). Completion moves the reservation into usage in the same folder, so it is
+not checked again.
+
 A drop upload holds only the bytes it has received (owner's decision of 2026-10-29, "Reserve as received"). Creation
 reserves nothing: `upload.max_file_size` still caps the declared length, but no bytes are reserved until they arrive.
 Each piece checks the quota and the disk for the bytes it brings, charges them, and is refused when they do not fit,
@@ -312,7 +317,9 @@ The hierarchy has three levels:
   (`0` = unlimited) and usage counters (bytes, files, bytes reserved by uploads). Every write that
   grows usage checks *used + reserved + growth* against the quota in the same transaction, and
   an upload reserves its declared length when it is created, so the counters always match the
-  rows. A copy counts in full even though it shares the blob. Suspending
+  rows. Each folder carries its share of the counters, and the account's are the sum of its
+  folders' (slice p1). Growth that lands in a personal folder is also checked against its user's
+  limit (`section 8, Storage limits`). A copy counts in full even though it shares the blob. Suspending
   blocks all access but keeps the data. The quota may be lowered below current usage: existing
   files stay, and new writes get `quota_exceeded` until usage drops. Deleting an account runs
   as a job (`202`), since a large tree takes time to remove.
@@ -916,6 +923,35 @@ routes carry every column the links need.
   - **Deleting or resetting a link ends its open uploads.** Both release the uploads' rows, bytes and files in the
     transaction that changes the link, not at the visitor's next request.
 
+### Storage limits (p1)
+
+Each user's My files may have a limit of its own (`users.quota_bytes`). A null limit follows the account's default
+(`accounts.user_quota_bytes`, 0 by default, which means no limit), and 0 means no limit. The owner, the account key and
+an installation admin set both: `PATCH /accounts/{acc}/users/{usr}` with `quota_bytes`, and
+`PATCH /accounts/{acc}/storage-policy` with `user_quota_bytes`.
+
+- **Charged by folder.** A byte counts against the folder it lands in. Bytes in a personal folder count against its
+  user's limit as well as the account quota. Bytes in a team space count against the account only, until slice u.
+  A drop upload counts where it lands.
+- **Checked first, and only growth.** The account quota is checked as it always was. Then, for a personal folder that
+  grows, `folder used + folder reserved + growth` must fit the user's limit. A change that shrinks usage, or that moves
+  bytes between two folders of the account, always passes the account check; a move is refused only when the destination
+  user's limit would be passed.
+- **Who learns the numbers.** A `quota_exceeded` refusal with `details.scope` `user` carries `required_bytes` and
+  `available_bytes` only to the user the folder belongs to, and to the account key. Anyone else (a contributor in a
+  member's My files) gets the refusal with no numbers. A drop visitor gets the one generic refusal of section 8.
+- **Moves and transfers.** A move across folders moves the subtree's bytes, files and reservations with it, and the
+  destination user's limit is checked. An ownership transfer out of one My files into another is checked the same way.
+  Deleting a user with `transfer_to` moves its files and is never refused.
+- **Lowering a limit** below current use keeps the files; new growth is refused until usage drops.
+- **Reservations** belong to the folder of the directory their upload is aimed at. A move of a directory moves the
+  uploads aimed into it, so their reservations move with it.
+- **Storage routes.** `GET /me` carries `storage` for the caller's own My files, against its limit. `GET /me/storage/largest`
+  lists the caller's largest files. `GET /accounts/{acc}/storage` gives the account's totals, its folders and, for an
+  owner or the key, the users paged by use. `GET /accounts/{acc}/storage/largest` lists the largest files of team spaces
+  (owners) or of any folder (the key); an owner never sees a file of a member's My files, and an admin sees no names.
+  Tokens are refused on every account route (`ManagesAccount`), and link visitors are refused by the route table.
+
 ### Accepted limits
 
 These were reviewed in the slice n1 security review and accepted for now. They have no code of their own.
@@ -929,8 +965,12 @@ These were reviewed in the slice n1 security review and accepted for now. They h
 
 - **Groups (L4).** Account owners manage groups. Sharing with a group shares with whoever is in it at
   the time, the sharer included if the sharer is a member. Membership changes are audited.
-- **Quota through My files (L6).** Any member can fill the account's quota through its personal folder
-  until the quotas slice (p) adds per-user limits.
+- **Quota through My files (L6), closed by slice p1.** Per-user limits now apply to My files (section 8, Storage
+  limits). The limits slice p1 leaves are these:
+  - Team spaces still fill the account's quota until slice u adds limits per space.
+  - The sum of the per-user limits may exceed the account's quota.
+  - A contributor on a subfolder of another member's My files fills that member's limit.
+  - Deleting a user with `transfer_to` may put the recipient over its limit.
 - **Shared subtree root (L7).** The root of a shared subtree shows its `parent_id`, which is an ID only.
   It names no ancestor, but it does tell the user that a parent exists.
 - **Login CSRF by sign-in link.** Any holder of an account key on a multi-tenant installation can make a
@@ -1006,8 +1046,12 @@ Accounts                                   admin key
 
 Inside an account                          account key, admin key, or owner session
   GET                   /accounts/{acc}/usage
+  GET|PATCH             /accounts/{acc}/storage-policy      {user_quota_bytes}: the default limit for each user; 0 is none (owner, key, admin)
+  GET                   /accounts/{acc}/storage             ?users_limit=&users_cursor=: account and folder totals; the users, by use, for an owner or the key (no names from members' My files for an owner; admin: totals only)
+  GET                   /accounts/{acc}/storage/largest     ?folder=&limit=&cursor=: largest files of team spaces (owner) or of any folder (key); admin refused
+  GET                   /me/storage/largest                 the caller's largest My files, with in_trash and versions_bytes (session)
   POST|GET              /accounts/{acc}/users               verification: email | link | none; ?external_id=
-  GET|PATCH|DELETE      /accounts/{acc}/users/{usr}         DELETE: ?transfer_to=usr_ moves the user's files to another user's My files; ?delete_files=true deletes them; the two are refused together
+  GET|PATCH|DELETE      /accounts/{acc}/users/{usr}         PATCH and GET: quota_bytes (null follows the account default, 0 is none); GET and PATCH answer effective_quota_bytes. DELETE: ?transfer_to=usr_ moves the user's files to another user's My files; ?delete_files=true deletes them; the two are refused together
   POST                  /accounts/{acc}/users/{usr}/verification     send again, or a new link
   POST                  /accounts/{acc}/users/{usr}/sign-in-links    account key only: a single-use sign-in link, {next}; answers {url, expires_at}
   POST|GET              /accounts/{acc}/folders             ?external_id=
@@ -1319,6 +1363,12 @@ links that reach the item from above are listed, with "Open the parent". The rol
 signed-out visitor to sign in and back, and shows the one message a dead link gets, "This link doesn't work. It
 may have expired or been turned off." It has no app shell.
 
+*Storage (p1).* Every signed-in user has a storage meter in the navigation, from `GET /me`, and a `/storage` page: the meter,
+a breakdown, its largest files with an "In trash" badge and a link to the Trash. Manage has a Storage page
+(`/manage/storage`) for the owner: the account meter, the default limit (`limitBytes` and `splitLimit`), people sorted by
+use with an editable limit, and the team spaces with their sizes and largest files. The person dialog carries the limit.
+Admin tenant pages show the account's totals. Names are wrapped in `<bdi>`, and layout uses logical properties only.
+
 *Links and the badge (o4).* Manage has a Links page (`/manage/links`) for the owner: the account's live links with
 filters for audience and kind, a page at a time, each link's item, folder, creator, state and visitors, a per-row delete
 with its confirmation, and "Delete all public links", which names the number of anyone links before it deletes them. An
@@ -1458,12 +1508,12 @@ the not-found view.
 
 | Table | Main fields |
 |---|---|
-| `accounts` | id, external_id, name, status, quota_bytes, used_bytes, used_files, reserved_bytes, tokens_not_before, public_links (0 or 1; off by default) |
+| `accounts` | id, external_id, name, status, quota_bytes, used_bytes, used_files, reserved_bytes, tokens_not_before, public_links (0 or 1; off by default), user_quota_bytes (the default limit for each user; 0 is none) |
 | `api_keys` | id, account_id (null for admin keys), name, prefix, hash, expires_at, revoked_at, last_used_at |
-| `users` | id, account_id, external_id, email, display_name, locale, role, status, password_hash, totp_secret (encrypted), verified_at, tokens_not_before |
+| `users` | id, account_id, external_id, email, display_name, locale, role, status, password_hash, totp_secret (encrypted), verified_at, tokens_not_before, quota_bytes (null follows the account default; 0 is none) |
 | `verifications` | id, user_id, purpose (verify, reset), token_hash, expires_at, used_at |
 | `sessions` | id_hash, user_id, created_at, last_seen_at, expires_at, ip, user_agent |
-| `folders` | id, account_id, external_id, name, name_key, kind (`team` or `personal`), owner_user_id (personal only; at most one personal folder per user), members_only, sharing_managers_only, no_download_for_viewers, allow_links (0 or 1; team spaces only, personal folders keep them 0; read by the share-link rules) |
+| `folders` | id, account_id, external_id, name, name_key, kind (`team` or `personal`), owner_user_id (personal only; at most one personal folder per user), members_only, sharing_managers_only, no_download_for_viewers, allow_links (0 or 1; team spaces only, personal folders keep them 0; read by the share-link rules), used_bytes, used_files, reserved_bytes (the folder's share of the account's counters; they sum to the account's, p1) |
 | `groups` | id, account_id, external_id, name, name_key, created_at, updated_at |
 | `group_members` | group_id, user_id, created_at |
 | `permissions` | node_id, account_id, subject_kind (`user` or `group`), subject_id, role (viewer, commenter, contributor, editor, manager), created_at, created_by, expires_at (null: no expiry) |
@@ -1498,10 +1548,10 @@ cannot leak into another's results. Tests check this for each endpoint.
   and `selfcloud_storage_reserved_bytes`. Per-account figures come from the usage API
   (`GET /accounts/{acc}/usage`: `quota_bytes` and `available_bytes` are `null` when the quota
   is unlimited), not from metric labels.
-- **Usage counters**: the sweep compares the reserved counters with the uploads and logs a
-  warning when they disagree; it never repairs them. `selfcloud admin recount-usage
-  [-account ID]` rebuilds used and reserved bytes from the rows, one account per transaction,
-  and records the before and after figures in the audit log.
+- **Usage counters**: the sweep compares the reserved counters with the uploads, and each account's counters with the
+  sum of its folders' (p1); it logs a warning when they disagree, and never repairs them. `selfcloud admin recount-usage
+  [-account ID]` rebuilds the account's and its folders' used and reserved bytes from the rows, one account per
+  transaction, and records the before and after figures in the audit log.
 - **Access requests**: the sweep removes decided access requests older than 30 days. A pending request is
   kept however old it is, since someone still has to decide it.
 - **Expired permissions**: the sweep removes each permission whose `expires_at` passed more than 24
@@ -1586,7 +1636,7 @@ Each slice ships with tests and leaves the server runnable.
 | o2 | Links that anyone can open: the visitor credential, password and its limits, public pages | Built |
 | o3 | Drop folders (Request files): anonymous uploads into one directory | Built |
 | o4 | The sweep of ended links, the account-wide link list, Delete all public links, the link badge | Built |
-| p1 | Per-user quota (charged by folder) and the storage pages (decision 24) | Building |
+| p1 | Per-user quota (charged by folder) and the storage pages (decision 24) | Built |
 | p2 | Starred, Recent and Home | Planned |
 | p3 | Shortcuts, folder colours and descriptions | Planned |
 | p4 | Labels: typed fields the owner defines | Planned |
@@ -1828,3 +1878,22 @@ Decided on approval:
       files; they see team-space files by name. Members see their own largest files. Admins see totals only.
     - Home is the landing page at `/`; My files stays at `/files`.
     - Slice p is built in five parts, p1 to p5, each reviewed and pushed on its own, p1 first.
+    Interpretations made in p1, for review (the owner has not decided them):
+    - A reservation counts against the folder of its upload's target directory, and a move of a directory moves the
+      uploads aimed into it. Migration 0017 brings any earlier upload into line with its directory. This departs from
+      the slice p proposal's "released from the folder the upload row names": the rows now follow their directories.
+      The consequence: an upload aimed at a directory that moved across folders now completes into the directory's new
+      folder, under the upload creator's access check there. Before, a non-drop upload failed with `not_found` at
+      completion.
+    - The caller's own meter (`GET /me` `storage`) counts its My files and their reservations against its own limit. It
+      does not count team spaces, and it shows no account figure.
+    - The admin's storage view lists the team spaces' totals, with no names, and no personal folders or members.
+    - Largest files sort by the file's own size, then by ID. Versions are shown beside each file, not added to the sort.
+    - A file counts as in the trash when it sits below a trashed item.
+    - The account's own refusal (scope `quota`, `account_reservations`) still shows its numbers to any caller, as it did
+      before p1. Only the user's refusal (scope `user`) hides them.
+    - A drop piece checks its user's limit with the in-flight drop bytes of the whole account (conservative: a piece
+      can be refused when only another folder's pieces would fill the limit).
+    - The folder detail reads the folder's own counters, not a walk of its tree (this closes the k4 gap).
+    - A user's GET and PATCH answer `effective_quota_bytes`; list responses carry only the raw `quota_bytes`.
+    - A team-space ownership transfer moves no bytes, as before, so it is not limit-checked.

@@ -169,6 +169,7 @@ async function main() {
     await api(base, 'PUT', `/api/v1/accounts/${accountID}/folders/${teamB}/grants/${memberID}`, accountKey, { level: 'read' });
     await rawPut(base, `/api/v1/folders/${teamB}/files?path=%2Freadme.txt`, accountKey, 'read me\n');
     check(true, 'two team spaces made; the member edits one and reads the other');
+    await p1Setup(base, accountKey, memberID);
 
     const browserBin = await findBrowser();
     const launched = await launchBrowser(browserBin, join(dir, 'chrome-profile'));
@@ -187,7 +188,7 @@ async function main() {
     await page.waitFor(`!!document.getElementById('login-email')`);
     await setInput(page, 'login-email', OWNER.email);
     await setInput(page, 'login-password', OWNER.password);
-    await page.evaluate(`document.querySelector('form button[type="submit"]').click(), true`);
+    await clickOn(page, `form button[type="submit"]`);
     await page.waitFor(`!!document.querySelector('.topbar')`);
     const who = await page.evaluate(`document.querySelector('.user-menu > button').textContent`);
     check(who.includes(OWNER.name), `the shell shows the signed-in name (${who.trim()})`);
@@ -212,7 +213,7 @@ async function main() {
     check(true, 'the Hebrew choice is kept after a reload, from the account');
 
     // Theme: dark sets the data-theme attribute and the dark background.
-    await page.evaluate(`document.querySelector('input[name="theme"][value="dark"]').click(), true`);
+    await clickOn(page, `input[name="theme"][value="dark"]`);
     await page.waitFor(`document.documentElement.dataset.theme === 'dark'`);
     const bg = await page.evaluate(`getComputedStyle(document.body).backgroundColor`);
     check(bg === 'rgb(11, 17, 32)', `dark theme applies its background (${bg})`);
@@ -224,16 +225,16 @@ async function main() {
     check(overflow <= 0, `no horizontal scroll at 375px (overflow ${overflow}px)`);
 
     // Sign out.
-    await page.evaluate(`document.querySelector('.user-menu > button').click(), true`);
+    await clickOn(page, `.user-menu > button`);
     await page.waitFor(`!!document.querySelector('.menu-item:last-child')`);
-    await page.evaluate(`document.querySelector('.menu-item:last-child').click(), true`);
+    await clickOn(page, `.menu-item:last-child`);
     await page.waitFor(`location.pathname === '/login' && !!document.getElementById('login-email')`);
     check(true, 'sign out returns to the sign-in page');
 
     // A member sees no Admin link.
     await setInput(page, 'login-email', MEMBER.email);
     await setInput(page, 'login-password', MEMBER.password);
-    await page.evaluate(`document.querySelector('form button[type="submit"]').click(), true`);
+    await clickOn(page, `form button[type="submit"]`);
     await page.waitFor(`!!document.querySelector('.topbar')`);
     const memberAdmin = await page.evaluate(
       `[...document.querySelectorAll('.sidenav a')].some((a) => a.getAttribute('href') === '/admin')`,
@@ -250,12 +251,14 @@ async function main() {
     await signOut(page);
     await signIn(page, OWNER);
     await ownerChecks(page, { base, accountID, sink });
+    await p1OwnerChecks(page);
     await signOut(page);
     await signIn(page, ADMIN);
     await adminChecks(page, { base, adminKey });
     await signOut(page);
     await signIn(page, MEMBER);
     await memberNotFound(page);
+    await p1MemberChecks(page, { dir });
 
     // A sign-in link: the account's key makes one for the member, the browser opens it and lands signed in.
     await signInLinkChecks(page, { base, accountID, accountKey, memberID, teamA });
@@ -269,6 +272,7 @@ async function main() {
     check(page.expectedDeadLinks.length === 4, `the four dead links were refused once each: a signed-out open of a members' link, a removed link, a deleted anyone link and a deleted drop link (${page.expectedDeadLinks.length})`);
     check(page.expectedPasswordRefusals.length === 2, `the password link was refused twice: asked for, then a wrong one (${page.expectedPasswordRefusals.length})`);
     check(page.expectedSwitchPrompts.length === 2, `the two links for another user were each asked about, on a browser signed in as another (${page.expectedSwitchPrompts.length})`);
+    check(page.expectedQuotaRefusals.length === 1, `the member's upload over its limit was refused once, by the server (${page.expectedQuotaRefusals.length})`);
     check(page.expectedMissing.length >= 2, `the not-found views asked for access, and the browser logged their 404s (${page.expectedMissing.length})`);
     // A data: URL is inline, not a request: Chrome draws the calendar icon of a date input from one.
     const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:'));
@@ -312,6 +316,12 @@ async function clickButton(page, text) {
     `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`,
     10000,
   );
+}
+
+// clickOn finds an element and clicks it in one step, waiting until it is there. A wait for one element followed by a
+// click on another, in two calls, races a page that draws the second a moment after the first.
+async function clickOn(page, selector, timeout = 10000) {
+  await page.waitFor(`(() => { const e = document.querySelector(${q(selector)}); if (!e) return false; e.click(); return true; })()`, timeout);
 }
 
 // rowAppears and rowGone wait for a row of the listing.
@@ -363,10 +373,10 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   await page.waitFor(`document.documentElement.lang === 'en'`);
 
   // My files opens the personal folder; then Team A, where the member can edit.
-  await page.evaluate(`document.querySelector('.sidenav a[href="/files"]').click(), true`);
+  await clickOn(page, `.sidenav a[href="/files"]`);
   await page.waitFor(`/^\\/files\\/fld_/.test(location.pathname)`);
   check(true, 'My files opens the personal folder');
-  await page.evaluate(`document.querySelector('.teams a[href="/files/${teamA}"]').click(), true`);
+  await clickOn(page, `.teams a[href="/files/${teamA}"]`);
   await page.waitFor(`location.pathname === '/files/${teamA}'`);
   await page.waitFor(`!!document.querySelector('.toolbar')`);
   const buttons = await buttonTexts(page);
@@ -420,7 +430,7 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   await press(page, rowSel('hello.txt'), 'Delete');
   await clickButton(page, 'Move to trash');
   await rowGone(page, 'hello.txt');
-  await page.evaluate(`document.querySelector('.sidenav a[href="/trash"]').click(), true`);
+  await clickOn(page, `.sidenav a[href="/trash"]`);
   await page.waitFor(`location.pathname === '/trash' && [...document.querySelectorAll('.trash-item .name')].some((n) => n.textContent.includes('hello.txt'))`);
   await page.evaluate(`(() => { const item = [...document.querySelectorAll('.trash-item')].find((li) => li.textContent.includes('hello.txt')); [...item.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Restore').click(); return true; })()`);
   await page.waitFor(`document.querySelector('.alert.success') && document.querySelector('.alert.success').textContent.includes('hello.txt')`);
@@ -468,7 +478,7 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Upload files')`);
 
   // A viewer of Team B: no rename, no delete, no upload.
-  await page.evaluate(`document.querySelector('.teams a[href="/files/${teamB}"]').click(), true`);
+  await clickOn(page, `.teams a[href="/files/${teamB}"]`);
   await page.waitFor(`location.pathname === '/files/${teamB}'`);
   await rowAppears(page, 'readme.txt');
   await selectRow(page, 'readme.txt');
@@ -559,13 +569,13 @@ async function linkChecks(page, { base, accountID, accountKey }) {
   else await page.goto(base + '/login');
   await signIn(page, OWNER);
   await page.waitFor(`!!document.querySelector('.teams a[href="/files/${fld}"]')`);
-  await page.evaluate(`document.querySelector('.teams a[href="/files/${fld}"]').click(), true`);
+  await clickOn(page, `.teams a[href="/files/${fld}"]`);
   await page.waitFor(`location.pathname === '/files/${fld}'`);
   await rowAppears(page, 'Plans');
   await selectRow(page, 'Plans');
   await clickButton(page, 'Share');
   await page.waitFor(`!!document.getElementById('share-general')`);
-  await page.evaluate(`document.querySelector('input[name="share-general-access"][value="organisation"]').click(), true`);
+  await clickOn(page, `input[name="share-general-access"][value="organisation"]`);
   await clickButton(page, 'Create link');
   await page.waitFor(`!!document.querySelector('.made input')`);
   const url = await page.evaluate(`document.querySelector('.made input').value`);
@@ -593,13 +603,13 @@ async function linkChecks(page, { base, accountID, accountKey }) {
   await signOut(page);
   await signIn(page, OWNER);
   await page.waitFor(`!!document.querySelector('.teams a[href="/files/${fld}"]')`);
-  await page.evaluate(`document.querySelector('.teams a[href="/files/${fld}"]').click(), true`);
+  await clickOn(page, `.teams a[href="/files/${fld}"]`);
   await page.waitFor(`location.pathname === '/files/${fld}'`);
   await rowAppears(page, 'Plans');
   await selectRow(page, 'Plans');
   await clickButton(page, 'Share');
   await page.waitFor(`!!document.querySelector('input[name="share-general-access"][value="restricted"]')`);
-  await page.evaluate(`document.querySelector('input[name="share-general-access"][value="restricted"]').click(), true`);
+  await clickOn(page, `input[name="share-general-access"][value="restricted"]`);
   await page.waitFor(`document.querySelector('input[name="share-general-access"][value="restricted"]').checked`);
   await press(page, '[role="dialog"]', 'Escape');
   await page.waitFor(`!document.querySelector('[role="dialog"]')`);
@@ -644,7 +654,7 @@ async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans 
   await clickButton(page, 'Share');
   await page.waitFor(`!!document.getElementById('share-general')`);
   await page.waitFor(`!!document.querySelector('input[name="share-general-access"][value="anyone"]')`);
-  await page.evaluate(`document.querySelector('input[name="share-general-access"][value="anyone"]').click(), true`);
+  await clickOn(page, `input[name="share-general-access"][value="anyone"]`);
   await page.waitFor(`!!document.getElementById('share-anyone-password')`);
   await setInput(page, 'share-anyone-password', PASSWORD);
   await clickButton(page, 'Create link');
@@ -698,7 +708,7 @@ async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans 
   await selectRow(page, 'Plans');
   await clickButton(page, 'Share');
   await page.waitFor(`!!document.querySelector('input[name="share-general-access"][value="restricted"]')`);
-  await page.evaluate(`document.querySelector('input[name="share-general-access"][value="restricted"]').click(), true`);
+  await clickOn(page, `input[name="share-general-access"][value="restricted"]`);
   await page.waitFor(`document.querySelector('input[name="share-general-access"][value="restricted"]').checked`);
   await press(page, '[role="dialog"]', 'Escape');
   await page.waitFor(`!document.querySelector('[role="dialog"]')`);
@@ -728,7 +738,7 @@ async function dropLinkChecks(page, { base, accountID, accountKey, fld, plans })
   await page.waitFor(`!!document.querySelector('section.request .made input')`, 15000);
   const url = await page.evaluate(`document.querySelector('section.request .made input').value`);
   check(url.startsWith(base + '/s#') && url.slice(base.length + 3).length === 43, 'the owner turns on Request files and gets a link');
-  await page.evaluate(`(() => { const l = [...document.querySelectorAll('section.request label.toggle')].find((x) => x.textContent.includes('Ask for name')); l.querySelector('input').click(); return true; })()`);
+  await page.waitFor(`(() => { const l = [...document.querySelectorAll('section.request label.toggle')].find((x) => x.textContent.includes('Ask for name')); if (!l) return false; l.querySelector('input').click(); return true; })()`);
   await clickButton(page, 'Save');
   await page.waitFor(`document.querySelector('section.request .hint[role="status"]')?.textContent.includes('Saved')`, 15000);
   await press(page, '[role="dialog"]', 'Escape');
@@ -777,7 +787,7 @@ async function dropLinkChecks(page, { base, accountID, accountKey, fld, plans })
   await selectRow(page, 'Plans');
   await clickButton(page, 'Share');
   await page.waitFor(`!!document.getElementById('share-request-files')`);
-  await page.evaluate(`(() => { document.querySelector('section.request label.toggle input').click(); return true; })()`);
+  await clickOn(page, `section.request label.toggle input`);
   await page.waitFor(`!document.getElementById('drop-expires')`, 15000);
   await press(page, '[role="dialog"]', 'Escape');
   await page.waitFor(`!document.querySelector('[role="dialog"]')`);
@@ -835,9 +845,9 @@ async function signOut(page) {
     await page.waitFor(`!!document.querySelector('.user-menu > button') || !!document.getElementById('login-email')`, 15000);
     if (await page.evaluate(`!!document.getElementById('login-email')`)) return;
   }
-  await page.evaluate(`document.querySelector('.user-menu > button').click(), true`);
+  await clickOn(page, `.user-menu > button`);
   await page.waitFor(`!!document.querySelector('.menu-item:last-child')`);
-  await page.evaluate(`document.querySelector('.menu-item:last-child').click(), true`);
+  await clickOn(page, `.menu-item:last-child`);
   await page.waitFor(`location.pathname === '/login' && !!document.getElementById('login-email')`);
 }
 
@@ -846,7 +856,7 @@ async function signIn(page, who) {
   await page.waitFor(`!!document.getElementById('login-email')`);
   await setInput(page, 'login-email', who.email);
   await setInput(page, 'login-password', who.password);
-  await page.evaluate(`document.querySelector('form button[type="submit"]').click(), true`);
+  await clickOn(page, `form button[type="submit"]`);
   await page.waitFor(`!!document.querySelector('.topbar')`);
 }
 
@@ -864,7 +874,7 @@ async function setCheckbox(page, id, on) {
 
 // dialogSubmit presses the submit button of the open dialog's form.
 async function dialogSubmit(page) {
-  await page.evaluate(`document.querySelector('[role="dialog"] form button[type="submit"]').click(), true`);
+  await clickOn(page, `[role="dialog"] form button[type="submit"]`);
 }
 
 // pickPerson types a query into the people combobox and chooses the option with the name.
@@ -993,6 +1003,78 @@ async function ownerChecks(page, { base, accountID, sink }) {
   check(true, 'the owner creates a team space');
 }
 
+// p1Setup gives the member a 1 MB file in My files, through the account key, before the owner sets its limit. The
+// key reaches every folder, so the member's personal folder is found by its owner.
+async function p1Setup(base, accountKey, memberID) {
+  const list = await api(base, 'GET', '/api/v1/folders', accountKey);
+  const mine = (list.items ?? []).find((f) => f.kind === 'personal' && f.owner_user_id === memberID);
+  if (!mine) throw new Error('the member has no personal folder in the listing');
+  await rawPut(base, `/api/v1/folders/${mine.id}/files?path=%2Fp1-ledger.bin`, accountKey, randomBytes(1_000_000), 'application/octet-stream');
+}
+
+// p1OwnerChecks: the owner sets the member's own limit in the person dialog, to 0.01 GB (10 MB; the interface names
+// limits in GB and TB only). Then Manage > Storage shows the member's total, and no file name from its My files.
+async function p1OwnerChecks(page) {
+  await navigateTo(page, '/manage/people');
+  await page.waitFor(
+    `location.pathname === '/manage/people' && [...document.querySelectorAll('.row-title')].some((e) => e.textContent.includes(${q(MEMBER.name)}))`,
+  );
+  await page.evaluate(
+    `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes(${q(': ' + MEMBER.name)})); b.click(); return true; })()`,
+  );
+  await page.waitFor(`!!document.getElementById('person-limit')`);
+  await clickButton(page, 'Change limit');
+  await page.waitFor(`!!document.querySelector('[role="dialog"] input[aria-label="Amount"]')`);
+  await setValue(page, '[role="dialog"] input[aria-label="Amount"]', '0.01');
+  await clickButton(page, 'Save limit');
+  await page.waitFor(`(document.querySelector('[role="dialog"] .alert.success')?.textContent ?? '') === 'Limit saved.'`);
+  await page.waitFor(`(document.getElementById('person-limit')?.textContent ?? '').includes('10 MB')`);
+  check(true, 'the owner sets the member\'s limit to 10 MB in the person dialog');
+  await press(page, '[role="dialog"]', 'Escape');
+  await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+
+  await navigateTo(page, '/manage/storage');
+  await page.waitFor(
+    `document.querySelector('h1')?.textContent.trim() === 'Storage' && [...document.querySelectorAll('#people-storage tbody tr')].some((r) => r.textContent.includes(${q(MEMBER.name)}))`,
+    15000,
+  );
+  const row = await page.evaluate(
+    `[...document.querySelectorAll('#people-storage tbody tr')].find((r) => r.textContent.includes(${q(MEMBER.name)})).textContent`,
+  );
+  check(row.includes('1 MB') && row.includes('10 MB'), `Manage > Storage shows the member's total and limit (${row.replace(/\s+/g, ' ').trim()})`);
+  const content = await page.evaluate(`document.querySelector('.content').textContent`);
+  check(!content.includes('p1-ledger.bin'), 'Manage > Storage shows no file name from the member\'s My files');
+}
+
+// p1MemberChecks: the member, over its limit, uploads a 9.5 MB file to My files. The server refuses the creation,
+// and the interface says so. Then the member's /storage page shows the meter and the largest file it holds.
+async function p1MemberChecks(page, { dir }) {
+  const over = join(dir, 'p1-over.bin');
+  await writeFile(over, randomBytes(9_500_000));
+  await clickOn(page, `.sidenav a[href="/files"]`);
+  await page.waitFor(`/^\\/files\\/fld_/.test(location.pathname) && !!document.querySelector('.toolbar input[type="file"]')`);
+  await page.setFiles('.toolbar input[type="file"]:not([webkitdirectory])', [over]);
+  await page.waitFor(
+    `[...document.querySelectorAll('[role="alert"]')].some((e) => e.textContent.toLowerCase().includes('storage limit'))`,
+    20000,
+  );
+  const alert = await page.evaluate(
+    `[...document.querySelectorAll('[role="alert"]')].map((e) => e.textContent.trim()).find((t) => t.toLowerCase().includes('storage limit'))`,
+  );
+  check(!!alert, `the member's upload over its limit is refused, with the message (${alert})`);
+  check(!(await page.evaluate(`!!document.querySelector(${q(rowSel('p1-over.bin'))})`)), 'the refused file is not listed in My files');
+
+  await clickOn(page, `.sidenav a[href="/storage"]`);
+  await page.waitFor(`location.pathname === '/storage' && !!document.querySelector('.content [role="meter"]')`);
+  const max = await page.evaluate(`document.querySelector('.content [role="meter"]').getAttribute('aria-valuemax')`);
+  check(max === '10000000', `the storage page shows the meter against the 10 MB limit (aria-valuemax ${max})`);
+  await page.waitFor(
+    `[...document.querySelectorAll('.storage-table th')].some((th) => th.textContent.includes('p1-ledger.bin'))`,
+    15000,
+  );
+  check(true, 'the storage page lists the member\'s largest file');
+}
+
 // adminChecks is the installation admin's tenant pages, end to end: a new tenant whose first owner gets a link shown
 // once, and an API key for it shown once. The key then works for the API, and is gone from the page once its dialog closes.
 async function adminChecks(page, { base, adminKey }) {
@@ -1005,7 +1087,7 @@ async function adminChecks(page, { base, adminKey }) {
   await setInput(page, 'new-tenant-owner-email', TENANT.owner.email);
   await setInput(page, 'new-tenant-owner-name', TENANT.owner.name);
   await setInput(page, 'new-tenant-limit', '5');
-  await page.evaluate(`document.querySelector('input[name="how"][value="link"]').click(), true`);
+  await clickOn(page, `input[name="how"][value="link"]`);
   await dialogSubmit(page);
   await page.waitFor(`!!document.getElementById('tenant-link-value') || !!document.querySelector('[role="dialog"] .alert.error')`);
   const createdError = await page.evaluate(`document.querySelector('[role="dialog"] .alert.error')?.textContent ?? ''`);
@@ -1073,7 +1155,7 @@ async function sharingChecks(page, { base, dir, accountID, accountKey, memberID,
   // The owner shares Board with the member as a viewer, without mail. Then hides Team B and shows it again.
   await signOut(page);
   await signIn(page, OWNER);
-  await page.evaluate(`document.querySelector('.teams a[href="/files/${teamC}"]').click(), true`);
+  await clickOn(page, `.teams a[href="/files/${teamC}"]`);
   await page.waitFor(`location.pathname === '/files/${teamC}'`);
   await rowAppears(page, 'Board');
   await selectRow(page, 'Board');
@@ -1091,13 +1173,13 @@ async function sharingChecks(page, { base, dir, accountID, accountKey, memberID,
   await press(page, '[role="dialog"]', 'Escape');
   await page.waitFor(`!document.querySelector('[role="dialog"]')`);
 
-  await page.evaluate(`document.querySelector('button[aria-label="Options for Team B"]').click(), true`);
+  await clickOn(page, `button[aria-label="Options for Team B"]`);
   await clickMenuItem(page, 'Hide');
   await page.waitFor(`!document.querySelector('.teams a[href="/files/${teamB}"]')`);
   check(true, 'the owner hides a team space, and it leaves the list');
-  await page.evaluate(`document.querySelector('.nav-title + .teams + .check input').click(), true`);
+  await clickOn(page, `.nav-title + .teams + .check input`);
   await page.waitFor(`!!document.querySelector('.teams a[href="/files/${teamB}"]')`);
-  await page.evaluate(`document.querySelector('button[aria-label="Options for Team B"]').click(), true`);
+  await clickOn(page, `button[aria-label="Options for Team B"]`);
   await clickMenuItem(page, 'Show');
   // Wait until both lists have been read again: the space is listed once, and no list still marks it hidden.
   await page.waitFor(`document.querySelectorAll('.teams a[href="/files/${teamB}"]').length === 1 && !document.querySelector('.teams .count')`);
@@ -1106,10 +1188,10 @@ async function sharingChecks(page, { base, dir, accountID, accountKey, memberID,
   // The member sees the folder in Shared with me, opens it, and has no upload, rename or delete.
   await signOut(page);
   await signIn(page, MEMBER);
-  await page.evaluate(`document.querySelector('.sidenav a[href="/shared"]').click(), true`);
+  await clickOn(page, `.sidenav a[href="/shared"]`);
   await page.waitFor(`location.pathname === '/shared' && document.querySelector('.shared a[href="/n/${board}"]')`);
   check(true, 'Shared with me lists the folder the owner shared');
-  await page.evaluate(`document.querySelector('.shared a[href="/n/${board}"]').click(), true`);
+  await clickOn(page, `.shared a[href="/n/${board}"]`);
   await page.waitFor(`location.pathname === '/files/${teamC}/${board}'`);
   await rowAppears(page, 'notes.txt');
   const viewerButtons = await buttonTexts(page);
@@ -1181,21 +1263,21 @@ async function sharingChecks(page, { base, dir, accountID, accountKey, memberID,
   await signIn(page, OWNER);
   await page.waitFor(`/1 waiting/.test(document.querySelector('.sidenav a[href="/requests"]')?.textContent ?? '')`);
   check(true, 'the owner sees a requests entry with a count');
-  await page.evaluate(`document.querySelector('.sidenav a[href="/requests"]').click(), true`);
+  await clickOn(page, `.sidenav a[href="/requests"]`);
   await page.waitFor(`location.pathname === '/requests' && !!document.querySelector('.requests .request')`);
   await page.waitFor(`document.querySelector('.requests .request').textContent.includes('secret.txt')`);
-  await page.evaluate(
-    `(() => { const li = document.querySelector('.requests .request'); [...li.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Approve').click(); return true; })()`,
+  await page.waitFor(
+    `(() => { const b = [...(document.querySelector('.requests .request')?.querySelectorAll('button') ?? [])].find((x) => x.textContent.trim() === 'Approve'); if (!b) return false; b.click(); return true; })()`,
   );
   await page.waitFor(`document.querySelector('.alert.success') && document.querySelector('.alert.success').textContent.includes('Access given to ${MEMBER.name}')`);
   check(true, 'the owner approves the request');
 
   // The owner turns on no-download for viewers in Team B.
-  await page.evaluate(`document.querySelector('button[aria-label="Options for Team B"]').click(), true`);
+  await clickOn(page, `button[aria-label="Options for Team B"]`);
   await clickMenuItem(page, 'Space settings');
   await page.waitFor(`!!document.querySelector('[role="dialog"]')`);
-  await page.evaluate(
-    `(() => { const l = [...document.querySelectorAll('[role="dialog"] label.switch')].find((x) => x.textContent.includes("can't download")); l.querySelector('input').click(); return true; })()`,
+  await page.waitFor(
+    `(() => { const l = [...document.querySelectorAll('[role="dialog"] label.switch')].find((x) => x.textContent.includes("can't download")); if (!l) return false; l.querySelector('input').click(); return true; })()`,
   );
   await page.waitFor(`(document.querySelector('[role="dialog"] .live')?.textContent ?? '') === 'Saved.'`);
   check(true, 'the owner turns on no-download for viewers in Team B');
@@ -1208,7 +1290,7 @@ async function sharingChecks(page, { base, dir, accountID, accountKey, memberID,
   await navigateTo(page, `/n/${secret}`);
   await page.waitFor(`document.body.textContent.includes('secret.txt')`, 15000);
   check(true, 'the approved member opens the file it asked for');
-  await page.evaluate(`document.querySelector('.teams a[href="/files/${teamB}"]').click(), true`);
+  await clickOn(page, `.teams a[href="/files/${teamB}"]`);
   await page.waitFor(`location.pathname === '/files/${teamB}'`);
   await rowAppears(page, 'readme.txt');
   await selectRow(page, 'readme.txt');
