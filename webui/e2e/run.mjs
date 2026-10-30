@@ -17,6 +17,7 @@ import { promisify } from 'node:util';
 import { freePort, launchBrowser, Page } from './cdp.mjs';
 import { linkChecks } from './sharePublic.mjs';
 import { sharingChecks } from './shareDialog.mjs';
+import * as owner from './owner.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -26,6 +27,8 @@ const OWNER = { email: 'olivia@example.com', name: 'Olivia Owner', password: 'co
 const MEMBER = { email: 'mateo@example.com', name: 'Mateo Member', password: 'correct horse battery staple' };
 const ADMIN = { email: 'ada@example.com', name: 'Ada Admin', password: 'correct horse battery staple' };
 const BRAND = { name: 'E2E Drive', accent: '#0F766E' };
+const INVITEE = { email: 'dana@example.com', name: 'Dana Invited', password: 'correct horse battery staple' };
+const TENANT = { name: 'Acme Ltd', owner: { email: 'owen@example.com', name: 'Owen Owner' } };
 
 const results = [];
 function check(ok, what) {
@@ -37,6 +40,15 @@ function check(ok, what) {
 // The answers the run causes on purpose: the start-up probe of an anonymous visitor, and a sign-in link
 // used a second time. The browser logs each as a failed request; the run counts them instead.
 const EXPECTED = [
+  // A share link the visitor cannot open: a dead link is a 404, a wrong or missing password a 401 (both counted by name).
+  {
+    name: 'dead link',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/share\/open$/.test(e.url ?? '') && /status of 404\b/.test(e.text ?? ''),
+  },
+  {
+    name: 'password refused',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/share\/open$/.test(e.url ?? '') && /status of 401\b/.test(e.text ?? ''),
+  },
   // The sharing checks refuse a dead, removed, password-protected or wrong link on purpose, and a node a caller
   // cannot reach: each refusal is logged as a failed request, and counted here.
   {
@@ -55,6 +67,16 @@ const EXPECTED = [
     name: 'used sign-in link',
     matches: (e) =>
       e.source === 'network' && /\/api\/v1\/auth\/sign-in-link$/.test(e.url ?? '') && /status of 400\b/.test(e.text ?? ''),
+  },
+  // A link for another user: the browser is asked before it signs in as that user, and the page logs the 409 it got.
+  {
+    name: 'switch prompt',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/auth\/sign-in-link$/.test(e.url ?? '') && /status of 409\b/.test(e.text ?? ''),
+  },
+  // The member's upload over its limit is refused by the server.
+  {
+    name: 'over the limit',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/uploads$/.test(e.url ?? '') && /status of (403|413|507)\b/.test(e.text ?? ''),
   },
   // The upload that meets a taken name is refused once, and asked about; the connection the run drops is refused
   // by the browser while it is down.
@@ -541,6 +563,7 @@ async function main() {
     await api(base, 'POST', '/api/v1/auth/verify', null, { token: adminToken, password: ADMIN.password });
 
     let memberID = null;
+    let ownerID = null;
     for (const u of [
       { ...OWNER, role: 'owner' },
       { ...MEMBER, role: 'member' },
@@ -552,14 +575,18 @@ async function main() {
         verification: 'link',
       });
       if (u.role === 'member') memberID = created.id;
+      if (u.role === 'owner') ownerID = created.id;
       await api(base, 'POST', '/api/v1/auth/verify', null, { token: created.verification.token, password: u.password });
     }
+    check(true, 'account, owner and member created and verified through the API');
     const teamA = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'Team A' })).id;
     await api(base, 'PUT', `/api/v1/accounts/${accountID}/folders/${teamA}/grants/${memberID}`, accountKey, { level: 'write' });
     // Team B: the member only reads it, and it holds one file.
     const teamB = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'Team B' })).id;
     await api(base, 'PUT', `/api/v1/accounts/${accountID}/folders/${teamB}/grants/${memberID}`, accountKey, { level: 'read' });
     await rawPut(base, `/api/v1/folders/${teamB}/files?path=%2Freadme.txt`, accountKey, 'read me\n');
+    check(true, 'two team spaces made; the member edits one and reads the other');
+    await owner.p1Setup({ api, rawPut }, base, accountKey, memberID, randomBytes);
 
     const launched = await launchBrowser(await findBrowser(), join(dir, 'chrome-profile'));
     browser = launched.proc;
@@ -603,7 +630,11 @@ async function main() {
     const brandName = await page.evaluate(`document.querySelector('header a bdi')?.textContent ?? ''`);
     check(brandName.includes(BRAND.name), 'the header shows the configured brand name');
     const sider = await page.evaluate(`getComputedStyle(document.querySelector('.ant-layout-sider')).backgroundColor`);
-    check(sider === 'rgb(15, 118, 110)', `the sidebar takes the configured accent (${sider})`);
+    check(sider === 'rgb(15, 118, 110)', `the accent is the configured colour (${sider})`);
+    // The shell's menu is antd items, not links: the owner's Manage section is its Overview entry and its people entry.
+    const ownerItems = await menuTexts(page);
+    check(ownerItems.includes('Overview') && ownerItems.includes('People'), 'an owner sees the Manage link');
+    check(!ownerItems.includes('Tenants') && !ownerItems.includes('Admins'), 'an owner sees no Admin link: an owner is not an installation admin');
     const items = await menuTexts(page);
     check(items.includes('People'), 'an owner sees the owner pages in the menu');
     check(!items.includes('Tenants'), 'an owner sees no Tenants page: an owner is not an installation admin');
@@ -654,41 +685,38 @@ async function main() {
     await signIn(page, MEMBER);
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
+    check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
     await fileBrowserChecks(page, { base, dir, teamA, teamB });
     await fileBrowserExtraChecks(page, { dir, teamA });
+    const home = await owner.homeChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
     await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
+
+    // The owner's management pages, then the installation admin's, then a member who opens the owner's pages.
+    await signOut(page);
+    await signIn(page, OWNER);
+    await owner.homeOwnerChecks(page, h, home);
+    await owner.ownerChecks(page, h, { base, sink, waitForMail, INVITEE });
+    await owner.p1OwnerChecks(page, h, { MEMBER });
+    await signOut(page);
+    await signIn(page, ADMIN);
+    await owner.adminChecks(page, h, { base, adminKey, TENANT });
     await signOut(page);
     await signIn(page, MEMBER);
-    await page.goto(base + '/storage');
-    await page.waitFor(`document.body.textContent.includes('Coming soon')`);
-    check(true, 'a page not built yet shows its placeholder inside the shell');
-
-    // A sign-in link: the account's key makes one for the member; the browser opens it and lands signed in.
-    await signOut(page);
-    const link = await api(base, 'POST', `/api/v1/accounts/${accountID}/users/${memberID}/sign-in-links`, accountKey, {
-      next: `/files/${teamA}`,
-    });
-    check(link.url.startsWith(base + '/sign-in#token='), 'the account key makes a sign-in link for the member');
-    await page.goto(link.url);
-    await page.waitFor(
-      `location.pathname === '/files/${teamA}' && !location.hash && !!document.querySelector('[data-testid="account-menu"]')`,
-      15000,
-    );
-    const signedIn = await page.evaluate(`document.querySelector('[data-testid="account-menu"]').textContent`);
-    check(signedIn.includes(MEMBER.name), `the browser opens the link, lands on the requested path, signed in (${signedIn.trim()})`);
-    await signOut(page);
-    await page.goto(link.url);
-    await page.waitFor(`document.body.textContent.includes('already used')`, 15000);
-    check(
-      !(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`)),
-      'the same link a second time shows the expired message, and no shell',
-    );
+    await owner.memberNotFound(page, h);
+    await owner.p1MemberChecks(page, h, { dir, writeFile, randomBytes, join });
+    await owner.signInLinkChecks(page, h, { base, accountID, accountKey, memberID, teamA, MEMBER });
+    await owner.switchChecks(page, h, { base, accountID, accountKey, OWNER, MEMBER, signIn });
     await linkChecks(page, { base, accountID, accountKey }, h);
 
     // Policy: no console error and no content-policy violation (the nonce policy is enforced here),
     // and no request to another origin.
     check(page.errors.length === 0, `no console errors or policy violations (${page.errors.join(' | ') || 'none'})`);
     check(page.expectedAnswers.get('taken name')?.length === 1, 'exactly one upload met a taken name, and was asked about it');
+    check(page.expectedAnswers.get('dead link')?.length === 4, 'the four dead links were refused once each: a signed-out open of a members\' link, a removed link, a deleted anyone link and a deleted drop link');
+    check(page.expectedAnswers.get('password refused')?.length === 2, 'the password link was refused twice: asked for, then a wrong one');
+    check(owner.switchPrompts() === 2, 'the two links for another user were each asked about, on a browser signed in as another');
+    check(page.expectedAnswers.get('over the limit')?.length === 1, "the member's upload over its limit was refused once, by the server");
+    check((page.expectedAnswers.get('node the caller cannot reach')?.length ?? 0) >= 2, 'the not-found views asked for access, and the browser logged their 404s');
     check(page.expectedAnswers.get('dropped connection')?.length >= 1, 'the connection the run dropped was refused while it was down, and counted');
     check(page.expectedAnswers.get('start-up probe')?.length >= 1, 'the start-up probe of an anonymous visitor was refused, and counted');
     check(page.expectedAnswers.get('used sign-in link')?.length === 1, 'the used sign-in link was refused once, on the second visit');

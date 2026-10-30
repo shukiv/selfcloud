@@ -27,8 +27,10 @@ const rules = [
 // ConfigProvider, so they get no nonce and no theme. The app uses App.useApp() for them.
 const antdStatics = 'the antd static API renders outside the theme and the nonce; use App.useApp()';
 const staticModals = new Set(['confirm', 'info', 'success', 'error', 'warning']);
-// The file-browser and sharing views: their dialogs and drawers keep maskClosable={false}.
-const fileDialogScope = /^(components\/files\/|components\/share\/|pages\/(Files|Trash|NodeLink|Shared|Requests|OpenLink)Page\.tsx$)/;
+// Every dialog and drawer in the source keeps maskClosable={false}: a click outside a dialog must never answer it
+// (a form, a secret, or a question about the session). The one named exception is the navigation drawer in Shell.tsx,
+// which only lists destinations and closes on a click.
+const maskExempt = { file: 'components/Shell.tsx', tag: 'Drawer' };
 
 // astProblems finds what a line rule cannot: a .message read anywhere in a catch clause (whatever the
 // variable is called) or in a .catch callback, and the antd statics.
@@ -50,15 +52,14 @@ function astProblems(name, text) {
     }
   }
   // A click on the mask behind a file dialog must not answer it: Svelte's dialogs closed on Escape only.
-  const fileScope = fileDialogScope.test(name);
   const visit = (node, inCatch) => {
     if (ts.isCatchClause(node)) inCatch = true;
-    if (fileScope && (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))) {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
       const tag = node.tagName.getText(sf);
-      if (tag === 'Modal' || tag === 'Drawer') {
+      if ((tag === 'Modal' || tag === 'Drawer') && !(name === maskExempt.file && tag === maskExempt.tag)) {
         const attrs = node.attributes.properties;
         const kept = attrs.some((a) => ts.isJsxAttribute(a) && a.name.text === 'maskClosable' && a.initializer && ts.isJsxExpression(a.initializer) && a.initializer.expression?.kind === ts.SyntaxKind.FalseKeyword);
-        if (!kept) out.push([at(node), `<${tag}> in a file-browser view needs maskClosable={false}`]);
+        if (!kept) out.push([at(node), `<${tag}> needs maskClosable={false}`]);
       }
     }
     if (ts.isPropertyAccessExpression(node)) {

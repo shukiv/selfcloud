@@ -100,6 +100,16 @@ export function accentPlan(accent: string): { light: boolean; dark: boolean } {
   };
 }
 
+// safeLogo keeps a logo URL only when the page may put it in an image: the same-origin path the server sends (a single
+// slash, no backslash), an http(s) URL, or a PNG, JPEG, GIF, WebP or SVG data URL. Anything else gives no logo.
+export function safeLogo(url: string | null | undefined): string | null {
+  if (typeof url !== 'string' || url === '') return null;
+  if (/^\/(?![/\\])[^\\\s]*$/.test(url)) return url;
+  if (/^https?:\/\/[^\s\\]+$/i.test(url)) return url;
+  if (/^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/i.test(url)) return url;
+  return null;
+}
+
 export function validAccent(hex: string): boolean {
   return /^#[0-9a-fA-F]{6}$/.test(hex);
 }
@@ -210,7 +220,7 @@ export function resolveBrand(b: Brand): ResolvedBrand {
   return {
     name: b.name,
     accent,
-    logo_url: b.logo_url,
+    logo_url: safeLogo(b.logo_url),
     light,
     dark,
     sidebar,

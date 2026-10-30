@@ -8,6 +8,7 @@ import "./index.css";
 import { clearOnSessionChange, createQueryClient } from "./lib/query";
 import { createAppRouter } from "./lib/router";
 import { ThemeProvider } from "./theme/theme";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { Boot, Direction, Gate } from "./App";
 
 const queryClient = createQueryClient();
@@ -21,7 +22,9 @@ createRoot(root).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <Direction>
-          <RouterProvider router={router} />
+          <ErrorBoundary>
+            <RouterProvider router={router} />
+          </ErrorBoundary>
         </Direction>
       </ThemeProvider>
     </QueryClientProvider>

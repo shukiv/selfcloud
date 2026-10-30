@@ -110,3 +110,25 @@ describe('derived accent text reads at 4.5:1 on the card', () => {
   });
 });
 
+// The logo is a URL the page puts in an <img src>. The server sends only its own path, /brand/logo; anything else
+// (a script URL, another origin's protocol-relative path, a data URL of another type) gives no logo.
+describe('the logo URL is checked before it reaches an image', () => {
+  const base = { name: 'Acme', palette: { light: {}, dark: {} }, sidebar: {} } as never as Record<string, unknown>;
+  const logoOf = (logo_url: string | null) => resolveBrand({ ...base, logo_url } as never).logo_url;
+
+  it('keeps the same-origin path the server sends, an http(s) URL, and a PNG data URL', () => {
+    expect(logoOf('/brand/logo')).toBe('/brand/logo');
+    expect(logoOf('https://cdn.example.com/logo.png')).toBe('https://cdn.example.com/logo.png');
+    expect(logoOf('data:image/png;base64,iVBORw0KGgo=')).toBe('data:image/png;base64,iVBORw0KGgo=');
+  });
+
+  it('refuses a script URL, a protocol-relative URL, a backslash path, and a data URL of another type (guard: safeLogo)', () => {
+    for (const bad of ['javascript:alert(1)', 'JaVaScRiPt:alert(1)', '//evil.example/logo.png', '/\\evil.example/x', 'data:text/html;base64,PHNjcmlwdD4=', 'ftp://example.com/logo.png', 'vbscript:x']) {
+      expect(logoOf(bad), bad).toBeNull();
+    }
+  });
+
+  it('gives no logo when none is set', () => {
+    expect(logoOf(null)).toBeNull();
+  });
+});

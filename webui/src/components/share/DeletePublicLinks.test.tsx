@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -79,5 +79,28 @@ describe("delete all public links", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByRole("alert")).toBeNull();
     session.set(null);
+  });
+
+  // Escape during the delete would close the dialog while the outcome is still out: the close waits for the answer.
+  it("Escape does not close the dialog while the delete is in flight (guard: keyboard and onCancel check busy)", async () => {
+    const user = userEvent.setup();
+    let release!: (v: { deleted: number }) => void;
+    api.deleteAllPublicLinks.mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+    const ondone = vi.fn();
+    render(<DeletePublicLinks account="acc_1" count={2} ondone={ondone} />);
+    await user.click(screen.getByRole("button", { name: "Delete all public links" }));
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("dialog").querySelector(".ant-btn-primary") as HTMLElement);
+    await waitFor(() => expect(api.deleteAllPublicLinks).toHaveBeenCalled());
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape", code: "Escape", keyCode: 27 });
+    await new Promise((r) => setTimeout(r, 600));
+    expect(screen.queryByRole("dialog")).not.toBeNull();
+    // Nor can the dialog be closed by its own close button or its Cancel button while the delete is out.
+    const open = screen.getByRole("dialog");
+    expect(open.querySelector(".ant-modal-close")).toBeNull();
+    const cancel = [...open.querySelectorAll("button")].find((b) => b.textContent === "Cancel") as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    release({ deleted: 2 });
+    await waitFor(() => expect(ondone).toHaveBeenCalledWith(2));
   });
 });

@@ -66,6 +66,14 @@ async function navigateTo(page, path) {
 
 // signOut and signIn use the account menu the React shell draws (data-testid), as the webui e2e suite does.
 async function signOut(page) {
+  // A signed-out visitor on a public page has no account menu: the shell is opened first, through a link click
+  // (as run.mjs does). A visitor who is not signed in has nothing to sign out of.
+  if (!(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`))) {
+    if (await page.evaluate(`location.pathname === '/login'`)) return;
+    await navigateTo(page, '/');
+    await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') || location.pathname === '/login'`, 15000);
+    if (!(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`))) return;
+  }
   await clickOn(page, '[data-testid="account-menu"]');
   await page.waitFor(
     `(() => { const b = [...document.querySelectorAll('.ant-dropdown-menu-item')].find((x) => x.textContent.trim() === 'Sign out'); if (!b) return false; b.click(); return true; })()`,
@@ -282,7 +290,6 @@ export async function sharingChecks(page, ctx) {
 // publicLinksDeleteAllChecks: the account has an anyone link and a drop link (made here through the account key) and an
 // organisation link. The owner opens Manage > Links, sees the two public links and the organisation link, and uses
 // "Delete all public links", confirming the count. Both public links stop working; the organisation link stays.
-// Not run in this build: it opens Manage > Links, which is part v4. Kept so the check can move there unchanged.
 export async function publicLinksDeleteAllChecks(page, ctx) {
   const { base, accountID, accountKey, fld, check, OWNER } = ctx;
   const dir = async (path) => (await api(base, 'POST', `/api/v1/folders/${fld}/directories`, accountKey, { path, parents: false })).id;

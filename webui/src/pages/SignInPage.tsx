@@ -33,7 +33,7 @@ export default function SignInPage() {
     try {
       const signed = await signInWithLink(value, confirm);
       await establish(signed);
-      go(signInTarget(signed.next), { replace: true });
+      go(signInTarget(signed.next, signed.user), { replace: true });
     } catch (err) {
       const asked = switchPromptOf(err);
       if (asked) {
@@ -77,6 +77,8 @@ export default function SignInPage() {
         open={prompt !== null}
         title={t("signin.switch.title")}
         onCancel={stay}
+        // A click outside answers a question about the session, so it must not answer it: only the buttons do.
+        maskClosable={false}
         footer={null}
         destroyOnHidden
       >

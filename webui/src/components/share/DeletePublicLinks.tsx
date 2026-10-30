@@ -65,10 +65,15 @@ export default function DeletePublicLinks({
       <Modal
         open={asking}
         title={t("links.deleteAll.title")}
-        onCancel={() => setAsking(false)}
+        // Escape and the close button wait for the answer: a dialog closed mid-request would hide the outcome.
+        onCancel={() => {
+          if (!busy) setAsking(false);
+        }}
+        keyboard={!busy}
+        closable={!busy}
         maskClosable={false}
         footer={[
-          <Button key="cancel" onClick={() => setAsking(false)}>
+          <Button key="cancel" disabled={busy} onClick={() => setAsking(false)}>
             {t("common.cancel")}
           </Button>,
           <Button key="go" danger type="primary" loading={busy} disabled={busy} onClick={() => void confirmDelete()}>

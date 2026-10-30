@@ -1006,5 +1006,8 @@
   "auth.headline1": "Your files.",
   "auth.headline2": "Your server.",
   "auth.headline3": "Anywhere.",
-  "auth.tagline": "A private drive on your own server, for files of any size."
+  "auth.tagline": "A private drive on your own server, for files of any size.",
+  "app.crash.title": "Something went wrong on this page.",
+  "app.crash.body": "Reload the page to continue.",
+  "app.crash.reload": "Reload"
 }

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
-import { Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Space, theme as antdTheme } from "antd";
+import { Alert as AntdAlert, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Space, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
 import { Clock, FolderOpen, House, Inbox, Share2, Star, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useT, useLang, directionOf, translatePlural } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { brand } from "../lib/brand";
-import { flash, isAdmin, isOwner, session, sessionKey } from "../lib/session";
+import { flash, isAdmin, isOwner, session, sessionChanged, sessionKey } from "../lib/session";
+import { failureText } from "../lib/manage/failure";
 import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/files/folders";
 import { setHidden } from "../lib/sharing/api";
 import { pendingRequests, refreshPendingRequests } from "../lib/sharing/requestCount";
@@ -184,18 +185,26 @@ export default function Shell({ children }: { children: ReactNode }) {
   const hiddenTeams = admin ? [] : hiddenList.filter((f) => f.kind === "team");
   const [showHidden, setShowHidden] = useState(false);
   const [settingsFor, setSettingsFor] = useState<FolderAccess | null>(null);
-  // A change of person closes the settings and clears the hidden toggle: neither belongs to the next person.
+  // shellError is the text, by code, of a failed read of the spaces or a refused hide. The server's text is never shown.
+  const [shellError, setShellError] = useState<string | null>(null);
+  // A change of person closes the settings, clears the hidden toggle and the error: none of them belongs to the next person.
   const sessionID = sessionKey(me);
   useEffect(() => {
     setShowHidden(false);
     setSettingsFor(null);
+    setShellError(null);
   }, [sessionID]);
   useEffect(() => {
-    if (!admin) void loadFolders().catch(() => undefined);
+    if (admin) return;
+    const stale = sessionChanged();
+    loadFolders().catch((err: unknown) => {
+      if (!stale()) setShellError(failureText(err, lang));
+    });
   }, [admin]);
-  // The count of requests waiting for the caller is read for each person, so the entry shows the right count.
+  // The count of requests waiting for the caller is read for each person, so the entry shows the right count. An
+  // installation admin has no requests of its own, and the server refuses the read: it is not sent (as Svelte).
   useEffect(() => {
-    if (me) void refreshPendingRequests();
+    if (me && !admin) void refreshPendingRequests();
   }, [sessionID]);
   const pending = useStore(pendingRequests);
   const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n));
@@ -220,16 +229,27 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   // toggleHidden shows or hides the hidden team spaces. Turning them on reads the hidden list.
   const toggleHidden = async (on: boolean) => {
+    const stale = sessionChanged();
     setShowHidden(on);
-    if (on) await loadHiddenFolders().catch(() => undefined);
+    if (on) {
+      await loadHiddenFolders().catch((err: unknown) => {
+        if (!stale()) setShellError(failureText(err, lang));
+      });
+    }
   };
 
   // hideSpace hides a team space from the caller's own list, or shows it again. Access does not change. A refused
   // change leaves the lists as they are; both are read again either way, so they show the truth. A failed read
   // keeps the list it had.
+  // A failure is shown by its code, and a late answer after a change of person is dropped (sessionChanged is taken first).
   const hideSpace = async (team: FolderAccess, hidden: boolean) => {
-    await setHidden(team.id, hidden).catch(() => undefined);
-    await Promise.all([loadFolders().catch(() => undefined), showHidden ? loadHiddenFolders().catch(() => undefined) : undefined]);
+    const stale = sessionChanged();
+    const failed = (err: unknown) => {
+      if (!stale()) setShellError(failureText(err, lang));
+    };
+    setShellError(null);
+    await setHidden(team.id, hidden).catch(failed);
+    await Promise.all([loadFolders().catch(failed), showHidden ? loadHiddenFolders().catch(failed) : undefined]);
   };
 
   const go = (key: string) => {
@@ -265,6 +285,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         className="shell-menu"
         style={{ border: "none", background: "transparent" }}
       />
+      {shellError && !collapsedNow && <AntdAlert type="error" showIcon role="alert" message={shellError} style={{ margin: "8px 0" }} />}
       {(teams.length > 0 || showHidden) && (
         <div style={{ margin: "16px 8px 0" }}>
           <div style={{ fontSize: 12, opacity: 0.8, margin: "0 0 6px" }}>{t("nav.teams")}</div>
@@ -367,10 +388,14 @@ export default function Shell({ children }: { children: ReactNode }) {
               icon={<MenuIcon size={18} />}
             />
           )}
-          <a href={admin ? "/admin/tenants" : "/"} style={{ fontWeight: 700, color: token.colorText }}>
+          {/* One line in the 56px bar: a long brand name is cut short, never wrapped over the bar's edge. */}
+          <a
+            href={admin ? "/admin/tenants" : "/"}
+            style={{ fontWeight: 700, color: token.colorText, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
             <bdi>{b.name}</bdi>
           </a>
-          {admin && <span style={{ color: token.colorTextSecondary }}>{t("admin.badge")}</span>}
+          {admin && <span style={{ color: token.colorTextSecondary, whiteSpace: "nowrap" }}>{t("admin.badge")}</span>}
           <Space size={isMobile ? 4 : "middle"} style={{ marginInlineStart: "auto" }}>
             <LangSwitcher />
             {!isMobile && <ThemeToggle />}

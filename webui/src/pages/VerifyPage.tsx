@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button } from "antd";
+import { homeFor } from "../lib/routes";
 import { establish, verifyAccount } from "../lib/auth";
 import { errorMessage, isLinkFailure, type Message } from "../lib/errors";
 import { go } from "../lib/router";
@@ -55,7 +56,7 @@ export default function VerifyPage() {
     try {
       const signed = await verifyAccount(token, password);
       await establish(signed);
-      go("/", { replace: true });
+      go(homeFor(signed.user), { replace: true });
     } catch (err) {
       if (isLinkFailure(err)) setLinkUsable(false);
       setError(errorMessage(err, "link"));

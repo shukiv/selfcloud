@@ -48,7 +48,8 @@ export default function LoginPage() {
     try {
       const signed = await signIn(email.trim(), password, account || undefined);
       await establish(signed);
-      go(afterSignIn(next), { replace: true });
+      // One navigation, to the place the person is going: the gate does not have to move the page on a second time.
+      go(afterSignIn(next, signed.user), { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && Array.isArray(err.details.accounts)) {
         const choices = err.details.accounts as AccountChoice[];

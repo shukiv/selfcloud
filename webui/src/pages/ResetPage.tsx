@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Typography } from "antd";
+import { homeFor } from "../lib/routes";
 import { establish, resetPassword } from "../lib/auth";
 import { errorMessage, isLinkFailure, type Message } from "../lib/errors";
 import { go } from "../lib/router";
@@ -57,7 +58,7 @@ export default function ResetPage() {
       const signed = await resetPassword(token, password);
       await establish(signed);
       flash.set("reset.done");
-      go("/", { replace: true });
+      go(homeFor(signed.user), { replace: true });
     } catch (err) {
       if (isLinkFailure(err)) setLinkUsable(false);
       setError(errorMessage(err, "link"));

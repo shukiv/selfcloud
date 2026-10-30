@@ -1006,5 +1006,8 @@
   "auth.headline1": "Tus archivos.",
   "auth.headline2": "Tu servidor.",
   "auth.headline3": "En cualquier lugar.",
-  "auth.tagline": "Un disco privado en tu propio servidor, para archivos de cualquier tamaño."
+  "auth.tagline": "Un disco privado en tu propio servidor, para archivos de cualquier tamaño.",
+  "app.crash.title": "Algo salió mal en esta página.",
+  "app.crash.body": "Recarga la página para continuar.",
+  "app.crash.reload": "Recargar"
 }

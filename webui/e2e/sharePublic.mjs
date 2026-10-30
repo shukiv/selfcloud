@@ -3,7 +3,9 @@
 // same as in web/e2e/run.mjs, word for word, so the two PASS lists agree for this part. The helpers of run.mjs are
 // passed in as h (h.check, h.api, h.signIn, h.signOut, h.navigateTo, h.setInput, h.OWNER, h.MEMBER, and the rest).
 // Selectors follow the React DOM: antd alerts (.ant-alert), the share dialog's ids and names, and the visitor page's
-// classes (.rows, .crumbs, .public-preview, .dropzone). The Manage > Overview step and Manage > Links are not in this build (part v4).
+// classes (.rows, .crumbs, .public-preview, .dropzone).
+
+import { publicLinksDeleteAllChecks } from './shareDialog.mjs';
 
 const q = (v) => JSON.stringify(v);
 
@@ -22,11 +24,10 @@ export async function linkChecks(page, { base, accountID, accountKey }, h) {
   await h.rawPut(base, `/api/v1/folders/${fld}/files?path=%2FPlans%2Fplan.png`, accountKey, pixel, 'image/png');
 
   // The owner shares Plans through an organisation link, and copies the URL the dialog shows once.
-  if (await page.evaluate(`!!document.querySelector('.topbar')`)) await h.signOut(page);
+  if (await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`)) await h.signOut(page);
   else await page.goto(base + '/login');
   await h.signIn(page, h.OWNER);
-  await page.waitFor(`!!document.querySelector('.teams a[href="/files/${fld}"]')`);
-  await h.clickOn(page, `.teams a[href="/files/${fld}"]`);
+  await h.navigateTo(page, `/files/${fld}`);
   await page.waitFor(`location.pathname === '/files/${fld}'`);
   await h.rowAppears(page, 'Plans');
   await h.selectRow(page, 'Plans');
@@ -59,8 +60,7 @@ export async function linkChecks(page, { base, accountID, accountKey }, h) {
   // The owner removes the link with Restricted. The member loses the item at once, and the URL no longer opens it.
   await h.signOut(page);
   await h.signIn(page, h.OWNER);
-  await page.waitFor(`!!document.querySelector('.teams a[href="/files/${fld}"]')`);
-  await h.clickOn(page, `.teams a[href="/files/${fld}"]`);
+  await h.navigateTo(page, `/files/${fld}`);
   await page.waitFor(`location.pathname === '/files/${fld}'`);
   await h.rowAppears(page, 'Plans');
   await h.selectRow(page, 'Plans');
@@ -82,7 +82,8 @@ export async function linkChecks(page, { base, accountID, accountKey }, h) {
   h.check(true, 'the removed link shows the one message a dead link gets');
   await anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans }, h);
   await dropLinkChecks(page, { base, accountID, accountKey, fld, plans }, h);
-  // Not run in this build: publicLinksDeleteAllChecks (shareDialog.mjs) drives Manage > Links, which is part v4.
+  // Manage > Links: the anyone link and the drop link go, the organisation link stays.
+  await publicLinksDeleteAllChecks(page, { base, accountID, accountKey, fld, check: h.check, OWNER: h.OWNER });
 }
 
 // anyoneLinkChecks: the owner turns on links that anyone can open, and makes one on Plans with a password. A
@@ -92,11 +93,17 @@ async function anyoneLinkChecks(page, { base, accountID, accountKey, fld, plans 
   const PASSWORD = 'open sesame 2026';
   const outside = (await h.api(base, 'POST', `/api/v1/folders/${fld}/directories`, accountKey, { path: '/Other', parents: false })).id;
 
-  // Not ported: the Manage > Overview switch belongs to the React Manage page (part v4). The account's switch is set
-  // through the API here, so the rest of the check runs; the check that the switch is clicked is not in this build.
-  await h.api(base, 'PATCH', `/api/v1/accounts/${accountID}/sharing-policy`, accountKey, { public_links: true });
+  // The owner turns the account's switch on in Manage > Overview. The session reads the switch when it starts, so the
+  // owner signs in again after the change.
   await h.signOut(page);
   await h.signIn(page, h.OWNER);
+  await h.navigateTo(page, '/manage');
+  // The switch appears once the policy has loaded; a click that finds no switch yet is tried again.
+  await page.waitFor(`(() => { const el = document.getElementById('public-links-switch'); if (!el) return false; el.click(); return true; })()`);
+  await page.waitFor(`document.getElementById('public-links-switch').checked`);
+  await h.signOut(page);
+  await h.signIn(page, h.OWNER);
+  h.check(true, 'the owner turns on links that anyone can open in Manage > Overview');
 
   // The owner makes a link on Plans that anyone can open, with a password, and copies the URL the dialog shows once.
   await h.navigateTo(page, `/files/${fld}`);

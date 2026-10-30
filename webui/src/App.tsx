@@ -11,14 +11,13 @@ import { maxExpiryDays } from "./lib/sharing/limits";
 import { go, signInURL } from "./lib/router";
 import { afterSignIn } from "./lib/next";
 import { isAdmin, session } from "./lib/session";
-import { homeFor, mayOpen, targetOf } from "./lib/routes";
+import { homeFor, mayOpen, targetOf, type ManageSection, type Target } from "./lib/routes";
 import type { User } from "./lib/types";
 import { antdLocaleOf, directionOf, matchLang, setLang, useLang, useT, type Lang } from "./lib/i18n";
 import { PREF_LANG, readPref } from "./lib/prefs";
 import { get, useStore } from "./lib/store";
 import Shell from "./components/Shell";
 import AuthLayout from "./components/AuthLayout";
-import NotYet from "./components/NotYet";
 import LoginPage from "./pages/LoginPage";
 import ForgotPage from "./pages/ForgotPage";
 import ResetPage from "./pages/ResetPage";
@@ -34,6 +33,21 @@ const TrashPage = lazy(() => import("./pages/TrashPage"));
 const SharedPage = lazy(() => import("./pages/SharedPage"));
 const RequestsPage = lazy(() => import("./pages/RequestsPage"));
 const OpenLinkPage = lazy(() => import("./pages/OpenLinkPage"));
+const HomePage = lazy(() => import("./pages/HomePage"));
+const StarredPage = lazy(() => import("./pages/StarredPage"));
+const RecentPage = lazy(() => import("./pages/RecentPage"));
+const StoragePage = lazy(() => import("./pages/StoragePage"));
+const ManageOverviewPage = lazy(() => import("./pages/manage/OverviewPage"));
+const ManagePeoplePage = lazy(() => import("./pages/manage/PeoplePage"));
+const ManageGroupsPage = lazy(() => import("./pages/manage/GroupsPage"));
+const ManageSpacesPage = lazy(() => import("./pages/manage/SpacesPage"));
+const ManageStoragePage = lazy(() => import("./pages/manage/StoragePage"));
+const ManageLinksPage = lazy(() => import("./pages/manage/LinksPage"));
+const ManageAuditPage = lazy(() => import("./pages/manage/AuditPage"));
+const AdminTenantsPage = lazy(() => import("./pages/admin/TenantsPage"));
+const AdminTenantPage = lazy(() => import("./pages/admin/TenantPage"));
+const AdminAdminsPage = lazy(() => import("./pages/admin/AdminsPage"));
+const AdminInstallationPage = lazy(() => import("./pages/admin/InstallationPage"));
 
 // The views are the address's pages, read the way the Svelte build reads them, so both interfaces
 // agree on what an address means.
@@ -43,6 +57,9 @@ type View =
   | "manage" | "admin" | "change-password" | "notfound";
 
 const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "forgot", "sign-in", "share-link"];
+
+// The views of the drive: the files and the pages that list them. An installation admin is refused these.
+const DRIVE_VIEWS: View[] = ["home", "files", "node", "starred", "recent", "shared", "requests", "trash", "storage"];
 
 export function viewFor(path: string): View {
   if (path === "/") return "home";
@@ -201,7 +218,7 @@ export function Gate() {
   const signedIn = me !== null;
 
   if (view === "login" && signedIn) {
-    return <Navigate to={afterSignIn(new URLSearchParams(search).get("next"))} replace />;
+    return <Navigate to={afterSignIn(new URLSearchParams(search).get("next"), me.user)} replace />;
   }
   if (view === "notfound" ? !signedIn : PUBLIC_VIEWS.includes(view)) {
     return <Public view={view} />;
@@ -219,10 +236,36 @@ export function Gate() {
   );
 }
 
+// manageSection picks the owner page for a section. Each page checks the owner role itself as well.
+function manageSection(section: ManageSection): ReactNode {
+  switch (section) {
+    case "overview": return <ManageOverviewPage />;
+    case "people": return <ManagePeoplePage />;
+    case "groups": return <ManageGroupsPage />;
+    case "spaces": return <ManageSpacesPage />;
+    case "storage": return <ManageStoragePage />;
+    case "links": return <ManageLinksPage />;
+    case "audit": return <ManageAuditPage />;
+  }
+}
+
+// adminSection picks the administration page. Each page checks the installation admin role itself as well.
+function adminSection(target: Extract<Target, { area: "admin" }>): ReactNode {
+  switch (target.section) {
+    case "tenants": return <AdminTenantsPage />;
+    case "tenant": return <AdminTenantPage account={target.account ?? ""} />;
+    case "admins": return <AdminAdminsPage />;
+    case "installation": return <AdminInstallationPage />;
+  }
+}
+
 // signedPage is the page inside the shell. The pages not built yet show their placeholder, and an
 // address the person may not open is the not-found page.
 function signedPage(view: View, path: string, user: User): ReactNode {
   const target = targetOf(path);
+  // An installation admin has no drive: the server refuses it every read of a file (internal/api/access.go), so the
+  // drive pages are not its pages. The change-password page is open to every signed-in person.
+  if (user.role === "admin" && DRIVE_VIEWS.includes(view)) return <NotFoundPage />;
   switch (view) {
     case "change-password": return <ChangePasswordPage />;
     case "files": return <FilesPage />;
@@ -231,12 +274,17 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "shared": return <SharedPage />;
     case "requests": return <RequestsPage />;
     case "notfound": return <NotFoundPage />;
+    case "home": return <HomePage />;
+    case "starred": return <StarredPage />;
+    case "recent": return <RecentPage />;
+    case "storage": return <StoragePage />;
     case "manage":
+      if (target === null || target.area !== "manage" || !mayOpen(target, user)) return <NotFoundPage />;
+      return manageSection(target.section);
     case "admin":
-      return target !== null && mayOpen(target, user) ? <NotYet /> : <NotFoundPage />;
-    case "storage":
-      return user.role === "admin" ? <NotFoundPage /> : <NotYet />;
+      if (target === null || target.area !== "admin" || !mayOpen(target, user)) return <NotFoundPage />;
+      return adminSection(target);
     default:
-      return <NotYet />;
+      return <NotFoundPage />;
   }
 }

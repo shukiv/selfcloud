@@ -1635,6 +1635,27 @@ selection bar and from Details) and the request-access form on the not-found vie
 - The share actions are hidden for a caller who may not share, and the dialog shows a viewer only its own row (the
   server checks every change again).
 
+*React manage and admin interface (slice v4a).* The rest of the pages are in `webui/`, with the rules of the Svelte ones they
+replace. The user pages are `pages/HomePage.tsx`, `pages/StarredPage.tsx`, `pages/RecentPage.tsx` and `pages/StoragePage.tsx`.
+The owner pages are `pages/manage/*.tsx` (Overview, People, Groups, Team spaces, Storage, Links, Audit), and the
+installation admin pages are `pages/admin/*.tsx` (Tenants, one tenant, Admins, Installation). All load with `React.lazy`
+from `App.tsx`. Each owner page checks the owner role itself (`components/manage/OwnerPage.tsx`), and each admin page
+checks the installation admin role (`isAdmin`); a page the person may not open is the not-found view, and no request is sent.
+- A failed first load shows an error, never an empty or default state. A failed refetch keeps the list on screen.
+- Secrets shown once (an invite's verification link, a new tenant's owner link, a new API key) live in the dialog's
+  component state only. They are not in the query cache or a module store, they are gone when the dialog closes or the
+  session changes, and they never reach a URL, a log or an error text (`components/admin/ShowOnce.tsx`).
+- A destructive action (delete a tenant, remove a person, revoke a key, delete a group or a space) asks first, with the
+  typed name where Svelte asks for it. A double click sends one request, and a failed request keeps the dialog open with
+  its error by code.
+- Every dialog holding a form, a secret or a question keeps `maskClosable={false}`. `scripts/check-source.mjs` enforces
+  it for every Modal and Drawer in `src`, with one named exception: the navigation drawer in `components/Shell.tsx`.
+- Errors are shown by their code. The server's text is never shown.
+- The shell shows an error by code when the spaces cannot be read or a hide is refused (`components/Shell.tsx`).
+- The top-level error boundary (`components/ErrorBoundary.tsx`) strips the fragment of the share-link address before it
+  shows its message and reload button, so a render error cannot leave the link secret in the address bar.
+
+
 ## 11. Data model
 
 | Table | Main fields |
@@ -1774,7 +1795,8 @@ Each slice ships with tests and leaves the server runnable.
 | v1 | React web interface beside the Svelte one (`webui/`, section 10): Vite, React 18 with Ant Design 5, React Router 7; the theme and the brand palette and sidebar; the CSP nonce, reported by the Svelte build and enforced by the React build; the seven languages; the app gate, shell and auth pages | Built |
 | v2 | React file browser: Files, NodeLink and Trash, the `files/*` components, uploads, undo | Built |
 | v3 | React sharing interface: Shared, Requests, OpenLink, the public browse and drop pages, the share dialog and its parts, hidden spaces and space settings | Built |
-| v4 | React rest: Home, Starred, Recent, Storage, owner and installation admin pages; then the flip, which removes the Svelte app and moves `webui/` to `web/` | Planned |
+| v4a | React rest: Home, Starred, Recent, Storage, the owner pages (Manage) and the installation admin pages (Admin) | Built |
+| v4b | The flip: removes the Svelte app and moves `webui/` to `web/` | Planned |
 | p3 | Shortcuts, folder colours and descriptions | Planned |
 | p4 | Labels: typed fields the owner defines | Planned |
 | p5 | The OpenAPI file, the design record and a security review of slice p | Planned |
@@ -2126,3 +2148,20 @@ Decided on approval:
       - When the first read of a link list fails, React shows the failure and no choices or form (the switch, the
         radios, the date fields): an action there would act on a link that was not read. Svelte's fieldset stays visible
         with the error above it. A failed refetch of a list already shown keeps the list in both. (Review v3, H1.)
+
+    - *Slice v4a, for review.* These are the interpretations and deliberate differences from the Svelte pages.
+      - The Svelte Manage pages swallow a failed links count or a failed names read in the audit log. React shows the
+        failure by code. (Not a review item; a deliberate difference.)
+      - Escape and the close control do not close DeletePublicLinks while its delete is in flight, and Svelte's Confirm
+        does. (Review v3, L4, applied in v4a.)
+      - The switch-account dialog on the sign-in page does not answer to a click outside it: a question about the session
+        is answered only by its buttons.
+      - The shell's team-space error is shown in the sidebar. On a phone width the sidebar is the drawer, so the error is
+        shown inside it. (Review v3, L8, applied in v4a.)
+      - The owner pages' row menus are antd Dropdowns, not the Svelte menu, and the admin tabs are buttons with
+        `role="tab"` rather than antd Tabs. Both are for the e2e selectors that the Svelte suite uses.
+      - A sign-in goes straight to the signed-in person's own home (`afterSignIn(next, user)`, `homeFor`), not to "/"
+        first. The old two-step path lost the admin's second navigation, and the page stayed blank after an admin's
+        sign-in (v4a, found by the e2e suite). Svelte has the same two steps but no role-specific home.
+      - An installation admin does not read the requests count, which the server refuses for an admin (403). Svelte
+        skips the read for admins too.

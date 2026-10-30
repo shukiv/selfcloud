@@ -9,6 +9,8 @@ import { ThemeProvider } from "../theme/theme";
 import { Direction } from "../App";
 import type { FolderAccess } from "../lib/files/types";
 import Shell from "./Shell";
+import { ApiError } from "../lib/apiError";
+import { get } from "../lib/store";
 
 // The folder lists and the hide call are replaced: each test states what the server answers.
 const mocks = vi.hoisted(() => ({
@@ -220,6 +222,40 @@ describe("Shell", () => {
       await waitFor(() => expect(teamsIn(nav)).toEqual(["Team A", "Team B"]));
     });
 
+    // A failure is shown by its code. The server's own text (here "server text") never reaches the page.
+    it("a failed read of the spaces shows its code's message, never the server text", async () => {
+      signIn("member");
+      mocks.loadFolders.mockRejectedValueOnce(new ApiError(500, "internal", { detail: "server text" }, 0));
+      renderShell("/files");
+      const nav = await openNav();
+      const alert = await within(nav).findByRole("alert");
+      expect(alert.textContent).toContain("The server had a problem");
+      expect(alert.textContent).not.toContain("server text");
+    });
+
+    it("a refused hide shows the refusal by its code, and the page stays", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A")]);
+      mocks.setHidden.mockRejectedValueOnce(new ApiError(403, "forbidden", { detail: "server text" }, 0));
+      renderShell("/files");
+      const nav = await openNav();
+      fireEvent.click(within(nav).getByRole("button", { name: "Options for Team A" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Hide" }));
+      const alert = await within(nav).findByRole("alert");
+      expect(alert.textContent).not.toContain("server text");
+      expect(screen.getByText("page body")).toBeTruthy();
+    });
+
+    it("a change of person clears the error", async () => {
+      signIn("member");
+      mocks.loadFolders.mockRejectedValueOnce(new ApiError(500, "internal", {}, 0));
+      renderShell("/files");
+      const nav = await openNav();
+      await within(nav).findByRole("alert");
+      act(() => session.set({ ...(get(session) as Session), csrf: "other" } as Session));
+      await waitFor(() => expect(within(nav).queryByRole("alert")).toBeNull());
+    });
+
     it("offers Space settings to a manager of the space", async () => {
       signIn("member");
       folders.set([team("fld_a", "Team A", { role: "manager" })]);
@@ -264,6 +300,18 @@ describe("Shell", () => {
 describe("the Requests entry", () => {
   beforeEach(() => {
     mocks.listAccessRequests.mockResolvedValue({ items: [] });
+  });
+
+  // An installation admin is not an owner of any requests: the read is refused (403) and the console shows it. Svelte
+  // reads the count for members and owners only.
+  it("an installation admin sends no access-request read", async () => {
+    signIn("admin");
+    renderShell("/admin/tenants");
+    await openNav();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    expect(mocks.listAccessRequests).not.toHaveBeenCalled();
   });
 
   it("is shown with its count to a member who has requests waiting to be decided, and is not shown otherwise", async () => {

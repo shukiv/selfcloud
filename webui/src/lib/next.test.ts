@@ -53,3 +53,32 @@ describe('afterSignIn', () => {
     expect(afterSignIn(null)).toBe('/');
   });
 });
+
+// A sign-in goes straight to the signed-in person's own home. Going to "/" first and letting the gate
+// send an admin on again is a second navigation that can be lost, which left a blank page after an
+// admin's sign-in (v4a).
+describe("afterSignIn goes straight to the home of the person's role", () => {
+  const admin = { id: "usr_a", role: "admin" } as unknown as import("./types").User;
+  const member = { id: "usr_m", role: "member" } as unknown as import("./types").User;
+
+  it("an admin with no next goes to the tenants list, in one step", () => {
+    expect(afterSignIn(null, admin)).toBe("/admin/tenants");
+    expect(afterSignIn("/", admin)).toBe("/admin/tenants");
+  });
+
+  it("an admin with a next address goes there", () => {
+    expect(afterSignIn("/admin/installation", admin)).toBe("/admin/installation");
+  });
+
+  it("a member with no next goes home, and a path back to the sign-in page still goes home", () => {
+    expect(afterSignIn(null, member)).toBe("/");
+    expect(afterSignIn("/login", member)).toBe("/");
+  });
+});
+
+describe("afterSignIn only treats the sign-in page itself as the sign-in page (guard: exact /login match)", () => {
+  it("a path that only starts with the sign-in word is an ordinary path", () => {
+    const someone = { id: "usr_m", role: "member" } as unknown as import("./types").User;
+    expect(afterSignIn("/login-help", someone)).toBe("/login-help");
+  });
+});
