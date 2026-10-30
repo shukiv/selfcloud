@@ -74,6 +74,7 @@ func decodeError(t *testing.T, rec *httptest.ResponseRecorder) errorDetail {
 }
 
 func TestHealthz(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	rec := do(t, s.Handler(), "GET", "/healthz")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"ok"`) {
@@ -82,6 +83,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestReadyz(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	rec := do(t, s.Handler(), "GET", "/readyz")
 	if rec.Code != 200 {
@@ -102,6 +104,7 @@ func TestReadyz(t *testing.T) {
 }
 
 func TestDraining(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	s.draining.Store(true)
 	rec := do(t, s.Handler(), "GET", "/api/v1/info")
@@ -117,6 +120,7 @@ func TestDraining(t *testing.T) {
 }
 
 func TestInfo(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t, func(c *config.Config) {
 		c.PublicURL = "https://drive.example.com"
 		c.Upload.MaxChunkSize = 90 * config.MiB
@@ -133,6 +137,7 @@ func TestInfo(t *testing.T) {
 }
 
 func TestNotFound(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	rec := do(t, s.Handler(), "GET", "/api/v1/nothing-here")
 	if rec.Code != 404 {
@@ -148,6 +153,7 @@ func TestNotFound(t *testing.T) {
 }
 
 func TestSpecServed(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	rec := do(t, s.Handler(), "GET", "/api/v1/openapi.yaml")
 	if rec.Code != 200 || !bytes.Equal(rec.Body.Bytes(), apispec.Spec) {
@@ -156,6 +162,7 @@ func TestSpecServed(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	do(t, s.Handler(), "GET", "/api/v1/info")
 	rec := do(t, s.Handler(), "GET", "/metrics")
@@ -171,6 +178,7 @@ func TestMetrics(t *testing.T) {
 }
 
 func TestHandlerErrors(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	for name, tc := range map[string]struct {
 		handle  handlerFunc
@@ -207,6 +215,7 @@ func TestHandlerErrors(t *testing.T) {
 // TestShutdownCancelsStragglers checks the contract long uploads rely on: at the shutdown
 // deadline, the request context is cancelled and the handler still gets to finish.
 func TestShutdownCancelsStragglers(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t, func(c *config.Config) { c.ShutdownTimeout = config.Duration(100 * time.Millisecond) })
 	started := make(chan struct{})
 	finished := make(chan struct{})

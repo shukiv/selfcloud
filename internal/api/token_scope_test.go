@@ -20,6 +20,7 @@ func userRevokePath(accID, usrID string) string {
 // TestRevokeOneUsersTokens: revoking one user ends that user's tokens at once and leaves the other
 // tokens of the account working. A token minted afterwards works.
 func TestRevokeOneUsersTokens(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	bob, _ := verifiedUser(t, s, key, accID, "bob@example.com")
@@ -49,6 +50,7 @@ func TestRevokeOneUsersTokens(t *testing.T) {
 // TestRevokeOneUsersTokensMovesForward: a second revoke keeps the earlier one's voids, and its own
 // cut-off is not earlier than the first.
 func TestRevokeOneUsersTokensMovesForward(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	kids := childrenPath(m.f.ID)
@@ -66,6 +68,7 @@ func TestRevokeOneUsersTokensMovesForward(t *testing.T) {
 // another account, an unknown user and a user of another account all get not_found, as the account-wide
 // route answers them. The call is audited with the user named.
 func TestRevokeOneUsersTokensCallers(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	admin := adminKey(t, s)
@@ -99,6 +102,7 @@ func TestRevokeOneUsersTokensCallers(t *testing.T) {
 // TestRevokeOneUsersTokenWithKeyMode: a token that acts as the account key has no user, so revoking a
 // user leaves it working.
 func TestRevokeOneUsersTokenKeyModeUnaffected(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	kids := childrenPath(m.f.ID)
@@ -159,6 +163,7 @@ func listedRoles(t *testing.T, s *Server, cred string) map[string]string {
 // spaces the user holds, and the user's My files; it gets not_found for a space the user does not hold
 // and for another user's My files.
 func TestAllReachableTokenReachesWhatTheUserReaches(t *testing.T) {
+	t.Parallel()
 	fx := newAllReachable(t)
 	s, m := fx.s, fx.memberFixture
 	tok := mintFor(t, s, m.key, m.acc.ID, map[string]any{"all": true, "user": m.ann.ID})
@@ -181,6 +186,7 @@ func TestAllReachableTokenReachesWhatTheUserReaches(t *testing.T) {
 // TestAllReachableWriteCappedAtEditor: an owner holds manager on every team space; a token carries at
 // most editor, and the share and settings routes refuse tokens as before.
 func TestAllReachableWriteCappedAtEditor(t *testing.T) {
+	t.Parallel()
 	fx := newAllReachable(t)
 	s, m := fx.s, fx.memberFixture
 	tok := mintFor(t, s, m.key, m.acc.ID, map[string]any{"all": true, "user": fx.owner.ID, "permissions": "write"})
@@ -198,6 +204,7 @@ func TestAllReachableWriteCappedAtEditor(t *testing.T) {
 // TestAllReachableWriteNeedsWriteRole: a user who holds only read on a space cannot write there with a
 // write token, though the same token writes where the user holds write.
 func TestAllReachableWriteNeedsWriteRole(t *testing.T) {
+	t.Parallel()
 	fx := newAllReachable(t)
 	s, m := fx.s, fx.memberFixture
 	tok := mintFor(t, s, m.key, m.acc.ID, map[string]any{"all": true, "user": m.ann.ID, "permissions": "write"})
@@ -208,6 +215,7 @@ func TestAllReachableWriteNeedsWriteRole(t *testing.T) {
 
 // TestAllReachableEndsWithUser: disabling the user ends the user's all-reachable tokens.
 func TestAllReachableEndsWithUser(t *testing.T) {
+	t.Parallel()
 	fx := newAllReachable(t)
 	s, m := fx.s, fx.memberFixture
 	tok := mintFor(t, s, m.key, m.acc.ID, map[string]any{"all": true, "user": m.ann.ID})
@@ -219,6 +227,7 @@ func TestAllReachableEndsWithUser(t *testing.T) {
 // TestAllReachableMintRules: folders may be omitted only with a user; path needs one folder, so it is
 // refused without folders; node confines the token, and the node must be one the user reaches.
 func TestAllReachableMintRules(t *testing.T) {
+	t.Parallel()
 	fx := newAllReachable(t)
 	s, m := fx.s, fx.memberFixture
 	mint := "/api/v1/accounts/" + m.acc.ID + "/tokens"
@@ -245,6 +254,7 @@ func TestAllReachableMintRules(t *testing.T) {
 // of the same user with the same node scope. Folder-list tokens, other users and narrower tokens do not
 // see it; the account key does.
 func TestAllReachableJobRule(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	allTok := mintFor(t, s, key, accID, map[string]any{"all": true, "user": m.ann.ID, "permissions": "write"})
@@ -268,6 +278,7 @@ func TestAllReachableJobRule(t *testing.T) {
 // TestFolderListTokenStillVerifies: a token minted before the all-reachable scope has no "all" field and a
 // folder list; it verifies as it did.
 func TestFolderListTokenStillVerifies(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	tok := mintFor(t, s, key, accID, map[string]any{"folders": []string{m.f.ID}})
@@ -280,6 +291,7 @@ func TestFolderListTokenStillVerifies(t *testing.T) {
 // TestAllReachableRefusesForgedShape: the server signs only shapes it would mint. An all-reachable payload
 // without a user, or with folders as well, is refused even when correctly signed.
 func TestAllReachableRefusesForgedShape(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	base := payloadOf(t, mintFor(t, s, key, accID, map[string]any{"folders": []string{m.f.ID}}))
@@ -305,6 +317,7 @@ func TestAllReachableRefusesForgedShape(t *testing.T) {
 // TestAllReachableIsOptIn: all-reachable is asked for with "all": true. A user with no folders and no
 // "all" is a mistake, so it is refused, not widened. "all" needs a user and no folders.
 func TestAllReachableIsOptIn(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	mint := "/api/v1/accounts/" + accID + "/tokens"
@@ -322,6 +335,7 @@ func TestAllReachableIsOptIn(t *testing.T) {
 // TestAllReachableCopyQueuedBeforeRevokeFails: a copy queued by an all-reachable token fails when it runs
 // after the user's tokens were revoked. A revoke of another user leaves the copy working.
 func TestAllReachableCopyQueuedBeforeRevokeFails(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	ctx := context.Background()

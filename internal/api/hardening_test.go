@@ -18,6 +18,7 @@ import (
 // TestPasswordFailsPrune checks that counts of sessions that ended for other reasons do not stay
 // in memory: once stale, a count is swept, and a stale count restarts at one.
 func TestPasswordFailsPrune(t *testing.T) {
+	t.Parallel()
 	var f passwordFails
 	a, b := []byte("session-a"), []byte("session-b")
 	f.add(a)
@@ -43,6 +44,7 @@ func TestPasswordFailsPrune(t *testing.T) {
 // TestMailBudgets checks the limits on verification and reset mail: 30 an hour per account, and 3
 // an hour to one address. A refused request creates nothing.
 func TestMailBudgets(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	admin := adminKey(t, s)
@@ -89,6 +91,7 @@ func TestMailBudgets(t *testing.T) {
 // has answered, no session made by a sign-in may still work: the sign-in re-reads the user under
 // the write lock, so a sign-in that was checked before the disable cannot mint a live session.
 func TestDisableBeatsConcurrentSignIn(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -128,6 +131,7 @@ func TestDisableBeatsConcurrentSignIn(t *testing.T) {
 // TestPasswordChangeBeatsConcurrentDisable does the same for a password change: a change checked
 // before a disable must not mint a session for the disabled user.
 func TestPasswordChangeBeatsConcurrentDisable(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -158,6 +162,7 @@ func TestPasswordChangeBeatsConcurrentDisable(t *testing.T) {
 // TestLastAdminIgnoresExpiringKeys checks the last-admin guard: a key with an expiry does not keep
 // the installation reachable, so it does not count.
 func TestLastAdminIgnoresExpiringKeys(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	root, sess := newAdminUser(t, s, admin, "root@example.com")
@@ -190,6 +195,7 @@ func TestLastAdminIgnoresExpiringKeys(t *testing.T) {
 // TestRoleChangeEndsGrants checks that leaving the member role ends a user's grants, so a return to
 // member does not restore them, and that the removal is audited.
 func TestRoleChangeEndsGrants(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

@@ -12,20 +12,36 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 )
 
 // Argon2id parameters: the second recommended option in RFC 9106, section 4. A hash costs
-// 64 MiB, so the number running at once is capped (see hashSlots).
+// 64 MiB, so the number running at once is capped (see hashSlots). They are variables only so
+// that UseTestHashCost can lower them under `go test`; nothing else changes them.
+var (
+	argonTime    uint32 = 3
+	argonMemory  uint32 = 64 * 1024 // KiB
+	argonThreads uint8  = 4
+)
+
 const (
-	argonTime    = 3
-	argonMemory  = 64 * 1024 // KiB
-	argonThreads = 4
 	argonKeyLen  = 32
 	argonSaltLen = 16
 )
+
+// UseTestHashCost makes new password hashes cost as little as argon2id allows, so the test suites that create many
+// accounts do not spend their time hashing. It panics outside a test binary, so no production process can lower the
+// cost: there is no configuration value and no environment variable for it. A hash made before the call, or one
+// stored with other parameters, still verifies, because a stored hash carries its own parameters.
+func UseTestHashCost() {
+	if !testing.Testing() {
+		panic("auth: UseTestHashCost may only be called from a test")
+	}
+	argonTime, argonMemory, argonThreads = 1, 8, 1
+}
 
 // Limits on the parameters read back from a stored hash. They are generous, so any hash this
 // package wrote verifies, but a corrupt or hostile value cannot make verification exhaust memory.

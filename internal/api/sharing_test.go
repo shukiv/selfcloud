@@ -100,6 +100,7 @@ func (fx *sharingFixture) personalFolder(t *testing.T, sess testSession) string 
 }
 
 func TestPermissionOnDirectoryReachesDeepFile(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantError(t, fx.stat(t, fx.annSess, fx.deep.ID), 404, apierr.NotFound)
 
@@ -123,6 +124,7 @@ func TestPermissionOnDirectoryReachesDeepFile(t *testing.T) {
 }
 
 func TestGroupPermissionFollowsMembership(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	grp := fx.group(t, "Staff")
 	fx.inGroup(t, grp, fx.ann.ID, true)
@@ -147,6 +149,7 @@ func TestGroupPermissionFollowsMembership(t *testing.T) {
 }
 
 func TestEffectiveRoleIsTheMax(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	root := fx.rootOf(t, fx.fld.ID)
 	fx.setPerm(t, root, fx.ann.ID, "viewer")
@@ -173,6 +176,7 @@ func TestEffectiveRoleIsTheMax(t *testing.T) {
 }
 
 func TestRoleGatesPerOperation(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, "contributor")
 	fld := fx.fld.ID
@@ -204,6 +208,7 @@ func TestRoleGatesPerOperation(t *testing.T) {
 }
 
 func TestRevokedBetweenCheckAndCommit(t *testing.T) {
+	t.Parallel()
 	t.Run("move", func(t *testing.T) {
 		fx := newSharingFixture(t)
 		fx.setPerm(t, fx.b.ID, fx.ann.ID, "editor")
@@ -266,6 +271,7 @@ func TestRevokedBetweenCheckAndCommit(t *testing.T) {
 }
 
 func TestOwnerManagesTeamSpacesNotPersonalFolders(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.bob.ID, fx.key,
 		map[string]any{"role": "owner"}), 200)
@@ -291,6 +297,7 @@ func TestOwnerManagesTeamSpacesNotPersonalFolders(t *testing.T) {
 }
 
 func TestPersonalFolderPrivateButShareable(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	pf := fx.personalFolder(t, fx.annSess)
 	root := fx.rootOf(t, pf)
@@ -317,6 +324,7 @@ func TestPersonalFolderPrivateButShareable(t *testing.T) {
 }
 
 func TestSharedListsOnlyWhatWasShared(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.setPerm(t, fx.b.ID, fx.bob.ID, "viewer")
 	shared := decode[listResponse[nodeJSON]](t, callSession(t, fx.s, fx.bobSess, "GET", "/api/v1/shared", nil))
@@ -338,6 +346,7 @@ func TestSharedListsOnlyWhatWasShared(t *testing.T) {
 }
 
 func TestPermissionsAPIRules(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	perms := "/api/v1/nodes/" + fx.b.ID + "/permissions/" + fx.bob.ID
 
@@ -382,6 +391,7 @@ func TestPermissionsAPIRules(t *testing.T) {
 }
 
 func TestTokenNodeScope(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	tok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"folders": []string{fx.fld.ID},
 		"path": "/a/b", "permissions": "write"})
@@ -413,6 +423,7 @@ func TestTokenNodeScope(t *testing.T) {
 }
 
 func TestDeletingUserWithFilesNeedsDeleteFiles(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	carol, carolSess := verifiedUser(t, fx.s, fx.key, fx.acc.ID, "carol@example.com")
 	pf := fx.personalFolder(t, carolSess)
@@ -435,6 +446,7 @@ func TestDeletingUserWithFilesNeedsDeleteFiles(t *testing.T) {
 }
 
 func TestGrantsAliasRoundTrip(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	grants := "/api/v1/accounts/" + fx.acc.ID + "/folders/" + fx.fld.ID + "/grants/" + fx.ann.ID
 	put := func(level string) {
@@ -469,6 +481,7 @@ func TestGrantsAliasRoundTrip(t *testing.T) {
 // TestMoveKeepsPermissionsCopyDoesNot: a move keeps the permissions on the node it moves, since the
 // node keeps its ID; a copy is a new node and takes none of the original's permissions.
 func TestMoveKeepsPermissionsCopyDoesNot(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.setPerm(t, fx.b.ID, fx.bob.ID, "viewer")
 	wantStatus(t, call(t, fx.s, "POST", "/api/v1/nodes/"+fx.b.ID+"/move", fx.key, map[string]any{"parent": fx.c.ID}), 200)
@@ -488,6 +501,7 @@ func TestMoveKeepsPermissionsCopyDoesNot(t *testing.T) {
 // TestTokenCannotReadPermissions: a delegated token, read or write, may not list the permissions on a
 // node. Permissions are a management view, and a token manages nothing.
 func TestTokenCannotReadPermissions(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	for _, body := range []map[string]any{
 		{"folders": []string{fx.fld.ID}, "node": fx.b.ID},
@@ -502,6 +516,7 @@ func TestTokenCannotReadPermissions(t *testing.T) {
 // name it or a group it is in, and the inherited ones among those only. Managers and the account key
 // see the full chain.
 func TestPermissionListingShowsOnlyOwnRowsBelowManager(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	grp := fx.group(t, "Staff")
 	fx.inGroup(t, grp, fx.ann.ID, true)
@@ -535,6 +550,7 @@ func TestPermissionListingShowsOnlyOwnRowsBelowManager(t *testing.T) {
 // TestAuditHidesPersonalFolderEntries: an entry about a file in a personal folder is private to the
 // folder's user. The owner does not see it; the account key sees all of it.
 func TestAuditHidesPersonalFolderEntries(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.bob.ID, fx.key,
 		map[string]any{"role": "owner"}), 200)
@@ -568,6 +584,7 @@ func TestAuditHidesPersonalFolderEntries(t *testing.T) {
 // TestAuditFiltersKeepPersonalEntriesPrivate: the action and actor filters narrow what the owner may already
 // see; they never bring back an entry about a personal folder.
 func TestAuditFiltersKeepPersonalEntriesPrivate(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.bob.ID, fx.key,
 		map[string]any{"role": "owner"}), 200)
@@ -592,6 +609,7 @@ func TestAuditFiltersKeepPersonalEntriesPrivate(t *testing.T) {
 // visible to owners, so it names the recipient only: not how many entries moved, nor the recipient's
 // personal folder, nor the new directory.
 func TestFilesMovedEntryDoesNotSizeMyFiles(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.bob.ID, fx.key,
 		map[string]any{"role": "owner"}), 200)
@@ -619,6 +637,7 @@ func TestFilesMovedEntryDoesNotSizeMyFiles(t *testing.T) {
 // TestEveryNodeWriteKeepsItsOwner: a node made by a write keeps its creator as owner, whichever way
 // it was made. The owner must not be wiped by a later update.
 func TestEveryNodeWriteKeepsItsOwner(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.setPerm(t, fx.a.ID, fx.ann.ID, "contributor")
 	ownerOf := func(id string) string {
@@ -670,6 +689,7 @@ func TestEveryNodeWriteKeepsItsOwner(t *testing.T) {
 // nor the file learns nothing from a path through it. The answer is the one a missing name gets. The
 // account key, which reaches everything, is told the path is invalid.
 func TestUnreachableFileOnPathAnswersLikeMissing(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	putNode(t, fx.s, fx.key, fx.fld.ID, "/a/f.txt", "file")
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer") // deep only: /a and /a/f.txt stay closed
@@ -699,6 +719,7 @@ func TestUnreachableFileOnPathAnswersLikeMissing(t *testing.T) {
 // TestReplaceNeedsEditorOnDisplacedFile: a contributor may place a file but may not overwrite one, so
 // a replace that displaces a file needs editor on that file.
 func TestReplaceNeedsEditorOnDisplacedFile(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
 	fx.setPerm(t, fx.c.ID, fx.ann.ID, "contributor")
@@ -723,6 +744,7 @@ func TestReplaceNeedsEditorOnDisplacedFile(t *testing.T) {
 // TestQueuedCopyNeedsItsTokenNode: a copy job queued by one token is not visible to another token of the
 // same user that is scoped to a different node.
 func TestQueuedCopyNeedsItsTokenNode(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.s.copySyncNodes = 0 // every copy becomes a job
 	mint := func(node string) string {
@@ -740,6 +762,7 @@ func TestQueuedCopyNeedsItsTokenNode(t *testing.T) {
 // TestDeleteUserConflictOmitsEntryCount: the refusal to delete a user with files does not say how many
 // entries the folder holds.
 func TestDeleteUserConflictOmitsEntryCount(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	carol, carolSess := verifiedUser(t, fx.s, fx.key, fx.acc.ID, "carol@example.com")
 	pf := fx.personalFolder(t, carolSess)

@@ -144,6 +144,7 @@ async function main() {
 
     // The users: an owner and a member, each verified through the link the API returns.
     let memberID = null;
+    let ownerID = null;
     for (const u of [
       { ...OWNER, role: 'owner' },
       { ...MEMBER, role: 'member' },
@@ -155,6 +156,7 @@ async function main() {
         verification: 'link',
       });
       if (u.role === 'member') memberID = created.id;
+      if (u.role === 'owner') ownerID = created.id;
       await api(base, 'POST', '/api/v1/auth/verify', null, {
         token: created.verification.token,
         password: u.password,
@@ -244,12 +246,16 @@ async function main() {
     // The file browser, as a member who edits Team A and only reads Team B.
     await fileBrowserChecks(page, { base, dir, teamA, teamB });
 
+    // Home, Starred and Recent, as the member: a star, an open, a clear; the owner then sees what was shared with it.
+    const home = await homeChecks(page, { base, accountKey, memberID, ownerID, teamA });
+
     // Sharing, from both sides: the owner's share dialog and spaces, and the member's shared list and requests.
     await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink });
 
     // The owner's management pages, then the installation admin's, then a member who opens the owner's pages.
     await signOut(page);
     await signIn(page, OWNER);
+    await homeOwnerChecks(page, home);
     await ownerChecks(page, { base, accountID, sink });
     await p1OwnerChecks(page);
     await signOut(page);
@@ -353,6 +359,73 @@ async function press(page, selector, key) {
 // buttonTexts lists the text of every button on the page.
 async function buttonTexts(page) {
   return page.evaluate(`[...document.querySelectorAll('button')].map((b) => b.textContent.trim())`);
+}
+
+// rootChild finds the item of a folder's root with this name, as the account key sees it, and returns its ID.
+async function rootChild(base, folder, key, name) {
+  const page = await api(base, 'GET', `/api/v1/folders/${folder}/children?path=%2F`, key);
+  const found = (page.items ?? []).find((n) => n.name === name);
+  if (!found) throw new Error(`${name} is not in the folder ${folder}`);
+  return found.id;
+}
+
+// homeChecks is slice p2's end-to-end path, as the member: a file is starred in its listing and shows in Starred and on
+// Home; opening it records it in Recent; Recent is cleared. It shares a file of the member's My files with the owner
+// first, so the owner's Home can show it. It returns what the owner's check needs.
+async function homeChecks(page, { base, accountKey, memberID, ownerID, teamA }) {
+  const note = 'home-note.txt';
+  const shared = 'home-shared.txt';
+  await rawPut(base, `/api/v1/folders/${teamA}/files?path=%2F${note}`, accountKey, 'a note for home\n');
+  const list = await api(base, 'GET', '/api/v1/folders', accountKey);
+  const mine = (list.items ?? []).find((f) => f.kind === 'personal' && f.owner_user_id === memberID);
+  if (!mine) throw new Error('the member has no personal folder in the listing');
+  await rawPut(base, `/api/v1/folders/${mine.id}/files?path=%2F${shared}`, accountKey, 'shared with the owner\n');
+  const sharedID = await rootChild(base, mine.id, accountKey, shared);
+  await api(base, 'PUT', `/api/v1/nodes/${sharedID}/permissions/${ownerID}`, accountKey, { role: 'viewer', notify: false });
+  const noteID = await rootChild(base, teamA, accountKey, note);
+
+  // Star the note from its listing: the star button is pressed, and the item is marked.
+  await navigateTo(page, `/files/${teamA}`);
+  await rowAppears(page, note);
+  await clickOn(page, `${rowSel(note)} .star-button`);
+  await page.waitFor(`document.querySelector(${q(rowSel(note) + ' .star-button')})?.getAttribute('aria-pressed') === 'true'`);
+  check(true, 'a member stars a file from the listing, and the star button is pressed');
+  await page.waitFor(`!!document.querySelector(${q(rowSel(note) + ' .star-mark')})`);
+
+  // Starred lists it, and so does Home.
+  await clickOn(page, `.sidenav a[href="/starred"]`);
+  await page.waitFor(`location.pathname === '/starred' && !!document.querySelector('.items a[href="/n/${noteID}"]')`);
+  check(true, 'the starred file is listed in Starred');
+  await clickOn(page, `.sidenav a[href="/"]`);
+  await page.waitFor(`location.pathname === '/' && !!document.querySelector('[aria-labelledby="home-starred"] a[href="/n/${noteID}"]')`, 15000);
+  check(true, 'the starred file shows on Home');
+
+  // Opening the file (through its address) records it in Recent.
+  await navigateTo(page, `/n/${noteID}`);
+  await page.waitFor(`location.pathname.startsWith('/files/') || location.pathname === '/n/${noteID}'`, 15000);
+  // The server writes views in batches every two seconds, so the view is in the database a moment after the open.
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+  await clickOn(page, `.sidenav a[href="/recent"]`);
+  await page.waitFor(`location.pathname === '/recent' && !!document.querySelector('.items a[href="/n/${noteID}"]')`, 15000);
+  check(true, 'the opened file is listed in Recent');
+
+  // Clear Recent after a confirmation: the list empties, and the file itself is still there.
+  await clickButton(page, 'Clear all');
+  await page.waitFor(`!!document.querySelector('[role="dialog"] .foot .danger-fill')`);
+  await clickOn(page, `[role="dialog"] .foot .danger-fill`);
+  await page.waitFor(`!document.querySelector('.items a[href="/n/${noteID}"]') && !!document.querySelector('.empty')`, 15000);
+  check(true, 'Recent is cleared after the confirmation, and the file is kept');
+  await navigateTo(page, `/files/${teamA}`);
+  await rowAppears(page, note);
+  check(true, 'the note is still in its folder after Recent is cleared');
+  return { sharedID, shared };
+}
+
+// homeOwnerChecks: the owner's Home shows the item the member shared with it, in Recently shared.
+async function homeOwnerChecks(page, { sharedID }) {
+  await navigateTo(page, '/');
+  await page.waitFor(`location.pathname === '/' && !!document.querySelector('[aria-labelledby="home-shared"] a[href="/n/${sharedID}"]')`, 15000);
+  check(true, 'the owner sees a recently shared item on Home');
 }
 
 // fileBrowserChecks is the file browser's end-to-end path, as the member signed in.

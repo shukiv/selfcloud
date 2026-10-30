@@ -37,6 +37,7 @@ var httpMethods = []string{"get", "put", "post", "delete", "options", "head", "p
 // TestRoutesMatchSpec keeps api/openapi.yaml honest in both directions: every route is
 // documented, and everything documented is served.
 func TestRoutesMatchSpec(t *testing.T) {
+	t.Parallel()
 	doc := loadSpec(t)
 	s := newTestServer(t)
 	routed := map[string]bool{}
@@ -58,6 +59,7 @@ func TestRoutesMatchSpec(t *testing.T) {
 }
 
 func TestErrorCodesMatchSpec(t *testing.T) {
+	t.Parallel()
 	doc := loadSpec(t)
 	var codes []string
 	for _, c := range apierr.Codes() {
@@ -74,6 +76,7 @@ func TestErrorCodesMatchSpec(t *testing.T) {
 // TestUsageSchemaMatchesResponse keeps the Usage schema and the usage reply in step: every field the
 // reply carries is documented, and nothing documented is missing from the reply.
 func TestUsageSchemaMatchesResponse(t *testing.T) {
+	t.Parallel()
 	var doc struct {
 		Components struct {
 			Schemas map[string]struct {

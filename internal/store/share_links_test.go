@@ -76,7 +76,7 @@ func TestShareLinkRanksCountOnlyWhileLive(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		shared, _, err := s.SharedNodes(ctx, a, ann.ID, false, Page{Limit: 10})
+		shared, _, err := s.SharedNodes(ctx, a, ann.ID, false, false, Page{Limit: 10})
 		if err != nil {
 			t.Fatal(err)
 		}

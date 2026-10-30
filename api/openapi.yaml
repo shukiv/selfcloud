@@ -2444,16 +2444,117 @@ paths:
         caller's role. Nodes in the caller's own personal folder are left out, and so are nodes
         whose team space's root the caller already reaches. The caller reaches nothing above a
         shared node. A user only: an account key has no shares.
+        Without `order`, the nodes come in node ID order. With `order=recent`, the newest share
+        first, and each item carries `shared_at`: the later of the permission's creation and the
+        caller's visit to an organisation link on the node.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+        - name: order
+          in: query
+          description: "`recent` orders by `shared_at`, newest first. Left out: node ID order."
+          schema: { type: string, enum: [recent] }
+      responses:
+        "200":
+          description: The shared nodes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SharedList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/star:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    put:
+      tags: [Stars]
+      operationId: starNode
+      summary: Star a file or directory for the caller
+      description: |
+        Stars a node the caller reaches at any role. Starring again changes nothing. A user only, and a
+        delegated token acting as its user: an account key and an installation admin get `forbidden`.
+        A user may hold at most 5000 stars; a star past that is `conflict` with `details.reason` `limit`.
+        A star on a node that is later trashed or that the caller loses is kept but not listed.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Starred. }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Stars]
+      operationId: unstarNode
+      summary: Remove the caller's star on a file or directory
+      description: |
+        Removes the caller's own star. A signed-in user needs no reach for it, and any well-formed node ID
+        answers 204, so a star on a trashed or unreachable node can be removed. A delegated token acting for
+        the user needs write and reach. A star that is not there is not an error.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Unstarred. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/starred:
+    get:
+      tags: [Stars]
+      operationId: listStarred
+      summary: List the caller's starred items, newest star first
+      description: |
+        The starred nodes the caller still reaches, each with its role and `starred_at`. A star on a node
+        in the trash, or one the caller no longer reaches, is kept but not listed, so a page can come back
+        shorter than its limit; `next_cursor` is set while the stars run on. A user only.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
       responses:
         "200":
-          description: The shared nodes, in node ID order.
+          description: The starred items.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/NodeList" }
+              schema: { $ref: "#/components/schemas/StarredList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/recent:
+    get:
+      tags: [Stars]
+      operationId: listRecent
+      summary: List the caller's recent items, latest first
+      description: |
+        The nodes the caller viewed (a signed-in user opening a file, not a delegated token and not a
+        HEAD request) or edited (any user who created, wrote or copied the file, a token acting as its user
+        included), each with `viewed_at`, `edited_at` and `last_at`. Entries older than 30 days are
+        removed, and at most 500 are kept per user. An item the caller no longer reaches, or one in the
+        trash, is kept but not listed, so a page can come back shorter than its limit. A user only.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The recent items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecentList" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Stars]
+      operationId: clearRecent
+      summary: Clear the caller's recent list
+      description: A signed-in user only. A delegated token is refused, whatever its scope.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Cleared. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/recent/{nod}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    delete:
+      tags: [Stars]
+      operationId: removeRecent
+      summary: Remove one item from the caller's recent list
+      description: |
+        Removes the caller's entry for the node. It answers 204 whether or not the entry was there, and
+        it does not check reach: the entry is the caller's own. A signed-in user only; a delegated token
+        is refused, whatever its scope.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Removed. }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/directory:
     get:
@@ -3250,6 +3351,62 @@ components:
         created_by: { type: string, description: "The ID of the user, or of the key, that made the node." }
         owner_id: { type: string, description: "The ID of the user that owns the node." }
         has_link: { type: boolean, description: "Set in a listing of children, and omitted when false: the item carries a link the caller may know of. A visitor never gets it." }
+        starred: { type: boolean, description: "The caller's own star on the node. Set for a signed-in user and for a token acting as its user, on stat, listings and the shared list, false when not starred. Absent for keys, admins and link visitors." }
+
+    StarredItem:
+      description: A starred node, with when the caller starred it.
+      allOf:
+        - $ref: "#/components/schemas/Node"
+        - type: object
+          required: [starred_at]
+          properties:
+            starred_at: { type: string, format: date-time }
+
+    StarredList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StarredItem" }
+        next_cursor: { type: string }
+
+    RecentItem:
+      description: A node in the caller's recent list. `viewed_at` and `edited_at` are null when that did not happen.
+      allOf:
+        - $ref: "#/components/schemas/Node"
+        - type: object
+          required: [last_at, viewed_at, edited_at]
+          properties:
+            viewed_at: { type: [string, "null"], format: date-time }
+            edited_at: { type: [string, "null"], format: date-time }
+            last_at: { type: string, format: date-time, description: The later of the view and the edit. }
+
+    RecentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/RecentItem" }
+        next_cursor: { type: string }
+
+    SharedItem:
+      description: A node shared with the caller. `shared_at` is set with `order=recent`.
+      allOf:
+        - $ref: "#/components/schemas/Node"
+        - type: object
+          properties:
+            shared_at: { type: string, format: date-time }
+
+    SharedList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SharedItem" }
+        next_cursor: { type: string }
 
     NodeList:
       type: object

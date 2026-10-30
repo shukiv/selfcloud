@@ -301,6 +301,9 @@ func (s *Server) handleRestoreVersion(w http.ResponseWriter, r *http.Request) er
 			return err
 		}
 		out = cur
+		if err := noteEdit(ctx, tx, p, cur.AccountID, cur.ID); err != nil {
+			return err
+		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.version.restore", cur.ID,
 			map[string]any{"version": v.ID, "size": v.Size, "previous_size": prev}, cur.FolderID))
 	})

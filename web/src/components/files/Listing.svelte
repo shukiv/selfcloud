@@ -27,6 +27,8 @@
     onrename: (commit: boolean) => void;
     onkeydown: (e: KeyboardEvent) => void;
     onfocusitem: (index: number) => void;
+    // onstar toggles the caller's star on an item; the page makes the call. Absent items show no star button.
+    onstar?: (n: Node) => void;
     ondragover: (e: DragEvent) => void;
     ondragleave: (e: DragEvent) => void;
     ondrop: (e: DragEvent) => void;
@@ -50,6 +52,7 @@
     onrename,
     onkeydown,
     onfocusitem,
+    onstar,
     ondragover,
     ondragleave,
     ondrop,
@@ -111,6 +114,39 @@
   {/if}
 {/snippet}
 
+{#snippet starButton(n: Node)}
+  {#if n.starred !== undefined && onstar}
+    <button
+      type="button"
+      class="star-button"
+      aria-pressed={n.starred}
+      aria-label={$tr('star.button', { name: n.name })}
+      onclick={(e) => {
+        e.stopPropagation();
+        onstar(n);
+      }}
+      onkeydown={(e) => e.stopPropagation()}
+      ondblclick={(e) => e.stopPropagation()}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill={n.starred ? 'currentColor' : 'none'} stroke="currentColor"
+        stroke-width="2" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.2 6.5 20.2l1-6.2-4.5-4.4 6.2-.9z" />
+      </svg>
+    </button>
+  {/if}
+{/snippet}
+
+{#snippet starMark(n: Node)}
+  {#if n.starred}
+    <span class="star-mark">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+        <path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.2 6.5 20.2l1-6.2-4.5-4.4 6.2-.9z" />
+      </svg>
+      <span class="sr-only">{$tr('star.mark')}</span>
+    </span>
+  {/if}
+{/snippet}
+
 {#snippet roleText(n: Node)}
   {#if n.role}{$tr(`role.${n.role}`)}{/if}
 {/snippet}
@@ -164,6 +200,8 @@
           <Icon kind={kindOf(n)} size={22} />
           {@render nameField(n)}
           {@render linkBadge(n)}
+          {@render starMark(n)}
+          {@render starButton(n)}
           {#if renameID === n.id && renameError}
             <p class="field-error" id="rename-error">{renameError}</p>
           {/if}
@@ -216,6 +254,8 @@
           <bdi class="name">{n.name}</bdi>
         {/if}
         {@render linkBadge(n)}
+        {@render starMark(n)}
+        {@render starButton(n)}
         <span class="muted small">{sizeOf(n)}</span>
       </div>
     {/each}
@@ -237,6 +277,39 @@
     margin-inline-start: var(--space-2);
     color: var(--color-muted-foreground);
     vertical-align: middle;
+  }
+
+  .star-button,
+  .star-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+  }
+
+  .star-button {
+    min-width: 36px;
+    min-height: 36px;
+    margin-inline-start: var(--space-1);
+    padding: 0;
+    color: var(--color-muted-foreground);
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .star-button[aria-pressed='true'] {
+    color: var(--color-warning-fg);
+  }
+
+  .star-button:hover {
+    background: var(--color-muted);
+  }
+
+  .star-mark {
+    margin-inline-start: var(--space-1);
+    color: var(--color-warning-fg);
   }
 
   .row {

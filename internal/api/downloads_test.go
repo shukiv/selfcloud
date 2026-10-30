@@ -30,6 +30,7 @@ func rangeFixture(t *testing.T, s *Server) (string, nodeJSON) {
 }
 
 func TestNormalizeRanges(t *testing.T) {
+	t.Parallel()
 	const size = 26
 	ok := map[string]string{
 		"bytes=0-4":        "bytes=0-4",
@@ -81,6 +82,7 @@ func TestNormalizeRanges(t *testing.T) {
 }
 
 func TestRangedDownloads(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	key, doc := rangeFixture(t, s)
 	get := func(method string, hdr map[string]string) *httptest.ResponseRecorder {
@@ -149,6 +151,7 @@ func TestRangedDownloads(t *testing.T) {
 }
 
 func TestIfRangeAndConditionals(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	key, doc := rangeFixture(t, s)
 	get := func(hdr map[string]string) *httptest.ResponseRecorder {
@@ -192,6 +195,7 @@ func TestIfRangeAndConditionals(t *testing.T) {
 }
 
 func TestHeadDownloads(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	key, doc := rangeFixture(t, s)
 	path := "/api/v1/nodes/" + doc.ID + "/content"
@@ -219,6 +223,7 @@ func putTyped(t *testing.T, s *Server, key, fld, name, mimeType, body string) no
 }
 
 func TestInlineOnTheMainOrigin(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -268,6 +273,7 @@ func TestInlineOnTheMainOrigin(t *testing.T) {
 }
 
 func TestInlineOnTheContentOrigin(t *testing.T) {
+	t.Parallel()
 	const contentHost = "files.example.test"
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.ContentURL = "https://" + contentHost })
 	admin := adminKey(t, s)
@@ -321,6 +327,7 @@ func TestInlineOnTheContentOrigin(t *testing.T) {
 }
 
 func TestContentDispositionEncoding(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"plain.txt":        `attachment; filename="plain.txt"; filename*=UTF-8''plain.txt`,
 		`a"b\c ü.txt`:      `attachment; filename="a_b_c _.txt"; filename*=UTF-8''a%22b%5Cc%20%C3%BC.txt`,

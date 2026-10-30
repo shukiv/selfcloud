@@ -123,6 +123,7 @@ func deadVisitor(t *testing.T, rec *httptest.ResponseRecorder) {
 }
 
 func TestAnyoneNeedsManagerAndTheSwitch(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	// The account's switch is off by default: a manager is refused.
 	rec := call(t, fx.s, "POST", "/api/v1/nodes/"+fx.b.ID+"/share-links", fx.key, map[string]any{"audience": "anyone"})
@@ -160,6 +161,7 @@ func TestAnyoneNeedsManagerAndTheSwitch(t *testing.T) {
 }
 
 func TestAnyoneLinkIsViewerOnlyAndEnds(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	for _, extra := range []map[string]any{
 		{"role": "editor"},
@@ -196,6 +198,7 @@ func TestAnyoneLinkIsViewerOnlyAndEnds(t *testing.T) {
 }
 
 func TestAnyonePasswordIsHashedAndNeverShown(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	rec := call(t, fx.s, "POST", "/api/v1/nodes/"+fx.b.ID+"/share-links", fx.key,
@@ -227,6 +230,7 @@ func TestAnyonePasswordIsHashedAndNeverShown(t *testing.T) {
 }
 
 func TestOpenPasswordFlowAndWrongPasswords(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	_, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
@@ -251,6 +255,7 @@ func TestOpenPasswordFlowAndWrongPasswords(t *testing.T) {
 }
 
 func TestWrongPasswordLocksAnAddressOutOfTheLink(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	_, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
@@ -286,6 +291,7 @@ func TestWrongPasswordLocksAnAddressOutOfTheLink(t *testing.T) {
 }
 
 func TestWrongPasswordsSlowTheLinkWithoutRefusingIt(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	link, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
@@ -307,6 +313,7 @@ func TestWrongPasswordsSlowTheLinkWithoutRefusingIt(t *testing.T) {
 }
 
 func TestOpenNeedsNoSessionAndDeadLinksAreOneAnswer(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	link, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	// A signed-in member of the account may open it too, and a stranger too: no session is needed.
@@ -325,6 +332,7 @@ func TestOpenNeedsNoSessionAndDeadLinksAreOneAnswer(t *testing.T) {
 }
 
 func TestVisitorCredentialDiesWithTheLinkState(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		kill func(t *testing.T, fx *anyoneFixture, link shareLinkJSON, secret string)
@@ -379,6 +387,7 @@ func TestVisitorCredentialDiesWithTheLinkState(t *testing.T) {
 }
 
 func TestSwitchingPolicyOffAndOnAtUse(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -399,6 +408,7 @@ func TestSwitchingPolicyOffAndOnAtUse(t *testing.T) {
 }
 
 func TestMyFilesNeedTheSwitchForAnyoneOnly(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	setPolicy(t, fx.s, fx.key, fx.acc.ID, false)
 	pf := fx.personalFolder(t, fx.annSess)
@@ -414,6 +424,7 @@ func TestMyFilesNeedTheSwitchForAnyoneOnly(t *testing.T) {
 }
 
 func TestVisitorStaysInTheLinkSubtree(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -448,6 +459,7 @@ func TestVisitorStaysInTheLinkSubtree(t *testing.T) {
 }
 
 func TestVisitorIsCutOffFromEveryRouteButTheLinkedOnes(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -490,6 +502,7 @@ func TestVisitorIsCutOffFromEveryRouteButTheLinkedOnes(t *testing.T) {
 }
 
 func TestVisitorDownloadRulesApply(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	fx.flag(t, fx.deep.ID, map[string]any{"no_download": true})
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
@@ -501,6 +514,7 @@ func TestVisitorDownloadRulesApply(t *testing.T) {
 }
 
 func TestVisitorCredentialForgedExpiredOrOfAnotherLinkIsRefused(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -533,6 +547,7 @@ func TestVisitorCredentialForgedExpiredOrOfAnotherLinkIsRefused(t *testing.T) {
 }
 
 func TestVisitorRenewsWhileLive(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -552,6 +567,7 @@ func TestVisitorRenewsWhileLive(t *testing.T) {
 }
 
 func TestCredentialIssuedBeforeAResetIsRefusedAtOnce(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	link, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -563,6 +579,7 @@ func TestCredentialIssuedBeforeAResetIsRefusedAtOnce(t *testing.T) {
 }
 
 func TestAnyoneAuditHoldsNoSecretOrPassword(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	_, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
@@ -589,6 +606,7 @@ func TestAnyoneAuditHoldsNoSecretOrPassword(t *testing.T) {
 }
 
 func TestAnyoneAndOrganisationSwitch(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	link, url := fx.makeLink(t, fx.b.ID, "viewer")
 	secret := secretOf(t, url)
@@ -611,6 +629,7 @@ func TestAnyoneAndOrganisationSwitch(t *testing.T) {
 }
 
 func TestMeSaysWhetherPublicLinksAreOn(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	me := decode[meResponse](t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/me", nil))
 	if me.PublicLinks {
@@ -625,6 +644,7 @@ func TestMeSaysWhetherPublicLinksAreOn(t *testing.T) {
 
 // The store's state read is what every visitor request depends on; its fields must match the schema's.
 func TestShareLinkStateReadsTheSwitchAndTheNode(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	link, _ := fx.makeAnyone(t, fx.b.ID, nil)
 	st, err := fx.s.store.ShareLinkStateByID(t.Context(), fx.acc.ID, link.ID)
@@ -640,6 +660,7 @@ func TestShareLinkStateReadsTheSwitchAndTheNode(t *testing.T) {
 }
 
 func TestAnyoneCreateRefusedByTeamPolicy(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	fx.settings(t, fx.fld.ID, map[string]any{"members_only": true})
 	rec := call(t, fx.s, "POST", "/api/v1/nodes/"+fx.sib.ID+"/share-links", fx.key, map[string]any{"audience": "anyone"})
@@ -651,20 +672,39 @@ func TestAnyoneCreateRefusedByTeamPolicy(t *testing.T) {
 	}
 }
 
+// The limiter holds 30 opens a minute per address and refills at 0.5 a second. The test does not
+// count on wall-clock speed: a slow run refills tokens while it works, so it checks the bound the
+// limiter promises. The first 30 opens pass, a 429 arrives, and the opens let through never exceed
+// 30 plus what the elapsed time refills.
 func TestOpenIsRateLimitedPerAddress(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
+	start := time.Now()
+	admitted := 0
 	var last *httptest.ResponseRecorder
-	for i := 0; i < 31; i++ {
+	for i := 0; i < 200; i++ {
 		_, last = fx.tryAnyone(t, secret, "")
-		if i < 30 && last.Code != http.StatusOK {
-			t.Fatalf("open %d answered %d, want 200", i+1, last.Code)
+		if last.Code == http.StatusTooManyRequests {
+			break
 		}
+		if last.Code != http.StatusOK {
+			t.Fatalf("open %d answered %d, want 200 or 429", i+1, last.Code)
+		}
+		admitted++
 	}
 	wantError(t, last, 429, apierr.RateLimited)
+	if admitted < 30 {
+		t.Fatalf("admitted %d opens before the 429, want at least the burst of 30", admitted)
+	}
+	refilled := int(time.Since(start).Seconds() * 0.5)
+	if admitted > 30+refilled+1 {
+		t.Fatalf("admitted %d opens in %v, the limit allows %d", admitted, time.Since(start), 30+refilled+1)
+	}
 }
 
 func TestVisitorNoDownloadForViewersApplies(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	fx.settings(t, fx.fld.ID, map[string]any{"no_download_for_viewers": true})
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
@@ -686,6 +726,7 @@ func (fx *anyoneFixture) tryFrom(t *testing.T, addr, secret, password string) *h
 
 // M4: a switch to anyone keeps no end past the anyone cap.
 func TestSwitchToAnyoneCapsAnEarlierEnd(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	setPolicy(t, fx.s, fx.key, fx.acc.ID, true)
 	link, _ := fx.makeLink(t, fx.b.ID, "viewer")
@@ -712,6 +753,7 @@ func TestSwitchToAnyoneCapsAnEarlierEnd(t *testing.T) {
 
 // L1: a link under a trashed ancestor is dead before its password is checked.
 func TestTrashedAncestorRefusesAnyoneLinkBeforeThePassword(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	_, secret := fx.makeAnyone(t, fx.deep.ID, map[string]any{"password": password})
@@ -725,6 +767,7 @@ func TestTrashedAncestorRefusesAnyoneLinkBeforeThePassword(t *testing.T) {
 // M1, L5: one password check per link at a time. With the budget spent, each attempt waits two seconds, so two
 // concurrent wrong guesses take two waits in turn, not one.
 func TestPasswordChecksOfALinkRunOneAtATime(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	link, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
@@ -755,6 +798,7 @@ func TestPasswordChecksOfALinkRunOneAtATime(t *testing.T) {
 
 // M1, L5: an address is the /64 of an IPv6 client, so one address cannot shed its lock by changing its low bits.
 func TestLockoutCountsAnIPv6PrefixOnce(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	_, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
@@ -769,6 +813,7 @@ func TestLockoutCountsAnIPv6PrefixOnce(t *testing.T) {
 // M2: the in-memory guard keeps at most passwordLinkBudget timestamps per link, and at most 100000 keys in each
 // per-address map. A full map takes no new key: the address is not recorded, and nothing else is refused.
 func TestGuardKeepsItsMapsBounded(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	g := newShareGuard()
 	for i := 0; i < passwordLinkBudget+10; i++ {
@@ -811,6 +856,7 @@ func TestGuardKeepsItsMapsBounded(t *testing.T) {
 // A full map is swept at most once a second, so a flood that keeps it full does not pay for a whole sweep on
 // every attempt.
 func TestGuardSweepsAFullMapAtMostOnceASecond(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	g := newShareGuard()
 	for i := 0; len(g.ipFails) < guardMaxKeys; i++ {
@@ -830,6 +876,7 @@ func TestGuardSweepsAFullMapAtMostOnceASecond(t *testing.T) {
 
 // M3: an anyone link writes one link.open entry per throttle gap, not one per open.
 func TestAnyoneOpenAuditsOncePerGap(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	for i := 0; i < 3; i++ {
@@ -848,6 +895,7 @@ func TestAnyoneOpenAuditsOncePerGap(t *testing.T) {
 
 // L4: the signed-link budget of a visitor is its own, not the link's.
 func TestVisitorsHaveTheirOwnSignedLinkBudget(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -871,6 +919,7 @@ func TestVisitorsHaveTheirOwnSignedLinkBudget(t *testing.T) {
 
 // L2: a visitor is not told the folder or the editors-can-share flag.
 func TestVisitorSeesNoFolderOrEditorFlag(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -890,6 +939,7 @@ func TestVisitorSeesNoFolderOrEditorFlag(t *testing.T) {
 
 // L6: a visitor's role is viewer whatever the link's row says.
 func TestAuthenticateShareClampsTheRoleToViewer(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	_, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -905,6 +955,7 @@ func TestAuthenticateShareClampsTheRoleToViewer(t *testing.T) {
 
 // L6: a visitor is never the account key in a share, transfer or listing; the principal is built here directly.
 func TestTransferRefusesAVisitorWhateverRoleItHolds(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	link, _ := fx.makeAnyone(t, fx.b.ID, nil)
 	p := &auth.Principal{Kind: auth.KindShareLink, ID: link.ID, AccountID: fx.acc.ID,
@@ -919,6 +970,7 @@ func TestTransferRefusesAVisitorWhateverRoleItHolds(t *testing.T) {
 }
 
 func TestSeesFullChainIsNotAVisitor(t *testing.T) {
+	t.Parallel()
 	p := &auth.Principal{Kind: auth.KindShareLink, ID: "shl_x", AccountID: "acc_x",
 		Link: &auth.LinkScope{Node: "nod_x", Role: store.RoleViewer}}
 	if seesFullChain(p, store.RoleViewer) {
@@ -928,6 +980,7 @@ func TestSeesFullChainIsNotAVisitor(t *testing.T) {
 
 // L6: the folder list of a visitor is its own, never every folder of the account as manager.
 func TestVisitorIsNotListedEveryFolder(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	link, _ := fx.makeAnyone(t, fx.b.ID, nil)
 	p := &auth.Principal{Kind: auth.KindShareLink, ID: link.ID, AccountID: fx.acc.ID,
@@ -953,6 +1006,7 @@ func TestVisitorIsNotListedEveryFolder(t *testing.T) {
 
 // Item 9: the sharing policy answers how many anyone links the account has, live or paused.
 func TestSharingPolicyCountsAnyoneLinks(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	fx.makeAnyone(t, fx.b.ID, nil)
 	expired, _ := fx.makeAnyone(t, fx.deep.ID, nil)
@@ -978,6 +1032,7 @@ func TestSharingPolicyCountsAnyoneLinks(t *testing.T) {
 // A renewal that races a reset: the reset lands after the presented credential is checked and before the renewal
 // reads the link again. The renewal must not mint a credential the reset has ended.
 func TestRenewRefusedWhenAResetLandsBetweenCheckAndRenewal(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	link, secret := fx.makeAnyone(t, fx.b.ID, nil)
 	tok := fx.visitAnyone(t, secret, "")
@@ -1031,6 +1086,7 @@ func (fx *anyoneFixture) slotUsers(linkID string) int {
 // A locked address is refused before it takes or waits for the link's password turn: a holder of the secret who
 // locks their address out does not hold the turn against the real visitors.
 func TestLockedAddressDoesNotTakeOrWaitForTheSlot(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	link, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
@@ -1056,6 +1112,7 @@ func TestLockedAddressDoesNotTakeOrWaitForTheSlot(t *testing.T) {
 // Only one request per address may hold or wait for a link's turn: a second from the same address is refused at
 // once, and the first still gets its turn.
 func TestSecondAttemptFromAddressIsRefusedWhileItsFirstWaits(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	link, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})
@@ -1085,6 +1142,7 @@ func TestSecondAttemptFromAddressIsRefusedWhileItsFirstWaits(t *testing.T) {
 
 // A waiter for the turn gives up after the bound, with rate_limited and a Retry-After; it does not wait forever.
 func TestSlotWaiterGivesUpAfterTheBound(t *testing.T) {
+	t.Parallel()
 	fx := newAnyoneFixture(t)
 	const password = "correct horse battery"
 	link, secret := fx.makeAnyone(t, fx.b.ID, map[string]any{"password": password})

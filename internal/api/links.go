@@ -334,6 +334,7 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	if restricted && !s.inlineAllowed(r, n, disp == dispInline) {
 		return errDownloadRestricted()
 	}
+	s.noteView(p, n)
 	expires := time.Now().Add(ttl).Truncate(time.Second)
 	c := linkClaims{nod: n.ID, acc: n.AccountID, disp: disp, exp: expires.Unix()}
 	base := s.cfg.PublicURL

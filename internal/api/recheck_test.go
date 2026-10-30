@@ -76,6 +76,7 @@ func snapshot(t *testing.T, m *memberFixture) (usageJSON, int) {
 }
 
 func TestPutRecheckedAtCommit(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	before, files := snapshot(t, m)
 	onceBefore(m.s, func() { m.revoke(t, m.f.ID) })
@@ -91,6 +92,7 @@ func TestPutRecheckedAtCommit(t *testing.T) {
 }
 
 func TestCreateRecheckedAtCommit(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	before, files := snapshot(t, m)
 	// The user is disabled between the check and the commit.
@@ -107,6 +109,7 @@ func TestCreateRecheckedAtCommit(t *testing.T) {
 }
 
 func TestMkdirRecheckedAtCommit(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	onceBefore(m.s, func() { m.grant(t, m.f.ID, "read") })
 	wantError(t, callSession(t, m.s, m.sess, "POST", "/api/v1/folders/"+m.f.ID+"/directories",
@@ -115,6 +118,7 @@ func TestMkdirRecheckedAtCommit(t *testing.T) {
 }
 
 func TestRenameRecheckedAtCommit(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	// Someone moves the file into a folder the member cannot write, between the check and the commit.
 	onceBefore(m.s, func() {
@@ -130,6 +134,7 @@ func TestRenameRecheckedAtCommit(t *testing.T) {
 }
 
 func TestDeleteRecheckedAtCommit(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	onceBefore(m.s, func() { m.revoke(t, m.f.ID) })
 	wantError(t, callSession(t, m.s, m.sess, "DELETE", "/api/v1/nodes/"+m.fileF.ID, nil), 404, apierr.NotFound)
@@ -137,6 +142,7 @@ func TestDeleteRecheckedAtCommit(t *testing.T) {
 }
 
 func TestMoveRecheckedAtCommit(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	m.grant(t, m.g.ID, "write")
 	before, files := snapshot(t, m)
@@ -153,6 +159,7 @@ func TestMoveRecheckedAtCommit(t *testing.T) {
 }
 
 func TestCopyRecheckedAtCommit(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	m.grant(t, m.g.ID, "write")
 	before, files := snapshot(t, m)
@@ -169,6 +176,7 @@ func TestCopyRecheckedAtCommit(t *testing.T) {
 // source's folder. The source moves into a folder the member may only read between the check and the
 // commit: the copy must be refused, not written into the read-only folder.
 func TestCopyTargetFollowsMovedSource(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	before, files := snapshot(t, m)
 	onceBefore(m.s, func() {
@@ -189,6 +197,7 @@ func TestCopyTargetFollowsMovedSource(t *testing.T) {
 // TestDeadlineSetForBodyReads checks that a raw-body write sets a read deadline that grows with the
 // size cap: 30 seconds plus a second per MiB, here 16 MiB.
 func TestDeadlineSetForBodyReads(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	req := httptest.NewRequest("POST", "/api/v1/folders/"+m.f.ID+"/files?"+q("/d.txt"), strings.NewReader("x"))
 	req.Header.Set("Authorization", "Bearer "+m.key)

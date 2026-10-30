@@ -81,6 +81,10 @@ type Server struct {
 	guard  *shareGuard
 	// corsAllowed holds the origins whose pages may call the API; see cors.go. Empty when CORS is off.
 	corsAllowed map[string]bool
+	// views records the views of the Recent list off the request path; see views.go.
+	views *viewRecorder
+	// starLimit is how many stars one user may hold; see handleStarNode. A test lowers it.
+	starLimit int
 	// sessionCookie is the cookie's name; the "__Host-" form is used when public_url is https.
 	sessionCookie string
 	// bg holds mail sent after a response has gone out, so Serve can wait for it.
@@ -272,6 +276,8 @@ func New(opts Options) (*Server, error) {
 			"links.serve":  newLimiter(600),
 		},
 	}
+	s.views = newViewRecorder(opts.Store, log)
+	s.starLimit = maxStarsPerUser
 	if pub.Scheme == "https" {
 		s.sessionCookie = "__Host-selfcloud_session"
 	}
@@ -401,6 +407,12 @@ func (s *Server) routes() []route {
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true},
 		{method: http.MethodGet, path: "/api/v1/shared", handle: s.handleSharedWithMe, auth: true},
+		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/star", handle: s.handleStarNode, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/star", handle: s.handleUnstarNode, auth: true},
+		{method: http.MethodGet, path: "/api/v1/starred", handle: s.handleListStarred, auth: true},
+		{method: http.MethodGet, path: "/api/v1/recent", handle: s.handleListRecent, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/recent", handle: s.handleClearRecent, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/recent/{nod}", handle: s.handleRemoveRecent, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleCreateShareLink, auth: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleListShareLinks, auth: true},
 		{method: http.MethodPatch, path: "/api/v1/share-links/{shl}", handle: s.handleUpdateShareLink, auth: true},
@@ -557,6 +569,12 @@ func (s *Server) Run(ctx context.Context) error {
 func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	baseCtx, cancelBase := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelBase()
+	// The view recorder outlives the HTTP shutdown, so views recorded while requests finish are written. Its last
+	// batch is written before Serve returns, while the store is still open.
+	viewsCtx, stopViews := context.WithCancel(baseCtx)
+	viewsDone := make(chan struct{})
+	go func() { defer close(viewsDone); s.views.run(viewsCtx) }()
+	defer func() { stopViews(); <-viewsDone }()
 	errLog := slog.NewLogLogger(s.log.Handler(), slog.LevelWarn)
 	hs := &http.Server{
 		Handler:           s.handler,

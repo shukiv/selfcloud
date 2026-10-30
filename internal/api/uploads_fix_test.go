@@ -42,6 +42,7 @@ func dirFiles(t *testing.T, dir string) int {
 // Item 1: a completion that fails after the rename leaves nothing behind once the upload is deleted
 // or expires.
 func TestFailedCompletionLeavesNoFileOnDelete(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 4, md("folder", f.ID, "name", "f1.txt")))
 	s.beforeCommitUpload = func() error { return errors.New("simulated failure after the rename") }
@@ -62,6 +63,7 @@ func TestFailedCompletionLeavesNoFileOnDelete(t *testing.T) {
 }
 
 func TestFailedCompletionLeavesNoFileOnExpiry(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t, func(c *config.Config) { c.Upload.Expiry = config.Duration(time.Hour) })
 	upl := uploadID(t, createUpload(t, s, key, 4, md("folder", f.ID, "name", "f2.txt")))
 	s.beforeCommitUpload = func() error { return errors.New("simulated failure after the rename") }
@@ -83,6 +85,7 @@ func TestFailedCompletionLeavesNoFileOnExpiry(t *testing.T) {
 // Item 1: completion runs on a context detached from the request, so a client that disconnects at
 // the last byte does not roll back the finished work.
 func TestCompletionSurvivesClientDisconnect(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 4, md("folder", f.ID, "name", "gone-client.txt")))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -106,6 +109,7 @@ func TestCompletionSurvivesClientDisconnect(t *testing.T) {
 
 // Item 2: open uploads are capped per caller and per account.
 func TestUploadOpenCaps(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t, func(c *config.Config) { c.Upload.MaxOpenPerPrincipal = 2 })
 	for i := 0; i < 2; i++ {
 		uploadID(t, createUpload(t, s, key, 1, md("folder", f.ID, "name", fmt.Sprintf("o%d.txt", i))))
@@ -134,6 +138,7 @@ func TestUploadOpenCaps(t *testing.T) {
 
 // Item 2: creation is rate limited per caller.
 func TestUploadCreationRateLimited(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	// Production allows 60 a minute, refilling at one a second; a test with a slow race build would
 	// earn a token mid-loop, so the test uses a bucket of five that cannot refill meanwhile.
@@ -147,6 +152,7 @@ func TestUploadCreationRateLimited(t *testing.T) {
 
 // Item 2: the disk check counts every open upload's unwritten bytes, not just the new piece.
 func TestDiskCheckCountsReservations(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t, func(c *config.Config) { c.Upload.MaxDiskSharePercent = 100 })
 	s.freeBytes = func(string) (uint64, error) { return 100, nil }
 	upl := uploadID(t, createUpload(t, s, key, 60, md("folder", f.ID, "name", "d60.bin")))
@@ -158,6 +164,7 @@ func TestDiskCheckCountsReservations(t *testing.T) {
 
 // Item 3: a checksummed piece that is cut short cannot be verified, so it is dropped whole.
 func TestCutShortChecksummedPieceIsDropped(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 6, md("folder", f.ID, "name", "cut.bin")))
 	body := io.MultiReader(strings.NewReader("abc"), brokenReader{})
@@ -174,6 +181,7 @@ func TestCutShortChecksummedPieceIsDropped(t *testing.T) {
 
 // Item 4: a creation-with-upload that fails deletes the upload, row and file.
 func TestFailedCreationWithBodyDeletesUpload(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	body := io.MultiReader(strings.NewReader("abc"), brokenReader{})
 	rec := upCall(t, s, "POST", "/api/v1/uploads", key, map[string]string{
@@ -200,6 +208,7 @@ func TestFailedCreationWithBodyDeletesUpload(t *testing.T) {
 
 // Item 5: a missing file of an upload with nothing recorded is made again, not a 500.
 func TestMissingFileWithNothingRecordedIsRecreated(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 5, md("folder", f.ID, "name", "re.txt")))
 	if err := os.Remove(uploadFile(s, accID, upl)); err != nil {
@@ -257,6 +266,7 @@ func (b *stallBody) Read(p []byte) (int, error) {
 // Item 6: a new piece from the owner stops the half-open one holding the slot, waits for it, and
 // then goes on from the durable offset the holder left.
 func TestSlotHolderIsStoppedAndResumed(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 6, md("folder", f.ID, "name", "stall.bin")))
 	stopped := make(chan struct{})
@@ -290,6 +300,7 @@ func TestSlotHolderIsStoppedAndResumed(t *testing.T) {
 
 // Item 6: a holder that does not let go in time keeps the slot, and the new request gets 409 locked.
 func TestSlotHolderThatStaysGivesLocked(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	s.uploadSlotWait = 100 * time.Millisecond
 	upl := uploadID(t, createUpload(t, s, key, 6, md("folder", f.ID, "name", "stuck.bin")))
@@ -334,6 +345,7 @@ func waitForSlot(t *testing.T, s *Server, upl string) {
 
 // Item 7: creating, terminating and expiring uploads are audited, expiry as the system.
 func TestUploadsAreAudited(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t, func(c *config.Config) { c.Upload.Expiry = config.Duration(time.Hour) })
 	gone := uploadID(t, createUpload(t, s, key, 5, md("folder", f.ID, "name", "a1.txt")))
 	wantStatus(t, upCall(t, s, "DELETE", "/api/v1/uploads/"+gone, key, nil, nil, 0), 204)
@@ -362,6 +374,7 @@ func TestUploadsAreAudited(t *testing.T) {
 // Item 8: a completion that meets a taken name waits for a commit, the file stays where it is, and
 // the owner commits it under another name.
 func TestAwaitingCommitAndCommit(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 2, md("folder", f.ID, "name", "y.txt")))
 	putNode(t, s, key, f.ID, "/y.txt", "taken")
@@ -408,6 +421,7 @@ func TestAwaitingCommitAndCommit(t *testing.T) {
 
 // Item 8: committing an upload that is not waiting for a name is a conflict.
 func TestCommitOnlyWhileAwaiting(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 5, md("folder", f.ID, "name", "nw.txt")))
 	wantError(t, upCall(t, s, "POST", "/api/v1/uploads/"+upl+"/commit", key,

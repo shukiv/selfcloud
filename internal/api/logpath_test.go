@@ -8,6 +8,7 @@ import "testing"
 // path is spelled. The mux answers an unclean path with a redirect that matches no route, so the
 // raw path would otherwise be logged.
 func TestLogPathRedactsLinks(t *testing.T) {
+	t.Parallel()
 	info := &reqInfo{route: "unmatched"}
 	for _, p := range []string{
 		"/api/v1/links/TOKEN",

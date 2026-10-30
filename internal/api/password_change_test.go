@@ -13,6 +13,7 @@ import (
 // fifth wrong guess in a row ends the session that made it, and the user's attempts across
 // sessions share one limit, so a second session gets rate_limited.
 func TestChangePasswordGuessingEndsSession(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

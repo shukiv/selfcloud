@@ -42,6 +42,7 @@ func blobFiles(t *testing.T, s *Server) int {
 // TestDeletedContentIsCollectedAfterGrace checks that a deleted file's contents stay on disk for the
 // grace period, are removed after it, and that a second pass finds nothing to do.
 func TestDeletedContentIsCollectedAfterGrace(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -81,6 +82,7 @@ func TestDeletedContentIsCollectedAfterGrace(t *testing.T) {
 // TestCopyKeepsContentAlive checks that deleting the original of a copy does not orphan the shared
 // contents: the copy still refers to them.
 func TestCopyKeepsContentAlive(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -105,6 +107,7 @@ func TestCopyKeepsContentAlive(t *testing.T) {
 // collector, and that replacing a file's contents keeps the old content as a version: its blob is still
 // referenced, so the collector leaves it alone.
 func TestFolderDeleteAndReplaceLeaveContentToCollector(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -145,6 +148,7 @@ func TestFolderDeleteAndReplaceLeaveContentToCollector(t *testing.T) {
 // TestHousekeepingEndsSessionsAndTokens checks that ended sessions and spent or expired tokens are
 // removed, and that live ones are kept.
 func TestHousekeepingEndsSessionsAndTokens(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -166,6 +170,7 @@ func TestHousekeepingEndsSessionsAndTokens(t *testing.T) {
 // TestHousekeepingRunsBesideWrites runs collection passes while files are written and replaced, with
 // no grace period, so anything wrongly unreferenced would be removed. Every file must still read.
 func TestHousekeepingRunsBesideWrites(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -211,6 +216,7 @@ func TestHousekeepingRunsBesideWrites(t *testing.T) {
 // TestAccountDeleteRemovesItsFiles checks that the account-delete job takes the account's contents
 // off disk, not only its rows.
 func TestAccountDeleteRemovesItsFiles(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -233,6 +239,7 @@ func TestAccountDeleteRemovesItsFiles(t *testing.T) {
 // TestHousekeepingRemovesStaleUploads checks that a pass removes abandoned temporary upload files and
 // reports them.
 func TestHousekeepingRemovesStaleUploads(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, _ := newAccount(t, s, admin, "Acme")
@@ -259,6 +266,7 @@ func TestHousekeepingRemovesStaleUploads(t *testing.T) {
 
 // TestDefaultDeleteGraceIsSevenDays checks the default that design section 12 gives.
 func TestDefaultDeleteGraceIsSevenDays(t *testing.T) {
+	t.Parallel()
 	if got := config.Defaults().Blobs.DeleteGrace.D(); got != 7*24*time.Hour {
 		t.Errorf("default delete_grace = %v, want 168h", got)
 	}
@@ -266,6 +274,7 @@ func TestDefaultDeleteGraceIsSevenDays(t *testing.T) {
 
 // TestTruncateBytesKeepsCharacters checks that a cut never splits a character.
 func TestTruncateBytesKeepsCharacters(t *testing.T) {
+	t.Parallel()
 	if got := truncateBytes("ééééé", 5); got != "éé" {
 		t.Errorf("truncate = %q, want éé", got)
 	}

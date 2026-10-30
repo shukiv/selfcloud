@@ -428,24 +428,61 @@ func (s *Server) handleSharedWithMe(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
+	byRecent := false
+	switch o := r.URL.Query().Get("order"); o {
+	case "":
+	case "recent":
+		byRecent = true
+	default:
+		return apierr.New(apierr.InvalidRequest, "order must be recent, or left out")
+	}
 	ctx := r.Context()
-	shared, next, err := s.store.SharedNodes(ctx, p.AccountID, p.UserID, p.Role == auth.RoleOwner, page)
+	shared, next, err := s.store.SharedNodes(ctx, p.AccountID, p.UserID, p.Role == auth.RoleOwner, byRecent, page)
 	if err != nil {
 		return storeErr(err)
 	}
-	out := listResponse[nodeJSON]{Items: []nodeJSON{}, NextCursor: next}
+	// The reach of the whole page is read in one query, and a node the caller does not reach (a token outside its
+	// scope, a trashed node) is left out, as the per-node check left it out before.
+	ids := make([]string, len(shared))
+	for i, sn := range shared {
+		ids[i] = sn.NodeID
+	}
+	reach, err := reachRoles(ctx, s.store, p, ids)
+	if err != nil {
+		return err
+	}
+	nodes, err := s.store.NodesByID(ctx, p.AccountID, ids)
+	if err != nil {
+		return err
+	}
+	items := make([]sharedItem, 0, len(shared))
 	for _, sn := range shared {
-		n, role, err := nodeAccessWith(ctx, s.store, p, sn.NodeID)
-		if apierr.From(err).Code == apierr.NotFound {
-			continue // a token that does not reach the node leaves it out
-		}
-		if err != nil {
-			return err
+		n, role := nodes[sn.NodeID], reach[sn.NodeID]
+		if n == nil || role == "" {
+			continue
 		}
 		j := toNodeJSON(n)
 		j.Role = role
-		out.Items = append(out.Items, j)
+		item := sharedItem{nodeJSON: j}
+		if byRecent {
+			at := sn.SharedAt
+			item.SharedAt = &at
+		}
+		items = append(items, item)
 	}
-	writeJSON(w, http.StatusOK, out)
+	ptrs := make([]*nodeJSON, len(items))
+	for i := range items {
+		ptrs[i] = &items[i].nodeJSON
+	}
+	if err := s.withStarred(r, p.UserID, ptrs); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, listResponse[sharedItem]{Items: items, NextCursor: next})
 	return nil
+}
+
+// sharedItem is a node in the shared list. With order=recent it carries when the node was shared with the caller.
+type sharedItem struct {
+	nodeJSON
+	SharedAt *time.Time `json:"shared_at,omitempty"`
 }

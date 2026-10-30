@@ -53,7 +53,10 @@
     admin
       ? ADMIN_LINKS
       : [
+          { href: '/', label: 'nav.home' },
           { href: '/files', label: 'nav.files' },
+          { href: '/starred', label: 'nav.starred' },
+          { href: '/recent', label: 'nav.recent' },
           { href: '/shared', label: 'nav.shared' },
           { href: '/trash', label: 'nav.trash' },
           { href: '/storage', label: 'nav.storage' },
@@ -141,7 +144,7 @@
 
 <a class="skip-link" href="#main">{$tr('app.skip')}</a>
 <header class="topbar">
-  <a class="brand-link" href={admin ? '/admin/tenants' : '/files'}>
+  <a class="brand-link" href={admin ? '/admin/tenants' : '/'}>
     {#if $brand.logo_url}
       <img src={$brand.logo_url} alt="" width="28" height="28" />
     {/if}

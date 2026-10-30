@@ -142,6 +142,9 @@ type nodeJSON struct {
 	// HasLink is set on a child of a listing that carries a link the caller may know of (design section 8): every live
 	// link for a sharer, and the access links that policy lets through for anyone else. Visitors never see it.
 	HasLink bool `json:"has_link,omitempty"`
+	// Starred is the caller's own star on the node. It is set for a signed-in user and for a token acting as its
+	// user; a key, an admin and a link visitor get no value.
+	Starred *bool `json:"starred,omitempty"`
 }
 
 // nodeJSONFor is toNodeJSON as the caller may see it. A visitor of a link that anyone can open sees no user IDs,
@@ -151,6 +154,7 @@ func nodeJSONFor(p *auth.Principal, n *store.Node) nodeJSON {
 	if p != nil && p.Kind == auth.KindShareLink {
 		out.CreatedBy, out.OwnerID = "", ""
 		out.FolderID, out.EditorsCanShare = "", false
+		out.Starred = nil
 		if p.Link != nil && n.ID == p.Link.Node {
 			out.ParentID = nil
 		}
@@ -345,8 +349,14 @@ func (s *Server) handleStatNode(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := nodeJSONFor(principalOf(r), n)
+	p := principalOf(r)
+	out := nodeJSONFor(p, n)
 	out.Role = role
+	if p.Kind == auth.KindUser {
+		if err := s.withStarred(r, p.UserID, []*nodeJSON{&out}); err != nil {
+			return err
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
@@ -393,6 +403,15 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 		j.Role = store.RoleOfRank(max(base, min(ranks[k.ID], cap)))
 		j.HasLink = links[k.ID]
 		out.Items = append(out.Items, j)
+	}
+	if p.Kind == auth.KindUser && len(out.Items) > 0 {
+		ptrs := make([]*nodeJSON, len(out.Items))
+		for i := range out.Items {
+			ptrs[i] = &out.Items[i]
+		}
+		if err := s.withStarred(r, p.UserID, ptrs); err != nil {
+			return err
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -651,6 +670,9 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		out = n
+		if err := noteEdit(ctx, tx, p, f.AccountID, n.ID); err != nil {
+			return err
+		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, f.AccountID, "node.create", n.ID,
 			map[string]any{"kind": store.KindFile, "name": leaf.name, "parent": parent.ID, "size": c.Size}, f.ID))
 	})
@@ -923,6 +945,9 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		out = cur
+		if err := noteEdit(ctx, tx, p, cur.AccountID, cur.ID); err != nil {
+			return err
+		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.write", cur.ID,
 			map[string]any{"size": c.Size, "previous_size": prev}, cur.FolderID))
 	})

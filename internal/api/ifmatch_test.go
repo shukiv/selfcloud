@@ -14,6 +14,7 @@ import (
 // a mismatch is precondition_failed and changes nothing, and an absent header checks nothing. Files and
 // directories both carry the token, and each write changes it.
 func TestIfMatchOnRenameAndMove(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

@@ -31,6 +31,7 @@ func newFixtureWithMailer(t *testing.T, rec mail.Sender) *sharingFixture {
 // TestNoteWithControlsIsCleanedAndMailedClean checks that a note carrying a bare CR, an SMTP end-of-data
 // sequence and a NUL is stored without them, and mailed without them: a body must go out with CRLF only.
 func TestNoteWithControlsIsCleanedAndMailedClean(t *testing.T) {
+	t.Parallel()
 	bad := "hello\rworld\r\n.\r\nend\x00tail\tok"
 	if got := cleanNote(bad); strings.ContainsAny(got, "\r\x00") || !strings.Contains(got, "\tok") {
 		t.Fatalf("cleanNote(%q) = %q", bad, got)

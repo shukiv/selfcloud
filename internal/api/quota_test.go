@@ -74,6 +74,7 @@ func sweepAt(t *testing.T, s *Server, now time.Time) sweep.Result {
 }
 
 func TestQuotaRefusesSmallFileOverQuota(t *testing.T) {
+	t.Parallel()
 	s, _, key, accID, f := quotaSetup(t, 100)
 	wantStatus(t, writeFile(t, s, key, f.ID, "/a.bin", strings.Repeat("a", 60)), 201)
 	quotaDetails(t, writeFile(t, s, key, f.ID, "/b.bin", strings.Repeat("b", 50)), apierr.QuotaExceeded, 50, 40, "quota")
@@ -92,6 +93,7 @@ func TestQuotaRefusesSmallFileOverQuota(t *testing.T) {
 // toward the quota, so the new content counts in full. A replacement is not a difference any more: it needs
 // its whole size free, even when it is smaller than what it replaces.
 func TestQuotaReplaceCountsNewContentInFull(t *testing.T) {
+	t.Parallel()
 	s, admin, key, accID, f := quotaSetup(t, 200)
 	n := nodeOf(t, writeFile(t, s, key, f.ID, "/a.bin", strings.Repeat("a", 60)))
 	put := func(body, etag string) *httptest.ResponseRecorder {
@@ -120,6 +122,7 @@ func TestQuotaReplaceCountsNewContentInFull(t *testing.T) {
 }
 
 func TestQuotaCopyCountsInFullAndDisplacedStaysInTrash(t *testing.T) {
+	t.Parallel()
 	s, _, key, accID, f := quotaSetup(t, 100)
 	a := nodeOf(t, writeFile(t, s, key, f.ID, "/a.bin", strings.Repeat("a", 50)))
 	nodeOf(t, writeFile(t, s, key, f.ID, "/b.bin", strings.Repeat("b", 40))) // used 90
@@ -137,6 +140,7 @@ func TestQuotaCopyCountsInFullAndDisplacedStaysInTrash(t *testing.T) {
 }
 
 func TestQuotaCopyJobIsChecked(t *testing.T) {
+	t.Parallel()
 	s, _, key, accID, f := quotaSetup(t, 100)
 	s.copySyncNodes = 0 // every copy becomes a job
 	a := nodeOf(t, writeFile(t, s, key, f.ID, "/a.bin", strings.Repeat("a", 60)))
@@ -157,6 +161,7 @@ func TestQuotaCopyJobIsChecked(t *testing.T) {
 }
 
 func TestQuotaReservationCountsAndRefuses(t *testing.T) {
+	t.Parallel()
 	s, _, key, accID, f := quotaSetup(t, 100)
 	upl := uploadID(t, createUpload(t, s, key, 60, md("folder", f.ID, "name", "a.bin")))
 	if u := usageOf(t, s, key, accID); u.ReservedBytes != 60 || *u.AvailableBytes != 40 {
@@ -174,6 +179,7 @@ func TestQuotaReservationCountsAndRefuses(t *testing.T) {
 }
 
 func TestUploadCompletionIsNeverRefused(t *testing.T) {
+	t.Parallel()
 	s, admin, key, accID, f := quotaSetup(t, 100)
 	upl := uploadID(t, createUpload(t, s, key, 40, md("folder", f.ID, "name", "a.bin")))
 	wantStatus(t, piece(t, s, key, upl, 0, strings.Repeat("a", 20), nil), 204)
@@ -194,6 +200,7 @@ func TestUploadCompletionIsNeverRefused(t *testing.T) {
 
 // TestReservationsReleasedOnEveryPath: every way an upload ends gives its reservation back.
 func TestReservationsReleasedOnEveryPath(t *testing.T) {
+	t.Parallel()
 	s, _, key, accID, f := quotaSetup(t, 10000)
 	reserved := func() int64 { return usageOf(t, s, key, accID).ReservedBytes }
 
@@ -257,6 +264,7 @@ func TestReservationsReleasedOnEveryPath(t *testing.T) {
 
 // TestUnlimitedAccountReservationCap: an account with no quota is held to upload.max_reserved_per_account.
 func TestUnlimitedAccountReservationCap(t *testing.T) {
+	t.Parallel()
 	s, _, key, accID, f := quotaSetup(t, 0, func(c *config.Config) { c.Upload.MaxReservedPerAccount = 100 })
 	createUpload(t, s, key, 60, md("folder", f.ID, "name", "a.bin"))
 	quotaDetails(t, createUpload(t, s, key, 50, md("folder", f.ID, "name", "b.bin")),
@@ -273,6 +281,7 @@ func TestUnlimitedAccountReservationCap(t *testing.T) {
 // TestDiskShareStopsOneAccountFillingThePool: an account that opens many large uploads is stopped at
 // its share of the disk, and another account's small upload still fits.
 func TestDiskShareStopsOneAccountFillingThePool(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	s.freeBytes = func(string) (uint64, error) { return 1000, nil }
 	admin := adminKey(t, s)
@@ -298,6 +307,7 @@ func TestDiskShareStopsOneAccountFillingThePool(t *testing.T) {
 // TestUploadLifetimeCap: an upload expires max_lifetime after its creation, however often it is written
 // to, and the Upload-Expires header says so.
 func TestUploadLifetimeCap(t *testing.T) {
+	t.Parallel()
 	const life = 2 * time.Hour
 	s, _, key, _, f := quotaSetup(t, 0, func(c *config.Config) { c.Upload.MaxLifetime = config.Duration(life) })
 	created := time.Now()
@@ -332,6 +342,7 @@ func TestUploadLifetimeCap(t *testing.T) {
 // TestUploadPastLifetimeRefused: a request for an upload past its lifetime is refused even before the
 // sweep has run.
 func TestUploadPastLifetimeRefused(t *testing.T) {
+	t.Parallel()
 	s, _, key, _, f := quotaSetup(t, 0)
 	upl := uploadID(t, createUpload(t, s, key, 10, md("folder", f.ID, "name", "late.bin")))
 	s.cfg.Upload.MaxLifetime = config.Duration(time.Nanosecond) // the upload was created before this
@@ -341,6 +352,7 @@ func TestUploadPastLifetimeRefused(t *testing.T) {
 
 // TestUsageMetricsReportTotals: the installation gauges sum every account.
 func TestUsageMetricsReportTotals(t *testing.T) {
+	t.Parallel()
 	s, _, key, _, f := quotaSetup(t, 0)
 	wantStatus(t, writeFile(t, s, key, f.ID, "/a.bin", strings.Repeat("a", 12)), 201)
 	createUpload(t, s, key, 34, md("folder", f.ID, "name", "b.bin"))

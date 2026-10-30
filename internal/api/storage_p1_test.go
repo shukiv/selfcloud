@@ -78,6 +78,7 @@ func refusedForUser(t *testing.T, rec *httptest.ResponseRecorder, withNumbers bo
 // TestUserLimitRefusesMyFilesOverLimit: a write into a member's My files is refused over the member's limit while
 // the account has room; the same bytes in a team space are not charged to the member.
 func TestUserLimitRefusesMyFilesOverLimit(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	wantStatus(t, writeFile(t, fx.s, fx.key, fx.annPF, "/a.bin", bytesOf(60)), 201)
 	refusedForUser(t, writeFile(t, fx.s, fx.key, fx.annPF, "/b.bin", bytesOf(50)), true, 50, 40)
@@ -87,6 +88,7 @@ func TestUserLimitRefusesMyFilesOverLimit(t *testing.T) {
 // TestUserLimitHidesNumbersFromAContributor: a contributor in a member's My files learns the limit is passed, and
 // not the numbers.
 func TestUserLimitHidesNumbersFromAContributor(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	fx.setPerm(t, fx.annRoot, fx.bob.ID, "contributor")
 	wantStatus(t, writeFile(t, fx.s, fx.key, fx.annPF, "/a.bin", bytesOf(60)), 201)
@@ -98,6 +100,7 @@ func TestUserLimitHidesNumbersFromAContributor(t *testing.T) {
 // TestMoveIntoMembersFolderChecksItsLimit: a move from the team space into a member's My files is checked against
 // that member, and the file stays where it was when refused.
 func TestMoveIntoMembersFolderChecksItsLimit(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	wantStatus(t, writeFile(t, fx.s, fx.key, fx.annPF, "/a.bin", bytesOf(60)), 201)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/moving.bin", bytesOf(80))
@@ -114,6 +117,7 @@ func TestMoveIntoMembersFolderChecksItsLimit(t *testing.T) {
 // another member's My files is checked against the recipient, as a move is. (A transfer inside a team space moves
 // no bytes, so it is not checked.)
 func TestOwnershipTransferChecksTheRecipient(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	wantStatus(t, writeFile(t, fx.s, fx.key, fx.annPF, "/a.bin", bytesOf(60)), 201)
 	bobPF, err := fx.s.store.PersonalFolder(context.Background(), fx.acc.ID, fx.bob.ID)
@@ -128,6 +132,7 @@ func TestOwnershipTransferChecksTheRecipient(t *testing.T) {
 // TestTransferToIsNeverRefused: deleting a member with transfer_to moves its files even past the recipient's limit
 // (accepted limit of slice p1).
 func TestTransferToIsNeverRefused(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	wantStatus(t, writeFile(t, fx.s, fx.key, fx.annPF, "/a.bin", bytesOf(60)), 201)
 	bobPF, err := fx.s.store.PersonalFolder(context.Background(), fx.acc.ID, fx.bob.ID)
@@ -143,6 +148,7 @@ func TestTransferToIsNeverRefused(t *testing.T) {
 
 // TestLoweringLimitKeepsFilesAndRefusesGrowth: a limit below current use keeps the files; growth is refused.
 func TestLoweringLimitKeepsFilesAndRefusesGrowth(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	wantStatus(t, writeFile(t, fx.s, fx.key, fx.annPF, "/a.bin", bytesOf(60)), 201)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.ann.ID, fx.key,
@@ -153,6 +159,7 @@ func TestLoweringLimitKeepsFilesAndRefusesGrowth(t *testing.T) {
 
 // TestUserLimitNullFollowsAccountDefault: a null limit follows the account default; 0 is no limit.
 func TestUserLimitNullFollowsAccountDefault(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/storage-policy", fx.key,
 		map[string]any{"user_quota_bytes": 30}), 200)
@@ -172,6 +179,7 @@ func TestUserLimitNullFollowsAccountDefault(t *testing.T) {
 // totals and team-space names, never a name from a member's My files; the key sees every name; an admin sees
 // totals and no names.
 func TestStorageRoutesAccess(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	wantStatus(t, writeFile(t, fx.s, fx.key, fx.annPF, "/secret-name.txt", bytesOf(60)), 201)
 	wantStatus(t, writeFile(t, fx.s, fx.key, fx.fld.ID, "/team-name.txt", bytesOf(30)), 201)
@@ -227,6 +235,7 @@ func TestStorageRoutesAccess(t *testing.T) {
 
 // TestMeStorageAndLargest: the member's own meter and its largest files, and nothing of anyone else's.
 func TestMeStorageAndLargest(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	wantStatus(t, writeFile(t, fx.s, fx.key, fx.annPF, "/a.bin", bytesOf(60)), 201)
 	rec := callSession(t, fx.s, fx.annSess, "GET", "/api/v1/me", nil)
@@ -251,6 +260,7 @@ func TestMeStorageAndLargest(t *testing.T) {
 // TestDropIntoMyFilesIsChargedToItsUser: a drop into a member's My files counts against that member, and the
 // visitor gets the one generic refusal with no numbers.
 func TestDropIntoMyFilesIsChargedToItsUser(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	ctx := context.Background()
 	ann, _ := verifiedUser(t, fx.s, fx.key, fx.acc.ID, "drop-owner@example.com")
@@ -307,6 +317,7 @@ func driftedAccounts(t *testing.T, s *Server) int {
 // TestCountersStayConsistentThroughTheAPI runs the real paths that move usage (upload, replace, copy, move, trash,
 // restore, purge, a tus upload into a member's My files) and checks the folders against the account after each.
 func TestCountersStayConsistentThroughTheAPI(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	// Ann's replaced content and its version take 100 bytes; lift the limit, so the paths below are not refused.
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.ann.ID, fx.key,
@@ -348,6 +359,7 @@ func TestCountersStayConsistentThroughTheAPI(t *testing.T) {
 // TestOwnerFoldersAreTeamSpacesOnly: an owner's storage lists the team spaces and no personal folder (the members'
 // My files are seen only as totals through the users). The account key lists every folder.
 func TestOwnerFoldersAreTeamSpacesOnly(t *testing.T) {
+	t.Parallel()
 	fx := newP1Fixture(t)
 	base := "/api/v1/accounts/" + fx.acc.ID
 	owner := ownerSession(t, fx, "owner-folders@example.com")
@@ -370,6 +382,7 @@ func TestOwnerFoldersAreTeamSpacesOnly(t *testing.T) {
 // before the upload row is written, must not leave the upload in the folder the directory left. The creation is
 // refused, or the upload is in the directory's folder: never a row that cannot complete.
 func TestUploadFolderFollowsItsParentAtInsert(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	other := newFolder(t, fx.s, fx.key, fx.acc.ID, "Other")
 	otherRoot := fx.rootOf(t, other.ID)
@@ -411,6 +424,7 @@ func TestUploadFolderFollowsItsParentAtInsert(t *testing.T) {
 // TestDropPieceOverTheLimitNeverReachesDisk: a drop piece that the account's quota cannot take is refused before its
 // bytes are written. The piece's file stays empty and the reservation is unchanged.
 func TestDropPieceOverTheLimitNeverReachesDisk(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	fx.setQuota(t, 10)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)

@@ -11,6 +11,7 @@ import (
 )
 
 func TestLimiterBurstThenRetryAfter(t *testing.T) {
+	t.Parallel()
 	l := newLimiter(3)
 	for i := 0; i < 3; i++ {
 		if err := l.allow("a"); err != nil {
@@ -37,6 +38,7 @@ func TestLimiterBurstThenRetryAfter(t *testing.T) {
 }
 
 func TestLimiterSweepsIdleKeys(t *testing.T) {
+	t.Parallel()
 	l := newLimiter(5)
 	_ = l.allow("old")
 	_ = l.allow("fresh")
@@ -58,6 +60,7 @@ func TestLimiterSweepsIdleKeys(t *testing.T) {
 // not refilled, so it stays, and its key is still refused. A per-minute bucket is full again within
 // a minute, so it is removed.
 func TestHourlyBucketSurvivesSweepUntilFull(t *testing.T) {
+	t.Parallel()
 	hourly := newLimiterRate(3, time.Hour)
 	t0 := time.Now()
 	for range 3 {

@@ -24,6 +24,7 @@ func victimWithFiles(t *testing.T, fx *sharingFixture, email string) member {
 // TestOwnerSessionCannotTakeADeletedUsersFiles: an owner session may move a deleted user's files only to an
 // active member. An owner that names itself or another owner is refused. The account key is unrestricted.
 func TestOwnerSessionCannotTakeADeletedUsersFiles(t *testing.T) {
+	t.Parallel()
 	del := func(fx *sharingFixture, victim member, to string, sess testSession, key bool) int {
 		path := "/api/v1/accounts/" + fx.acc.ID + "/users/" + victim.user.ID + "?transfer_to=" + to
 		if key {
@@ -75,6 +76,7 @@ func TestOwnerSessionCannotTakeADeletedUsersFiles(t *testing.T) {
 // TestAccessRequestMailHasItsOwnBudget: a burst of access requests spends only the request buckets. After
 // it, a verification mail still goes out, since the shared account and address buckets were not touched.
 func TestAccessRequestMailHasItsOwnBudget(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	dan := newMember(t, fx, "dan-budget@example.com")
 	fx.grant(t, fx.rootOf(t, fx.fld.ID), dan.user.ID, "manager")
@@ -111,6 +113,7 @@ func TestAccessRequestMailHasItsOwnBudget(t *testing.T) {
 // TestApprovalRespectsMembersOnly: approving a request from an outsider below the root of a members-only
 // space is refused with the same conflict a direct grant gets.
 func TestApprovalRespectsMembersOnly(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.settings(t, fx.fld.ID, map[string]any{"members_only": true})
 	carl := newMember(t, fx, "carl-mo@example.com")
@@ -126,6 +129,7 @@ func TestApprovalRespectsMembersOnly(t *testing.T) {
 // TestCopyByContributorDropsEditorsCanShare: a contributor's copy of a flagged node is unflagged, since the
 // caller does not manage the destination. A manager's copy keeps the flag.
 func TestCopyByContributorDropsEditorsCanShare(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.flag(t, fx.deep.ID, map[string]any{"editors_can_share": true})
 	fx.grant(t, fx.a.ID, fx.ann.ID, "contributor")
@@ -146,6 +150,7 @@ func TestCopyByContributorDropsEditorsCanShare(t *testing.T) {
 // TestRepeatRequestKeepsItsRole: a repeat of a pending request collapses into it and keeps the role it was
 // made with. To ask for more, the requester waits for a decision.
 func TestRepeatRequestKeepsItsRole(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	ask := "/api/v1/nodes/" + fx.deep.ID + "/access-requests"
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "POST", ask, map[string]any{"role": "editor"}), 202)
@@ -159,6 +164,7 @@ func TestRepeatRequestKeepsItsRole(t *testing.T) {
 // TestDecidedRoleIsStored: an approval stores the role granted, so a listing shows what was actually given,
 // even when the approver granted less than the requester asked for.
 func TestDecidedRoleIsStored(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	ask := "/api/v1/nodes/" + fx.deep.ID + "/access-requests"
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "POST", ask, map[string]any{"role": "editor"}), 202)
@@ -173,6 +179,7 @@ func TestDecidedRoleIsStored(t *testing.T) {
 
 // TestDenialMailNamesNoItem: a denial mail says that an item was involved, and does not name it.
 func TestDenialMailNamesNoItem(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	ask := "/api/v1/nodes/" + fx.deep.ID + "/access-requests"
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "POST", ask, map[string]any{"role": "viewer"}), 202)
@@ -191,6 +198,7 @@ func TestDenialMailNamesNoItem(t *testing.T) {
 // TestFolderSettingsMissingAndUnreachableAlike: a folder the caller cannot reach answers exactly as a
 // missing folder does.
 func TestFolderSettingsMissingAndUnreachableAlike(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	body := map[string]any{"members_only": true}
 	missing := decodeError(t, callSession(t, fx.s, fx.annSess, "PATCH", "/api/v1/folders/"+id.New("fld")+"/settings", body))
@@ -206,6 +214,7 @@ func TestFolderSettingsMissingAndUnreachableAlike(t *testing.T) {
 // TestAccessRequestListIsRateLimited: the pending list is limited per caller, so one caller cannot make the
 // server scan the account's requests again and again.
 func TestAccessRequestListIsRateLimited(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	for i := 0; i < 60; i++ {
 		wantStatus(t, call(t, fx.s, "GET", "/api/v1/access-requests", fx.key, nil), 200)
@@ -215,6 +224,7 @@ func TestAccessRequestListIsRateLimited(t *testing.T) {
 
 // TestCollapsedRequestWritesNoAuditRow: a repeat that collapses into a pending request writes no audit entry.
 func TestCollapsedRequestWritesNoAuditRow(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	ask := "/api/v1/nodes/" + fx.deep.ID + "/access-requests"
 	count := func() int {
@@ -239,6 +249,7 @@ func TestCollapsedRequestWritesNoAuditRow(t *testing.T) {
 // TestRerequestWithinADayIsRecordedWithoutMail: after a decision, the same user's new request on the same
 // node is recorded, but managers are not mailed again.
 func TestRerequestWithinADayIsRecordedWithoutMail(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	dan := newMember(t, fx, "dan-rerequest@example.com")
 	fx.grant(t, fx.rootOf(t, fx.fld.ID), dan.user.ID, "manager")

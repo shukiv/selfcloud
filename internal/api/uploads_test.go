@@ -155,6 +155,7 @@ func uploadSetup(t *testing.T, mutate ...func(*config.Config)) (*Server, string,
 }
 
 func TestUploadHappyPathInChunks(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t, func(c *config.Config) { c.Upload.MaxChunkSize = 8 })
 	data := "abcdefghijklmnopqrstuvwxyz0123"
 	rec := createUpload(t, s, key, int64(len(data)), md("folder", f.ID, "name", "alpha.txt", "sha256", digest(data)))
@@ -200,6 +201,7 @@ func TestUploadHappyPathInChunks(t *testing.T) {
 }
 
 func TestUploadResumeAfterTruncatedPiece(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	data := "0123456789"
 	upl := uploadID(t, createUpload(t, s, key, 10, md("folder", f.ID, "name", "r.bin")))
@@ -225,6 +227,7 @@ type brokenReader struct{}
 func (brokenReader) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
 
 func TestUploadCrashAndRestart(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	data := "first-half|second-half"
 	upl := uploadID(t, createUpload(t, s, key, int64(len(data)), md("folder", f.ID, "name", "c.txt")))
@@ -250,6 +253,7 @@ func TestUploadCrashAndRestart(t *testing.T) {
 // TestUploadCompletionIsIdempotentAcrossCrash makes the commit fail after the file has moved into
 // blobs/, then restarts and completes again: one file, one node, correct usage.
 func TestUploadCompletionIsIdempotentAcrossCrash(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	data := "crash-me"
 	upl := uploadID(t, createUpload(t, s, key, int64(len(data)), md("folder", f.ID, "name", "x.txt")))
@@ -279,6 +283,7 @@ func TestUploadCompletionIsIdempotentAcrossCrash(t *testing.T) {
 }
 
 func TestUploadPieceChecksum(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 10, md("folder", f.ID, "name", "k.bin")))
 	wantStatus(t, piece(t, s, key, upl, 0, "01234", map[string]string{"Upload-Checksum": "sha256 " + b64sum("01234")}), 204)
@@ -303,6 +308,7 @@ func TestUploadPieceChecksum(t *testing.T) {
 }
 
 func TestUploadWholeFileChecksumMismatchDropsUpload(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 3, md("folder", f.ID, "name", "w.txt", "sha256", digest("nope"))))
 	rec := piece(t, s, key, upl, 0, "abc", nil)
@@ -319,6 +325,7 @@ func TestUploadWholeFileChecksumMismatchDropsUpload(t *testing.T) {
 }
 
 func TestUploadOffsetMismatch(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 6, md("folder", f.ID, "name", "o.txt")))
 	wantStatus(t, piece(t, s, key, upl, 0, "abc", nil), 204)
@@ -330,6 +337,7 @@ func TestUploadOffsetMismatch(t *testing.T) {
 }
 
 func TestUploadOwnership(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	// Another key of the same account, and the member, both get not_found for the owner's upload.
 	other := call(t, m.s, "POST", "/api/v1/accounts/"+m.acc.ID+"/keys", adminKey(t, m.s), map[string]any{"name": "other"})
@@ -356,6 +364,7 @@ func upSessionCreate(t *testing.T, m *memberFixture, name string, length int64) 
 }
 
 func TestUploadNeedsWriteAccess(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	// The member's grant on g is read only.
 	wantError(t, upSession(t, m.s, m.sess, "POST", "/api/v1/uploads", map[string]string{
@@ -368,6 +377,7 @@ func TestUploadNeedsWriteAccess(t *testing.T) {
 }
 
 func TestUploadGrantRevokedStopsPiece(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	rec := upSessionCreate(t, m, "long.txt", 6)
 	upl := uploadID(t, rec)
@@ -381,6 +391,7 @@ func TestUploadGrantRevokedStopsPiece(t *testing.T) {
 }
 
 func TestUploadOnConflict(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	putNode(t, s, key, f.ID, "/same.txt", "old")
 
@@ -409,6 +420,7 @@ func TestUploadOnConflict(t *testing.T) {
 }
 
 func TestUploadParentsAndPathAreCreatedOnCompletion(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	// The directory does not exist, so creation without parents is refused.
 	wantError(t, createUpload(t, s, key, 1, md("folder", f.ID, "name", "a.txt", "path", "/x/y")), 404, apierr.NotFound)
@@ -421,6 +433,7 @@ func TestUploadParentsAndPathAreCreatedOnCompletion(t *testing.T) {
 }
 
 func TestUploadLimits(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t, func(c *config.Config) {
 		c.Upload.MaxChunkSize = 4
 		c.Upload.MaxFileSize = 16
@@ -456,6 +469,7 @@ func TestUploadLimits(t *testing.T) {
 }
 
 func TestUploadExpiresAndSweepRemovesIt(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t, func(c *config.Config) { c.Upload.Expiry = config.Duration(time.Hour) })
 	upl := uploadID(t, createUpload(t, s, key, 5, md("folder", f.ID, "name", "e.txt")))
 	wantStatus(t, piece(t, s, key, upl, 0, "ab", nil), 204)
@@ -490,6 +504,7 @@ func TestUploadExpiresAndSweepRemovesIt(t *testing.T) {
 }
 
 func TestUploadExpiredIsGone(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t, func(c *config.Config) { c.Upload.Expiry = config.Duration(time.Millisecond) })
 	upl := uploadID(t, createUpload(t, s, key, 5, md("folder", f.ID, "name", "gone.txt")))
 	time.Sleep(5 * time.Millisecond)
@@ -497,6 +512,7 @@ func TestUploadExpiredIsGone(t *testing.T) {
 }
 
 func TestUploadTermination(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	upl := uploadID(t, createUpload(t, s, key, 5, md("folder", f.ID, "name", "t.txt")))
 	wantStatus(t, piece(t, s, key, upl, 0, "ab", nil), 204)
@@ -509,6 +525,7 @@ func TestUploadTermination(t *testing.T) {
 }
 
 func TestUploadDiskSpace(t *testing.T) {
+	t.Parallel()
 	// One account alone: its share is set to the whole pool, so this tests the install-wide rule.
 	s, key, _, f := uploadSetup(t, func(c *config.Config) { c.Storage.MinFree = 50; c.Upload.MaxDiskSharePercent = 100 })
 	free := uint64(100)
@@ -524,6 +541,7 @@ func TestUploadDiskSpace(t *testing.T) {
 }
 
 func TestUploadOnePieceAtATime(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	s.uploadSlotWait = 100 * time.Millisecond
 	upl := uploadID(t, createUpload(t, s, key, 4, md("folder", f.ID, "name", "busy.txt")))
@@ -555,6 +573,7 @@ func TestUploadOnePieceAtATime(t *testing.T) {
 }
 
 func TestUploadProtocolHeaders(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	// Without Tus-Resumable 1.0.0 the request is refused, with the version the server speaks.
 	rec := upCall(t, s, "POST", "/api/v1/uploads", key, map[string]string{"Tus-Resumable": "0.2.2",
@@ -581,6 +600,7 @@ func TestUploadProtocolHeaders(t *testing.T) {
 }
 
 func TestUploadCreationWithBody(t *testing.T) {
+	t.Parallel()
 	s, key, _, f := uploadSetup(t)
 	rec := upCall(t, s, "POST", "/api/v1/uploads", key, map[string]string{
 		"Upload-Length": "5", "Upload-Metadata": md("folder", f.ID, "name", "cb.txt"),
@@ -592,6 +612,7 @@ func TestUploadCreationWithBody(t *testing.T) {
 }
 
 func TestUploadSpecDocumentsTusHeaders(t *testing.T) {
+	t.Parallel()
 	var doc struct {
 		Paths map[string]map[string]any `yaml:"paths"`
 	}

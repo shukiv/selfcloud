@@ -56,7 +56,7 @@ describe('mayOpen', () => {
 describe('homeFor', () => {
   it('sends an admin to the tenants list and everyone else to the drive', () => {
     expect(homeFor(admin)).toBe('/admin/tenants');
-    expect(homeFor(owner)).toBe('/files');
-    expect(homeFor(undefined)).toBe('/files');
+    expect(homeFor(owner)).toBe('/');
+    expect(homeFor(undefined)).toBe('/');
   });
 });

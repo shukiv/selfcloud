@@ -1212,6 +1212,10 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 		// releases the reservation and the usage takes the bytes in the same transaction. Nothing is checked
 		// against the quota here. The reservation was checked when the upload was created, so a quota lowered
 		// while the upload was going does not strand a file that has been written in full.
+		// A user who completes an upload has edited the file (replaced or created). Drop visitors record nothing.
+		if err := noteEdit(ctx, tx, p, cur.AccountID, out.ID); err != nil {
+			return err
+		}
 		if err := tx.DeleteUpload(ctx, cur.AccountID, cur.ID); err != nil {
 			return err
 		}

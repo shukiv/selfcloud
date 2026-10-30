@@ -96,6 +96,7 @@ func (fx *dropFixture) reservedBytes(t *testing.T) int64 {
 }
 
 func TestDropLinkMakingRules(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	link, _ := fx.makeDrop(t, fx.b.ID, map[string]any{"title": "Send us files", "message": "Line one\nline two",
 		"ask_name": true, "notify": true})
@@ -143,6 +144,7 @@ func TestDropLinkMakingRules(t *testing.T) {
 }
 
 func TestDropLinkWhoMayMakeIt(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	post := func(sess testSession) *httptest.ResponseRecorder {
 		return callSession(t, fx.s, sess, "POST", "/api/v1/nodes/"+fx.b.ID+"/share-links",
@@ -187,6 +189,7 @@ func TestDropLinkWhoMayMakeIt(t *testing.T) {
 }
 
 func TestDropCredentialReachesNoNode(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	tok := fx.visitDrop(t, secret, "")
@@ -227,6 +230,7 @@ func dropUploadCall(t *testing.T, fx *dropFixture, tok, name, body string) *http
 }
 
 func TestDropRouteWalkCoversBothKinds(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	tok := fx.visitDrop(t, secret, "")
@@ -259,6 +263,7 @@ func TestDropRouteWalkCoversBothKinds(t *testing.T) {
 }
 
 func TestDropVisitorOpenAnswerAndInfo(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, map[string]any{"title": "Invoices", "message": "Drop them here",
 		"ask_name": true})
@@ -276,6 +281,7 @@ func TestDropVisitorOpenAnswerAndInfo(t *testing.T) {
 }
 
 func TestDropUploadsAreTheirVisitorsOwn(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	a := fx.visitDrop(t, secret, "")
@@ -293,6 +299,7 @@ func TestDropUploadsAreTheirVisitorsOwn(t *testing.T) {
 }
 
 func TestDropUploadsLandOnlyInTheLinkDirectory(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	tok := fx.visitDrop(t, secret, "")
@@ -324,6 +331,7 @@ func TestDropUploadsLandOnlyInTheLinkDirectory(t *testing.T) {
 }
 
 func TestDropLimits(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	if fx.s.limits["drop.ip"].burst != 30 || fx.s.limits["drop.link"].burst != 300 {
 		t.Errorf("the drop limits are %d an hour per address and %d per link; want 30 and 300",
@@ -344,6 +352,7 @@ func TestDropLimits(t *testing.T) {
 }
 
 func TestDropRateLimitsPerAddressAndPerLink(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	tok := fx.visitDrop(t, secret, "")
@@ -367,6 +376,7 @@ func TestDropRateLimitsPerAddressAndPerLink(t *testing.T) {
 }
 
 func TestDropUploadSizeIsTheAccountsLimit(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	tok := fx.visitDrop(t, secret, "")
@@ -376,6 +386,7 @@ func TestDropUploadSizeIsTheAccountsLimit(t *testing.T) {
 }
 
 func TestDropMidUploadEndsWhenItsLinkDies(t *testing.T) {
+	t.Parallel()
 	// gone says whether the link's end takes the upload with it. A paused or trashed link keeps it (item 3).
 	type ending struct {
 		gone bool
@@ -445,6 +456,7 @@ func (fx *dropFixture) dropID(t *testing.T) string {
 }
 
 func TestDropUploaderFields(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, map[string]any{"ask_name": true})
 	tok := fx.visitDrop(t, secret, "")
@@ -487,6 +499,7 @@ func anyStrings(m map[string]any) []string {
 }
 
 func TestDropPasswordFlow(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, map[string]any{"password": "drop-password"})
 	if _, rec := fx.tryAnyone(t, secret, ""); rec.Code != http.StatusUnauthorized ||
@@ -528,6 +541,7 @@ func drops(t *testing.T, fx *dropFixture) []mail.Message {
 }
 
 func TestDropNotificationOncePerHour(t *testing.T) {
+	t.Parallel()
 	fx, secret, _ := dropNotifyFixture(t)
 	ctx := context.Background()
 	tok := fx.visitDrop(t, secret, "")
@@ -554,6 +568,7 @@ func TestDropNotificationOncePerHour(t *testing.T) {
 }
 
 func TestDropNotificationOnlyForAManagingUser(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// A key creator is mailed nothing.
 	fx := newDropFixture(t)
@@ -578,6 +593,7 @@ func TestDropNotificationOnlyForAManagingUser(t *testing.T) {
 }
 
 func TestDropEditorsAndSwitchOffPauseTheLink(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	setPolicy(t, fx.s, fx.key, fx.acc.ID, false)
@@ -607,6 +623,7 @@ var _ = auth.KindShareLink
 // TestDropVisitorReachesNoNodeInTheAccessWalk checks the access walk itself, not only the route table: a drop
 // visitor is not found on any node, even on a route that would admit it.
 func TestDropVisitorReachesNoNodeInTheAccessWalk(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	tok := fx.visitDrop(t, secret, "")

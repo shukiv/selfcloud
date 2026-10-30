@@ -19,6 +19,7 @@ func newFolder(t *testing.T, s *Server, cred, accID, name string) folderJSON {
 }
 
 func TestFolderCreateAndNames(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -53,6 +54,7 @@ func TestFolderCreateAndNames(t *testing.T) {
 }
 
 func TestFolderDeleteCascadesGrants(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -81,6 +83,7 @@ func TestFolderDeleteCascadesGrants(t *testing.T) {
 }
 
 func TestGrantsAndMyFolders(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -149,6 +152,7 @@ func TestGrantsAndMyFolders(t *testing.T) {
 }
 
 func TestAdminsNeverReadFolders(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -164,6 +168,7 @@ func TestAdminsNeverReadFolders(t *testing.T) {
 // TestFolderAccessRules checks what each kind of caller reaches, through the file routes that use
 // folderAccess: a stat of a file (read) and a directory creation (write).
 func TestFolderAccessRules(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -198,6 +203,7 @@ func TestFolderAccessRules(t *testing.T) {
 // TestFolderResponsesCarryRootNodeID checks that a folder's answer names its root node, the node the
 // share dialog opens on, in every listing and lookup that returns the folder.
 func TestFolderResponsesCarryRootNodeID(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -243,6 +249,7 @@ func TestFolderResponsesCarryRootNodeID(t *testing.T) {
 // TestFolderDetailCountsItsTree checks that the single-folder answer gives the files in the folder's tree and
 // their bytes, which the delete confirmation shows. A list answer does not carry them.
 func TestFolderDetailCountsItsTree(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

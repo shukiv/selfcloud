@@ -77,6 +77,7 @@ func flipFirst(tok string) string {
 }
 
 func TestSignedLinkLifecycle(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -134,6 +135,7 @@ func TestSignedLinkLifecycle(t *testing.T) {
 }
 
 func TestSignedLinkRequests(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -204,6 +206,7 @@ func contentTagOf(t *testing.T, s *Server, accID, nodeID string) string {
 // TestLinkStaysDeadWhenOldContentReturns: a link made on contents X dies when the contents become Y, and it
 // stays dead when X comes back by a version restore. A rename does not kill it.
 func TestLinkStaysDeadWhenOldContentReturns(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "X")
 	onX := makeLink(t, fx.s, fx.key, f.ID, "")
@@ -239,6 +242,7 @@ func TestLinkStaysDeadWhenOldContentReturns(t *testing.T) {
 }
 
 func TestSignedLinkExpiryAndChanges(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -280,6 +284,7 @@ func TestSignedLinkExpiryAndChanges(t *testing.T) {
 }
 
 func TestSuspendedAccountRefusesContent(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -305,6 +310,7 @@ func TestSuspendedAccountRefusesContent(t *testing.T) {
 }
 
 func TestMemberNeedsReadToMakeLink(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -324,6 +330,7 @@ func TestMemberNeedsReadToMakeLink(t *testing.T) {
 }
 
 func TestContentOriginRefusesOtherRoutes(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.ContentURL = "https://files.example.test" })
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -352,6 +359,7 @@ func TestContentOriginRefusesOtherRoutes(t *testing.T) {
 }
 
 func TestLinkKeys(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	s := newTestServer(t, func(c *config.Config) { c.DataDir = dir })
 	keyDir := filepath.Join(dir, "keys")
@@ -402,6 +410,7 @@ func TestLinkKeys(t *testing.T) {
 }
 
 func TestLinkKeyRotation(t *testing.T) {
+	t.Parallel()
 	s1 := newAuthServer(t, &mail.Recorder{})
 	dir := s1.cfg.DataDir
 	admin := adminKey(t, s1)
@@ -460,6 +469,7 @@ func errorHeaders(t *testing.T, name string, rec *httptest.ResponseRecorder) {
 }
 
 func TestErrorsCarrySafetyHeaders(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -519,6 +529,7 @@ func TestErrorsCarrySafetyHeaders(t *testing.T) {
 }
 
 func TestSignedLinkRateLimits(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -554,6 +565,7 @@ func TestSignedLinkRateLimits(t *testing.T) {
 }
 
 func TestKeysDirectoryIsTightened(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	keyDir := filepath.Join(dir, "keys")
 	if err := os.MkdirAll(keyDir, 0o755); err != nil {

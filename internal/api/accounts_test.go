@@ -100,6 +100,7 @@ func newAccount(t *testing.T, s *Server, admin, name string) (accountJSON, strin
 }
 
 func TestAuthentication(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	admin := adminKey(t, s)
 	fakeAdmin, _, _ := auth.NewKey(auth.AdminKeyPrefix)
@@ -139,6 +140,7 @@ func TestAuthentication(t *testing.T) {
 }
 
 func TestAccountLifecycle(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	admin := adminKey(t, s)
 	ctx := context.Background()
@@ -233,6 +235,7 @@ func TestAccountLifecycle(t *testing.T) {
 }
 
 func TestAccountKeyScope(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	admin := adminKey(t, s)
 	a, keyA := newAccount(t, s, admin, "A")
@@ -256,6 +259,7 @@ func TestAccountKeyScope(t *testing.T) {
 }
 
 func TestListAccounts(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	admin := adminKey(t, s)
 	for _, n := range []string{"one", "two", "three"} {
@@ -287,6 +291,7 @@ func TestListAccounts(t *testing.T) {
 }
 
 func TestJSONBodies(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	admin := adminKey(t, s)
 	post := func(contentType, body string) *httptest.ResponseRecorder {

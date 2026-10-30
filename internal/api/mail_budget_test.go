@@ -14,6 +14,7 @@ import (
 // TestRefusedAddressSpendsNoAccountBudget checks that a message refused by the per-address limit
 // does not use up the account's budget: the account keeps its full 30 for other addresses.
 func TestRefusedAddressSpendsNoAccountBudget(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -41,6 +42,7 @@ func TestRefusedAddressSpendsNoAccountBudget(t *testing.T) {
 // address cannot stop the account's owner from inviting or resending to that address. The forgot
 // path has its own buckets, and the forgot answer is the same 202 whether or not mail went out.
 func TestForgotBudgetDoesNotBlockInvitations(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	admin := adminKey(t, s)
@@ -75,6 +77,7 @@ func TestForgotBudgetDoesNotBlockInvitations(t *testing.T) {
 // the account's 30 an hour let through 30. Another account is not affected. The per-client limit is
 // raised here, so this test isolates the account cap.
 func TestForgotAccountCap(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	s.limits["mail.forgot.ip"] = newLimiterRate(1000, time.Hour)
@@ -112,6 +115,7 @@ func TestForgotAccountCap(t *testing.T) {
 // cannot stop a user of that account from getting a first reset: the first reset of each address
 // in an hour is reserved.
 func TestFirstResetSurvivesAccountCap(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	s.limits["mail.forgot.ip"] = newLimiterRate(1000, time.Hour)
@@ -153,6 +157,7 @@ func TestFirstResetSurvivesAccountCap(t *testing.T) {
 // TestFirstAdminResetSurvivesAdminRepeats checks the same for installation admins, who share the
 // "admin" bucket. The admin bucket is cut to 2 here so the test stays short.
 func TestFirstAdminResetSurvivesAdminRepeats(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	s.limits["mail.forgot.account"] = newLimiterRate(2, time.Hour)

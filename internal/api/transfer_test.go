@@ -29,6 +29,7 @@ func bigTree(t *testing.T, s *Server, key, fld string) nodeJSON {
 // TestLargeCopyIsQueuedAndRuns checks that a copy above the sync threshold answers 202 with a job,
 // and that the job makes the copy: the new root is the job's target, and a repeat does nothing.
 func TestLargeCopyIsQueuedAndRuns(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	s.copySyncNodes = 3
 	admin := adminKey(t, s)
@@ -85,6 +86,7 @@ func TestLargeCopyIsQueuedAndRuns(t *testing.T) {
 // TestQueuedCopyRechecksAccess checks that a copy queued by a member fails, and makes nothing, when the
 // member's write grant on the target is gone by the time the job runs.
 func TestQueuedCopyRechecksAccess(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	m.s.copySyncNodes = 2
 	bigTree(t, m.s, m.key, m.f.ID)
@@ -118,6 +120,7 @@ func treeID(t *testing.T, m *memberFixture) string {
 
 // TestCopyAboveMaxNodesIsRefused checks the cap, with its details.
 func TestCopyAboveMaxNodesIsRefused(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.Copy.MaxNodes = 5 })
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -138,6 +141,7 @@ func TestCopyAboveMaxNodesIsRefused(t *testing.T) {
 // TestReadOnlyCopy checks that a copy needs read on the source and write on the target: read on both
 // is refused, and read on the source with write on the target is allowed.
 func TestReadOnlyCopy(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	// The member has write on f and read on g. Copying from g to f needs write on f: allowed; copying
 	// from f to g needs write on g: refused.
@@ -153,6 +157,7 @@ func TestReadOnlyCopy(t *testing.T) {
 
 // TestCaseOnlyMoveRename checks that a move which only changes a name's case renames the node.
 func TestCaseOnlyMoveRename(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -167,6 +172,7 @@ func TestCaseOnlyMoveRename(t *testing.T) {
 // TestRenameLongNameStaysWithinLimit checks that "rename" on a name near the limit cuts the base and
 // keeps the extension, so the new name is at most 255 bytes.
 func TestRenameLongNameStaysWithinLimit(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -196,6 +202,7 @@ func nodeIn(t *testing.T, s *Server, key, fld, name string) string {
 // TestReplaceFileOverFile checks the replace policy for a move and a copy: the file is replaced and
 // its contents are later collected; a folder on either side is a conflict.
 func TestReplaceFileOverFile(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	m.grant(t, m.g.ID, "write")
 	old := putNode(t, m.s, m.key, m.g.ID, "/doc.txt", "old contents")
@@ -239,6 +246,7 @@ func TestReplaceFileOverFile(t *testing.T) {
 // TestReplaceRefusesFoldersAndSelf checks the refusals of replace: a folder on either side, and a
 // copy onto itself.
 func TestReplaceRefusesFoldersAndSelf(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -263,6 +271,7 @@ func TestReplaceRefusesFoldersAndSelf(t *testing.T) {
 
 // TestConflictPolicyAndDefaults keeps the default policy: a clash is a conflict.
 func TestConflictPolicyAndDefaults(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

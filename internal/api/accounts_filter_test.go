@@ -13,6 +13,7 @@ import (
 // is exactly it, folding case) and ?status= (active or suspended), and that the text is matched
 // literally: a % or _ in it is not a wildcard.
 func TestListAccountsSearchAndStatus(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acme := decode[accountJSON](t, call(t, s, "POST", "/api/v1/accounts", admin,

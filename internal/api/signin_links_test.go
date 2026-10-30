@@ -80,6 +80,7 @@ func setUserStatus(t *testing.T, s *Server, key, accID, usr, status string) {
 }
 
 func TestSignInLinkWhoMayCreate(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -111,6 +112,7 @@ func TestSignInLinkWhoMayCreate(t *testing.T) {
 }
 
 func TestSignInLinkRefusedTargets(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -148,6 +150,7 @@ func TestSignInLinkRefusedTargets(t *testing.T) {
 }
 
 func TestSignInLinkNextValidation(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -182,6 +185,7 @@ func TestSignInLinkNextValidation(t *testing.T) {
 }
 
 func TestSignInLinkSingleUse(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -192,6 +196,7 @@ func TestSignInLinkSingleUse(t *testing.T) {
 }
 
 func TestSignInLinkRefusesUnknownMalformedAndExpired(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {
 		c.Users.SignInLinkTTL = config.Duration(50 * time.Millisecond)
 	})
@@ -208,6 +213,7 @@ func TestSignInLinkRefusesUnknownMalformedAndExpired(t *testing.T) {
 }
 
 func TestSignInLinkDisabledBetweenCreateAndUse(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -223,6 +229,7 @@ func TestSignInLinkDisabledBetweenCreateAndUse(t *testing.T) {
 }
 
 func TestSignInLinkStoredHashed(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -248,6 +255,7 @@ func TestSignInLinkStoredHashed(t *testing.T) {
 }
 
 func TestSignInLinkStartsNormalSession(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -270,6 +278,7 @@ func TestSignInLinkStartsNormalSession(t *testing.T) {
 }
 
 func TestSignInLinkReplacesExistingSession(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -292,6 +301,7 @@ func TestSignInLinkReplacesExistingSession(t *testing.T) {
 }
 
 func TestSignInLinkAuditHoldsNoToken(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -316,6 +326,7 @@ func TestSignInLinkAuditHoldsNoToken(t *testing.T) {
 }
 
 func TestSignInLinkRateLimits(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.RateLimit.PerIPPerMinute = 2 })
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -342,6 +353,7 @@ func freshToken() string {
 // TestSignInLinkSpentReplaysWriteNoAudit: replaying a link that is already used writes nothing, so a
 // holder of a spent link cannot fill the audit log. The first, successful use is audited.
 func TestSignInLinkSpentReplaysWriteNoAudit(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -361,6 +373,7 @@ func TestSignInLinkSpentReplaysWriteNoAudit(t *testing.T) {
 // TestSignInLinkChunkedEmptyBody: a request with no body is the default path, whether or not the
 // client sent a length.
 func TestSignInLinkChunkedEmptyBody(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -377,6 +390,7 @@ func TestSignInLinkChunkedEmptyBody(t *testing.T) {
 // TestSignInLinkConcurrentRedeem: one link redeemed at once from several browsers starts exactly one
 // session.
 func TestSignInLinkConcurrentRedeem(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -441,6 +455,7 @@ func signInAuditCount(t *testing.T, s *Server, key, accID string) int {
 // TestSignInLinkAsksBeforeSwitching: a browser signed in as A that redeems a link for B is not switched.
 // The answer is 409 signed_in_as_other, naming both users. A keeps its session, and nothing is audited.
 func TestSignInLinkAsksBeforeSwitching(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -475,6 +490,7 @@ func TestSignInLinkAsksBeforeSwitching(t *testing.T) {
 // TestSignInLinkSwitchOnConfirm: the prompt does not use the link, so confirming it signs the browser in as B,
 // ends A's session, and consumes the link.
 func TestSignInLinkSwitchOnConfirm(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -497,6 +513,7 @@ func TestSignInLinkSwitchOnConfirm(t *testing.T) {
 
 // TestSignInLinkSameUserNoPrompt: a browser already signed in as the link's user is signed in again at once.
 func TestSignInLinkSameUserNoPrompt(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -519,6 +536,7 @@ func TestSignInLinkSameUserNoPrompt(t *testing.T) {
 
 // TestSignInLinkNoLiveSessionNoPrompt: a cookie that maps to no session, or to an expired one, changes nothing.
 func TestSignInLinkNoLiveSessionNoPrompt(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

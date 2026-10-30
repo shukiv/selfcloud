@@ -13,6 +13,7 @@ import (
 // ask for a link to set up a user who has never verified, but never "none", and never a link for
 // a password reset. Owner and member sessions may only use email.
 func TestAdminSessionLinkRules(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	_, adminSess := newAdminUser(t, s, admin, "ann@example.com")

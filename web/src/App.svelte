@@ -27,6 +27,9 @@
   import NodeLink from './pages/NodeLink.svelte';
   import Trash from './pages/Trash.svelte';
   import Storage from './pages/Storage.svelte';
+  import Home from './pages/Home.svelte';
+  import Starred from './pages/Starred.svelte';
+  import Recent from './pages/Recent.svelte';
   import ManageOverview from './pages/manage/Overview.svelte';
   import ManagePeople from './pages/manage/People.svelte';
   import ManageGroups from './pages/manage/Groups.svelte';
@@ -46,8 +49,11 @@
     | 'forgot'
     | 'sign-in'
     | 'share-link'
+    | 'home'
     | 'files'
     | 'node'
+    | 'starred'
+    | 'recent'
     | 'shared'
     | 'requests'
     | 'trash'
@@ -62,7 +68,8 @@
   let ready = $state(false);
 
   function viewFor(path: string): View {
-    if (path === '/' || path === '/files' || path.startsWith('/files/')) return 'files';
+    if (path === '/') return 'home';
+    if (path === '/files' || path.startsWith('/files/')) return 'files';
     if (path.startsWith('/n/')) return 'node';
     // The owner and administration pages are read by their path; whether the person may open one is decided
     // below, so a page for another role is the not-found view.
@@ -83,6 +90,10 @@
         return 'share-link';
       case '/shared':
         return 'shared';
+      case '/starred':
+        return 'starred';
+      case '/recent':
+        return 'recent';
       case '/requests':
         return 'requests';
       case '/trash':
@@ -189,8 +200,14 @@
   </PublicLayout>
 {:else if $session !== null}
   <Shell>
-    {#if view === 'files'}
+    {#if view === 'home'}
+      <Home />
+    {:else if view === 'files'}
       <Files />
+    {:else if view === 'starred'}
+      <Starred />
+    {:else if view === 'recent'}
+      <Recent />
     {:else if view === 'node'}
       <NodeLink />
     {:else if view === 'shared'}

@@ -45,6 +45,7 @@ func namesIn(t *testing.T, rec *httptest.ResponseRecorder) []string {
 // TestDirectoryFindsActiveColleague: a member finds another active user of its account by its email
 // local part, and gets its ID, kind, name and email, and nothing else about it.
 func TestDirectoryFindsActiveColleague(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	rec := searchSession(t, fx, fx.annSess, "bob")
 	wantStatus(t, rec, 200)
@@ -61,6 +62,7 @@ func TestDirectoryFindsActiveColleague(t *testing.T) {
 
 // TestDirectoryHidesPendingUsers: a user that has not verified is not listed, whatever its name.
 func TestDirectoryHidesPendingUsers(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.pendingUser(t, "pat@example.com")
 	if got := namesIn(t, searchSession(t, fx, fx.annSess, "pat")); len(got) != 0 {
@@ -77,6 +79,7 @@ func TestDirectoryHidesPendingUsers(t *testing.T) {
 
 // TestDirectoryHidesOtherAccounts: a user of another account is never listed.
 func TestDirectoryHidesOtherAccounts(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	other, _ := newAccount(t, fx.s, fx.admin, "Other Co")
 	rec := call(t, fx.s, "POST", "/api/v1/accounts/"+other.ID+"/users", fx.admin,
@@ -93,6 +96,7 @@ func TestDirectoryHidesOtherAccounts(t *testing.T) {
 // TestDirectoryFindsGroups: a group is found by part of its name, case-insensitively, and only when the
 // kind asks for groups or for all.
 func TestDirectoryFindsGroups(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	gid := fx.group(t, "Finance Team")
 	rec := searchSession(t, fx, fx.annSess, "FINANCE")
@@ -108,6 +112,7 @@ func TestDirectoryFindsGroups(t *testing.T) {
 
 // TestDirectoryQueryBounds: q is trimmed, then must be 2 to 100 characters.
 func TestDirectoryQueryBounds(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	for _, q := range []string{"", " ", "a", " a ", strings.Repeat("a", 101)} {
 		wantError(t, searchAs(t, fx, fx.key, q, ""), 400, apierr.InvalidRequest)
@@ -120,6 +125,7 @@ func TestDirectoryQueryBounds(t *testing.T) {
 
 // TestDirectoryTakesWildcardsLiterally: % and _ in q match only themselves.
 func TestDirectoryTakesWildcardsLiterally(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.activeUser(t, "a_b@example.com", "Ann Underscore", "en")
 	// "an" is a real prefix of the fixture's ann: a control that the search works at all.
@@ -147,6 +153,7 @@ func TestDirectoryTakesWildcardsLiterally(t *testing.T) {
 
 // TestDirectoryAnswerIsCapped: an answer holds at most 20 entries, users and groups together.
 func TestDirectoryAnswerIsCapped(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	for i := 0; i < 25; i++ {
 		fx.activeUser(t, fmt.Sprintf("zed%02d@example.com", i), "", "en")
@@ -165,6 +172,7 @@ func TestDirectoryAnswerIsCapped(t *testing.T) {
 // token, whether it names a user or not: a token is narrowed to its folders and never lists the account's
 // people. A session user and the account key are allowed.
 func TestDirectoryRefusesAdminsAndTokens(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantError(t, searchAs(t, fx, fx.admin, "bob", ""), 403, apierr.Forbidden)
 	// An installation admin signed in as a user is refused as well: its kind is user, so only the admin check stops it.
@@ -183,6 +191,7 @@ func TestDirectoryRefusesAdminsAndTokens(t *testing.T) {
 // TestDirectoryIsRateLimitedPerCaller: a caller that searches past its allowance is refused, and the answer
 // says so.
 func TestDirectoryIsRateLimitedPerCaller(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	var last *httptest.ResponseRecorder
 	for i := 0; i < 80; i++ {
@@ -197,6 +206,7 @@ func TestDirectoryIsRateLimitedPerCaller(t *testing.T) {
 // TestInfoReportsSharingMaxExpiryDays: the cap a share may run is in /info in whole days, rounded up, and
 // 0 means no cap, so a cap shorter than a day is never read as no cap.
 func TestInfoReportsSharingMaxExpiryDays(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	days := func(d time.Duration) float64 {
 		t.Helper()

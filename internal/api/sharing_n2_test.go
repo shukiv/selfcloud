@@ -181,6 +181,7 @@ func (fx *sharingFixture) usage(t *testing.T) usageKey {
 // TestPermissionExpiresAtIsCheckedAgainstTheCap: expires_at must be in the future and within the
 // sharing cap, and a zero cap means no limit at all.
 func TestPermissionExpiresAtIsCheckedAgainstTheCap(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	path := "/api/v1/nodes/" + fx.a.ID + "/permissions/" + fx.bob.ID
 	put := func(at time.Time) *httptest.ResponseRecorder {
@@ -200,6 +201,7 @@ func TestPermissionExpiresAtIsCheckedAgainstTheCap(t *testing.T) {
 // TestExpiredPermissionGrantsNothing: a permission grants access until its expires_at and none after,
 // even though its row is still there.
 func TestExpiredPermissionGrantsNothing(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	expires := time.Now().Add(time.Second)
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+fx.a.ID+"/permissions/"+fx.bob.ID, fx.key,
@@ -213,6 +215,7 @@ func TestExpiredPermissionGrantsNothing(t *testing.T) {
 // TestPermissionListingShowsExpiresAt: the listing gives each permission's expires_at, and null for a
 // permission that never ends.
 func TestPermissionListingShowsExpiresAt(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	at := time.Now().Add(2 * time.Hour).Truncate(time.Second)
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+fx.a.ID+"/permissions/"+fx.bob.ID, fx.key,
@@ -243,6 +246,7 @@ func TestPermissionListingShowsExpiresAt(t *testing.T) {
 // TestSweepRemovesPermissionsExpiredOverADay: the sweep deletes a row that expired more than a day ago,
 // audits the removal as a system action, and keeps a row that expired inside the day.
 func TestSweepRemovesPermissionsExpiredOverADay(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	ctx := context.Background()
 	now := time.Now()
@@ -297,6 +301,7 @@ func TestSweepRemovesPermissionsExpiredOverADay(t *testing.T) {
 // signed links and copies to a viewer or a commenter. Inline viewing and a contributor or editor are
 // unaffected, and only an editor may set the flag.
 func TestNoDownloadRestrictsViewersAndCommentersOnly(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	carl := newMember(t, fx, "carl@example.com")
 	dan := newMember(t, fx, "dan@example.com")
@@ -330,6 +335,7 @@ func TestNoDownloadRestrictsViewersAndCommentersOnly(t *testing.T) {
 // TestNoDownloadForViewersSpaceSettingRestrictsViewers: the team-space flag applies to every node of the
 // space, for viewers only.
 func TestNoDownloadForViewersSpaceSettingRestrictsViewers(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	carl := newMember(t, fx, "carl@example.com")
 	fx.grant(t, fx.a.ID, fx.bob.ID, "viewer")
@@ -346,6 +352,7 @@ func TestNoDownloadForViewersSpaceSettingRestrictsViewers(t *testing.T) {
 // file, since the copy would carry the file out. The flag here is on the file only, so the directory
 // itself is not restricted and only the subtree rule applies.
 func TestCopyOfSubtreeWithRestrictedNodeIsRefused(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	carl := newMember(t, fx, "carl@example.com")
 	fx.grant(t, fx.a.ID, fx.bob.ID, "viewer")
@@ -363,6 +370,7 @@ func TestCopyOfSubtreeWithRestrictedNodeIsRefused(t *testing.T) {
 // TestEditorsCanShareIsOffByDefaultAndFollowsTheNode: an editor may share only where the node allows it,
 // and the flag reaches the nodes below.
 func TestEditorsCanShareIsOffByDefaultAndFollowsTheNode(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.a.ID, fx.ann.ID, "editor")
 	put := func(nodeID string) *httptest.ResponseRecorder {
@@ -379,6 +387,7 @@ func TestEditorsCanShareIsOffByDefaultAndFollowsTheNode(t *testing.T) {
 // TestEditorSharingCannotGrantOrChangeManager: an editor may give up to editor, never manager, and may
 // not change or remove a manager's row.
 func TestEditorSharingCannotGrantOrChangeManager(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	dan := newMember(t, fx, "dan@example.com")
 	fx.grant(t, fx.a.ID, fx.ann.ID, "editor")
@@ -397,6 +406,7 @@ func TestEditorSharingCannotGrantOrChangeManager(t *testing.T) {
 // TestSharingManagersOnlyOverridesEditorsCanShare: with the team space keeping sharing for managers, an
 // editor is refused even where the node allows editors to share. An account key still shares.
 func TestSharingManagersOnlyOverridesEditorsCanShare(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.a.ID, fx.ann.ID, "editor")
 	fx.flag(t, fx.a.ID, map[string]any{"editors_can_share": true})
@@ -410,6 +420,7 @@ func TestSharingManagersOnlyOverridesEditorsCanShare(t *testing.T) {
 // TestDelegatedTokenCannotChangePermissions: a delegated token may not put or remove a permission, even
 // where it has write access and the node allows editors to share.
 func TestDelegatedTokenCannotChangePermissions(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.a.ID, fx.bob.ID, "viewer")
 	fx.flag(t, fx.a.ID, map[string]any{"editors_can_share": true})
@@ -429,6 +440,7 @@ func TestDelegatedTokenCannotChangePermissions(t *testing.T) {
 // owner's My files, takes a free name when the new owner has one, leaves the old owner editor, and does
 // not change usage.
 func TestTransferPersonalItemMovesIntoRecipientFiles(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	annPF := fx.personalFolder(t, fx.annSess)
 	bobPF := fx.personalFolder(t, fx.bobSess)
@@ -471,6 +483,7 @@ func TestTransferPersonalItemMovesIntoRecipientFiles(t *testing.T) {
 // TestTransferTeamItemStaysInPlace: in a team space an item keeps its folder and parent, and only its
 // owner changes, for the whole subtree. The owner may transfer it, and a user who is not the owner may not.
 func TestTransferTeamItemStaysInPlace(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.c.ID, fx.ann.ID, "editor")
 	fx.grant(t, fx.c.ID, fx.bob.ID, "viewer")
@@ -496,6 +509,7 @@ func TestTransferTeamItemStaysInPlace(t *testing.T) {
 // TestTransferOwnershipRefusals: the recipient must be an active user of the same account. A user with no
 // access gets not_found, and a user who reaches the item but does not own it gets forbidden.
 func TestTransferOwnershipRefusals(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	other, otherKey := newAccount(t, fx.s, fx.admin, "Other")
 	zed, _ := verifiedUser(t, fx.s, otherKey, other.ID, "zed@example.com")
@@ -523,6 +537,7 @@ func TestTransferOwnershipRefusals(t *testing.T) {
 // TestDeleteUserTransferKeepsUsageAndMakesDirectory: the deleted user's My files land in a new directory
 // named after the user, in the recipient's My files, and usage does not change.
 func TestDeleteUserTransferKeepsUsageAndMakesDirectory(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	annPF := fx.personalFolder(t, fx.annSess)
 	bobPF := fx.personalFolder(t, fx.bobSess)
@@ -561,6 +576,7 @@ func TestDeleteUserTransferKeepsUsageAndMakesDirectory(t *testing.T) {
 // TestDeleteUserTransferUsesDisplayNameAndRenamesClash: the directory takes the user's display name, and
 // a second user with the same name gets a name of its own.
 func TestDeleteUserTransferUsesDisplayNameAndRenamesClash(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	bobPF := fx.personalFolder(t, fx.bobSess)
 	for _, email := range []string{"carl@example.com", "carl2@example.com"} {
@@ -586,6 +602,7 @@ func TestDeleteUserTransferUsesDisplayNameAndRenamesClash(t *testing.T) {
 // TestDeleteUserTransferRefusals: transfer_to and delete_files cannot both be given, a user cannot take
 // its own files, and a pending user cannot receive them. A refused delete changes nothing.
 func TestDeleteUserTransferRefusals(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	annPF := fx.personalFolder(t, fx.annSess)
 	fx.sessionFile(t, fx.annSess, annPF, "/b.txt", "bee")
@@ -608,6 +625,7 @@ func TestDeleteUserTransferRefusals(t *testing.T) {
 // TestAccessRequestRecordedOnceAndMailsManagers: a user who reaches a node may ask for more on it. A repeat
 // collapses into the pending row, and managers are mailed only for a new request.
 func TestAccessRequestRecordedOnceAndMailsManagers(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	dan := newMember(t, fx, "dan@example.com")
 	fx.grant(t, fx.rootOf(t, fx.fld.ID), dan.user.ID, "manager")
@@ -639,6 +657,7 @@ func TestAccessRequestRecordedOnceAndMailsManagers(t *testing.T) {
 // about the nodes that exist. A user with no role on a node in its own account is recorded: having no
 // role is exactly why it asks.
 func TestAccessRequestAnswersMissingAndUnreachableAlike(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	pending := func() int {
 		rec := call(t, fx.s, "GET", "/api/v1/access-requests", fx.key, nil)
@@ -682,6 +701,7 @@ func TestAccessRequestAnswersMissingAndUnreachableAlike(t *testing.T) {
 
 // TestAccessRequestRateLimit: a user may make 20 requests an hour, and the 21st is refused.
 func TestAccessRequestRateLimit(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	eve := newMember(t, fx, "eve@example.com")
 	for i := 0; i < 20; i++ {
@@ -695,6 +715,7 @@ func TestAccessRequestRateLimit(t *testing.T) {
 // TestAccessRequestApproveRaisesRoleOnly: an approval grants the asked role but never lowers a role the
 // requester gained in the meantime.
 func TestAccessRequestApproveRaisesRoleOnly(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	dan := newMember(t, fx, "dan@example.com")
 	fx.grant(t, fx.rootOf(t, fx.fld.ID), dan.user.ID, "manager")
@@ -718,6 +739,7 @@ func TestAccessRequestApproveRaisesRoleOnly(t *testing.T) {
 // approver's role is therefore not reachable through approve: every approver holds editor or more, and
 // approve grants at most editor.
 func TestAccessRequestApprovalCappedByApprover(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	dan := newMember(t, fx, "dan@example.com")
 	fx.grant(t, fx.c.ID, dan.user.ID, "editor")
@@ -745,6 +767,7 @@ func TestAccessRequestApprovalCappedByApprover(t *testing.T) {
 // TestAccessRequestDecisionsAreManagersOnlyAndOnce: a viewer may not decide, a manager decides once, and
 // each request and decision is audited.
 func TestAccessRequestDecisionsAreManagersOnlyAndOnce(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	dan := newMember(t, fx, "dan@example.com")
 	fx.grant(t, fx.rootOf(t, fx.fld.ID), dan.user.ID, "manager")
@@ -792,6 +815,7 @@ func onlyPending(t *testing.T, fx *sharingFixture) string {
 // TestShareMailUsesRecipientLocale: a share to a user whose locale is Hebrew is written in Hebrew, and its
 // subject has no line break.
 func TestShareMailUsesRecipientLocale(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	heidi := fx.activeUser(t, "heidi@example.com", "", "he")
 	base := len(fx.sent(t))
@@ -827,6 +851,7 @@ func TestShareMailUsesRecipientLocale(t *testing.T) {
 
 // TestShareMailNotifyAndMessageText: notify false sends nothing, and the note is put in the body as typed.
 func TestShareMailNotifyAndMessageText(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	base := len(fx.sent(t))
 
@@ -854,6 +879,7 @@ func TestShareMailNotifyAndMessageText(t *testing.T) {
 
 // TestShareMailSkipsGroupsOverFifty: a group of more than 50 members gets no mail, and the reply says why.
 func TestShareMailSkipsGroupsOverFifty(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	grp := fx.group(t, "everyone")
 	for i := 0; i < 51; i++ {
@@ -872,6 +898,7 @@ func TestShareMailSkipsGroupsOverFifty(t *testing.T) {
 
 // TestGrantsAliasSendsNoMail: the /grants route sets a permission without mail, as it always has.
 func TestGrantsAliasSendsNoMail(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	base := len(fx.sent(t))
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/accounts/"+fx.acc.ID+"/folders/"+fx.fld.ID+"/grants/"+fx.ann.ID, fx.key,
@@ -884,6 +911,7 @@ func TestGrantsAliasSendsNoMail(t *testing.T) {
 // TestMailTextReplacesLineBreaks: mailText turns every kind of line break into a space, so no value can
 // start a header.
 func TestMailTextReplacesLineBreaks(t *testing.T) {
+	t.Parallel()
 	if got, want := mailText("a\r\nBcc: x@example.com\ny\rz"), "a Bcc: x@example.com y z"; got != want {
 		t.Errorf("mailText = %q, want %q", got, want)
 	}
@@ -893,6 +921,7 @@ func TestMailTextReplacesLineBreaks(t *testing.T) {
 // subject. The API refuses a control character in a display name, so this end-to-end path cannot be reached
 // and the test skips; TestMailTextReplacesLineBreaks covers the helper that protects the subject.
 func TestMailSubjectHasNoLineBreakFromActorName(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	rec := callSession(t, fx.s, fx.annSess, "PATCH", "/api/v1/me", map[string]any{"display_name": "Ann\r\nBcc: x@example.com"})
 	if rec.Code != 200 {
@@ -915,6 +944,7 @@ func TestMailSubjectHasNoLineBreakFromActorName(t *testing.T) {
 // TestMembersOnlyAdmitsOnlyHoldersOfTheRoot: below the root, a members-only space names only users and
 // groups that already hold something on the root. The root itself is never refused.
 func TestMembersOnlyAdmitsOnlyHoldersOfTheRoot(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	root := fx.rootOf(t, fx.fld.ID)
 	carl := newMember(t, fx, "carl@example.com")
@@ -941,6 +971,7 @@ func TestMembersOnlyAdmitsOnlyHoldersOfTheRoot(t *testing.T) {
 // change. Only a user can hide, a user who cannot reach the space gets not_found, and a personal folder
 // cannot be hidden.
 func TestHiddenSpaceLeavesListingNotAccess(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.rootOf(t, fx.fld.ID), fx.bob.ID, "viewer")
 	bobPF := fx.personalFolder(t, fx.bobSess)
@@ -992,6 +1023,7 @@ func TestHiddenSpaceLeavesListingNotAccess(t *testing.T) {
 // transfer is private to the recipient, which the store's reader filter shows. A team-space entry is seen
 // by every reader.
 func TestPersonalAuditEntriesArePrivate(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	annPF := fx.personalFolder(t, fx.annSess)
 	docs := fx.sessionDir(t, fx.annSess, annPF, "/docs")
@@ -1042,6 +1074,7 @@ func TestPersonalAuditEntriesArePrivate(t *testing.T) {
 // gets the same 202 with no body as every other silent answer, and nothing is recorded, even for a node
 // the user would be allowed to ask about through a session.
 func TestAccessRequestByDelegatedTokenIsSilentAndUnrecorded(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	tok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"user": fx.ann.ID, "folders": []string{fx.fld.ID}})
 	rec := call(t, fx.s, "POST", "/api/v1/nodes/"+fx.deep.ID+"/access-requests", tok, map[string]any{"role": "editor"})
@@ -1058,6 +1091,7 @@ func TestAccessRequestByDelegatedTokenIsSilentAndUnrecorded(t *testing.T) {
 // TestAccessRequestOnAnotherUsersPersonalFolderMailsItsOwner: a request for a node in another user's My files
 // is recorded, and the owner of that folder is mailed, as Drive does.
 func TestAccessRequestOnAnotherUsersPersonalFolderMailsItsOwner(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	bob := newMember(t, fx, "bob-pf@example.com")
 	ann := newMember(t, fx, "ann-pf@example.com")
@@ -1082,6 +1116,7 @@ func TestAccessRequestOnAnotherUsersPersonalFolderMailsItsOwner(t *testing.T) {
 // with everything below it. The caller manages the recipient's files, not the item, so the flag does not
 // come along.
 func TestTransferClearsEditorsCanShare(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	annPF := fx.personalFolder(t, fx.annSess)
 	bobPF := fx.personalFolder(t, fx.bobSess)
@@ -1104,6 +1139,7 @@ func TestTransferClearsEditorsCanShare(t *testing.T) {
 // TestDeleteUserTransferClearsEditorsCanShare: the files a deleted user hands over lose editors_can_share,
 // since the deleting owner does not manage the recipient's My files.
 func TestDeleteUserTransferClearsEditorsCanShare(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	annPF := fx.personalFolder(t, fx.annSess)
 	bobPF := fx.personalFolder(t, fx.bobSess)
@@ -1132,6 +1168,7 @@ func TestDeleteUserTransferClearsEditorsCanShare(t *testing.T) {
 // different active user, would use up the account's verification allowance under the shared budget. They
 // do not, so a new user still gets its verification mail.
 func TestShareBurstLeavesVerificationMailWorking(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	for i := 0; i < 10; i++ {
 		m := newMember(t, fx, fmt.Sprintf("m%d@example.com", i))
@@ -1153,6 +1190,7 @@ func TestShareBurstLeavesVerificationMailWorking(t *testing.T) {
 // TestShareToOneUserStopsMailingAtItsBucket: a share mails the subject at most ten times an hour. Later
 // shares still happen, and say so: notified is false with the reason mail_budget.
 func TestShareToOneUserStopsMailingAtItsBucket(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	for i := 0; i < 11; i++ {
 		rec := call(t, fx.s, "PUT", "/api/v1/nodes/"+fx.deep.ID+"/permissions/"+fx.bob.ID, fx.key,
@@ -1171,6 +1209,7 @@ func TestShareToOneUserStopsMailingAtItsBucket(t *testing.T) {
 // TestRequestFloodFromOneUserStopsMailing: one requester gets three request mails an hour. Its further
 // requests are recorded and listed, but not mailed, and another user's request still mails the managers.
 func TestRequestFloodFromOneUserStopsMailing(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	dan := newMember(t, fx, "dan@example.com")
 	fx.grant(t, fx.rootOf(t, fx.fld.ID), dan.user.ID, "manager")
@@ -1203,6 +1242,7 @@ func TestRequestFloodFromOneUserStopsMailing(t *testing.T) {
 // requester's bucket is charged once for the request, not once per manager. Ann's fourth request in the hour
 // is recorded and mails nobody.
 func TestRequesterBudgetIsChargedOncePerRequest(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	root := fx.rootOf(t, fx.fld.ID)
 	for i := 0; i < 5; i++ {

@@ -26,6 +26,7 @@ func (fx *linkFixture) linkEditorOnB(t *testing.T) shareLinkJSON {
 }
 
 func TestLinkEditorCannotShare(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link := fx.linkEditorOnB(t)
 	wantStatus(t, callSession(t, fx.s, fx.bobSess, "POST", "/api/v1/nodes/"+fx.deep.ID+"/access-requests",
@@ -59,6 +60,7 @@ func TestLinkEditorCannotShare(t *testing.T) {
 // TestRealEditorStillShares is the control for TestLinkEditorCannotShare: the same node, with ann holding
 // editor by a permission of her own, may share and decide.
 func TestRealEditorStillShares(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	fx.flag(t, fx.b.ID, map[string]any{"editors_can_share": true})
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, "editor")
@@ -75,6 +77,7 @@ func TestRealEditorStillShares(t *testing.T) {
 // a link when the transfer runs. The transfer must still leave it a row, since the link can be deleted. The
 // item moves into the recipient's My files, so the row is what keeps the previous owner's access.
 func TestTransferWritesEditorForALinkHolder(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	pf := fx.personalFolder(t, fx.annSess)
 	file := fx.sessionFile(t, fx.annSess, pf, "/mine.txt", "mine")
@@ -96,6 +99,7 @@ func TestTransferWritesEditorForALinkHolder(t *testing.T) {
 // TestApprovalWritesARowForALinkHolder (M2): the requester holds the requested role only through a link when
 // the approval runs. The approval must still write its row, so the grant outlives the link.
 func TestApprovalWritesARowForALinkHolder(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link, url := fx.makeLink(t, fx.b.ID, "viewer")
 	fx.openedAs(t, fx.annSess, secretOf(t, url))
@@ -117,6 +121,7 @@ func TestApprovalWritesARowForALinkHolder(t *testing.T) {
 // TestLinkHolderMayRequestDurableAccess: a role held only through a link does not count as held when a
 // request is made, so a link editor may ask for editor and the request reaches the managers.
 func TestLinkHolderMayRequestDurableAccess(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	_, url := fx.makeLink(t, fx.b.ID, "editor")
 	fx.openedAs(t, fx.annSess, secretOf(t, url))
@@ -128,6 +133,7 @@ func TestLinkHolderMayRequestDurableAccess(t *testing.T) {
 // TestOpenDeletedBetweenReadAndWrite (L1): the link is deleted after the open reads it and before its write.
 // The answer is the uniform not_found, not a failure from the visit's foreign key.
 func TestOpenDeletedBetweenReadAndWrite(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link, url := fx.makeLink(t, fx.b.ID, "viewer")
 	fired := false
@@ -151,6 +157,7 @@ func TestOpenDeletedBetweenReadAndWrite(t *testing.T) {
 // TestOpenSecretResetBetweenReadAndWrite (L1): the secret is replaced after the open reads the old hash. The
 // old secret must not open the link: the stored hash no longer matches what was presented.
 func TestOpenSecretResetBetweenReadAndWrite(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link, url := fx.makeLink(t, fx.b.ID, "viewer")
 	oldSecret := secretOf(t, url)
@@ -182,6 +189,7 @@ func TestOpenSecretResetBetweenReadAndWrite(t *testing.T) {
 
 // TestRepeatOpenAuditsOnce (L2): a member who opens the same link again within a day adds no audit entry.
 func TestRepeatOpenAuditsOnce(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link, url := fx.makeLink(t, fx.b.ID, "viewer")
 	secret := secretOf(t, url)
@@ -202,6 +210,7 @@ func TestRepeatOpenAuditsOnce(t *testing.T) {
 // TestOpenIsLimitedPerUser (L2): the per-address limit is raised here, so the per-member limit is what refuses
 // the sixty-first open of a link by one member.
 func TestOpenIsLimitedPerUser(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	_, url := fx.makeLink(t, fx.b.ID, "viewer")
 	secret := secretOf(t, url)

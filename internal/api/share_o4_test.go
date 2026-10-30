@@ -39,6 +39,7 @@ func (fx *anyoneFixture) countRows(t *testing.T, query string, args ...any) int 
 // moment it ends; then the sweep removes it with its visits and its drop uploads, audits it, and leaves the live
 // links alone. A second pass finds nothing to do.
 func TestEndedLinkWaitsADayThenTheSweepRemovesIt(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	ctx := context.Background()
 	now := time.Now()
@@ -97,6 +98,7 @@ func TestEndedLinkWaitsADayThenTheSweepRemovesIt(t *testing.T) {
 // TestSweptLinkOfAMembersFilesIsPrivate: the link.expired entry for a link in a personal folder names that folder,
 // so only its user and the account key read it, as every entry about My files.
 func TestSweptLinkOfAMembersFilesIsPrivate(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	pf := fx.personalFolder(t, fx.annSess)
 	keep := fx.sessionFile(t, fx.annSess, pf, "/keep.txt", "keep")
@@ -147,6 +149,7 @@ func listedBy(t *testing.T, rec *httptest.ResponseRecorder) map[string]accountSh
 // TestAccountLinkListWhoSeesWhat: the key sees every item; the owner sees the items of other members' My files without
 // their name or path; an admin sees no item at all; members and tokens are refused; another account's links never appear.
 func TestAccountLinkListWhoSeesWhat(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	owner := fx.ownerSession(t, "boss@example.com")
 	pf := fx.personalFolder(t, fx.annSess)
@@ -234,6 +237,7 @@ func TestAccountLinkListWhoSeesWhat(t *testing.T) {
 // TestAccountLinkListFiltersPagingAndEnds: the filters narrow the list, a page's cursor leads to the next, a link
 // past its end is left out, and a paused link is said to be paused.
 func TestAccountLinkListFiltersPagingAndEnds(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	orgLink, orgURL := fx.makeLink(t, fx.c.ID, store.RoleViewer)
 	fx.openedAs(t, fx.annSess, secretOf(t, orgURL))
@@ -320,6 +324,7 @@ func publicLinksFixture(t *testing.T) (fx *dropFixture, org shareLinkJSON, anyon
 // TestDeletePublicShareLinksRules: a member and a token are refused; the account key and an owner session delete
 // every link that anyone can open, and only those.
 func TestDeletePublicShareLinksRules(t *testing.T) {
+	t.Parallel()
 	path := func(fx *dropFixture) string { return "/api/v1/accounts/" + fx.acc.ID + "/share-links/delete-public" }
 
 	t.Run("refused to a member and a token", func(t *testing.T) {
@@ -382,6 +387,7 @@ func TestDeletePublicShareLinksRules(t *testing.T) {
 // TestOwnerDeletesAMembersMyFilesLink: an owner session, and the account key, delete a link on a member's My files, which
 // the owner cannot reach. A member still cannot delete a link it does not reach, nor another member's link.
 func TestOwnerDeletesAMembersMyFilesLink(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	pf := fx.personalFolder(t, fx.annSess)
 	keep := fx.sessionFile(t, fx.annSess, pf, "/keep.txt", "keep")
@@ -434,6 +440,7 @@ func (fx *dropFixture) badgesFor(t *testing.T, cred string, sess *testSession, d
 // sees every live link, drop links included; a member sees the access links its listing would show, and loses them
 // with the team space's links switch; a visitor sees none.
 func TestChildrenShowLinkBadges(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	fx.setPerm(t, fx.a.ID, fx.ann.ID, store.RoleViewer)
 	fx.makeLink(t, fx.b.ID, store.RoleViewer)
@@ -471,6 +478,7 @@ func folderListIDs(t *testing.T, fx *linkFixture, sess testSession) []string {
 // TestOrganisationLinkOnATeamRootListsTheSpace: a member who opens an organisation link on a team space's root finds
 // the space under Team spaces, as a member with a permission on the root does, and not only under Shared with me.
 func TestOrganisationLinkOnATeamRootListsTheSpace(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	_, url := fx.makeLink(t, fx.root, store.RoleViewer)
 	before := folderListIDs(t, fx, fx.annSess)
@@ -497,6 +505,7 @@ func TestOrganisationLinkOnATeamRootListsTheSpace(t *testing.T) {
 
 // TestSharedWithMeListsANodeOnce: a node a member reaches by a permission and by a link it opened is listed once.
 func TestSharedWithMeListsANodeOnce(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, store.RoleViewer)
 	_, url := fx.makeLink(t, fx.b.ID, store.RoleEditor)
@@ -526,6 +535,7 @@ func slicesContains(xs []string, x string) bool {
 // TestChildBadgesNeverReachATokenSharer: a delegated token never manages links, so its listing shows no badge for a
 // drop link, an anyone link or a paused link, even when the account key or a user that manages the folder would see one.
 func TestChildBadgesNeverReachATokenSharer(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	fx.setPerm(t, fx.a.ID, fx.ann.ID, store.RoleManager)
 	fx.makeDrop(t, fx.b.ID, nil)
@@ -568,6 +578,7 @@ func TestChildBadgesNeverReachATokenSharer(t *testing.T) {
 // TestOneBadEndedLinkDoesNotStopTheSweep: a link whose removal fails is skipped and logged. The other ended links are
 // removed in the same pass, the failed one is kept for the next pass, and the sweeps after the links still run.
 func TestOneBadEndedLinkDoesNotStopTheSweep(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	ctx := context.Background()
 	past := time.Now().Add(-25 * time.Hour)

@@ -24,6 +24,8 @@ export interface Node {
   owner_id?: string;
   // has_link is set when the item carries a share link the caller may know of (the children listing only).
   has_link?: boolean;
+  // starred is set for a signed-in caller (the caller's own star); absent for keys, admins and link visitors.
+  starred?: boolean;
 }
 
 export interface TrashItem extends Node {

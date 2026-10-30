@@ -11,6 +11,7 @@ import (
 )
 
 func TestClientIP(t *testing.T) {
+	t.Parallel()
 	trusted, err := config.ParsePrefixes([]string{"10.0.0.0/8", "2001:db8::/32"})
 	if err != nil {
 		t.Fatal(err)

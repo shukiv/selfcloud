@@ -40,6 +40,7 @@ func hasID(ids []string, id string) bool {
 // answer not_found on every route a normal caller uses, a delegated token and a user included, and a
 // permanent purge is the only thing left to do with it.
 func TestTrashedSubtreeAnswersNotFoundEverywhere(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.b.ID, fx.ann.ID, "editor")
 	fx.grant(t, fx.deep.ID, fx.bob.ID, "viewer")
@@ -107,6 +108,7 @@ func TestTrashedSubtreeAnswersNotFoundEverywhere(t *testing.T) {
 // TestSignedLinkStopsWhenItsFileIsTrashed: a link made before the file was trashed stops working at once. The
 // link's MAC still checks, since trashing does not change the ETag, so the trash itself is what refuses it.
 func TestSignedLinkStopsWhenItsFileIsTrashed(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	link := decode[linkJSON](t, call(t, fx.s, "POST", "/api/v1/nodes/"+fx.deep.ID+"/links", fx.key,
 		map[string]any{"ttl": 300}))
@@ -123,6 +125,7 @@ func TestSignedLinkStopsWhenItsFileIsTrashed(t *testing.T) {
 // TestTrashedNameIsFreeForANewItem: the name of a trashed item may be taken again at once, and the trashed
 // item keeps its name in the trash listing.
 func TestTrashedNameIsFreeForANewItem(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.sib.ID, fx.key, nil), 204)
 
@@ -138,6 +141,7 @@ func TestTrashedNameIsFreeForANewItem(t *testing.T) {
 
 // TestUsageUnchangedUntilPurge: a trashed file still counts toward usage, and only a purge takes it off.
 func TestUsageUnchangedUntilPurge(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	before := fx.usage(t)
 	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.deep.ID, fx.key, nil), 204)
@@ -154,6 +158,7 @@ func TestUsageUnchangedUntilPurge(t *testing.T) {
 // TestRestoreToOriginalParent: a restore puts the item back in its original directory, and the reply
 // carries the new parent and the name.
 func TestRestoreToOriginalParent(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.sib.ID, fx.key, nil), 204)
 	rec := call(t, fx.s, "POST", "/api/v1/nodes/"+fx.sib.ID+"/restore", fx.key, nil)
@@ -184,6 +189,7 @@ func childNames(t *testing.T, fx *sharingFixture, dir string) []string {
 // TestRestoreFallsBackToRootWhenParentIsTrashed: a child trashed before its parent is restored to the root
 // of its folder while the parent is in the trash, and back to the parent once the parent is restored.
 func TestRestoreFallsBackToRootWhenParentIsTrashed(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.deep.ID, fx.key, nil), 204)
 	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.b.ID, fx.key, nil), 204)
@@ -211,6 +217,7 @@ func rootOf(t *testing.T, fx *sharingFixture, fld string) string {
 // TestRestoreRenamesANameClash: a name the original directory now has is taken by renaming the restored
 // item, as a copy is.
 func TestRestoreRenamesANameClash(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.sib.ID, fx.key, nil), 204)
 	putNode(t, fx.s, fx.key, fx.fld.ID, "/a/c/x.txt", "again")
@@ -225,6 +232,7 @@ func TestRestoreRenamesANameClash(t *testing.T) {
 // TestRestoreNeedsTheTrasherOrAManager: a user with editor on the item who did not trash it cannot restore it.
 // The one that trashed it can, and so can the account key.
 func TestRestoreNeedsTheTrasherOrAManager(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.a.ID, fx.ann.ID, "editor")
 	fx.grant(t, fx.a.ID, fx.bob.ID, "editor")
@@ -238,6 +246,7 @@ func TestRestoreNeedsTheTrasherOrAManager(t *testing.T) {
 // TestRestoreNeedsEditorOnTheDestination: the original parent is reached, but the caller holds only viewer
 // there, so the restore is refused.
 func TestRestoreNeedsEditorOnTheDestination(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, rootOf(t, fx, fx.fld.ID), fx.ann.ID, "viewer")
 	fx.grant(t, fx.deep.ID, fx.ann.ID, "editor")
@@ -254,6 +263,7 @@ func TestRestoreNeedsEditorOnTheDestination(t *testing.T) {
 // root, so there is nowhere the caller may restore to: a conflict. Once the parent is restored, the item goes
 // back to it.
 func TestRestoreToRootNeedsEditorOnTheRoot(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.sib.ID, fx.ann.ID, "editor")
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "DELETE", "/api/v1/nodes/"+fx.sib.ID, nil), 204)
@@ -271,6 +281,7 @@ func TestRestoreToRootNeedsEditorOnTheRoot(t *testing.T) {
 // TestPermanentDeleteNeedsManager: a permanent delete is for managers only, since it cannot be undone; the
 // account key may do it.
 func TestPermanentDeleteNeedsManager(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.deep.ID, fx.ann.ID, "editor")
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "DELETE", "/api/v1/nodes/"+fx.deep.ID+"?permanent=true", nil), 403)
@@ -283,6 +294,7 @@ func TestPermanentDeleteNeedsManager(t *testing.T) {
 
 // TestPurgeTrashNeedsManager: an editor who trashed an item cannot purge it from the trash; the account key can.
 func TestPurgeTrashNeedsManager(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.grant(t, fx.deep.ID, fx.ann.ID, "editor")
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "DELETE", "/api/v1/nodes/"+fx.deep.ID, nil), 204)
@@ -293,6 +305,7 @@ func TestPurgeTrashNeedsManager(t *testing.T) {
 // TestEmptyTrashIsBoundedAndPurgesOnlyWhatTheCallerManages: an empty call purges at most its limit and says
 // whether more remain. A user who trashed an item but does not manage it purges nothing.
 func TestEmptyTrashIsBoundedAndPurgesOnlyWhatTheCallerManages(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.s.emptyTrashLimit = 2
 	loose := putNode(t, fx.s, fx.key, fx.fld.ID, "/o.txt", "o")
@@ -322,6 +335,7 @@ func TestEmptyTrashIsBoundedAndPurgesOnlyWhatTheCallerManages(t *testing.T) {
 // manage. With a scan cap of two, one call examines two of them and replies more, rather than scanning the
 // rest; the client calls again. Without the cap the scan would go through all three and reply nothing more.
 func TestEmptyTrashStopsAtTheScanCap(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.s.trashScanLimit = 2
 	loose := putNode(t, fx.s, fx.key, fx.fld.ID, "/o.txt", "o")
@@ -339,6 +353,7 @@ func TestEmptyTrashStopsAtTheScanCap(t *testing.T) {
 // TestRetentionPurgesAfterTheRetentionWithAuditAndUsage: the sweep purges a trashed item once it has been in
 // the trash for trash.retention, under the system actor, and takes its usage off. Before that it purges nothing.
 func TestRetentionPurgesAfterTheRetentionWithAuditAndUsage(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+fx.deep.ID, fx.key, nil), 204)
 	before := fx.usage(t)
@@ -372,6 +387,7 @@ func TestRetentionPurgesAfterTheRetentionWithAuditAndUsage(t *testing.T) {
 // TestTrashListingShowsOwnAndManagedOnly: a user sees the items it trashed and the ones it manages. It does
 // not see another user's items, and an owner does not see another user's personal-folder trash.
 func TestTrashListingShowsOwnAndManagedOnly(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	annPF := fx.personalFolder(t, fx.annSess)
 	mine := fx.sessionFile(t, fx.annSess, annPF, "/mine.txt", "mine")
@@ -417,6 +433,7 @@ func TestTrashListingShowsOwnAndManagedOnly(t *testing.T) {
 
 // TestTokenSeesOnlyItsFolders: a delegated token lists only the trash inside its folders.
 func TestTokenSeesOnlyItsFolders(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	other := newFolder(t, fx.s, fx.key, fx.acc.ID, "Other")
 	putNode(t, fx.s, fx.key, other.ID, "/o.txt", "o")
@@ -438,6 +455,7 @@ func TestTokenSeesOnlyItsFolders(t *testing.T) {
 // TestRecheckRefusesTrashRoutesAfterRoleRevoked: a manager whose role is revoked between the early check
 // and the transaction is refused, and nothing is written: the item stays in the trash, and nothing is purged.
 func TestRecheckRefusesTrashRoutesAfterRoleRevoked(t *testing.T) {
+	t.Parallel()
 	t.Run("restore", func(t *testing.T) {
 		fx := newSharingFixture(t)
 		// Editor on the parent keeps the restore's destination open, so only the node's own role decides

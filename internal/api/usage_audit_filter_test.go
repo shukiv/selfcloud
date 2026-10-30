@@ -11,6 +11,7 @@ import (
 // TestUsageCountsPeopleByStatus checks that the usage answer counts the account's active and pending
 // users, which the tenant overview shows.
 func TestUsageCountsPeopleByStatus(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -30,6 +31,7 @@ func TestUsageCountsPeopleByStatus(t *testing.T) {
 // TestAuditFilterByActionAndActor checks GET /accounts/{acc}/audit?action= and ?actor=: each returns only
 // the entries with that action, or by that actor, and the paging still works under a filter.
 func TestAuditFilterByActionAndActor(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

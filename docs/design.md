@@ -952,6 +952,49 @@ an installation admin set both: `PATCH /accounts/{acc}/users/{usr}` with `quota_
   (owners) or of any folder (the key); an owner never sees a file of a member's My files, and an admin sees no names.
   Tokens are refused on every account route (`ManagesAccount`), and link visitors are refused by the route table.
 
+### Stars, recent and Home (p2)
+
+Stars and recent items belong to one user, and no route reads another user's (the account key, the installation admin
+and the owner included). Only a signed-in user, and a delegated token acting as its user, reach them; the key and an
+admin get `forbidden`, as `/shared` gives it, and a link visitor is refused by the route table. Nothing here is audited.
+
+- **Stars.** `PUT /nodes/{nod}/star` needs the caller to reach the node at any role, checked again inside the write, and
+  a delegated token needs write as well. A star past 5000 is `conflict` with `details.reason` `limit`. `DELETE` removes
+  the signed-in user's own star with no reach check, and answers 204 for any well-formed node ID, so a star on a trashed
+  or unreachable node can be removed and stops counting toward the limit; a token acting for the user needs write and
+  reach. A read-only token is refused on star and unstar. A star on a trashed or unreachable node stays in the database
+  and is not listed; it shows again when the node is restored or the grant returns. `starred`
+  is a field of the node (stat, folder listings and `/shared`), set for the caller's own star and absent for a key,
+  an admin and a visitor.
+- **Reach in one query.** Every list that shows nodes to a user reads their caller's role on the whole page in one
+  recursive query (`store.ReachRows`). It applies the rules of the per-node check (`nodeRoleIn`): the permissions and
+  groups of the node and its ancestors, live organisation links the user has visited, the implicit manager rule, the
+  trash of the node and its ancestors, a token's folder list, its node scope and its role cap. `reachRoles` applies
+  them, and a property test (`TestReachRowsMatchPerNodeCheck`) checks the two over random trees, grants, trash, links
+  and tokens, so they cannot drift apart. `/shared` reads its roles this way too.
+- **Recent.** An entry records the caller's last view (`viewed_at`) and last edit (`edited_at`); `last_at` is the later
+  one and orders the list. Views are recorded at `GET /nodes/{nod}/content` and `POST /nodes/{nod}/links`, for a
+  signed-in user acting for itself, never at `HEAD`, never for a token, a key, an admin or a visitor, and never for a
+  directory. Edits are recorded in the transaction of each write that changes a file's contents: a file made, an
+  upload completed (its replacement or its new file), a `PUT` of the content, and a version restored. They are
+  recorded for any user principal, a token acting as its user included. A rename, a move and a label change record
+  nothing. A copy made by a user is an edit too: the new copy lands in the copier's Recent, in the request and when a
+  queued copy job runs, by user principals only, in the copy's transaction (owner decision, 2026-10-30). `DELETE /recent`
+  clears the list, and `DELETE /recent/{nod}` removes one entry (204, whatever the reach). Neither is open to a token,
+  of any scope or permission: the list is the signed-in user's own.
+- **View recorder.** A view is taken off the request path. An in-memory gate lets one user see one file at most once in
+  10 minutes, and holds at most 100000 keys; a full gate drops the view. A buffered channel of 4096 holds the views
+  waiting to be written, and a view that finds it full is dropped, with its gate mark undone. A writer goroutine writes
+  them every 2 seconds or every 256, in one transaction of upserts whose times only move forward, so a batch that
+  arrives out of order keeps the later times. Serve flushes the last batch before it returns, while the store is open.
+- **Sweep.** The sweep removes recent entries last used more than 30 days ago, and then all but the 500 latest of each
+  user.
+- **Home** (`/`, decision 9) is built on the public API alone: Recent, Starred and Recently shared (`/shared?order=recent`,
+  8 each), the access requests the caller may decide, and a storage notice at 80% of its limit from `GET /me`.
+  `/files` stays My files.
+- **Pages of stars and recent items.** A page is read at the requested size and then listed after the reach check, so a
+  page can come back shorter than its limit, as `/shared` does, and `next_cursor` still follows the rows read.
+
 ### Accepted limits
 
 These were reviewed in the slice n1 security review and accepted for now. They have no code of their own.
@@ -1026,6 +1069,16 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   item's name or path. The owner may delete it. The account key sees the names. An admin sees no item name or path. A
   link that ended less than 24 hours ago keeps its row until the sweep removes it; it is refused at use and not listed.
 
+- **Stars and recent (p2).** A view is recorded at most once per user and file in 10 minutes, and a view waiting to be
+  written is lost in a crash. The gate's keys are in memory and reset on a restart, which only lets a view through
+  again. Stars and recent rows of items the user can no longer reach stay in the database and in backups, and their
+  names are not listed. Migration 0018 adds two tables and rewrites no rows.
+- **Stars and recent, review round (p2).** Creating a signed link counts as a view of the file, by design: web previews
+  and downloads go through signed links, and a link is how the interface opens a file. Recent's 500-per-user cap applies
+  when the sweep runs, so the table may hold more than 500 for a user between sweeps. The prune is one full-table window
+  query (`ROW_NUMBER() OVER (PARTITION BY user_id ...)`) inside the sweep transaction; it reads every recent row once per
+  sweep, at the sweep's interval (five minutes). A view whose node or user was removed before its batch is written is
+  skipped, and the rest of the batch is written.
 ## 9. API outline
 
 Everything below is under `/api/v1`. The full contract will be an OpenAPI 3 document at
@@ -1073,7 +1126,11 @@ Files                                      any caller, limited to what it may re
   GET    /folders                          team spaces the caller reaches at the root, plus its personal folder; ?hidden=true lists only the hidden ones
   PATCH  /folders/{fld}/settings           {members_only, sharing_managers_only, no_download_for_viewers, allow_links}: managers of the space root; refused on a personal folder
   PUT|DELETE /folders/{fld}/hidden         hide or show a team space in the caller's own list (users only; changes no access)
-  GET    /shared                           nodes shared with the caller (users only), each with its role
+  GET    /shared[?order=recent]            nodes shared with the caller (users only), each with its role; `order=recent` lists the newest share first, with `shared_at` (p2)
+  PUT|DELETE /nodes/{nod}/star             star or unstar a node the caller reaches, at any role (users only; 204). At most 5000 stars per user (p2)
+  GET    /starred                          the caller's starred nodes, newest star first, with `starred_at` (users only) (p2)
+  GET    /recent                           the caller's recent nodes, latest first, with `viewed_at`, `edited_at` and `last_at` (users only) (p2)
+  DELETE /recent, DELETE /recent/{nod}     clear the recent list, or remove one entry (users only; 204) (p2)
   GET    /directory?q=&kind=user|group|all people and groups of the account, for the share dialog (k3). Any user by session, and the account key; admins and every delegated token get `forbidden`, since a token is narrowed to its folders. `q` is 2 to 100 characters after trimming; a user matches by its email local part (prefix) or its name (substring), a group by its name (substring); `%` and `_` are literal. Active users only; at most 20 entries; rate limited per caller. Each entry carries only ID, kind, name and, for a user, email
   GET    /folders/{fld}/children?path=/a/b list a directory by path
   GET    /nodes/{nod}                      stat: name, size, mime_type, etag, modified_at, sha256
@@ -1521,6 +1578,8 @@ the not-found view.
 | `share_links` | id (`shl_`), account_id, node_id (cascade), audience (`organisation` or `anyone`), role (viewer, commenter, contributor or editor; null for a drop link), upload_only (0 or 1), secret_hash (SHA-256, unique), password_hash (argon2id; anyone links only, null otherwise), expires_at (null: no end), credentials_at (the secret's issue time), created_by and created_kind, created_at, updated_by, updated_kind, updated_at; unique (node_id, upload_only). Drop fields (o3): title (100 characters), message (1000), ask_name, notify, unreported_files (files not yet mailed), notified_at (the last mail, null before the first) |
 | `share_link_visits` | link_id (cascade), user_id (cascade), visited_at; primary key (link_id, user_id). A member's recorded open of a link; it counts only from `credentials_at` on |
 | `hidden_folders` | user_id, folder_id, created_at; primary key (user_id, folder_id). A user's own list of hidden team spaces, which changes no access |
+| `stars` | user_id (cascade), node_id (cascade), account_id (cascade), created_at; primary key (user_id, node_id). A user's private bookmarks, at most 5000 per user (p2) |
+| `recent` | user_id (cascade), node_id (cascade), account_id (cascade), viewed_at and edited_at (either may be null, not both), last_at; primary key (user_id, node_id). A user's private last view and edit of a file, pruned by the sweep (p2) |
 | `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors), trashed_at and trashed_by (set on a trash root only), trashed_name_key (the name key before the trash) |
 | `versions` | id (`ver_`), account_id, node_id, blob_id, size, sha256, etag, mime_type, created_at and created_by (when that content was first written), replaced_at and replaced_by, label (at most 100 characters), keep_forever (0 or 1); indexed by (node_id, created_at) |
 | `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
@@ -1637,7 +1696,7 @@ Each slice ships with tests and leaves the server runnable.
 | o3 | Drop folders (Request files): anonymous uploads into one directory | Built |
 | o4 | The sweep of ended links, the account-wide link list, Delete all public links, the link badge | Built |
 | p1 | Per-user quota (charged by folder) and the storage pages (decision 24) | Built |
-| p2 | Starred, Recent and Home | Planned |
+| p2 | Starred, Recent and Home | Built |
 | p3 | Shortcuts, folder colours and descriptions | Planned |
 | p4 | Labels: typed fields the owner defines | Planned |
 | p5 | The OpenAPI file, the design record and a security review of slice p | Planned |
@@ -1897,3 +1956,26 @@ Decided on approval:
     - The folder detail reads the folder's own counters, not a walk of its tree (this closes the k4 gap).
     - A user's GET and PATCH answer `effective_quota_bytes`; list responses carry only the raw `quota_bytes`.
     - A team-space ownership transfer moves no bytes, as before, so it is not limit-checked.
+    Interpretations made in p2, for review (the owner has not decided them):
+    - Views are recorded by `GET /nodes/{nod}/content` and `POST /nodes/{nod}/links` only, and only for a file. A ranged
+      or conditional GET counts as a view; the ten-minute gate keeps one view per file in that window.
+    - Edits are recorded in the transaction of the writes that change a file's contents: a file created (`POST .../files`),
+      an upload completed (both the commit and the last piece, which share one completion), `PUT .../content`, a version
+      restored, and a copy (the new copy root, in the request or in its job). The copy rule is the owner's decision of
+      2026-10-30 (decision 24).
+    - `GET /starred` and `GET /recent` list only items the caller still reaches and that are not in the trash, as stars
+      have always been. The proposal did not say so for Recent; the entry is kept in the database either way.
+    - Starring needs reach at any role and write from a token. Unstarring by a signed-in user needs no reach (owner
+      decision, review 2026-10-30): it answers 204 for any well-formed ID, so no node is revealed, and a star on a trashed
+      or unreachable node is removable. A token needs write and reach to unstar. `DELETE /recent` and `DELETE
+      /recent/{nod}` are refused to every token, and `DELETE /recent/{nod}` needs no reach for the signed-in user.
+    - The star limit counts every star the user holds, listed or not.
+    - `starred` is a `*bool` with `omitempty`: it is absent for a key, an admin or a visitor, and `false` for a signed-in
+      user who has not starred the node.
+    - A page of stars, recent items or shared items comes back shorter than its limit when the reach check drops some
+      of its rows; `next_cursor` still follows the last row read, as `/shared` already did.
+    - `/shared?order=recent` sorts by `shared_at`, the newest of the user's live permissions' creation times and its
+      organisation-link visits on the node. The cursor is that time and the node ID.
+    - The sweep's Recent limits (30 days, 500 per user) are constants, not settings.
+    - Both new tables cascade from accounts, users and nodes, as the other tables do. Purging a node or deleting a user
+      therefore removes its stars and recent entries with no extra code.

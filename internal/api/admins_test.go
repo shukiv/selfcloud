@@ -29,6 +29,7 @@ func newAdminUser(t *testing.T, s *Server, admin, email string) (userResponse, t
 }
 
 func TestAdminUserSignsInAndManages(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	ann, sess := newAdminUser(t, s, admin, "ann@example.com")
@@ -52,6 +53,7 @@ func TestAdminUserSignsInAndManages(t *testing.T) {
 }
 
 func TestAdminCreationRules(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	newAdminUser(t, s, admin, "ann@example.com")
@@ -87,6 +89,7 @@ func TestAdminCreationRules(t *testing.T) {
 }
 
 func TestDeleteLastAdminNeedsAKey(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	ann, _ := newAdminUser(t, s, admin, "ann@example.com")
@@ -115,6 +118,7 @@ func TestDeleteLastAdminNeedsAKey(t *testing.T) {
 }
 
 func TestLoginAdminAndTenantChoice(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -147,6 +151,7 @@ func TestLoginAdminAndTenantChoice(t *testing.T) {
 }
 
 func TestCreateAccountWithOwner(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	body := func(ext string, verification string) map[string]any {

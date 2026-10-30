@@ -15,6 +15,7 @@ import (
 // a link or skip verification. A link would hand a token to the session, which could then set
 // another user's password.
 func TestSessionCannotUseLinkOrNone(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -52,6 +53,7 @@ func TestSessionCannotUseLinkOrNone(t *testing.T) {
 // TestSessionResponsesCarryNoToken checks that email delivery, the one method a session may use,
 // returns no token or link in the response.
 func TestSessionResponsesCarryNoToken(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	admin := adminKey(t, s)

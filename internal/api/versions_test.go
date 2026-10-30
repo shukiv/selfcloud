@@ -33,6 +33,7 @@ func versionsOf(t *testing.T, fx *sharingFixture, nodeID string) []versionJSON {
 // TestReplaceKeepsAVersionAndGrowsUsage: a replacement keeps the content it replaces as a version. The list
 // starts with the current content, and usage grows by the new size, since the old content still counts.
 func TestReplaceKeepsAVersionAndGrowsUsage(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	before := fx.usage(t)
@@ -54,6 +55,7 @@ func TestReplaceKeepsAVersionAndGrowsUsage(t *testing.T) {
 // TestVersionContentDownloadHonoursNoDownload: a version reads back the old contents. A viewer who may not
 // download the file cannot download a version either.
 func TestVersionContentDownloadHonoursNoDownload(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	replaceContent(t, fx, f.ID, f.ETag, "two")
@@ -76,6 +78,7 @@ func TestVersionContentDownloadHonoursNoDownload(t *testing.T) {
 // ETag, and the content it replaces becomes a version. A stale If-Match is refused, a missing one is 428, a
 // viewer is 403 and a contributor is 200.
 func TestRestoreVersionSwapsContentAndHonoursIfMatch(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	first := f.ETag
@@ -110,6 +113,7 @@ func TestRestoreVersionSwapsContentAndHonoursIfMatch(t *testing.T) {
 // TestRestoreVersionByViewerIsForbidden is the viewer case of the restore on its own: the role check comes
 // before the If-Match check, and a viewer gets 403 with a valid ETag.
 func TestRestoreVersionByViewerIsForbidden(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	replaceContent(t, fx, f.ID, f.ETag, "two")
@@ -136,6 +140,7 @@ func newVersionedServer(t *testing.T, maxCount int) (*Server, string, string, st
 // and a version kept forever stays however old it is. Kept versions do not count toward the limit, and the
 // usage falls with each pruned version.
 func TestKeepForeverSurvivesCountPruning(t *testing.T) {
+	t.Parallel()
 	s, accID, key, fld := newVersionedServer(t, 2)
 	f := nodeOf(t, writeFile(t, s, key, fld, "/a.txt", "v0v0"))
 	etag := f.ETag
@@ -183,6 +188,7 @@ func hasSHA(shas []string, want string) bool {
 // TestAgePruningAdjustsUsageAndKeepsKeptVersions: the sweep prunes versions older than versions.max_age, and
 // not the kept ones, and each pruned version comes off the usage.
 func TestAgePruningAdjustsUsageAndKeepsKeptVersions(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "aa")
 	etag := f.ETag
@@ -216,6 +222,7 @@ func TestAgePruningAdjustsUsageAndKeepsKeptVersions(t *testing.T) {
 // TestDeletingTheCurrentVersionIsRefused: the current content is not a version, so it cannot be deleted by
 // version; the answer is a conflict that says what to do instead.
 func TestDeletingTheCurrentVersionIsRefused(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	replaceContent(t, fx, f.ID, f.ETag, "two")
@@ -227,6 +234,7 @@ func TestDeletingTheCurrentVersionIsRefused(t *testing.T) {
 
 // TestCopyHasNoVersions: a copy of a file starts with its current content only.
 func TestCopyHasNoVersions(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	replaceContent(t, fx, f.ID, f.ETag, "two")
@@ -241,6 +249,7 @@ func TestCopyHasNoVersions(t *testing.T) {
 // TestBlobCollectionKeepsVersionBlobsAndFreesPrunedOnes: a version's blob stays until the version goes; when a
 // deleted version's blob has no other reference, the collector removes it after the grace period.
 func TestBlobCollectionKeepsVersionBlobsAndFreesPrunedOnes(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	// The fixture's own two files are on disk already: the baseline is taken before the replace.
@@ -267,6 +276,7 @@ func TestBlobCollectionKeepsVersionBlobsAndFreesPrunedOnes(t *testing.T) {
 // TestRecountMatchesTheCountersAfterAMix: after replaces, a restore, a trash, a purge and a version delete, a
 // full recount gives the same usage the counters kept as they went.
 func TestRecountMatchesTheCountersAfterAMix(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	etag := replaceContent(t, fx, f.ID, f.ETag, "two").ETag
@@ -302,6 +312,7 @@ func versionsOfCurrentETag(t *testing.T, fx *sharingFixture, nodeID string) stri
 // TestRestoreVersionRecheckRefusesAfterRoleRevoked: a contributor whose role is revoked between the early check
 // and the transaction is refused, and the content stays as it was.
 func TestRestoreVersionRecheckRefusesAfterRoleRevoked(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	replaceContent(t, fx, f.ID, f.ETag, "two")
@@ -320,6 +331,7 @@ func TestRestoreVersionRecheckRefusesAfterRoleRevoked(t *testing.T) {
 
 // TestVersionUpdateIsAuditedAndLabelled: a label is checked for length, set, and the update is audited.
 func TestVersionUpdateIsAuditedAndLabelled(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
 	replaceContent(t, fx, f.ID, f.ETag, "two")
@@ -348,6 +360,7 @@ func TestVersionUpdateIsAuditedAndLabelled(t *testing.T) {
 // TestUploadReplaceKeepsAVersion: a resumable upload that completes over an existing file with on_conflict
 // replace keeps the file's old content as a version, and counts the new content in full.
 func TestUploadReplaceKeepsAVersion(t *testing.T) {
+	t.Parallel()
 	s, key, accID, f := uploadSetup(t)
 	putNode(t, s, key, f.ID, "/same.txt", "old")
 	old := nodeIn(t, s, key, f.ID, "same.txt")
@@ -373,6 +386,7 @@ func TestUploadReplaceKeepsAVersion(t *testing.T) {
 // on a 100-byte quota completes, and usage ends at 70 (the kept 10 bytes and the new 60). The reservation
 // of 60 is released as the bytes are counted, so they are not checked twice.
 func TestUploadReplaceUnderQuotaCountsItsBytesOnce(t *testing.T) {
+	t.Parallel()
 	s, _, key, accID, f := quotaSetup(t, 100)
 	putNode(t, s, key, f.ID, "/same.txt", "0123456789")
 
@@ -389,6 +403,7 @@ func TestUploadReplaceUnderQuotaCountsItsBytesOnce(t *testing.T) {
 // TestRestoreKeepsTheChosenVersionKept: a contributor restores a version kept forever. The version is still
 // kept afterwards, with its label, and a later replace does not make it prunable even at a count of one.
 func TestRestoreKeepsTheChosenVersionKept(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.s.cfg.Versions.MaxCount = 1
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/one.txt", "one")
@@ -428,6 +443,7 @@ func TestRestoreKeepsTheChosenVersionKept(t *testing.T) {
 // TestRestoreVersionChecksTheQuota: the restored version counts twice once it is current, so a restore that
 // would take usage past the quota is refused with the content unchanged.
 func TestRestoreVersionChecksTheQuota(t *testing.T) {
+	t.Parallel()
 	s, _, key, _, f := quotaSetup(t, 100)
 	first := nodeOf(t, writeFile(t, s, key, f.ID, "/q.txt", strings.Repeat("a", 60)))
 	rec := rawCall(t, s, "PUT", "/api/v1/nodes/"+first.ID+"/content", key, strings.Repeat("b", 30),
@@ -447,6 +463,7 @@ func TestRestoreVersionChecksTheQuota(t *testing.T) {
 // TestKeepForeverIsCappedPerFile: with versions.max_kept at two, a third version cannot be kept forever until
 // one of the two is unmarked. The refusal is a conflict that names the limit.
 func TestKeepForeverIsCappedPerFile(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.s.cfg.Versions.MaxKept = 2
 	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/k.txt", "v0")

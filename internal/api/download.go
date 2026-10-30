@@ -417,5 +417,9 @@ func (s *Server) handleGetContent(w http.ResponseWriter, r *http.Request) error 
 	if restricted && !s.inlineAllowed(r, n, inline) {
 		return errDownloadRestricted()
 	}
+	// A HEAD request reads no contents, so only a GET counts as a view.
+	if r.Method == http.MethodGet {
+		s.noteView(principalOf(r), n)
+	}
 	return s.serveFile(w, r, n, inline, corpSameOrigin)
 }

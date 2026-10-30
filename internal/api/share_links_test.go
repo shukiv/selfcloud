@@ -86,6 +86,7 @@ func (fx *linkFixture) setExpiry(t *testing.T, linkID string, at time.Time) {
 }
 
 func TestLinkCreateFollowsMayShare(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
 	fx.setPerm(t, fx.b.ID, fx.bob.ID, "contributor")
@@ -121,6 +122,7 @@ func TestLinkCreateFollowsMayShare(t *testing.T) {
 }
 
 func TestLinkRefusesWhatIsNotBuiltYet(t *testing.T) {
+	t.Parallel()
 	// A drop link is an anyone link: an organisation drop link is refused (see share_drop_test.go).
 	fx := newLinkFixture(t)
 	for _, body := range []map[string]any{
@@ -145,6 +147,7 @@ func TestLinkRefusesWhatIsNotBuiltYet(t *testing.T) {
 }
 
 func TestLinkPolicyAllowLinksAndMembersOnly(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	fx.settings(t, fx.fld.ID, map[string]any{"allow_links": false})
 	rec := call(t, fx.s, "POST", "/api/v1/nodes/"+fx.b.ID+"/share-links", fx.key, map[string]any{"audience": "organisation"})
@@ -163,6 +166,7 @@ func TestLinkPolicyAllowLinksAndMembersOnly(t *testing.T) {
 }
 
 func TestLinkInMyFilesNeedsNoSwitch(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	pf := fx.personalFolder(t, fx.annSess)
 	file := fx.sessionFile(t, fx.annSess, pf, "/mine.txt", "mine")
@@ -171,6 +175,7 @@ func TestLinkInMyFilesNeedsNoSwitch(t *testing.T) {
 }
 
 func TestSecretIsStoredHashedAndShownOnce(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link, url := fx.makeLink(t, fx.b.ID, "viewer")
 	secret := secretOf(t, url)
@@ -215,6 +220,7 @@ func mapValues(m map[string]any) []string {
 }
 
 func TestResetInvalidatesOldSecret(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link, oldURL := fx.makeLink(t, fx.b.ID, "viewer")
 	oldSecret := secretOf(t, oldURL)
@@ -237,6 +243,7 @@ func TestResetInvalidatesOldSecret(t *testing.T) {
 }
 
 func TestOpenGrantsRoleAndRecordsAVisit(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link, url := fx.makeLink(t, fx.b.ID, "commenter")
 	secret := secretOf(t, url)
@@ -275,6 +282,7 @@ func TestOpenGrantsRoleAndRecordsAVisit(t *testing.T) {
 }
 
 func TestOpenKeepsAHigherOwnRole(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	fx.setPerm(t, fx.deep.ID, fx.ann.ID, "editor")
 	_, url := fx.makeLink(t, fx.b.ID, "viewer")
@@ -285,6 +293,7 @@ func TestOpenKeepsAHigherOwnRole(t *testing.T) {
 }
 
 func TestOpenRefusesEveryCallerButAMemberOfTheAccount(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	_, url := fx.makeLink(t, fx.b.ID, "viewer")
 	secret := secretOf(t, url)
@@ -321,6 +330,7 @@ func TestOpenRefusesEveryCallerButAMemberOfTheAccount(t *testing.T) {
 }
 
 func TestDeadLinksAreAllTheSameAnswer(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link, url := fx.makeLink(t, fx.b.ID, "viewer")
 	secret := secretOf(t, url)
@@ -351,6 +361,7 @@ func TestDeadLinksAreAllTheSameAnswer(t *testing.T) {
 }
 
 func TestTrashedNodeEndsAccessAtOnce(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	_, url := fx.makeLink(t, fx.b.ID, "viewer")
 	fx.openedAs(t, fx.annSess, secretOf(t, url))
@@ -361,6 +372,7 @@ func TestTrashedNodeEndsAccessAtOnce(t *testing.T) {
 }
 
 func TestMembersOnlyPausesALinkBelowTheRootAtUse(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	_, url := fx.makeLink(t, fx.b.ID, "viewer")
 	secret := secretOf(t, url)
@@ -371,6 +383,7 @@ func TestMembersOnlyPausesALinkBelowTheRootAtUse(t *testing.T) {
 }
 
 func TestLinkListingShowsSharersMoreThanMembers(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	link, url := fx.makeLink(t, fx.b.ID, "viewer")
 	fx.openedAs(t, fx.annSess, secretOf(t, url))
@@ -404,6 +417,7 @@ func TestLinkListingShowsSharersMoreThanMembers(t *testing.T) {
 }
 
 func TestChangingALinkNeedsTheRightSharer(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
 	link, _ := fx.makeLink(t, fx.b.ID, "viewer")
@@ -431,6 +445,7 @@ func TestChangingALinkNeedsTheRightSharer(t *testing.T) {
 }
 
 func TestSharingPolicyRoutes(t *testing.T) {
+	t.Parallel()
 	fx := newLinkFixture(t)
 	path := "/api/v1/accounts/" + fx.acc.ID + "/sharing-policy"
 	if got := decode[sharingPolicyJSON](t, call(t, fx.s, "GET", path, fx.key, nil)); got.PublicLinks {

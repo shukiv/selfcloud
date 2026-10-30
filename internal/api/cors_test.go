@@ -38,6 +38,7 @@ func preflight(t *testing.T, s *Server, origin, p, method, headers string) *http
 }
 
 func TestCORSPreflightAnswersBeforeRouting(t *testing.T) {
+	t.Parallel()
 	s := corsServer(t)
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodPost, "/api/v1/uploads"},
@@ -74,6 +75,7 @@ func TestCORSPreflightAnswersBeforeRouting(t *testing.T) {
 }
 
 func TestCORSDisallowedOriginGetsNoHeaders(t *testing.T) {
+	t.Parallel()
 	s := corsServer(t)
 	rec := preflight(t, s, "https://evil.example.net", "/api/v1/uploads", http.MethodPost, "")
 	wantError(t, rec, 403, apierr.Forbidden)
@@ -90,6 +92,7 @@ func TestCORSDisallowedOriginGetsNoHeaders(t *testing.T) {
 }
 
 func TestCORSPlainTusOptionsStillAnswers(t *testing.T) {
+	t.Parallel()
 	s := corsServer(t)
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/uploads", nil)
 	req.Header.Set("Origin", appOrigin)
@@ -104,6 +107,7 @@ func TestCORSPlainTusOptionsStillAnswers(t *testing.T) {
 }
 
 func TestCORSActualResponseExposesHeaders(t *testing.T) {
+	t.Parallel()
 	s := corsServer(t)
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -135,6 +139,7 @@ func TestCORSActualResponseExposesHeaders(t *testing.T) {
 }
 
 func TestCORSOffWithoutOrigins(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	rec := preflight(t, s, appOrigin, "/api/v1/uploads", http.MethodPost, "")
 	if rec.Header().Get("Access-Control-Allow-Origin") != "" || rec.Header().Get("Vary") != "" {
@@ -156,6 +161,7 @@ func crossSiteSession(t *testing.T, s *Server, sess testSession, method, p, orig
 }
 
 func TestCookiesNeverAuthenticateAcrossSites(t *testing.T) {
+	t.Parallel()
 	s := corsServer(t)
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -178,6 +184,7 @@ func TestCookiesNeverAuthenticateAcrossSites(t *testing.T) {
 }
 
 func TestConfiguredCORSDoesNotWeakenSigninCSRF(t *testing.T) {
+	t.Parallel()
 	s := corsServer(t)
 	// A sign-in from another site is still refused, whatever the CORS list says.
 	rec := rawCall(t, s, "POST", "/api/v1/auth/login", "", `{"email":"a@example.com","password":"x"}`,

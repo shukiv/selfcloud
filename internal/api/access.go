@@ -58,6 +58,17 @@ func implicitRole(f *store.Folder, u *store.User) string {
 	return ""
 }
 
+// checkUserStatus refuses a user who may not act: a disabled one, and any other that is not active.
+func checkUserStatus(u *store.User) error {
+	switch u.Status {
+	case store.UserDisabled:
+		return apierr.New(apierr.UserDisabled, "the user is disabled")
+	case store.UserActive:
+		return nil
+	}
+	return apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+}
+
 // nodeAccessWith returns the node with the given ID and the role p holds on it, read through rd.
 // The role is the highest of the user's implicit role on the folder, the permissions on the node
 // and on its ancestors, and any role a group the user is in gives there. An account key holds
@@ -171,12 +182,8 @@ func nodeRoleIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeID 
 		if err != nil {
 			return nil, "", err
 		}
-		switch u.Status {
-		case store.UserDisabled:
-			return nil, "", apierr.New(apierr.UserDisabled, "the user is disabled")
-		case store.UserActive:
-		default:
-			return nil, "", apierr.New(apierr.Unauthenticated, "the session has ended; sign in again")
+		if err := checkUserStatus(u); err != nil {
+			return nil, "", err
 		}
 		role = implicitRole(f, u)
 		var rank int

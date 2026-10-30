@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -361,19 +362,24 @@ func (s *Store) queryPermissions(ctx context.Context, query string, args ...any)
 }
 
 // SharedNode is a node that carries a permission for a user, directly or through a group, with the
-// highest rank of those permissions on it.
+// highest rank of those permissions on it. SharedAt is set when the list is ordered by recency: the later of the
+// permission's creation and the user's visit to an organisation link on the node.
 type SharedNode struct {
-	NodeID string
-	Rank   int
+	NodeID   string
+	Rank     int
+	SharedAt time.Time
 }
 
 // SharedNodes lists the nodes of accountID that userID holds a permission on, or has opened an
-// organisation link to, one page at a time, in node ID order. It leaves out the user's own personal
+// organisation link to, one page at a time. It leaves out the user's own personal
 // folder, the team spaces a user reaches at the root (every team space when owner is set), and any node
 // whose folder root the user reaches through a permission of its own. Those nodes are reached already,
 // so listing them again would only repeat them. A link the user has opened under the root of such a node
 // is still listed here, though reached already; the list then repeats it, and nothing is granted twice.
-func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner bool, p Page) ([]SharedNode, string, error) {
+//
+// The order is node ID, with the node ID as cursor. With byRecent the order is the time each node was shared
+// with the user (SharedAt), newest first, and the cursor is that time and the node ID.
+func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner, byRecent bool, p Page) ([]SharedNode, string, error) {
 	where := []string{"n.account_id = ?",
 		"NOT (f.kind = 'personal' AND f.owner_user_id = ?)",
 		`NOT EXISTS (SELECT 1 FROM permissions rp JOIN nodes rn ON rn.id = rp.node_id
@@ -393,21 +399,55 @@ func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner
 	if owner {
 		where = append(where, "f.kind <> 'team'")
 	}
+	// The shared time is the permission's creation or the visit, whichever is later, for each branch.
+	atPerm, atLink := "pm.created_at", "v.visited_at"
+	var cursorCond, order string
+	var having []string
+	if byRecent {
+		atPerm, atLink = "pm.created_at AS at", "v.visited_at AS at"
+	}
 	if p.Cursor != "" {
-		parts, err := decodeCursor(p.Cursor, 1)
-		if err != nil {
-			return nil, "", err
+		// The recent order's cursor is the shared time and the node ID; the default order's is the node ID alone.
+		if byRecent {
+			parts, err := decodeCursor(p.Cursor, 2)
+			if err != nil {
+				return nil, "", err
+			}
+			at, err := strconv.ParseInt(parts[0], 10, 64)
+			if err != nil {
+				return nil, "", ErrBadCursor
+			}
+			having = append(having, "(MAX(src.at) < ? OR (MAX(src.at) = ? AND src.node_id < ?))")
+			args = append(args, at, at, parts[1])
+		} else {
+			parts, err := decodeCursor(p.Cursor, 1)
+			if err != nil {
+				return nil, "", err
+			}
+			where = append(where, "src.node_id > ?")
+			args = append(args, parts[0])
 		}
-		where = append(where, "src.node_id > ?")
-		args = append(args, parts[0])
+	}
+	if byRecent {
+		order = "ORDER BY MAX(src.at) DESC, src.node_id DESC"
+	} else {
+		order = "ORDER BY src.node_id"
+	}
+	cursorCond = ""
+	if len(having) > 0 {
+		cursorCond = " HAVING " + strings.Join(having, " AND ")
 	}
 	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, `SELECT src.node_id, MAX(`+fmt.Sprintf(roleRankSQL, "src.role")+`)
+	sharedCol := ""
+	if byRecent {
+		sharedCol = ", MAX(src.at)"
+	}
+	rows, err := s.r.QueryContext(ctx, `SELECT src.node_id, MAX(`+fmt.Sprintf(roleRankSQL, "src.role")+`)`+sharedCol+`
 		FROM (
-			SELECT pm.node_id AS node_id, pm.role AS role FROM permissions pm
+			SELECT pm.node_id AS node_id, pm.role AS role, `+atPerm+` FROM permissions pm
 			WHERE pm.account_id = ? AND `+subjectPredicate+` AND `+liveClause+`
 			UNION ALL
-			SELECT sl.node_id AS node_id, sl.role AS role FROM share_links sl
+			SELECT sl.node_id AS node_id, sl.role AS role, `+atLink+` FROM share_links sl
 			JOIN nodes ln ON ln.id = sl.node_id
 			JOIN folders lf ON lf.id = ln.folder_id
 			JOIN share_link_visits v ON v.link_id = sl.id AND v.user_id = ?
@@ -416,7 +456,7 @@ func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner
 		JOIN nodes n ON n.id = src.node_id
 		JOIN folders f ON f.id = n.folder_id
 		WHERE `+strings.Join(where, " AND ")+`
-		GROUP BY src.node_id ORDER BY src.node_id LIMIT ?`, args...)
+		GROUP BY src.node_id`+cursorCond+` `+order+` LIMIT ?`, args...)
 	if err != nil {
 		return nil, "", err
 	}
@@ -424,7 +464,13 @@ func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner
 	var out []SharedNode
 	for rows.Next() {
 		var sn SharedNode
-		if err := rows.Scan(&sn.NodeID, &sn.Rank); err != nil {
+		if byRecent {
+			var at int64
+			if err := rows.Scan(&sn.NodeID, &sn.Rank, &at); err != nil {
+				return nil, "", err
+			}
+			sn.SharedAt = fromMillis(at)
+		} else if err := rows.Scan(&sn.NodeID, &sn.Rank); err != nil {
 			return nil, "", err
 		}
 		out = append(out, sn)
@@ -435,7 +481,41 @@ func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner
 	next := ""
 	if len(out) > p.Limit {
 		out = out[:p.Limit]
-		next = encodeCursor(out[len(out)-1].NodeID)
+		last := out[len(out)-1]
+		if byRecent {
+			next = encodeCursor(strconv.FormatInt(millis(last.SharedAt), 10), last.NodeID)
+		} else {
+			next = encodeCursor(last.NodeID)
+		}
 	}
 	return out, next, nil
+}
+
+// NodesByID returns the nodes of accountID with the given IDs, keyed by ID. An ID that names no node of the
+// account has no entry. One query reads the whole list.
+func (s *Store) NodesByID(ctx context.Context, accountID string, ids []string) (map[string]*Node, error) {
+	out := make(map[string]*Node, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	marks := make([]string, len(ids))
+	args := []any{accountID}
+	for i, id := range ids {
+		marks[i] = "?"
+		args = append(args, id)
+	}
+	rows, err := s.r.QueryContext(ctx, nodeSelect+" WHERE n.account_id = ? AND n.id IN ("+
+		strings.Join(marks, ",")+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		n, err := scanNode(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[n.ID] = n
+	}
+	return out, rows.Err()
 }

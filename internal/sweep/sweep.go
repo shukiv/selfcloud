@@ -120,7 +120,14 @@ type Result struct {
 	Purged         int   // trashed items past trash.retention, purged with their contents
 	Versions       int   // versions past versions.max_count or versions.max_age, pruned
 	Links          int   // share links that ended more than a day ago, removed with their open uploads
+	Recent         int64 // recent entries past recentRetention, or beyond recentPerUser for their user, removed
 }
+
+// recentRetention is how long a recent entry is kept after its last use, and recentPerUser how many a user keeps.
+const (
+	recentRetention = 30 * 24 * time.Hour
+	recentPerUser   = 500
+)
 
 // Run sweeps at once and then every interval, until ctx is cancelled.
 func (w *Sweeper) Run(ctx context.Context) {
@@ -182,6 +189,10 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 			return err
 		}
 		if res.SignInLinks, err = tx.DeleteSpentSignInLinks(ctx, now); err != nil {
+			return err
+		}
+		// Recent entries older than recentRetention, and all but the recentPerUser latest of each user (slice p2).
+		if res.Recent, err = tx.PruneRecent(ctx, now.Add(-recentRetention), recentPerUser); err != nil {
 			return err
 		}
 		// Each expired permission is audited with the folder it was on, so one in a personal folder

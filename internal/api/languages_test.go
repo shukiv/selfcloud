@@ -18,6 +18,7 @@ var expiryPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC`)
 // regional tag resolves to its base language, and the expiry is written the same way in every
 // language.
 func TestMailUsesTheRecipientsLocale(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	admin := adminKey(t, s)
@@ -41,6 +42,7 @@ func TestMailUsesTheRecipientsLocale(t *testing.T) {
 
 // TestPatchMe covers a signed-in user changing their own display name and locale.
 func TestPatchMe(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -112,6 +114,7 @@ func httptestRecorder(t *testing.T, s *Server, req *http.Request) *httptest.Resp
 
 // TestPatchMeForAdmin checks that an admin's own PATCH /me answers with no account.
 func TestPatchMeForAdmin(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	_, sess := newAdminUser(t, s, admin, "root@example.com")

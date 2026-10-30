@@ -13,6 +13,7 @@ import (
 )
 
 func TestCreateUserVerificationMethods(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	admin := adminKey(t, s)
@@ -64,6 +65,7 @@ func TestCreateUserVerificationMethods(t *testing.T) {
 }
 
 func TestCreateUserWithoutMail(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, nil)
 	admin := adminKey(t, s)
 	acc, _ := newAccount(t, s, admin, "Acme")
@@ -75,6 +77,7 @@ func TestCreateUserWithoutMail(t *testing.T) {
 }
 
 func TestCreateUserIdempotentAndConflicts(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, _ := newAccount(t, s, admin, "Acme")
@@ -108,6 +111,7 @@ func TestCreateUserIdempotentAndConflicts(t *testing.T) {
 }
 
 func TestCreateUserValidation(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, _ := newAccount(t, s, admin, "Acme")
@@ -130,6 +134,7 @@ func TestCreateUserValidation(t *testing.T) {
 }
 
 func TestUsersAreIsolatedByAccount(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	a, keyA := newAccount(t, s, admin, "A")
@@ -152,6 +157,7 @@ func TestUsersAreIsolatedByAccount(t *testing.T) {
 }
 
 func TestMemberSessionCannotManageUsers(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -164,6 +170,7 @@ func TestMemberSessionCannotManageUsers(t *testing.T) {
 }
 
 func TestOwnerSessionManagesItsAccount(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -179,6 +186,7 @@ func TestOwnerSessionManagesItsAccount(t *testing.T) {
 }
 
 func TestUpdateUser(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -227,6 +235,7 @@ func signInAfterVerify(t *testing.T, s *Server, token string) testSession {
 }
 
 func TestResendVerificationVoidsOldLink(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	admin := adminKey(t, s)
@@ -264,6 +273,7 @@ func TestResendVerificationVoidsOldLink(t *testing.T) {
 }
 
 func TestNoneVerifiesPendingUser(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -290,6 +300,7 @@ func TestNoneVerifiesPendingUser(t *testing.T) {
 }
 
 func TestListUsersFilters(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

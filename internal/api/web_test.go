@@ -26,6 +26,7 @@ const errorCSP = "default-src 'none'; sandbox"
 
 // TestWebInterfaceServesTheShell: "/" and client routes get the app, with its headers.
 func TestWebInterfaceServesTheShell(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	for _, target := range []string{"/", "/files/x", "/login", "/shared"} {
 		rec := serveRaw(t, s, http.MethodGet, target)
@@ -45,6 +46,7 @@ func TestWebInterfaceServesTheShell(t *testing.T) {
 // TestUnknownAPIPathIsJSONNotIndex: an unmatched API path keeps the JSON 404 and its own CSP, and
 // a write to a UI path gets the same.
 func TestUnknownAPIPathIsJSONNotIndex(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	for _, c := range []struct{ method, target string }{
 		{http.MethodGet, "/api/v1/nope"},
@@ -67,6 +69,7 @@ func TestUnknownAPIPathIsJSONNotIndex(t *testing.T) {
 // TestUIDisabledServesNoUI: with ui.enabled false, "/" and the UI paths are the JSON 404, and the
 // API still answers.
 func TestUIDisabledServesNoUI(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t, func(c *config.Config) { c.UI.Enabled = false })
 	for _, target := range []string{"/", "/files/x", "/login", "/index.html"} {
 		rec := serveRaw(t, s, http.MethodGet, target)
@@ -81,6 +84,7 @@ func TestUIDisabledServesNoUI(t *testing.T) {
 
 // TestAPIResponsesKeepTheirOwnHeaders: the UI's headers never reach an API response.
 func TestAPIResponsesKeepTheirOwnHeaders(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	rec := serveRaw(t, s, http.MethodGet, "/api/v1/info")
 	wantStatus(t, rec, http.StatusOK)
@@ -94,6 +98,7 @@ func TestAPIResponsesKeepTheirOwnHeaders(t *testing.T) {
 // TestContentResponsesKeepTheirPolicy: a file's content keeps its sandbox policy, with no UI
 // headers added to it.
 func TestContentResponsesKeepTheirPolicy(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	key, node := rangeFixture(t, s)
 	rec := rawCall(t, s, "GET", "/api/v1/nodes/"+node.ID+"/content", key, "", nil)
@@ -108,6 +113,7 @@ func TestContentResponsesKeepTheirPolicy(t *testing.T) {
 
 // TestContentHostHasNoUI: the content origin answers only links, so the UI is not served there.
 func TestContentHostHasNoUI(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t, func(c *config.Config) { c.ContentURL = "https://files.example.com" })
 	rec := fromHost(t, s, "files.example.com", "GET", "/", nil, nil)
 	wantError(t, rec, http.StatusNotFound, "not_found")
@@ -117,6 +123,7 @@ func TestContentHostHasNoUI(t *testing.T) {
 
 // TestContentURLIsAllowedInTheShellPolicy: the UI allows the content origin for images and frames.
 func TestContentURLIsAllowedInTheShellPolicy(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t, func(c *config.Config) { c.ContentURL = "https://files.example.com" })
 	csp := serveRaw(t, s, http.MethodGet, "/").Header().Get("Content-Security-Policy")
 	if !strings.Contains(csp, "img-src 'self' data: blob: https://files.example.com") ||
@@ -128,6 +135,7 @@ func TestContentURLIsAllowedInTheShellPolicy(t *testing.T) {
 // TestInfoBrand: /info carries the installation's name and accent, and the logo as a URL; the
 // file's path never appears.
 func TestInfoBrand(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	rec := serveRaw(t, s, http.MethodGet, "/api/v1/info")
 	wantStatus(t, rec, http.StatusOK)
@@ -159,6 +167,7 @@ func TestInfoBrand(t *testing.T) {
 
 // TestLogoRoute: the logo is served with its type, and is there whether or not the UI is on.
 func TestLogoRoute(t *testing.T) {
+	t.Parallel()
 	logo := filepath.Join(t.TempDir(), "mark.svg")
 	if err := os.WriteFile(logo, []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`), 0o600); err != nil {
 		t.Fatal(err)
@@ -179,6 +188,7 @@ func TestLogoRoute(t *testing.T) {
 
 // TestLogoRouteWithoutLogo: no logo file, so the route is the JSON 404.
 func TestLogoRouteWithoutLogo(t *testing.T) {
+	t.Parallel()
 	s := newTestServer(t)
 	wantError(t, serveRaw(t, s, http.MethodGet, "/brand/logo"), http.StatusNotFound, "not_found")
 }
@@ -186,6 +196,7 @@ func TestLogoRouteWithoutLogo(t *testing.T) {
 // TestLinkResponsesKeepTheirPolicy: a signed link's file keeps the content policy on the content
 // origin, and the UI's headers are not added to it.
 func TestLinkResponsesKeepTheirPolicy(t *testing.T) {
+	t.Parallel()
 	const contentHost = "files.example.test"
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.ContentURL = "https://" + contentHost })
 	admin := adminKey(t, s)

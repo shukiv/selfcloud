@@ -87,6 +87,7 @@ func usageOf(t *testing.T, s *Server, key, accID string) usageJSON {
 }
 
 func TestParsePath(t *testing.T) {
+	t.Parallel()
 	ok := map[string]int{"": 0, "/": 0, "a": 1, "/a/b.txt": 2, "a/b/c": 3}
 	for p, n := range ok {
 		segs, err := parsePath(p)
@@ -105,6 +106,7 @@ func TestParsePath(t *testing.T) {
 }
 
 func TestListStatAndPaths(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -161,6 +163,7 @@ func TestListStatAndPaths(t *testing.T) {
 }
 
 func TestMkdirRules(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -188,6 +191,7 @@ func TestMkdirRules(t *testing.T) {
 }
 
 func TestCreateFileRules(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec, func(c *config.Config) { c.Upload.MaxSmallFileSize = 1024 })
 	admin := adminKey(t, s)
@@ -232,6 +236,7 @@ func TestCreateFileRules(t *testing.T) {
 }
 
 func TestRenameMoveCopyDelete(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -338,6 +343,7 @@ func TestRenameMoveCopyDelete(t *testing.T) {
 }
 
 func TestContentReadAndWrite(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.Upload.MaxSmallFileSize = 1024 })
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -390,6 +396,7 @@ func TestContentReadAndWrite(t *testing.T) {
 }
 
 func TestNodeAuthorization(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -471,6 +478,7 @@ func foreignFolderID(t *testing.T, s *Server, key, accID string) string {
 }
 
 func TestMemberFoldersArePaged(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -502,6 +510,7 @@ func TestMemberFoldersArePaged(t *testing.T) {
 
 // TestNodesAreAudited checks that every change to the tree leaves an audit entry.
 func TestNodesAreAudited(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

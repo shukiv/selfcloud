@@ -10,6 +10,7 @@ import (
 // TestEmptyHiddenListIsAnArray: a user with no hidden team spaces gets an empty items array, not null, so the
 // interface can read the list without a special case.
 func TestEmptyHiddenListIsAnArray(t *testing.T) {
+	t.Parallel()
 	fx := newSharingFixture(t)
 	rec := callSession(t, fx.s, fx.annSess, "GET", "/api/v1/folders?hidden=true", nil)
 	wantStatus(t, rec, 200)

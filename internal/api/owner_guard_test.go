@@ -24,6 +24,7 @@ func makeOwner(t *testing.T, s *Server, key, accID, email string) userResponse {
 // TestLastOwnerAndSelfAreKept checks that an account always keeps an active owner, and that an owner
 // cannot remove its own user. Each refusal is a conflict whose details give the reason.
 func TestLastOwnerAndSelfAreKept(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -68,6 +69,7 @@ func TestLastOwnerAndSelfAreKept(t *testing.T) {
 // even when it is the only owner that is not yet active, and that removing an active member is not
 // affected by the guard.
 func TestRemovingPendingOwnerIsAllowed(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")

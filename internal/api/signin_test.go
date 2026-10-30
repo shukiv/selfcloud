@@ -126,6 +126,7 @@ func login(t *testing.T, s *Server, email, password, account string) *httptest.R
 }
 
 func TestVerifyLinkThenSignIn(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	admin := adminKey(t, s)
@@ -190,6 +191,7 @@ func TestVerifyLinkThenSignIn(t *testing.T) {
 }
 
 func TestSessionCSRFAndPrecedence(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, _ := newAccount(t, s, admin, "Acme")
@@ -260,6 +262,7 @@ func TestSessionCSRFAndPrecedence(t *testing.T) {
 }
 
 func TestSuspendedAccountEndsSession(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, _ := newAccount(t, s, admin, "Acme")
@@ -271,6 +274,7 @@ func TestSuspendedAccountEndsSession(t *testing.T) {
 }
 
 func TestLoginOutcomes(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -297,6 +301,7 @@ func TestLoginOutcomes(t *testing.T) {
 }
 
 func TestLoginAcrossAccounts(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	a, keyA := newAccount(t, s, admin, "Alpha")
@@ -319,6 +324,7 @@ func TestLoginAcrossAccounts(t *testing.T) {
 }
 
 func TestForgotAndReset(t *testing.T) {
+	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
 	admin := adminKey(t, s)
@@ -351,6 +357,7 @@ func TestForgotAndReset(t *testing.T) {
 }
 
 func TestForgotWithoutMail(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, nil)
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -360,6 +367,7 @@ func TestForgotWithoutMail(t *testing.T) {
 }
 
 func TestChangePassword(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -397,6 +405,7 @@ func sessionFrom204(t *testing.T, s *Server, rec *httptest.ResponseRecorder) tes
 }
 
 func TestCookieAttributes(t *testing.T) {
+	t.Parallel()
 	// Plain http (development): no __Host- prefix and no Secure.
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
@@ -441,6 +450,7 @@ func cookieNamed(t *testing.T, rec *httptest.ResponseRecorder, name string) *htt
 }
 
 func TestLoginRateLimit(t *testing.T) {
+	t.Parallel()
 	s := newTestServerWith(t, &mail.Recorder{}, func(c *config.Config) {
 		c.RateLimit.PerIPPerMinute = 100
 		c.RateLimit.PerEmailPerMinute = 2
@@ -458,6 +468,7 @@ func TestLoginRateLimit(t *testing.T) {
 }
 
 func TestVerificationRateLimitIsPerAddress(t *testing.T) {
+	t.Parallel()
 	s := newTestServerWith(t, nil, func(c *config.Config) { c.RateLimit.PerIPPerMinute = 2 })
 	for i := 0; i < 2; i++ {
 		wantError(t, call(t, s, "POST", "/api/v1/auth/verify", "", map[string]any{"token": "x"}), 400, apierr.InvalidRequest)

@@ -124,6 +124,7 @@ func disableMember(t *testing.T, m *memberFixture, status string) {
 }
 
 func TestMintRules(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, acc, key := m.s, m.acc, m.key
 	admin := adminKey(t, s)
@@ -198,6 +199,7 @@ func TestMintRules(t *testing.T) {
 }
 
 func TestTokenFormatAndVerification(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	tok := mintFor(t, s, key, accID, map[string]any{"folders": []string{m.f.ID}, "user": m.ann.ID, "permissions": "write"})
@@ -265,6 +267,7 @@ func signRaw(t *testing.T, s *Server, raw string) string {
 }
 
 func TestTokenSurvivesOneRotationOnly(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s1, key, accID := m.s, m.key, m.acc.ID
 	tok := mintFor(t, s1, key, accID, map[string]any{"folders": []string{m.f.ID}})
@@ -285,6 +288,7 @@ func TestTokenSurvivesOneRotationOnly(t *testing.T) {
 }
 
 func TestRevocationEndsTokens(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	admin := adminKey(t, s)
@@ -325,6 +329,7 @@ func TestRevocationEndsTokens(t *testing.T) {
 }
 
 func TestTokenScopeNarrowsAccess(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t) // ann: write on f, read on g
 	s, key, accID := m.s, m.key, m.acc.ID
 	mkdir := func(cred, fld, p string) *httptest.ResponseRecorder {
@@ -385,6 +390,7 @@ func TestTokenScopeNarrowsAccess(t *testing.T) {
 }
 
 func TestUploadContinuesWithAnotherTokenForSameUser(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	tokA := mintFor(t, s, key, accID, map[string]any{"folders": []string{m.f.ID}, "user": m.ann.ID, "permissions": "write"})
@@ -433,6 +439,7 @@ func childCount(t *testing.T, m *memberFixture) int {
 }
 
 func TestQueuedCopyRechecksItsCaller(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	tok := mintFor(t, s, key, accID, map[string]any{"folders": []string{m.f.ID}, "user": m.ann.ID, "permissions": "write"})
@@ -449,6 +456,7 @@ func TestQueuedCopyRechecksItsCaller(t *testing.T) {
 }
 
 func TestQueuedCopyIgnoresTokenExpiry(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	// A token for the member that expires a second from now, minted by the account key that really
@@ -472,6 +480,7 @@ func TestQueuedCopyIgnoresTokenExpiry(t *testing.T) {
 }
 
 func TestCopyJobWithDisabledUserWritesNothing(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	tok := mintFor(t, m.s, m.key, m.acc.ID, map[string]any{"folders": []string{m.f.ID}, "user": m.ann.ID, "permissions": "write"})
 	job := queueCopy(t, m, tok)
@@ -485,6 +494,7 @@ func TestCopyJobWithDisabledUserWritesNothing(t *testing.T) {
 }
 
 func TestTokenMintRateLimit(t *testing.T) {
+	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -500,6 +510,7 @@ func TestTokenMintRateLimit(t *testing.T) {
 // TestLinkFromTokenEndsWithToken: a signed link outlives every revocation, so one made with a
 // delegated token may not outlive the token.
 func TestLinkFromTokenEndsWithToken(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	tok := mintFor(t, s, key, accID, map[string]any{"folders": []string{m.f.ID}, "user": m.ann.ID, "ttl": 120})
@@ -526,6 +537,7 @@ func TestLinkFromTokenEndsWithToken(t *testing.T) {
 // TestRevokeAllNeverMovesBack: a revoke that commits after a later one keeps the later cut-off, so
 // tokens the later call ended stay ended.
 func TestRevokeAllNeverMovesBack(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	ctx := context.Background()
@@ -557,6 +569,7 @@ func TestRevokeAllNeverMovesBack(t *testing.T) {
 // TestCallerReadsTheJobItQueued: the caller a copy runs for may follow its job, under any token for
 // the same user; others who do not manage the account may not.
 func TestCallerReadsTheJobItQueued(t *testing.T) {
+	t.Parallel()
 	m := newMemberFixture(t)
 	s, key, accID := m.s, m.key, m.acc.ID
 	body := map[string]any{"folders": []string{m.f.ID}, "user": m.ann.ID, "permissions": "write"}

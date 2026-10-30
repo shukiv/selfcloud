@@ -89,3 +89,15 @@ func TestUserPrincipalManagesOwnAccountOnly(t *testing.T) {
 		t.Error("member must not manage the account")
 	}
 }
+
+// TestDefaultHashParametersAreRFC9106 keeps the production cost: a hash made without the test switch writes the
+// second recommended option of RFC 9106, and UseTestHashCost is the only way to lower it.
+func TestDefaultHashParametersAreRFC9106(t *testing.T) {
+	h, err := HashPassword(context.Background(), "a long enough password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h, "$m=65536,t=3,p=4$") {
+		t.Fatalf("default hash parameters = %s, want m=65536,t=3,p=4", h)
+	}
+}

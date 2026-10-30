@@ -21,6 +21,7 @@
     type Transfer,
   } from '../lib/files/api';
   import { locate, joinPath, type Here } from '../lib/files/location';
+  import { starNode, unstarNode } from '../lib/stars';
   import { fileErrorText } from '../lib/files/fileErrors';
   import {
     nameProblem,
@@ -336,6 +337,21 @@
 
   function onRowClick(index: number, e: MouseEvent) {
     setSel(clickSelect(current(), ids, index, { shift: e.shiftKey, toggle: e.ctrlKey || e.metaKey }));
+  }
+
+  // toggleStar stars or unstars an item for the caller, then shows the new state in the listing. A refused change
+  // leaves the listing as it was and says why, unless the session has ended.
+  async function toggleStar(n: Node): Promise<void> {
+    const changed = sessionChanged();
+    const next = n.starred !== true;
+    try {
+      if (next) await starNode(n.id);
+      else await unstarNode(n.id);
+      if (changed()) return;
+      items = items.map((x) => (x.id === n.id ? { ...x, starred: next } : x));
+    } catch (err) {
+      if (!changed() && !signingOut()) notice = fileErrorText(err, $lang);
+    }
   }
 
   function openNode(n: Node) {
@@ -868,6 +884,7 @@
               onsort={sortBy}
               onrename={finishRename}
               onkeydown={onKey}
+              onstar={toggleStar}
               onfocusitem={(i) => {
                 const id = ids[i];
                 if (id) sel = { ...sel, focusID: id };

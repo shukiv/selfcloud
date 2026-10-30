@@ -34,6 +34,7 @@ func dropDeclare(t *testing.T, s *Server, tok, name string, length int64) string
 // TestDropUploadsReserveAsReceived (item 1, M1): a drop upload holds only the bytes it has received, so twenty
 // drop uploads each declaring the largest file hold nothing until bytes arrive, and the owner's upload still fits.
 func TestDropUploadsReserveAsReceived(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	fx.setQuota(t, 100)
 	fx.s.cfg.Upload.MaxFileSize = 64
@@ -56,6 +57,7 @@ func TestDropUploadsReserveAsReceived(t *testing.T) {
 // TestDropRefusalsHideTheAccountsNumbers (item 2, M2): a drop visitor is refused a full quota or a full disk with
 // one generic answer, with no numbers and no scope. The owner still gets the detail.
 func TestDropRefusalsHideTheAccountsNumbers(t *testing.T) {
+	t.Parallel()
 	const generic = "this link cannot take the file now"
 	fx := newDropFixture(t)
 	fx.setQuota(t, 100)
@@ -99,6 +101,7 @@ func assertGenericRefusal(t *testing.T, rec *httptest.ResponseRecorder, message 
 // with not_found but keeps the upload, so the visitor resumes once the link is back. A deleted, reset or expired link
 // still ends it (see TestDropMidUploadEndsWhenItsLinkDies).
 func TestDropPausedLinkKeepsItsUploads(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		off func(t *testing.T, fx *dropFixture)
 		on  func(t *testing.T, fx *dropFixture)
@@ -147,6 +150,7 @@ func TestDropPausedLinkKeepsItsUploads(t *testing.T) {
 // TestDropFinishesAfterItsDirectoryMoves (item 3, M3): a directory moved to another folder must not destroy a finished
 // transfer. The file lands in the directory where it now is.
 func TestDropFinishesAfterItsDirectoryMoves(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	tok := fx.visitDrop(t, secret, "")
@@ -167,6 +171,7 @@ func TestDropFinishesAfterItsDirectoryMoves(t *testing.T) {
 // TestDropDeleteAndResetReleaseTheirUploads (item 4, L7): deleting or resetting a drop link releases its open uploads
 // at once, with their rows, their files and their reservations, not on the visitor's next request.
 func TestDropDeleteAndResetReleaseTheirUploads(t *testing.T) {
+	t.Parallel()
 	for name, end := range map[string]func(fx *dropFixture) *httptest.ResponseRecorder{
 		"deleted": func(fx *dropFixture) *httptest.ResponseRecorder {
 			return call(t, fx.s, "DELETE", "/api/v1/share-links/"+fx.dropID(t), fx.key, nil)
@@ -224,6 +229,7 @@ func (m *countingMailer) Send(ctx context.Context, msg mail.Message) error {
 // TestDropFailedMailBacksOff (item 5, L4): a mail that does not go does not make the notifier try again every minute.
 // The files stay counted, and the next try is an hour after the failed one.
 func TestDropFailedMailBacksOff(t *testing.T) {
+	t.Parallel()
 	fx, secret, _ := dropNotifyFixture(t)
 	m := &countingMailer{fail: true}
 	fx.s.mailer = m
@@ -252,6 +258,7 @@ func TestDropFailedMailBacksOff(t *testing.T) {
 // TestDropCompletionSendsNoNodeID (item 6, L5): the completing piece of a drop upload does not name the new node to
 // the visitor. An owner's completing piece still does.
 func TestDropCompletionSendsNoNodeID(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, nil)
 	tok := fx.visitDrop(t, secret, "")
@@ -272,6 +279,7 @@ func TestDropCompletionSendsNoNodeID(t *testing.T) {
 // TestDropNodeOwnerFollowsTheStore (item 6, L5): the owner the completed node reports is the one the store gives it:
 // the folder's user in a personal folder, and the link's creator elsewhere.
 func TestDropNodeOwnerFollowsTheStore(t *testing.T) {
+	t.Parallel()
 	personal := &store.Folder{Kind: store.KindPersonal, OwnerUserID: "usr_personal"}
 	team := &store.Folder{Kind: store.KindTeam}
 	if got := dropNodeOwner(personal, "usr_creator"); got != "usr_personal" {
@@ -285,6 +293,7 @@ func TestDropNodeOwnerFollowsTheStore(t *testing.T) {
 // TestDropUploaderFieldsStripControls (item 7, L6): every control character and the Unicode line and paragraph
 // separators are replaced by a space before the uploader's name or email is stored or audited.
 func TestDropUploaderFieldsStripControls(t *testing.T) {
+	t.Parallel()
 	fx := newDropFixture(t)
 	_, secret := fx.makeDrop(t, fx.b.ID, map[string]any{"ask_name": true})
 	tok := fx.visitDrop(t, secret, "")
