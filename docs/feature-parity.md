@@ -196,12 +196,12 @@ come **before** k.
 |---|---|---|
 | n1 | Sharing model (built, see the sections marked (n1) above): roles, permissions on any node with inheritance, groups, personal "My files", team-space owners, the grants routes on permissions, `GET /shared`, token node scope | Large |
 | n2 | Sharing v2 (built, see the rows marked Built (n2) above): access expiry, no-download, "editors can share", ownership transfer, team-space restrictions and hiding, access requests, share emails | Medium |
-| m | Trash, version history, keep forever, restore, undo | Medium |
+| m | Trash, version history, keep forever, restore, undo (built) | Medium |
 | k | Web interface (as planned, on the new model). Built in four parts. k1 (built): the foundation and the sign-in, verification and password pages. k2 (built): the file browser, uploads, previews, Trash and versions. k3 (built): the sharing interface: share dialog, Shared with me, access requests, hidden spaces, space settings, and the account directory search (`GET /directory`). k4 (built): owner pages (overview, people, groups, team spaces, audit log) and installation admin pages (tenants, tenant tabs, admins, installation facts), with the owner guard and list filters in the API. Known gaps: design section 10 | Large |
 | c2 | Sign-in links for trusted clients (built, after k) | Small |
 | i2 | Delegated tokens: per-user revoke and the all-reachable scope (built, after k) | Small |
 | o | Organisation and public links, link expiry and password, drop folders, admin policy. Built in four parts: o1 to o4 | Medium |
-| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts: p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels, p5 OpenAPI, design record and security review | Medium |
+| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts (p1 being built): p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels, p5 OpenAPI, design record and security review | Medium |
 | pg | PostgreSQL as an option for the metadata store (design decision 7), before q | Medium |
 | q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |
 | r | Comments, mentions, activity pane, notifications, who-viewed | Medium |

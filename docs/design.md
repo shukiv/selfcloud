@@ -1562,36 +1562,46 @@ cannot leak into another's results. Tests check this for each endpoint.
 
 Each slice ships with tests and leaves the server runnable.
 
-| Slice | Contents |
-|---|---|
-| a | Server skeleton, config, logging, `/healthz`, `/readyz`, `/metrics`, graceful shutdown, Dockerfile, CI |
-| b | Accounts, admin and account keys, `admin` bootstrap command, JSON errors, audit log |
-| c | Users, verification (`email`, `link`, `none`), SMTP and templates in the seven languages, passwords, sessions, rate limits |
-| d | Folders and grants |
-| e | File operations: list, stat, mkdir, rename, move, copy, delete, small-file write with `If-Match` |
-| f | Resumable uploads (tus), with crash and resume tests and the upload benchmark |
-| g | Ranged downloads and signed links, with the download benchmark |
-| h | Quotas and usage, enforced at upload creation and while writing |
-| i | Delegated tokens and CORS |
-| n1 | Sharing model: roles on any node with inheritance, groups, personal "My files", team spaces and their owners, the grants routes on top of permissions, `GET /shared`, delegated-token node scope |
-| n2 | Sharing v2: access expiry, no-download, the "editors can share" switch, ownership transfer, team-space restrictions and hiding, access requests, share emails |
-| m | Trash, version history, keep forever, restore, undo |
-| k | Web interface, in the seven languages, with right-to-left layout for Arabic and Hebrew. Built in four parts: k1 the foundation (the embedded Svelte app, its serving and headers, branding, themes, languages) and the sign-in, verification and password pages; k2 the file browser (lists, actions by role, resumable uploads, previews, Trash, versions, undo); k3 the sharing interface (share dialog, Shared with me, access requests, hidden spaces, space settings, the account directory); k4 the owner's pages (overview, people, groups, team spaces, audit log) and the installation admin's pages (tenants, admins, installation facts) |
-| c2 | Sign-in links for trusted clients: a client holding the account key hands a user into the web interface with a one-use link, and a browser signed in as someone else is asked before it switches (built) |
-| i2 | Delegated tokens: revoking one user's tokens, and a scope that reaches whatever the user reaches (built) |
-| o | Organisation and public links (off by default), link policy, drop folders. Built in four parts: o1 organisation links and the policy, o2 links that anyone can open, o3 drop folders, o4 the sweep, the account-wide list and bulk delete |
-| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (decision 24). In five parts: p1 per-user quota and the storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels, p5 the OpenAPI file, the design record and a security review |
-| pg | PostgreSQL as an option for the metadata store (decision 7). It lands before q, whose full-text search gains from it |
-| q | Search: filters, label search, full text and OCR within size limits |
-| r | Comments, mentions, activity pane, notifications, who-viewed |
-| s | Thumbnails, document previews, conversions and export, zip download |
-| l | WOPI host for Collabora |
-| j | Webhooks |
-| t | Changes feed, file picker, WebDAV, installable web app |
-| u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits |
-| t2 | Approvals |
+| Slice | Contents | Status |
+|---|---|---|
+| a | Server skeleton, config, logging, `/healthz`, `/readyz`, `/metrics`, graceful shutdown, Dockerfile, CI | Built |
+| b | Accounts, admin and account keys, `admin` bootstrap command, JSON errors, audit log | Built |
+| c | Users, verification (`email`, `link`, `none`), SMTP and templates in the seven languages, passwords, sessions, rate limits | Built |
+| d | Folders and grants | Built |
+| e | File operations: list, stat, mkdir, rename, move, copy, delete, small-file write with `If-Match` | Built |
+| f | Resumable uploads (tus), with crash and resume tests and the upload benchmark | Built |
+| g | Ranged downloads and signed links, with the download benchmark | Built |
+| h | Quotas and usage, enforced at upload creation and while writing | Built |
+| i | Delegated tokens and CORS | Built |
+| n1 | Sharing model: roles on any node with inheritance, groups, personal "My files", team spaces and their owners, the grants routes on top of permissions, `GET /shared`, delegated-token node scope | Built |
+| n2 | Sharing v2: access expiry, no-download, the "editors can share" switch, ownership transfer, team-space restrictions and hiding, access requests, share emails | Built |
+| m | Trash, version history, keep forever, restore, undo | Built |
+| k1 | Web interface foundation: the Svelte app embedded in the binary, its serving and headers, branding, themes, the seven languages with right-to-left layout for Arabic and Hebrew, and the sign-in, verification and password pages | Built |
+| k2 | File browser: lists by role, new folder, rename, move, copy, delete, download, resumable uploads, previews, Trash, versions, undo | Built |
+| k3 | Sharing interface: share dialog, Shared with me, access requests, hidden spaces, space settings, the account directory | Built |
+| k4 | Owner pages (overview, people, groups, team spaces, audit log) and installation admin pages (tenants, admins, installation facts) | Built |
+| c2 | Sign-in links for trusted clients: a client holding the account key hands a user into the web interface with a one-use link, and a browser signed in as someone else is asked before it switches | Built |
+| i2 | Delegated tokens: revoking one user's tokens, and a scope that reaches whatever the user reaches | Built |
+| o1 | Share links for people in the account (organisation links, recorded visits), the account's link policy | Built |
+| o2 | Links that anyone can open: the visitor credential, password and its limits, public pages | Built |
+| o3 | Drop folders (Request files): anonymous uploads into one directory | Built |
+| o4 | The sweep of ended links, the account-wide link list, Delete all public links, the link badge | Built |
+| p1 | Per-user quota (charged by folder) and the storage pages (decision 24) | Building |
+| p2 | Starred, Recent and Home | Planned |
+| p3 | Shortcuts, folder colours and descriptions | Planned |
+| p4 | Labels: typed fields the owner defines | Planned |
+| p5 | The OpenAPI file, the design record and a security review of slice p | Planned |
+| pg | PostgreSQL as an option for the metadata store (decision 7). It lands before q, whose full-text search gains from it | Planned |
+| q | Search: filters, label search, full text and OCR within size limits | Planned |
+| r | Comments, mentions, activity pane, notifications, who-viewed | Planned |
+| s | Thumbnails, document previews, conversions and export, zip download | Planned |
+| l | WOPI host for Collabora | Planned |
+| j | Webhooks | Planned |
+| t | Changes feed, file picker, WebDAV, installable web app | Planned |
+| u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Planned |
+| t2 | Approvals | Planned |
 
-Slices are listed in build order; the letters keep their first meaning, and a slice named with a 2 (c2, i2, t2) follows up the slice of that letter. Slices m to u come from
+Slices are listed in build order; the letters keep their first meaning, and a slice named with a 2 (c2, i2, t2) follows up the slice of that letter. A slice built in parts (k, o, p) has a row for each part, each reviewed and pushed on its own. Status is Built, Building or Planned. Slices m to u come from
 the Google Drive parity plan in `feature-parity.md` (approved 2026-10-28). An API client can switch
 over once slices a to i work. Slice n1 keeps the `/grants` routes working, mapping `read` to viewer
 and `write` to editor, so a client that switched after i keeps working. Slice n was split in two
