@@ -60,6 +60,9 @@ func (s *Server) handleListRecent(w http.ResponseWriter, r *http.Request) error 
 	for i := range items {
 		kept[i] = &items[i].nodeJSON
 	}
+	if err := s.withTargets(r.Context(), p, kept...); err != nil {
+		return err
+	}
 	if err := s.withStarred(r, p.UserID, kept); err != nil {
 		return err
 	}

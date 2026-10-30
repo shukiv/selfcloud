@@ -364,6 +364,10 @@ func (s *Server) handleCreateShareLink(w http.ResponseWriter, r *http.Request) e
 		if err != nil {
 			return err
 		}
+		// A shortcut grants nothing, so a link on it would open nothing of its own: share its target instead.
+		if n.Kind == store.KindShortcut {
+			return apierr.New(apierr.InvalidRequest, "a shortcut cannot be shared by link; share its target")
+		}
 		if anyone && own != store.RoleManager {
 			return managerRequired()
 		}

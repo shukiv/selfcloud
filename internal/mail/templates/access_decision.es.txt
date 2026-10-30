@@ -2,6 +2,6 @@ Subject: {{.Actor}} {{if .Approved}}aprobó{{else}}rechazó{{end}} tu solicitud 
 
 {{if .Approved}}{{.Actor}} aprobó tu solicitud de acceso a {{.Item}} como {{.Role}}.{{else}}{{.Actor}} rechazó tu solicitud de acceso a {{.Item}}.{{end}}
 
-{{.Link}}
+{{if .Link}}{{.Link}}
 
-Si no esperabas este mensaje, puedes ignorarlo.
+{{end}}Si no esperabas este mensaje, puedes ignorarlo.

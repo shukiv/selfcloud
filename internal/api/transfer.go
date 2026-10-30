@@ -434,7 +434,11 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toNodeJSON(out))
+	j := toNodeJSON(out)
+	if err := s.withTargets(ctx, p, &j); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, j)
 	return nil
 }
 
@@ -549,9 +553,12 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		// The copy is the copier's own edit: it lands in the copier's Recent as the new copy.
-		if err := noteEdit(ctx, tx, p, cur.AccountID, rootID); err != nil {
-			return err
+		// The copy is the copier's own edit: it lands in the copier's Recent as the new copy. A shortcut has no
+		// contents, so copying one is not an edit.
+		if cur.Kind != store.KindShortcut {
+			if err := noteEdit(ctx, tx, p, cur.AccountID, rootID); err != nil {
+				return err
+			}
 		}
 		// The copies count in full. What they displace stays in usage, in the trash, so only the copies count.
 		change := store.UsageChange{Bytes: bytes, Files: files}
@@ -574,7 +581,11 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	w.Header().Set("Location", "/api/v1/nodes/"+out.ID)
-	writeJSON(w, http.StatusCreated, toNodeJSON(out))
+	j := toNodeJSON(out)
+	if err := s.withTargets(ctx, p, &j); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusCreated, j)
 	return nil
 }
 
@@ -704,8 +715,10 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		if err != nil {
 			return err
 		}
-		if err := noteEdit(ctx, tx, p, job.AccountID, pl.Root); err != nil {
-			return err
+		if src.Kind != store.KindShortcut {
+			if err := noteEdit(ctx, tx, p, job.AccountID, pl.Root); err != nil {
+				return err
+			}
 		}
 		change := store.UsageChange{Bytes: bytes, Files: files}
 		if err := s.applyUsage(ctx, tx, p, job.AccountID, store.FolderChange{FolderID: plan.folderID, Change: change}); err != nil {

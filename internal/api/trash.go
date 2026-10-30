@@ -157,6 +157,14 @@ scan:
 	if out == nil {
 		out = []trashItemJSON{}
 	}
+	// A shortcut in the trash shows its target to a caller who reaches it, as anywhere else.
+	ptrs := make([]*nodeJSON, len(out))
+	for i := range out {
+		ptrs[i] = &out[i].nodeJSON
+	}
+	if err := s.withTargets(ctx, p, ptrs...); err != nil {
+		return err
+	}
 	writeJSON(w, http.StatusOK, listResponse[trashItemJSON]{Items: out, NextCursor: next})
 	return nil
 }
@@ -385,6 +393,9 @@ func (s *Server) handleRestoreNode(w http.ResponseWriter, r *http.Request) error
 	}
 	j := toNodeJSON(out)
 	j.Role = outRole
+	if err := s.withTargets(r.Context(), principalOf(r), &j); err != nil {
+		return err
+	}
 	writeJSON(w, http.StatusOK, j)
 	return nil
 }

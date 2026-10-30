@@ -30,16 +30,24 @@ type AccessRequest struct {
 	CreatedAt time.Time
 	DecidedAt *time.Time
 	DecidedBy string
+	// ViaNodeID is the shortcut the request came through, while it exists; the request is then filed on its target.
+	// ViaShortcut is set for every request that came through a shortcut, and stays set after the shortcut is deleted.
+	ViaNodeID   string
+	ViaShortcut bool
 }
 
-const accessRequestCols = "id, account_id, node_id, user_id, role, message, status, created_at, decided_at, decided_by"
+const accessRequestCols = "id, account_id, node_id, user_id, role, message, status, created_at, decided_at, decided_by," +
+	" via_node_id, via_shortcut"
 
 func scanAccessRequest(row interface{ Scan(...any) error }) (*AccessRequest, error) {
 	var r AccessRequest
 	var created int64
 	var decided sql.NullInt64
+	var via sql.NullString
+	var viaFlag int64
 	err := row.Scan(&r.ID, &r.AccountID, &r.NodeID, &r.UserID, &r.Role, &r.Message, &r.Status, &created,
-		&decided, &r.DecidedBy)
+		&decided, &r.DecidedBy, &via, &viaFlag)
+	r.ViaNodeID, r.ViaShortcut = via.String, viaFlag == 1
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -62,8 +70,9 @@ func (tx *Tx) InsertAccessRequest(ctx context.Context, r *AccessRequest) (*Acces
 		return nil, err
 	}
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO access_requests (`+accessRequestCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '')`,
-		r.ID, r.AccountID, r.NodeID, r.UserID, r.Role, r.Message, RequestPending, millis(r.CreatedAt))
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '', ?, ?)`,
+		r.ID, r.AccountID, r.NodeID, r.UserID, r.Role, r.Message, RequestPending, millis(r.CreatedAt),
+		nullString(r.ViaNodeID), boolInt(r.ViaShortcut))
 	if isUniqueViolation(err) {
 		return nil, ErrConflict
 	}

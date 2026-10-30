@@ -150,6 +150,16 @@ type nodeJSON struct {
 	// Starred is the caller's own star on the node. It is set for a signed-in user and for a token acting as its
 	// user; a key, an admin and a link visitor get no value.
 	Starred *bool `json:"starred,omitempty"`
+	// Color is a directory's palette colour and Description the item's text. Every reader sees them.
+	Color       string `json:"color,omitempty"`
+	Description string `json:"description,omitempty"`
+	// Target is what a shortcut points to, for a caller who reaches it. Unavailable is set on a shortcut whose
+	// target the caller cannot reach or that was purged: the answer is the same for all three, and never names
+	// the target. Both are set by withTargets, and a link visitor gets neither (see nodeJSONFor).
+	Target      *shortcutTarget `json:"target,omitempty"`
+	Unavailable bool            `json:"unavailable,omitempty"`
+	// targetID is the shortcut's target as stored. It is used to find the target, never sent.
+	targetID string
 }
 
 // nodeJSONFor is toNodeJSON as the caller may see it. A visitor of a link that anyone can open sees no user IDs,
@@ -160,6 +170,11 @@ func nodeJSONFor(p *auth.Principal, n *store.Node) nodeJSON {
 		out.CreatedBy, out.OwnerID = "", ""
 		out.FolderID, out.EditorsCanShare = "", false
 		out.Starred = nil
+		// A visitor learns nothing about a shortcut's target: no target, and no unavailable mark either.
+		out.Target, out.Unavailable, out.targetID = nil, false, ""
+		// The owner's colour and description are not for a link visitor: a description may hold notes the
+		// sharer did not mean to publish. Decision 6 means the signed-in readers of the item, not visitors.
+		out.Color, out.Description = "", ""
 		if p.Link != nil && n.ID == p.Link.Node {
 			out.ParentID = nil
 		}
@@ -206,7 +221,13 @@ func (s *Server) addPeopleNames(ctx context.Context, p *auth.Principal, accountI
 func toNodeJSON(n *store.Node) nodeJSON {
 	out := nodeJSON{ID: n.ID, FolderID: n.FolderID, Name: n.Name, Kind: n.Kind, Size: n.Size,
 		CreatedAt: n.CreatedAt, ModifiedAt: n.ModifiedAt, NoDownload: n.NoDownload,
-		EditorsCanShare: n.EditorsCanShare, CreatedBy: n.CreatedBy, OwnerID: n.OwnerID}
+		EditorsCanShare: n.EditorsCanShare, CreatedBy: n.CreatedBy, OwnerID: n.OwnerID,
+		Color: n.Color, Description: n.Description}
+	if n.Kind == store.KindShortcut {
+		// Unavailable until withTargets finds the target reachable: a shortcut fails closed.
+		out.Unavailable = true
+		out.targetID = n.TargetID
+	}
 	if !n.IsRoot() {
 		parent := n.ParentID
 		out.ParentID = &parent
@@ -396,6 +417,9 @@ func (s *Server) handleStatNode(w http.ResponseWriter, r *http.Request) error {
 	if err := s.addPeopleNames(r.Context(), p, n.AccountID, &out); err != nil {
 		return err
 	}
+	if err := s.withTargets(r.Context(), p, &out); err != nil {
+		return err
+	}
 	if p.Kind == auth.KindUser {
 		if err := s.withStarred(r, p.UserID, []*nodeJSON{&out}); err != nil {
 			return err
@@ -443,6 +467,10 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 	}
 	out := listResponse[nodeJSON]{Items: []nodeJSON{}, NextCursor: next}
 	for _, k := range kids {
+		// A link visitor sees no shortcut in a listing: a shortcut's name is the only thing it could show.
+		if p.Kind == auth.KindShareLink && k.Kind == store.KindShortcut {
+			continue
+		}
 		j := nodeJSONFor(p, k)
 		j.Role = store.RoleOfRank(max(base, min(ranks[k.ID], cap)))
 		j.HasLink = links[k.ID]
@@ -454,6 +482,9 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 			ptrs[i] = &out.Items[i]
 		}
 		if err := s.addPeopleNames(ctx, p, dir.AccountID, ptrs...); err != nil {
+			return err
+		}
+		if err := s.withTargets(ctx, p, ptrs...); err != nil {
 			return err
 		}
 		if p.Kind == auth.KindUser {
@@ -510,6 +541,9 @@ func (s *Server) handleListNodeChildren(w http.ResponseWriter, r *http.Request) 
 	dir, role, err := s.nodeAccess(r, r.PathValue("nod"))
 	if err != nil {
 		return err
+	}
+	if dir.Kind == store.KindShortcut {
+		return apierr.New(apierr.InvalidRequest, "a shortcut has no children; open its target instead")
 	}
 	if dir.Kind != store.KindDir {
 		return apierr.New(apierr.InvalidRequest, "this node is a file, not a directory")
@@ -782,20 +816,37 @@ func (s *Server) discardBlob(accountID, blobID string) {
 // but a request must name at least one. A folder's root has no name, so its name is refused.
 func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		Name            *string `json:"name"`
-		NoDownload      *bool   `json:"no_download"`
-		EditorsCanShare *bool   `json:"editors_can_share"`
+		Name            *string   `json:"name"`
+		NoDownload      *bool     `json:"no_download"`
+		EditorsCanShare *bool     `json:"editors_can_share"`
+		Color           optString `json:"color"`
+		Description     optString `json:"description"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	if in.Name == nil && in.NoDownload == nil && in.EditorsCanShare == nil {
-		return apierr.New(apierr.InvalidRequest, "give name, no_download or editors_can_share")
+	if in.Name == nil && in.NoDownload == nil && in.EditorsCanShare == nil && !in.Color.set && !in.Description.set {
+		return apierr.New(apierr.InvalidRequest, "give name, no_download, editors_can_share, color or description")
 	}
 	var name, key string
 	if in.Name != nil {
 		var err error
 		if name, key, err = names.Clean(*in.Name); err != nil {
+			return err
+		}
+	}
+	// A colour is one of the palette names, or null to clear it; a description is cleaned here, so a bad one is
+	// refused before anything is looked up.
+	var color, desc string
+	if in.Color.set {
+		var err error
+		if color, err = colorOf(in.Color); err != nil {
+			return err
+		}
+	}
+	if in.Description.set && !in.Description.null {
+		var err error
+		if desc, err = cleanDescription(in.Description.val); err != nil {
 			return err
 		}
 	}
@@ -827,6 +878,18 @@ func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error 
 		}
 		if err := checkIfMatch(r, cur); err != nil {
 			return err
+		}
+		if in.Color.set && cur.Kind != store.KindDir {
+			return apierr.New(apierr.InvalidRequest, "only a directory has a colour")
+		}
+		appearance := map[string]any{}
+		if in.Color.set {
+			cur.Color = color
+			appearance["color"] = orNil(color)
+		}
+		if in.Description.set {
+			cur.Description = desc
+			appearance["description"] = orNil(desc)
 		}
 		var renamed *string
 		if in.Name != nil {
@@ -864,14 +927,31 @@ func (s *Server) handleRenameNode(w http.ResponseWriter, r *http.Request) error 
 			}
 		}
 		if len(sharing) > 0 {
-			return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.sharing", cur.ID, sharing, cur.FolderID))
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.sharing", cur.ID, sharing, cur.FolderID)); err != nil {
+				return err
+			}
+		}
+		if len(appearance) > 0 {
+			// The description's text stays out of the log: only that it changed, or was cleared, is recorded.
+			if _, ok := appearance["description"]; ok {
+				state := "changed"
+				if desc == "" {
+					state = "cleared"
+				}
+				appearance["description"] = state
+			}
+			return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.appearance", cur.ID, appearance, cur.FolderID))
 		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toNodeJSON(out))
+	j := toNodeJSON(out)
+	if err := s.withTargets(ctx, p, &j); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, j)
 	return nil
 }
 

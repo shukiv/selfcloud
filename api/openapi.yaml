@@ -1766,7 +1766,8 @@ paths:
         `name` needs the editor role. `no_download` needs the editor role: it refuses viewers and
         commenters the downloads of the node and its subtree, though inline viewing still works.
         `editors_can_share` needs the manager role: it lets editors set permissions below the node,
-        up to editor. A folder's root has no name. At least one field is required.
+        up to editor. A folder's root has no name. `color` (a directory only, from the palette) and
+        `description` need the editor role. At least one field is required.
         `If-Match` is optional. With the node's current `etag`, the change applies only if the node
         is still that version; otherwise the answer is `precondition_failed` (412) and nothing
         changes. The check runs inside the write.
@@ -1898,6 +1899,42 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Job" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/nodes/{nod}/shortcuts:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Files]
+      operationId: createShortcut
+      summary: Make a shortcut to a file or directory
+      description: |
+        Makes a node of kind `shortcut` in the directory `{nod}`, which needs the contributor role. The
+        target must be a file or a directory in the same account that the caller reaches, and not a
+        shortcut or a folder's root. A missing, foreign or unreachable target is one `not_found`, and
+        nothing about it is shown. The name defaults to the target's name. A shortcut grants nothing:
+        it takes no quota and has no content or children, and it shows as unavailable to a caller who
+        cannot reach its target.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [target]
+              properties:
+                target: { type: string, description: The ID of the file or directory the shortcut points to. }
+                name: { type: string, minLength: 1, maxLength: 255 }
+      responses:
+        "201":
+          description: The shortcut.
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/nodes/{nod}/content:
@@ -2691,6 +2728,13 @@ paths:
         mailed when a request is new, and not again within 24 hours of the user's previous request on
         that node. Rate limited per user. An account key and a delegated token get the same silent
         `202`, and nothing is recorded.
+        A request on a shortcut is filed on the shortcut's target and names the shortcut: the target's
+        managers receive it, and approving it grants the target. The caller must reach the shortcut
+        itself. A shortcut with no live target, one the caller cannot see, and a target that is already
+        reachable all get the same silent `202` as a missing node. The requester is mailed the decision.
+        An approval names the shortcut and links to it only while the requester still reaches it; otherwise
+        the mail is generic and has no link. A denial is always generic, with no name and no link. No
+        response shows the shortcut or the target to the requester.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -3335,7 +3379,7 @@ components:
         folder_id: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
         parent_id: { type: [string, "null"] }
         name: { type: string }
-        kind: { type: string, enum: [dir, file] }
+        kind: { type: string, enum: [dir, file, shortcut], description: "A shortcut points to another node; see target." }
         size: { type: integer, minimum: 0, description: Bytes, for a file. }
         mime_type: { type: string, description: Files only. }
         etag: { type: string, description: "A strong ETag. A file's changes with every write to it, its contents and its record (a rename, a move, a flag). A directory's changes with every write to its record. Send it as If-Match to make a rename or move conditional." }
@@ -3352,6 +3396,15 @@ components:
         owner_id: { type: string, description: "The ID of the user that owns the node." }
         has_link: { type: boolean, description: "Set in a listing of children, and omitted when false: the item carries a link the caller may know of. A visitor never gets it." }
         starred: { type: boolean, description: "The caller's own star on the node. Set for a signed-in user and for a token acting as its user, on stat, listings and the shared list, false when not starred. Absent for keys, admins and link visitors." }
+        color: { type: string, description: "A directory's palette colour; absent when none, and absent for a link visitor." }
+        description: { type: string, description: "The item's plain-text description; absent when none, and absent for a link visitor." }
+        target:
+          type: object
+          description: "A shortcut's target, for a caller who reaches it. Absent otherwise, and never shown to a caller who does not. A link visitor gets no target."
+          properties:
+            id: { type: string }
+            kind: { type: string, enum: [file, dir] }
+        unavailable: { type: boolean, description: "Set on a shortcut whose target the caller cannot reach or that was purged. It says nothing about why, and the target's ID is never shown." }
 
     StarredItem:
       description: A starred node, with when the caller starred it.
@@ -3489,6 +3542,13 @@ components:
         name: { type: string, minLength: 1, maxLength: 255 }
         no_download: { type: boolean }
         editors_can_share: { type: boolean }
+        color:
+          type: [string, "null"]
+          description: A palette name for a directory, or null or "" to clear it. Needs the editor role.
+          enum: [red, orange, yellow, green, teal, blue, indigo, purple, pink, brown, slate, grey, null]
+        description:
+          type: [string, "null"]
+          description: Plain text, at most 1000 characters; control characters other than line breaks are removed. Empty or null clears it. Needs the editor role.
 
     Transfer:
       type: object

@@ -999,6 +999,41 @@ admin get `forbidden`, as `/shared` gives it, and a link visitor is refused by t
 - **Pages of stars and recent items.** A page is read at the requested size and then listed after the reach check, so a
   page can come back shorter than its limit, as `/shared` does, and `next_cursor` still follows the rows read.
 
+### Shortcuts, colours and descriptions (p3)
+
+**Shortcuts.** A shortcut is a node of kind `shortcut`, with size 0. It points to a file or a directory of the same
+account through `target_id`. It grants nothing: opening it reads its target under the caller's own access, and the
+access rules never read `target_id`. A shortcut has no content and no children, and it cannot be a parent: nothing is
+made, uploaded or moved into it. It takes no quota, since the counters count `kind = 'file'` only.
+
+- A target the caller cannot reach, whether missing, trashed, moved out of reach, purged, or in another account, gives
+  the same answer: `not_found` on creation, and on a read `unavailable: true` with no `target`. The target's ID is
+  never shown to such a caller.
+- A target that is a shortcut, or a folder's root, is `invalid_request`.
+- A target trashed or purged changes what the shortcut shows, and a purge sets `target_id` to NULL.
+- A copy of a shortcut is a new shortcut to the same target. A copy of a tree copies its shortcuts, never their targets.
+- A permission on a shortcut shows it to the person it names, and grants no reach to the target.
+- A shortcut cannot be shared by link. Its target can.
+
+**Colours and descriptions.** A directory's colour is one of the twelve palette names (`store.Colors`). A description is
+plain text of at most 1000 characters; control characters other than line breaks are removed, and it is stored and sent
+as text. Editors set both with `PATCH /nodes/{nod}`, and every signed-in reader sees them. A link visitor never does: a
+description may hold notes the sharer did not mean to publish. A copy
+keeps both.
+
+**Rebuild and operators.** Migration 0019 rebuilds the `nodes` table, because the kind CHECK must change. The runner
+runs that migration with foreign keys off (the directive on its first line), so the rebuild does not cascade into
+permissions, uploads, versions, share links, access requests, stars or recent items. The migration runs in one
+transaction, runs `PRAGMA foreign_key_check` before the commit, and rolls back on any violation. Foreign keys are on
+again afterwards. The rebuild takes time in proportion to the number of nodes. **An operator must back up the database
+file before starting a version with migration 0019**: the server does not make a backup, and a failed migration rolls
+back, but a backup is still the only recovery from a bad disk or an interrupted copy.
+
+**Kind comparisons.** Every comparison of a node's kind in `internal/api` and `internal/store` is listed in
+`TestNodeKindComparisonsAreReviewed` (`internal/api/kind_guard_test.go`), with its count per file. A new comparison
+fails that test until a reviewer decides it. Where a check accepts only a file or a directory, a shortcut is refused
+(fail closed), as the decision list in section 15 (decision 24, p3) records.
+
 ### Accepted limits
 
 These were reviewed in the slice n1 security review and accepted for now. They have no code of their own.
@@ -1135,6 +1170,9 @@ Files                                      any caller, limited to what it may re
   GET    /starred                          the caller's starred nodes, newest star first, with `starred_at` (users only) (p2)
   GET    /recent                           the caller's recent nodes, latest first, with `viewed_at`, `edited_at` and `last_at` (users only) (p2)
   DELETE /recent, DELETE /recent/{nod}     clear the recent list, or remove one entry (users only; 204) (p2)
+  POST   /nodes/{nod}/shortcuts            make a shortcut in a directory: {target, name?}; contributor on the directory, reach of the target; 201 (p3)
+  PATCH  /nodes/{nod}                      + color (a palette name on a directory, or null) and description (plain text, at most 1000 characters, or null or ""); editor (p3)
+  GET    /nodes/{nod}, listings            a node carries color and description; a shortcut carries target {id, kind} when the caller reaches the target, and unavailable: true when it does not or the target is gone (p3)
   GET    /directory?q=&kind=user|group|all people and groups of the account, for the share dialog (k3). Any user by session, and the account key; admins and every delegated token get `forbidden`, since a token is narrowed to its folders. `q` is 2 to 100 characters after trimming; a user matches by its email local part (prefix) or its name (substring), a group by its name (substring); `%` and `_` are literal. Active users only; at most 20 entries; rate limited per caller. Each entry carries only ID, kind, name and, for a user, email
   GET    /folders/{fld}/children?path=/a/b list a directory by path
   GET    /nodes/{nod}                      stat: name, size, mime_type, etag, modified_at, sha256
@@ -1679,7 +1717,7 @@ checks the installation admin role (`isAdmin`); a page the person may not open i
 | `hidden_folders` | user_id, folder_id, created_at; primary key (user_id, folder_id). A user's own list of hidden team spaces, which changes no access |
 | `stars` | user_id (cascade), node_id (cascade), account_id (cascade), created_at; primary key (user_id, node_id). A user's private bookmarks, at most 5000 per user (p2) |
 | `recent` | user_id (cascade), node_id (cascade), account_id (cascade), viewed_at and edited_at (either may be null, not both), last_at; primary key (user_id, node_id). A user's private last view and edit of a file, pruned by the sweep (p2) |
-| `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind, size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors), trashed_at and trashed_by (set on a trash root only), trashed_name_key (the name key before the trash) |
+| `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind (dir, file or shortcut), size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors), trashed_at and trashed_by (set on a trash root only), trashed_name_key (the name key before the trash), color (a palette name, directories only), description (at most 1000 characters), target_id (a shortcut's target; set NULL when the target is purged) (p3) |
 | `versions` | id (`ver_`), account_id, node_id, blob_id, size, sha256, etag, mime_type, created_at and created_by (when that content was first written), replaced_at and replaced_by, label (at most 100 characters), keep_forever (0 or 1); indexed by (node_id, created_at) |
 | `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
 | `uploads` | id, account_id, target (folder_id, parent_id or dir_path, parents, name, name_key, on_conflict, mime_type), length, durable_offset, hash_state, blob_id, created_by, created_kind, expires_at; uploader_name (100), uploader_email (254) and visitor_id, for uploads through a drop link (o3) |
@@ -1801,7 +1839,7 @@ Each slice ships with tests and leaves the server runnable.
 | v3 | React sharing interface: Shared, Requests, OpenLink, the public browse and drop pages, the share dialog and its parts, hidden spaces and space settings | Built |
 | v4a | React rest: Home, Starred, Recent, Storage, the owner pages (Manage) and the installation admin pages (Admin) | Built |
 | v4b | The flip: removes the Svelte app and moves `webui/` to `web/` | Planned |
-| p3 | Shortcuts, folder colours and descriptions | Planned |
+| p3 | Shortcuts, folder colours and descriptions (decision 24). The Go part is built, with migration 0019 (the `nodes` rebuild); the pages follow in React after the `webui/` to `web/` rename | Built (Go part) |
 | p4 | Labels: typed fields the owner defines | Planned |
 | p5 | The OpenAPI file, the design record and a security review of slice p | Planned |
 | pg | PostgreSQL as an option for the metadata store (decision 7). It lands before q, whose full-text search gains from it | Planned |
@@ -2092,6 +2130,97 @@ Decided on approval:
     - The sweep's Recent limits (30 days, 500 per user) are constants, not settings.
     - Both new tables cascade from accounts, users and nodes, as the other tables do. Purging a node or deleting a user
       therefore removes its stars and recent entries with no extra code.
+    Interpretations made in p3, for review (the owner has not decided them):
+    - The palette is twelve names: red, orange, yellow, green, teal, blue, indigo, purple, pink, brown, slate, grey. A colour
+      belongs to a directory only; a colour on a file or a shortcut is `invalid_request`. A folder's root may carry a
+      description, and the palette is checked in the API and by the migration's CHECK.
+    - Link visitors do not see colour or description, on a stat or in a listing. Decision 6's "every reader" means the
+      signed-in readers of the item, and section 6 of the proposal strips both for visitors. The lead corrected this
+      reading on review (2026-10-30): a description may hold private notes that the sharer did not mean to publish.
+    - A link visitor's listing leaves shortcuts out. A visitor's stat of a shortcut gives its name and kind only: no
+      `target` and no `unavailable`.
+    - `target` is omitted, not sent as null, when the caller does not reach the target. `unavailable: true` marks the
+      shortcut in both cases (unreachable, and purged). A target's `kind` is given only to a caller who reaches it.
+    - A shortcut cannot point at a shortcut or at a folder's root. The proposal did not say so; both are refused.
+    - A shortcut's name defaults to its target's. When a name is taken, the "name (n).ext" rename treats a shortcut like a
+      directory, so it gets no extension split.
+    - A shortcut cannot be shared by link (`invalid_request`). Permissions on a shortcut are allowed and show it only.
+    - Creation is audited as `node.shortcut`, with the target's ID in the details. A colour change is audited as
+      `node.appearance` with the new colour (null when cleared); a description change records only "changed" or
+      "cleared", never the text.
+    - A description change bumps the ETag of a file and the modified time, as a rename does.
+    - `PATCH` takes a tri-state colour and description: absent leaves them, null or "" clears them. A description is
+      refused when it is not valid UTF-8 or is over 1000 characters (counted after the control characters are removed).
+    - A copy of a shortcut keeps its target and does not check the copier's reach to it: the copy shows unavailable where
+      the copier cannot reach the target, so the copy reveals nothing.
+    - Recent records no edit for a shortcut, since it has no contents.
+    - An ownership transfer of a shortcut takes the same path as any node's. Not tested; a shortcut holds no bytes, so none move.
+    - Migration 0019 rebuilds the `nodes` table. Its backup note is in section 8 (p3). Its SQL is in
+      `internal/store/migrations/0019_shortcuts.sql`.
+    - Kind comparisons (node kind, Go and SQL, 48 in 16 files, counted by the guard test). The proposal said 31; I could not
+      reproduce 31, and the guard counts every match of the pattern in `internal/api` and `internal/store`, excluding folder,
+      job and principal kinds. The decision for each is:
+      - *Usage and counters (SQL `kind = 'file'`, shortcut counted as nothing, so no quota):* `store/nodes.go` subtree files
+        (2), `store/usage.go` recount (2), `store/sharing.go` totals (2), `store/storage.go` largest files (1),
+        `store/folders.go` folder counters (1). Kept as they are.
+      - *Content and ETag, file only:* `api/nodes.go` `nodeETag` (77), the rename ETag (912), PUT content (1024),
+        `api/transfer.go` copy ETag and bytes (305) and move ETag (396), `api/versions.go` (81, 103, 125), `api/download.go`
+        (400), `api/links.go` link create and link content (326, 381), `api/views.go` view recording (153), and
+        `store/nodes.go` InsertNode content tag (305). A shortcut is refused by each refusal and takes no ETag or bytes of
+        its own. Kept.
+      - *Directory-only checks (refuse a shortcut):* `api/access.go` anchorDir (341), `api/nodes.go` walkDirs and
+        walkDirsTx (276, 293), handleListNodeChildren (545), mkdir's existing-directory check (643: a shortcut is a name
+        clash), `api/uploads.go` upload parent (340, 500), `api/tokens.go` token node scope (436), `api/transfer.go`
+        move and copy destination (98), `api/share_links.go` drop link (374). Each refuses a shortcut, `invalid_request` or
+        a path error. Kept.
+      - *New, for the shortcut kind:* `api/nodes.go` toNodeJSON default `unavailable` (223), the shortcut-only children
+        refusal (542), the visitor listing omission (468), the colour-on-directory rule (879); `api/shortcuts.go` target
+        lookups (39, 79), the creation directory check (121, 144) and the target-is-not-a-shortcut check (194); and
+        `api/share_links.go` link refusal (368). Each is covered by a test in `shortcuts_test.go`.
+      - *Replace and conflicts:* `api/transfer.go` replace (193, two comparisons): a shortcut neither replaces nor is
+        replaced, because replace is only file over file. Kept.
+      - *Name rule:* `api/transfer.go` freeName extension split (207) splits only for a file. Shortcut is treated as a
+        directory; see the name interpretation above.
+      - *Copy edit (review 2026-10-30):* `api/transfer.go` (two new: the sync copy and the queued copy's job) skip the
+        Recent entry when the copied root is a shortcut. A shortcut has no contents, so copying it is not an edit. Kept.
+      - *Request through a shortcut (review 2026-10-30):* `api/access_requests.go` (one new comparison) resolves a request
+        that names a shortcut to its target. Every other request is unchanged. Kept.
+      - *Cycle check:* `api/transfer.go` (149) checks only a directory moved into itself. A shortcut has no children, so it
+        cannot make a cycle. Kept.
+      - *Node-kind in toNodeJSON:* `api/nodes.go` (233) gives MIME and SHA-256 to a file only. A shortcut has neither.
+        Kept.
+    Accepted on the security review of p3 (2026-10-30), recorded without a code change:
+    - A shortcut's default name is its target's name. The creator could see the target and chose to place the shortcut
+      beside it, so the name adds nothing the creator did not have.
+    - Copying a shortcut clones its target without re-checking the copier's reach. An unreachable target shows as
+      unavailable to the copier and grants nothing, so the copy reveals no target.
+    - `foreign_key_check` covers the whole database, so an upgrade is refused while the database holds dangling
+      references from earlier releases. The operator repairs them first; the error names the tables.
+    Request access on a shortcut (decision 5, decided by the lead on review, 2026-10-30; migration 0019):
+      - A request that names a shortcut is filed on its target, resolved on the server. The access request row
+        records the shortcut in `via_node_id` (nullable, `ON DELETE SET NULL`) and keeps `via_shortcut` set. The
+        target's managers receive the request, and approving it grants the target.
+      - The caller must reach the shortcut itself. A shortcut it cannot see, a shortcut with no live target, a missing
+        node, a trashed or foreign target, and a target the caller already reaches all answer the same `202` with no
+        body, and file nothing and mail nothing. A duplicate of a pending request answers the same way. A test pins
+        status and body.
+      - The decision mail to the requester: an approval names the shortcut and links to it only while the requester
+        still reaches it now (checked as the requester, not trashed). If the shortcut is trashed, moved out of reach or
+        deleted (`via_node_id` NULL, `via_shortcut` still 1) after filing, the mail is generic and carries no link. A
+        denial is always generic, with no name and no link, because nothing was granted and a contributor chose the
+        shortcut's name. The mail never falls back to the target's name or link. The generic wording has no empty line
+        where a link would be, in all seven languages (`access_decision` templates, guarded on `.Link`).
+      - Accepted on the second review, no code: a decision mail confirms that the target is live, which is the one place
+        target state shows to a requester; zero-width and line-separator characters stay in descriptions.
+      - The manager's view (`GET /nodes/{nod}/access-requests`) shows the target, as for any request, and no field of
+        the shortcut. `via_node_id` and `via_shortcut` appear in no response.
+      - The request's audit entry and the decision's audit entry name no node when the request came through a shortcut;
+        they record `via_shortcut`. Both are filed under the target's folder, as before.
+    Corrections made on review, with tests: a link visitor gets no colour or description; the `node.shortcut` audit
+      entry carries no target ID; the runner checks `PRAGMA foreign_keys` inside the transaction and reads the mode
+      directive from the first line only; a `foreign_key_check` failure names the tables; bidirectional controls
+      (U+202A-202E, U+2066-2069) are stripped from descriptions, and ZWJ, ZWNJ, LRM and RLM are kept; `""` clears a
+      colour as null does; a copy of a shortcut is not recorded as an edit in Recent, sync or queued.
 25. **React web interface, slice v** (2026-10-30, owner's decisions). It replaces decision 8, and amends decision 22.
     - Stack: React 18.3 and Ant Design 5.29, pinned exactly, with TanStack Query, React Router 7 (the router is
       built on `react-router-dom`), i18next and lucide icons. Node is needed only

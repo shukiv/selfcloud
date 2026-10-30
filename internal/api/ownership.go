@@ -159,6 +159,10 @@ func (s *Server) handleTransferOwnership(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toNodeJSON(out))
+	j := toNodeJSON(out)
+	if err := s.withTargets(r.Context(), principalOf(r), &j); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, j)
 	return nil
 }

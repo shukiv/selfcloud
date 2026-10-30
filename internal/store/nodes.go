@@ -11,11 +11,31 @@ import (
 	"time"
 )
 
-// Node kinds, as the nodes.kind column names them.
+// Node kinds, as the nodes.kind column names them. A shortcut points to another node (TargetID) and
+// grants nothing; it has no content and no children.
 const (
-	KindDir  = "dir"
-	KindFile = "file"
+	KindDir      = "dir"
+	KindFile     = "file"
+	KindShortcut = "shortcut"
 )
+
+// Colors is the palette a directory's colour is taken from, in display order. The names are stored; the
+// interface shows and translates them. The migration 0019 CHECK repeats this list.
+var Colors = []string{"red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink",
+	"brown", "slate", "grey"}
+
+// ValidColor reports whether name is a palette colour.
+func ValidColor(name string) bool {
+	for _, c := range Colors {
+		if c == name {
+			return true
+		}
+	}
+	return false
+}
+
+// MaxDescriptionChars is the longest description a node may carry, in characters.
+const MaxDescriptionChars = 1000
 
 // Node is an entry of a folder's file tree: a directory, a file, or a folder's root (a directory
 // with no parent and the empty name).
@@ -26,7 +46,7 @@ type Node struct {
 	ParentID  string // "" for a folder's root
 	Name      string // NFC; "" for a root
 	NameKey   string
-	Kind      string // KindDir or KindFile
+	Kind      string // KindDir, KindFile or KindShortcut
 	Size      int64
 	MimeType  string
 	BlobID    string // files only
@@ -51,6 +71,13 @@ type Node struct {
 	TrashedAt      *time.Time
 	TrashedBy      string
 	TrashedNameKey string
+	// Color is a palette name on a directory, or "" for none. Description is plain text, or "" for none.
+	// Both belong to the item: every reader sees them, and editors set them.
+	Color       string
+	Description string
+	// TargetID is the node a shortcut points to, or "" for a node that is not a shortcut, and for a shortcut
+	// whose target was purged. It is set when the shortcut is made and never changed after.
+	TargetID string
 }
 
 // NewContentTag returns a fresh random content tag: 16 random bytes, base64url.
@@ -69,11 +96,12 @@ func (n *Node) IsRoot() bool { return n.ParentID == "" }
 const nodeSelect = `SELECT n.id, n.account_id, n.folder_id, n.parent_id, n.name, n.name_key, n.kind,
 	n.size, n.mime_type, n.blob_id, COALESCE(b.sha256, ''), n.etag, n.content_tag, n.created_at, n.modified_at,
 	n.created_by, n.modified_by, n.owner_id, n.no_download, n.editors_can_share,
-	n.trashed_at, n.trashed_by, n.trashed_name_key
+	n.trashed_at, n.trashed_by, n.trashed_name_key, n.color, n.description, n.target_id
 	FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id AND b.account_id = n.account_id`
 
 const nodeCols = `id, account_id, folder_id, parent_id, name, name_key, kind, size, mime_type, blob_id,
-	etag, content_tag, created_at, modified_at, created_by, modified_by, owner_id, no_download, editors_can_share`
+	etag, content_tag, created_at, modified_at, created_by, modified_by, owner_id, no_download, editors_can_share,
+	color, description, target_id`
 
 func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	var n Node
@@ -81,9 +109,10 @@ func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	var created, modified int64
 	var noDownload, editorsCanShare int64
 	var trashed sql.NullInt64
+	var color, desc, target sql.NullString
 	err := row.Scan(&n.ID, &n.AccountID, &n.FolderID, &parent, &n.Name, &n.NameKey, &n.Kind, &n.Size,
 		&n.MimeType, &blob, &n.SHA256, &n.ETag, &n.ContentTag, &created, &modified, &n.CreatedBy, &n.ModifiedBy, &n.OwnerID,
-		&noDownload, &editorsCanShare, &trashed, &n.TrashedBy, &n.TrashedNameKey)
+		&noDownload, &editorsCanShare, &trashed, &n.TrashedBy, &n.TrashedNameKey, &color, &desc, &target)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -97,6 +126,7 @@ func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	n.NoDownload = noDownload == 1
 	n.EditorsCanShare = editorsCanShare == 1
 	n.TrashedAt = fromNullMillis(trashed)
+	n.Color, n.Description, n.TargetID = color.String, desc.String, target.String
 	return &n, nil
 }
 
@@ -278,26 +308,30 @@ func (tx *Tx) InsertNode(ctx context.Context, n *Node) error {
 	}
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), ?), ?, ?)`,
+			COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), ?), ?, ?,
+			?, ?, ?)`,
 		n.ID, n.AccountID, n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Kind, n.Size,
 		n.MimeType, nullString(n.BlobID), n.ETag, n.ContentTag, millis(n.CreatedAt), millis(n.ModifiedAt),
-		n.CreatedBy, n.ModifiedBy, n.FolderID, owner, boolInt(n.NoDownload), boolInt(n.EditorsCanShare))
+		n.CreatedBy, n.ModifiedBy, n.FolderID, owner, boolInt(n.NoDownload), boolInt(n.EditorsCanShare),
+		nullString(n.Color), nullString(n.Description), nullString(n.TargetID))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
 	return err
 }
 
-// UpdateNode writes the mutable fields of n: parent, folder, name, content and times. It returns
+// UpdateNode writes the mutable fields of n: parent, folder, name, content, times, the sharing flags, the colour
+// and the description. A shortcut's target is set once, by InsertNode, and is not written here. It returns
 // ErrNotFound if the node is not in the account, and ErrConflict on a sibling name clash.
 func (tx *Tx) UpdateNode(ctx context.Context, n *Node) error {
 	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET folder_id = ?, parent_id = ?, name = ?,
 		name_key = ?, size = ?, mime_type = ?, blob_id = ?, etag = ?, content_tag = ?, modified_at = ?, modified_by = ?,
-		owner_id = CASE WHEN ? = '' THEN owner_id ELSE ? END, no_download = ?, editors_can_share = ?
+		owner_id = CASE WHEN ? = '' THEN owner_id ELSE ? END, no_download = ?, editors_can_share = ?,
+		color = ?, description = ?
 		WHERE account_id = ? AND id = ?`,
 		n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Size, n.MimeType, nullString(n.BlobID),
 		n.ETag, n.ContentTag, millis(n.ModifiedAt), n.ModifiedBy, n.OwnerID, n.OwnerID, boolInt(n.NoDownload),
-		boolInt(n.EditorsCanShare), n.AccountID, n.ID))
+		boolInt(n.EditorsCanShare), nullString(n.Color), nullString(n.Description), n.AccountID, n.ID))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}

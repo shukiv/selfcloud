@@ -197,6 +197,13 @@ func (s *Server) handleListStarred(w http.ResponseWriter, r *http.Request) error
 		j.Starred = &starred
 		out.Items = append(out.Items, starredItem{nodeJSON: j, StarredAt: st.CreatedAt})
 	}
+	ptrs := make([]*nodeJSON, len(out.Items))
+	for i := range out.Items {
+		ptrs[i] = &out.Items[i].nodeJSON
+	}
+	if err := s.withTargets(ctx, p, ptrs...); err != nil {
+		return err
+	}
 	if len(stars) == page.Limit {
 		out.NextCursor = store.StarCursor(stars[len(stars)-1])
 	}

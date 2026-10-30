@@ -103,6 +103,7 @@ func (s *Server) handleCreateAccessRequest(w http.ResponseWriter, r *http.Reques
 	var created *store.AccessRequest
 	var node *store.Node
 	var folder *store.Folder
+	var via *store.Node // the shortcut the request came through, when it names one
 	mute := false
 	s.atWrite()
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
@@ -118,6 +119,29 @@ func (s *Server) handleCreateAccessRequest(w http.ResponseWriter, r *http.Reques
 		}
 		if err != nil {
 			return err
+		}
+		// A request that names a shortcut is filed on its target, and the shortcut is recorded on it. The caller
+		// must reach the shortcut: one it cannot see answers as a missing node does. A shortcut with no live
+		// target answers the same way too, so the answer tells nothing about the target.
+		if n.Kind == store.KindShortcut {
+			if _, _, err := nodeAccessWith(ctx, tx, p, n.ID); err != nil {
+				if apierr.From(err).Code == apierr.NotFound {
+					return nil
+				}
+				return err
+			}
+			if n.TargetID == "" {
+				return nil
+			}
+			target, err := tx.Node(ctx, p.AccountID, n.TargetID)
+			if errors.Is(err, store.ErrNotFound) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			via = n
+			n = target
 		}
 		// A node in the trash does not exist for this purpose: nothing is recorded, as for a missing node.
 		if self, above, err := tx.TrashState(ctx, n.AccountID, n.ID); err != nil {
@@ -151,6 +175,9 @@ func (s *Server) handleCreateAccessRequest(w http.ResponseWriter, r *http.Reques
 		}
 		req := &store.AccessRequest{ID: id.New("arq"), AccountID: n.AccountID, NodeID: n.ID, UserID: u.ID,
 			Role: in.Role, Message: in.Message, Status: store.RequestPending, CreatedAt: store.Now()}
+		if via != nil {
+			req.ViaNodeID, req.ViaShortcut = via.ID, true
+		}
 		recent, err := tx.RecentAccessRequest(ctx, n.ID, u.ID, store.Now().Add(-recentRequestWindow))
 		if err != nil {
 			return err
@@ -162,8 +189,15 @@ func (s *Server) handleCreateAccessRequest(w http.ResponseWriter, r *http.Reques
 		if stored.ID != req.ID {
 			return nil // a repeat collapsed into the pending request: no new row, no audit entry, no mail
 		}
+		// The entry is filed under the target's folder and names the request, not the target: a reader of the
+		// shortcut's folder audit must not learn the target's ID from it. A request through a shortcut records
+		// only that it came through one.
+		details := map[string]any{"node": n.ID, "role": in.Role}
+		if via != nil {
+			details = map[string]any{"role": in.Role, "via_shortcut": true}
+		}
 		if err := tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "access.request", stored.ID,
-			map[string]any{"node": n.ID, "role": in.Role}, n.FolderID)); err != nil {
+			details, n.FolderID)); err != nil {
 			return err
 		}
 		created, node, folder = stored, n, f
@@ -409,8 +443,12 @@ func (s *Server) decideRequest(w http.ResponseWriter, r *http.Request, approve b
 			return err
 		}
 		out = req
-		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, action, req.ID,
-			map[string]any{"node": n.ID, "user": req.UserID, "role": req.Role}, n.FolderID))
+		details := map[string]any{"node": n.ID, "user": req.UserID, "role": req.Role}
+		if req.ViaShortcut {
+			// As the request's own entry: a request through a shortcut names no node.
+			details = map[string]any{"user": req.UserID, "role": req.Role, "via_shortcut": true}
+		}
+		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, action, req.ID, details, n.FolderID))
 	})
 	if err != nil {
 		return err
@@ -487,12 +525,47 @@ func (s *Server) mailDecision(ctx context.Context, p *auth.Principal, n *store.N
 	name := mailText(itemName(n, f))
 	link := s.nodeLink(n.ID)
 	approved := req.Status == store.RequestApproved
+	// A request that came through a shortcut never names the target to the requester. A denial names nothing and links
+	// to nothing: nothing was granted, and a contributor chose the shortcut's name. An approval names the shortcut and
+	// links to it only while the requester still reaches it; otherwise the mail is generic and carries no link.
+	if req.ViaShortcut {
+		name, link = "", ""
+		if approved {
+			if sc, ok := s.shortcutForDecision(ctx, n.AccountID, req); ok {
+				name, link = mailText(sc.Name), s.nodeLink(sc.ID)
+			}
+		}
+	} else if !approved {
+		name = "" // a denial of a plain request names no item, as before
+	}
 	s.sendEach(ctx, p, users, s.requestBudget(n.AccountID), func(u *store.User) (string, string, error) {
 		item := name
-		if !approved {
+		if name == "" {
 			item = mail.GenericItemLabel(u.Locale)
 		}
 		return s.templates.Render("access_decision", u.Locale, decisionData{Actor: actor, Item: item,
 			Role: mail.RoleLabel(u.Locale, req.Role), Link: link, Approved: approved})
 	})
+}
+
+// shortcutForDecision returns the shortcut a request came through, when an approval mail may name it: the shortcut
+// is live, not trashed, and the requester reaches it now. A requester that is no longer active, or no longer reaches
+// the shortcut (moved, or its folder shared away), gets the generic wording instead.
+func (s *Server) shortcutForDecision(ctx context.Context, accountID string, req *store.AccessRequest) (*store.Node, bool) {
+	if req.ViaNodeID == "" {
+		return nil, false
+	}
+	u, err := s.store.User(ctx, accountID, req.UserID)
+	if err != nil || u.Status != store.UserActive {
+		return nil, false
+	}
+	sc, err := s.store.Node(ctx, accountID, req.ViaNodeID)
+	if err != nil || sc.TrashedAt != nil {
+		return nil, false
+	}
+	p := &auth.Principal{Kind: auth.KindUser, ID: u.ID, AccountID: u.AccountID, UserID: u.ID, Role: u.Role}
+	if _, _, err := nodeAccessWith(ctx, s.store, p, sc.ID); err != nil {
+		return nil, false
+	}
+	return sc, true
 }

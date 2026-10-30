@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package api
+
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+// nodeKindSite matches a comparison of a node's kind with one of the kinds, in Go or in SQL. The kinds are dir, file
+// and shortcut. Folder kinds (team, personal), job kinds and principal kinds never match.
+// Each match is one comparison, so a line with two of them counts twice.
+var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)\s*(?:store\.|')?(?:Kind(?:Dir|File|Shortcut)|dir|file|shortcut)'?` +
+	`|(?:==|!=|<>|=)\s*store\.Kind(?:Dir|File|Shortcut)\b`)
+
+// reviewedNodeKindSites is how many node-kind comparisons each file holds, as reviewed for slice p3. Each one was read
+// and decided: a check that accepts only a file or a directory refuses a shortcut (fails closed), and an SQL count of
+// bytes counts files only, so a shortcut takes no quota. A new comparison, or a moved one, changes a count here, and
+// the reviewer decides it again before the count is updated. docs/design.md section 15 (decision 24, p3) records them.
+var reviewedNodeKindSites = map[string]int{
+	"internal/api/access.go":          1,
+	"internal/api/access_requests.go": 1,
+	"internal/api/download.go":        1,
+	"internal/api/links.go":           2,
+	"internal/api/nodes.go":           12,
+	"internal/api/share_links.go":     2,
+	"internal/api/shortcuts.go":       5,
+	"internal/api/tokens.go":          1,
+	"internal/api/transfer.go":        9,
+	"internal/api/uploads.go":         2,
+	"internal/api/versions.go":        3,
+	"internal/api/views.go":           1,
+	"internal/store/folders.go":       1,
+	"internal/store/nodes.go":         3,
+	"internal/store/sharing.go":       2,
+	"internal/store/storage.go":       1,
+	"internal/store/usage.go":         2,
+}
+
+// TestNodeKindComparisonsAreReviewed fails when a node-kind comparison appears, moves or goes in internal/api or
+// internal/store without the count above being updated by a reviewer. It is the mechanical half of the slice p3 review:
+// the decisions are in the design record, and this test keeps them from drifting.
+func TestNodeKindComparisonsAreReviewed(t *testing.T) {
+	root := filepath.Join("..", "..")
+	got := map[string]int{}
+	for _, dir := range []string{"internal/api", "internal/store"} {
+		entries, err := os.ReadDir(filepath.Join(root, dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(root, dir, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n := len(nodeKindSite.FindAllString(string(b), -1)); n > 0 {
+				got[dir+"/"+name] = n
+			}
+		}
+	}
+	for file, n := range got {
+		if reviewedNodeKindSites[file] != n {
+			t.Errorf("%s has %d node-kind comparisons, reviewed %d: review each one, then update reviewedNodeKindSites",
+				file, n, reviewedNodeKindSites[file])
+		}
+	}
+	for file, n := range reviewedNodeKindSites {
+		if got[file] != n {
+			t.Errorf("%s has %d node-kind comparisons now, reviewed %d", file, got[file], n)
+		}
+	}
+}

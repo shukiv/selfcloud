@@ -174,7 +174,13 @@ type migration struct {
 	version int
 	name    string
 	sql     string
+	// foreignKeysOff runs the migration with foreign keys off, which a table rebuild needs: with them on,
+	// DROP TABLE on a parent deletes the children through their cascades. See applyMigration.
+	foreignKeysOff bool
 }
+
+// foreignKeysOffDirective is the line a migration carries to ask for foreign keys off.
+const foreignKeysOffDirective = "-- runner: foreign_keys=off"
 
 func loadMigrations() ([]migration, error) {
 	entries, err := fs.ReadDir(migrationFS, "migrations")
@@ -192,7 +198,7 @@ func loadMigrations() ([]migration, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, migration{version: v, name: e.Name(), sql: string(b)})
+		out = append(out, migration{version: v, name: e.Name(), sql: string(b), foreignKeysOff: hasDirective(b)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].version < out[j].version })
 	for i := range out {
@@ -230,20 +236,110 @@ func (s *Store) migrate(ctx context.Context) error {
 		return fmt.Errorf("store: database schema version %d is newer than this binary knows (%d); "+
 			"run a newer selfcloud", current, len(migrations))
 	}
-	for _, m := range migrations[current:] {
-		err := s.write(ctx, func(tx *sql.Tx) error {
-			if _, err := tx.ExecContext(ctx, m.sql); err != nil {
-				return err
-			}
-			_, err := tx.ExecContext(ctx,
-				"INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-				m.version, m.name, now())
-			return err
-		})
-		if err != nil {
+	return s.applyMigrations(ctx, migrations[current:])
+}
+
+// hasDirective reports whether a migration asks the runner for foreign keys off. Only the first line counts: the
+// same text later in the file is a comment.
+func hasDirective(b []byte) bool {
+	first, _, _ := strings.Cut(string(b), "\n")
+	return strings.TrimSpace(first) == foreignKeysOffDirective
+}
+
+// applyMigrations runs migs in order, each in its own transaction.
+func (s *Store) applyMigrations(ctx context.Context, migs []migration) error {
+	for _, m := range migs {
+		if err := s.applyMigration(ctx, m); err != nil {
 			return fmt.Errorf("store: migration %s: %w", m.name, err)
 		}
 		s.log.Info("applied migration", "name", m.name)
+	}
+	return nil
+}
+
+// applyMigration runs one migration and records it, in one transaction. A migration with foreignKeysOff
+// runs with foreign keys off, which PRAGMA cannot change inside a transaction, so it is switched off on the
+// writer connection first. Before the commit, PRAGMA foreign_key_check must find no row: a rebuild that left
+// a dangling reference is rolled back. Foreign keys go back on whatever happened.
+func (s *Store) applyMigration(ctx context.Context, m migration) (err error) {
+	if m.foreignKeysOff {
+		if _, err := s.w.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+			return err
+		}
+		defer func() {
+			// The rebuild has committed or rolled back by now, so it is safe to turn the checks back on.
+			if _, ferr := s.w.ExecContext(context.WithoutCancel(ctx), "PRAGMA foreign_keys = ON"); ferr != nil && err == nil {
+				err = ferr
+			}
+		}()
+	}
+	return s.write(ctx, func(tx *sql.Tx) error {
+		if m.foreignKeysOff {
+			if err := requireForeignKeysOff(ctx, tx); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, m.sql); err != nil {
+			return err
+		}
+		if m.foreignKeysOff {
+			if err := foreignKeyCheck(ctx, tx); err != nil {
+				return err
+			}
+		}
+		_, err := tx.ExecContext(ctx,
+			"INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+			m.version, m.name, now())
+		return err
+	})
+}
+
+// requireForeignKeysOff refuses a migration transaction that starts with foreign keys on. PRAGMA foreign_keys
+// does nothing inside a transaction, so the runner switches it off before BEGIN; if that did not take, a
+// DROP TABLE would cascade into the child tables, and the check after the rebuild could not see the rows lost.
+func requireForeignKeysOff(ctx context.Context, tx *sql.Tx) error {
+	var on int
+	if err := tx.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&on); err != nil {
+		return err
+	}
+	if on != 0 {
+		return fmt.Errorf("foreign keys are on inside the migration's transaction; a rebuild would cascade into other tables")
+	}
+	return nil
+}
+
+// foreignKeyCheck fails when PRAGMA foreign_key_check reports any row inside tx. The error names the tables with
+// violations, so an operator knows where to look; it covers the whole database, so a database that already holds
+// dangling references cannot be upgraded until they are repaired.
+func foreignKeyCheck(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	tables := map[string]int{}
+	n := 0
+	for rows.Next() {
+		var table, parent string
+		var rowid sql.NullInt64
+		var fkid int
+		if err := rows.Scan(&table, &rowid, &parent, &fkid); err != nil {
+			return err
+		}
+		tables[table]++
+		n++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if n > 0 {
+		names := make([]string, 0, len(tables))
+		for t := range tables {
+			names = append(names, fmt.Sprintf("%s (%d)", t, tables[t]))
+		}
+		sort.Strings(names)
+		return fmt.Errorf("%d foreign key violations after the rebuild in %s; the migration is rolled back",
+			n, strings.Join(names, ", "))
 	}
 	return nil
 }

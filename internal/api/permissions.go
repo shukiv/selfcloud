@@ -474,6 +474,9 @@ func (s *Server) handleSharedWithMe(w http.ResponseWriter, r *http.Request) erro
 	for i := range items {
 		ptrs[i] = &items[i].nodeJSON
 	}
+	if err := s.withTargets(ctx, p, ptrs...); err != nil {
+		return err
+	}
 	if err := s.withStarred(r, p.UserID, ptrs); err != nil {
 		return err
 	}

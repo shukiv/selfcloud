@@ -177,6 +177,26 @@ func TestNoteAndDecisionOutcomes(t *testing.T) {
 	}
 }
 
+// TestDecisionWithoutLinkRendersCleanly: a decision with no link (a denial through a shortcut, or a deleted shortcut)
+// leaves no empty line where the link would be, in every language and for both outcomes.
+func TestDecisionWithoutLinkRendersCleanly(t *testing.T) {
+	tpl, err := NewTemplates("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range locale.Supported {
+		for _, approved := range []bool{true, false} {
+			_, body, err := tpl.Render(PurposeAccessDecision, code, mailData{Actor: "Dana Levi", Item: GenericItemLabel(code), Role: "editor", Approved: approved})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(body, "\n\n\n") || strings.Contains(body, "  \n") {
+				t.Errorf("access_decision/%s approved=%v leaves an empty line without a link: %q", code, approved, body)
+			}
+		}
+	}
+}
+
 // TestSubjectHasNoLineBreak checks that a subject is one line even when the data holds line breaks,
 // which is how a caller could otherwise add a mail header.
 func TestSubjectHasNoLineBreak(t *testing.T) {
