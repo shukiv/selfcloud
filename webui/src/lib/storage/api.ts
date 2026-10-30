@@ -2,6 +2,7 @@
 
 // The storage calls. Each is a thin call through api(); the server checks every rule. Ids in a path are encoded.
 import { userWritable } from '../store';
+import { sessionChanged } from '../session';
 import { api } from '../api';
 import type { Page } from '../files/types';
 import { pageQuery, type MeStorage } from './logic';
@@ -11,8 +12,9 @@ export const myStorage = userWritable<MeStorage | null>(null);
 
 // refreshMyStorage reads GET /me and keeps only its storage block.
 export async function refreshMyStorage(): Promise<void> {
+  const changed = sessionChanged();
   const me = await api<{ storage?: MeStorage }>('GET', '/api/v1/me');
-  myStorage.set(me.storage ?? null);
+  if (!changed()) myStorage.set(me.storage ?? null);
 }
 
 // A file in a listing. in_trash is true when the file is in the trash, or below a trashed directory.

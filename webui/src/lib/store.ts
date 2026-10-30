@@ -34,6 +34,7 @@ function changed(a: unknown, b: unknown): boolean {
 const userResets: Array<() => void> = [];
 
 // userWritable is writable for data that belongs to the signed-in person. It is emptied on every change of session.
+// The reset runs once, so whoever fills one after an await checks sessionChanged() first (lateWrites.test.ts).
 export function userWritable<T>(initial: T): Writable<T> {
   const store = writable(initial);
   userResets.push(() => store.set(initial));
