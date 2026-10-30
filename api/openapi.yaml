@@ -459,6 +459,127 @@ paths:
         "204": { description: Revoked. }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/accounts/{acc}/webhooks:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    post:
+      tags: [Webhooks]
+      operationId: createWebhook
+      summary: Register a webhook endpoint
+      description: |
+        Account key only. The secret is in this answer and nowhere else: store it at once. The URL must be
+        HTTPS (HTTP only where the operator allows it), with no user name and no fragment. A refused URL
+        is never echoed back. An account holds at most 100 endpoints; a create beyond that is a conflict
+        with `reason: limit`. The answer is `Cache-Control: no-store`.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookCreate" }
+      responses:
+        "201":
+          description: Created, with the secret.
+          headers:
+            Location: { schema: { type: string } }
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookShown" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Webhooks]
+      operationId: listWebhooks
+      summary: List the webhook endpoints of the account
+      description: |
+        The account key and an owner of the account. No secret is ever returned. The account key sees the full
+        `url`; an owner sees only its scheme, host and port, because the URL may hold a token in its path or
+        query.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The endpoints, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/webhooks/{hook}:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/hook"
+    get:
+      tags: [Webhooks]
+      operationId: getWebhook
+      summary: Read one webhook endpoint
+      description: |
+        The account key and an owner of the account. No secret is ever returned. The account key sees the full
+        `url`; an owner sees only its scheme, host and port, because the URL may hold a token in its path or
+        query.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The endpoint.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Webhooks]
+      operationId: updateWebhook
+      summary: Change a webhook endpoint
+      description: |
+        Account key only. A disabled endpoint changes state only with a new URL in the same request; a state
+        change alone is a conflict, whatever the disabled reason. An unchanged URL keeps the state and the
+        reason. A new URL clears the failure count and the disabled reason. Rotating the secret of a disabled
+        endpoint pauses it.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookUpdate" }
+      responses:
+        "200":
+          description: The endpoint.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Webhooks]
+      operationId: deleteWebhook
+      summary: Delete a webhook endpoint
+      description: Account key only. Its events and deliveries go with it.
+      security: [{ bearer: [] }]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/webhooks/{hook}/secret:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/hook"
+    post:
+      tags: [Webhooks]
+      operationId: rotateWebhookSecret
+      summary: Rotate the secret of a webhook endpoint
+      description: |
+        Account key only. The new secret is in this answer and nowhere else; the answer is `Cache-Control:
+        no-store`. The secret it replaces still signs for 24 hours (until previous_secret_until); a second
+        rotation ends it at once. Rotating a disabled endpoint pauses it.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The endpoint, with the new secret.
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookShown" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/tokens:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -3163,6 +3284,11 @@ components:
     grp:
       name: grp
       in: path
+    hook:
+      name: hook
+      in: path
+      required: true
+      schema: { type: string, example: whk_5m2k8x1v0c3d9q7r4t6w8y0z2a }
       required: true
       schema: { type: string, example: grp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     subject:
@@ -4012,6 +4138,69 @@ components:
           type: integer
           format: int64
           description: Largest upload request body accepted, in bytes.
+
+    Webhook:
+      type: object
+      required: [id, url, events, state, consecutive_failures, created_at, updated_at]
+      description: An endpoint. Never carries its secret.
+      properties:
+        id: { type: string, example: whk_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        url: { type: string, description: "The full URL for the account key. An owner gets only the scheme, host and port." }
+        description: { type: [string, "null"], maxLength: 200 }
+        events:
+          type: array
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, upload.completed, quota.warning, quota.exceeded, webhook.test] }
+        state: { type: string, enum: [active, paused, disabled] }
+        disabled_reason: { type: [string, "null"], enum: [failing, overflow, secret_unreadable, null] }
+        consecutive_failures: { type: integer }
+        last_success_at: { type: [string, "null"], format: date-time }
+        last_failure_at: { type: [string, "null"], format: date-time }
+        previous_secret_until: { type: [string, "null"], format: date-time, description: "When the secret a rotation replaced stops signing. Null once that time has passed, and when no rotation is in its grace period." }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WebhookShown:
+      type: object
+      required: [secret]
+      description: An endpoint with its secret. Shown once, at creation and at rotation.
+      allOf:
+        - $ref: "#/components/schemas/Webhook"
+      properties:
+        secret: { type: string, description: "The signing secret, shown once: whsec_ and 43 base64url characters." }
+
+    WebhookCreate:
+      type: object
+      required: [url, events]
+      additionalProperties: false
+      properties:
+        url: { type: string, maxLength: 2048 }
+        events:
+          type: array
+          minItems: 1
+          uniqueItems: false
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, upload.completed, quota.warning, quota.exceeded, webhook.test] }
+        description: { type: string, maxLength: 200 }
+
+    WebhookUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        url: { type: string, maxLength: 2048 }
+        events:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, upload.completed, quota.warning, quota.exceeded, webhook.test] }
+        description: { type: string, maxLength: 200, description: Empty clears it. }
+        state: { type: string, enum: [active, paused], description: A disabled endpoint cannot be set to active alone. }
+
+    WebhookList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Webhook" }
+        next_cursor: { type: string }
 
     Error:
       type: object

@@ -27,6 +27,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 	"github.com/shukiv/selfcloud/internal/sweep"
 	"github.com/shukiv/selfcloud/internal/web"
+	"github.com/shukiv/selfcloud/internal/webhook"
 )
 
 // sweepInterval is how often housekeeping runs: blob removal, expired sessions and tokens.
@@ -76,6 +77,8 @@ type Server struct {
 	links *linkKeys
 	// tokens signs and verifies delegated tokens; see tokens.go.
 	tokens *tokenKeys
+	// webhookSeal encrypts webhook secrets at rest; see internal/webhook.
+	webhookSeal *webhook.Sealer
 	// shares signs and verifies the visitor credentials of links that anyone can open; see
 	// share_credentials.go. guard counts the wrong passwords those links take; see share_open.go.
 	shares *shareKeys
@@ -176,6 +179,10 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
+	webhookSeal, err := webhook.NewSealer(links.current, links.previous)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
 	tokens, err := deriveTokenKeys(links)
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
@@ -213,6 +220,7 @@ func New(opts Options) (*Server, error) {
 		contentScheme: contentScheme,
 		links:         links,
 		tokens:        tokens,
+		webhookSeal:   webhookSeal,
 		shares:        shares,
 		guard:         newShareGuard(),
 		corsAllowed:   corsAllowed,
@@ -347,6 +355,12 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens", handle: s.handleMintToken, auth: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens/revoke", handle: s.handleRevokeTokens, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit", handle: s.handleAuditLog, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleCreateWebhook, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleListWebhooks, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleGetWebhook, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleUpdateWebhook, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleDeleteWebhook, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/secret", handle: s.handleRotateWebhookSecret, auth: true},
 		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true},
 
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/folders", handle: s.handleCreateFolder, auth: true},

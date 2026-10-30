@@ -167,7 +167,8 @@ woven into each step.
    `sha256`. Clients may also send `Upload-Checksum` per piece.
 5. **Complete.** When the offset reaches the length: sync, `rename(2)` the file into `blobs/`,
    sync the directory, then in one transaction create the file entry, turn the reservation into
-   usage, and queue the `upload.completed` webhook. The conflict policy is `rename` (save as
+   usage, and queue the `upload.completed` webhook (from slice j2; slice j1 adds only the endpoint routes,
+   so no event is written yet). The conflict policy is `rename` (save as
    "name (1).ext"), `replace` or `fail`. With `fail`, a name taken after the upload began
    leaves the completed upload waiting, until it expires, to be committed under another name:
    the last `PATCH` answers `409 conflict` with `Selfcloud-Upload-State: awaiting_commit`, and
@@ -1847,7 +1848,8 @@ Each slice ships with tests and leaves the server runnable.
 | r | Comments, mentions, activity pane, notifications, who-viewed | Planned |
 | s | Thumbnails, document previews, conversions and export, zip download | Planned |
 | l | WOPI host for Collabora | Planned |
-| j | Webhooks | Planned |
+| j1 | Webhook endpoints: the migration, the encrypted secret (AES-256-GCM, key derived with HKDF from the links signing key, bound to its row), the endpoint routes, the show-once secret and its rotation, the isolation tests | Built |
+| j | Webhooks: events, the outbox, the worker, the dialer (j2 to j4 remain) | Building |
 | t | Changes feed, file picker, WebDAV, installable web app | Planned |
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Planned |
 | t2 | Approvals | Planned |
@@ -2306,3 +2308,42 @@ Decided on approval:
         sign-in (v4a, found by the e2e suite). Svelte has the same two steps but no role-specific home.
       - An installation admin does not read the requests count, which the server refuses for an admin (403). Svelte
         skips the read for admins too.
+26. **Webhook endpoints, slice j1** (2026-10-30, the owner approved slice j's proposal with every recommendation (a)).
+    Decisions and interpretations:
+    - **Rotation and the old secret: decided.** The old secret stays valid for 24 hours, as the approved proposal
+      says. After a rotation it is no longer the endpoint's current secret, and it still signs during the grace
+      period. A second rotation ends the first old secret at once, even if the caller lost the response. The brief's
+      wording "rotation invalidates the old secret" was the lead's error and is not the design.
+    - **Disabled endpoints.** A disabled endpoint leaves its state only by a PATCH that changes its URL in the same
+      request (the state then becomes the one asked for, or paused). A state change alone, to paused or to active,
+      is refused as a conflict, whatever the reason (`failing`, `overflow`, `secret_unreadable`). A PATCH with an
+      unchanged URL keeps the state and the reason. A new URL resets `consecutive_failures`. A secret rotation
+      pauses a disabled endpoint, clears the reason and resets the count; the owner then sets it active. The
+      proposal said "URL or secret" in one step; this build splits them.
+    - **Endpoint limit: 100 per account.** The lead's choice; the proposal named a limit but no value. Going over it
+      is `conflict` with `reason: limit`. The count is read inside the same write as the insert, so concurrent
+      creates cannot both pass. The limit is per account.
+    - **URL shown to others: origin only.** An owner's reads and every audit entry carry only the scheme, host and
+      port of an endpoint URL (`urlOrigin`), and never its path, query, fragment or user name. The account key's
+      reads keep the full URL. This is tighter than the proposal, which only removed the query from audit entries:
+      a token may sit in the path (`/services/T/B/SECRET`). Slice j3's worker logs and its `last_error` must use the
+      same helper.
+    - **Secret encoding.** The shown secret is `whsec_` plus 43 unpadded base64url characters of 32 random bytes.
+      The proposal did not fix the text form.
+    - **Binding.** The additional data names the account, the endpoint and the column (`secret` or
+      `previous_secret`). A rotation re-seals the old secret under the previous column's binding.
+    - **Expired grace copy.** `previous_secret_enc` stays in the row after its grace period until the next rotation.
+      `previous_secret_until` is returned as null once it has passed, and nothing signs with the copy. The worker
+      part (j3) clears it.
+    - **Responses that show a secret** carry `Cache-Control: no-store`, as token answers do.
+    - **Previous links key.** Decryption also tries the previous links key, so a rotation of the links key does not
+      lose secrets. The rewrap command is slice j4, as the proposal says.
+    - **Not in j1.** The address deny list at registration and the resolution of the host are for slice j4. Note for
+      j4: its guard must check the addresses actually resolved at delivery, and must not rely on `net.ParseIP` of the
+      host string, because `parseHostLiteral` accepts forms such as `127.1`, `2130706433`, `0x7f.1` and `localhost`,
+      which name loopback without being an IP literal. A private IP literal is accepted now and nothing is sent
+      before j3. The test route, the delivery log and retry routes, and the quota-warning route are later parts.
+    - **Choices not in the proposal.** A URL with a fragment is refused. An installation admin key reads no webhooks.
+      One delivery per endpoint per event (a UNIQUE constraint). The config key is `webhooks.allow_http` only.
+      The schema's CHECK keeps `disabled_reason` set exactly when the state is disabled.
+

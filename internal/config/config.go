@@ -68,6 +68,7 @@ type Config struct {
 	Upload    UploadConfig    `yaml:"upload"`
 	Links     LinksConfig     `yaml:"links"`
 	Tokens    TokensConfig    `yaml:"tokens"`
+	Webhooks  WebhooksConfig  `yaml:"webhooks"`
 	CORS      CORSConfig      `yaml:"cors"`
 	UI        UIConfig        `yaml:"ui"`
 	Users     UsersConfig     `yaml:"users"`
@@ -232,6 +233,12 @@ type LinksConfig struct {
 	// PreviousKeyFile names the key that links signed before the last rotation still verify
 	// with. Empty means data_dir/keys/signing.prev.key, used when that file exists.
 	PreviousKeyFile string `yaml:"previous_key_file"`
+}
+
+// WebhooksConfig controls webhook endpoints (design section 10).
+type WebhooksConfig struct {
+	// AllowHTTP admits http:// endpoint URLs. Off by default: an endpoint must be HTTPS. For development only.
+	AllowHTTP bool `yaml:"allow_http"`
 }
 
 // TokensConfig controls delegated tokens, the short-lived credentials an account key mints for a
