@@ -1577,8 +1577,11 @@ Each slice ships with tests and leaves the server runnable.
 | n2 | Sharing v2: access expiry, no-download, the "editors can share" switch, ownership transfer, team-space restrictions and hiding, access requests, share emails |
 | m | Trash, version history, keep forever, restore, undo |
 | k | Web interface, in the seven languages, with right-to-left layout for Arabic and Hebrew |
-| o | Organisation and public links (off by default), link policy, drop folders. In four parts: o1 organisation links and the policy (built), o2 links that anyone can open (built), o3 drop folders (built), o4 the sweep, the account-wide list and bulk delete (built) |
-| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page |
+| c2 | Sign-in links for trusted clients: a client holding the account key hands a user into the web interface with a one-use link, and a browser signed in as someone else is asked before it switches (built) |
+| i2 | Delegated tokens: revoking one user's tokens, and a scope that reaches whatever the user reaches (built) |
+| o | Organisation and public links (off by default), link policy, drop folders. Built in four parts: o1 organisation links and the policy, o2 links that anyone can open, o3 drop folders, o4 the sweep, the account-wide list and bulk delete |
+| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (decision 24). In five parts: p1 per-user quota and the storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels, p5 the OpenAPI file, the design record and a security review |
+| pg | PostgreSQL as an option for the metadata store (decision 7). It lands before q, whose full-text search gains from it |
 | q | Search: filters, label search, full text and OCR within size limits |
 | r | Comments, mentions, activity pane, notifications, who-viewed |
 | s | Thumbnails, document previews, conversions and export, zip download |
@@ -1588,7 +1591,7 @@ Each slice ships with tests and leaves the server runnable.
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits |
 | t2 | Approvals |
 
-Slices are listed in build order; the letters keep their first meaning. Slices m to u come from
+Slices are listed in build order; the letters keep their first meaning, and a slice named with a 2 (c2, i2, t2) follows up the slice of that letter. Slices m to u come from
 the Google Drive parity plan in `feature-parity.md` (approved 2026-10-28). An API client can switch
 over once slices a to i work. Slice n1 keeps the `/grants` routes working, mapping `read` to viewer
 and `write` to editor, so a client that switched after i keeps working. Slice n was split in two
@@ -1607,7 +1610,7 @@ Decided on approval:
    2026-10-28 by decision 11: all three are built (slices m and o).*
 5. **On-disk layout**: blobs by ID (section 4).
 6. **Delegated tokens**: Selfcloud mints them through the API.
-7. **PostgreSQL**: added after slice i.
+7. **PostgreSQL**: added after slice i. *Scheduled 2026-10-29: slice pg, before slice q (section 14).*
 8. **Web interface stack**: Svelte.
 9. **Hierarchy** (2026-10-28): admin, then tenants, then sub-accounts (section 8). Admins can
    also be users who sign in, not only API keys.
@@ -1796,3 +1799,22 @@ Decided on approval:
     - The o1 gap (a) is repaired: a team space is listed under Team spaces when a member has opened an organisation link on
       its root, at the link's role, as a permission on the root lists it. The o1 gap (b) was not reproduced at the API: a
       node reached by a permission and a link is listed once, since the query groups by node.
+
+24. **Slice p: personal organisation and per-user quota** (2026-10-30, owner's decisions on the slice p proposal):
+    - Quota is charged by folder: bytes in a user's My files count against that user's limit; bytes in a team space
+      count against the account only, until slice u adds limits per space. A drop upload counts where it lands.
+    - The account owner, the account key and an installation admin set each user's limit and the account's default
+      limit. There is no default limit out of the box, so an upgrade changes nothing.
+    - Recent records views (by signed-in users) and edits, kept 30 days and at most 500 items per user. It is private
+      to its user, who can clear it.
+    - A shortcut is a node of its own kind (the `nodes` table is rebuilt once, by a migration that runs with foreign
+      keys off). It grants no access. A shortcut whose target the viewer cannot reach shows as unavailable, with
+      "Request access", and never shows the target's ID.
+    - Folder colours (from a fixed palette) and item descriptions belong to the item: editors set them, and every
+      reader sees them.
+    - Labels: every reader of an item sees its values and editors set them. A field may be restricted, and is then
+      seen and set only by managers of the item, the owner on team spaces, and the account key.
+    - The storage page: owners see the account's total and each member's total, but no file names from members' My
+      files; they see team-space files by name. Members see their own largest files. Admins see totals only.
+    - Home is the landing page at `/`; My files stays at `/files`.
+    - Slice p is built in five parts, p1 to p5, each reviewed and pushed on its own, p1 first.

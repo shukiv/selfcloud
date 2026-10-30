@@ -198,8 +198,11 @@ come **before** k.
 | n2 | Sharing v2 (built, see the rows marked Built (n2) above): access expiry, no-download, "editors can share", ownership transfer, team-space restrictions and hiding, access requests, share emails | Medium |
 | m | Trash, version history, keep forever, restore, undo | Medium |
 | k | Web interface (as planned, on the new model). Complete after k4. k3 (built): the sharing interface: share dialog, Shared with me, access requests, hidden spaces, space settings, and the account directory search (`GET /directory`). k4 (built): owner pages (overview, people, groups, team spaces, audit log) and installation admin pages (tenants, tenant tabs, admins, installation facts), with the owner guard and list filters in the API. Known gaps: design section 10 | Large |
+| c2 | Sign-in links for trusted clients (built, after k) | Small |
+| i2 | Delegated tokens: per-user revoke and the all-reachable scope (built, after k) | Small |
 | o | Organisation and public links, link expiry and password, drop folders, admin policy. Built in four parts: o1 to o4 | Medium |
-| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page | Medium |
+| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts: p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels, p5 OpenAPI, design record and security review | Medium |
+| pg | PostgreSQL as an option for the metadata store (design decision 7), before q | Medium |
 | q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |
 | r | Comments, mentions, activity pane, notifications, who-viewed | Medium |
 | s | Thumbnails, document previews, conversions and export, zip download | Medium |
@@ -210,4 +213,4 @@ come **before** k.
 | t2 | Approvals | Small |
 
 Roughly, this doubles the remaining work. Slices n and q are the largest. The PostgreSQL option
-(decision 7) becomes more useful with full-text search and should land before q.
+(decision 7) becomes more useful with full-text search, so it lands before q, as slice pg.
