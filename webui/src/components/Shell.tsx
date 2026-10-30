@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useState, type ReactNode } from "react";
-import { Button, Drawer, Dropdown, Grid, Layout, Menu, Space, theme as antdTheme } from "antd";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Space, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
-import { Clock, FolderOpen, House, Inbox, Share2, Star, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound } from "lucide-react";
+import { Clock, FolderOpen, House, Inbox, Share2, Star, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useT, useLang, directionOf } from "../lib/i18n";
+import { useT, useLang, directionOf, translatePlural } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { brand } from "../lib/brand";
-import { flash, isAdmin, isOwner, session } from "../lib/session";
-import { folders, loadFolders } from "../lib/files/folders";
+import { flash, isAdmin, isOwner, session, sessionKey } from "../lib/session";
+import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/files/folders";
+import { setHidden } from "../lib/sharing/api";
+import { pendingRequests, refreshPendingRequests } from "../lib/sharing/requestCount";
 import type { FolderAccess } from "../lib/files/types";
 import { signOut } from "../lib/auth";
 import { readPref, writePref } from "../lib/prefs";
@@ -21,6 +23,9 @@ import Sentence from "./Sentence";
 import ThemeToggle from "./ThemeToggle";
 import UploadTray from "./UploadTray";
 
+// The space settings dialog is loaded when a team space's settings are opened.
+const SpaceSettings = lazy(() => import("./share/SpaceSettings"));
+
 // Below this width (the antd `lg` breakpoint, 992px) the sidebar is a drawer.
 const SIDE_WIDTH = 264;
 const RAIL_WIDTH = 88;
@@ -29,7 +34,7 @@ const PREF_NAV_RAIL = "selfcloud.navRail";
 
 interface NavItem {
   key: string;
-  label: string;
+  label: ReactNode;
   icon: ReactNode;
 }
 
@@ -42,7 +47,7 @@ interface NavSection {
   items: NavItem[];
 }
 
-function navFor(admin: boolean, owner: boolean, t: (k: string) => string, teams: FolderAccess[]): NavSection[] {
+function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pending: number | null, waiting: (n: number) => string): NavSection[] {
   if (admin) {
     return [
       {
@@ -63,15 +68,20 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, teams:
     { key: "/trash", label: t("nav.trash"), icon: icon(Trash2) },
     { key: "/storage", label: t("nav.storage"), icon: icon(HardDrive) },
   ];
-  if (owner) main.push({ key: "/requests", label: t("nav.requests"), icon: icon(Inbox) });
-  const sections: NavSection[] = [{ items: main }];
-  // The team spaces the caller reaches are listed under the main entries; a hidden one is not listed.
-  if (teams.length > 0) {
-    sections.push({
-      section: t("nav.teams"),
-      items: teams.map((f) => ({ key: `/files/${f.id}`, label: f.name, icon: icon(FolderOpen) })),
-    });
+  // The access requests entry shows to an owner, and to anyone who has a request waiting to be decided, with its count.
+  if (owner || (pending ?? 0) > 0) {
+    const label =
+      (pending ?? 0) > 0 ? (
+        <>
+          {t("nav.requests")}
+          <span style={{ marginInlineStart: 8, fontSize: 12, opacity: 0.8 }}>{waiting(pending ?? 0)}</span>
+        </>
+      ) : (
+        t("nav.requests")
+      );
+    main.push({ key: "/requests", label, icon: icon(Inbox) });
   }
+  const sections: NavSection[] = [{ items: main }];
   if (owner) {
     sections.push({
       section: t("nav.manage"),
@@ -92,6 +102,58 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, teams:
 // menuLeaves turns nav entries into antd menu items; the icon is passed through with the label.
 function menuLeaves(items: NavItem[]): NonNullable<MenuProps["items"]> {
   return items.map((it) => ({ key: it.key, label: it.label, icon: it.icon }));
+}
+
+// TeamRow is one team space in the sidebar: a link to its files, its hidden tag, and an options menu. The menu
+// offers Hide or Show to anyone, and Space settings to a manager of the space.
+function TeamRow({
+  team,
+  color,
+  current,
+  onNavigate,
+  onHide,
+  onSettings,
+  hiddenLabel,
+  labels,
+}: {
+  team: FolderAccess;
+  color: string;
+  current: boolean;
+  onNavigate: () => void;
+  onHide: () => void;
+  onSettings: () => void;
+  hiddenLabel: string;
+  labels: { hide: string; show: string; settings: string; options: (name: string) => string };
+}) {
+  const items: MenuProps["items"] = [
+    { key: "hide", label: team.hidden ? labels.show : labels.hide },
+    ...(team.role === "manager" ? [{ key: "settings", label: labels.settings }] : []),
+  ];
+  return (
+    <li style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+      <a
+        href={`/files/${team.id}`}
+        aria-current={current ? "page" : undefined}
+        onClick={onNavigate}
+        style={{ flex: 1, minWidth: 0, padding: "6px 8px", color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+      >
+        <bdi>{team.name}</bdi>
+        {team.hidden && <span style={{ marginInlineStart: 8, fontSize: 12, opacity: 0.8 }}>{hiddenLabel}</span>}
+      </a>
+      <Dropdown
+        trigger={["click"]}
+        menu={{
+          items,
+          onClick: ({ key }) => {
+            if (key === "hide") onHide();
+            if (key === "settings") onSettings();
+          },
+        }}
+      >
+        <Button type="text" size="small" aria-label={labels.options(team.name)} icon={<Ellipsis size={16} />} style={{ color }} />
+      </Dropdown>
+    </li>
+  );
 }
 
 // Shell is the signed-in frame: the top bar with the account menu, and the sidebar. The sidebar
@@ -115,11 +177,28 @@ export default function Shell({ children }: { children: ReactNode }) {
   const admin = isAdmin(me?.user);
   const owner = isOwner(me?.user);
   const folderList = useStore(folders);
+  const hiddenList = useStore(hiddenFolders);
+  // The team spaces are listed under My files, from the folders the caller reaches. The hidden ones are listed
+  // only when the caller asks to see them. An admin has no drive, so it reads neither list.
   const teams = admin ? [] : folderList.filter((f) => f.kind === "team");
+  const hiddenTeams = admin ? [] : hiddenList.filter((f) => f.kind === "team");
+  const [showHidden, setShowHidden] = useState(false);
+  const [settingsFor, setSettingsFor] = useState<FolderAccess | null>(null);
+  // A change of person closes the settings and clears the hidden toggle: neither belongs to the next person.
+  const sessionID = sessionKey(me);
+  useEffect(() => {
+    setShowHidden(false);
+    setSettingsFor(null);
+  }, [sessionID]);
   useEffect(() => {
     if (!admin) void loadFolders().catch(() => undefined);
   }, [admin]);
-  const sections = navFor(admin, owner, t, teams);
+  // The count of requests waiting for the caller is read for each person, so the entry shows the right count.
+  useEffect(() => {
+    if (me) void refreshPendingRequests();
+  }, [sessionID]);
+  const pending = useStore(pendingRequests);
+  const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n));
   const items: MenuProps["items"] = sections.flatMap((s, i) =>
     s.section
       ? [{ type: "group" as const, key: `group-${i}`, label: s.section, children: menuLeaves(s.items) }]
@@ -137,6 +216,20 @@ export default function Shell({ children }: { children: ReactNode }) {
       writePref(PREF_NAV_RAIL, c ? "0" : "1");
       return !c;
     });
+  };
+
+  // toggleHidden shows or hides the hidden team spaces. Turning them on reads the hidden list.
+  const toggleHidden = async (on: boolean) => {
+    setShowHidden(on);
+    if (on) await loadHiddenFolders().catch(() => undefined);
+  };
+
+  // hideSpace hides a team space from the caller's own list, or shows it again. Access does not change. A refused
+  // change leaves the lists as they are; both are read again either way, so they show the truth. A failed read
+  // keeps the list it had.
+  const hideSpace = async (team: FolderAccess, hidden: boolean) => {
+    await setHidden(team.id, hidden).catch(() => undefined);
+    await Promise.all([loadFolders().catch(() => undefined), showHidden ? loadHiddenFolders().catch(() => undefined) : undefined]);
   };
 
   const go = (key: string) => {
@@ -172,6 +265,29 @@ export default function Shell({ children }: { children: ReactNode }) {
         className="shell-menu"
         style={{ border: "none", background: "transparent" }}
       />
+      {(teams.length > 0 || showHidden) && (
+        <div style={{ margin: "16px 8px 0" }}>
+          <div style={{ fontSize: 12, opacity: 0.8, margin: "0 0 6px" }}>{t("nav.teams")}</div>
+          <ul className="teams" aria-label={t("nav.teams")} style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {[...teams, ...(showHidden ? hiddenTeams : [])].map((team) => (
+              <TeamRow
+                key={team.id}
+                team={team}
+                color={sidebar.text}
+                current={location.pathname === `/files/${team.id}` || location.pathname.startsWith(`/files/${team.id}/`)}
+                onNavigate={() => setNavOpen(false)}
+                onHide={() => void hideSpace(team, !team.hidden)}
+                onSettings={() => setSettingsFor(team)}
+                hiddenLabel={t("nav.hiddenTag")}
+                labels={{ hide: t("nav.hide"), show: t("nav.show"), settings: t("nav.spaceSettings"), options: (name: string) => t("nav.spaceOptions", { name }) }}
+              />
+            ))}
+          </ul>
+          <Checkbox checked={showHidden} onChange={(e) => void toggleHidden(e.target.checked)} style={{ color: sidebar.text, marginTop: 8 }}>
+            {t("nav.showHidden")}
+          </Checkbox>
+        </div>
+      )}
     </div>
   );
 
@@ -285,6 +401,11 @@ export default function Shell({ children }: { children: ReactNode }) {
           {children}
         </Layout.Content>
         <UploadTray />
+        {settingsFor && (
+          <Suspense fallback={null}>
+            <SpaceSettings space={settingsFor} onclose={() => setSettingsFor(null)} onsaved={() => void loadFolders().catch(() => undefined)} />
+          </Suspense>
+        )}
       </Layout>
     </Layout>
   );

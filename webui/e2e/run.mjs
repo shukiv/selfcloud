@@ -9,11 +9,14 @@
 import { execFile, spawn } from 'node:child_process';
 import { access, constants, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { freePort, launchBrowser, Page } from './cdp.mjs';
+import { linkChecks } from './sharePublic.mjs';
+import { sharingChecks } from './shareDialog.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -34,6 +37,16 @@ function check(ok, what) {
 // The answers the run causes on purpose: the start-up probe of an anonymous visitor, and a sign-in link
 // used a second time. The browser logs each as a failed request; the run counts them instead.
 const EXPECTED = [
+  // The sharing checks refuse a dead, removed, password-protected or wrong link on purpose, and a node a caller
+  // cannot reach: each refusal is logged as a failed request, and counted here.
+  {
+    name: 'refused share link',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/share\/open$/.test(e.url ?? '') && /status of (401|404|429)\b/.test(e.text ?? ''),
+  },
+  {
+    name: 'node the caller cannot reach',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+$/.test(e.url ?? '') && /status of 404\b/.test(e.text ?? ''),
+  },
   {
     name: 'start-up probe',
     matches: (e) => e.source === 'network' && /\/api\/v1\/me$/.test(e.url ?? '') && /status of 401\b/.test(e.text ?? ''),
@@ -128,6 +141,14 @@ async function signIn(page, who) {
 }
 
 async function signOut(page) {
+  // A signed-in visitor on a public page has no account menu: the shell is opened first, through a link click.
+  if (!(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`))) {
+    // A visitor who is not signed in has nothing to sign out of: the sign-in page is what it sees.
+    if (await page.evaluate(`location.pathname === '/login'`)) return;
+    await navigateTo(page, '/');
+    await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') || location.pathname === '/login'`, 15000);
+    if (!(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`))) return;
+  }
   await clickOn(page, '[data-testid="account-menu"]');
   await clickText(page, '.ant-dropdown-menu-item', 'Sign out');
   await page.waitFor(`location.pathname === '/login' && !!document.getElementById('login-email')`, 15000);
@@ -149,7 +170,7 @@ const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$
 // clickMenu clicks the sidebar entry with exactly this text, once it is on the page.
 async function clickMenu(page, text) {
   await page.waitFor(
-    `(() => { const i = [...document.querySelectorAll('[role="menuitem"]')].find((x) => x.textContent.trim() === ${q(text)}); if (!i) return false; i.click(); return true; })()`,
+    `(() => { const i = [...document.querySelectorAll('[role="menuitem"], ul[aria-label] > li > a')].find((x) => x.textContent.trim() === ${q(text)}); if (!i) return false; i.click(); return true; })()`,
     10000,
   );
 }
@@ -185,7 +206,9 @@ async function openRow(page, name) {
 
 // press sends a key to the element the selector names, as the page's own key handlers see it.
 async function press(page, selector, key) {
-  await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); el.focus(); el.dispatchEvent(new KeyboardEvent('keydown', { key: ${q(key)}, bubbles: true })); return true; })()`);
+  // keyCode is set too: the dialogs' Escape handler reads it.
+  const keyCode = key === 'Escape' ? 27 : 0;
+  await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); el.focus(); el.dispatchEvent(new KeyboardEvent('keydown', { key: ${q(key)}, keyCode: ${keyCode}, bubbles: true })); return true; })()`);
 }
 
 // buttonTexts lists the text of every button on the page.
@@ -379,11 +402,93 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
 // menuTexts lists the entries of the sidebar menu, open or in the drawer.
 const menuTexts = (page) => page.evaluate(`[...document.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent.trim())`);
 
+// mailSink is a minimal SMTP server that keeps the mail it is sent, so the run can take the links from it. It
+// does no TLS and no login: the server dials it with smtp_tls none.
+function mailSink() {
+  const messages = [];
+  const server = createServer((sock) => {
+    let buf = '';
+    let to = [];
+    let data = null;
+    const say = (line) => sock.write(`${line}\r\n`);
+    sock.on('error', () => {});
+    say('220 e2e-sink');
+    sock.on('data', (chunk) => {
+      buf += chunk.toString('latin1');
+      let end;
+      while ((end = buf.indexOf('\r\n')) !== -1) {
+        const line = buf.slice(0, end);
+        buf = buf.slice(end + 2);
+        if (data !== null) {
+          if (line !== '.') {
+            data += `${line}\r\n`;
+            continue;
+          }
+          messages.push({ to, data });
+          to = [];
+          data = null;
+          say('250 queued');
+          continue;
+        }
+        const verb = line.slice(0, 4).toUpperCase();
+        if (verb === 'RCPT') {
+          to.push(/<([^>]*)>/.exec(line)?.[1] ?? line.slice(8));
+          say('250 ok');
+        } else if (verb === 'DATA') {
+          data = '';
+          say('354 end with a dot');
+        } else if (verb === 'RSET') {
+          to = [];
+          say('250 ok');
+        } else if (verb === 'QUIT') {
+          say('221 bye');
+          sock.end();
+        } else {
+          say('250 ok');
+        }
+      }
+    });
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () =>
+      resolve({ port: server.address().port, messages, close: () => server.close() }),
+    );
+  });
+}
+
+// waitForMail waits for a message to the address, and returns it.
+async function waitForMail(sink, address, timeout = 15000) {
+  const until = Date.now() + timeout;
+  for (;;) {
+    const m = sink.messages.find((x) => x.to.includes(address));
+    if (m) return m;
+    if (Date.now() > until) throw new Error(`no mail to ${address}`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+// clickMenuItemText clicks the sidebar entry whose text starts with this text (the Requests entry carries a count).
+async function clickMenuItemText(page, text) {
+  await page.waitFor(
+    `(() => { const b = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((x) => x.textContent.trim().startsWith(${q(text)})); if (!b) return false; b.click(); return true; })()`,
+    10000,
+  );
+}
+
+// navigateTo moves inside the app by a link click, so the router (not a page load) shows the page.
+async function navigateTo(page, path) {
+  await page.evaluate(
+    `(() => { const a = document.createElement('a'); a.href = ${q(path)}; document.body.append(a); a.click(); a.remove(); return true; })()`,
+  );
+}
+
 async function main() {
   const dir = await mkdtemp(join(tmpdir(), 'selfcloud-e2e-react-'));
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   const cfg = join(dir, 'selfcloud.yaml');
+  const sink = await mailSink();
   await writeFile(
     cfg,
     [
@@ -401,6 +506,12 @@ async function main() {
       '  max_chunk_size: "1MiB"',
       'storage:',
       '  min_free: "1MiB"',
+      // Mail goes to the sink above, with no TLS and no login, as the server's smtp_tls none allows on localhost.
+      'mail:',
+      '  smtp_host: "127.0.0.1"',
+      `  smtp_port: ${sink.port}`,
+      '  smtp_tls: "none"',
+      '  from: "Selfcloud <drive@example.com>"',
       'ui:',
       '  brand:',
       `    name: "${BRAND.name}"`,
@@ -456,6 +567,34 @@ async function main() {
     page.base = base;
     await page.start(EXPECTED);
     await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    // The helpers the share modules take as h. Their own helpers stay in their own files.
+    const h = {
+      check,
+      api,
+      rawPut,
+      clickOn,
+      clickButton,
+      rowAppears,
+      selectRow,
+      openRow,
+      press,
+      signIn,
+      signOut,
+      // signInHere signs in on the sign-in page already open, so its ?next= goes on being used.
+      signInHere: async (p, who) => {
+        await p.waitFor(`!!document.getElementById('login-email')`);
+        await p.setInput('#login-email', who.email);
+        await p.setInput('#login-password', who.password);
+        await clickOn(p, 'form button[type="submit"]');
+        await p.waitFor(`!!document.querySelector('[data-testid="account-menu"]')`, 15000);
+      },
+      navigateTo,
+      // clickNav opens a sidebar entry by its text, as a person would.
+      clickNav: (p, text) => clickMenuItemText(p, text),
+      setInput: (p, id, value) => p.setInput(`#${id}`, value),
+      OWNER,
+      MEMBER,
+    };
 
     // Sign in as the owner, at desktop width.
     await signIn(page, OWNER);
@@ -517,6 +656,9 @@ async function main() {
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     await fileBrowserChecks(page, { base, dir, teamA, teamB });
     await fileBrowserExtraChecks(page, { dir, teamA });
+    await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
+    await signOut(page);
+    await signIn(page, MEMBER);
     await page.goto(base + '/storage');
     await page.waitFor(`document.body.textContent.includes('Coming soon')`);
     check(true, 'a page not built yet shows its placeholder inside the shell');
@@ -541,6 +683,7 @@ async function main() {
       !(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`)),
       'the same link a second time shows the expired message, and no shell',
     );
+    await linkChecks(page, { base, accountID, accountKey }, h);
 
     // Policy: no console error and no content-policy violation (the nonce policy is enforced here),
     // and no request to another origin.
@@ -555,6 +698,7 @@ async function main() {
     console.log('e2e passed');
     passed = true;
   } finally {
+    sink.close();
     page?.close();
     browser?.kill();
     server.kill();

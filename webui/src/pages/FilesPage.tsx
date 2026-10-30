@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useLocation } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { Alert, Button, Form, Input, Modal, Select, Skeleton, theme as antdTheme } from "antd";
@@ -11,7 +11,7 @@ import { ApiError } from "../lib/apiError";
 import { go } from "../lib/router";
 import { session, sessionChanged, sessionKey, signingOut } from "../lib/session";
 import { queryKey, refreshTree } from "../lib/query";
-import { folders, loadFolders, loadHiddenFolders } from "../lib/files/folders";
+import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/files/folders";
 import { childrenPage, copyNode, deleteNode, getJob, getMe, mkdir, moveNode, renameNode, restoreNode, serverLimits, type Transfer } from "../lib/files/api";
 import { locate, joinPath, type Here } from "../lib/files/location";
 import { starNode, unstarNode } from "../lib/stars";
@@ -23,6 +23,7 @@ import { sortNodes, nextSort, type SortDir, type SortKey } from "../lib/files/so
 import { clickSelect, moveFocus, selectAll, EMPTY, type Selection } from "../lib/files/selection";
 import { keyAction } from "../lib/files/keys";
 import { can, downloadAllowed, atLeast } from "../lib/files/roles";
+import { shareCap } from "../lib/sharing/roles";
 import { previewable } from "../lib/files/kind";
 import { readPrefs, writePrefs, type ViewPrefs } from "../lib/files/viewPrefs";
 import { UndoStack } from "../lib/files/undo";
@@ -43,10 +44,13 @@ import NotFoundPage from "./NotFoundPage";
 // The file browser: a folder or a directory, its items, and what the signed-in person may do with them.
 // The server checks every operation again; the buttons only show what the role allows.
 //
-// Not in this build (part v3): the share dialog, the share button, "Who has access", and the access request on
-// a not-found view. Each place that opened them in the Svelte page is left out here.
+// The share dialog is loaded on first use: it is not part of the file browser's first load.
+const ShareDialog = lazy(() => import("../components/share/ShareDialog"));
 
-type Dialog = "newFolder" | "delete" | "pick" | "details" | "versions" | "preview" | null;
+// Sharing from this page: the Share button in the selection bar (when the caller may share the item), Share and
+// "Who has access" in Details, and the access request on a not-found directory.
+
+type Dialog = "newFolder" | "delete" | "pick" | "details" | "versions" | "preview" | "share" | null;
 
 // Place is where the browser is, or why it cannot show it.
 type PlaceState =
@@ -107,6 +111,7 @@ export default function FilesPage() {
   const route = useMemo(() => parseFilesPath(path), [path]);
   const brandName = useStore(brand).name;
   const folderList = useStore(folders);
+  const hiddenList = useStore(hiddenFolders);
   const uploadList = useStore(uploads);
 
 
@@ -134,6 +139,12 @@ export default function FilesPage() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [pickMode, setPickMode] = useState<"move" | "copy">("move");
   const [target, setTarget] = useState<Node | null>(null);
+  // A change of person (a sign-out, or a sign-in as someone else) closes whatever dialog was open: its answers
+  // were given to the previous person.
+  const sessionID = sessionKey(useStore(session));
+  useEffect(() => {
+    setDialog((d) => (d === "share" ? null : d));
+  }, [sessionID]);
   const [pending, setPending] = useState<Node[]>([]);
   const [previewItems, setPreviewItems] = useState<Node[]>([]);
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -314,6 +325,11 @@ export default function FilesPage() {
   const canUploadFolder = canUploadHere && here !== null && here.path !== null;
   const canMakeFolder = canUploadFolder;
   const allEdit = picked.length > 0 && picked.every((n) => can.edit(n.role));
+  // The space the listing is in: a visible one, or a hidden one, which is still reached.
+  const space = here ? ([...folderList, ...hiddenList].find((f) => f.id === here.folder) ?? null) : null;
+  // canShareItem says whether the caller may share an item here, from its role and the space's settings.
+  const canShareItem = (n: Node): boolean =>
+    shareCap({ role: n.role, editorsCanShare: n.editors_can_share, managersOnly: space?.sharing_managers_only ?? false }) !== null;
   const spaces = useMemo(
     () => (personalID ? [...folderList.filter((f) => f.id === personalID), ...folderList.filter((f) => f.id !== personalID)] : folderList),
     [folderList, personalID],
@@ -812,7 +828,8 @@ export default function FilesPage() {
 
 
   if (route === null || route.kind === "node" || place?.kind === "missing") {
-    return <NotFoundPage />;
+    // A directory address that is not there offers an access request for it, as the Svelte page did.
+    return <NotFoundPage nodeID={route?.kind === "dir" ? route.dir : undefined} />;
   }
   if (placeQ.isError) {
     return <Alert type="error" showIcon role="alert" message={fileErrorText(placeQ.error, lang)} />;
@@ -934,6 +951,16 @@ export default function FilesPage() {
                   }}
                 >
                   {t("files.act.details")}
+                </Button>
+              )}
+              {selectedNodes.length === 1 && (
+                <Button
+                  onClick={() => {
+                    setTarget(selectedNodes[0]);
+                    setDialog("share");
+                  }}
+                >
+                  {t("share.open")}
                 </Button>
               )}
               {selectedNodes.length === 1 && selectedNodes[0].kind === "file" && atLeast(selectedNodes[0].role, "viewer") && (
@@ -1084,7 +1111,20 @@ export default function FilesPage() {
       )}
 
       {dialog === "details" && target && (
-        <Details node={target} canVersions={atLeast(target.role, "viewer")} onVersions={() => setDialog("versions")} onClose={() => setDialog(null)} />
+        <Details
+          node={target}
+          canVersions={atLeast(target.role, "viewer")}
+          canShare={canShareItem(target)}
+          onVersions={() => setDialog("versions")}
+          onShare={() => setDialog("share")}
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      {dialog === "share" && target && (
+        <Suspense fallback={null}>
+          <ShareDialog node={target} space={space} onclose={() => setDialog(null)} onchanged={() => void reload()} />
+        </Suspense>
       )}
 
       {dialog === "versions" && target && <Versions node={gated(target)} onChanged={() => void reload()} onClose={() => setDialog(null)} />}

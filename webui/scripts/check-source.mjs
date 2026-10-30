@@ -20,15 +20,15 @@ const rules = [
   [/setAttributeNS\([^)]*['"](style|on[a-z]*)['"]/, 'setting a style or event attribute is not allowed'],
   [/\bautoSize\b|\bWatermark\b/, 'antd autoSize and Watermark write style attributes, which the policy blocks'],
   [/from\s+['"]@ant-design\/icons(\/[^'"]*)?['"]/, 'import icons from lucide-react, not @ant-design/icons'],
-  [/\b(err|error|e)\.message\b/, 'read an error code, never the server text'],
+  [/(?<![\w.])(err|error|e)\.message\b/, 'read an error code, never the server text'],
 ];
 
 // The antd statics (message, notification, Modal.confirm and the rest) render outside the app's
 // ConfigProvider, so they get no nonce and no theme. The app uses App.useApp() for them.
 const antdStatics = 'the antd static API renders outside the theme and the nonce; use App.useApp()';
 const staticModals = new Set(['confirm', 'info', 'success', 'error', 'warning']);
-// The file-browser views: their dialogs and drawers keep maskClosable={false}.
-const fileDialogScope = /^(components\/files\/|pages\/(Files|Trash|NodeLink)Page\.tsx$)/;
+// The file-browser and sharing views: their dialogs and drawers keep maskClosable={false}.
+const fileDialogScope = /^(components\/files\/|components\/share\/|pages\/(Files|Trash|NodeLink|Shared|Requests|OpenLink)Page\.tsx$)/;
 
 // astProblems finds what a line rule cannot: a .message read anywhere in a catch clause (whatever the
 // variable is called) or in a .catch callback, and the antd statics.

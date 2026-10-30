@@ -66,3 +66,28 @@ describe("NodeLinkPage", () => {
     view.unmount();
   });
 });
+
+describe("the link page leaves the address alone once the person has moved on", () => {
+  const dirNode = (id: string, name: string, parent: string | null): Node => ({ ...lone, id, name, kind: "dir", parent_id: parent, mime_type: undefined });
+  it("does not send the address back to the folder when the read finishes after a move", async () => {
+    window.history.replaceState(null, "", "/shared");
+    api.statOrNull.mockResolvedValue(dirNode("nod_aaaaaaaa", "Plans", "nod_parent0"));
+    api.statNode.mockResolvedValue(dirNode("nod_parent0", "Team", null));
+    const router = createMemoryRouter(
+      [{ path: "/n/:nod", element: <NodeLinkPage /> }, { path: "*", element: <p>elsewhere</p> }],
+      { initialEntries: ["/n/nod_aaaaaaaa"] },
+    );
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(api.statOrNull).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(window.location.pathname).toBe("/shared");
+    window.history.replaceState(null, "", "/");
+  });
+});
+

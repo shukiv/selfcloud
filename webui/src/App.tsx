@@ -7,6 +7,7 @@ import type { Locale } from "antd/es/locale";
 import enUS from "antd/locale/en_US";
 import { loadInfo, loadMe } from "./lib/auth";
 import { applyBrand, brand, passwordMinLength } from "./lib/brand";
+import { maxExpiryDays } from "./lib/sharing/limits";
 import { go, signInURL } from "./lib/router";
 import { afterSignIn } from "./lib/next";
 import { isAdmin, session } from "./lib/session";
@@ -30,6 +31,9 @@ import NotFoundPage from "./pages/NotFoundPage";
 const FilesPage = lazy(() => import("./pages/FilesPage"));
 const NodeLinkPage = lazy(() => import("./pages/NodeLinkPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
+const SharedPage = lazy(() => import("./pages/SharedPage"));
+const RequestsPage = lazy(() => import("./pages/RequestsPage"));
+const OpenLinkPage = lazy(() => import("./pages/OpenLinkPage"));
 
 // The views are the address's pages, read the way the Svelte build reads them, so both interfaces
 // agree on what an address means.
@@ -130,6 +134,7 @@ export function Boot({ children }: { children: ReactNode }) {
       }
       applyBrand(info?.brand ?? get(brand));
       passwordMinLength.set(info?.passwordMinLength ?? 8);
+      maxExpiryDays.set(info?.sharingMaxExpiryDays ?? 0);
       const me = await loadMe().catch(() => null);
       chooseLang(me);
       setReady(true);
@@ -174,7 +179,14 @@ function Public({ view }: { view: View }) {
     case "reset": return <ResetPage />;
     case "forgot": return <ForgotPage />;
     case "sign-in": return <SignInPage />;
-    case "share-link": return <AuthLayout><NotYet /></AuthLayout>;
+    case "share-link":
+      return (
+        <AuthLayout>
+          <Suspense fallback={<PageLoading />}>
+            <OpenLinkPage />
+          </Suspense>
+        </AuthLayout>
+      );
     default: return <AuthLayout><NotFoundPage /></AuthLayout>;
   }
 }
@@ -216,6 +228,8 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "files": return <FilesPage />;
     case "node": return <NodeLinkPage />;
     case "trash": return <TrashPage />;
+    case "shared": return <SharedPage />;
+    case "requests": return <RequestsPage />;
     case "notfound": return <NotFoundPage />;
     case "manage":
     case "admin":

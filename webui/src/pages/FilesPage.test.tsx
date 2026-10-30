@@ -58,6 +58,33 @@ vi.mock("../lib/files/uploads", async () => {
   return { uploads: uploadList.store, manager: uploadsMock, conflictAsk: writable<string | null>(null) };
 });
 vi.mock("../lib/stars", () => ({ starNode: vi.fn(), unstarNode: vi.fn() }));
+// The access request on a missing directory is replaced by a stub that names the item it was given.
+vi.mock("../components/share/RequestAccess", async () => {
+  const React = await import("react");
+  return {
+    default: ({ nodeID }: { nodeID: string }) => React.createElement("p", null, `request for ${nodeID}`),
+  };
+});
+
+// The share dialog is replaced by a stub that shows the props it was given, so these tests state what the page passes.
+const shareStub = vi.hoisted(() => ({ mounted: 0, props: [] as Array<{ node: { id: string }; space: { id: string } | null }> }));
+vi.mock("../components/share/ShareDialog", async () => {
+  const React = await import("react");
+  return {
+    default: (p: { node: { id: string }; space: { id: string } | null; onclose: () => void; onchanged: () => void }) => {
+      React.useEffect(() => {
+        shareStub.mounted++;
+      }, []);
+      shareStub.props.push({ node: p.node, space: p.space });
+      return React.createElement(
+        "div",
+        { role: "dialog", "aria-label": "stub share" },
+        React.createElement("button", { onClick: p.onclose }, "stub close"),
+        React.createElement("button", { onClick: p.onchanged }, "stub changed"),
+      );
+    },
+  };
+});
 
 import FilesPage from "./FilesPage";
 
@@ -357,3 +384,133 @@ describe("the page reads nothing without a session", () => {
 
 export const storeForTests = writable(0);
 export type { RouterProvider as _unused };
+
+describe("sharing from the browser", () => {
+  beforeEach(() => {
+    shareStub.mounted = 0;
+    shareStub.props = [];
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
+  });
+  afterEach(() => folders.set([]));
+
+  // The listing is read with the role the item gives the caller; node() reads place.role when it is called.
+  function listing(role: Role, extra: Partial<Node> = {}) {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role, ...extra })], next_cursor: undefined });
+  }
+
+  function selectOnly(name: string) {
+    fireEvent.click(rows(name) as Element);
+  }
+
+  it("offers Share in the selection bar to a manager of the item", async () => {
+    place.role = "manager";
+    listing("manager");
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    selectOnly("alpha.txt");
+    await screen.findByRole("button", { name: "Details" });
+    expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
+  });
+
+  it("offers Share in the selection bar to every caller for one picked item, as Svelte does (the dialog limits what each role sees)", async () => {
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "viewer" })], next_cursor: undefined });
+    const first = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    selectOnly("alpha.txt");
+    expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
+    first.unmount();
+
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "editor", editors_can_share: false })], next_cursor: undefined });
+    const second = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    selectOnly("alpha.txt");
+    expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
+    second.unmount();
+  });
+
+  it("offers no Share bar button when the picks are not exactly one item", async () => {
+    place.role = "manager";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "manager" }), node("n2", "beta.txt", { role: "manager" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    selectOnly("alpha.txt");
+    expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("row", { name: "beta.txt" }), { ctrlKey: true });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Share" })).toBeNull());
+  });
+
+  it("Details shows Who has access to every caller, and its own Share only where Share is offered", async () => {
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "viewer" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    selectOnly("alpha.txt");
+    fireEvent.click(await screen.findByRole("button", { name: "Details" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("button", { name: "Who has access" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "Share" })).toBeNull();
+  });
+
+  it("opens the share dialog for the item, in the space the listing is in", async () => {
+    place.role = "manager";
+    listing("manager");
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    selectOnly("alpha.txt");
+    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    const dialog = await screen.findByRole("dialog", { name: "stub share" });
+    expect(dialog).toBeTruthy();
+    expect(shareStub.props.at(-1)?.node.id).toBe("n1");
+    expect(shareStub.props.at(-1)?.space?.id).toBe("fld_aaaaaaaa");
+  });
+
+  it("closes the share dialog through its own onclose, and the page does not close it on its own", async () => {
+    place.role = "manager";
+    listing("manager");
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    selectOnly("alpha.txt");
+    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    await screen.findByRole("dialog", { name: "stub share" });
+    expect(screen.getByRole("dialog", { name: "stub share" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "stub close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "stub share" })).toBeNull());
+  });
+
+  it("reads the listing again when the dialog changes something", async () => {
+    place.role = "manager";
+    listing("manager");
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    selectOnly("alpha.txt");
+    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    await screen.findByRole("dialog", { name: "stub share" });
+    api.childrenPage.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "stub changed" }));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalled());
+  });
+
+  it("a change of person closes an open share dialog", async () => {
+    place.role = "manager";
+    listing("manager");
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    selectOnly("alpha.txt");
+    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    await screen.findByRole("dialog", { name: "stub share" });
+    act(() => {
+      session.set(signedAs("u2", "t2"));
+    });
+    // The page reads the place again for the new session, and the dialog must not come back with the listing.
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("dialog", { name: "stub share" })).toBeNull();
+  });
+
+  it("a directory that is not there offers the access request for that directory", async () => {
+    vi.mocked(locate).mockResolvedValueOnce(null as never);
+    renderAt(`${FOLDER}/nod_dddddddd`);
+    expect(await screen.findByText("request for nod_dddddddd")).toBeTruthy();
+  });
+});

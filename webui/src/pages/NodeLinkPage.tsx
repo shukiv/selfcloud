@@ -43,15 +43,20 @@ export default function NodeLinkPage() {
   const alone = plan?.kind === "alone" ? plan.node : null;
   useEffect(() => {
     if (!plan) return;
+    // The read can finish after the person has moved on (a sidebar click while the page is still drawn): then the
+    // address is no longer this link's, and it is not moved back.
+    if (window.location.pathname !== path) return;
     if (plan.kind === "folder") {
       go(filesURL(plan.folder, null), { replace: true });
     } else if (plan.kind !== "alone") {
       const query: Record<string, string> = plan.preview ? { preview: plan.preview } : { select: plan.select ?? "" };
       go(filesURL(plan.folder, plan.dir, query), { replace: true });
     }
-  }, [plan]);
+  }, [plan, path]);
 
-  if (q.data?.kind === "missing" || !validID("nod", linkID)) return <NotFoundPage />;
+  if (q.data?.kind === "missing" || !validID("nod", linkID)) {
+    return <NotFoundPage nodeID={validID("nod", linkID) ? linkID : undefined} />;
+  }
   if (q.isError) return <Alert type="error" showIcon role="alert" message={fileErrorText(q.error, lang)} />;
   if (alone) {
     return <Preview items={[alone]} index={0} onIndex={() => undefined} onClose={() => go("/files", { replace: true })} />;

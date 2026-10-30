@@ -41,7 +41,7 @@ describe("Details", () => {
   afterEach(() => session.set(null));
 
   it("shows the signed-in person's name for their own ID, and never a raw ID", () => {
-    render(<Details node={file()} canVersions={false} onClose={vi.fn()} onVersions={vi.fn()} />);
+    render(<Details node={file()} canVersions={false} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={vi.fn()} />);
     const drawer = document.querySelector('[data-testid="details"]') as HTMLElement;
     // created_by is the signed-in ID, shown as the name; owner_id is someone else's, which the API gives no name for, so its row is left out.
     expect(drawer.textContent).toContain("Olivia");
@@ -51,26 +51,35 @@ describe("Details", () => {
   });
 
   it("shows Account key for a key's ID, not the key itself", () => {
-    render(<Details node={file({ created_by: "key_aaaaaaaa", owner_id: undefined })} canVersions={false} onClose={vi.fn()} onVersions={vi.fn()} />);
+    render(<Details node={file({ created_by: "key_aaaaaaaa", owner_id: undefined })} canVersions={false} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={vi.fn()} />);
     const drawer = document.querySelector('[data-testid="details"]') as HTMLElement;
     expect(drawer.textContent).toContain("Account key");
     expect(drawer.textContent).not.toContain("key_aaaaaaaa");
   });
 
-  it("has no share controls: no Share button and no access list", () => {
-    render(<Details node={file()} canVersions={true} onClose={vi.fn()} onVersions={vi.fn()} />);
+  it("shows Who has access to a caller who may not share, and no Share button", () => {
+    const onShare = vi.fn();
+    render(<Details node={file()} canVersions={true} canShare={false} onShare={onShare} onClose={vi.fn()} onVersions={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Who has access" })).toBeNull();
-    expect(screen.queryByText("Who has access")).toBeNull();
+    screen.getByRole("button", { name: "Who has access" }).click();
+    expect(onShare).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows Share and Who has access to a caller who may share, and both open the share dialog", () => {
+    const onShare = vi.fn();
+    render(<Details node={file()} canVersions={true} canShare={true} onShare={onShare} onClose={vi.fn()} onVersions={vi.fn()} />);
+    screen.getByRole("button", { name: "Share" }).click();
+    screen.getByRole("button", { name: "Who has access" }).click();
+    expect(onShare).toHaveBeenCalledTimes(2);
   });
 
   it("offers Versions for a file the caller may see versions of, and not for a folder", () => {
     const onVersions = vi.fn();
-    const { unmount } = render(<Details node={file()} canVersions={true} onClose={vi.fn()} onVersions={onVersions} />);
+    const { unmount } = render(<Details node={file()} canVersions={true} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={onVersions} />);
     screen.getByRole("button", { name: "Versions" }).click();
     expect(onVersions).toHaveBeenCalledTimes(1);
     unmount();
-    render(<Details node={file({ kind: "dir", sha256: undefined })} canVersions={true} onClose={vi.fn()} onVersions={onVersions} />);
+    render(<Details node={file({ kind: "dir", sha256: undefined })} canVersions={true} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={onVersions} />);
     expect(screen.queryByRole("button", { name: "Versions" })).toBeNull();
   });
 });
@@ -78,7 +87,7 @@ describe("Details", () => {
 describe("Details mask", () => {
   it("a click outside the drawer does not close it", () => {
     const onClose = vi.fn();
-    render(<Details node={file()} canVersions={false} onClose={onClose} onVersions={vi.fn()} />);
+    render(<Details node={file()} canVersions={false} canShare={false} onShare={vi.fn()} onClose={onClose} onVersions={vi.fn()} />);
     const mask = document.querySelector(".ant-drawer-mask") as HTMLElement;
     fireEvent.click(mask);
     expect(onClose).not.toHaveBeenCalled();
@@ -87,14 +96,14 @@ describe("Details mask", () => {
 
 describe("Details close control", () => {
   it("has one close control, the drawer's X", () => {
-    render(<Details node={file()} canVersions={false} onClose={vi.fn()} onVersions={vi.fn()} />);
+    render(<Details node={file()} canVersions={false} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={vi.fn()} />);
     expect(screen.getAllByRole("button", { name: /close/i })).toHaveLength(1);
   });
 });
 
 describe("Details versions by role", () => {
   it("offers no Versions to a caller who may not see them", () => {
-    render(<Details node={file()} canVersions={false} onClose={vi.fn()} onVersions={vi.fn()} />);
+    render(<Details node={file()} canVersions={false} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Versions" })).toBeNull();
   });
 });

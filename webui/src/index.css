@@ -14,6 +14,16 @@ body {
     "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
+/* The text colour of the pages that are not antd components (the public link and drop pages, the brand name). It
+   follows the theme's text token, as the palette in theme/tokens.ts gives it. */
+body {
+  color: #0d2142;
+}
+
+:root[data-theme="dark"] body {
+  color: #ffffff;
+}
+
 .skip-link {
   position: absolute;
   inset-inline-start: 8px;

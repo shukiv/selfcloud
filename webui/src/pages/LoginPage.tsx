@@ -42,10 +42,13 @@ export default function LoginPage() {
       return;
     }
     setBusy(true);
+    // The next address is read before the session is set: the gate moves the page on as soon as it is, and the
+    // address then no longer carries the next the person came from.
+    const next = new URLSearchParams(window.location.search).get("next");
     try {
       const signed = await signIn(email.trim(), password, account || undefined);
       await establish(signed);
-      go(afterSignIn(new URLSearchParams(window.location.search).get("next")), { replace: true });
+      go(afterSignIn(next), { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && Array.isArray(err.details.accounts)) {
         const choices = err.details.accounts as AccountChoice[];

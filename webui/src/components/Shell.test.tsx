@@ -1,13 +1,49 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../lib/session";
 import { setLang } from "../lib/i18n";
 import { ThemeProvider } from "../theme/theme";
 import { Direction } from "../App";
+import type { FolderAccess } from "../lib/files/types";
 import Shell from "./Shell";
+
+// The folder lists and the hide call are replaced: each test states what the server answers.
+const mocks = vi.hoisted(() => ({
+  loadFolders: vi.fn(async () => []),
+  loadHiddenFolders: vi.fn(async () => []),
+  setHidden: vi.fn(async () => undefined),
+  listAccessRequests: vi.fn(async () => ({ items: [] as unknown[] })),
+}));
+vi.mock("../lib/files/folders", async () => {
+  const { userWritable } = await import("../lib/store");
+  return {
+    folders: userWritable([]),
+    hiddenFolders: userWritable([]),
+    loadFolders: mocks.loadFolders,
+    loadHiddenFolders: mocks.loadHiddenFolders,
+  };
+});
+vi.mock("../lib/sharing/api", () => ({ setHidden: mocks.setHidden, listAccessRequests: mocks.listAccessRequests }));
+
+import { folders, hiddenFolders } from "../lib/files/folders";
+
+function team(id: string, name: string, extra: Partial<FolderAccess> = {}): FolderAccess {
+  return {
+    id,
+    name,
+    kind: "team",
+    access: "read",
+    role: "viewer",
+    members_only: false,
+    sharing_managers_only: false,
+    no_download_for_viewers: false,
+    allow_links: false,
+    ...extra,
+  };
+}
 
 function signIn(role: "owner" | "member" | "admin") {
   const s: Session = {
@@ -48,6 +84,11 @@ describe("Shell", () => {
   beforeEach(async () => {
     window.localStorage.clear();
     await setLang("en");
+    folders.set([]);
+    hiddenFolders.set([]);
+    mocks.loadFolders.mockClear();
+    mocks.loadHiddenFolders.mockReset().mockResolvedValue([]);
+    mocks.setHidden.mockClear();
   });
 
   it("draws the page inside and lists the member's destinations", async () => {
@@ -114,4 +155,133 @@ describe("Shell", () => {
       window.matchMedia = original;
     }
   });
+
+  describe("team spaces and hidden spaces", () => {
+    function teamsIn(drawer: HTMLElement): string[] {
+      return within(drawer.querySelector('ul[aria-label="Team spaces"]') as HTMLElement)
+        .queryAllByRole("link")
+        .map((a) => a.querySelector("bdi")?.textContent ?? "");
+    }
+
+    it("lists the visible team spaces, and no hidden one until the caller asks for them", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A")]);
+      hiddenFolders.set([team("fld_b", "Team B", { hidden: true })]);
+      renderShell("/files");
+      const nav = await openNav();
+      expect(teamsIn(nav)).toEqual(["Team A"]);
+      expect(within(nav).queryByText("Team B")).toBeNull();
+      fireEvent.click(within(nav).getByRole("checkbox", { name: "Show hidden spaces" }));
+      await waitFor(() => expect(teamsIn(nav)).toEqual(["Team A", "Team B"]));
+      expect(within(nav).getByText("Hidden")).toBeTruthy();
+      expect(mocks.loadHiddenFolders).toHaveBeenCalledTimes(1);
+    });
+
+    it("lists only team spaces, never a personal folder", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A"), team("fld_p", "Mine", { kind: "personal" })]);
+      renderShell("/files");
+      const nav = await openNav();
+      expect(teamsIn(nav)).toEqual(["Team A"]);
+    });
+
+    it("Hide calls setHidden for that space and then reads both lists again", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A")]);
+      renderShell("/files");
+      const nav = await openNav();
+      fireEvent.click(within(nav).getByRole("button", { name: "Options for Team A" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Hide" }));
+      await waitFor(() => expect(mocks.setHidden).toHaveBeenCalledWith("fld_a", true));
+      await waitFor(() => expect(mocks.loadFolders).toHaveBeenCalled());
+    });
+
+    it("Show on a hidden space calls setHidden with false", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A")]);
+      hiddenFolders.set([team("fld_b", "Team B", { hidden: true })]);
+      renderShell("/files");
+      const nav = await openNav();
+      fireEvent.click(within(nav).getByRole("checkbox", { name: "Show hidden spaces" }));
+      fireEvent.click(await within(nav).findByRole("button", { name: "Options for Team B" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Show" }));
+      await waitFor(() => expect(mocks.setHidden).toHaveBeenCalledWith("fld_b", false));
+    });
+
+    it("a failed read of the hidden list keeps the list that was there", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A")]);
+      hiddenFolders.set([team("fld_b", "Team B", { hidden: true })]);
+      mocks.loadHiddenFolders.mockRejectedValue(new Error("network"));
+      renderShell("/files");
+      const nav = await openNav();
+      fireEvent.click(within(nav).getByRole("checkbox", { name: "Show hidden spaces" }));
+      await waitFor(() => expect(mocks.loadHiddenFolders).toHaveBeenCalled());
+      await waitFor(() => expect(teamsIn(nav)).toEqual(["Team A", "Team B"]));
+    });
+
+    it("offers Space settings to a manager of the space", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A", { role: "manager" })]);
+      renderShell("/files");
+      const nav = await openNav();
+      fireEvent.click(within(nav).getByRole("button", { name: "Options for Team A" }));
+      expect(await screen.findByRole("menuitem", { name: "Space settings" })).toBeTruthy();
+    });
+
+    it("offers no Space settings to a viewer of the space", async () => {
+      signIn("member");
+      folders.set([team("fld_c", "Team C", { role: "viewer" })]);
+      renderShell("/files");
+      const nav = await openNav();
+      fireEvent.click(within(nav).getByRole("button", { name: "Options for Team C" }));
+      await screen.findByRole("menuitem", { name: "Hide" });
+      expect(screen.queryByRole("menuitem", { name: "Space settings" })).toBeNull();
+    });
+
+    it("a change of person clears the hidden toggle", async () => {
+      signIn("member");
+      hiddenFolders.set([team("fld_b", "Team B", { hidden: true })]);
+      folders.set([team("fld_a", "Team A")]);
+      renderShell("/files");
+      const nav = await openNav();
+      fireEvent.click(within(nav).getByRole("checkbox", { name: "Show hidden spaces" }));
+      await waitFor(() => expect(teamsIn(nav)).toEqual(["Team A", "Team B"]));
+      // Another person (another ID and token), not a renewed session of the same one.
+      act(() =>
+        session.set({
+          user: { id: "u2", email: "pat@example.com", display_name: "Pat", role: "member", locale: "en" } as Session["user"],
+          account: null,
+          csrf: "other",
+          publicLinks: false,
+        }),
+      );
+      await waitFor(() => expect((within(nav).getByRole("checkbox", { name: "Show hidden spaces" }) as HTMLInputElement).checked).toBe(false));
+    });
+  });
 });
+
+describe("the Requests entry", () => {
+  beforeEach(() => {
+    mocks.listAccessRequests.mockResolvedValue({ items: [] });
+  });
+
+  it("is shown with its count to a member who has requests waiting to be decided, and is not shown otherwise", async () => {
+    signIn("member");
+    mocks.listAccessRequests.mockResolvedValue({ items: [{ id: "arq_a" }, { id: "arq_b" }] });
+    renderShell("/");
+    const drawer = await openNav();
+    const entry = await waitFor(() => within(drawer).getByRole("menuitem", { name: /Requests/ }));
+    expect(entry.textContent).toContain("2 waiting");
+  });
+
+  it("is not shown to a member with nothing waiting", async () => {
+    signIn("member");
+    mocks.listAccessRequests.mockResolvedValue({ items: [] });
+    renderShell("/");
+    const drawer = await openNav();
+    await waitFor(() => within(drawer).getByRole("menuitem", { name: /Shared with me/ }));
+    expect(within(drawer).queryByRole("menuitem", { name: /Requests/ })).toBeNull();
+  });
+});
+

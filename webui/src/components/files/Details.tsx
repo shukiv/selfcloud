@@ -11,18 +11,22 @@ import { kindOf } from "../../lib/files/kind";
 import type { Node } from "../../lib/files/types";
 import Icon from "./Icon";
 
-// Details is the side drawer for one node. The sharing part of the Svelte details view is left out
-// until the sharing slice: no share action and no access list are shown here.
+// Details is the side drawer for one node. The Share button shows only when the caller may share the node;
+// "Who has access" always shows, and both open the share dialog.
 export default function Details({
   node,
   canVersions,
+  canShare,
   onClose,
   onVersions,
+  onShare,
 }: {
   node: Node;
   canVersions: boolean;
+  canShare: boolean;
   onClose: () => void;
   onVersions: () => void;
+  onShare: () => void;
 }) {
   const { t } = useT();
   const lang = useLang();
@@ -105,6 +109,16 @@ export default function Details({
           {t("files.details.versions")}
         </Button>
       )}
+      <div style={{ display: "grid", gap: 8, marginBlockStart: 16 }}>
+        {canShare && (
+          <Button type="primary" block onClick={onShare}>
+            {t("share.open")}
+          </Button>
+        )}
+        <Button block onClick={onShare}>
+          {t("share.whoHas")}
+        </Button>
+      </div>
     </Drawer>
   );
 }

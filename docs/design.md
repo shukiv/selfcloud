@@ -1616,6 +1616,25 @@ the not-found view.
 - *Wording.* Hebrew addresses the reader in the plural imperative (התחברו, not התחבר or
   התחברי), so no text assumes a gender. Portuguese follows European spelling and usage.
 
+*React sharing interface (slice v3).* The sharing pages are in `webui/` with the rules of the Svelte ones they replace.
+`pages/SharedPage.tsx` (Shared with me), `pages/RequestsPage.tsx` (access requests) and `pages/OpenLinkPage.tsx` (the
+address `/s#secret`) load with `React.lazy`, as do the share dialog (`components/share/ShareDialog.tsx`, opened from the
+selection bar and from Details) and the request-access form on the not-found view. Public browse and the drop page
+(`components/share/PublicBrowse.tsx`, `components/share/DropPage.tsx`) are the visitor's view of a link.
+- The link secret stays in the address fragment. It leaves the address by `history.replaceState` on each exit (dead,
+  sign-in, organisation redirect). It is never in a request URL, a query string, storage (except the session-scoped
+  sign-in hand-off, which is the Svelte rule), or an error text.
+- A visitor's credential is held in component state only, renewed 2 minutes before it ends, and sent in the header to
+  the server that issued it. A visitor's reads are not refused for lack of a session, and a visitor's 401 does not sign
+  a signed-in person out (the visitor calls pass `noRedirect`, as in Svelte).
+- A drop page never lists the folder. It lists only the files that this visit sent, from its own upload manager, which
+  is created on mount and halted on unmount (a StrictMode remount gets a new one).
+- Every error is shown by its code. A dead link gets one message whatever its cause.
+- Dates are the five native date inputs; the cap from `GET /api/v1/info` (`sharing_max_expiry_days`) is an installation
+  setting, set at start-up, and it survives a change of person.
+- The share actions are hidden for a caller who may not share, and the dialog shows a viewer only its own row (the
+  server checks every change again).
+
 ## 11. Data model
 
 | Table | Main fields |
@@ -1754,7 +1773,7 @@ Each slice ships with tests and leaves the server runnable.
 | p2 | Starred, Recent and Home | Built |
 | v1 | React web interface beside the Svelte one (`webui/`, section 10): Vite, React 18 with Ant Design 5, React Router 7; the theme and the brand palette and sidebar; the CSP nonce, reported by the Svelte build and enforced by the React build; the seven languages; the app gate, shell and auth pages | Built |
 | v2 | React file browser: Files, NodeLink and Trash, the `files/*` components, uploads, undo | Built |
-| v3 | React sharing interface: Shared, Requests, OpenLink and the share components | Planned |
+| v3 | React sharing interface: Shared, Requests, OpenLink, the public browse and drop pages, the share dialog and its parts, hidden spaces and space settings | Built |
 | v4 | React rest: Home, Starred, Recent, Storage, owner and installation admin pages; then the flip, which removes the Svelte app and moves `webui/` to `web/` | Planned |
 | p3 | Shortcuts, folder colours and descriptions | Planned |
 | p4 | Labels: typed fields the owner defines | Planned |
@@ -2071,3 +2090,39 @@ Decided on approval:
       - The share actions are hidden, not disabled, so a viewer or editor never sees a control that v3 will own.
       - Alt+ArrowUp moves focus up a row, as the Svelte listing does (the arrow case matches first). Backspace goes to the
         parent folder. Kept as it is, not changed.
+    - *Slice v3, for review.* These are the interpretations and deliberate differences from the Svelte sharing interface.
+      Each is a choice the owner has not made; each is listed so that it can be changed.
+      - The selection bar's Share button is shown for any single picked item, as Svelte shows it. The dialog then shows a
+        viewer only its own row and says what the caller's access is. (A narrower gate was tried and reverted.)
+      - Team spaces are a list of links beside the sidebar's menu, each with its own options menu. Svelte's row nests a
+        button in a link, which antd's menu items do not allow. The look is close, not identical.
+      - The recipient picker is a custom ARIA combobox on an antd input, not antd Select: Svelte's keyboard rules (Escape
+        closes the list only, arrows, Enter) and the input id are the contract the e2e drives. The role pickers are antd
+        Select.
+      - A request row shows "A person" when the requester has no name; Svelte showed the raw user ID. The v2 rule holds:
+        no raw IDs.
+      - A failed refetch of Shared with me or Requests keeps the list and shows the failure above it. Only a failure with
+        no data is a full error. Svelte replaced the list with the error.
+      - A change of session while `/s` is open ends the visit: the credential, the renewal timer, the secret and any typed
+        password are dropped, the address is stripped, and the dead-link message is shown. Svelte did not watch the session.
+      - A signed-out visitor to a dead link is sent to sign in, as in Svelte, and keeps the secret for the sign-in. The
+        dead-link message is shown to a signed-in person.
+      - An ancestor with an empty name (a folder root) is named "from a parent folder", not "from " followed by nothing.
+      - The Requests entry shows to anyone who has a request waiting, with its count, as Svelte does. It is shown to an
+        owner always.
+      - `/s` sits in the split-screen layout (AuthLayout) for signed-in and signed-out people alike. Svelte's PublicLayout
+        is the same frame for both.
+      - Two faults of earlier slices are fixed here. The sign-in page read `next` after the session was set, so a sign-in
+        that started from a link landed on home (v1). A folder read that finished after the person had moved to another
+        page moved the address back (v2, NodeLink).
+      - The Manage > Overview switch and the Manage > Links check (Delete all public links) are not in this build: both
+        pages are part v4. The switch is set through the API for now, and the Links check is kept to move with its page.
+      - The `maxExpiryDays` cap is a plain writable set at start-up, not a per-person store, so the reset at sign-in
+        keeps it.
+      - The sharing cap is applied to the dates a person types. React clamps an organisation link's end, a person's
+        end and a drop link's end to `maxExpiryDays` (`expiryFromInputCapped`); Svelte does not clamp, and a date past
+        the cap is refused by the server. The React choice shows the cap in the picker, so the person sees the limit
+        before the server refuses. The Svelte behaviour goes at the flip. (Review v3, M3.)
+      - When the first read of a link list fails, React shows the failure and no choices or form (the switch, the
+        radios, the date fields): an action there would act on a link that was not read. Svelte's fieldset stays visible
+        with the error above it. A failed refetch of a list already shown keeps the list in both. (Review v3, H1.)
