@@ -37,6 +37,9 @@ func newTestServerWith(t *testing.T, mailer mail.Sender, mutate ...func(*config.
 	cfg := config.Defaults()
 	cfg.DataDir = t.TempDir()
 	cfg.Storage.MinFree = 0
+	// A search costs a few hundred milliseconds here, most of it SQLite preparing its statements, and this host can be
+	// loaded: the tests give the deadline room so that they test the search, not the clock. The deadline's own test sets it.
+	cfg.Search.Timeout = config.Duration(60 * time.Second)
 	for _, f := range mutate {
 		f(cfg)
 	}

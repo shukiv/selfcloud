@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/mail"
@@ -296,6 +295,7 @@ func TestSearchPagesWithoutTotals(t *testing.T) {
 			q += "&cursor=" + url.QueryEscape(cursor)
 		}
 		rec := fx.search(t, q)
+		wantStatus(t, rec, http.StatusOK)
 		if strings.Contains(rec.Body.String(), "total") {
 			t.Fatalf("a response names a total: %s", rec.Body)
 		}
@@ -411,9 +411,7 @@ func TestSmallCopyIsSearchableAtOnce(t *testing.T) {
 // TestLargeCopyAppearsAfterTheIndexJob: a copy above the small limit records its rowid range, and its names are found only
 // after the search job has indexed the range.
 func TestLargeCopyAppearsAfterTheIndexJob(t *testing.T) {
-	// A search costs a few hundred milliseconds here, most of it SQLite preparing its statements, and this host can be
-	// loaded: the test gives the deadline room so that it tests the index, not the clock.
-	fx := newSearchFixture(t, func(c *config.Config) { c.Search.Timeout = config.Duration(60 * time.Second) })
+	fx := newSearchFixture(t)
 	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/pkg")
 	writeFile(t, fx.s, fx.key, fx.fld.ID, "/pkg/copy-marker.txt", "x")
 	for i := range 120 {
