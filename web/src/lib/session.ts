@@ -10,6 +10,13 @@ export interface Session {
   csrf: string;
   // publicLinks is the account's switch for links that anyone can open.
   publicLinks: boolean;
+  // mustChange: the person must change the password before the app opens (every route answers so).
+  mustChange?: boolean;
+  // impersonation is set while an installation admin is signed in as this person, until endsAt (RFC 3339).
+  impersonation?: { endsAt: string } | null;
+  // tenantAccess and mailConfigured are the installation admin's switches; they are set for an admin's session only.
+  tenantAccess?: boolean;
+  mailConfigured?: boolean;
 }
 
 export const session = writable<Session | null>(null);
@@ -26,7 +33,23 @@ export function setSignedIn(s: SignedIn): void {
 }
 
 export function setMe(me: Me): void {
-  session.set({ user: me.user, account: me.account, csrf: me.csrf_token, publicLinks: me.public_links === true });
+  session.set({
+    user: me.user,
+    account: me.account,
+    csrf: me.csrf_token,
+    publicLinks: me.public_links === true,
+    mustChange: me.must_change_password === true,
+    impersonation: me.impersonation ? { endsAt: me.impersonation.ends_at } : null,
+    tenantAccess: me.tenant_access === true,
+    mailConfigured: me.mail_configured === true,
+  });
+}
+
+// forcePasswordChange records that the person must change the password. A refused request says so, so the page
+// goes to the change-password page at once.
+export function forcePasswordChange(): void {
+  const s = get(session);
+  if (s) session.set({ ...s, mustChange: true });
 }
 
 // sessionKey names the session a request was made under: its person and its CSRF token. It is '' with no session.

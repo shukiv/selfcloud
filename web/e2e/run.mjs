@@ -9,7 +9,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { access, constants, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +22,7 @@ import * as p4 from './p4.mjs';
 import * as p5 from './p5.mjs';
 import * as s4a from './s4a.mjs';
 import { mediaChecks } from './media.mjs';
+import { mailSink, waitForMail } from './mailsink.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -433,72 +433,6 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
 
 // menuTexts lists the entries of the sidebar menu, open or in the drawer.
 const menuTexts = (page) => page.evaluate(`[...document.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent.trim())`);
-
-// mailSink is a minimal SMTP server that keeps the mail it is sent, so the run can take the links from it. It
-// does no TLS and no login: the server dials it with smtp_tls none.
-function mailSink() {
-  const messages = [];
-  const server = createServer((sock) => {
-    let buf = '';
-    let to = [];
-    let data = null;
-    const say = (line) => sock.write(`${line}\r\n`);
-    sock.on('error', () => {});
-    say('220 e2e-sink');
-    sock.on('data', (chunk) => {
-      buf += chunk.toString('latin1');
-      let end;
-      while ((end = buf.indexOf('\r\n')) !== -1) {
-        const line = buf.slice(0, end);
-        buf = buf.slice(end + 2);
-        if (data !== null) {
-          if (line !== '.') {
-            data += `${line}\r\n`;
-            continue;
-          }
-          messages.push({ to, data });
-          to = [];
-          data = null;
-          say('250 queued');
-          continue;
-        }
-        const verb = line.slice(0, 4).toUpperCase();
-        if (verb === 'RCPT') {
-          to.push(/<([^>]*)>/.exec(line)?.[1] ?? line.slice(8));
-          say('250 ok');
-        } else if (verb === 'DATA') {
-          data = '';
-          say('354 end with a dot');
-        } else if (verb === 'RSET') {
-          to = [];
-          say('250 ok');
-        } else if (verb === 'QUIT') {
-          say('221 bye');
-          sock.end();
-        } else {
-          say('250 ok');
-        }
-      }
-    });
-  });
-  return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () =>
-      resolve({ port: server.address().port, messages, close: () => server.close() }),
-    );
-  });
-}
-
-// waitForMail waits for a message to the address, and returns it.
-async function waitForMail(sink, address, timeout = 15000) {
-  const until = Date.now() + timeout;
-  for (;;) {
-    const m = sink.messages.find((x) => x.to.includes(address));
-    if (m) return m;
-    if (Date.now() > until) throw new Error(`no mail to ${address}`);
-    await new Promise((r) => setTimeout(r, 100));
-  }
-}
 
 // clickMenuItemText clicks the sidebar entry whose text starts with this text (the Requests entry carries a count).
 async function clickMenuItemText(page, text) {

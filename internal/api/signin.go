@@ -382,6 +382,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) error {
 		if err := tx.DeleteSession(r.Context(), sess.IDHash); err != nil {
 			return err
 		}
+		// An admin who signs out ends the sign-ins-as it began (decision 41).
+		if err := s.endAdminImpersonations(r.Context(), tx, p.UserID, "admin_signed_out"); err != nil {
+			return err
+		}
 		return tx.InsertAudit(r.Context(), s.auditEntry(r, p.AccountID, "user.logout", p.UserID, nil))
 	})
 	if err != nil {
@@ -544,6 +548,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		}
 		at := store.Now()
 		found.PasswordHash = hashed
+		found.MustChangePassword = false
 		found.UpdatedAt = at
 		if err := tx.UpdateUser(ctx, found); err != nil {
 			return err
@@ -554,6 +559,12 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 			return err
 		}
 		if err := tx.DeleteVerifications(ctx, found.ID, store.PurposeReset, ""); err != nil {
+			return err
+		}
+		if err := s.endImpersonations(ctx, tx, found.ID, "password_reset"); err != nil {
+			return err
+		}
+		if err := s.endAdminImpersonations(ctx, tx, found.ID, "admin_sessions_ended"); err != nil {
 			return err
 		}
 		if err := tx.DeleteUserSessions(ctx, found.ID); err != nil {
@@ -586,6 +597,20 @@ type meResponse struct {
 	PersonalFolderID *string `json:"personal_folder_id"`
 	// PublicLinks is the account's switch for links that anyone can open. False for an installation admin.
 	PublicLinks bool `json:"public_links"`
+	// MustChangePassword is set when an admin typed this user's password. Until the user changes it, only the
+	// change-password route and this one are open to the user (decision 41).
+	MustChangePassword bool `json:"must_change_password"`
+	// Impersonation is set while an installation admin is signed in as this user. EndsAt is the hard limit.
+	Impersonation *impersonationJSON `json:"impersonation,omitempty"`
+	// TenantAccess and MailConfigured are set for an installation admin only. The admin pages read them to show the
+	// ways in to a tenant user; nobody else learns them (decision 41).
+	TenantAccess   *bool `json:"tenant_access,omitempty"`
+	MailConfigured *bool `json:"mail_configured,omitempty"`
+}
+
+// impersonationJSON describes a sign-in-as session to the person it signed in as.
+type impersonationJSON struct {
+	EndsAt time.Time `json:"ends_at"`
 }
 
 type accountRef struct {
@@ -614,7 +639,15 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) error {
 // meOf is the answer for the signed-in user u: the user, the account (none for an admin) and the
 // session's CSRF token. GET /me and PATCH /me both answer with it.
 func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
-	out := meResponse{User: toUserJSON(u), CSRFToken: sessionOf(r).CSRFToken}
+	sess := sessionOf(r)
+	out := meResponse{User: toUserJSON(u), CSRFToken: sess.CSRFToken, MustChangePassword: u.MustChangePassword}
+	if sess.ImpersonatorID != "" {
+		out.Impersonation = &impersonationJSON{EndsAt: sess.CreatedAt.Add(impersonationTTL)}
+	}
+	if u.AccountID == "" && u.Role == store.RoleAdmin {
+		tenantAccess, mail := s.cfg.Admin.TenantAccess, s.mailer != nil
+		out.TenantAccess, out.MailConfigured = &tenantAccess, &mail
+	}
 	if u.AccountID != "" {
 		acc, err := s.store.Account(r.Context(), u.AccountID)
 		if err != nil {
@@ -761,6 +794,9 @@ func (s *Server) failedPasswordChange(w http.ResponseWriter, r *http.Request) er
 			if err := tx.DeleteSession(r.Context(), sess.IDHash); err != nil {
 				return err
 			}
+			if err := s.endAdminImpersonations(r.Context(), tx, p.UserID, "admin_session_ended"); err != nil {
+				return err
+			}
 		}
 		e := s.auditEntry(r, p.AccountID, "user.password_change", p.UserID, nil)
 		e.ActorKind, e.ActorID, e.Outcome = string(auth.KindUser), p.UserID, "failed"
@@ -840,8 +876,16 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 		}
 		now := store.Now()
 		found.PasswordHash = hashed
+		found.MustChangePassword = false
 		found.UpdatedAt = now
 		if err := tx.UpdateUser(ctx, found); err != nil {
+			return err
+		}
+		if err := s.endImpersonations(ctx, tx, found.ID, "password_change"); err != nil {
+			return err
+		}
+		// An admin who changes its own password signs out its sign-ins-as, too (decision 41).
+		if err := s.endAdminImpersonations(ctx, tx, found.ID, "admin_password_change"); err != nil {
 			return err
 		}
 		if err := tx.DeleteUserSessions(ctx, found.ID); err != nil {

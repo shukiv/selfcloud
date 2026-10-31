@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -58,6 +59,30 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) error {
 			Details: e.Details,
 		})
 	}
+	s.nameImpersonators(r.Context(), out.Items)
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// nameImpersonators adds the installation admin's name to each row a sign-in-as made, so an owner sees who acted and
+// that it was done signed in as the user (decision 41). The name is empty when the admin no longer exists.
+func (s *Server) nameImpersonators(ctx context.Context, items []auditJSON) {
+	names := map[string]string{}
+	for i := range items {
+		id, _ := items[i].Details["impersonated_by"].(string)
+		if id == "" {
+			continue
+		}
+		name, seen := names[id]
+		if !seen {
+			if u, err := s.store.User(ctx, "", id); err == nil {
+				name = u.DisplayName
+				if name == "" {
+					name = u.Email
+				}
+			}
+			names[id] = name
+		}
+		items[i].Details["impersonated_by_name"] = name
+	}
 }

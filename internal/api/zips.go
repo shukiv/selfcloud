@@ -383,8 +383,7 @@ func (s *Server) runZipJob(ctx context.Context, job *store.Job) error {
 	if err := json.Unmarshal([]byte(job.Payload), &pl); err != nil {
 		return fmt.Errorf("zip job payload: %w", err)
 	}
-	p := &auth.Principal{Kind: auth.Kind(pl.Actor.Kind), ID: pl.Actor.ID, AccountID: job.AccountID,
-		UserID: pl.Actor.UserID, Role: pl.Actor.Role, Token: pl.Actor.Token}
+	p := jobPrincipal(pl.Actor, job.AccountID)
 	defer s.zipRecover(ctx, z)
 	// Each turn checks the caller first, as a copy's batch does: a caller revoked since the last turn gets no zip.
 	if err := s.zipGuard(ctx, z, p); err != nil {
@@ -742,9 +741,12 @@ func (s *Server) publishZip(ctx context.Context, z *store.Zip, w *zipWork) error
 		if !ok {
 			return errors.New("the zip was not pending when it was finished")
 		}
+		details := map[string]any{"nodes": w.roots, "entries": len(w.plan), "skipped": w.skipped, "bytes": size}
+		if w.caller.Impersonator != "" {
+			details = impersonated(w.caller, details)
+		}
 		return tx.InsertAudit(ctx, &store.AuditEntry{AccountID: z.AccountID, ActorKind: string(w.caller.Kind),
-			ActorID: w.caller.ID, Action: "node.zip", Target: z.ID, Time: now,
-			Details: map[string]any{"nodes": w.roots, "entries": len(w.plan), "skipped": w.skipped, "bytes": size}})
+			ActorID: w.caller.ID, Action: "node.zip", Target: z.ID, Time: now, Details: details})
 	})
 	if err != nil {
 		_ = os.Remove(final)

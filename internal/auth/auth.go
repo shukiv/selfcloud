@@ -66,6 +66,13 @@ type Principal struct {
 	// Link is set for KindShareLink: the node the link sits on and the role it gives there, read from
 	// the database on every request.
 	Link *LinkScope
+	// Impersonator is set for a session that an installation admin began by signing in as this user
+	// (decision 41). It is the admin's user ID. Such a session is refused every route that is not
+	// classified as allowed while impersonating.
+	Impersonator string
+	// MustChangePassword is set for a user whose password an admin typed. Until the user changes it,
+	// the user reaches only the routes that allow it (see server.go).
+	MustChangePassword bool
 }
 
 // LinkScope is what an open link gives its visitor: the node the link sits on, which the visitor reaches

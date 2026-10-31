@@ -51,10 +51,13 @@ type User struct {
 	// QuotaBytes is the user's own storage limit on its personal folder. nil follows the account's default;
 	// 0 means no limit; a positive value is the limit.
 	QuotaBytes *int64
+	// MustChangePassword is set by an installation admin's typed password (decision 41). Until the
+	// user changes it, the user reaches only the change-password route and GET /me.
+	MustChangePassword bool
 }
 
 const userCols = `id, account_id, external_id, email, email_key, display_name, locale, role, status,
-	password_hash, verified_at, created_at, updated_at, quota_bytes`
+	password_hash, verified_at, created_at, updated_at, quota_bytes, must_change_password`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
@@ -62,8 +65,9 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var verified sql.NullInt64
 	var created, updated int64
 	var quota sql.NullInt64
+	var mustChange int64
 	err := row.Scan(&u.ID, &acc, &ext, &u.Email, &u.EmailKey, &u.DisplayName, &u.Locale,
-		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota)
+		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota, &mustChange)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -76,6 +80,7 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	u.VerifiedAt = fromNullMillis(verified)
 	u.CreatedAt = fromMillis(created)
 	u.UpdatedAt = fromMillis(updated)
+	u.MustChangePassword = mustChange == 1
 	if quota.Valid {
 		q := quota.Int64
 		u.QuotaBytes = &q
@@ -246,10 +251,10 @@ func (s *Store) queryUsers(ctx context.Context, query string, args []any) ([]*Us
 // account.
 func (tx *Tx) InsertUser(ctx context.Context, u *User) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO users (`+userCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.ID, nullString(u.AccountID), nullString(u.ExternalID), u.Email, u.EmailKey, u.DisplayName, u.Locale,
 		u.Role, u.Status, nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.CreatedAt),
-		millis(u.UpdatedAt), nullInt(u.QuotaBytes))
+		millis(u.UpdatedAt), nullInt(u.QuotaBytes), boolInt(u.MustChangePassword))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -268,10 +273,11 @@ func (tx *Tx) UpdateUser(ctx context.Context, u *User) error {
 		return err
 	}
 	args := append([]any{nullString(u.ExternalID), u.DisplayName, u.Locale, u.Role, u.Status,
-		nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.UpdatedAt), nullInt(u.QuotaBytes), u.ID}, cargs...)
+		nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.UpdatedAt), nullInt(u.QuotaBytes),
+		boolInt(u.MustChangePassword), u.ID}, cargs...)
 	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE users SET external_id = ?, display_name = ?,
-		locale = ?, role = ?, status = ?, password_hash = ?, verified_at = ?, updated_at = ?, quota_bytes = ?
-		WHERE id = ? AND `+clause, args...))
+		locale = ?, role = ?, status = ?, password_hash = ?, verified_at = ?, updated_at = ?, quota_bytes = ?,
+		must_change_password = ? WHERE id = ? AND `+clause, args...))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}

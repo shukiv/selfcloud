@@ -10,8 +10,9 @@ import (
 )
 
 // TestAdminSessionLinkRules checks what an admin session may do with verification methods. It may
-// ask for a link to set up a user who has never verified, but never "none", and never a link for
-// a password reset. Owner and member sessions may only use email.
+// ask for a link to set up a user who has never verified, but never "none". A link for a password
+// reset is refused while admin.tenant_access is off, with its reason; when it is on, the link is
+// allowed (TestResetLinkWhenAllowedClearsTheFlag). Owner and member sessions may only use email.
 func TestAdminSessionLinkRules(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
@@ -43,10 +44,13 @@ func TestAdminSessionLinkRules(t *testing.T) {
 	wantError(t, callSession(t, s, adminSess, "POST", users(acc.ID)+"/"+acc.Owner.ID+"/verification",
 		map[string]any{"method": "none"}), 403, apierr.Forbidden)
 
-	// A password reset as a link is refused, even for an active user.
+	// A password reset as a link is refused while admin.tenant_access is off, and says why.
 	active, _ := verifiedUser(t, s, adminKeyAccount(t, s, admin, acc.ID), acc.ID, "active@example.com")
-	wantError(t, callSession(t, s, adminSess, "POST", users(acc.ID)+"/"+active.ID+"/password-reset",
+	e := wantError(t, callSession(t, s, adminSess, "POST", users(acc.ID)+"/"+active.ID+"/password-reset",
 		map[string]any{"method": "link"}), 403, apierr.Forbidden)
+	if e.Details["reason"] != reasonTenantAccessOff {
+		t.Errorf("reset link refused with reason %v, want %s", e.Details["reason"], reasonTenantAccessOff)
+	}
 
 	// Email still works for a reset, and the answer carries no token.
 	reset := callSession(t, s, adminSess, "POST", users(acc.ID)+"/"+active.ID+"/password-reset",

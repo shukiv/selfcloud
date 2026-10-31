@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Spin, ConfigProvider } from "antd";
 import type { Locale } from "antd/es/locale";
 import enUS from "antd/locale/en_US";
@@ -23,7 +23,6 @@ import ForgotPage from "./pages/ForgotPage";
 import ResetPage from "./pages/ResetPage";
 import VerifyPage from "./pages/VerifyPage";
 import SignInPage from "./pages/SignInPage";
-import ChangePasswordPage from "./pages/ChangePasswordPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 // Pages beyond the shell and the auth pages load on first use, so the first load of sign-in stays small.
@@ -49,6 +48,7 @@ const AdminTenantsPage = lazy(() => import("./pages/admin/TenantsPage"));
 const AdminTenantPage = lazy(() => import("./pages/admin/TenantPage"));
 const AdminAdminsPage = lazy(() => import("./pages/admin/AdminsPage"));
 const AdminInstallationPage = lazy(() => import("./pages/admin/InstallationPage"));
+const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 
 // The views are the address's pages, read the way the Svelte build reads them, so both interfaces
 // agree on what an address means.
@@ -209,6 +209,24 @@ function Public({ view }: { view: View }) {
   }
 }
 
+// ForcedPassword is the change-password page of a person who must change the password. It is drawn at any address, and an
+// effect moves the address to the change-password page. The effect runs again whenever the address moves, so another
+// navigation (the sign-in page's own redirect, for one) cannot leave the person on a blank page. A <Navigate> would not:
+// it redirects once per mount, and a navigation that lands after it leaves nothing drawn.
+function ForcedPassword({ path }: { path: string }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (path !== "/change-password") navigate("/change-password", { replace: true });
+  }, [path, navigate]);
+  return (
+    <AuthLayout>
+      <Suspense fallback={<PageLoading />}>
+        <ChangePasswordPage forced />
+      </Suspense>
+    </AuthLayout>
+  );
+}
+
 // Gate decides what the address shows: a public page, the shell with its page, or a redirect.
 export function Gate() {
   const loc = useLocation();
@@ -218,6 +236,11 @@ export function Gate() {
   const view = viewFor(path);
   const signedIn = me !== null;
 
+  // A person who must change the password gets nothing else: the server refuses every route until it is changed, so
+  // every other address goes to the change-password page, which is drawn without the shell (its sidebar reads the drive).
+  if (signedIn && me.mustChange) {
+    return <ForcedPassword path={path} />;
+  }
   if (view === "login" && signedIn) {
     return <Navigate to={afterSignIn(new URLSearchParams(search).get("next"), me.user)} replace />;
   }

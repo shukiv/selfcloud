@@ -62,7 +62,9 @@ export function antdTokens(mode: Mode, p: Palette, sb: Sidebar): ThemeConfig {
       colorBgContainer: p.card,
       // Menus and popovers sit one step above the dark card, or they would have no edge on it.
       colorBgElevated: dark ? p.line : p.card,
-      colorBorder: p.line2,
+      // Radio circles, checkboxes and inputs take this border. In dark mode the palette's line is 1.6:1 on the card, too faint
+      // for a control; this value is 3.9:1, the 3:1 that non-text parts of a control need (WCAG 1.4.11).
+      colorBorder: dark ? "#6B7FA3" : p.line2,
       colorBorderSecondary: p.line,
       colorSplit: p.line,
       colorPrimaryBg: p.accentSoft,

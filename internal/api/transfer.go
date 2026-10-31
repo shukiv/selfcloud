@@ -554,10 +554,20 @@ type actorPayload struct {
 	UserID string           `json:"user_id,omitempty"`
 	Role   string           `json:"role,omitempty"`
 	Token  *auth.TokenScope `json:"token,omitempty"`
+	// Impersonator is the installation admin who was signed in as the caller when the job was queued (decision 41). It
+	// travels with the job, so the job's audit rows keep the mark even when they are written after the session ended.
+	Impersonator string `json:"impersonator,omitempty"`
 }
 
 func actorOf(p *auth.Principal) actorPayload {
-	return actorPayload{Kind: string(p.Kind), ID: p.ID, UserID: p.UserID, Role: p.Role, Token: p.Token}
+	return actorPayload{Kind: string(p.Kind), ID: p.ID, UserID: p.UserID, Role: p.Role, Token: p.Token,
+		Impersonator: p.Impersonator}
+}
+
+// jobPrincipal is the caller a job runs for, rebuilt from its payload.
+func jobPrincipal(a actorPayload, accountID string) *auth.Principal {
+	return &auth.Principal{Kind: auth.Kind(a.Kind), ID: a.ID, AccountID: accountID, UserID: a.UserID, Role: a.Role,
+		Token: a.Token, Impersonator: a.Impersonator}
 }
 
 // handleCopyNode copies a file, or a folder with everything in it. The caller needs read on the
@@ -702,8 +712,7 @@ func (s *Server) runCopyJobWhole(ctx context.Context, job *store.Job) error {
 	if err := json.Unmarshal([]byte(job.Payload), &pl); err != nil {
 		return fmt.Errorf("copy job payload: %w", err)
 	}
-	p := &auth.Principal{Kind: auth.Kind(pl.Actor.Kind), ID: pl.Actor.ID, AccountID: job.AccountID,
-		UserID: pl.Actor.UserID, Role: pl.Actor.Role, Token: pl.Actor.Token}
+	p := jobPrincipal(pl.Actor, job.AccountID)
 	return s.store.Write(ctx, func(tx *store.Tx) error {
 		if _, err := tx.Node(ctx, job.AccountID, pl.Root); err == nil {
 			return nil // made by an earlier run
@@ -789,6 +798,12 @@ func (s *Server) runCopyJobWhole(ctx context.Context, job *store.Job) error {
 
 // auditAs describes an action by p for the audit log, for work that runs outside a request.
 func auditAs(p *auth.Principal, accountID, action, target string, details map[string]any, folders ...string) *store.AuditEntry {
+	// An impersonated job's rows name the admin and are not private to the user's My files, as an impersonated request's
+	// rows are not (decision 41).
+	if p.Impersonator != "" {
+		details = impersonated(p, details)
+		folders = nil
+	}
 	return &store.AuditEntry{Time: store.Now(), AccountID: accountID, ActorKind: string(p.Kind), ActorID: p.ID,
 		Action: action, Target: target, Details: delegated(p, details), Folders: folders}
 }

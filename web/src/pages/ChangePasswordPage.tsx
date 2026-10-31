@@ -2,12 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 import { Button } from "antd";
-import { changePassword, loadMe } from "../lib/auth";
+import { changePassword, loadMe, signOut } from "../lib/auth";
 import { errorMessage, type Message } from "../lib/errors";
 import { go } from "../lib/router";
 import { useT } from "../lib/i18n";
 import { passwordMinLength } from "../lib/brand";
-import { flash } from "../lib/session";
+import { flash, session } from "../lib/session";
 import { useStore, get } from "../lib/store";
 import Alert from "../components/Alert";
 import Field, { describedBy } from "../components/Field";
@@ -15,10 +15,13 @@ import NewPasswordFields from "../components/NewPasswordFields";
 import PasswordField from "../components/PasswordField";
 import { checkNewPassword } from "./passwordRules";
 
-// ChangePasswordPage replaces the signed-in person's password. The current one is asked first.
-export default function ChangePasswordPage() {
+// ChangePasswordPage replaces the signed-in person's password. The current one is asked first. forced is the page a person
+// is kept on until the password is changed: it says so, and offers a sign-out instead of the rest of the app.
+// While an installation admin is signed in as this person, the change is refused, so the page says why and has no form.
+export default function ChangePasswordPage({ forced = false }: { forced?: boolean }) {
   const { t } = useT();
   const minLength = useStore(passwordMinLength);
+  const impersonating = !!useStore(session)?.impersonation;
   const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -53,9 +56,19 @@ export default function ChangePasswordPage() {
     }
   }
 
+  if (impersonating) {
+    return (
+      <div style={{ maxWidth: 560 }}>
+        <h1 style={{ fontSize: 24 }}>{t("change.title")}</h1>
+        <Alert message={{ key: "error.impersonation" }} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 560 }}>
       <h1 style={{ fontSize: 24 }}>{t("change.title")}</h1>
+      {forced && <p>{t("change.forced")}</p>}
       <Alert message={error} />
       <form onSubmit={submit} noValidate>
         <Field id="change-current" label={t("change.current")} error={currentError ? t(currentError) : null}>
@@ -82,6 +95,14 @@ export default function ChangePasswordPage() {
           {t("change.submit")}
         </Button>
       </form>
+      {forced && (
+        <p style={{ marginBlockStart: 16 }}>
+          {/* The accent link colour is faint on the dark card, so the text takes the paragraph's colour, underlined. */}
+          <Button type="link" style={{ padding: 0, color: "inherit", textDecoration: "underline" }} onClick={() => void signOut().then(() => go("/login", { replace: true }))}>
+            {t("user.signOut")}
+          </Button>
+        </p>
+      )}
     </div>
   );
 }

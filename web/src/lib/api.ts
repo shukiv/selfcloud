@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ApiError } from './apiError';
-import { clearSession, currentCsrf, session, sessionKey, signingOut } from './session';
+import { clearSession, currentCsrf, forcePasswordChange, session, sessionKey, signingOut } from './session';
 import { get } from './store';
 import { go, signInURL } from './router';
 
@@ -21,6 +21,13 @@ export interface RequestOptions {
 }
 
 export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+
+// endedHandler is set by lib/impersonation.ts: it restores the admin's session when a sign-in as has ended. It is a
+// registered function, not an import, so the two modules do not import each other.
+let endedHandler: ((expired: boolean) => void) | null = null;
+export function onSignInAsEnded(fn: (expired: boolean) => void): void {
+  endedHandler = fn;
+}
 
 // api calls the Selfcloud API on this origin. Cookies go with the request only to this site. Every
 // request that changes something carries the CSRF token from the session.
@@ -54,10 +61,6 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
     throw new ApiError(0, 'network', {}, 0);
   }
 
-  if (res.status === 401 && !opts.noRedirect && issued !== '' && sessionKey(get(session)) === issued) {
-    clearSession();
-    go(signInURL(), { replace: true });
-  }
   if (res.status === 204) return undefined as T;
 
   let data: unknown = null;
@@ -66,11 +69,27 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   } catch {
     data = null;
   }
+  const env = data as { error?: { code?: unknown; details?: unknown } } | null;
+  const code = typeof env?.error?.code === 'string' ? env.error.code : 'internal';
+  const raw = env?.error?.details;
+  const details = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+
+  // The one-hour sign-in as has ended: the admin's own session is restored in place of it, and the page carries on
+  // with that session. The request that found out fails with its code; the page shows nothing more for it.
+  if (res.status === 401 && !opts.noRedirect && details.reason === 'impersonation_ended') {
+    endedHandler?.(true);
+    throw new ApiError(401, 'impersonation_ended', details, 0);
+  }
+  if (res.status === 401 && !opts.noRedirect && issued !== '' && sessionKey(get(session)) === issued) {
+    clearSession();
+    go(signInURL(), { replace: true });
+  }
+  // The person must change the password first: every route refuses until then, so the change-password page is opened.
+  if (res.status === 403 && !opts.noRedirect && details.reason === 'password_change_required') {
+    forcePasswordChange();
+    go('/change-password', { replace: true });
+  }
   if (!res.ok) {
-    const env = data as { error?: { code?: unknown; details?: unknown } } | null;
-    const code = typeof env?.error?.code === 'string' ? env.error.code : 'internal';
-    const raw = env?.error?.details;
-    const details = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
     const retry = Number(res.headers.get('Retry-After') ?? 0);
     throw new ApiError(res.status, code, details, Number.isFinite(retry) ? retry : 0);
   }

@@ -151,7 +151,11 @@ func (tx *Tx) EmitEvent(ctx context.Context, accountID, eventType string, at tim
 		return nil
 	}
 	eventID := id.New("evt")
-	body, err := webhook.Body(eventID, eventType, at, accountID, f.externalID, data)
+	encode := webhook.Body
+	if impersonatedWrite(ctx) {
+		encode = webhook.ImpersonatedBody
+	}
+	body, err := encode(eventID, eventType, at, accountID, f.externalID, data)
 	if err != nil {
 		return err
 	}
@@ -370,6 +374,18 @@ func FolderEvent(n *Node) webhook.Folder {
 	return webhook.Folder{ID: n.ID, FolderID: n.FolderID, Kind: KindDir, ParentID: n.ParentID, Subtree: true}
 }
 
+// impersonatedKey marks a context whose events come from a write made while impersonating.
+type impersonatedKey struct{}
+
+func withImpersonatedWrite(ctx context.Context) context.Context {
+	return context.WithValue(ctx, impersonatedKey{}, true)
+}
+
+func impersonatedWrite(ctx context.Context) bool {
+	v, _ := ctx.Value(impersonatedKey{}).(bool)
+	return v
+}
+
 // emitAudit reports the change that an audit entry records, if the action maps to an event. It runs in the
 // transaction of the change, after the audit entry is written, so a rolled-back change reports nothing. Admin
 // actions have no account and report nothing.
@@ -377,6 +393,10 @@ func (tx *Tx) emitAudit(ctx context.Context, e *AuditEntry) error {
 	eventType, ok := webhookAuditEvents[e.Action]
 	if !ok || e.AccountID == "" {
 		return nil
+	}
+	// A change made while an installation admin is signed in as the user is marked on its event (decision 41).
+	if _, ok := e.Details["impersonated_by"]; ok {
+		ctx = withImpersonatedWrite(ctx)
 	}
 	at := e.Time
 	if at.IsZero() {

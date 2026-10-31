@@ -150,7 +150,8 @@ func (v *viewRecorder) flush(ctx context.Context) {
 // delegated token, an account key, an installation admin and a link visitor record nothing, and neither does a
 // directory. A HEAD request is not a view: the caller passes GET only.
 func (s *Server) noteView(p *auth.Principal, n *store.Node) {
-	if p == nil || p.Kind != auth.KindUser || p.Token != nil || n.Kind != store.KindFile {
+	// A view made while impersonating counts nowhere: not in Recent, not in the view records (decision 41).
+	if p == nil || p.Kind != auth.KindUser || p.Token != nil || p.Impersonator != "" || n.Kind != store.KindFile {
 		return
 	}
 	s.views.record(store.ViewRecord{AccountID: n.AccountID, UserID: p.UserID, NodeID: n.ID, At: time.Now()})

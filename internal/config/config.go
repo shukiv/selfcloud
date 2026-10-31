@@ -79,6 +79,7 @@ type Config struct {
 	Office    OfficeConfig    `yaml:"office"`
 	Users     UsersConfig     `yaml:"users"`
 	Sessions  SessionsConfig  `yaml:"sessions"`
+	Admin     AdminConfig     `yaml:"admin"`
 	Mail      MailConfig      `yaml:"mail"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
 }
@@ -99,6 +100,16 @@ type UsersConfig struct {
 	// SignInURLTemplate builds the sign-in link, with {public_url} and {token} replaced. The token
 	// goes in the fragment, so it never reaches a server log or a Referer.
 	SignInURLTemplate string `yaml:"sign_in_url_template"`
+}
+
+// AdminConfig controls what an installation admin may do to tenant users (decision 41).
+type AdminConfig struct {
+	// TenantAccess turns on three ways for an installation admin to get into a tenant user's account:
+	// a one-time password-reset link shown to the admin, a password the admin types (the user must
+	// change it at the next sign-in), and sign-in-as (the admin uses the user's session, for an hour).
+	// Off by default. It does not turn off the reset email, which reaches the user. An admin can
+	// already reach a tenant's files by creating an audited account key, whatever this is set to.
+	TenantAccess bool `yaml:"tenant_access"`
 }
 
 // SessionsConfig controls web sessions.

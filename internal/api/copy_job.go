@@ -187,8 +187,7 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 	} else if err != nil {
 		return err
 	}
-	p := &auth.Principal{Kind: auth.Kind(pl.Actor.Kind), ID: pl.Actor.ID, AccountID: job.AccountID,
-		UserID: pl.Actor.UserID, Role: pl.Actor.Role, Token: pl.Actor.Token}
+	p := jobPrincipal(pl.Actor, job.AccountID)
 	// failed is the error of the phase that failed in this run, which keeps its API code when cleanup reports it. A run
 	// that resumes a cleanup has only the text, which the copy row kept.
 	var failed error

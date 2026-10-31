@@ -79,6 +79,18 @@ func (s *Server) authenticateSession(r *http.Request) (*auth.Principal, *store.S
 		return nil, nil, err
 	}
 	now := time.Now()
+	// An impersonation ends an hour after it began, whatever its idle expiry says (decision 41). The row stays, so the
+	// Go back route can still restore the admin's session.
+	if sess.ImpersonatorID != "" && !now.Before(sess.CreatedAt.Add(impersonationTTL)) {
+		return nil, nil, apierr.New(apierr.Unauthenticated, "the impersonation has ended; go back to the admin").
+			With("reason", "impersonation_ended")
+	}
+	// Turning admin.tenant_access off ends a running sign-in-as at once, not at its hour (decision 41). The row stays,
+	// so Go back, which does not pass through here, still restores the admin's session.
+	if sess.ImpersonatorID != "" && !s.cfg.Admin.TenantAccess {
+		return nil, nil, apierr.New(apierr.Unauthenticated, "the impersonation has ended; go back to the admin").
+			With("reason", reasonTenantAccessOff)
+	}
 	if !now.Before(sess.ExpiresAt) {
 		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has expired; sign in again")
 	}
@@ -116,12 +128,14 @@ func (s *Server) authenticateSession(r *http.Request) (*auth.Principal, *store.S
 			return nil, nil, err
 		}
 	}
-	if now.Sub(sess.LastSeenAt) > sessionTouchInterval {
+	// An impersonation is not touched: its expiry must not move past its hour (decision 41).
+	if now.Sub(sess.LastSeenAt) > sessionTouchInterval && sess.ImpersonatorID == "" {
 		if err := s.touchSession(ctx, sess, now); err != nil {
 			s.log.Warn("cannot record session use", "request_id", requestID(r), "error", err)
 		}
 	}
-	p := &auth.Principal{Kind: auth.KindUser, ID: u.ID, AccountID: u.AccountID, UserID: u.ID, Role: u.Role}
+	p := &auth.Principal{Kind: auth.KindUser, ID: u.ID, AccountID: u.AccountID, UserID: u.ID, Role: u.Role,
+		Impersonator: sess.ImpersonatorID, MustChangePassword: u.MustChangePassword}
 	return p, sess, nil
 }
 
@@ -261,6 +275,12 @@ func (s *Server) auditEntry(r *http.Request, accountID, action, target string, d
 		if p := info.principal; p != nil {
 			e.ActorKind, e.ActorID = string(p.Kind), p.ID
 			e.Details = delegated(p, details)
+			if p.Impersonator != "" {
+				// An entry made while impersonating names the admin, and is not private to a personal folder, so the
+				// tenant's owner can read it (decision 41; the owner's rule for these entries is in decision 41).
+				e.Folders = nil
+				e.Details = impersonated(p, e.Details)
+			}
 		}
 	}
 	return e

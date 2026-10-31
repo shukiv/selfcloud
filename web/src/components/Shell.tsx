@@ -16,6 +16,7 @@ import { setHidden } from "../lib/sharing/api";
 import { pendingRequests, refreshPendingRequests } from "../lib/sharing/requestCount";
 import type { FolderAccess } from "../lib/files/types";
 import { signOut } from "../lib/auth";
+import { endImpersonation } from "../lib/impersonation";
 import { readPref, writePref } from "../lib/prefs";
 import { useSidebar } from "../theme/theme";
 import { RADIUS } from "../theme/tokens";
@@ -179,6 +180,9 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   const admin = isAdmin(me?.user);
   const owner = isOwner(me?.user);
+  // While an installation admin is signed in as this person, the banner shows across every page, and the sign-out is not
+  // offered: the server refuses it, and the banner's button goes back to the admin's session instead.
+  const impersonating = !!me?.impersonation;
   const folderList = useStore(folders);
   const hiddenList = useStore(hiddenFolders);
   // The team spaces are listed under My files, from the folders the caller reaches. The hidden ones are listed
@@ -342,118 +346,161 @@ export default function Shell({ children }: { children: ReactNode }) {
     },
     { type: "divider" },
     { key: "password", label: t("user.changePassword") },
-    { key: "signout", label: t("user.signOut") },
+    ...(impersonating ? [] : [{ key: "signout", label: t("user.signOut") }]),
   ];
 
+  // The banner is one line, 48px: the sider is 48px shorter below it, so its foot stays on the screen.
   return (
-    <Layout style={{ minHeight: "100vh", background: token.colorBgLayout }}>
-      <a className="skip-link" href="#main">
-        {t("app.skip")}
-      </a>
-      {!isMobile && (
-        <Layout.Sider
-          className="shell-sider"
-          width={SIDE_WIDTH}
-          collapsedWidth={RAIL_WIDTH}
-          collapsed={collapsed}
-          trigger={null}
-          style={{
-            background: sidebar.bg,
-            color: sidebar.text,
-            position: "sticky",
-            top: 0,
-            height: "100vh",
-            overflow: "hidden",
-            padding: collapsed ? "16px 8px" : "16px 12px",
-          }}
-        >
-          {renderSidebar(collapsed)}
-          <Button
-            type="text"
-            onClick={toggleRail}
-            aria-label={collapsed ? t("nav.show") : t("nav.hide")} data-testid="rail-toggle"
-            icon={collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
-            style={{ color: sidebar.text, marginTop: 8, width: "100%" }}
-          />
-        </Layout.Sider>
-      )}
-      <Drawer
-        placement={rtl ? "right" : "left"}
-        open={isMobile && navOpen}
-        onClose={() => setNavOpen(false)}
-        width={280}
-        title={null}
-        closable
-        styles={{ body: { padding: "8px 12px 16px", background: sidebar.bg }, header: { background: sidebar.bg, borderBottom: "none" } }}
+    <>
+    {impersonating && (
+      <div
+        role="status"
+        data-testid="impersonation-banner"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+          // 48px on the desktop, where the sider below is offset by this height; a phone may wrap the name onto two lines.
+          minHeight: 48,
+          // Counted inside the 48px, so the shell beneath is exactly one banner shorter (review F9).
+          boxSizing: "border-box",
+          padding: "8px 16px",
+          background: token.colorWarningBg,
+          color: token.colorWarningText,
+          borderBottom: `2px solid ${token.colorWarning}`,
+          fontWeight: 600,
+          minWidth: 0,
+        }}
       >
-        {renderSidebar(false)}
-      </Drawer>
-      <Layout style={{ background: token.colorBgLayout }}>
-        <Layout.Header
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: isMobile ? "0 12px" : "0 24px",
-            background: token.colorBgContainer,
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            height: 56,
-            lineHeight: "56px",
-          }}
-        >
-          {isMobile && (
+        <span style={{ flex: "1 1 auto", minWidth: 0, overflowWrap: "anywhere" }}>
+          <Sentence
+            template={t("impersonation.banner")}
+            names={{ name: me?.user.display_name || me?.user.email || "" }}
+          />
+        </span>
+        <Button size="small" onClick={() => void endImpersonation()} style={{ flex: "none" }}>
+          {t("impersonation.back")}
+        </Button>
+      </div>
+    )}
+      {/* While the banner shows, the shell fills the window below it, and its content column scrolls inside it, so the page
+          itself never scrolls (F9). Without the banner the page scrolls as before. */}
+      <Layout
+        style={
+          impersonating
+            ? { height: "calc(100vh - 48px)", overflow: "hidden", background: token.colorBgLayout }
+            : { minHeight: "100vh", background: token.colorBgLayout }
+        }
+      >
+        <a className="skip-link" href="#main">
+          {t("app.skip")}
+        </a>
+        {!isMobile && (
+          <Layout.Sider
+            className="shell-sider"
+            width={SIDE_WIDTH}
+            collapsedWidth={RAIL_WIDTH}
+            collapsed={collapsed}
+            trigger={null}
+            style={{
+              background: sidebar.bg,
+              color: sidebar.text,
+              position: "sticky",
+              top: 0,
+              height: impersonating ? "calc(100vh - 48px)" : "100vh",
+              overflow: "hidden",
+              padding: collapsed ? "16px 8px" : "16px 12px",
+            }}
+          >
+            {renderSidebar(collapsed)}
             <Button
               type="text"
-              data-testid="nav-open"
-              aria-label={t("nav.show")}
-              onClick={() => setNavOpen(true)}
-              icon={<MenuIcon size={18} />}
+              onClick={toggleRail}
+              aria-label={collapsed ? t("nav.show") : t("nav.hide")} data-testid="rail-toggle"
+              icon={collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+              style={{ color: sidebar.text, marginTop: 8, width: "100%" }}
             />
-          )}
-          {/* One line in the 56px bar: a long brand name is cut short, never wrapped over the bar's edge. */}
-          <a
-            href={admin ? "/admin/tenants" : "/"}
-            style={{ fontWeight: 700, color: token.colorText, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          >
-            <bdi>{b.name}</bdi>
-          </a>
-          {admin && <span style={{ color: token.colorTextSecondary, whiteSpace: "nowrap" }}>{t("admin.badge")}</span>}
-          <Space size={isMobile ? 4 : "middle"} style={{ marginInlineStart: "auto" }}>
-            <LangSwitcher compact={isMobile} />
-            {!isMobile && <ThemeToggle />}
-            {me && (
-              <Dropdown
-                menu={{
-                  items: userItems,
-                  onClick: ({ key }) => {
-                    if (key === "password") navigate("/change-password");
-                    if (key === "signout") void logout();
-                  },
-                }}
-                trigger={["click"]}
-              >
-                <Button data-testid="account-menu" aria-label={t("user.menu")} style={{ borderRadius: RADIUS }}>
-                  <bdi>{me.user.display_name || me.user.email}</bdi>
-                </Button>
-              </Dropdown>
-            )}
-          </Space>
-        </Layout.Header>
-        <Layout.Content id="main" tabIndex={-1} style={{ padding: isMobile ? 14 : 28, outline: "none" }}>
-          {note && (
-            <div style={{ marginBottom: 16 }}>
-              <Alert message={{ key: note }} tone="success" />
-            </div>
-          )}
-          {children}
-        </Layout.Content>
-        <UploadTray />
-        {settingsFor && (
-          <Suspense fallback={null}>
-            <SpaceSettings space={settingsFor} onclose={() => setSettingsFor(null)} onsaved={() => void loadFolders().catch(() => undefined)} />
-          </Suspense>
+          </Layout.Sider>
         )}
+        <Drawer
+          placement={rtl ? "right" : "left"}
+          open={isMobile && navOpen}
+          onClose={() => setNavOpen(false)}
+          width={280}
+          title={null}
+          closable
+          styles={{ body: { padding: "8px 12px 16px", background: sidebar.bg }, header: { background: sidebar.bg, borderBottom: "none" } }}
+        >
+          {renderSidebar(false)}
+        </Drawer>
+        <Layout style={{ background: token.colorBgLayout, ...(impersonating ? { height: "100%", overflow: "auto" } : {}) }}>
+          <Layout.Header
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: isMobile ? "0 12px" : "0 24px",
+              background: token.colorBgContainer,
+              borderBottom: `1px solid ${token.colorBorderSecondary}`,
+              height: 56,
+              lineHeight: "56px",
+            }}
+          >
+            {isMobile && (
+              <Button
+                type="text"
+                data-testid="nav-open"
+                aria-label={t("nav.show")}
+                onClick={() => setNavOpen(true)}
+                icon={<MenuIcon size={18} />}
+              />
+            )}
+            {/* One line in the 56px bar: a long brand name is cut short, never wrapped over the bar's edge. */}
+            <a
+              href={admin ? "/admin/tenants" : "/"}
+              style={{ fontWeight: 700, color: token.colorText, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
+              <bdi>{b.name}</bdi>
+            </a>
+            {admin && <span style={{ color: token.colorTextSecondary, whiteSpace: "nowrap" }}>{t("admin.badge")}</span>}
+            <Space size={isMobile ? 4 : "middle"} style={{ marginInlineStart: "auto" }}>
+              <LangSwitcher compact={isMobile} />
+              {!isMobile && <ThemeToggle />}
+              {me && (
+                <Dropdown
+                  menu={{
+                    items: userItems,
+                    onClick: ({ key }) => {
+                      if (key === "password") navigate("/change-password");
+                      if (key === "signout") void logout();
+                    },
+                  }}
+                  trigger={["click"]}
+                >
+                  <Button data-testid="account-menu" aria-label={t("user.menu")} style={{ borderRadius: RADIUS }}>
+                    <bdi>{me.user.display_name || me.user.email}</bdi>
+                  </Button>
+                </Dropdown>
+              )}
+            </Space>
+          </Layout.Header>
+          <Layout.Content id="main" tabIndex={-1} style={{ padding: isMobile ? 14 : 28, outline: "none" }}>
+            {note && (
+              <div style={{ marginBottom: 16 }}>
+                <Alert message={{ key: note }} tone="success" />
+              </div>
+            )}
+            {children}
+          </Layout.Content>
+          <UploadTray />
+          {settingsFor && (
+            <Suspense fallback={null}>
+              <SpaceSettings space={settingsFor} onclose={() => setSettingsFor(null)} onsaved={() => void loadFolders().catch(() => undefined)} />
+            </Suspense>
+          )}
+        </Layout>
       </Layout>
-    </Layout>
+    </>
   );
 }

@@ -359,6 +359,18 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 		}
 		ttl, maxTTL = min(ttl, left), min(maxTTL, left)
 	}
+	// A signed link made while an installation admin is signed in as the user lives no longer than that sign-in-as
+	// (decision 41), so the viewer's preview link works and the link does not outlive the admin's hour.
+	if p.Impersonator != "" {
+		if sess := sessionOf(r); sess != nil {
+			left := time.Until(sess.CreatedAt.Add(impersonationTTL)).Truncate(time.Second)
+			if left < time.Second {
+				return apierr.New(apierr.Unauthenticated, "the impersonation has ended; go back to the admin").
+					With("reason", "impersonation_ended")
+			}
+			ttl, maxTTL = min(ttl, left), min(maxTTL, left)
+		}
+	}
 	if in.TTL != nil {
 		if *in.TTL < 1 {
 			return apierr.New(apierr.InvalidRequest, "ttl must be at least 1 second")

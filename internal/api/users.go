@@ -385,6 +385,12 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 				u.Status = store.UserActive
 			case store.UserDisabled:
 				u.Status = store.UserDisabled
+				if err := s.endImpersonations(ctx, tx, u.ID, "disabled"); err != nil {
+					return err
+				}
+				if err := s.endAdminImpersonations(ctx, tx, u.ID, "admin_sessions_ended"); err != nil {
+					return err
+				}
 				if err := tx.DeleteUserSessions(ctx, u.ID); err != nil {
 					return err
 				}
@@ -540,6 +546,9 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 		if labelValues > 0 {
 			details = map[string]any{"labels": labelValues}
 		}
+		if err := s.endImpersonations(ctx, tx, usr, "deleted"); err != nil {
+			return err
+		}
 		if err := tx.DeleteUser(ctx, acc.ID, usr); errors.Is(err, store.ErrNotFound) {
 			return notFound("user")
 		} else if err != nil {
@@ -671,7 +680,7 @@ func (s *Server) handleSendVerification(w http.ResponseWriter, r *http.Request) 
 	// The check needs the target's role and status: a session may get a link only for a pending owner.
 	target := linkTarget{}
 	if found, err := s.store.User(r.Context(), acc.ID, r.PathValue("usr")); err == nil {
-		target = linkTarget{role: found.Role, status: found.Status}
+		target = linkTarget{role: found.Role, status: found.Status, existing: true}
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
@@ -741,7 +750,8 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	var in struct {
-		Method string `json:"method"`
+		Method        string `json:"method"`
+		AdminPassword string `json:"admin_password"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -751,6 +761,14 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) err
 	}
 	if err := s.checkVerificationMethod(r, in.Method, linkTarget{reset: true}); err != nil {
 		return err
+	}
+	// A reset link from an admin's session hands over the account as surely as a typed password does, so the admin's
+	// own password is checked first (decision 41). The email reset reaches the user and needs no re-entry.
+	if p := principalOf(r); in.Method == methodLink && p.Kind == auth.KindUser && p.Role == auth.RoleAdmin {
+		if err := s.confirmAdminPassword(w, r, p, sessionOf(r), "user.password_reset", r.PathValue("usr"), acc.ID,
+			in.AdminPassword); err != nil {
+			return err
+		}
 	}
 	ctx := r.Context()
 	now := store.Now()

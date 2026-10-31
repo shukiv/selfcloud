@@ -5,6 +5,7 @@
 import { api } from '../api';
 import type { Page } from '../files/types';
 import type { AuditEntry } from '../audit/sentence';
+import type { SignedIn } from '../types';
 import { linkListQuery, type AccountLinkPage, type LinkFilter } from './links';
 import type {
   Account,
@@ -145,6 +146,37 @@ export function resendVerification(id: string, usr: string, method: 'email' | 'l
 
 export function sendPasswordReset(id: string, usr: string): Promise<PersonReply> {
   return api<PersonReply>('POST', `${acc(id)}/users/${usr}/password-reset`, { body: { method: 'email' } });
+}
+
+// PasswordReset is the answer to a reset. A link's url is returned once: the caller shows it and keeps nothing.
+export interface PasswordReset {
+  method: 'email' | 'link';
+  url?: string;
+  sent?: boolean;
+}
+
+// resetUserPassword starts a reset by email, or makes a one-time link (only when admin.tenant_access is on).
+// resetUserPassword makes a reset link or sends one by mail. A link from an admin's session needs the admin's own
+// password, sent for the check (decision 41); the mail reset needs none, as it reaches the user.
+export function resetUserPassword(
+  id: string,
+  usr: string,
+  method: 'email' | 'link',
+  adminPassword?: string,
+): Promise<PasswordReset> {
+  const body = adminPassword === undefined ? { method } : { method, admin_password: adminPassword };
+  return api<PasswordReset>('POST', `${acc(id)}/users/${usr}/password-reset`, { body });
+}
+
+// setUserPassword sets the password the admin types. The admin's own password is sent for the check, and the user must
+// choose a new one at the next sign-in. Only when admin.tenant_access is on.
+export function setUserPassword(id: string, usr: string, password: string, adminPassword: string): Promise<void> {
+  return api<void>('POST', `${acc(id)}/users/${usr}/password`, { body: { password, admin_password: adminPassword } });
+}
+
+// signInAsUser starts the admin's sign-in as this user: the answer is the user's session. Only when admin.tenant_access is on.
+export function signInAsUser(id: string, usr: string, adminPassword: string): Promise<SignedIn> {
+  return api<SignedIn>('POST', `${acc(id)}/users/${usr}/sign-in`, { body: { admin_password: adminPassword } });
 }
 
 export function listGroups(id: string, cursor?: string): Promise<Page<Group>> {

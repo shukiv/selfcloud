@@ -23,6 +23,8 @@ export type Ref = { text: string } | { key: string };
 export interface Sentence {
   key: string;
   params: Record<string, Ref>;
+  // via says that an installation admin acted while signed in as the actor (decision 41). It is added after the sentence.
+  via?: { key: string; params: Record<string, Ref> };
 }
 
 // Names are looked up by ID. A name the page has not loaded is undefined, and a generic word is used.
@@ -61,6 +63,19 @@ export function actorRef(actor: AuditActor, names: Names): Ref {
 // is filled only where the action's target really is that thing: a grant's or a group's target is not a person
 // or a team space, so those sentences name nothing they cannot know.
 export function sentence(entry: AuditEntry, names: Names): Sentence {
+  const s = baseSentence(entry, names);
+  const by = entry.details?.impersonated_by;
+  if (typeof by === 'string' && by !== '') {
+    const admin = detail(entry.details, 'impersonated_by_name');
+    s.via = {
+      key: 'audit.viaAdmin',
+      params: { admin: admin !== '' ? { text: admin } : { key: 'audit.anAdmin' } },
+    };
+  }
+  return s;
+}
+
+function baseSentence(entry: AuditEntry, names: Names): Sentence {
   const d = entry.details;
   const actor = actorRef(entry.actor, names);
   const person = names.person(entry.target);
@@ -137,9 +152,15 @@ export function isolate(text: string): string {
 // renderSentence turns a sentence into text. translate looks a catalogue key up with parameters, so the same
 // function serves any language; text parameters are isolated, and key parameters are translated first.
 export function renderSentence(s: Sentence, translate: (key: string, params?: Record<string, string>) => string): string {
+  const main = translate(s.key, refParams(s.params, translate));
+  if (!s.via) return main;
+  return `${main} ${translate(s.via.key, refParams(s.via.params, translate))}`;
+}
+
+function refParams(refs: Record<string, Ref>, translate: (key: string, params?: Record<string, string>) => string): Record<string, string> {
   const params: Record<string, string> = {};
-  for (const [name, ref] of Object.entries(s.params)) {
+  for (const [name, ref] of Object.entries(refs)) {
     params[name] = 'text' in ref ? isolate(ref.text) : translate(ref.key);
   }
-  return translate(s.key, params);
+  return params;
 }

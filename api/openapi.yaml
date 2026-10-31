@@ -1815,6 +1815,123 @@ paths:
               schema: { $ref: "#/components/schemas/UserWithVerification" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/accounts/{acc}/users/{usr}/password:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/usr"
+    post:
+      tags: [Users]
+      operationId: setUserPassword
+      summary: Type a password for a user (installation admin, admin.tenant_access)
+      description: |
+        Decision 41. The installation admin, signed in on its own session, types a new password for
+        an active user of the account. The user must change it at the next sign-in: until then the
+        user reaches only the change-password route, GET /me and sign-out. Every session of the user
+        ends, the user's pending and reset links stop working, and any impersonation of the user ends
+        (audited under the admin). The admin re-enters its own password in `admin_password` for each
+        call; a wrong one is counted as a wrong current password, and the fifth in a row ends the
+        admin's session. The password follows the same rules as anywhere else. The audit entry
+        (`user.password_set`) holds no password. Refused with `forbidden` and
+        `details.reason = tenant_access_off` while `admin.tenant_access` is off. A key may not call it.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, admin_password]
+              properties:
+                password: { type: string }
+                admin_password: { type: string }
+      responses:
+        "204":
+          description: The password is set and the user must change it.
+        "400":
+          description: The new password breaks the rules (`invalid_request`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: The fifth wrong admin password in a row; the admin's session has ended.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: |
+            `forbidden` with `details.reason = tenant_access_off`, or "your password is not correct"
+            for a wrong admin password, or the caller is not an installation admin on a session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No such user in the account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: The user is not active.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/accounts/{acc}/users/{usr}/sign-in:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/usr"
+    post:
+      tags: [Users]
+      operationId: signInAs
+      summary: Sign in as a user (installation admin, admin.tenant_access)
+      description: |
+        Decision 41. The installation admin, signed in on its own session, starts a session of an
+        active user of the account and the browser takes it. The admin's own session is parked in a
+        second cookie, `selfcloud_admin` (`__Secure-` on https), which has the path of the Go back
+        route and SameSite=Strict, so the impersonated pages never carry it. The session carries the
+        admin who began it. It ends one hour after it began, is not renewed, and cannot be used to
+        change the password, the email or the sign-in settings, to mint keys, tokens, links or share
+        links, to manage users or the account, or to sign in as someone else. The start is audited
+        under the admin, and every write made in the session records the user and the admin. The
+        admin re-enters its own password in `admin_password`. Refused with `forbidden` and
+        `details.reason = tenant_access_off` while `admin.tenant_access` is off. A user who must
+        change its password, a user of another account, an installation admin, and a user who is not
+        active are refused (`conflict`, `not_found`).
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [admin_password]
+              properties:
+                admin_password: { type: string }
+      responses:
+        "200":
+          description: The browser is the user's session. The body is the user and the new CSRF token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignedIn" }
+        "403":
+          description: |
+            `forbidden` with `details.reason = tenant_access_off`; `impersonation` when this session is
+            itself an impersonation (no chains); or a wrong admin password.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No such user in the account, or the caller is not an installation admin.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            `conflict`: the user is not active, or the account is suspended; `reason`
+            `password_change_required` when the user must change its password first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /api/v1/accounts/{acc}/users/{usr}/sign-in-links:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -1886,7 +2003,7 @@ paths:
       tags: [Users]
       operationId: sendPasswordReset
       summary: Send or create a password-reset link for an active user
-      description: The link works once and for the reset TTL (`users.reset_ttl`). Earlier reset links stop working.
+      description: The link works once and for the reset TTL (`users.reset_ttl`). Earlier reset links stop working. An installation admin's key gets no link to an existing user; an admin's session gets one only with `admin_password` and `admin.tenant_access` on (decision 41).
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -2007,6 +2124,42 @@ paths:
         "204":
           description: Signed out.
         default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/impersonation/end:
+    post:
+      tags: [Auth]
+      operationId: endImpersonation
+      summary: Go back to the installation admin (decision 41)
+      description: |
+        Ends the sign-in-as session the browser is in and restores the admin's own session from the
+        parked `selfcloud_admin` cookie. It needs the impersonation's CSRF token in `X-CSRF-Token`
+        and the site's `Origin`, and it works after the session's hour has passed, so the admin can
+        always come back. The end is audited under the admin (`impersonation.end`, with reason
+        `returned` or `expired`). A restore that cannot be made still ends the impersonation and
+        clears both cookies, and the answer is `unauthenticated`: sign in again. The impersonated
+        cookie grants nothing after this call.
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The admin's session is back. The body is the admin and the admin's CSRF token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignedIn" }
+        "401":
+          description: The admin's session cannot be restored; sign in again.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: The CSRF token or the site's Origin is missing or wrong.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: The browser is not signed in as another person.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/v1/auth/password/forgot:
     post:
@@ -6479,6 +6632,9 @@ components:
       additionalProperties: false
       properties:
         method: { type: string, enum: [email, link] }
+        admin_password:
+          type: string
+          description: The installation admin's own password, needed for a link made from an admin's session (decision 41). Not needed for email, which reaches the user.
 
     VerifyRequest:
       type: object
@@ -6623,3 +6779,18 @@ components:
         public_links:
           type: boolean
           description: The account's switch for links that anyone can open. False for an installation admin.
+        must_change_password:
+          type: boolean
+          description: Set when an installation admin typed this user's password. Until the user changes it, only the change-password route, GET /me and sign-out are open (decision 41).
+        impersonation:
+          type: object
+          description: Present only while an installation admin is signed in as this user (decision 41). The session ends at ends_at and is not renewed.
+          required: [ends_at]
+          properties:
+            ends_at: { type: string, format: date-time }
+        tenant_access:
+          type: boolean
+          description: Present only in an installation admin's own session. The value of admin.tenant_access (decision 41). Nobody else is told it.
+        mail_configured:
+          type: boolean
+          description: Present only in an installation admin's own session. Whether mail is configured, so the admin pages show the email reset only when it works.

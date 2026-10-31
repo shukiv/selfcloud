@@ -22,6 +22,13 @@ export interface Me {
   personal_folder_id: string | null;
   // public_links is the account's switch for links that anyone can open. False for an installation admin.
   public_links?: boolean;
+  // must_change_password: the person must choose a new password before anything else.
+  must_change_password?: boolean;
+  // impersonation is present only while an installation admin is signed in as this person; ends_at is the hard limit.
+  impersonation?: { ends_at: string };
+  // tenant_access and mail_configured are sent only to an installation admin's own session.
+  tenant_access?: boolean;
+  mail_configured?: boolean;
 }
 
 export interface SignedIn {

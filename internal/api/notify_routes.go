@@ -52,6 +52,10 @@ func ownNotifyCaller(p *auth.Principal) error {
 	if err := userCaller(p, "notifications"); err != nil {
 		return err
 	}
+	// An installation admin signed in as this user reads and changes nothing of the user's inbox (decision 41).
+	if p.Impersonator != "" {
+		return impersonationRefused()
+	}
 	if p.Token != nil {
 		return apierr.New(apierr.Forbidden, "a delegated token cannot read or change notifications; only the signed-in user can")
 	}

@@ -64,6 +64,9 @@ type envelope struct {
 	Time    string  `json:"time"`
 	Account account `json:"account"`
 	Data    any     `json:"data"`
+	// Impersonated is true for a change an installation admin made while signed in as the user (decision 41). The
+	// admin's identity is not in the event.
+	Impersonated bool `json:"impersonated,omitempty"`
 }
 
 // account names the account the event belongs to: its ID, and its external ID when it has one.
@@ -77,4 +80,10 @@ type account struct {
 func Body(eventID, eventType string, at time.Time, accountID string, externalID *string, data any) ([]byte, error) {
 	return json.Marshal(envelope{ID: eventID, Type: eventType, Time: at.UTC().Format(timeLayout),
 		Account: account{ID: accountID, ExternalID: externalID}, Data: data})
+}
+
+// ImpersonatedBody is Body for a change made while an installation admin is signed in as the user: the event says so.
+func ImpersonatedBody(eventID, eventType string, at time.Time, accountID string, externalID *string, data any) ([]byte, error) {
+	return json.Marshal(envelope{ID: eventID, Type: eventType, Time: at.UTC().Format(timeLayout),
+		Account: account{ID: accountID, ExternalID: externalID}, Data: data, Impersonated: true})
 }

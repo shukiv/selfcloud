@@ -51,6 +51,9 @@ type linkTarget struct {
 	role   string // the user's role; "" when the user is new and the role is decided by the caller
 	status string // the user's status
 	reset  bool   // true for a password reset
+	// existing is true when the user already exists (a resend or a reset), false when the call creates the user. A
+	// key may create a user and mail its link, but may not take a link to a user that exists (decision 41).
+	existing bool
 }
 
 // linkAllowed reports whether a caller may ask for a link. A link hands a token to the caller, so
@@ -78,6 +81,17 @@ func (s *Server) checkVerificationMethod(r *http.Request, method string, t linkT
 			return apierr.New(apierr.InvalidRequest, "mail is not configured; an API key may use the method \"link\" or \"none\"")
 		}
 	case methodLink:
+		// An installation admin's key is never handed a link to a user that already exists: the key reaches every
+		// account, so the link would take over that user. Decision 41 gives the admin's ways in through an admin session
+		// only, whatever admin.tenant_access says. A new user, which the key creates, is not an existing one.
+		if p != nil && p.Kind == auth.KindAdminKey && (t.reset || t.existing) {
+			return apierr.New(apierr.Forbidden, "an installation admin's key may not make a link to an existing user; use email")
+		}
+		// A reset link from an installation admin's session is decided by admin.tenant_access (decision 41), not by
+		// linkAllowed: the email reset stays open either way, since it reaches the user.
+		if p != nil && p.Kind == auth.KindUser && p.Role == auth.RoleAdmin && t.reset {
+			return s.tenantAccessGate()
+		}
 		if !linkAllowed(p, t) {
 			return apierr.New(apierr.Forbidden, "only an API key may use this method; use email")
 		}

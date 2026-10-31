@@ -192,7 +192,23 @@ type route struct {
 	// it, so a route added later fails closed. Each kind reaches only its own routes.
 	link bool
 	drop bool
+	// imp says whether the route may be called while the browser is signed in as a tenant user by an
+	// installation admin (decision 41). The zero value is unclassified and is refused, so a route added
+	// without it fails closed; TestEveryRouteIsClassified makes that a test failure too.
+	imp impClass
+	// mustChange admits a user whose password an admin typed (decision 41). Every other route refuses that
+	// user with password_change_required.
+	mustChange bool
 }
+
+// impClass classifies a route for a session that is an installation admin's sign-in-as (decision 41).
+type impClass int
+
+const (
+	impUnclassified impClass = iota // the zero value: refused
+	impAllow                        // the route acts for the person the browser is signed in as
+	impRefuse                       // the route changes what outlives the session, or the person's own sign-in
+)
 
 // New builds a Server.
 func New(opts Options) (*Server, error) {
@@ -434,7 +450,9 @@ func New(opts Options) (*Server, error) {
 		mux.Handle(rt.method+" "+rt.path, s.wrap(rt))
 	}
 	// Unmatched requests go to the web interface when it serves them; anything else, the JSON 404.
-	mux.Handle("/", s.wrap(route{path: "unmatched", handle: s.handleUnmatched}))
+	// Its answer is the web interface's files or the JSON 404. It reads no credential and changes nothing, so an
+	// impersonated browser loads the app (decision 41).
+	mux.Handle("/", s.wrap(route{path: "unmatched", handle: s.handleUnmatched, imp: impAllow}))
 	s.handler = s.observe(s.drain(s.cors(s.contentGate(mux))))
 	for _, w := range cfg.UI.Brand.ContrastWarnings() {
 		log.Warn("brand colours fall short of the contrast the text needs; the config is kept", "detail", w)
@@ -454,207 +472,214 @@ func (s *Server) handleUnmatched(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) routes() []route {
 	rs := []route{
-		{method: http.MethodGet, path: "/healthz", handle: s.handleHealthz},
-		{method: http.MethodGet, path: "/readyz", handle: s.handleReadyz},
-		{method: http.MethodGet, path: "/api/v1/info", handle: s.handleInfo},
-		{method: http.MethodGet, path: "/api/v1/openapi.yaml", handle: s.handleSpec},
+		{method: http.MethodGet, path: "/healthz", handle: s.handleHealthz, imp: impAllow},
+		{method: http.MethodGet, path: "/readyz", handle: s.handleReadyz, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/info", handle: s.handleInfo, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/openapi.yaml", handle: s.handleSpec, imp: impAllow},
 
-		{method: http.MethodPost, path: "/api/v1/accounts", handle: s.handleCreateAccount, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts", handle: s.handleListAccounts, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}", handle: s.handleGetAccount, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}", handle: s.handleUpdateAccount, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}", handle: s.handleDeleteAccount, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/usage", handle: s.handleUsage, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/keys", handle: s.handleCreateKey, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/keys", handle: s.handleListKeys, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/keys/{key}", handle: s.handleRevokeKey, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens", handle: s.handleMintToken, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens/revoke", handle: s.handleRevokeTokens, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit", handle: s.handleAuditLog, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleCreateWebhook, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleListWebhooks, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleGetWebhook, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleUpdateWebhook, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleDeleteWebhook, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/secret", handle: s.handleRotateWebhookSecret, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/test", handle: s.handleTestWebhook, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries", handle: s.handleListWebhookDeliveries, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry", handle: s.handleRetryWebhookDelivery, auth: true},
-		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handlePutQuotaWarning, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handleGetQuotaWarning, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handleDeleteQuotaWarning, auth: true},
-		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts", handle: s.handleCreateAccount, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts", handle: s.handleListAccounts, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}", handle: s.handleGetAccount, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}", handle: s.handleUpdateAccount, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}", handle: s.handleDeleteAccount, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/usage", handle: s.handleUsage, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/keys", handle: s.handleCreateKey, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/keys", handle: s.handleListKeys, auth: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/keys/{key}", handle: s.handleRevokeKey, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens", handle: s.handleMintToken, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens/revoke", handle: s.handleRevokeTokens, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit", handle: s.handleAuditLog, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleCreateWebhook, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleListWebhooks, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleGetWebhook, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleUpdateWebhook, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleDeleteWebhook, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/secret", handle: s.handleRotateWebhookSecret, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/test", handle: s.handleTestWebhook, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries", handle: s.handleListWebhookDeliveries, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry", handle: s.handleRetryWebhookDelivery, auth: true, imp: impRefuse},
+		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handlePutQuotaWarning, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handleGetQuotaWarning, auth: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handleDeleteQuotaWarning, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true, imp: impAllow},
 
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/folders", handle: s.handleCreateFolder, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders", handle: s.handleListFolders, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleGetFolder, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleUpdateFolder, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/folders", handle: s.handleCreateFolder, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders", handle: s.handleListFolders, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleGetFolder, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleUpdateFolder, auth: true, imp: impRefuse},
 
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/groups", handle: s.handleCreateGroup, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/groups", handle: s.handleListGroups, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/groups/{grp}", handle: s.handleGetGroup, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/groups/{grp}", handle: s.handleUpdateGroup, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/groups/{grp}", handle: s.handleDeleteGroup, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/groups/{grp}/members", handle: s.handleListGroupMembers, auth: true},
-		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/groups/{grp}/members/{usr}", handle: s.handleAddGroupMember, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/groups/{grp}/members/{usr}", handle: s.handleRemoveGroupMember, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleDeleteFolder, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders/{fld}/grants", handle: s.handleListFolderGrants, auth: true},
-		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/folders/{fld}/grants/{usr}", handle: s.handleSetGrant, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/folders/{fld}/grants/{usr}", handle: s.handleRemoveGrant, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users/{usr}/grants", handle: s.handleListUserGrants, auth: true},
-		{method: http.MethodGet, path: "/api/v1/folders", handle: s.handleMyFolders, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/folders/{fld}/settings", handle: s.handleUpdateFolderSettings, auth: true},
-		{method: http.MethodPut, path: "/api/v1/folders/{fld}/hidden", handle: s.handleHideFolder, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/folders/{fld}/hidden", handle: s.handleShowFolder, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/groups", handle: s.handleCreateGroup, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/groups", handle: s.handleListGroups, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/groups/{grp}", handle: s.handleGetGroup, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/groups/{grp}", handle: s.handleUpdateGroup, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/groups/{grp}", handle: s.handleDeleteGroup, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/groups/{grp}/members", handle: s.handleListGroupMembers, auth: true, imp: impAllow},
+		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/groups/{grp}/members/{usr}", handle: s.handleAddGroupMember, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/groups/{grp}/members/{usr}", handle: s.handleRemoveGroupMember, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/folders/{fld}", handle: s.handleDeleteFolder, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders/{fld}/grants", handle: s.handleListFolderGrants, auth: true, imp: impAllow},
+		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/folders/{fld}/grants/{usr}", handle: s.handleSetGrant, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/folders/{fld}/grants/{usr}", handle: s.handleRemoveGrant, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users/{usr}/grants", handle: s.handleListUserGrants, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/folders", handle: s.handleMyFolders, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/folders/{fld}/settings", handle: s.handleUpdateFolderSettings, auth: true, imp: impRefuse},
+		{method: http.MethodPut, path: "/api/v1/folders/{fld}/hidden", handle: s.handleHideFolder, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/folders/{fld}/hidden", handle: s.handleShowFolder, auth: true, imp: impRefuse},
 
-		{method: http.MethodPost, path: "/api/v1/admins", handle: s.handleCreateAdmin, auth: true},
-		{method: http.MethodGet, path: "/api/v1/admins", handle: s.handleListAdmins, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/admins/{usr}", handle: s.handleDeleteAdmin, auth: true},
+		{method: http.MethodPost, path: "/api/v1/admins", handle: s.handleCreateAdmin, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/admins", handle: s.handleListAdmins, auth: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/admins/{usr}", handle: s.handleDeleteAdmin, auth: true, imp: impRefuse},
 
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users", handle: s.handleCreateUser, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users", handle: s.handleListUsers, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleGetUser, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleUpdateUser, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleDeleteUser, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/verification", handle: s.handleSendVerification, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/password-reset", handle: s.handlePasswordReset, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/sign-in-links", handle: s.handleCreateSignInLink, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/tokens/revoke", handle: s.handleRevokeUserTokens, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users", handle: s.handleCreateUser, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users", handle: s.handleListUsers, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleGetUser, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleUpdateUser, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleDeleteUser, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/verification", handle: s.handleSendVerification, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/password-reset", handle: s.handlePasswordReset, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/sign-in-links", handle: s.handleCreateSignInLink, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/tokens/revoke", handle: s.handleRevokeUserTokens, auth: true, imp: impRefuse},
+		// An installation admin's typed password and sign-in-as (decision 41). Both need the admin's own session, not a key,
+		// and the admin's password again; both are off unless admin.tenant_access is on.
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/password", handle: s.handleSetUserPassword, session: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/sign-in", handle: s.handleSignInAs, session: true, imp: impRefuse},
 
-		{method: http.MethodPost, path: "/api/v1/auth/verify", handle: s.handleVerify, sameSite: true},
-		{method: http.MethodPost, path: "/api/v1/auth/login", handle: s.handleLogin, sameSite: true},
-		{method: http.MethodPost, path: "/api/v1/auth/logout", handle: s.handleLogout, session: true},
-		{method: http.MethodPost, path: "/api/v1/auth/password/forgot", handle: s.handleForgotPassword, sameSite: true},
-		{method: http.MethodPost, path: "/api/v1/auth/password/reset", handle: s.handleResetPassword, sameSite: true},
-		{method: http.MethodPost, path: "/api/v1/auth/sign-in-link", handle: s.handleRedeemSignInLink, sameSite: true},
-		{method: http.MethodGet, path: "/api/v1/me", handle: s.handleMe, session: true},
-		{method: http.MethodPatch, path: "/api/v1/me", handle: s.handleUpdateMe, session: true},
-		{method: http.MethodPost, path: "/api/v1/me/password", handle: s.handleChangePassword, session: true},
+		{method: http.MethodPost, path: "/api/v1/auth/verify", handle: s.handleVerify, sameSite: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/login", handle: s.handleLogin, sameSite: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/logout", handle: s.handleLogout, session: true, imp: impRefuse, mustChange: true},
+		{method: http.MethodPost, path: "/api/v1/auth/password/forgot", handle: s.handleForgotPassword, sameSite: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/auth/password/reset", handle: s.handleResetPassword, sameSite: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/sign-in-link", handle: s.handleRedeemSignInLink, sameSite: true, imp: impRefuse},
+		// Go back ends an impersonation and restores the admin's session. It checks its own CSRF token, because the
+		// impersonation may be past its hour, and a route that required a live session could not run then.
+		{method: http.MethodPost, path: "/api/v1/auth/impersonation/end", handle: s.handleEndImpersonation, sameSite: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/me", handle: s.handleMe, session: true, imp: impAllow, mustChange: true},
+		{method: http.MethodPatch, path: "/api/v1/me", handle: s.handleUpdateMe, session: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/me/password", handle: s.handleChangePassword, session: true, imp: impRefuse, mustChange: true},
 
-		{method: http.MethodGet, path: "/api/v1/folders/{fld}/children", handle: s.handleListPathChildren, auth: true},
-		{method: http.MethodPost, path: "/api/v1/folders/{fld}/directories", handle: s.handleMkdir, auth: true},
-		{method: http.MethodPost, path: "/api/v1/folders/{fld}/files", handle: s.handleCreateFile, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}", handle: s.handleStatNode, auth: true, link: true},
-		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}", handle: s.handleRenameNode, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}", handle: s.handleDeleteNode, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/children", handle: s.handleListNodeChildren, auth: true, link: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/move", handle: s.handleMoveNode, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/copy", handle: s.handleCopyNode, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/shortcuts", handle: s.handleCreateShortcut, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
-		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/preview", handle: s.handleGetPreview, auth: true},
-		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/preview", handle: s.handleGetPreview, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/exports", handle: s.handleCreateExport, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/exports/{drv}", handle: s.handleGetExport, auth: true},
-		{method: http.MethodPost, path: "/api/v1/zips", handle: s.handleCreateZip, auth: true},
-		{method: http.MethodGet, path: "/api/v1/zips/{zip}", handle: s.handleGetZip, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/zips/{zip}", handle: s.handleDeleteZip, auth: true},
-		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true},
-		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/permissions", handle: s.handleListNodePermissions, auth: true},
-		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true},
-		{method: http.MethodGet, path: "/api/v1/shared", handle: s.handleSharedWithMe, auth: true},
-		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/star", handle: s.handleStarNode, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/star", handle: s.handleUnstarNode, auth: true},
-		{method: http.MethodGet, path: "/api/v1/starred", handle: s.handleListStarred, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/comments", handle: s.handleListComments, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/comments", handle: s.handleCreateComment, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/comments/{cmt}", handle: s.handleEditComment, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/comments/{cmt}", handle: s.handleDeleteComment, auth: true},
-		{method: http.MethodPost, path: "/api/v1/comments/{cmt}/resolve", handle: s.handleResolveComment, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/people", handle: s.handleListPeople, auth: true},
+		{method: http.MethodGet, path: "/api/v1/folders/{fld}/children", handle: s.handleListPathChildren, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/folders/{fld}/directories", handle: s.handleMkdir, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/folders/{fld}/files", handle: s.handleCreateFile, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}", handle: s.handleStatNode, auth: true, link: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}", handle: s.handleRenameNode, auth: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}", handle: s.handleDeleteNode, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/children", handle: s.handleListNodeChildren, auth: true, link: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/move", handle: s.handleMoveNode, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/copy", handle: s.handleCopyNode, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/shortcuts", handle: s.handleCreateShortcut, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true, imp: impAllow},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/preview", handle: s.handleGetPreview, auth: true, imp: impAllow},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/preview", handle: s.handleGetPreview, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/exports", handle: s.handleCreateExport, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/exports/{drv}", handle: s.handleGetExport, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/zips", handle: s.handleCreateZip, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/zips/{zip}", handle: s.handleGetZip, auth: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/zips/{zip}", handle: s.handleDeleteZip, auth: true, imp: impAllow},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true, imp: impAllow},
+		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/permissions", handle: s.handleListNodePermissions, auth: true, imp: impAllow},
+		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/shared", handle: s.handleSharedWithMe, auth: true, imp: impAllow},
+		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/star", handle: s.handleStarNode, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/star", handle: s.handleUnstarNode, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/starred", handle: s.handleListStarred, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/comments", handle: s.handleListComments, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/comments", handle: s.handleCreateComment, auth: true, imp: impRefuse},
+		{method: http.MethodPatch, path: "/api/v1/comments/{cmt}", handle: s.handleEditComment, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/comments/{cmt}", handle: s.handleDeleteComment, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/comments/{cmt}/resolve", handle: s.handleResolveComment, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/people", handle: s.handleListPeople, auth: true, imp: impAllow},
 		// Notifications (slice r, decision 43): the signed-in user's own inbox and email switch. A token never reads them.
-		{method: http.MethodGet, path: "/api/v1/notifications", handle: s.handleListNotifications, auth: true},
-		{method: http.MethodGet, path: "/api/v1/notifications/unread", handle: s.handleUnreadNotifications, auth: true},
-		{method: http.MethodPost, path: "/api/v1/notifications/{ntf}/read", handle: s.handleReadNotification, auth: true},
-		{method: http.MethodGet, path: "/api/v1/notifications/settings", handle: s.handleGetNotifySettings, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/notifications/settings", handle: s.handlePatchNotifySettings, auth: true},
+		{method: http.MethodGet, path: "/api/v1/notifications", handle: s.handleListNotifications, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/notifications/unread", handle: s.handleUnreadNotifications, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/notifications/{ntf}/read", handle: s.handleReadNotification, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/notifications/settings", handle: s.handleGetNotifySettings, auth: true, imp: impRefuse},
+		{method: http.MethodPatch, path: "/api/v1/notifications/settings", handle: s.handlePatchNotifySettings, auth: true, imp: impRefuse},
 		// The unsubscribe link of a mail: no session and no cookie, and the token in the query is the only authority. GET
 		// only shows the page; the POST, from the page or from a mail client (RFC 8058), switches the email off.
-		{method: http.MethodGet, path: notifyUnsubPath, handle: s.handleUnsubscribeForm, secretPath: true},
-		{method: http.MethodPost, path: notifyUnsubPath, handle: s.handleUnsubscribe, secretPath: true},
-		{method: http.MethodGet, path: "/api/v1/recent", handle: s.handleListRecent, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/recent", handle: s.handleClearRecent, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/recent/{nod}", handle: s.handleRemoveRecent, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleCreateShareLink, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleListShareLinks, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/share-links/{shl}", handle: s.handleUpdateShareLink, auth: true},
-		{method: http.MethodPost, path: "/api/v1/share-links/{shl}/reset", handle: s.handleResetShareLink, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/share-links/{shl}", handle: s.handleDeleteShareLink, auth: true},
+		{method: http.MethodGet, path: notifyUnsubPath, handle: s.handleUnsubscribeForm, secretPath: true, imp: impAllow},
+		{method: http.MethodPost, path: notifyUnsubPath, handle: s.handleUnsubscribe, secretPath: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/recent", handle: s.handleListRecent, auth: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/recent", handle: s.handleClearRecent, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/recent/{nod}", handle: s.handleRemoveRecent, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleCreateShareLink, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleListShareLinks, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/share-links/{shl}", handle: s.handleUpdateShareLink, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/share-links/{shl}/reset", handle: s.handleResetShareLink, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/share-links/{shl}", handle: s.handleDeleteShareLink, auth: true, imp: impRefuse},
 		// Opening a link checks its own credential: the handler answers a dead link the same way for every caller.
-		{method: http.MethodPost, path: "/api/v1/share/open", handle: s.handleOpenShareLink},
+		{method: http.MethodPost, path: "/api/v1/share/open", handle: s.handleOpenShareLink, imp: impAllow},
 		// Renewing a visitor credential: the credential itself is the caller.
-		{method: http.MethodPost, path: "/api/v1/share/renew", handle: s.handleRenewShareCredential, auth: true, link: true, drop: true},
+		{method: http.MethodPost, path: "/api/v1/share/renew", handle: s.handleRenewShareCredential, auth: true, link: true, drop: true, imp: impAllow},
 		// What a drop link's visitor may upload, and what the drop page shows: the credential is the caller.
-		{method: http.MethodGet, path: "/api/v1/share/info", handle: s.handleShareInfo, auth: true, drop: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage-policy", handle: s.handleGetStoragePolicy, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/storage-policy", handle: s.handleUpdateStoragePolicy, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage", handle: s.handleAccountStorage, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage/largest", handle: s.handleAccountLargest, auth: true},
-		{method: http.MethodGet, path: "/api/v1/me/storage/largest", handle: s.handleMyLargest, session: true},
+		{method: http.MethodGet, path: "/api/v1/share/info", handle: s.handleShareInfo, auth: true, drop: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage-policy", handle: s.handleGetStoragePolicy, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/storage-policy", handle: s.handleUpdateStoragePolicy, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage", handle: s.handleAccountStorage, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage/largest", handle: s.handleAccountLargest, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/me/storage/largest", handle: s.handleMyLargest, session: true, imp: impAllow},
 		// Search by name and label values. A share-link visitor is refused (no link flag); a token may search within its scope.
-		{method: http.MethodGet, path: "/api/v1/search", handle: s.handleSearch, auth: true},
-		{method: http.MethodGet, path: "/api/v1/label-fields", handle: s.handleListLabelFields, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/label-fields", handle: s.handleCreateLabelField, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/label-fields/{lbf}", handle: s.handleUpdateLabelField, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/label-fields/{lbf}", handle: s.handleDeleteLabelField, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/labels", handle: s.handleListNodeLabels, auth: true},
-		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/labels/{lbf}", handle: s.handleSetNodeLabel, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/labels/{lbf}", handle: s.handleClearNodeLabel, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleGetSharingPolicy, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleUpdateSharingPolicy, auth: true},
-		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/share-links", handle: s.handleListAccountShareLinks, auth: true},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/share-links/delete-public", handle: s.handleDeletePublicShareLinks, auth: true},
-		{method: http.MethodGet, path: "/api/v1/directory", handle: s.handleDirectory, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/transfer-ownership", handle: s.handleTransferOwnership, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleCreateAccessRequest, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleListNodeAccessRequests, auth: true},
-		{method: http.MethodGet, path: "/api/v1/access-requests", handle: s.handleListPendingAccessRequests, auth: true},
-		{method: http.MethodPost, path: "/api/v1/access-requests/{arq}/approve", handle: s.handleApproveAccessRequest, auth: true},
-		{method: http.MethodPost, path: "/api/v1/access-requests/{arq}/deny", handle: s.handleDenyAccessRequest, auth: true},
+		{method: http.MethodGet, path: "/api/v1/search", handle: s.handleSearch, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/label-fields", handle: s.handleListLabelFields, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/label-fields", handle: s.handleCreateLabelField, auth: true, imp: impRefuse},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/label-fields/{lbf}", handle: s.handleUpdateLabelField, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/label-fields/{lbf}", handle: s.handleDeleteLabelField, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/labels", handle: s.handleListNodeLabels, auth: true, imp: impAllow},
+		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/labels/{lbf}", handle: s.handleSetNodeLabel, auth: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/labels/{lbf}", handle: s.handleClearNodeLabel, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleGetSharingPolicy, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/sharing-policy", handle: s.handleUpdateSharingPolicy, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/share-links", handle: s.handleListAccountShareLinks, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/share-links/delete-public", handle: s.handleDeletePublicShareLinks, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/directory", handle: s.handleDirectory, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/transfer-ownership", handle: s.handleTransferOwnership, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleCreateAccessRequest, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/access-requests", handle: s.handleListNodeAccessRequests, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/access-requests", handle: s.handleListPendingAccessRequests, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/access-requests/{arq}/approve", handle: s.handleApproveAccessRequest, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/access-requests/{arq}/deny", handle: s.handleDenyAccessRequest, auth: true, imp: impRefuse},
 
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/restore", handle: s.handleRestoreNode, auth: true},
-		{method: http.MethodGet, path: "/api/v1/trash", handle: s.handleListTrash, auth: true},
-		{method: http.MethodPost, path: "/api/v1/trash/empty", handle: s.handleEmptyTrash, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/trash/{nod}", handle: s.handlePurgeTrashed, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/versions", handle: s.handleListVersions, auth: true},
-		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/versions/{ver}/content", handle: s.handleGetVersionContent, auth: true},
-		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/versions/{ver}/content", handle: s.handleGetVersionContent, auth: true},
-		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}/versions/{ver}", handle: s.handleUpdateVersion, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/versions/{ver}/restore", handle: s.handleRestoreVersion, auth: true},
-		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/versions/{ver}", handle: s.handleDeleteVersion, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/restore", handle: s.handleRestoreNode, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/trash", handle: s.handleListTrash, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/trash/empty", handle: s.handleEmptyTrash, auth: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/trash/{nod}", handle: s.handlePurgeTrashed, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/versions", handle: s.handleListVersions, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/versions/{ver}/content", handle: s.handleGetVersionContent, auth: true, imp: impAllow},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/versions/{ver}/content", handle: s.handleGetVersionContent, auth: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}/versions/{ver}", handle: s.handleUpdateVersion, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/versions/{ver}/restore", handle: s.handleRestoreVersion, auth: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/versions/{ver}", handle: s.handleDeleteVersion, auth: true, imp: impAllow},
 
 		// A signed link carries its own authority: no credential, and no cookie is read.
-		{method: http.MethodGet, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},
-		{method: http.MethodHead, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},
+		{method: http.MethodGet, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true, imp: impAllow},
+		{method: http.MethodHead, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true, imp: impAllow},
 
 		// Office editing (decision 31). The editor route is for a person; the /wopi routes are called by Collabora
 		// and carry their token in the query, so they are secretPath. All of them answer not_found while office.enabled
 		// is off, and the /wopi routes check their proof and token before anything else.
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/office", handle: s.handleOpenOffice, auth: true},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/unlock", handle: s.handleBreakNodeLock, auth: true},
-		{method: http.MethodGet, path: "/wopi/files/{nod}", handle: s.handleWOPICheckFileInfo, secretPath: true},
-		{method: http.MethodGet, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIGetFile, secretPath: true},
-		{method: http.MethodPost, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIPutFile, secretPath: true},
-		{method: http.MethodPost, path: "/wopi/files/{nod}", handle: s.handleWOPIOverride, secretPath: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/office", handle: s.handleOpenOffice, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/unlock", handle: s.handleBreakNodeLock, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/wopi/files/{nod}", handle: s.handleWOPICheckFileInfo, secretPath: true, imp: impAllow},
+		{method: http.MethodGet, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIGetFile, secretPath: true, imp: impAllow},
+		{method: http.MethodPost, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIPutFile, secretPath: true, imp: impAllow},
+		{method: http.MethodPost, path: "/wopi/files/{nod}", handle: s.handleWOPIOverride, secretPath: true, imp: impAllow},
 
-		{method: http.MethodOptions, path: "/api/v1/uploads", handle: s.handleUploadOptions},
+		{method: http.MethodOptions, path: "/api/v1/uploads", handle: s.handleUploadOptions, imp: impAllow},
 		// Uploads admit a drop link's visitor. The access link's visitor is refused on each of them. A drop link
 		// has no commit: its uploads take a free name, so none waits for one.
-		{method: http.MethodPost, path: "/api/v1/uploads", handle: s.handleCreateUpload, auth: true, drop: true},
-		{method: http.MethodHead, path: "/api/v1/uploads/{upl}", handle: s.handleHeadUpload, auth: true, drop: true},
-		{method: http.MethodPatch, path: "/api/v1/uploads/{upl}", handle: s.handlePatchUpload, auth: true, drop: true},
-		{method: http.MethodDelete, path: "/api/v1/uploads/{upl}", handle: s.handleDeleteUpload, auth: true, drop: true},
-		{method: http.MethodPost, path: "/api/v1/uploads/{upl}/commit", handle: s.handleCommitUpload, auth: true},
+		{method: http.MethodPost, path: "/api/v1/uploads", handle: s.handleCreateUpload, auth: true, drop: true, imp: impAllow},
+		{method: http.MethodHead, path: "/api/v1/uploads/{upl}", handle: s.handleHeadUpload, auth: true, drop: true, imp: impAllow},
+		{method: http.MethodPatch, path: "/api/v1/uploads/{upl}", handle: s.handlePatchUpload, auth: true, drop: true, imp: impAllow},
+		{method: http.MethodDelete, path: "/api/v1/uploads/{upl}", handle: s.handleDeleteUpload, auth: true, drop: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/uploads/{upl}/commit", handle: s.handleCommitUpload, auth: true, imp: impAllow},
 	}
-	rs = append(rs, route{method: http.MethodGet, path: logoPath, handle: s.handleLogo})
+	rs = append(rs, route{method: http.MethodGet, path: logoPath, handle: s.handleLogo, imp: impAllow})
 	if s.cfg.MetricsListen == "" {
-		rs = append(rs, route{method: http.MethodGet, path: "/metrics", handle: s.handleMetrics})
+		rs = append(rs, route{method: http.MethodGet, path: "/metrics", handle: s.handleMetrics, imp: impAllow})
 	}
 	return rs
 }
@@ -708,6 +733,14 @@ func (s *Server) wrap(rt route) http.Handler {
 				info.principal = p
 				info.session = sess
 			}
+			if err := s.checkImpersonation(rt, p); err != nil {
+				s.writeError(w, r, err)
+				return
+			}
+		} else if rt.imp != impAllow && s.signedInAsOther(r) {
+			// A route that sets a new session would replace the impersonation without ending it.
+			s.writeError(w, r, impersonationRefused())
+			return
 		}
 		if err := rt.handle(w, r); err != nil {
 			s.writeError(w, r, err)

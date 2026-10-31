@@ -2,21 +2,34 @@
 
 import { Alert, Button } from "antd";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import { useLang, useT } from "../../lib/i18n";
 import { listPeople, resendVerification } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
 import { personLabel, statusTone } from "../../lib/manage/people";
 import { queryKey } from "../../lib/query";
-import { sessionChanged } from "../../lib/session";
+import { sessionChanged, session } from "../../lib/session";
+import { useStore } from "../../lib/store";
 import type { Person } from "../../lib/manage/types";
 import ShowOnce from "./ShowOnce";
 import { useOnSessionChange } from "./hooks";
 import StatusTag from "./StatusTag";
 import { list, more, muted, row, rowMain, rowTitle } from "./adminStyles";
 
-// TenantUsers: the tenant's people, read only. An admin does not manage a tenant's members day to day; it can resend the
-// invitation of an owner who has not verified yet, by email or as a new link shown once.
+// The two dialogs load on first use: a first load of the tenant's people does not need them.
+const ResetPassword = lazy(() => import("./ResetPassword"));
+const SignInAs = lazy(() => import("./SignInAs"));
+
+// A secret shown once: a link, with the id and title of its dialog.
+interface OnceLink {
+  id: string;
+  url: string;
+  title: string;
+}
+
+// TenantUsers: the tenant's people. An admin does not manage a tenant's members day to day. It can resend the invitation of
+// an owner who has not verified yet, reset a person's password, and (when admin.tenant_access is on) sign in as the person.
+// The reset and sign-in actions are offered only as far as the installation allows; the server checks each one again.
 export default function TenantUsers({ account }: { account: string }) {
   const { t } = useT();
   const lang = useLang();
@@ -24,8 +37,18 @@ export default function TenantUsers({ account }: { account: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [link, setLink] = useState<{ url: string; who: string } | null>(null);
-  useOnSessionChange(() => setLink(null));
+  const [link, setLink] = useState<OnceLink | null>(null);
+  const [resetFor, setResetFor] = useState<Person | null>(null);
+  const [signInFor, setSignInFor] = useState<Person | null>(null);
+  // tenant_access and mail_configured are sent to an installation admin's own session only.
+  const me = useStore(session);
+  const tenantAccess = me?.tenantAccess === true;
+  const mailConfigured = me?.mailConfigured === true;
+  useOnSessionChange(() => {
+    setLink(null);
+    setResetFor(null);
+    setSignInFor(null);
+  });
   const q = useInfiniteQuery({
     queryKey: queryKey("tenant-users", account),
     queryFn: ({ pageParam }) => listPeople(account, pageParam),
@@ -47,7 +70,7 @@ export default function TenantUsers({ account }: { account: string }) {
       const reply = await resendVerification(account, p.id, method);
       if (changed()) return;
       if (method === "link" && reply.verification?.url) {
-        setLink({ url: reply.verification.url, who: personLabel(p) });
+        setLink({ id: "owner-link", url: reply.verification.url, title: t("tenant.users.linkTitle", { name: personLabel(p) }) });
       } else {
         setNotice(reply.verification?.sent === false ? t("people.mailNotSent") : t("people.mailSent"));
       }
@@ -74,34 +97,55 @@ export default function TenantUsers({ account }: { account: string }) {
       )}
       {!firstFailed && people.length > 0 && (
         <ul style={list} aria-label={t("tenant.users.title")}>
-          {people.map((p) => (
-            <li key={p.id} style={row}>
-              <div style={rowMain}>
-                <p style={rowTitle}>
-                  <bdi>{personLabel(p)}</bdi>
-                </p>
-                <p style={muted}>
-                  <bdi>{p.email}</bdi>
-                </p>
-              </div>
-              <div>{t(`people.role.${p.role}`)}</div>
-              <div>
-                <StatusTag tone={statusTone(p.status)}>{t(`people.status.${p.status}`)}</StatusTag>
-              </div>
-              {p.role === "owner" && p.status === "pending" && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <Button size="small" disabled={busy === p.id} onClick={() => void resend(p, "email")}>
-                    {t("tenant.users.resend")}
-                    <span className="sr-only">: {personLabel(p)}</span>
-                  </Button>
-                  <Button size="small" disabled={busy === p.id} onClick={() => void resend(p, "link")}>
-                    {t("tenant.users.newLink")}
-                    <span className="sr-only">: {personLabel(p)}</span>
-                  </Button>
+          {people.map((p) => {
+            const ownerPending = p.role === "owner" && p.status === "pending";
+            const canReset = mailConfigured || tenantAccess;
+            const canSignIn = tenantAccess && p.status === "active";
+            return (
+              <li key={p.id} style={row}>
+                <div style={rowMain}>
+                  <p style={rowTitle}>
+                    <bdi>{personLabel(p)}</bdi>
+                  </p>
+                  <p style={muted}>
+                    <bdi>{p.email}</bdi>
+                  </p>
                 </div>
-              )}
-            </li>
-          ))}
+                <div>{t(`people.role.${p.role}`)}</div>
+                <div>
+                  <StatusTag tone={statusTone(p.status)}>{t(`people.status.${p.status}`)}</StatusTag>
+                </div>
+                {(ownerPending || canReset || canSignIn) && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {ownerPending && (
+                      <>
+                        <Button size="small" disabled={busy === p.id} onClick={() => void resend(p, "email")}>
+                          {t("tenant.users.resend")}
+                          <span className="sr-only">: {personLabel(p)}</span>
+                        </Button>
+                        <Button size="small" disabled={busy === p.id} onClick={() => void resend(p, "link")}>
+                          {t("tenant.users.newLink")}
+                          <span className="sr-only">: {personLabel(p)}</span>
+                        </Button>
+                      </>
+                    )}
+                    {canReset && (
+                      <Button size="small" disabled={busy === p.id} onClick={() => setResetFor(p)}>
+                        {t("tenant.users.reset")}
+                        <span className="sr-only">: {personLabel(p)}</span>
+                      </Button>
+                    )}
+                    {canSignIn && (
+                      <Button size="small" disabled={busy === p.id} onClick={() => setSignInFor(p)}>
+                        {t("tenant.users.signInAs")}
+                        <span className="sr-only">: {personLabel(p)}</span>
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {!firstFailed && q.hasNextPage && (
@@ -112,10 +156,32 @@ export default function TenantUsers({ account }: { account: string }) {
         </div>
       )}
 
+      <Suspense fallback={null}>
+        {resetFor !== null && (
+          <ResetPassword
+            accountID={account}
+            person={resetFor}
+            mailConfigured={mailConfigured}
+            tenantAccess={tenantAccess}
+            onClose={() => setResetFor(null)}
+            onDone={(text) => {
+              setResetFor(null);
+              setActionError(null);
+              setNotice(text);
+            }}
+            onLink={(url) => {
+              setLink({ id: "reset-link", url, title: t("tenant.users.resetLinkTitle", { name: personLabel(resetFor) }) });
+              setResetFor(null);
+            }}
+          />
+        )}
+        {signInFor !== null && <SignInAs accountID={account} person={signInFor} onClose={() => setSignInFor(null)} />}
+      </Suspense>
+
       {link !== null && (
         <ShowOnce
-          id="owner-link"
-          title={t("tenant.users.linkTitle", { name: link.who })}
+          id={link.id}
+          title={link.title}
           label={t("tenant.new.linkLabel")}
           value={link.url}
           warning={t("tenant.new.linkWarning")}

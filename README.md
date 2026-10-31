@@ -111,6 +111,7 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `office.enabled` | `false` | Turns on the office editor route and the WOPI host for Collabora. Needs `office.discovery_url`. |
 | `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished uploads may hold. Set `100` for a single tenant. |
 | `tokens.max_ttl` | `1h` | Longest lifetime of a delegated token. A longer `ttl` is refused. |
+| `admin.tenant_access` | `false` | **Off by default.** When on, an installation admin may get into a tenant user's account three ways: a one-time reset link, a password the admin types (the user must change it at the next sign-in), and sign-in as the user for one hour. Turning it on means the people who run this installation can read and act as any user of any tenant. Each of these is recorded in the tenant's audit log under the admin's name. Off, the admin cannot use these three ways. Off does not stop an admin reaching a tenant's files, since an admin can create an account key, and that is audited too. The email reset stays available either way. |
 | `sharing.max_expiry` | `8760h` | Longest a permission may run from the moment it is set (its `expires_at`). `0` means no cap. |
 | `trash.retention` | `720h` | How long a deleted item waits in the trash before the sweep purges it. Must be positive. |
 | `versions.max_count` | `100` | Most versions a file keeps that are not kept forever; the oldest go first. `0` means no count limit. |

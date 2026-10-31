@@ -28,4 +28,4 @@ docker:
 # headless Chrome through the web interface. It needs Chrome or Chromium, found on PATH or named by
 # SELFCLOUD_E2E_BROWSER.
 e2e: build
-	cd web && node e2e/run.mjs
+	cd web && node e2e/run.mjs && node e2e/adminAccess.mjs en && node e2e/adminAccess.mjs he

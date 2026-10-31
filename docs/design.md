@@ -1498,6 +1498,17 @@ status:
 
 Messages are English. Clients translate by code; `details` gives them the numbers to fill in.
 
+Installation admin access to tenant users (decision 41, slice adm1), all behind `admin.tenant_access` except the email reset:
+
+| Route | Who | What |
+|---|---|---|
+| `POST /accounts/{acc}/users/{usr}/password-reset` | Admin session | `method: link` is allowed when the setting is on (the link is returned once); `email` always. |
+| `POST /accounts/{acc}/users/{usr}/password` | Admin session, with its own password | Types a password for an active user. The user must change it. Ends the user's sessions and impersonations. |
+| `POST /accounts/{acc}/users/{usr}/sign-in` | Admin session, with its own password | Starts an hour-long session of the user for the admin. Answers the user and the new CSRF token, and parks the admin's cookie. |
+| `POST /auth/impersonation/end` | The impersonation's session and CSRF token | Go back: ends the impersonation and restores the admin's session. Works after the hour. |
+
+Every route the impersonated session may not reach answers `forbidden` with `details.reason = "impersonation"`. A user who must change its password answers `forbidden` with `password_change_required` for every route except `GET /me`, `POST /me/password` and sign-out. The classes are listed in decision 41.
+
 ## 10. Webhooks, office editing and the web interface
 
 A stored zip (decision 35) emits no webhook event: a download made by its maker is not a change to a file. Its audit entry is `node.zip`, with counts and no names.
@@ -1878,6 +1889,24 @@ checks the installation admin role (`isAdmin`); a page the person may not open i
   shows its message and reload button, so a render error cannot leave the link secret in the address bar.
 
 
+### Installation admin access and the banner (decision 41)
+
+The web interface shows the reset dialog on the tenant's Users tab, with the three ways (email shown only when mail is
+configured, and the link and typed password only when the setting is on), and a Sign in as action (only when on). The
+admin re-enters its password in the dialog, which says what will happen before the admin confirms. A link is shown once,
+with a copy button, and stays only in the dialog's state.
+
+While the browser is in an impersonation, a banner sits across every page: "Signed in as <name>. Go back to admin", not
+dismissable, in all seven languages, with a Go back button. A refused page says why. The account menu offers no sign-out
+while impersonating (the server refuses one too), so Go back is the only way out. An impersonation that has passed its
+hour is ended by the page itself, which goes back and says so. A user who must change its password is kept on the change
+page until it does, and its sign-out link is underlined in the text colour, since the accent link is faint on dark.
+
+The browser checks are in `web/e2e/adminAccess.mjs`, run for English and Hebrew by `make e2e`: the banner and the refusals,
+going back, a reset by email through the mail sink, a reset by link, a typed password and the forced change. The one-hour
+limit is unit-tested only (`internal/api/impersonation_test.go`); a browser run would wait an hour. Dark mode's control
+border (`colorBorder`) is 3.9:1 on the card. Light mode's is still 1.4:1, which is a separate decision for the owner.
+
 ## 11. Data model
 
 | Table | Main fields |
@@ -1918,6 +1947,8 @@ checks the installation admin role (`isAdmin`); a page the person may not open i
 
 Every store method takes the account ID and every query filters on it, so one account's data
 cannot leak into another's results. Tests check this for each endpoint.
+
+Migration 0034 (`0034_admin_access.sql`) adds `sessions.impersonator_user_id` (the admin who began a sign-in-as session, cascading on the admin's removal) and `sessions.impersonator_session_hash` (the hash of that admin's own session, which Go back restores), and `users.must_change_password`. Both session columns are NULL for an ordinary session.
 
 ## 12. Operations
 
@@ -2052,6 +2083,7 @@ Each slice ships with tests and leaves the server runnable.
 | t | Changes feed, file picker, WebDAV, installable web app | Planned |
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Planned |
 | t2 | Approvals | Planned |
+| adm1 | Installation admin access to tenant users: reset link, typed password and sign-in as, behind `admin.tenant_access` (decision 41) | Built |
 
 Slices are listed in build order; the letters keep their first meaning, and a slice named with a 2 (c2, i2, t2) follows up the slice of that letter. A slice built in parts (k, o, p, v) has a row for each part, each reviewed and pushed on its own. Status is Built, Building or Planned. Slices m to u come from
 the Google Drive parity plan in `feature-parity.md` (approved 2026-10-28). An API client can switch
@@ -2116,6 +2148,9 @@ Decided on approval:
     the tenant application's own credential, so it reaches every folder, personal ones included.
     Admins never reach contents, personal folders included. Deleting a user with files in its
     personal folder needs `delete_files=true`.
+    *Amended by decision 41 (2026-10-31): an installation admin reaches a tenant user's account only through the three
+    ways of decision 41, which are off unless `admin.tenant_access` is on. An impersonated session's writes are audited
+    where the owner reads them, though an entry may concern a personal folder. Nothing else in this decision changes.*
 19. **Slice n split into n1 and n2** (2026-10-28). n1 is the model: roles, permissions with
     inheritance, groups, personal folders, team-space owners, the grants routes on permissions, the
     shared list and token node scope. n2 builds on it: access expiry through the API, no-download,
@@ -3458,6 +3493,89 @@ Decided on approval:
     - **Not decided: a token acting for a user.** The user-scope quota numbers are given to a delegated token that acts for the charged user, where the account refusal gives a token none. Open for the owner.
     - **Not decided: views before the download.** A view is recorded before the content is served, so a download that then fails still counts in Recent. Open.
 37. **Document previews, exports and the conversion client, slice s3** (2026-10-31, built to the owner-approved proposal for slice s with every recommendation (a) in its section 9, question 2(a) (a conversion is a download, never a node) and question 8(a) (only the types the converter's discovery lists for conversion) among them). Decision 10 holds: no converter runs in the server, and the document goes to Collabora. **Live run done 2026-10-31 against Collabora Online 26.04.5.2 (owner's go-ahead for a test host): conversion works, with the operator settings listed below, and the live run corrected four assumptions (see the list).** No migration: the `derived` table holds the new kinds.
+
+41. **Installation admin access to tenant users, slice adm1** (2026-10-31). The owner decided the three ways in and the
+    sign-in-as rules; the technical decisions below are the owner's on the same day.
+    - *Owner's decisions.* Three ways in, each on its own: a one-time reset link shown to the admin; a password the admin
+      types, which the user must change at the next sign-in; and sign-in as the user, a session for one hour. Sign-in as
+      gives any user of a tenant full access, so the admin sees what that person sees, including My files. It cannot change
+      a password or a sign-in setting while impersonating. It is audited under the admin's name in the tenant's log. It is
+      off by default, behind `admin.tenant_access`, and the docs say plainly what enabling it means.
+    - *One setting.* `admin.tenant_access` (default false) governs the reset link, the typed password and sign-in as. The
+      email reset is always available, since it reaches the real user. Reason: a link or a typed password gives the same
+      takeover as sign-in as, so gating only sign-in as would make the off default mean nothing.
+    - *What off does not do.* An admin can already reach a tenant's files by creating an audited account key, whatever the
+      setting is. The docs say so, so off is not read as a guarantee.
+    - *Sessions and passwords.* The three ways need an admin session, not an API key. The admin re-enters its own password
+      for each sign-in as and each typed password, with the wrong-password limit of `POST /me/password`.
+    - *Cookies.* The main session cookie carries the impersonation session. The admin's own session cookie is parked in
+      `selfcloud_admin` (`__Secure-` on https, because `__Host-` forbids a path), with the path of the Go back route,
+      `HttpOnly` and `SameSite=Strict`. The impersonated pages never carry it, and only the Go back route reads it. Go back
+      checks the impersonation's CSRF token (the request's `Origin` must be this site), checks that the parked cookie is
+      the one the impersonation parked (its hash is in `sessions.impersonator_session_hash`), restores the admin's session,
+      and deletes the impersonation. It works after the hour has passed, so the admin can always come back. A restore that
+      cannot be made still ends the impersonation and clears both cookies.
+    - *Hard limit.* One hour from the start, not renewed: `authenticateSession` refuses an impersonation past its hour at
+      once, and a use does not move its expiry. The row stays until the admin goes back, so the restore still works.
+    - *Routes.* Each route carries a class (`route.imp` in `server.go`); a zero value is refused, and a test walks the
+      table. Refused while impersonating: changing the password, the profile and the sign-in settings; sign-out; keys,
+      tokens and webhooks; the account's settings; users (create, change, delete, verify, reset, sign-in links, token
+      revocation); label fields; folder, group and grant settings; share links and sharing permissions; access-request
+      decisions; ownership transfer; signed links; office editing; and the routes that set a session (sign-in, verify,
+      reset, sign-in link). Allowed: reads, file and folder work in the user's reach, uploads, trash, versions, labels on a node,
+      signed preview links (capped at the sign-in's end, review F8), and the go-back route. Refused, because each
+      records something in the user's name or sends mail: stars, recent, the hidden-folder list, access requests,
+      comments, notifications and their settings. The full list is the `imp:` field on each route, and
+      `TestImpersonationAllowedWrites` pins the writes that stay open.
+    - *Must-change.* A user whose password an admin typed reaches only `GET /me`, `POST /me/password` and sign-out. A
+      reset link or the user's own password change clears the flag. An admin cannot sign in as a user with the flag set.
+    - *Audit and views.* An audit entry made while impersonating names the admin (`impersonated_by`), and is not made
+      private to a personal folder, so the tenant's owner can read it. This relaxes decision 18 for impersonated writes;
+      the owner should confirm it. Views made while impersonating are not recorded (Recent and the view records).
+      Background jobs carry the mark in their payload, so a zip, a copy or a move that finishes after the sign-in ended
+      keeps it (review F5). Both audit viewers, the tenant owner's and the admin's, show the admin's name and that the
+      change was made signed in as the user, in all seven catalogues (`audit.viaAdmin`, review F6). The name is the
+      admin's display name or email, so a tenant owner can read which installation admin acted.
+    - *Webhooks.* An event's payload carries the node and the event type, not an actor (decision 27). An event for an
+      impersonated write carries `impersonated: true` and never the admin's ID (the owner's decision, review F6).
+    - *Ending.* Going back ends the impersonation. Ending every session of the user (a password change or reset, or a
+      disable) ends an impersonation of that user, and removing the admin ends the impersonations it began; each end is
+      audited under the admin. Logout is refused while impersonating, so Go back is the only way out.
+    - *Scope.* A user is looked up in the account the path names, so another account's user, and an installation admin,
+      are not found.
+    - *Deviations from the brief, for the owner to confirm.* Office editing is refused while impersonating, since its
+      token outlives the session. Signed links are allowed and capped at the sign-in's end (review F8). The session's `GET /me` is open, because the
+      change-password page reads its CSRF token from it. An admin cannot sign in as a user whose password must change.
+    - *Inbox and comments.* While impersonating, the user's notifications are neither read, marked read nor changed, and
+      the notification settings are neither read nor changed; the handlers refuse it too (`ownNotifyCaller`). A comment is
+      not written, edited, deleted or resolved in the user's name: a comment sends mention and reply mail as the person who
+      wrote it, and that mail would be sent under the user's name for an admin's act, so these routes are refused rather
+      than audited. Reading comments stays open. `TestImpersonatedInboxRefused` and `TestNotifyCallerRefusesImpersonation`
+      check it.
+    - *Review round (2026-10-31, independent security review, F1 to F10).* Each item has its test or a mutation proof.
+      **F1:** an installation admin's key is never handed a link to a user that exists (a reset or a resend), whatever
+      `admin.tenant_access` says; it may still create a user and mail that user's link, as before. **F2:** turning
+      `admin.tenant_access` off ends a running sign-in-as on its next request; Go back still restores the admin.
+      **F3:** an admin who changes its password, signs out, has its session ended by five wrong passwords, or is disabled
+      or reset loses the sign-ins-as it began, each audited with its reason. **F4:** `POST /nodes/{nod}/access-requests` is
+      refused while impersonating. The writes that stay open are listed in `TestImpersonationAllowedWrites`. The open
+      writes that send mail or leave a record in the user's name are the unsubscribe link, the anonymous forgot-password
+      route, and share open and renew (token-only). **F5:** the job payload carries the mark (zip, copy, move). **F6:** see
+      above. **F7:** a reset link from an admin's session needs the admin's own password, as a typed password does, and
+      the dialog asks for it. The email reset still needs none, as it reaches the user. **F8:** the viewer's preview link
+      is a signed link; the browser step in `adminAccess.mjs` makes, reads and downloads a file while signed in as the
+      member, and the link is capped at the sign-in's end. **F9:** while the banner shows, the shell fills the window below
+      it and its content column scrolls inside it, so the page does not scroll (the page was 814px in a 800px window, the
+      shell's content being 14px taller than the window once the banner took its 48px); `adminAccess.mjs` asserts it on the
+      files list and the home page, and prints the heights. The banner text is
+      4.63:1 on its background in light (`#B45309` on `#FFF6D1`) and 8.21:1 in dark (`#FECC00` on `#2A363A`), computed from
+      the palette in `web/src/theme/tokens.ts`. **F10:** go-back with a wrong Origin is refused by the route and by the
+      handler (`TestGoBackWithAWrongOriginIsRefused`).
+      **Not changed, for the owner:** an account key still makes a reset link to a user of its own account, as it did
+      before this slice (`TestCallersOfTheAdminWaysAreRefused` pins it). The review asked for refusal; a key can already
+      make a sign-in link, which the design accepts (section 8), so refusing it here is the owner's call.
+    - *Migration.* `0034_admin_access.sql` (sessions gain the impersonator columns; `users.must_change_password`). It follows
+      `0033`, the notifications migration of slice r3, which is on main.
     - **Code.** `internal/office` is the one conversion client: the fixed format list, the bounds, the capabilities copy and `ConverterKey`. `internal/derived/convert.go` is the conversion pool, and `install.go` holds the install step and the row helpers, which the thumbnail pool now also uses (the same budget rule, one copy). `internal/api/exports.go` holds the routes. `internal/wopi/discovery.go` gains `ConvertibleFrom`. `internal/wopi/wopitest/convert.go` is the fake's conversion endpoint, added to slice l's fake. Config: `derived.convert_workers` (2), `derived.convert_queue` (32), `derived.convert_account_queue` (8) and `derived.max_convert_bytes` (500 MiB), validated while office is off too. Kinds `pdf`, `png_page1` and `export_<format>` are at most 11 bytes (`export_pptx`); converter keys `office-convert-1+` and 12 hex digits are 29 bytes, under the table's limits of 32 and 64 (migration 0028), so no migration.
     - **Off.** With `office.enabled` false, the three routes answer `not_found`, and nothing is fetched (decision 31's pattern; the proposal names no code for this). The signed preview link on the content origin checks the switch too, and answers `not_found` (`TestConvertedLinkIsNotFoundWhileOfficeIsOff`).
     - **Access.** Each call runs `nodeAccess`, as the content route does: the token's folder scope, revocation, the trash, another account, and the route's refusal of share-link visitors. The kind must be a file. An export's row must belong to this node's blob and account, so the ID of another file's export is `not_found`.

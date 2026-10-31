@@ -134,6 +134,9 @@ func (s *Server) handleDeleteAdmin(w http.ResponseWriter, r *http.Request) error
 					"this is the last active admin and no admin key without an expiry is active").With("reason", "last_admin")
 			}
 		}
+		if err := s.endAdminImpersonations(ctx, tx, u.ID, "admin_removed"); err != nil {
+			return err
+		}
 		if err := tx.DeleteUser(ctx, "", u.ID); err != nil {
 			return err
 		}
