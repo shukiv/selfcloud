@@ -23,10 +23,14 @@ type WOPISession struct {
 	// BrowserSession is the hash of the browser session that opened the editor, or nil when a delegated token did.
 	// The editor ends with that browser session: every WOPI call checks it still exists (authenticateWOPI).
 	BrowserSession []byte
+	// ServedTag is the content tag of the file as this session was given it: set when the session opens, and moved
+	// on by each save the session makes. Lock refuses the session when it is not the file's current tag, so an API
+	// write made after the editor loaded the file is never overwritten. "" is not recorded.
+	ServedTag string
 }
 
 const wopiSessionCols = `id, account_id, node_id, COALESCE(user_id, ''), role, issued_at, expires_at, revoked_at,
-	browser_session`
+	browser_session, COALESCE(served_tag, '')`
 
 // InsertWOPISession records a new editing session, inside tx.
 func (tx *Tx) InsertWOPISession(ctx context.Context, w *WOPISession) error {
@@ -38,10 +42,16 @@ func (tx *Tx) InsertWOPISession(ctx context.Context, w *WOPISession) error {
 		browser = w.BrowserSession
 	}
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO wopi_sessions
-		(id, account_id, node_id, user_id, role, issued_at, expires_at, browser_session)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, w.ID, w.AccountID, w.NodeID, user, w.Role, millis(w.IssuedAt),
-		millis(w.ExpiresAt), browser)
+		(id, account_id, node_id, user_id, role, issued_at, expires_at, browser_session, served_tag)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, w.ID, w.AccountID, w.NodeID, user, w.Role, millis(w.IssuedAt),
+		millis(w.ExpiresAt), browser, nullString(w.ServedTag))
 	return err
+}
+
+// SetWOPISessionTag records the content tag the session's editor now holds: the file as its last save left it.
+func (tx *Tx) SetWOPISessionTag(ctx context.Context, accountID, id, tag string) error {
+	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE wopi_sessions SET served_tag = ?
+		WHERE account_id = ? AND id = ?`, tag, accountID, id))
 }
 
 // RevokeWOPISessions ends the live sessions of accountID at at: those of one user when userID is set, else every
@@ -84,7 +94,7 @@ func getWOPISession(ctx context.Context, q querier, accountID, id string) (*WOPI
 	)
 	err := q.QueryRowContext(ctx, `SELECT `+wopiSessionCols+` FROM wopi_sessions
 		WHERE account_id = ? AND id = ?`, accountID, id).Scan(&w.ID, &w.AccountID, &w.NodeID, &w.UserID,
-		&w.Role, &issued, &expires, &revoked, &w.BrowserSession)
+		&w.Role, &issued, &expires, &revoked, &w.BrowserSession, &w.ServedTag)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

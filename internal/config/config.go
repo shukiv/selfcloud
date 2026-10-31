@@ -261,7 +261,8 @@ type OfficeConfig struct {
 	// WOPIURL is the address Collabora uses to reach Selfcloud, with no path, when it differs from public_url. The
 	// proof-key check signs the URL built from it, so it must be the address Collabora actually calls.
 	WOPIURL string `yaml:"wopi_url"`
-	// LockMinutes is how long a WOPI lock lasts without a refresh. Locks are not enforced until slice l3.
+	// LockMinutes is how long a WOPI lock lasts without a refresh. The WOPI specification says 30, and Validate
+	// refuses more.
 	LockMinutes int `yaml:"lock_minutes"`
 	// MaxFileBytes is the largest file that may be opened for editing, and the largest one PutFile may write.
 	MaxFileBytes ByteSize `yaml:"max_file_bytes"`
@@ -611,8 +612,9 @@ func checkOffice(o OfficeConfig, bad func(string, ...any)) {
 			bad("office.wopi_url must be https")
 		}
 	}
-	if o.LockMinutes < 1 || o.LockMinutes > 1440 {
-		bad("office.lock_minutes must be between 1 and 1440")
+	// The WOPI specification fixes a lock at 30 minutes, and an editor may assume it, so a longer lock is refused.
+	if o.LockMinutes < 1 || o.LockMinutes > 30 {
+		bad("office.lock_minutes must be between 1 and 30, the WOPI lock limit")
 	}
 	if o.TokenMinutes < 1 || o.TokenMinutes > 1440 {
 		bad("office.token_minutes must be between 1 and 1440")

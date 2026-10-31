@@ -1053,7 +1053,7 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 		if cur.ETag != ifMatch {
 			return apierr.New(apierr.PreconditionFailed, "the file changed since it was read; read it again")
 		}
-		out, err = s.replaceContent(ctx, r, tx, p, cur, c, mt)
+		out, err = s.replaceContent(ctx, r, tx, p, cur, c, mt, "")
 		return err
 	})
 	if err != nil {
@@ -1069,24 +1069,59 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 // the quota, so the growth is the new size, not the difference: design section 8, Versions), the old content is kept
 // as a version, the node takes the new content and a new ETag, the edit is noted for Recent, and node.write is
 // audited, which reports file.updated. It runs inside tx. cur must be the node as read in tx, and its role checked.
+//
+// holder is the lock ID the caller holds on the file: "" for a PUT. A file that a live lock holds takes only its
+// holder's replacement. Within one lock (one editing session), the first replacement keeps the content before it as
+// the lock's version, and the later ones make no version: they replace the content and charge only the change in
+// size, since the content they replace is not kept (decision 32). The version is kept until pruning removes it, and
+// then the next replacement makes one.
 func (s *Server) replaceContent(ctx context.Context, r *http.Request, tx *store.Tx, p *auth.Principal,
-	cur *store.Node, c blob.Committed, mt string) (*store.Node, error) {
+	cur *store.Node, c blob.Committed, mt, holder string) (*store.Node, error) {
+	live, err := liveLockOf(ctx, tx, cur.AccountID, cur.ID)
+	if err != nil {
+		return nil, err
+	}
+	if live != nil && live.LockID != holder {
+		return nil, &store.LockedError{Current: live.LockID, Reason: "the file is open in an office editor"}
+	}
+	sameSession := false
+	if live != nil && live.VersionID != "" {
+		_, err := tx.Version(ctx, cur.AccountID, cur.ID, live.VersionID)
+		switch {
+		case err == nil:
+			sameSession = true
+		case !errors.Is(err, store.ErrNotFound):
+			return nil, err
+		}
+	}
+	delta := c.Size
+	if sameSession {
+		delta = c.Size - cur.Size
+	}
 	if err := tx.InsertBlob(ctx, &store.Blob{ID: c.ID, AccountID: cur.AccountID, Size: c.Size,
 		SHA256: c.SHA256, State: store.BlobLive, CreatedAt: store.Now()}); err != nil {
 		return nil, err
 	}
 	prev := cur.Size
 	if err := s.applyUsage(ctx, tx, p, cur.AccountID, store.FolderChange{FolderID: cur.FolderID,
-		Change: store.UsageChange{Bytes: c.Size}}); err != nil {
+		Change: store.UsageChange{Bytes: delta}}); err != nil {
 		return nil, err
 	}
-	if err := s.keepVersion(ctx, tx, cur, p.ID, store.Now()); err != nil {
-		return nil, err
+	if !sameSession {
+		vid, err := s.keepVersionID(ctx, tx, cur, p.ID, store.Now())
+		if err != nil {
+			return nil, err
+		}
+		if live != nil {
+			if err := tx.SetLockVersion(ctx, cur.AccountID, cur.ID, live.LockID, vid); err != nil {
+				return nil, err
+			}
+		}
 	}
 	cur.BlobID, cur.Size, cur.MimeType, cur.ETag, cur.SHA256 = c.ID, c.Size, mt, newETag(), c.SHA256
 	cur.ContentTag = store.NewContentTag()
 	cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
-	if err := tx.UpdateNode(ctx, cur); err != nil {
+	if err := tx.UpdateNodeHeld(ctx, cur, holder); err != nil {
 		return nil, err
 	}
 	if err := noteEdit(ctx, tx, p, cur.AccountID, cur.ID); err != nil {

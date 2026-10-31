@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/store"
 )
 
 // statusClientClosed records a request whose client went away before the answer, as nginx does (499). Nothing is sent
@@ -50,6 +51,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // a generic internal error; their cause is logged with the request ID, never sent.
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	e := apierr.From(err)
+	// A write that a live editor lock refuses is locked (409) for every API caller. The lock and its holder are not
+	// named: the store's reason is for the WOPI answer, not for this one.
+	var le *store.LockedError
+	if errors.As(err, &le) {
+		e = apierr.New(apierr.Locked, "the file is open in an office editor; try again when the editor has closed it")
+	}
 	info := infoFrom(r.Context())
 	reqID := ""
 	if info != nil {

@@ -169,6 +169,9 @@ func (tx *Tx) SharingManagersOnly(ctx context.Context, accountID, nodeID string)
 // SetSubtreeOwner gives every node under id, id included, the owner owner. It is the ownership
 // transfer inside a team space: the nodes stay where they are, only their owner changes.
 func (tx *Tx) SetSubtreeOwner(ctx context.Context, accountID, id, owner string) error {
+	if err := tx.guardNode(ctx, accountID, id, ""); err != nil {
+		return err
+	}
 	_, err := tx.q.ExecContext(ctx, `WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL
@@ -185,6 +188,9 @@ func (tx *Tx) SetSubtreeOwner(ctx context.Context, accountID, id, owner string) 
 // delete with DeleteFolder, so usage and reservations are adjusted there. Uploads aimed at a directory
 // that moved follow it, so they stay valid.
 func (tx *Tx) MoveFolderContents(ctx context.Context, accountID, fromFolder, toFolder, toParent, owner string) error {
+	if err := tx.guardFolder(ctx, accountID, fromFolder); err != nil {
+		return err
+	}
 	root, err := tx.RootNode(ctx, accountID, fromFolder)
 	if err != nil {
 		return err
@@ -279,6 +285,9 @@ func (s *Store) SharingManagersOnly(ctx context.Context, accountID, nodeID strin
 // a move placed by a caller who is not a manager of the destination takes this flag off, so the caller
 // cannot hand editors a power it does not hold.
 func (tx *Tx) ClearSubtreeEditorsCanShare(ctx context.Context, accountID, id string) error {
+	if err := tx.guardNode(ctx, accountID, id, ""); err != nil {
+		return err
+	}
 	_, err := tx.q.ExecContext(ctx, `WITH RECURSIVE sub(nid) AS (
 		SELECT id FROM nodes WHERE account_id = ? AND id = ?
 		UNION ALL

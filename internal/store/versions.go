@@ -99,6 +99,9 @@ func (tx *Tx) Version(ctx context.Context, accountID, nodeID, id string) (*Versi
 
 // UpdateVersion writes the label and keep_forever of a version. The contents are never changed.
 func (tx *Tx) UpdateVersion(ctx context.Context, v *Version) error {
+	if err := tx.guardNode(ctx, v.AccountID, v.NodeID, ""); err != nil {
+		return err
+	}
 	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE versions SET label = ?, keep_forever = ?
 		WHERE account_id = ? AND id = ?`, nullableLabel(v.Label), boolInt(v.KeepForever), v.AccountID, v.ID))
 }
@@ -115,6 +118,9 @@ func (tx *Tx) KeptVersions(ctx context.Context, accountID, nodeID string) (int, 
 // version's bytes off usage, or makes the change that replaces them, in the same transaction: a restore
 // moves the version's bytes into the file, so its net change is zero.
 func (tx *Tx) DeleteVersion(ctx context.Context, accountID string, v *Version) error {
+	if err := tx.guardNode(ctx, accountID, v.NodeID, ""); err != nil {
+		return err
+	}
 	return rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM versions WHERE account_id = ? AND id = ?",
 		accountID, v.ID))
 }

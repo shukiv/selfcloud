@@ -111,7 +111,7 @@ func (fx *officeFixture) wopiCall(t *testing.T, method, path, token string, body
 // wopiReq builds one signed WOPI request, without sending it.
 func (fx *officeFixture) wopiReq(method, path, token string, body io.Reader, hdr map[string]string) *http.Request {
 	q := url.Values{"access_token": {token}}.Encode()
-	ts := wopitest.Ticks(time.Now())
+	ts := wopitest.Ticks(fx.s.store.Clock())
 	req := httptest.NewRequest(method, path+"?"+q, body)
 	req.Header.Set(wopi.HeaderTimeStamp, strconv.FormatInt(ts, 10))
 	req.Header.Set(wopi.HeaderProof, fx.col.Sign(token, fx.s.wopiBase()+path+"?"+q, ts))
@@ -123,6 +123,20 @@ func (fx *officeFixture) wopiReq(method, path, token string, body io.Reader, hdr
 
 // nodeRoute is the WOPI path of a node.
 func nodeRoute(nodeID string) string { return "/wopi/files/" + nodeID }
+
+// lockFor takes the file's lock with lockID for the token's editor, as Collabora does before a save, and asks that
+// it is granted.
+func (fx *officeFixture) lockFor(t *testing.T, token, lockID string) {
+	t.Helper()
+	fx.lockNodeFor(t, fx.doc.ID, token, lockID)
+}
+
+// lockNodeFor is lockFor for the file nodeID.
+func (fx *officeFixture) lockNodeFor(t *testing.T, nodeID, token, lockID string) {
+	t.Helper()
+	wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(nodeID), token, nil,
+		map[string]string{"X-WOPI-Override": "LOCK", "X-WOPI-Lock": lockID}), 200)
+}
 
 // brace matches a path parameter in a route pattern, such as {acc}.
 var brace = regexp.MustCompile(`\{[^}]+\}`)
@@ -244,8 +258,9 @@ func TestOfficeNoDownloadBindsViewersOnly(t *testing.T) {
 		t.Errorf("editor of a no-download file: UserCanWrite = %v, DisablePrint = %v; want true, false",
 			info["UserCanWrite"], info["DisablePrint"])
 	}
+	fx.lockFor(t, editTok, "lock-nodl")
 	wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID)+"/contents", editTok, strings.NewReader("saved"),
-		map[string]string{"X-WOPI-Override": "PUT"}), 200)
+		map[string]string{"X-WOPI-Override": "PUT", "X-WOPI-Lock": "lock-nodl"}), 200)
 }
 
 func TestOfficeOpenRefusesALargeFile(t *testing.T) {
@@ -398,7 +413,7 @@ func TestWOPICheckFileInfoAndGetFile(t *testing.T) {
 	info := decodeInfo(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), tok, nil, nil))
 	checks := map[string]any{
 		"BaseFileName": "letter.docx", "UserCanWrite": true, "ReadOnly": false,
-		"SupportsLocks": false, "SupportsUpdate": true, "DisablePrint": false,
+		"SupportsLocks": true, "SupportsGetLock": true, "SupportsUpdate": true, "DisablePrint": false,
 		"Size": float64(5), "UserId": fx.ann.ID,
 	}
 	for k, want := range checks {
@@ -465,13 +480,14 @@ func TestWOPIPutAndGetStreamALargeFile(t *testing.T) {
 	tok := fx.openToken(t, "edit")
 	const size = 64 << 20
 	const budget = 16 << 20
+	fx.lockFor(t, tok, "lock-large")
 
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
 	put := httptest.NewRecorder()
 	fx.s.Handler().ServeHTTP(put, fx.wopiReq("POST", nodeRoute(fx.doc.ID)+"/contents", tok,
-		&zeroReader{n: size}, map[string]string{"X-WOPI-Override": "PUT"}))
+		&zeroReader{n: size}, map[string]string{"X-WOPI-Override": "PUT", "X-WOPI-Lock": "lock-large"}))
 	runtime.ReadMemStats(&after)
 	putAlloc := after.TotalAlloc - before.TotalAlloc
 	t.Logf("PutFile of %d MiB: status %d, TotalAlloc grew by %d KiB", size>>20, put.Code, putAlloc>>10)
@@ -650,9 +666,10 @@ func TestWOPIPutFileReplacesAndVersions(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
 	tok := fx.openToken(t, "edit")
+	fx.lockFor(t, tok, "lock-replace")
 	put := func(body string) *httptest.ResponseRecorder {
 		return fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID)+"/contents", tok, strings.NewReader(body),
-			map[string]string{"X-WOPI-Override": "PUT"})
+			map[string]string{"X-WOPI-Override": "PUT", "X-WOPI-Lock": "lock-replace"})
 	}
 	rec := put("first save")
 	wantStatus(t, rec, 200)
@@ -669,8 +686,10 @@ func TestWOPIPutFileReplacesAndVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != 2 {
-		t.Errorf("two saves kept %d versions, want 2 (one per save, as a PUT does)", len(versions))
+	// Both saves are one editing session under one lock, so the session keeps one version: the content before its
+	// first save (decision 32). A PUT still keeps one version per replacement.
+	if len(versions) != 1 {
+		t.Errorf("two saves under one lock kept %d versions, want 1 (the session's version)", len(versions))
 	}
 	entries := decode[listResponse[auditJSON]](t, call(t, fx.s, "GET", "/api/v1/accounts/"+fx.acc.ID+"/audit", fx.key, nil))
 	writes := 0
@@ -715,8 +734,9 @@ func TestWOPIPutFileRefusesAnOverLimitBody(t *testing.T) {
 	rec := fx.open(t, fx.annSess, small.ID, "edit")
 	wantStatus(t, rec, 200)
 	tok := decode[officeJSON](t, rec).Token
+	fx.lockNodeFor(t, small.ID, tok, "lock-limit")
 	wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(small.ID)+"/contents", tok,
-		strings.NewReader("too long for four bytes"), map[string]string{"X-WOPI-Override": "PUT"}), 413)
+		strings.NewReader("too long for four bytes"), map[string]string{"X-WOPI-Override": "PUT", "X-WOPI-Lock": "lock-limit"}), 413)
 	got := fx.wopiCall(t, "GET", nodeRoute(small.ID)+"/contents", tok, nil, nil)
 	if got.Body.String() != "abc" {
 		t.Errorf("an over-limit save changed the file to %q", got.Body.String())
@@ -730,8 +750,9 @@ func TestWOPIPutFileRefusesAQuotaTheSaveWouldPass(t *testing.T) {
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID, fx.admin,
 		map[string]any{"quota_bytes": 10}), 200)
 	tok := fx.openToken(t, "edit")
+	fx.lockFor(t, tok, "lock-quota")
 	rec := fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID)+"/contents", tok, strings.NewReader("six by"),
-		map[string]string{"X-WOPI-Override": "PUT"})
+		map[string]string{"X-WOPI-Override": "PUT", "X-WOPI-Lock": "lock-quota"})
 	wantStatus(t, rec, 413)
 	if g := fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID)+"/contents", tok, nil, nil); g.Body.String() != "hello" {
 		t.Errorf("a quota refusal changed the file to %q", g.Body.String())
@@ -758,7 +779,9 @@ func TestWOPIPutRefusesOverQuotaBeforeTheBodyIsRead(t *testing.T) {
 		map[string]any{"quota_bytes": 10}), 200)
 	tok := fx.openToken(t, "edit")
 	body := &readFlag{r: strings.NewReader("six by")}
-	req := fx.wopiReq("POST", nodeRoute(fx.doc.ID)+"/contents", tok, body, map[string]string{"X-WOPI-Override": "PUT"})
+	fx.lockFor(t, tok, "lock-quota-pre")
+	req := fx.wopiReq("POST", nodeRoute(fx.doc.ID)+"/contents", tok, body,
+		map[string]string{"X-WOPI-Override": "PUT", "X-WOPI-Lock": "lock-quota-pre"})
 	req.ContentLength = 6
 	rec := httptest.NewRecorder()
 	fx.s.Handler().ServeHTTP(rec, req)
@@ -775,7 +798,9 @@ func TestWOPIRevocationDuringTheUploadRefusesTheSave(t *testing.T) {
 	fx := newOfficeFixture(t)
 	tok := fx.openToken(t, "edit")
 	revoke := &revokeOnRead{fx: fx, r: strings.NewReader("six by")}
-	req := fx.wopiReq("POST", nodeRoute(fx.doc.ID)+"/contents", tok, revoke, map[string]string{"X-WOPI-Override": "PUT"})
+	fx.lockFor(t, tok, "lock-revoke")
+	req := fx.wopiReq("POST", nodeRoute(fx.doc.ID)+"/contents", tok, revoke,
+		map[string]string{"X-WOPI-Override": "PUT", "X-WOPI-Lock": "lock-revoke"})
 	rec := httptest.NewRecorder()
 	fx.s.Handler().ServeHTTP(rec, req)
 	wantStatus(t, rec, 401)
@@ -809,17 +834,15 @@ func (v *revokeOnRead) Read(p []byte) (int, error) {
 	return v.r.Read(p)
 }
 
-func TestWOPINoLocksAreImplementedYet(t *testing.T) {
+// TestWOPIUnimplementedOverridesAnswer501: the lock operations are implemented (office_locks_test.go). RenameFile is
+// slice l4, and the others are not in the design, so they are checked and answered 501.
+func TestWOPIUnimplementedOverridesAnswer501(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
 	tok := fx.openToken(t, "edit")
-	info := decodeInfo(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), tok, nil, nil))
-	if info["SupportsLocks"] != false {
-		t.Errorf("SupportsLocks = %v, want false until slice l3", info["SupportsLocks"])
-	}
 	var logs bytes.Buffer
 	fx.s.log = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	for _, o := range []string{"LOCK", "GET_LOCK", "REFRESH_LOCK", "UNLOCK", "RENAME_FILE"} {
+	for _, o := range []string{"RENAME_FILE", "PUT_RELATIVE"} {
 		wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, nil,
 			map[string]string{"X-WOPI-Override": o}), 501)
 	}

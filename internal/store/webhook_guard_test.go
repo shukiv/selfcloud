@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"io/fs"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,60 +98,110 @@ var webhookAuditNoEvent = map[string]string{
 	"node.label_clear":       "label values are not on the event list (decision 29)",
 	"webhook.rewrap":         "a webhook secret sealed again under the current key by the admin command: the secret is the same, nothing is reported",
 	"account.quota_warning":  "the quota-warning level is a setting, not a change of usage: the quota.warning event is the report",
+	"node.lock":              "an editor takes a lock: a lock is not a change to the file, and the edits the editor saves are node.write",
+	"node.unlock":            "an editor or the sweep ends a lock: a lock is not a change to the file",
 }
 
-// nodeWriteSite is one pinned count of node-writing calls or statements in one file, with what each one
-// reports, or why it reports nothing.
+// nodeWriteSite is one pinned count of node-writing calls or statements in one file: how many there are, the lock rule
+// they follow (decision 32), and what each one reports, or why it reports nothing.
 type nodeWriteSite struct {
-	n   int
-	why string
+	n    int
+	lock string
+	why  string
 }
 
-// nodeWriteSites pins, per file, how many node-writing calls and raw statements there are, and what each
-// reports. A new one changes a count, and the test fails until its line here says what it reports.
+// The lock rules a node write follows (decision 32). A guarded write runs a store guard inside its transaction (guardNode
+// or guardFolder, wopi_locks.go): it is refused while a live lock holds the node, or, for a folder, a file below it. Only
+// the changes that name, place, content or owner make are guarded, for UpdateNodeHeld. A holder write is the save of the
+// lock's own holder, and replaceContent lets through no other holder. An adding write creates a node, a folder, an account
+// or a history row, which no lock holds, and it changes no current content of a locked file. A free write changes
+// counters, settings or history that no lock refuses, and no file's content, name or place. A clearing write ends the
+// account's locks in the same transaction (DeleteAccount). Every pinned site states one.
+const (
+	lockGuarded = "guarded"
+	lockHolder  = "holder"
+	lockAdds    = "adds"
+	lockFree    = "free"
+	lockClears  = "clears"
+)
+
+// nodeWriteSites pins, per file, how many node-writing calls and raw statements there are, what each one reports, and
+// the lock rule each follows. A new one changes a count, and the test fails until its line here says both.
 var nodeWriteSites = map[string]nodeWriteSite{
-	"../api/nodes.go InsertNode":                      {1, "newNode's insert: the caller's node.create reports a file; a folder reports nothing"},
-	"../api/nodes.go UpdateNode":                      {3, "PUT create (node.create), PUT write (node.write), and rename, sharing or appearance (only the rename reports, file.updated)"},
-	"../api/nodes.go newNode":                         {3, "a folder on the path or a mkdir (nothing), and PUT create of a file (node.create, file.created)"},
-	"../api/nodes.go replaceContent":                  {1, "PUT's replacement: its node.write reports file.updated, as the WOPI PutFile's does"},
-	"../api/office.go replaceContent":                 {1, "WOPI PutFile: its node.write reports file.updated through the same helper as PUT"},
-	"../api/ownership.go ClearSubtreeEditorsCanShare": {1, "the editors_can_share flag, which is not in the payload"},
-	"../api/ownership.go MoveSubtree":                 {1, "a move into My files (personal branch): file.moved for each file, explicitly in ownership.go"},
-	"../api/ownership.go UpdateNode":                  {1, "the move into My files (personal branch): reported with the MoveSubtree above"},
-	"../api/ownership.go SetSubtreeOwner":             {1, "a change of owner inside a team space: nothing is reported, the item does not move"},
-	"../api/shortcuts.go InsertNode":                  {1, "node.shortcut: file.created with kind shortcut and no target"},
-	"../api/transfer.go ClearSubtreeEditorsCanShare":  {1, "the editors_can_share flag, which is not in the payload"},
-	"../api/transfer.go InsertNode":                   {1, "copyTree: each file made is reported by an explicit file.created (the audit names only the root)"},
-	"../api/transfer.go MoveSubtree":                  {1, "node.move: each file below the moved node reports file.moved"},
-	"../api/transfer.go TrashNode":                    {1, "applyReplace trashes what a copy or move displaces: the caller's node.trash reports it as file.deleted"},
-	"../api/transfer.go UpdateNode":                   {1, "node.move: the node's folder and parent change, reported as file.moved"},
-	"../api/trash.go PurgeNode":                       {1, "node.purge: nothing is reported (decision 27)"},
-	"../api/trash.go TrashNode":                       {1, "trashIn: node.trash reports file.deleted for each file below"},
-	"../api/trash.go Untrash":                         {1, "node.restore: reported as file.restored by the audit entry (decision 27)"},
-	"../api/trash.go UpdateNode":                      {1, "node.restore: the restored node's files report file.restored (decision 27)"},
-	"../api/uploads.go InsertNode":                    {1, "completeUpload of a new file: node.create reports file.created; upload.completed is explicit"},
-	"../api/uploads.go UpdateNode":                    {1, "completeUpload of a replacement: node.write reports file.updated; upload.completed is explicit"},
-	"../api/users.go ClearSubtreeEditorsCanShare":     {1, "the editors_can_share flag, which is not in the payload"},
-	"../api/users.go InsertNode":                      {1, "the folder that takes a deleted user's files: a folder, which reports nothing"},
-	"../api/users.go MoveFolderContents":              {1, "user.files_moved: each file moved reports file.moved, explicitly"},
-	"../api/versions.go UpdateNode":                   {1, "node.version.restore: file.updated"},
-	"../store/folders.go INSERT INTO nodes":           {1, "the root node of a new folder: a folder, which reports nothing"},
-	"../store/nodes.go INSERT INTO nodes":             {1, "the InsertNode method itself; its callers are classified above"},
-	"../store/nodes.go UPDATE nodes":                  {2, "the UpdateNode method and the MoveSubtree method themselves; their callers are classified above"},
-	"../store/sharing.go UPDATE nodes":                {4, "SetSubtreeOwner (owner only: nothing reported), MoveFolderContents (two statements, reported by users.go), and ClearSubtreeEditorsCanShare (the flag)"},
-	"../store/trash.go DELETE FROM nodes":             {1, "the PurgeNode method itself: nothing is reported"},
-	"../store/trash.go UPDATE nodes":                  {2, "the TrashNode and Untrash methods themselves; their callers are classified above"},
-	"../sweep/trash.go PurgeNode":                     {1, "the sweep's purge of a trash root: nothing is reported (decision 27)"},
+	"../api/accounts.go DeleteAccount":                                 {1, lockClears, "the account job's delete: the account's locks and sessions are cleared in the same write (store DeleteAccount)"},
+	"../api/folders.go DeleteFolder":                                   {1, lockGuarded, "a folder delete: refused while a file in the folder is open in an editor (guardFolder)"},
+	"../api/users.go DeleteFolder":                                     {1, lockGuarded, "a user's personal folder: the user's locks are released first (ReleaseUserLocks), so nothing is refused unless a lock was taken since"},
+	"../api/nodes.go InsertNode":                                       {1, lockAdds, "newNode's insert: the caller's node.create reports a file; a folder reports nothing"},
+	"../api/nodes.go UpdateNode":                                       {2, lockGuarded, "a rename, refused while the file is open; and handleCreateFile's new file, which no lock can hold"},
+	"../api/nodes.go UpdateNodeHeld":                                   {1, lockHolder, "replaceContent's write: a PUT holds no lock, so an open file refuses it; PutFile passes its lock ID"},
+	"../api/nodes.go newNode":                                          {3, lockAdds, "a folder on the path or a mkdir (nothing), and PUT create of a file (node.create, file.created)"},
+	"../api/nodes.go replaceContent":                                   {1, lockHolder, "PUT's replacement: its node.write reports file.updated, as the WOPI PutFile's does"},
+	"../api/office_locks.go replaceContent":                            {1, lockHolder, "WOPI PutFile: its node.write reports file.updated through the same helper as PUT; the holder is the lock ID"},
+	"../api/ownership.go ClearSubtreeEditorsCanShare":                  {1, lockGuarded, "the editors_can_share flag, which is not in the payload"},
+	"../api/ownership.go MoveSubtree":                                  {1, lockGuarded, "a move into My files (personal branch): file.moved for each file, explicitly in ownership.go"},
+	"../api/ownership.go UpdateNode":                                   {1, lockGuarded, "the move into My files (personal branch): reported with the MoveSubtree above"},
+	"../api/ownership.go SetSubtreeOwner":                              {1, lockGuarded, "a change of owner inside a team space: nothing is reported, the item does not move"},
+	"../api/shortcuts.go InsertNode":                                   {1, lockAdds, "node.shortcut: file.created with kind shortcut and no target"},
+	"../api/transfer.go ClearSubtreeEditorsCanShare":                   {1, lockGuarded, "the editors_can_share flag, which is not in the payload"},
+	"../api/transfer.go InsertNode":                                    {1, lockAdds, "copyTree: each file made is reported by an explicit file.created (the audit names only the root)"},
+	"../api/transfer.go MoveSubtree":                                   {1, lockGuarded, "node.move: each file below the moved node reports file.moved"},
+	"../api/transfer.go TrashNode":                                     {1, lockGuarded, "applyReplace trashes what a copy or move displaces: the caller's node.trash reports it as file.deleted"},
+	"../api/transfer.go UpdateNode":                                    {1, lockGuarded, "node.move: the node's folder and parent change, reported as file.moved"},
+	"../api/trash.go PurgeNode":                                        {1, lockGuarded, "node.purge: nothing is reported (decision 27)"},
+	"../api/trash.go TrashNode":                                        {1, lockGuarded, "trashIn: node.trash reports file.deleted for each file below"},
+	"../api/trash.go Untrash":                                          {1, lockGuarded, "node.restore: reported as file.restored by the audit entry (decision 27)"},
+	"../api/trash.go UpdateNode":                                       {1, lockGuarded, "node.restore: the restored node's files report file.restored (decision 27)"},
+	"../api/uploads.go InsertNode":                                     {1, lockAdds, "completeUpload of a new file: node.create reports file.created; upload.completed is explicit"},
+	"../api/uploads.go UpdateNode":                                     {1, lockGuarded, "completeUpload of a replacement: node.write reports file.updated; refused while the file is open"},
+	"../api/users.go ClearSubtreeEditorsCanShare":                      {1, lockGuarded, "the editors_can_share flag, which is not in the payload"},
+	"../api/users.go InsertNode":                                       {1, lockAdds, "the folder that takes a deleted user's files: a folder, which reports nothing"},
+	"../api/users.go MoveFolderContents":                               {1, lockGuarded, "user.files_moved: each file moved reports file.moved, explicitly; refused while a file in the folder is open"},
+	"../api/versions.go UpdateNode":                                    {1, lockGuarded, "node.version.restore: file.updated; refused while the file is open"},
+	"../api/versions.go UpdateVersion":                                 {1, lockGuarded, "a version's label or keep flag: history only, refused while the file is open"},
+	"../api/versions.go DeleteVersion":                                 {1, lockGuarded, "node.version.delete: history only, refused while the file is open"},
+	"../store/nodes.go UpdateNodeHeld":                                 {1, lockGuarded, "UpdateNode, which passes no holder: the guard is in UpdateNodeHeld"},
+	"../sweep/trash.go PurgeNode":                                      {1, lockGuarded, "the sweep's purge of a trash root: nothing is reported (decision 27)"},
+	"../store/accounts.go DeleteAccount DELETE FROM accounts":          {1, lockClears, "the account's delete: its locks and sessions are cleared in the same write"},
+	"../store/accounts.go InsertAccount INSERT INTO accounts":          {1, lockAdds, "a new account: no lock can hold it"},
+	"../store/accounts.go UpdateAccount UPDATE accounts":               {1, lockFree, "the account's settings and quota: no file changes"},
+	"../store/folders.go DeleteFolder DELETE FROM folders":             {1, lockGuarded, "DeleteFolder: refused while a file in the folder is open (guardFolder)"},
+	"../store/folders.go InsertFolder INSERT INTO folders":             {1, lockAdds, "a new folder row: no lock can hold it; nothing is reported"},
+	"../store/folders.go InsertFolder INSERT INTO nodes":               {1, lockAdds, "the root node of a new folder: a folder, which reports nothing"},
+	"../store/folders.go UpdateFolder UPDATE folders":                  {1, lockFree, "a folder's name and settings: a rename changes no path an editor holds"},
+	"../store/nodes.go InsertNode INSERT INTO nodes":                   {1, lockAdds, "the InsertNode method itself; its callers are classified above"},
+	"../store/nodes.go MoveSubtree UPDATE nodes":                       {1, lockGuarded, "MoveSubtree: every node below the moved node; refused while a file below is open (guardNode)"},
+	"../store/nodes.go UpdateNodeHeld UPDATE nodes":                    {1, lockGuarded, "UpdateNodeHeld: refused for a change of a file's name, place, content or owner and a folder's place or owner; a description, colour or flag passes"},
+	"../store/share_links.go SetSharingPolicy UPDATE accounts":         {1, lockFree, "the account's sharing policy: no file changes"},
+	"../store/sharing.go ClearSubtreeEditorsCanShare UPDATE nodes":     {1, lockGuarded, "the editors_can_share flag below a node: written only inside a move or a copy, and the move is refused first"},
+	"../store/sharing.go MoveFolderContents UPDATE nodes":              {2, lockGuarded, "MoveFolderContents: two statements, reported by users.go; refused while a file in the folder is open (guardFolder)"},
+	"../store/sharing.go SetSubtreeOwner UPDATE nodes":                 {1, lockGuarded, "SetSubtreeOwner: owner only, nothing reported; refused while a file below is open (guardNode)"},
+	"../store/sharing.go UpdateFolderSettings UPDATE folders":          {1, lockFree, "a folder's settings: no file changes"},
+	"../store/storage.go SetUserQuotaDefault UPDATE accounts":          {1, lockFree, "the default quota: no file changes"},
+	"../store/trash.go PurgeNode DELETE FROM nodes":                    {1, lockGuarded, "PurgeNode: nothing is reported (decision 27); refused while a file below is open"},
+	"../store/trash.go TrashNode UPDATE nodes":                         {1, lockGuarded, "TrashNode: refused while a file below is open (guardNode)"},
+	"../store/trash.go Untrash UPDATE nodes":                           {1, lockGuarded, "Untrash: refused while the file is open (guardNode)"},
+	"../store/usage.go RecountAccount UPDATE accounts":                 {1, lockFree, "a usage counter recount: no file changes"},
+	"../store/usage.go RecountAccount UPDATE folders":                  {1, lockFree, "a usage counter recount of a folder: no file changes"},
+	"../store/usage.go adjustAccount UPDATE accounts":                  {1, lockFree, "a usage counter: no file changes"},
+	"../store/usage.go adjustFolder UPDATE folders":                    {1, lockFree, "a usage counter of a folder: no file changes"},
+	"../store/versions.go DeleteVersion DELETE FROM versions":          {1, lockGuarded, "a version's delete: refused while the file is open"},
+	"../store/versions.go InsertVersion INSERT INTO versions":          {1, lockAdds, "a version of the content a write replaces: history, which changes no current content"},
+	"../store/versions.go PruneVersions DELETE FROM versions":          {1, lockFree, "retention pruning: removes history only; the current content does not change (decision 32)"},
+	"../store/versions.go UpdateVersion UPDATE versions":               {1, lockGuarded, "a version's label or keep flag: history, refused while the file is open"},
+	"../store/webhook_quota.go SetQuotaWarningPercent UPDATE accounts": {1, lockFree, "the quota warning percent: no file changes"},
+	"../store/webhook_quota.go syncQuotaWatch UPDATE accounts":         {1, lockFree, "the quota warning mark: no file changes"},
 }
 
 // webhookAuditCalls maps the names of helpers that take an audit action to the position of the action
 // argument.
 var webhookAuditCalls = map[string]int{"auditEntry": 2, "auditAs": 2, "addUser": 5}
 
-// nodeWriterMethods are the store calls that change a node row.
-var nodeWriterMethods = map[string]bool{"InsertNode": true, "UpdateNode": true, "TrashNode": true, "Untrash": true,
-	"PurgeNode": true, "MoveSubtree": true, "MoveFolderContents": true, "ClearSubtreeEditorsCanShare": true,
-	"newNode": true, "SetSubtreeOwner": true, "replaceContent": true}
+// nodeWriterMethods are the store calls that change a node row, a version, a folder or an account, and so are
+// covered by a lock rule.
+var nodeWriterMethods = map[string]bool{"InsertNode": true, "UpdateNode": true, "UpdateNodeHeld": true,
+	"TrashNode": true, "Untrash": true, "PurgeNode": true, "MoveSubtree": true, "MoveFolderContents": true,
+	"ClearSubtreeEditorsCanShare": true, "newNode": true, "SetSubtreeOwner": true, "replaceContent": true,
+	"UpdateVersion": true, "DeleteVersion": true, "DeleteFolder": true, "DeleteAccount": true}
 
 // guardFile is one parsed non-test Go file under internal/.
 type guardFile struct {
@@ -360,37 +411,47 @@ func TestEveryAuditActionIsClassified(t *testing.T) {
 	}
 }
 
-// nodeWriteCounts counts, per file, the node-writing calls and the raw statements that write nodes.
+// writeStatement is a raw statement that writes a table a lock rule covers: any letter case, any spacing or line break,
+// and the insert-or-replace forms, which SQLite also reads as writes. The verb is the first group, the table the second.
+var writeStatement = regexp.MustCompile(`(?i)\b(insert\s+or\s+replace\s+into|replace\s+into|insert\s+into|update|delete\s+from)\s+(nodes|versions|folders|accounts)\b`)
+
+// nodeWriteCounts counts, per file, the node-writing calls, keyed by the method's name, and the raw statements that write
+// nodes, versions, folders and accounts, keyed by the file, the function that holds the statement, the verb in capitals and
+// the table. A statement is pinned per function, since one file can hold writes that follow different rules.
 func nodeWriteCounts(t *testing.T, files []guardFile) map[string]int {
 	t.Helper()
 	counts := map[string]int{}
 	for _, gf := range files {
-		ast.Inspect(gf.file, func(n ast.Node) bool {
-			switch n := n.(type) {
-			case *ast.CallExpr:
-				name := ""
-				switch f := n.Fun.(type) {
-				case *ast.Ident:
-					name = f.Name
-				case *ast.SelectorExpr:
-					name = f.Sel.Name
-				}
-				if nodeWriterMethods[name] {
-					counts[gf.path+" "+name]++
-				}
-			case *ast.BasicLit:
-				if n.Kind != token.STRING {
-					return true
-				}
-				s := unquoteLit(t, n)
-				for _, stmt := range []string{"UPDATE nodes", "INSERT INTO nodes", "DELETE FROM nodes"} {
-					if strings.Contains(s, stmt) {
-						counts[gf.path+" "+stmt]++
+		for _, decl := range gf.file.Decls {
+			where := ""
+			if fn, ok := decl.(*ast.FuncDecl); ok {
+				where = fn.Name.Name
+			}
+			ast.Inspect(decl, func(n ast.Node) bool {
+				switch n := n.(type) {
+				case *ast.CallExpr:
+					name := ""
+					switch f := n.Fun.(type) {
+					case *ast.Ident:
+						name = f.Name
+					case *ast.SelectorExpr:
+						name = f.Sel.Name
+					}
+					if nodeWriterMethods[name] {
+						counts[gf.path+" "+name]++
+					}
+				case *ast.BasicLit:
+					if n.Kind != token.STRING {
+						return true
+					}
+					for _, m := range writeStatement.FindAllStringSubmatch(unquoteLit(t, n), -1) {
+						verb := strings.ToUpper(strings.Join(strings.Fields(m[1]), " "))
+						counts[gf.path+" "+where+" "+verb+" "+strings.ToLower(m[2])]++
 					}
 				}
-			}
-			return true
-		})
+				return true
+			})
+		}
 	}
 	return counts
 }
@@ -412,8 +473,65 @@ func TestEveryNodeWriteIsClassified(t *testing.T) {
 			diff = append(diff, k+": "+strconv.Itoa(got[k])+" found, "+strconv.Itoa(nodeWriteSites[k].n)+" classified")
 		}
 	}
+	// Every pinned site states the lock rule it follows, and it is one of the three the store's guards and holder rule
+	// give (decision 32).
+	for k, s := range nodeWriteSites {
+		if s.lock != lockGuarded && s.lock != lockHolder && s.lock != lockAdds && s.lock != lockFree && s.lock != lockClears {
+			diff = append(diff, k+": no lock rule stated")
+		}
+	}
 	sort.Strings(diff)
 	if len(diff) > 0 {
 		t.Errorf("node writes not classified:\n  %s", strings.Join(diff, "\n  "))
+	}
+}
+
+// TestNodeWriteScanCountsEveryForm plants one statement of each form in a source file and checks that the scan counts it:
+// any letter case, any spacing or line break, the replace forms, and each table a write can change (decision 32).
+func TestNodeWriteScanCountsEveryForm(t *testing.T) {
+	const src = `package store
+
+func planted() {
+	_ = "UPDATE nodes SET name = ?"
+	_ = "update   nodes\n\tSET name = ?"
+	_ = "INSERT\n  OR REPLACE INTO nodes (id) VALUES (?)"
+	_ = "replace into nodes (id) VALUES (?)"
+	_ = "Delete From NODES WHERE id = ?"
+	_ = "UPDATE versions SET label = ?"
+	_ = "delete from versions where id = ?"
+	_ = "INSERT OR REPLACE INTO versions (id) VALUES (?)"
+	_ = "UPDATE folders SET name = ?"
+	_ = "DELETE FROM folders WHERE id = ?"
+	_ = "DELETE FROM accounts WHERE id = ?"
+	_ = "update accounts set status = ?"
+	_ = "SELECT id FROM nodes"
+}
+`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "planted.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := nodeWriteCounts(t, []guardFile{{path: "planted.go", fset: fset, file: f}})
+	want := map[string]int{
+		"planted.go planted UPDATE nodes":                    2,
+		"planted.go planted INSERT OR REPLACE INTO nodes":    1,
+		"planted.go planted REPLACE INTO nodes":              1,
+		"planted.go planted DELETE FROM nodes":               1,
+		"planted.go planted UPDATE versions":                 1,
+		"planted.go planted DELETE FROM versions":            1,
+		"planted.go planted INSERT OR REPLACE INTO versions": 1,
+		"planted.go planted UPDATE folders":                  1,
+		"planted.go planted DELETE FROM folders":             1,
+		"planted.go planted DELETE FROM accounts":            1,
+		"planted.go planted UPDATE accounts":                 1,
+	}
+	if len(got) != len(want) {
+		t.Errorf("counts = %v, want %v", got, want)
+	}
+	for k, n := range want {
+		if got[k] != n {
+			t.Errorf("%s = %d, want %d (all counts %v)", k, got[k], n, got)
+		}
 	}
 }

@@ -38,13 +38,35 @@ type Tx struct {
 	fanouts map[string]*webhookFanout
 	// quota holds the accounts whose usage this transaction changed, for the quota check before commit (webhook_quota.go).
 	quota map[string]*quotaTouch
+	// now is the store's clock, read for lock expiry (wopi_locks.go). Set by Write.
+	now func() time.Time
 }
+
+// clock returns the time of the transaction: the store's clock, which tests replace.
+func (tx *Tx) clock() time.Time {
+	if tx.now == nil {
+		return Now()
+	}
+	return tx.now()
+}
+
+// Clock returns the time the store reads for lock expiry. Production keeps Now; a test replaces it with SetClock.
+func (s *Store) Clock() time.Time {
+	if s.clock == nil {
+		return Now()
+	}
+	return s.clock()
+}
+
+// SetClock replaces the store's clock. Tests use it to run locks and their expiry on a fake clock. It is not for
+// use while the store serves requests.
+func (s *Store) SetClock(fn func() time.Time) { s.clock = fn }
 
 // Write runs fn in a write transaction and commits if fn returns nil. Errors from fn are
 // returned unchanged. Before the commit, the quota levels of the accounts fn changed are checked on the state it left.
 func (s *Store) Write(ctx context.Context, fn func(tx *Tx) error) error {
 	return s.write(ctx, func(t *sql.Tx) error {
-		tx := &Tx{q: t, log: s.log}
+		tx := &Tx{q: t, log: s.log, now: s.Clock}
 		if err := fn(tx); err != nil {
 			return err
 		}

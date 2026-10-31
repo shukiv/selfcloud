@@ -3,9 +3,8 @@
 package api
 
 // Office editing through WOPI (design section 10, decision 31). Two parts: the route that opens an editor for a
-// person, and the WOPI host that Collabora Online calls while the editor is open. Locks are not here yet: slice l3
-// adds Lock, GetLock, RefreshLock and Unlock and the store's lock check. Until then PutFile does not check a lock,
-// and CheckFileInfo says SupportsLocks is false.
+// person, and the WOPI host that Collabora Online calls while the editor is open. The lock operations and the save
+// that honours them are in office_locks.go (decision 32).
 //
 // A WOPI request is checked in this order, and each refusal is answered as the WOPI specification says: the
 // proof-key signature and its timestamp (500 when they fail), the access token under the WOPI key (401), the token's
@@ -139,7 +138,7 @@ func (s *Server) handleOpenOffice(w http.ResponseWriter, r *http.Request) error 
 		}
 	}
 
-	now := time.Now()
+	now := s.store.Clock()
 	expires := now.Add(time.Duration(s.cfg.Office.TokenMinutes) * time.Minute)
 	minted := ""
 	if p.Token != nil {
@@ -187,11 +186,13 @@ func (s *Server) handleOpenOffice(w http.ResponseWriter, r *http.Request) error 
 
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		if _, err := requireNodeRole(ctx, tx, p, n.ID, minRole); err != nil {
+		cur, err := requireNodeRole(ctx, tx, p, n.ID, minRole)
+		if err != nil {
 			return err
 		}
+		// The editor is given the file as it is now: the session's tag is its content tag, which Lock compares.
 		sess := &store.WOPISession{ID: sid, AccountID: n.AccountID, NodeID: n.ID, UserID: p.UserID,
-			Role: "read", IssuedAt: now, ExpiresAt: expires, BrowserSession: browser}
+			Role: "read", IssuedAt: now, ExpiresAt: expires, BrowserSession: browser, ServedTag: cur.ContentTag}
 		if write {
 			sess.Role = "write"
 		}
@@ -218,8 +219,10 @@ type wopiGrant struct {
 	// restricted is the no-download rule for this caller on this file (downloadRestricted): it binds a viewer or a
 	// commenter, not an editor, the same as for downloads. A restricted grant has print, export and copy disabled.
 	restricted bool
-	// token is the access token the request carried, checked again inside a write (PutFile).
+	// token is the access token the request carried, checked again inside a write (PutFile, the lock operations).
 	token string
+	// session is the editing session the token names: the row whose content tag Lock and PutFile keep.
+	session string
 }
 
 // writable reports whether the grant may change the file: the role is editor or more. The no-download rule does not
@@ -240,7 +243,7 @@ func (s *Server) wopiRequest(w http.ResponseWriter, r *http.Request) (*wopiGrant
 		return nil, nodeNotFound()
 	}
 	token := r.URL.Query().Get("access_token")
-	now := time.Now()
+	now := s.store.Clock()
 	doc, err := s.office.Get(ctx)
 	if err != nil {
 		return nil, errNoDiscovery
@@ -280,12 +283,16 @@ func (s *Server) wopiRequest(w http.ResponseWriter, r *http.Request) (*wopiGrant
 	if err != nil {
 		return nil, err
 	}
-	return &wopiGrant{p: p, node: n, role: role, restricted: restricted, token: token}, nil
+	return &wopiGrant{p: p, node: n, role: role, restricted: restricted, token: token, session: pl.Session}, nil
 }
 
 // wopiStatus is the HTTP status a WOPI request answers for err. The specification's codes are used where it gives
 // one; a quota refusal answers 413 because the specification has no code for it (decision 31 says so).
 func wopiStatus(err error) int {
+	var le *store.LockedError
+	if errors.As(err, &le) {
+		return http.StatusConflict
+	}
 	if errors.Is(err, errBadProof) || errors.Is(err, errNoDiscovery) {
 		return http.StatusInternalServerError
 	}
@@ -316,9 +323,12 @@ func wopiStatus(err error) int {
 func (s *Server) wopiFail(w http.ResponseWriter, r *http.Request, err error) {
 	status := wopiStatus(err)
 	code := apierr.From(err).Code
-	// Every refusal the client caused is a client fault in the access log, whatever its status: a 501 for a lock this
-	// slice does not have, or a 404 that is an answer, is not a server error. Only an internal failure is one.
-	clientFault := code != apierr.Internal || errors.Is(err, errBadProof) || errors.Is(err, errNoDiscovery) ||
+	var le *store.LockedError
+	locked := errors.As(err, &le)
+	// Every refusal the client caused is a client fault in the access log, whatever its status: a 501 for an operation
+	// this slice does not have, a lock refused by another editor, or a 404 that is an answer, is not a server error.
+	// Only an internal failure is one.
+	clientFault := locked || code != apierr.Internal || errors.Is(err, errBadProof) || errors.Is(err, errNoDiscovery) ||
 		errors.Is(err, errNotImplemented) || errors.Is(err, errTooLargeForCaller)
 	if info := infoFrom(r.Context()); info != nil && clientFault {
 		info.clientFault = true
@@ -326,16 +336,24 @@ func (s *Server) wopiFail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, errBadProof), errors.Is(err, errNoDiscovery):
 		s.log.Warn("wopi request refused", "request_id", requestID(r), "reason", err.Error())
-	case code == apierr.Internal && !errors.Is(err, errNotImplemented):
+	case code == apierr.Internal && !errors.Is(err, errNotImplemented) && !locked:
 		s.log.Error("wopi request failed", "request_id", requestID(r), "error", err)
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	if locked {
+		// A 409 always carries X-WOPI-Lock: the lock on the file, or "" when no editor holds it. The reason is one of
+		// the fixed texts in the store, and names no lock.
+		w.Header().Set("X-WOPI-Lock", le.Current)
+		if le.Reason != "" {
+			w.Header().Set("X-WOPI-LockFailureReason", le.Reason)
+		}
+	}
 	w.WriteHeader(status)
 }
 
 // handleWOPICheckFileInfo answers CheckFileInfo: what the editor shows, and what it may do. UserCanWrite and
 // ReadOnly follow the grant; the three Disable properties follow no_download, which the proposal's read-only rule
-// sets. SupportsLocks is false until slice l3, so Collabora should not call Lock.
+// sets. SupportsLocks and SupportsGetLock are true: the lock operations are in office_locks.go.
 func (s *Server) handleWOPICheckFileInfo(w http.ResponseWriter, r *http.Request) error {
 	g, err := s.wopiRequest(w, r)
 	if err != nil {
@@ -372,7 +390,8 @@ func (s *Server) handleWOPICheckFileInfo(w http.ResponseWriter, r *http.Request)
 		"ReadOnly":                !write,
 		"UserCanNotWriteRelative": true,
 		"SupportsUpdate":          true,
-		"SupportsLocks":           false,
+		"SupportsLocks":           true,
+		"SupportsGetLock":         true,
 		"DisablePrint":            g.restricted,
 		"DisableExport":           g.restricted,
 		"DisableCopy":             g.restricted,
@@ -433,76 +452,6 @@ func (s *Server) handleWOPIGetFile(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
-// handleWOPIPutFile replaces the file's content with the body, which is the whole file. It is one more way a
-// content is replaced, and it goes through replaceContent, the path PUT uses: the same quota, the same version
-// kept, the same node.write audit entry that reports file.updated. The body is streamed to a blob first, limited to
-// office.max_file_bytes; a refusal removes the blob.
-//
-// Locks are not checked in this slice. Until l3, an API write made after the editor loaded the file is overwritten
-// by this save, and two editors overwrite each other: nothing here refuses a save because someone else changed the
-// file. The /wopi routes are off unless office.enabled is set, for that reason.
-func (s *Server) handleWOPIPutFile(w http.ResponseWriter, r *http.Request) error {
-	g, err := s.wopiRequest(w, r)
-	if err != nil {
-		s.wopiFail(w, r, err)
-		return nil
-	}
-	if r.Header.Get("X-WOPI-Override") != "PUT" {
-		s.wopiFail(w, r, errNotImplemented)
-		return nil
-	}
-	if !g.writable() {
-		s.wopiFail(w, r, apierr.New(apierr.Forbidden, "the token is read-only"))
-		return nil
-	}
-	n := g.node
-	if n.Kind != store.KindFile {
-		s.wopiFail(w, r, notFound("node"))
-		return nil
-	}
-	ctx := r.Context()
-	p := g.p
-	// A body whose length is known is refused over the account's quota before a byte of it is read. The save would be
-	// refused by the same check once written, because the kept version counts too.
-	if r.ContentLength >= 0 {
-		if err := s.precheckSaveQuota(ctx, p, n.AccountID, r.ContentLength); err != nil {
-			s.wopiFail(w, r, err)
-			return nil
-		}
-	}
-	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Office.MaxFileBytes))
-	if err != nil {
-		s.wopiFail(w, r, err)
-		return nil
-	}
-	var out *store.Node
-	s.atWrite()
-	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		// The token is checked again inside the write: a revocation made while the body was arriving ends the save.
-		if _, _, err := s.authenticateWOPI(ctx, tx, g.token, time.Now()); err != nil {
-			return err
-		}
-		cur, err := requireNodeRole(ctx, tx, p, n.ID, store.RoleEditor)
-		if err != nil {
-			return err
-		}
-		if cur.Kind != store.KindFile {
-			return notFound("node")
-		}
-		out, err = s.replaceContent(ctx, r, tx, p, cur, c, n.MimeType)
-		return err
-	})
-	if err != nil {
-		s.discardBlob(n.AccountID, c.ID)
-		s.wopiFail(w, r, err)
-		return nil
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-WOPI-ItemVersion", unquoteETag(out.ETag))
-	w.WriteHeader(http.StatusOK)
-	return nil
-}
-
 // precheckSaveQuota refuses a save of size bytes that the account's quota would refuse, before the body is read.
 func (s *Server) precheckSaveQuota(ctx context.Context, p *auth.Principal, accountID string, size int64) error {
 	acc, err := s.store.Account(ctx, accountID)
@@ -510,19 +459,4 @@ func (s *Server) precheckSaveQuota(ctx context.Context, p *auth.Principal, accou
 		return err
 	}
 	return s.checkQuota(p, accountID, acc, store.UsageChange{Bytes: size})
-}
-
-// handleWOPIOverride answers POST /wopi/files/{nod}, which carries Lock, GetLock, RefreshLock, Unlock and RenameFile
-// by X-WOPI-Override. None is implemented in this slice: the request is checked, then answered 501.
-func (s *Server) handleWOPIOverride(w http.ResponseWriter, r *http.Request) error {
-	if _, err := s.wopiRequest(w, r); err != nil {
-		s.wopiFail(w, r, err)
-		return nil
-	}
-	if info := infoFrom(r.Context()); info != nil {
-		info.clientFault = true // a 501 for an operation this slice does not have, not a server failure
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusNotImplemented)
-	return nil
 }

@@ -340,6 +340,9 @@ func (tx *Tx) UpdateFolder(ctx context.Context, f *Folder) error {
 // The blobs the files pointed at are not removed here. Copies share blobs, so a blob may still be
 // in use elsewhere; the blob garbage collector (slice e) finds the orphaned ones by reference.
 func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) error {
+	if err := tx.guardFolder(ctx, accountID, folderID); err != nil {
+		return err
+	}
 	var bytes, files, reserved int64
 	err := tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0), COUNT(*) FROM nodes
 		WHERE folder_id = ? AND account_id = ? AND kind = 'file'`, folderID, accountID).Scan(&bytes, &files)

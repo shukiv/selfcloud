@@ -2364,6 +2364,28 @@ paths:
         "413": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/unlock:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Office]
+      operationId: breakNodeLock
+      summary: Break an editor's lock on a file
+      description: |
+        Ends the live office lock on a file, whoever holds it (decision 32). The editor's next refresh or
+        save then answers with no lock on the file, and nothing it sends overwrites a write made after the
+        break. The break is audited as `node.unlock` with `reason: broken`, the lock's holder and the caller.
+        A manager of the file, an owner of the account and the account key may break a lock. A delegated
+        token and a share-link visitor may not, whatever their role, and the WOPI routes do not take this
+        route, so an editor's own token cannot end its lock here. The confirmation before a break belongs to
+        the web interface (slice l4), not to this route.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: The lock is ended. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /wopi/files/{nod}:
     parameters:
       - $ref: "#/components/parameters/nod"
@@ -2374,8 +2396,8 @@ paths:
       description: |
         Collabora's WOPI host call. The access token is the `access_token` query parameter, and the
         request must carry the proof-key headers Collabora signs it with; a request whose proof or
-        timestamp does not verify answers `500`, as the WOPI specification says. `SupportsLocks` is
-        false until locks are built.
+        timestamp does not verify answers `500`, as the WOPI specification says. `SupportsLocks` and
+        `SupportsGetLock` are true: the lock operations are on `POST` below (decision 32).
       security: []
       parameters:
         - name: access_token
@@ -2394,21 +2416,43 @@ paths:
     post:
       tags: [Office]
       operationId: wopiOverride
-      summary: WOPI operations by X-WOPI-Override (not yet implemented)
+      summary: WOPI lock operations by X-WOPI-Override
       description: |
-        Lock, GetLock, RefreshLock, Unlock and RenameFile arrive here by `X-WOPI-Override`. In this
-        slice the request is checked as above, then answered `501`.
+        `LOCK`, `GET_LOCK`, `REFRESH_LOCK` and `UNLOCK` (decision 32). A lock lasts 30 minutes from its
+        last refresh. `LOCK` on an unlocked file takes it, and `LOCK` with the ID already held refreshes
+        it; a lock is held by its ID, not by a person. `LOCK`, `REFRESH_LOCK` and `UNLOCK` need the
+        `X-WOPI-Lock` header and answer `400` without it. A mismatch answers `409` with `X-WOPI-Lock` set
+        to the lock on the file, or to the empty string when the file is not locked. `LOCK` also answers
+        `409` when the editor was given an earlier content of the file, so an API write made before the
+        lock is not overwritten. `LOCK` with `X-WOPI-OldLock` (UnlockAndRelock) replaces the live lock with
+        that ID by the new one, and otherwise answers `409` with the current lock. An account that already
+        holds 1,000 live locks answers `LOCK` with `409`, an empty `X-WOPI-Lock` and a `X-WOPI-LockFailureReason`.
+        `GET_LOCK` answers the lock in `X-WOPI-Lock`. `RenameFile` (slice l4) and
+        the other overrides answer `501`.
       security: []
       parameters:
         - name: access_token
           in: query
           required: true
           schema: { type: string }
-        - { name: X-WOPI-Override, in: header, schema: { type: string } }
+        - { name: X-WOPI-Override, in: header, schema: { type: string, enum: [LOCK, GET_LOCK, REFRESH_LOCK, UNLOCK] } }
+        - { name: X-WOPI-Lock, in: header, schema: { type: string, maxLength: 1024 } }
+        - { name: X-WOPI-OldLock, in: header, description: "With `LOCK`: the lock this request replaces (UnlockAndRelock).", schema: { type: string, maxLength: 1024 } }
       responses:
+        "200":
+          description: The operation is done. `GET_LOCK` gives the lock in `X-WOPI-Lock`, empty when unlocked.
+          headers:
+            X-WOPI-Lock: { schema: { type: string } }
+        "400": { description: The lock ID is missing, longer than 1024 characters, or not printable ASCII. }
         "401": { description: The token is not valid, or its session has ended. }
+        "404": { description: The file is not the token's, or the token is read-only. }
+        "409":
+          description: A lock mismatch, or no lock to refresh or end. `X-WOPI-Lock` is the lock on the file, or empty.
+          headers:
+            X-WOPI-Lock: { schema: { type: string } }
+            X-WOPI-LockFailureReason: { schema: { type: string } }
         "500": { description: The proof does not verify, or the discovery document is not available. }
-        "501": { description: Not implemented in this slice. }
+        "501": { description: "Not implemented: RenameFile (slice l4) and the other overrides." }
   /wopi/files/{nod}/contents:
     parameters:
       - $ref: "#/components/parameters/nod"
@@ -2442,7 +2486,14 @@ paths:
         request needs `X-WOPI-Override: PUT`. A read-only token, or a no-download file, answers `404`,
         which the specification gives for an unauthorized user. A body over `office.max_file_bytes`
         answers `413`, and so does a quota refusal, since the specification has no code for quota.
-        Locks are not checked in this slice (see decision 31).
+        The save needs the file's lock: `X-WOPI-Lock` is the lock the editor took. A save with no lock,
+        or with another lock, answers `409` with `X-WOPI-Lock` set to the lock on the file, or to the
+        empty string when no editor holds it. An empty unlocked file takes a save without a lock only when
+        the editor's session holds the file's current content, so an API write that emptied it after the
+        editor opened it is not overwritten (decision 32). A save with no lock into a file that is not empty
+        answers `409`, as does a save after a manager has broken the lock.
+        The first save of a lock keeps a version; the later saves of that lock replace the content
+        without one.
       security: []
       parameters:
         - name: access_token
@@ -2450,6 +2501,7 @@ paths:
           required: true
           schema: { type: string }
         - { name: X-WOPI-Override, in: header, required: true, schema: { type: string, enum: [PUT] } }
+        - { name: X-WOPI-Lock, in: header, schema: { type: string, maxLength: 1024 } }
       requestBody:
         required: true
         content:
@@ -2462,6 +2514,7 @@ paths:
             X-WOPI-ItemVersion: { schema: { type: string } }
         "401": { description: The token is not valid, or its session has ended. }
         "404": { description: The file is not the token's, the token is read-only, or the file is no-download. }
+        "409": { description: "The file's lock refuses the save: no lock, or another lock. `X-WOPI-Lock` is the lock on the file, or empty." }
         "413": { description: The body is over the limit, or the quota would be passed. }
         "500": { description: The proof does not verify, or the discovery document is not available. }
   /api/v1/nodes/{nod}/content:

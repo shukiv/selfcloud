@@ -62,14 +62,20 @@ func currentOf(n *store.Node) versionJSON {
 // It does not change usage: the caller's usage change already counts the new content in full, and the old
 // content's bytes are the version's. It then prunes the versions past versions.max_count.
 func (s *Server) keepVersion(ctx context.Context, tx *store.Tx, cur *store.Node, by string, at time.Time) error {
+	_, err := s.keepVersionID(ctx, tx, cur, by, at)
+	return err
+}
+
+// keepVersionID is keepVersion, and returns the ID of the version it made, so a lock can record it (replaceContent).
+func (s *Server) keepVersionID(ctx context.Context, tx *store.Tx, cur *store.Node, by string, at time.Time) (string, error) {
 	v := &store.Version{ID: id.New("ver"), AccountID: cur.AccountID, NodeID: cur.ID, BlobID: cur.BlobID,
 		Size: cur.Size, SHA256: cur.SHA256, ETag: cur.ETag, MimeType: cur.MimeType, CreatedAt: cur.ModifiedAt,
 		CreatedBy: cur.ModifiedBy, ReplacedAt: at, ReplacedBy: by}
 	if err := tx.InsertVersion(ctx, v); err != nil {
-		return err
+		return "", err
 	}
 	_, _, err := tx.PruneVersions(ctx, cur.AccountID, cur.ID, s.cfg.Versions.MaxCount, nil)
-	return err
+	return v.ID, err
 }
 
 // fileNodeOf loads a file the caller holds at least minRole on. A folder has no versions.

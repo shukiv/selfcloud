@@ -46,6 +46,10 @@ func trashState(ctx context.Context, q querier, accountID, id string) (self, abo
 // the name at once. ErrNotFound if the node is not in the account or is already trashed. The caller
 // checks access and the usage side: trashed items still count toward usage.
 func (tx *Tx) TrashNode(ctx context.Context, accountID, id, by string, at time.Time) error {
+	// A folder's trash mark covers the files below it, so the guard walks the subtree (wopi_locks.go).
+	if err := tx.guardNode(ctx, accountID, id, ""); err != nil {
+		return err
+	}
 	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET trashed_at = ?, trashed_by = ?,
 		trashed_name_key = name_key, name_key = ? || id
 		WHERE account_id = ? AND id = ? AND trashed_at IS NULL`,
@@ -55,6 +59,9 @@ func (tx *Tx) TrashNode(ctx context.Context, accountID, id, by string, at time.T
 // Untrash clears the trash mark of node id of accountID and its saved name key. The caller has already
 // written the node's name key and parent with UpdateNode, in the same transaction.
 func (tx *Tx) Untrash(ctx context.Context, accountID, id string) error {
+	if err := tx.guardNode(ctx, accountID, id, ""); err != nil {
+		return err
+	}
 	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET trashed_at = NULL, trashed_by = '',
 		trashed_name_key = '' WHERE account_id = ? AND id = ? AND trashed_at IS NOT NULL`, accountID, id))
 }
@@ -163,6 +170,9 @@ func (tx *Tx) DropUploadsUnder(ctx context.Context, accountID, id string) (int64
 // the uploads aimed into the subtree, which the foreign keys delete with it. Blobs are left for the collector.
 // It returns the files and bytes that went.
 func (tx *Tx) PurgeNode(ctx context.Context, accountID, id string) (files, bytes int64, err error) {
+	if err := tx.guardNode(ctx, accountID, id, ""); err != nil {
+		return 0, 0, err
+	}
 	folder, err := tx.NodeFolder(ctx, accountID, id)
 	if err != nil {
 		return 0, 0, err

@@ -115,6 +115,7 @@ type Result struct {
 	Verifications  int64 // expired or used verification and reset tokens removed
 	SignInLinks    int64 // expired or used sign-in links removed
 	WOPISessions   int64 // office editing sessions past their end removed
+	Locks          int   // office editing locks past their expiry removed and audited (decision 32)
 	TempRemoved    int   // abandoned temporary upload files removed
 	Uploads        int   // expired resumable uploads removed, rows and files
 	UploadFiles    int   // resumable upload files with no row, removed
@@ -205,6 +206,21 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 		if res.WOPISessions, err = tx.DeleteEndedWOPISessions(ctx, now); err != nil {
 			return err
 		}
+		// A lock past its expiry is removed and audited, so a crashed editor leaves no lock behind (decision 32).
+		// The file is free from the expiry on; the sweep only tidies the row.
+		expiredLocks, err := tx.DeleteExpiredLocks(ctx, now)
+		if err != nil {
+			return err
+		}
+		for _, l := range expiredLocks {
+			entry := &store.AuditEntry{Time: now, AccountID: l.AccountID, ActorKind: "system",
+				Action: "node.unlock", Target: l.NodeID, Folders: []string{l.FolderID},
+				Details: map[string]any{"reason": "expired"}}
+			if err := tx.InsertAudit(ctx, entry); err != nil {
+				return err
+			}
+		}
+		res.Locks = len(expiredLocks)
 		// Recent entries older than recentRetention, and all but the recentPerUser latest of each user (slice p2).
 		if res.Recent, err = tx.PruneRecent(ctx, now.Add(-recentRetention), recentPerUser); err != nil {
 			return err

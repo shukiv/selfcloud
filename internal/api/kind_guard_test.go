@@ -25,14 +25,19 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // when it reports a subtree (store/webhook_events.go), and the threshold count excludes directories in SQL
 // (store/webhook_events.go countSubtree). Decision 27 records them. Slice l1 and l2 added four in office.go, each
 // refusing whatever is not a file (an editor opens a file only, and a shortcut or folder is never sent to it).
-// Decision 31 records them.
+// Decision 31 records them. Slice l3 moved the PutFile and the lock operations' comparisons to office_locks.go, which
+// refuse whatever is not a file for the same reason (decision 32). Slice l3b added one in store/nodes.go
+// (changesLockedPlace: a directory's write passes a lock unless it moves; anything else takes the file rule, so a shortcut
+// is guarded as a file, which fails closed) and one in api/lock_break.go (the break refuses whatever is not a file).
 var reviewedNodeKindSites = map[string]int{
 	"internal/api/access.go":           2,
 	"internal/api/access_requests.go":  1,
 	"internal/api/download.go":         1,
 	"internal/api/links.go":            2,
+	"internal/api/lock_break.go":       1,
 	"internal/api/nodes.go":            12,
-	"internal/api/office.go":           4,
+	"internal/api/office.go":           2,
+	"internal/api/office_locks.go":     3,
 	"internal/api/share_links.go":      2,
 	"internal/api/shortcuts.go":        5,
 	"internal/api/tokens.go":           1,
@@ -41,7 +46,7 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/api/versions.go":         3,
 	"internal/api/views.go":            1,
 	"internal/store/folders.go":        1,
-	"internal/store/nodes.go":          3,
+	"internal/store/nodes.go":          4,
 	"internal/store/webhook_events.go": 3,
 	"internal/store/sharing.go":        2,
 	"internal/store/storage.go":        1,

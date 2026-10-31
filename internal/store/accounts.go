@@ -180,8 +180,16 @@ func (tx *Tx) UpdateAccount(ctx context.Context, a *Account) error {
 }
 
 // DeleteAccount removes the account and, by cascade, everything that belongs to it in the
-// database. Deleting an account that is already gone is not an error.
+// database. Its office locks and editing sessions are cleared first, in this write, so an account
+// with a file open in an editor is deleted at once (decision 32). Deleting an account that is
+// already gone is not an error.
 func (tx *Tx) DeleteAccount(ctx context.Context, id string) error {
+	if _, err := tx.q.ExecContext(ctx, "DELETE FROM wopi_locks WHERE account_id = ?", id); err != nil {
+		return err
+	}
+	if _, err := tx.q.ExecContext(ctx, "DELETE FROM wopi_sessions WHERE account_id = ?", id); err != nil {
+		return err
+	}
 	_, err := tx.q.ExecContext(ctx, "DELETE FROM accounts WHERE id = ?", id)
 	return err
 }

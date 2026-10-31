@@ -30,6 +30,8 @@ func TestOfficeBlockIsValidated(t *testing.T) {
 		{"wopi URL with a path", func(o *OfficeConfig) { o.WOPIURL = "https://selfcloud.example.com/drive" }, "wopi_url"},
 		{"wopi URL with a host", func(o *OfficeConfig) { o.WOPIURL = "https://selfcloud.example.com" }, ""},
 		{"lock minutes zero", func(o *OfficeConfig) { o.LockMinutes = 0 }, "lock_minutes"},
+		{"lock minutes above the WOPI limit", func(o *OfficeConfig) { o.LockMinutes = 31 }, "lock_minutes"},
+		{"lock minutes at the WOPI limit", func(o *OfficeConfig) { o.LockMinutes = 30 }, ""},
 		{"token minutes above a day", func(o *OfficeConfig) { o.TokenMinutes = 1441 }, "token_minutes"},
 		{"no file size", func(o *OfficeConfig) { o.MaxFileBytes = 0 }, "max_file_bytes"},
 	}

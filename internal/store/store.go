@@ -41,6 +41,8 @@ type Store struct {
 	// r is a pool of read-only connections; WAL mode lets them read while w writes.
 	r   *sql.DB
 	log *slog.Logger
+	// clock is the time locks read; nil means Now. See SetClock.
+	clock func() time.Time
 }
 
 // Options configure Open.

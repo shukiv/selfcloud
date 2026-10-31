@@ -535,6 +535,7 @@ func (s *Server) routes() []route {
 		// and carry their token in the query, so they are secretPath. All of them answer not_found while office.enabled
 		// is off, and the /wopi routes check their proof and token before anything else.
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/office", handle: s.handleOpenOffice, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/unlock", handle: s.handleBreakNodeLock, auth: true},
 		{method: http.MethodGet, path: "/wopi/files/{nod}", handle: s.handleWOPICheckFileInfo, secretPath: true},
 		{method: http.MethodGet, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIGetFile, secretPath: true},
 		{method: http.MethodPost, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIPutFile, secretPath: true},

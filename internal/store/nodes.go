@@ -324,7 +324,23 @@ func (tx *Tx) InsertNode(ctx context.Context, n *Node) error {
 // and the description. A shortcut's target is set once, by InsertNode, and is not written here. It returns
 // ErrNotFound if the node is not in the account, and ErrConflict on a sibling name clash.
 func (tx *Tx) UpdateNode(ctx context.Context, n *Node) error {
-	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET folder_id = ?, parent_id = ?, name = ?,
+	return tx.UpdateNodeHeld(ctx, n, "")
+}
+
+// UpdateNodeHeld is UpdateNode for the holder of a lock: holder is the lock ID the caller holds on n, which may
+// then write its own file. The write is refused with *LockedError while any other live lock holds n or, for a
+// folder, a file below it (wopi_locks.go). "" holds none, so UpdateNode is refused on any locked file.
+func (tx *Tx) UpdateNodeHeld(ctx context.Context, n *Node, holder string) error {
+	changes, err := tx.changesLockedPlace(ctx, n)
+	if err != nil {
+		return err
+	}
+	if changes {
+		if err := tx.guardNode(ctx, n.AccountID, n.ID, holder); err != nil {
+			return err
+		}
+	}
+	err = rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET folder_id = ?, parent_id = ?, name = ?,
 		name_key = ?, size = ?, mime_type = ?, blob_id = ?, etag = ?, content_tag = ?, modified_at = ?, modified_by = ?,
 		owner_id = CASE WHEN ? = '' THEN owner_id ELSE ? END, no_download = ?, editors_can_share = ?,
 		color = ?, description = ?
@@ -336,6 +352,30 @@ func (tx *Tx) UpdateNode(ctx context.Context, n *Node) error {
 		return ErrConflict
 	}
 	return err
+}
+
+// changesLockedPlace reports whether the write n makes a change that a live lock refuses (decision 32). For a file those
+// are its name, its place, its content and its owner. For a folder they are its place and its owner, since moving a
+// folder moves every file below it; a folder's rename changes no path an editor holds, since the editor holds the file
+// by its ID. The other fields (description, colour, the sharing flags, times) change no content or place and pass. A node
+// that is not in the account reports false, and the write then answers not found.
+func (tx *Tx) changesLockedPlace(ctx context.Context, n *Node) (bool, error) {
+	var kind, folder, parent, name, nameKey, contentTag, owner string
+	err := tx.q.QueryRowContext(ctx, `SELECT kind, COALESCE(folder_id, ''), COALESCE(parent_id, ''),
+		COALESCE(name, ''), COALESCE(name_key, ''), COALESCE(content_tag, ''), COALESCE(owner_id, '')
+		FROM nodes WHERE account_id = ? AND id = ?`, n.AccountID, n.ID).
+		Scan(&kind, &folder, &parent, &name, &nameKey, &contentTag, &owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	moved := folder != n.FolderID || parent != n.ParentID || (n.OwnerID != "" && n.OwnerID != owner)
+	if kind == KindDir {
+		return moved, nil
+	}
+	return moved || name != n.Name || nameKey != n.NameKey || contentTag != n.ContentTag, nil
 }
 
 // SubtreeUsage is what the subtree under id holds in usage: its files with their versions, and the
@@ -369,6 +409,9 @@ func (tx *Tx) SubtreeUsage(ctx context.Context, accountID, id string) (UsageChan
 func (tx *Tx) MoveSubtree(ctx context.Context, accountID, id, fromFolder, toFolder string) error {
 	if fromFolder == toFolder {
 		return nil
+	}
+	if err := tx.guardNode(ctx, accountID, id, ""); err != nil {
+		return err
 	}
 	c, err := tx.SubtreeUsage(ctx, accountID, id)
 	if err != nil {

@@ -493,6 +493,15 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
+		// The user's sessions go with it, so no lock it holds can be refreshed. Its locks, and the locks on the files in its
+		// personal folder, are released first, and the files then move or go at once (decision 32).
+		personal := ""
+		if err == nil {
+			personal = pf.ID
+		}
+		if err := tx.ReleaseUserLocks(ctx, acc.ID, usr, personal); err != nil {
+			return err
+		}
 		if err == nil {
 			entries, err := tx.CountFolderEntries(ctx, acc.ID, pf.ID)
 			if err != nil {
