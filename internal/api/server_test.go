@@ -12,8 +12,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,6 +44,7 @@ func newTestServerWith(t *testing.T, mailer mail.Sender, mutate ...func(*config.
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	seedMigratedDB(t, cfg.Store.Path)
 	st, err := store.Open(context.Background(), store.Options{Path: cfg.Store.Path})
 	if err != nil {
 		t.Fatal(err)
@@ -55,6 +58,45 @@ func newTestServerWith(t *testing.T, mailer mail.Sender, mutate ...func(*config.
 	// Webhook names resolve through a stub, so no test does DNS. A test that needs other addresses replaces the client.
 	s.webhookClient = testWebhookClient(cfg, nil)
 	return s
+}
+
+// migratedDB holds a database with every migration applied, made once per test binary. Running the
+// migrations for each test's own database took half of this package's CPU time. store's own tests
+// cover the migrations, and this copy comes from running them.
+var (
+	migratedOnce sync.Once
+	migratedDB   []byte
+	migratedErr  error
+)
+
+// seedMigratedDB writes a copy of migratedDB to path, for store.Open to find up to date.
+func seedMigratedDB(t *testing.T, path string) {
+	t.Helper()
+	migratedOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "selfcloud-migrated")
+		if err != nil {
+			migratedErr = err
+			return
+		}
+		defer os.RemoveAll(dir)
+		p := filepath.Join(dir, "selfcloud.db")
+		st, err := store.Open(context.Background(), store.Options{Path: p})
+		if err != nil {
+			migratedErr = err
+			return
+		}
+		if err := st.Close(); err != nil {
+			migratedErr = err
+			return
+		}
+		migratedDB, migratedErr = os.ReadFile(p)
+	})
+	if migratedErr != nil {
+		t.Fatal(migratedErr)
+	}
+	if err := os.WriteFile(path, migratedDB, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // frozenLimitInstant is the time every test server's rate limiters read: a fixed instant, so no bucket

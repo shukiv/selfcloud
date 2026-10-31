@@ -7,13 +7,53 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+// migratedDB holds a database with every migration applied, made once per test binary, so that
+// openTest's many fresh databases do not each run them. Tests of the migrations call Open themselves.
+var (
+	migratedOnce sync.Once
+	migratedDB   []byte
+	migratedErr  error
+)
+
+func seedMigratedDB(t testing.TB, path string) {
+	t.Helper()
+	migratedOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "selfcloud-migrated")
+		if err != nil {
+			migratedErr = err
+			return
+		}
+		defer os.RemoveAll(dir)
+		p := filepath.Join(dir, "selfcloud.db")
+		s, err := Open(context.Background(), Options{Path: p})
+		if err != nil {
+			migratedErr = err
+			return
+		}
+		if err := s.Close(); err != nil {
+			migratedErr = err
+			return
+		}
+		migratedDB, migratedErr = os.ReadFile(p)
+	})
+	if migratedErr != nil {
+		t.Fatal(migratedErr)
+	}
+	if err := os.WriteFile(path, migratedDB, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // openTest opens a fresh database in a temporary directory.
 func openTest(t testing.TB) *Store {
 	t.Helper()
-	s, err := Open(context.Background(), Options{Path: filepath.Join(t.TempDir(), "test.db")})
+	path := filepath.Join(t.TempDir(), "test.db")
+	seedMigratedDB(t, path)
+	s, err := Open(context.Background(), Options{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
