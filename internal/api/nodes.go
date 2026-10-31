@@ -1053,32 +1053,8 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 		if cur.ETag != ifMatch {
 			return apierr.New(apierr.PreconditionFailed, "the file changed since it was read; read it again")
 		}
-		if err := tx.InsertBlob(ctx, &store.Blob{ID: c.ID, AccountID: cur.AccountID, Size: c.Size,
-			SHA256: c.SHA256, State: store.BlobLive, CreatedAt: store.Now()}); err != nil {
-			return err
-		}
-		prev := cur.Size
-		// The replacement counts in full. The old content is kept as a version, which still counts toward
-		// the quota, so the growth is the new size, not the difference (design section 8, Versions).
-		if err := s.applyUsage(ctx, tx, p, cur.AccountID, store.FolderChange{FolderID: cur.FolderID,
-			Change: store.UsageChange{Bytes: c.Size}}); err != nil {
-			return err
-		}
-		if err := s.keepVersion(ctx, tx, cur, p.ID, store.Now()); err != nil {
-			return err
-		}
-		cur.BlobID, cur.Size, cur.MimeType, cur.ETag, cur.SHA256 = c.ID, c.Size, mt, newETag(), c.SHA256
-		cur.ContentTag = store.NewContentTag()
-		cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
-		if err := tx.UpdateNode(ctx, cur); err != nil {
-			return err
-		}
-		out = cur
-		if err := noteEdit(ctx, tx, p, cur.AccountID, cur.ID); err != nil {
-			return err
-		}
-		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.write", cur.ID,
-			map[string]any{"size": c.Size, "previous_size": prev}, cur.FolderID))
+		out, err = s.replaceContent(ctx, r, tx, p, cur, c, mt)
+		return err
 	})
 	if err != nil {
 		s.discardBlob(n.AccountID, c.ID)
@@ -1086,6 +1062,41 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 	}
 	writeJSON(w, http.StatusOK, toNodeJSON(out))
 	return nil
+}
+
+// replaceContent is the one way a file's content is replaced by a request: a PUT, and the WOPI PutFile. The new
+// blob is recorded, its full size is charged to the folder (the old content stays as a version, which counts toward
+// the quota, so the growth is the new size, not the difference: design section 8, Versions), the old content is kept
+// as a version, the node takes the new content and a new ETag, the edit is noted for Recent, and node.write is
+// audited, which reports file.updated. It runs inside tx. cur must be the node as read in tx, and its role checked.
+func (s *Server) replaceContent(ctx context.Context, r *http.Request, tx *store.Tx, p *auth.Principal,
+	cur *store.Node, c blob.Committed, mt string) (*store.Node, error) {
+	if err := tx.InsertBlob(ctx, &store.Blob{ID: c.ID, AccountID: cur.AccountID, Size: c.Size,
+		SHA256: c.SHA256, State: store.BlobLive, CreatedAt: store.Now()}); err != nil {
+		return nil, err
+	}
+	prev := cur.Size
+	if err := s.applyUsage(ctx, tx, p, cur.AccountID, store.FolderChange{FolderID: cur.FolderID,
+		Change: store.UsageChange{Bytes: c.Size}}); err != nil {
+		return nil, err
+	}
+	if err := s.keepVersion(ctx, tx, cur, p.ID, store.Now()); err != nil {
+		return nil, err
+	}
+	cur.BlobID, cur.Size, cur.MimeType, cur.ETag, cur.SHA256 = c.ID, c.Size, mt, newETag(), c.SHA256
+	cur.ContentTag = store.NewContentTag()
+	cur.ModifiedAt, cur.ModifiedBy = store.Now(), p.ID
+	if err := tx.UpdateNode(ctx, cur); err != nil {
+		return nil, err
+	}
+	if err := noteEdit(ctx, tx, p, cur.AccountID, cur.ID); err != nil {
+		return nil, err
+	}
+	if err := tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.write", cur.ID,
+		map[string]any{"size": c.Size, "previous_size": prev}, cur.FolderID)); err != nil {
+		return nil, err
+	}
+	return cur, nil
 }
 
 // atWrite runs the test hook, if a test set one, just before a mutating request takes the write

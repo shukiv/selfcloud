@@ -48,6 +48,9 @@ type Options struct {
 	// ContentURL is content_url, or empty. Its origin is allowed for images, video, audio and frames,
 	// because file previews load from it.
 	ContentURL string
+	// OfficeURL is office.discovery_url, or empty when office editing is off. Its origin is allowed for the editor's
+	// frame, and as the target of the editor's form post (form-action), because the editor is Collabora's page.
+	OfficeURL string
 }
 
 // Handler serves the built files of the web interface.
@@ -55,6 +58,8 @@ type Handler struct {
 	files fs.FS
 	// origins are the extra sources of the policy (the content origin), or empty.
 	origins string
+	// officeOrigin is the origin of the office editor, with a leading space, or empty when office editing is off.
+	officeOrigin string
 	// index is index.html split at the nonce placeholder, or nil when the build has none. Joining
 	// the parts with a nonce gives the page for that response.
 	index []string
@@ -72,7 +77,15 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		}
 		origins = " " + u.Scheme + "://" + u.Host
 	}
-	h := &Handler{files: files, origins: origins}
+	officeOrigin := ""
+	if opts.OfficeURL != "" {
+		u, err := url.Parse(opts.OfficeURL)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return nil, fmt.Errorf("web: office URL %q has no origin", opts.OfficeURL)
+		}
+		officeOrigin = " " + u.Scheme + "://" + u.Host
+	}
+	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin}
 	data, err := fs.ReadFile(files, "index.html")
 	if err == nil {
 		parts := strings.Split(string(data), cspNoncePlaceholder)
@@ -93,8 +106,8 @@ func (h *Handler) policy(nonce string) string {
 	}
 	return "default-src 'self'; script-src 'self'; style-src " + style + "; img-src 'self' data: blob:" + h.origins +
 		"; media-src 'self'" + h.origins +
-		"; font-src 'self'; connect-src 'self'; frame-src 'self'" + h.origins +
-		"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		"; font-src 'self'; connect-src 'self'; frame-src 'self'" + h.origins + h.officeOrigin +
+		"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" + h.officeOrigin
 }
 
 // robotsTxt keeps crawlers away from the pages that open share links. The pages also answer with

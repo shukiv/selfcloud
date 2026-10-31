@@ -114,6 +114,7 @@ type Result struct {
 	Sessions       int64 // expired sessions removed
 	Verifications  int64 // expired or used verification and reset tokens removed
 	SignInLinks    int64 // expired or used sign-in links removed
+	WOPISessions   int64 // office editing sessions past their end removed
 	TempRemoved    int   // abandoned temporary upload files removed
 	Uploads        int   // expired resumable uploads removed, rows and files
 	UploadFiles    int   // resumable upload files with no row, removed
@@ -199,6 +200,9 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 			return err
 		}
 		if res.SignInLinks, err = tx.DeleteSpentSignInLinks(ctx, now); err != nil {
+			return err
+		}
+		if res.WOPISessions, err = tx.DeleteEndedWOPISessions(ctx, now); err != nil {
 			return err
 		}
 		// Recent entries older than recentRetention, and all but the recentPerUser latest of each user (slice p2).

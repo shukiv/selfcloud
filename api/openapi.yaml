@@ -2314,6 +2314,155 @@ paths:
               schema: { $ref: "#/components/schemas/Node" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/nodes/{nod}/office:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Office]
+      operationId: openOffice
+      summary: Open a file in the office editor
+      description: |
+        Makes the editor's URL for a file and an access token for it. The client posts the token into
+        the editor's form (the token is not put in an address), and the editor calls the `/wopi` routes
+        with it. The token is bound to this file, this person and one editing session, and it ends at
+        the session's end or at `office.token_minutes`, whichever is first. It never outlives the
+        delegated token that made the request. A session revoked with the person's tokens, or an
+        account's tokens, stops at once.
+
+        Only a person opens the editor: a session, or a delegated token that acts as a user. `edit`
+        needs the editor role and a file that is not no-download; a no-download file opens to `view`
+        only. `view` needs the viewer role. A file over `office.max_file_bytes` is `too_large`; a type
+        Collabora does not open is `invalid_request`. While office editing is off, the route answers
+        `not_found`. With no discovery document, it answers `unavailable` and `Retry-After`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              additionalProperties: false
+              properties:
+                mode: { type: string, enum: [edit, view] }
+      responses:
+        "200":
+          description: The editor's URL and the token. Both are shown once, and `Cache-Control` is `no-store`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, description: "Collabora's editor URL, with WOPISrc set to this file's /wopi address." }
+                  token: { type: string, example: "sct_..." }
+                  expires_at: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /wopi/files/{nod}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Office]
+      operationId: wopiCheckFileInfo
+      summary: WOPI CheckFileInfo
+      description: |
+        Collabora's WOPI host call. The access token is the `access_token` query parameter, and the
+        request must carry the proof-key headers Collabora signs it with; a request whose proof or
+        timestamp does not verify answers `500`, as the WOPI specification says. `SupportsLocks` is
+        false until locks are built.
+      security: []
+      parameters:
+        - name: access_token
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The file's properties for the editor.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { description: The token is not valid, or its session has ended. }
+        "404": { description: The file is not the token's, or no longer reachable by its person. }
+        "500": { description: The proof does not verify, or the discovery document is not available. }
+    post:
+      tags: [Office]
+      operationId: wopiOverride
+      summary: WOPI operations by X-WOPI-Override (not yet implemented)
+      description: |
+        Lock, GetLock, RefreshLock, Unlock and RenameFile arrive here by `X-WOPI-Override`. In this
+        slice the request is checked as above, then answered `501`.
+      security: []
+      parameters:
+        - name: access_token
+          in: query
+          required: true
+          schema: { type: string }
+        - { name: X-WOPI-Override, in: header, schema: { type: string } }
+      responses:
+        "401": { description: The token is not valid, or its session has ended. }
+        "500": { description: The proof does not verify, or the discovery document is not available. }
+        "501": { description: Not implemented in this slice. }
+  /wopi/files/{nod}/contents:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Office]
+      operationId: wopiGetFile
+      summary: WOPI GetFile
+      description: |
+        The file's content, streamed. `X-WOPI-ItemVersion` is the file's ETag without its quotes.
+      security: []
+      parameters:
+        - name: access_token
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The whole file, as application/octet-stream.
+          headers:
+            X-WOPI-ItemVersion: { schema: { type: string } }
+        "401": { description: The token is not valid, or its session has ended. }
+        "404": { description: The file is not the token's, or no longer reachable by its person. }
+        "500": { description: The proof does not verify, or the discovery document is not available. }
+    post:
+      tags: [Office]
+      operationId: wopiPutFile
+      summary: WOPI PutFile
+      description: |
+        Replaces the file's content with the body, which is the whole file, through the same path as
+        a PUT: the same quota, the old content kept as a version, and a `file.updated` event. The
+        request needs `X-WOPI-Override: PUT`. A read-only token, or a no-download file, answers `404`,
+        which the specification gives for an unauthorized user. A body over `office.max_file_bytes`
+        answers `413`, and so does a quota refusal, since the specification has no code for quota.
+        Locks are not checked in this slice (see decision 31).
+      security: []
+      parameters:
+        - name: access_token
+          in: query
+          required: true
+          schema: { type: string }
+        - { name: X-WOPI-Override, in: header, required: true, schema: { type: string, enum: [PUT] } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Saved. `X-WOPI-ItemVersion` is the new ETag without its quotes.
+          headers:
+            X-WOPI-ItemVersion: { schema: { type: string } }
+        "401": { description: The token is not valid, or its session has ended. }
+        "404": { description: The file is not the token's, the token is read-only, or the file is no-download. }
+        "413": { description: The body is over the limit, or the quota would be passed. }
+        "500": { description: The proof does not verify, or the discovery document is not available. }
   /api/v1/nodes/{nod}/content:
     parameters:
       - $ref: "#/components/parameters/nod"

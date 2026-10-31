@@ -71,6 +71,7 @@ type Config struct {
 	Webhooks  WebhooksConfig  `yaml:"webhooks"`
 	CORS      CORSConfig      `yaml:"cors"`
 	UI        UIConfig        `yaml:"ui"`
+	Office    OfficeConfig    `yaml:"office"`
 	Users     UsersConfig     `yaml:"users"`
 	Sessions  SessionsConfig  `yaml:"sessions"`
 	Mail      MailConfig      `yaml:"mail"`
@@ -245,6 +246,25 @@ type WebhooksConfig struct {
 	AllowNetworks []string `yaml:"allow_networks"`
 }
 
+// OfficeConfig controls office editing through WOPI with Collabora Online (design section 10, decision 31). Off by
+// default: while it is off, every /wopi route and the office route answer not_found, and nothing is fetched.
+type OfficeConfig struct {
+	// Enabled turns the WOPI host and the office route on.
+	Enabled bool `yaml:"enabled"`
+	// DiscoveryURL is Collabora's WOPI discovery URL, such as https://office.example.com/hosting/discovery. It is
+	// operator configuration and the only address this server fetches for office editing.
+	DiscoveryURL string `yaml:"discovery_url"`
+	// WOPIURL is the address Collabora uses to reach Selfcloud, with no path, when it differs from public_url. The
+	// proof-key check signs the URL built from it, so it must be the address Collabora actually calls.
+	WOPIURL string `yaml:"wopi_url"`
+	// LockMinutes is how long a WOPI lock lasts without a refresh. Locks are not enforced until slice l3.
+	LockMinutes int `yaml:"lock_minutes"`
+	// MaxFileBytes is the largest file that may be opened for editing, and the largest one PutFile may write.
+	MaxFileBytes ByteSize `yaml:"max_file_bytes"`
+	// TokenMinutes is how long an access token lives. A token never outlives the delegated token it came from.
+	TokenMinutes int `yaml:"token_minutes"`
+}
+
 // TokensConfig controls delegated tokens, the short-lived credentials an account key mints for a
 // browser.
 type TokensConfig struct {
@@ -355,8 +375,9 @@ func Defaults() *Config {
 			IdleTimeout: Duration(168 * time.Hour),
 			MaxAge:      Duration(720 * time.Hour),
 		},
-		UI:   UIConfig{Enabled: true, Brand: BrandConfig{Name: "Selfcloud", Accent: "#053D8E"}},
-		Mail: MailConfig{SMTPPort: 587, SMTPTLS: "starttls"},
+		UI:     UIConfig{Enabled: true, Brand: BrandConfig{Name: "Selfcloud", Accent: "#053D8E"}},
+		Office: OfficeConfig{LockMinutes: 30, MaxFileBytes: 50 * MiB, TokenMinutes: 600},
+		Mail:   MailConfig{SMTPPort: 587, SMTPTLS: "starttls"},
 		RateLimit: RateLimitConfig{
 			PerIPPerMinute:    10,
 			PerEmailPerMinute: 5,
@@ -430,6 +451,7 @@ func (c *Config) Validate() error {
 	if _, err := ParsePrefixes(c.Webhooks.AllowNetworks); err != nil {
 		bad("webhooks.allow_networks: %v", err)
 	}
+	checkOffice(c.Office, bad)
 	if c.ShutdownTimeout <= 0 {
 		bad("shutdown_timeout must be positive")
 	}
@@ -554,6 +576,46 @@ func (c *Config) Validate() error {
 		bad("ui.brand: %v", err)
 	}
 	return errors.Join(errs...)
+}
+
+// checkOffice validates the office block. The discovery URL must be https, name a host, and have exactly the
+// discovery path; the WOPI URL must be https with no path. Both are checked even when office is off, so a typo is
+// found at start-up rather than when someone turns the editor on.
+func checkOffice(o OfficeConfig, bad func(string, ...any)) {
+	if o.Enabled && o.DiscoveryURL == "" {
+		bad("office.discovery_url is required when office.enabled is true")
+	}
+	if o.DiscoveryURL != "" {
+		u, err := url.Parse(o.DiscoveryURL)
+		switch {
+		case err != nil:
+			bad("office.discovery_url: %v", err)
+		case u.Scheme != "https":
+			bad("office.discovery_url must be https")
+		case u.Host == "":
+			bad("office.discovery_url has no host")
+		case u.Path != "/hosting/discovery":
+			bad("office.discovery_url must end in /hosting/discovery")
+		case u.RawQuery != "" || u.Fragment != "" || u.User != nil:
+			bad("office.discovery_url must have no query, fragment or user information")
+		}
+	}
+	if o.WOPIURL != "" {
+		if err := checkBaseURL(o.WOPIURL); err != nil {
+			bad("office.wopi_url: %v", err)
+		} else if !strings.HasPrefix(o.WOPIURL, "https://") {
+			bad("office.wopi_url must be https")
+		}
+	}
+	if o.LockMinutes < 1 || o.LockMinutes > 1440 {
+		bad("office.lock_minutes must be between 1 and 1440")
+	}
+	if o.TokenMinutes < 1 || o.TokenMinutes > 1440 {
+		bad("office.token_minutes must be between 1 and 1440")
+	}
+	if o.MaxFileBytes <= 0 {
+		bad("office.max_file_bytes must be positive")
+	}
 }
 
 // checkBaseURL accepts an absolute http or https URL with no path, query or fragment.

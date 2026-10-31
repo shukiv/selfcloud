@@ -28,6 +28,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/sweep"
 	"github.com/shukiv/selfcloud/internal/web"
 	"github.com/shukiv/selfcloud/internal/webhook"
+	"github.com/shukiv/selfcloud/internal/wopi"
 	webassets "github.com/shukiv/selfcloud/web"
 )
 
@@ -82,6 +83,10 @@ type Server struct {
 	links *linkKeys
 	// tokens signs and verifies delegated tokens; see tokens.go.
 	tokens *tokenKeys
+	// wopiTokens signs and verifies WOPI access tokens under a key of their own; office holds Collabora's discovery
+	// document and proof keys, and is nil while office.enabled is off. See office.go.
+	wopiTokens *tokenKeys
+	office     *wopi.Discovery
 	// webhookSeal encrypts webhook secrets at rest; see internal/webhook.
 	webhookSeal *webhook.Sealer
 	// webhookClient is the one client every webhook connection goes through (internal/webhook/client.go). It checks
@@ -207,6 +212,10 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
+	wopiTokens, err := deriveWOPIKeys(links)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
 	shares, err := deriveShareKeys(links)
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
@@ -240,6 +249,7 @@ func New(opts Options) (*Server, error) {
 		contentScheme: contentScheme,
 		links:         links,
 		tokens:        tokens,
+		wopiTokens:    wopiTokens,
 		webhookSeal:   webhookSeal,
 		webhookClient: webhookClient,
 		webhookClock:  time.Now,
@@ -297,6 +307,8 @@ func New(opts Options) (*Server, error) {
 			"upload.create": newLimiter(60),
 			// Minting delegated tokens, per account key: each is a credential, so a flood is refused.
 			"tokens.mint": newLimiter(60),
+			// Opening an editor, per person: each one makes a credential and a session row.
+			"office.open": newLimiter(60),
 			// Opening a share link is a secret lookup, so it is limited per client address.
 			"share.open.ip":   newLimiter(30),
 			"share.open.user": newLimiter(60),
@@ -329,8 +341,15 @@ func New(opts Options) (*Server, error) {
 			return nil, fmt.Errorf("api: ui.brand.logo_file: %w", err)
 		}
 	}
+	if cfg.Office.Enabled {
+		s.office = wopi.NewDiscovery(cfg.Office.DiscoveryURL, nil, nil)
+	}
 	if cfg.UI.Enabled {
-		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL}); err != nil {
+		var officeURL string
+		if cfg.Office.Enabled {
+			officeURL = cfg.Office.DiscoveryURL
+		}
+		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}
 	}
@@ -511,6 +530,15 @@ func (s *Server) routes() []route {
 		// A signed link carries its own authority: no credential, and no cookie is read.
 		{method: http.MethodGet, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},
 		{method: http.MethodHead, path: "/api/v1/links/{token}", handle: s.handleGetLink, secretPath: true},
+
+		// Office editing (decision 31). The editor route is for a person; the /wopi routes are called by Collabora
+		// and carry their token in the query, so they are secretPath. All of them answer not_found while office.enabled
+		// is off, and the /wopi routes check their proof and token before anything else.
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/office", handle: s.handleOpenOffice, auth: true},
+		{method: http.MethodGet, path: "/wopi/files/{nod}", handle: s.handleWOPICheckFileInfo, secretPath: true},
+		{method: http.MethodGet, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIGetFile, secretPath: true},
+		{method: http.MethodPost, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIPutFile, secretPath: true},
+		{method: http.MethodPost, path: "/wopi/files/{nod}", handle: s.handleWOPIOverride, secretPath: true},
 
 		{method: http.MethodOptions, path: "/api/v1/uploads", handle: s.handleUploadOptions},
 		// Uploads admit a drop link's visitor. The access link's visitor is refused on each of them. A drop link

@@ -47,9 +47,13 @@ const (
 	tokenVersion    = 1
 	tokenKeyLabel   = "selfcloud token v1"
 	tokenAudience   = "api"
-	tokenMACLen     = sha256.Size
-	permRead        = "read"
-	permWrite       = "write"
+	// wopiKeyLabel and wopiAudience make the WOPI access token a different kind of token: its MAC key differs from the
+	// API token's, and its audience is checked on its own, so each kind is refused by the other's routes twice over.
+	wopiKeyLabel = "selfcloud wopi token v1"
+	wopiAudience = "wopi"
+	tokenMACLen  = sha256.Size
+	permRead     = "read"
+	permWrite    = "write"
 )
 
 // errBadToken is the answer to every token that is malformed, forged, unknown, or void. One answer
@@ -69,15 +73,24 @@ type tokenKeys struct {
 	previous *tokenKey // nil when there is no previous key
 }
 
-// deriveTokenKeys derives the token keys from the signing keys the links use.
+// deriveTokenKeys derives the API token keys from the signing keys the links use.
 func deriveTokenKeys(lk *linkKeys) (*tokenKeys, error) {
-	cur, err := deriveTokenKey(lk.current)
+	return deriveKeysUnder(lk, tokenKeyLabel)
+}
+
+// deriveWOPIKeys derives the WOPI access token keys, under their own label.
+func deriveWOPIKeys(lk *linkKeys) (*tokenKeys, error) {
+	return deriveKeysUnder(lk, wopiKeyLabel)
+}
+
+func deriveKeysUnder(lk *linkKeys, label string) (*tokenKeys, error) {
+	cur, err := deriveTokenKey(lk.current, label)
 	if err != nil {
 		return nil, err
 	}
 	tk := &tokenKeys{current: cur}
 	if lk.previous != nil {
-		prev, err := deriveTokenKey(lk.previous)
+		prev, err := deriveTokenKey(lk.previous, label)
 		if err != nil {
 			return nil, err
 		}
@@ -86,8 +99,8 @@ func deriveTokenKeys(lk *linkKeys) (*tokenKeys, error) {
 	return tk, nil
 }
 
-func deriveTokenKey(secret []byte) (tokenKey, error) {
-	mac, err := hkdf.Key(sha256.New, secret, nil, tokenKeyLabel, tokenMACLen)
+func deriveTokenKey(secret []byte, label string) (tokenKey, error) {
+	mac, err := hkdf.Key(sha256.New, secret, nil, label, tokenMACLen)
 	if err != nil {
 		return tokenKey{}, fmt.Errorf("tokens: %w", err)
 	}
@@ -111,12 +124,17 @@ type tokenPayload struct {
 	Audience   string `json:"aud"`
 	IssuedAt   int64  `json:"iat"` // Unix milliseconds
 	ExpiresAt  int64  `json:"exp"` // Unix milliseconds
+	// Session names the wopi_sessions row of a WOPI access token. An API token never carries one.
+	Session string `json:"ses,omitempty"`
 }
 
-// valid reports whether the fields have the shape a token minted here has. It is checked after the
+// valid reports whether the fields have the shape an API token minted here has. It is checked after the
 // MAC, so only a token this server signed gets this far.
 func (pl tokenPayload) valid() bool {
 	if pl.Version != tokenVersion || !id.Valid("acc", pl.AccountID) || !id.Valid("key", pl.MintedBy) {
+		return false
+	}
+	if pl.Session != "" {
 		return false
 	}
 	if pl.UserID != "" && !id.Valid("usr", pl.UserID) {
@@ -141,6 +159,26 @@ func (pl tokenPayload) valid() bool {
 	}
 	return (pl.Permission == permRead || pl.Permission == permWrite) && pl.Audience == tokenAudience &&
 		pl.IssuedAt > 0 && pl.ExpiresAt > pl.IssuedAt
+}
+
+// wopiValid reports whether the fields have the shape a WOPI access token has: one file (Node), in one folder, with
+// a session row, and no folder list or all-reachable scope. MintedBy is the account key that opened the session, or
+// "" when a signed-in user did. It is checked after the MAC, under the WOPI key.
+func (pl tokenPayload) wopiValid() bool {
+	if pl.Version != tokenVersion || !id.Valid("acc", pl.AccountID) || pl.All {
+		return false
+	}
+	if pl.MintedBy != "" && !id.Valid("key", pl.MintedBy) {
+		return false
+	}
+	if pl.UserID != "" && !id.Valid("usr", pl.UserID) {
+		return false
+	}
+	if len(pl.Folders) != 1 || !id.Valid("fld", pl.Folders[0]) || !id.Valid("nod", pl.Node) {
+		return false
+	}
+	return id.Valid("wps", pl.Session) && (pl.Permission == permRead || pl.Permission == permWrite) &&
+		pl.Audience == wopiAudience && pl.IssuedAt > 0 && pl.ExpiresAt > pl.IssuedAt
 }
 
 func tokenMAC(key, body []byte) []byte {
@@ -239,6 +277,72 @@ func (s *Server) authenticateToken(ctx context.Context, tok string) (*auth.Princ
 		return nil, errBadToken
 	}
 	return p, nil
+}
+
+// wopiReader is what authenticateWOPI reads from: the store, or a write transaction, so the same checks can be made
+// again inside a write (PutFile does that, so a revocation during an upload refuses the save).
+type wopiReader interface {
+	WOPISession(ctx context.Context, accountID, id string) (*store.WOPISession, error)
+	SessionByHash(ctx context.Context, hash []byte) (*store.Session, error)
+	Delegation(ctx context.Context, accountID, keyID, userID string) (*store.Delegation, error)
+}
+
+// authenticateWOPI identifies the caller from a WOPI access token and returns the grant it carries. It runs the
+// checks authenticateToken runs, under the WOPI key and audience, and then the editing session's row: a revoked
+// or ended session is refused, as is a session whose file or user no longer matches the token. When a browser
+// session opened the editor, that browser session must still exist and belong to the same user, so signing out,
+// a password change, a reset or a disabled user ends the editor on its next call. Every failure is errBadToken,
+// so a forged token and an ended one look alike to the caller.
+func (s *Server) authenticateWOPI(ctx context.Context, rd wopiReader, tok string, now time.Time) (*auth.Principal, tokenPayload, error) {
+	body, mac, err := splitToken(tok)
+	if err != nil {
+		return nil, tokenPayload{}, err
+	}
+	key := s.wopiTokens.match(body, mac)
+	if key == nil {
+		return nil, tokenPayload{}, errBadToken
+	}
+	pl, err := parsePayload(body)
+	if err != nil || !pl.wopiValid() || pl.KeyID != key.kid {
+		return nil, tokenPayload{}, errBadToken
+	}
+	if now.UnixMilli() >= pl.ExpiresAt {
+		return nil, tokenPayload{}, errBadToken
+	}
+	sess, err := rd.WOPISession(ctx, pl.AccountID, pl.Session)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, tokenPayload{}, errBadToken
+	}
+	if err != nil {
+		return nil, tokenPayload{}, err
+	}
+	if sess.RevokedAt != nil || !now.Before(sess.ExpiresAt) || sess.NodeID != pl.Node || sess.UserID != pl.UserID {
+		return nil, tokenPayload{}, errBadToken
+	}
+	if len(sess.BrowserSession) > 0 {
+		bs, err := rd.SessionByHash(ctx, sess.BrowserSession)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, tokenPayload{}, errBadToken
+		}
+		if err != nil {
+			return nil, tokenPayload{}, err
+		}
+		if !now.Before(bs.ExpiresAt) || bs.UserID != pl.UserID {
+			return nil, tokenPayload{}, errBadToken
+		}
+	}
+	d, err := rd.Delegation(ctx, pl.AccountID, pl.MintedBy, pl.UserID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, tokenPayload{}, errBadToken
+	}
+	if err != nil {
+		return nil, tokenPayload{}, err
+	}
+	p := principalOfToken(pl, d)
+	if !callerLive(p, d, now) {
+		return nil, tokenPayload{}, errBadToken
+	}
+	return p, pl, nil
 }
 
 // principalOfToken is the caller a token stands for: its user, when it names one, else the account
@@ -557,7 +661,7 @@ func (s *Server) checkTokenRequest(in tokenRequest) (folders []string, all, writ
 	switch in.Audience {
 	case "", tokenAudience:
 	case "wopi":
-		return nil, false, false, 0, apierr.New(apierr.InvalidRequest, "wopi tokens are not available until the office-editing slice")
+		return nil, false, false, 0, apierr.New(apierr.InvalidRequest, "a wopi token is made by POST /api/v1/nodes/{nod}/office")
 	default:
 		return nil, false, false, 0, apierr.New(apierr.InvalidRequest, "audience must be api")
 	}
@@ -605,6 +709,10 @@ func (s *Server) handleRevokeUserTokens(w http.ResponseWriter, r *http.Request) 
 		if err != nil {
 			return err
 		}
+		// The user's editing sessions end with the user's tokens; the cut-off above also stops their WOPI tokens.
+		if _, err := tx.RevokeWOPISessions(ctx, acc.ID, usr, cut); err != nil {
+			return err
+		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.tokens_revoke", usr,
 			map[string]any{"user": usr, "tokens_not_before": cut.Format(time.RFC3339Nano)}))
 	})
@@ -644,6 +752,9 @@ func (s *Server) handleRevokeTokens(w http.ResponseWriter, r *http.Request) erro
 		cur.TokensNotBefore = cut
 		cur.UpdatedAt = now
 		if err := tx.UpdateAccount(ctx, cur); err != nil {
+			return err
+		}
+		if _, err := tx.RevokeWOPISessions(ctx, acc.ID, "", cut); err != nil {
 			return err
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "tokens.revoke", acc.ID,

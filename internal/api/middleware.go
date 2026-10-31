@@ -31,7 +31,10 @@ type reqInfo struct {
 	session    *store.Session  // set when the caller signed in with a session cookie
 	err        *apierr.Error
 	clientGone bool // the client went away before the answer: logged as a disconnect, not a failure
-	sw         *statusWriter
+	// clientFault marks a 5xx that the client caused, such as a WOPI request whose proof does not verify. It is logged
+	// as a warning, not an error, and the status is still the one the specification gives.
+	clientFault bool
+	sw          *statusWriter
 }
 
 func infoFrom(ctx context.Context) *reqInfo {
@@ -166,7 +169,7 @@ func (s *Server) finish(r *http.Request, sw *statusWriter, info *reqInfo, d time
 		level = slog.LevelDebug
 	case quietRoutes[info.route]:
 		level = slog.LevelWarn // a failing probe repeats every few seconds; the cause is logged once each time
-	case status >= 500 && !quota:
+	case status >= 500 && !quota && !info.clientFault:
 		level = slog.LevelError
 	}
 	if !s.log.Enabled(r.Context(), level) {

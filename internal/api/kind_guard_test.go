@@ -23,13 +23,16 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // Slice j2 added three, each reviewed for event emission and neither an access decision: copyTree reports a file.created for
 // each node that is not a directory and counts them for the big-folder rule (transfer.go), the outbox skips a directory
 // when it reports a subtree (store/webhook_events.go), and the threshold count excludes directories in SQL
-// (store/webhook_events.go countSubtree). Decision 27 records them.
+// (store/webhook_events.go countSubtree). Decision 27 records them. Slice l1 and l2 added four in office.go, each
+// refusing whatever is not a file (an editor opens a file only, and a shortcut or folder is never sent to it).
+// Decision 31 records them.
 var reviewedNodeKindSites = map[string]int{
 	"internal/api/access.go":           2,
 	"internal/api/access_requests.go":  1,
 	"internal/api/download.go":         1,
 	"internal/api/links.go":            2,
 	"internal/api/nodes.go":            12,
+	"internal/api/office.go":           4,
 	"internal/api/share_links.go":      2,
 	"internal/api/shortcuts.go":        5,
 	"internal/api/tokens.go":           1,

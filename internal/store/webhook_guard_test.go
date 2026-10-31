@@ -29,6 +29,7 @@ var webhookAuditNoEvent = map[string]string{
 	"node.sharing":           "sharing flags are not in the payload and are not on the event list",
 	"node.appearance":        "colour and description are not in the payload and are not on the event list",
 	"node.link":              "share links are not on the event list",
+	"node.office":            "opening an editor is not a change to the file; the edits the editor saves are node.write, which reports file.updated",
 	"node.copy":              "emitted per created node by copyTree (api/transfer.go), not from this audit entry",
 	"upload.create":          "an upload begun is not a change to a file; upload.completed reports the file",
 	"upload.delete":          "an upload dropped is not on the event list",
@@ -111,6 +112,8 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../api/nodes.go InsertNode":                      {1, "newNode's insert: the caller's node.create reports a file; a folder reports nothing"},
 	"../api/nodes.go UpdateNode":                      {3, "PUT create (node.create), PUT write (node.write), and rename, sharing or appearance (only the rename reports, file.updated)"},
 	"../api/nodes.go newNode":                         {3, "a folder on the path or a mkdir (nothing), and PUT create of a file (node.create, file.created)"},
+	"../api/nodes.go replaceContent":                  {1, "PUT's replacement: its node.write reports file.updated, as the WOPI PutFile's does"},
+	"../api/office.go replaceContent":                 {1, "WOPI PutFile: its node.write reports file.updated through the same helper as PUT"},
 	"../api/ownership.go ClearSubtreeEditorsCanShare": {1, "the editors_can_share flag, which is not in the payload"},
 	"../api/ownership.go MoveSubtree":                 {1, "a move into My files (personal branch): file.moved for each file, explicitly in ownership.go"},
 	"../api/ownership.go UpdateNode":                  {1, "the move into My files (personal branch): reported with the MoveSubtree above"},
@@ -147,7 +150,7 @@ var webhookAuditCalls = map[string]int{"auditEntry": 2, "auditAs": 2, "addUser":
 // nodeWriterMethods are the store calls that change a node row.
 var nodeWriterMethods = map[string]bool{"InsertNode": true, "UpdateNode": true, "TrashNode": true, "Untrash": true,
 	"PurgeNode": true, "MoveSubtree": true, "MoveFolderContents": true, "ClearSubtreeEditorsCanShare": true,
-	"newNode": true, "SetSubtreeOwner": true}
+	"newNode": true, "SetSubtreeOwner": true, "replaceContent": true}
 
 // guardFile is one parsed non-test Go file under internal/.
 type guardFile struct {

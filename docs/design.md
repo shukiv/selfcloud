@@ -256,7 +256,7 @@ from a secret file named in the config.
 - `path` or `node`: optional, and at most one. `path` names a directory under the root of the one folder given, so it needs exactly one folder; `node` names a directory ID in one of the folders. The directory is resolved at mint time, inside the mint transaction, and stored in the token as its node ID. The token then reaches that directory and everything below it, and nothing else in its folders. Anything outside that subtree is `not_found`, and a move that would carry an item out of it, or bring one in from outside, is refused.
 - `permissions`: `read` (the default) or `write`; write implies read. A token can narrow a role, never widen it. The role a token carries is capped: `read` at viewer, `write` at editor. A token never manages anything, so it never reaches manager (section 8).
 - `ttl`: default 15 minutes, at least 1 minute. A longer lifetime than `tokens.max_ttl` (default 1 hour) is refused with the limit in `details.max_ttl_seconds`, not cut short, as for signed links.
-- `audience`: `api`. `wopi` is refused until the office-editing slice.
+- `audience`: `api`. `wopi` is the audience of the editing token of decision 31; only the `/wopi` routes accept it, and the API refuses it.
 
 Only an account key of the same account may mint. An installation admin, a signed-in session and a token itself get `forbidden`, so a token never widens itself. Tokens manage nothing: the management routes (users, folders, grants, groups, permissions, keys, usage, audit, webhooks, minting and revocation) refuse a token as they refuse any caller outside the account. The reply carries the token and its `expires_at`, so the back end can cache a token for most of its lifetime instead of minting one per request. Minting is rate-limited per account key.
 
@@ -1818,7 +1818,8 @@ checks the installation admin role (`isAdmin`); a page the person may not open i
 | `versions` | id (`ver_`), account_id, node_id, blob_id, size, sha256, etag, mime_type, created_at and created_by (when that content was first written), replaced_at and replaced_by, label (at most 100 characters), keep_forever (0 or 1); indexed by (node_id, created_at) |
 | `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
 | `uploads` | id, account_id, target (folder_id, parent_id or dir_path, parents, name, name_key, on_conflict, mime_type), length, durable_offset, hash_state, blob_id, created_by, created_kind, expires_at; uploader_name (100), uploader_email (254) and visitor_id, for uploads through a drop link (o3) |
-| `wopi_locks` | node_id, lock_id, expires_at |
+| `wopi_locks` | node_id, account_id, lock_id, holder, created_at, expires_at (decision 31; not enforced until slice l3) |
+| `wopi_sessions` | id, account_id, node_id, user_id (null for an account key), role, issued_at, expires_at, revoked_at (decision 31) |
 | `webhooks`, `webhook_deliveries` | endpoint (url, secret encrypted, events); outbox (event, payload, attempts, next_attempt_at, status, last_error) |
 | `jobs` | id, account_id, kind, status, progress, error |
 | `audit_log` | id, time, account_id, actor kind and id, action, target, ip, user_agent, outcome |
@@ -1943,7 +1944,7 @@ Each slice ships with tests and leaves the server runnable.
 | q | Search: filters, label search, full text and OCR within size limits | Planned |
 | r | Comments, mentions, activity pane, notifications, who-viewed | Planned |
 | s | Thumbnails, document previews, conversions and export, zip download | Planned |
-| l | WOPI host for Collabora | Planned |
+| l | WOPI host for Collabora: the editor route, CheckFileInfo, GetFile and PutFile, the WOPI token, the proof keys (decision 31). Locks (l3) and rename, the read-only view and the button (l4) are not built | Building (l1, l2) |
 | j1 | Webhook endpoints: the migration, the encrypted secret (AES-256-GCM, key derived with HKDF from the links signing key, bound to its row), the endpoint routes, the show-once secret and its rotation, the isolation tests | Built |
 | j2 | Webhook events: each change writes its event in its own transaction (the audit hook and four explicit emits), the payloads and the event list including `file.restored`, the big-folder summary (1,000 files, 5,000 deliveries, 10,000 nodes: decision 27), the personal-folder rule, the outbox atomicity tests. The worker that sends them is j3 (decision 28) | Built |
 | j3 | Webhook worker: claim, lease, per-endpoint order, signing, delivery, backoff and the give-up, the disable paths, the 100,000 pending cap, the sweep, the metrics, the delivery log, retry and test routes; the SSRF dialer and `webhooks.allow_networks`, moved here from j4 (decision 28) | Built |
@@ -2892,3 +2893,150 @@ Decided on approval:
       restricted value out of its folder, or into a place it would manage, is refused (`restricted_label`). The
       copy's measured cost is in section 8. The ownership hand-overs are not under this rule yet, and the owner decides
       them (section 8).
+31. **Office editing through WOPI, slices l1 and l2** (2026-10-31, built on the owner-approved proposal with every
+    recommendation (a); the licence question stays open, so there is no Compose example and no statement about Collabora's
+    licence). Locks (l3) and rename, the read-only view and the editor button (l4) are not in this part. The interpretations
+    below are for review. The code is `internal/wopi` (discovery and proof keys), `internal/api/office.go` (the editor route and
+    the WOPI host), the WOPI token in `internal/api/tokens.go`, `internal/store/wopi.go`, and migration `0025_wopi.sql`.
+    - **Off by default.** With `office.enabled` false, the editor route and every `/wopi` route answer `not_found`, and nothing
+      is fetched. `Validate` checks the office block even while it is off.
+    - **What is unsafe until l3.** Locks are not enforced, so: (1) PutFile does not check a lock or an `If-Match`, so a save
+      overwrites an API write made after the editor read the file, and two editors overwrite each other; (2) Selfcloud's own
+      writes (PUT, rename, move, trash, restore, version restore) are not refused while an editor has the file; (3)
+      `CheckFileInfo` says `SupportsLocks` false and `POST /wopi/files/{nod}` answers `501`, so Collabora should not take a
+      lock. I have not verified how Collabora behaves with that answer. (4) A token's folder list is fixed when it is issued:
+      a file moved to another folder is refused until the editor is opened again; (5) every autosave keeps a version, so the
+      version history fills up (see Versions). Turning `office.enabled` on before l3 is unsafe for those reasons; that is why
+      it defaults to off.
+    - **Versions.** Each PutFile keeps one version, as a PUT does. Proposal question 1(a) asks for one version per editing
+      session, so that an autosave does not add a version each time. That rule depends on the lock, so it is slice l3's, and it
+      is not built here. Until l3, every autosave keeps a version. That is unsafe for the version history, so `/wopi` stays off
+      by default, and it is in the unsafe list above.
+    - **One replace path.** The transaction body of `handlePutContent` moved into `replaceContent` in `nodes.go`, and PutFile
+      calls the same function. It charges the new size in full, keeps the old content as a version, sets the new ETag, notes
+      the edit for Recent, and audits `node.write`, which reports `file.updated` through the existing hook. The `UpdateNode`
+      count in `nodes.go` is unchanged. The helper is in the store's node-write guard (`replaceContent`), with a pin for each
+      caller, so a new caller in any file is counted. The second replace path, in `uploads.go`, is not touched.
+    - **Sizes and quota.** `office.max_file_bytes` (50 MiB) limits opening and PutFile. The body is streamed to a blob by
+      `writeBlob`, and a refusal removes the blob. A quota refusal answers `413`: the WOPI page lists no quota status, so `413` is
+      my choice, not a protocol fact. GetFile streams from the blob in pieces and is not limited by the editing size; the
+      length is checked against the record first. Measured in `TestWOPIPutAndGetStreamALargeFile` on the test machine: a 64 MiB
+      PutFile grew the allocated total by 117 KiB, and a 64 MiB GetFile by 74 KiB, both against a 16 MiB budget. The body was
+      generated as it was read, so the test itself held none of it. A PutFile whose Content-Length is known is refused over
+      the account quota before any byte is read (F9; `TestWOPIPutRefusesOverQuotaBeforeTheBodyIsRead`). That check is the
+      account quota only: the folder and personal limits are checked inside the write, after the body. The write also checks
+      the token again, so a revocation made while the body is arriving refuses the save
+      (`TestWOPIRevocationDuringTheUploadRefusesTheSave`).
+    - **GetFile headers (F7).** GetFile sends `X-Content-Type-Options: nosniff`. When the caller sends
+      `X-WOPI-MaxExpectedSize`, a file larger than that value is refused with 412 before any byte is sent; the GetFile page
+      lists 412 among its codes and describes this case. A value that is not a whole number of bytes answers 400, which is my
+      choice, as the page gives no code for it. Test: `TestWOPIGetFileHeadersAndMaxExpectedSize`.
+    - **Names (F6).** CheckFileInfo's `UserFriendlyName` is the person's display name. Without one, it is the word `User`, in
+      English, because Selfcloud has no translation of that word yet. It is never an ID or an email. `UserId` and `OwnerId` stay
+      IDs: Collabora keys its editors by `UserId`, and the page does not describe it as shown to people. Test:
+      `TestWOPICheckFileInfoNamesThePersonNotTheirID`.
+    - **Token alphabet (the choice).** The token is `sct_` followed by unpadded base64url, a `.`, and the base64url MAC, so it is
+      URL-safe and the signing is unchanged. `TestWOPITokenAlphabetIsURLSafe` pins that: tokens over payloads holding `+ / = ?
+      & %` and non-ASCII text survive a query escape unchanged and hold only `A-Za-z0-9_-.`. It passed on its first run, because
+      the code was already right. It is a pin, not a fix.
+    - **Statuses.** A forged or unverifiable request answers `500`, as the proof page says. A read-only token, or a no-download
+      file, answers `404` for PutFile, because the page's list gives `404` for an unauthorized user. An operation other than
+      PutFile's `X-WOPI-Override: PUT` answers `501`, and so does every lock or rename request on `/wopi/files/{nod}`, which
+      this slice does not have. Discovery not available: `500` on `/wopi` and `503` with `Retry-After` (60 s) when a person
+      opens an editor. Every refusal the client causes (the proof failures, the discovery gap, the 501s, the 404s) is logged
+      as a warning, not an error: the access log's error level is for internal failures only. Test:
+      `TestWOPINoLocksAreImplementedYet` fails if a 501 is logged as an error (it did, before the fix).
+    - **Read-only rule and no-download (the brief asked for it to be stated).** The role a token carries is the role the person
+      holds at issue, capped to viewer when the token is read only, and every WOPI call recomputes it from the database. The
+      edit mode needs the editor role. The no-download rule is the one the API already applies to downloads (`restrict.go`,
+      `downloadRestricted`): it binds a viewer or a commenter, and not an editor or above, and it follows inherited flags as
+      `NoDownloadApplies` does. So a restricted caller opens to view only, and gets `UserCanWrite` false, `ReadOnly` true and
+      `DisablePrint`, `DisableExport`, `DisableCopy` true; an editor is unaffected, opens to edit, and may save. The proposal
+      said "a member with no_download gets view only" and I read it as the API reads it, which is the reading the code already
+      carries. The owner should confirm it. Decision 20 leaves inline viewing alone, so GetFile still sends the bytes to a
+      restricted viewer's editor. That the editor honours the three Disable properties I have not verified (item 5 below).
+      Test: `TestOfficeNoDownloadBindsViewersOnly`. A view on a type whose discovery lists no view action (only `edit`) opens
+      through the edit action. The token and CheckFileInfo stay read-only, so the editor shows the file without a save, and a
+      PutFile with that token answers 404 (`TestOfficeViewFallsBackToTheEditActionWhenThereIsNoView`).
+    - **The token.** Format as a delegated token (`sct_`, payload and HMAC), with its own key from HKDF under the label
+      `selfcloud wopi token v1`, and audience `wopi`. The payload names one file (`nod`), one folder (`fld`), one editing
+      session (`ses`, a `wps_` row), and a user; `key` is set only when a delegated token opened the editor. `wopiValid` and
+      `valid` each accept only their own audience, so a token is refused by the other kind of route twice over, once by the MAC
+      and once by the audience. Tests re-sign each kind with the other's key to show both checks. The expiry is the earlier of
+      `office.token_minutes` (600 by default) and the delegated token's expiry. Only a person opens an editor: an account key
+      and an admin are refused.
+    - **Refusal on every call.** Each WOPI call runs `authenticateWOPI`: the MAC under the WOPI key, the audience, the session row
+      (not revoked, not past its end, same file and user), `Delegation` and `callerLive` (the account's, the user's and the key's
+      cut-offs), then `nodeAccessWith`, which re-reads the permissions, the trash and the folder on every call. Between the
+      session row and `Delegation` comes the browser session that opened the editor, when there is one (below). A revoked
+      permission, a trashed file and a file the path does not name all answer `404`. Revoking a user's tokens or the account's
+      marks the user's rows, or all the account's rows, revoked, in the same write.
+    - **Ended sessions.** The sweep deletes a `wopi_sessions` row once its end has passed (`DeleteEndedWOPISessions`). Refusal
+      past the end comes from the token's own expiry, so no refusal is lost.
+    - **Single sign-out, and the browser session that opened the editor (F2).** An editor opened from a browser session records
+      that session's hash in `wopi_sessions.browser_session`; an editor opened through a delegated token records none. Every
+      WOPI call, and the write of a PutFile, checks that the browser session still exists, has not passed its end, and belongs
+      to the same user. The reading: signing out that browser ends its editor (`POST /api/v1/auth/logout`); signing out another
+      browser of the same person does not (`TestWOPIEditorIsNotEndedByAnotherBrowsersSignOut`); a password change, a reset
+      (`/api/v1/auth/password/reset` and the admin's reset link) ends the user's sessions, so it ends the editor; a disabled
+      user is refused by the user cut-off in `callerLive`. The API has no sign-out-everywhere route, so none is tested. Test:
+      `TestWOPIEditorEndsWithTheBrowserSessionThatOpenedIt` has one subtest per way, and each refuses CheckFileInfo, GetFile and
+      PutFile with 401 and leaves the file unchanged. When I disabled the browser check for one run, the sign-out, password
+      change and reset subtests failed; the disabled-user subtest still passed, because the user cut-off refuses it first.
+    - **Discovery fetch (SSRF).** The URL is operator configuration, and it is the only address this server fetches for
+      office editing. The config requires https, the host, and the path `/hosting/discovery`, with no query, fragment or user
+      information. Collabora is usually on a private network, so the fetch does not use the webhook deny table. The client has a
+      10-second timeout, reads at most 1 MiB and then refuses a larger body, and refuses every redirect, whatever client is
+      injected. The document is cached in memory: refreshed on use after one hour, not by a timer, so there is no goroutine; a
+      failed refresh keeps the old copy; with no copy, a failed fetch is not repeated for a minute; a failed proof asks for one
+      refetch, again at most once a minute. A stale copy keeps answering while the last fetch was within a minute, so an outage
+      costs one fetch a minute, not one a read (F4; `TestStaleDiscoveryDuringAnOutageFetchesOncePerRetryGap`). The copy has no
+      hard expiry. While Collabora stays unreachable, the last copy answers, so a key Collabora rotated in that time fails
+      proofs, closed, until a fetch succeeds. Every proof is still limited to the 20-minute window. The fetch runs with the lock released, so readers of the cache are not held up by
+      a slow fetch; while one fetch runs, a second caller gets the cached copy and starts none of its own. An editor action whose URL is on another host is dropped, so a file never opens
+      through a foreign address. Discovery is parsed for the first `external` zone, or the first zone when there is none.
+    - **Proof keys.** The expected proof is built as the page gives it: a 4-byte length and the bytes of the token, of the URL in
+      uppercase, and of the timestamp. The URL is `office.wopi_url` (or the origin of `public_url`) plus the request path and
+      the raw query, so it matches what Collabora signs. The three combinations are all checked, and the old key is used only
+      for `X-WOPI-Proof`. The window is 20 minutes old (the page's rule) and 5 minutes ahead (my limit; the page does not
+      give one).
+    - **What the proof does not cover (F5).** The proof covers the access token, the URL with its query, and the timestamp. It
+      does not cover the method or the body. A captured request can therefore be replayed with another method or body, to the
+      same URL, within 20 minutes. This is a property of the protocol as the page describes it, and the window is its only
+      bound. Selfcloud adds no nonce, and the page gives none. No code change.
+    - **Deployment shapes (F8; check at l4).** Three limits are enforced now and are to be checked against a live Collabora at
+      l4: (a) an action URL must be on the host of the discovery URL, so a Collabora served from another host cannot open a
+      file; (b) discovery must be https; (c) a request without proof headers is refused, so a Collabora that does not sign
+      its requests cannot be used. No code change.
+    - **The access log.** It logs the path, not the query, so the token is never in it. The `/wopi` routes are `secretPath`
+      too, so their log line names the route pattern. Test: the log of a successful call holds the route pattern and not the token.
+    - **CSP.** The discovery URL's origin, scheme and host only, is added to `frame-src` and `form-action`, and to nothing else.
+      Test: it appears exactly twice when on, and not at all when off.
+    - **Audit label (untested).** Audit entries made through a WOPI token say `via: office_editor`, not `delegated_token`. No
+      test checks this yet.
+    - **Config drift from the proposal.** The proposal's test list (section 7, Config) requires "https, a host, no path" for both
+      URLs, but its section 2 gives `discovery_url` the path `/hosting/discovery`. I follow section 2 for the discovery URL, and
+      require no path on `wopi_url`.
+    - **Checked against Microsoft's proof-key vectors.** The eight cases of `ProofKeyTests.cs` in Microsoft's
+      Office-Online-Test-Tools repository, as its Python sample carries them, are copied as data into
+      `internal/wopi/proof_vectors_test.go`, with values unchanged and no code from that repository. The repository's licence
+      is the MIT licence, `Copyright (c) 2015 Microsoft`, and the file carries the notice. `TestMicrosoftProofVectors` runs the
+      verifier on all eight: six verify (through `X-WOPI-Proof` with the current key, `X-WOPI-ProofOld` with the current key, or
+      `X-WOPI-Proof` with the old key), and two are refused. Because they verify, the vectors confirm the expected-proof layout
+      (4-byte big-endian lengths, the uppercased URL, an 8-byte timestamp), the RSA PKCS#1 v1.5 SHA-256 signature, and the .NET
+      ticks reading of the timestamp, whose first case is about 2015. The vectors are Microsoft's test data, not Collabora's:
+      they show what the verifier accepts from Microsoft's sample, not how a live Collabora signs.
+    - **Not verified against a live Collabora, and marked as such.** How a live Collabora signs is not known to me. The
+      Microsoft vectors above fix the unit, epoch and byte order that the verifier uses, and they agree with it, but they are
+      not Collabora's output. (1) The unit and epoch of `X-WOPI-TimeStamp`: the page says only "convert to a long"; Selfcloud
+      reads .NET ticks, as the Microsoft vectors do. (2) The byte order of the length prefixes and of the timestamp: the page
+      calls an `EncodeNumber` helper it does not define; big-endian is what the Microsoft vectors use. (3) That the editor takes `access_token` in a form post, as the proposal
+      says; I did not check Collabora's own pages. (4) The editor URL template: the `<...>` placeholders are removed and
+      `WOPISrc` appended; I did not check that against a real discovery document. (5) The property names of `CheckFileInfo`
+      and what Collabora honours. (6) That a `501` for locks makes Collabora refuse to edit. The tests use a fake Collabora
+      (`internal/wopi/wopitest`), which signs with the same `ExpectedProof` the verifier uses, so they show that the two agree.
+      They do not show that either agrees with Collabora, and no client has been run.
+    - **Not in this part.** Lock, GetLock, RefreshLock and Unlock; the store's lock check on every write; the sweep's unlock step
+      and its `node.unlock` entry; the reset of the one-version rule at unlock; RenameFile; the read-only view in the React
+      interface; the editor button; the README example (held until the licence question is answered); and the security review
+      of slice l.

@@ -277,6 +277,9 @@ func delegated(p *auth.Principal, details map[string]any) map[string]any {
 		out[k] = v
 	}
 	out["via"] = "delegated_token"
+	if p.Token.Audience == wopiAudience {
+		out["via"] = "office_editor"
+	}
 	out["token_key"] = p.Token.MintedBy
 	return out
 }
