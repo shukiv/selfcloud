@@ -1,0 +1,8 @@
+Subject: {{.Count}} إشارات وردود جديدة في Selfcloud
+
+لديك {{.Count}} إشارات وردود جديدة.
+
+{{range .Entries}}{{if eq .Kind "reply"}}- ردّ {{.Actor}} في {{.Item}}{{else}}- ذكرك {{.Actor}} في {{.Item}}{{end}}
+  {{.Link}}
+{{end}}
+افتح كل رابط لقراءته. يمكنك إيقاف هذه الرسائل من إعدادات الإشعارات.

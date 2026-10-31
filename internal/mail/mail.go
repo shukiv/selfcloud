@@ -11,10 +11,15 @@ import (
 )
 
 // Message is one email. To is a bare address; Subject and Body are plain text.
+//
+// MessageID, when set, is the Message-ID header, without angle brackets. ListUnsubscribe, when set, is the address of
+// the one-click unsubscribe of RFC 8058: the message then carries List-Unsubscribe and List-Unsubscribe-Post.
 type Message struct {
-	To      string
-	Subject string
-	Body    string
+	To              string
+	Subject         string
+	Body            string
+	MessageID       string
+	ListUnsubscribe string
 }
 
 // Sender delivers messages.
@@ -31,6 +36,8 @@ const (
 	PurposeAccessRequest  = "access_request"
 	PurposeAccessDecision = "access_decision"
 	PurposeDrop           = "drop"
+	PurposeComment        = "comment"
+	PurposeDigest         = "digest"
 )
 
 // Purposes lists every purpose. Every one needs an English template, and the filename pattern for
@@ -42,6 +49,8 @@ var Purposes = []string{
 	PurposeAccessRequest,
 	PurposeAccessDecision,
 	PurposeDrop,
+	PurposeComment,
+	PurposeDigest,
 }
 
 // ReadSecretFile returns the contents of a file holding a secret, without the final line break.

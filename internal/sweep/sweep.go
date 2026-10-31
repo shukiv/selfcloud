@@ -143,6 +143,11 @@ type Result struct {
 	WebhookEvents     int
 	WebhookSecrets    int64
 	WebhookQuotaMarks int // quota marks that no longer hold (decision 30)
+	// Notifications older than notificationKeep removed, and mail rows finished or expired (decision 43): a finished row
+	// older than notifyMailKeep is removed, and a pending one older than it is expired as skipped.
+	Notifications int64
+	MailRows      int64
+	MailExpired   int64
 	// DerivedEvicted is the ready derived files removed to keep the derived budget; DerivedTemp the abandoned
 	// temporary files of the derived workers; DerivedOrphans the derived files no row names; DerivedCleared the
 	// failed rows of 30 days ago or more, which the next request queues again.
@@ -284,6 +289,9 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 		return res, err
 	}
 	if res.Links, err = w.expireShareLinks(ctx, now); err != nil {
+		return res, err
+	}
+	if err := w.pruneNotifications(ctx, now, &res); err != nil {
 		return res, err
 	}
 	if err := w.pruneWebhooks(ctx, now, &res); err != nil {

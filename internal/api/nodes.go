@@ -195,6 +195,16 @@ func peopleNamesSeen(p *auth.Principal, accountID string) bool {
 	return p.Kind == auth.KindAccountKey || p.Kind == auth.KindUser
 }
 
+// personName is the display name a response shows for the person id: the name for a caller peopleNamesSeen admits, and ""
+// otherwise, or when the person has no display name. names is UserNames of the people read. Every surface that names a
+// person uses this one function, so a comment's author, a notification's actor and a mail's actor agree (review D4).
+func personName(p *auth.Principal, accountID string, names map[string]string, id string) string {
+	if id == "" || !peopleNamesSeen(p, accountID) {
+		return ""
+	}
+	return names[id]
+}
+
 // addPeopleNames sets the names of the creator and the owner of each item, for a caller peopleNamesSeen admits. One
 // query names the whole list, whatever its length.
 func (s *Server) addPeopleNames(ctx context.Context, p *auth.Principal, accountID string, items ...*nodeJSON) error {

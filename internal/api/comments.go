@@ -190,13 +190,13 @@ func (s *Server) commentViews(ctx context.Context, p *auth.Principal, accountID 
 	}
 	out := make([]commentJSON, len(cs))
 	for i, c := range cs {
-		out[i] = commentView(p, c, mentions[c.ID], names, peopleNamesSeen(p, accountID))
+		out[i] = commentView(p, accountID, c, mentions[c.ID], names)
 	}
 	return out, nil
 }
 
 // commentView is one comment's JSON. A tombstone shows nothing but that it was deleted.
-func commentView(p *auth.Principal, c *store.Comment, mentioned []string, names map[string]string, showNames bool) commentJSON {
+func commentView(p *auth.Principal, accountID string, c *store.Comment, mentioned []string, names map[string]string) commentJSON {
 	v := commentJSON{ID: c.ID, ParentID: c.ParentID, CreatedAt: c.CreatedAt, EditedAt: c.EditedAt, Mentions: []commentMention{}}
 	if c.DeletedAt != nil {
 		v.Deleted = true
@@ -206,12 +206,12 @@ func commentView(p *auth.Principal, c *store.Comment, mentioned []string, names 
 	v.Mine = p.UserID != "" && c.AuthorID == p.UserID
 	if c.AuthorID == "" {
 		v.AuthorGone = true
-	} else if showNames {
-		v.AuthorName = names[c.AuthorID]
+	} else {
+		v.AuthorName = personName(p, accountID, names, c.AuthorID)
 	}
-	if showNames {
+	if peopleNamesSeen(p, accountID) {
 		for _, u := range mentioned {
-			v.Mentions = append(v.Mentions, commentMention{Name: names[u]})
+			v.Mentions = append(v.Mentions, commentMention{Name: personName(p, accountID, names, u)})
 		}
 	}
 	if c.ResolvedAt != nil {
@@ -219,8 +219,8 @@ func commentView(p *auth.Principal, c *store.Comment, mentioned []string, names 
 		v.ResolvedAt = c.ResolvedAt
 		if c.ResolvedBy == "" {
 			v.ResolvedByGone = true
-		} else if showNames {
-			v.ResolvedByName = names[c.ResolvedBy]
+		} else {
+			v.ResolvedByName = personName(p, accountID, names, c.ResolvedBy)
 		}
 	}
 	return v
@@ -410,8 +410,9 @@ func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) err
 		if n.Kind == store.KindShortcut {
 			return nodeNotFound()
 		}
+		var parent *store.Comment
 		if in.ParentID != "" {
-			if err := checkReplyParent(ctx, tx, p.AccountID, nodeID, in.ParentID); err != nil {
+			if parent, err = checkReplyParent(ctx, tx, p.AccountID, nodeID, in.ParentID); err != nil {
 				return err
 			}
 		}
@@ -435,8 +436,12 @@ func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) err
 		if err := tx.InsertMentions(ctx, p.AccountID, c.ID, resolved); err != nil {
 			return err
 		}
-		// r3 writes the notifications of this comment here, in this transaction: one for each resolved mention, and one
-		// for the author of the parent when this is a reply (proposal section 6.1, steps 8 and 9). Nothing is sent yet.
+		// The notifications of this comment are written here, in this transaction: one for each resolved mention, and one
+		// for the author of the parent when this is a reply (proposal section 6.1, steps 8 and 9). They are only rows: the
+		// worker sends the mail later (notify.go).
+		if err := s.commentNotices(ctx, tx, p.AccountID, nodeID, c, resolved, parent); err != nil {
+			return err
+		}
 		created = c
 		return tx.InsertAudit(ctx, s.auditEntry(r, p.AccountID, "comment.create", nodeID,
 			map[string]any{"comment": c.ID, "reply": in.ParentID != "", "mentions": len(userIDs)}, n.FolderID))
@@ -452,21 +457,22 @@ func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
-// checkReplyParent refuses a reply whose parent is not a live top-level comment of the same node. A reply to a reply is
-// invalid_request, since the thread holds one level; a parent of another node, a missing one and a tombstone are not_found.
-func checkReplyParent(ctx context.Context, tx *store.Tx, accountID, nodeID, parentID string) error {
+// checkReplyParent refuses a reply whose parent is not a live top-level comment of the same node, and returns the parent.
+// A reply to a reply is invalid_request, since the thread holds one level; a parent of another node, a missing one and a
+// tombstone are not_found.
+func checkReplyParent(ctx context.Context, tx *store.Tx, accountID, nodeID, parentID string) (*store.Comment, error) {
 	parent, err := tx.CommentIn(ctx, accountID, parentID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && (parent.NodeID != nodeID || parent.DeletedAt != nil)) {
-		return notFound("comment")
+		return nil, notFound("comment")
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if parent.ParentID != "" {
-		return apierr.New(apierr.InvalidRequest, "a reply goes on a top-level comment, not on another reply").
+		return nil, apierr.New(apierr.InvalidRequest, "a reply goes on a top-level comment, not on another reply").
 			With("reason", "reply_to_reply")
 	}
-	return nil
+	return parent, nil
 }
 
 // handleEditComment changes the body of the caller's own comment. Only the author edits, and only while the author still

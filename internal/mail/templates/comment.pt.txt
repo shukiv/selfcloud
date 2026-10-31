@@ -1,0 +1,7 @@
+Subject: {{if eq .Kind "reply"}}{{.Actor}} respondeu em {{.Item}}{{else}}{{.Actor}} mencionou você em {{.Item}}{{end}}
+
+{{if eq .Kind "reply"}}{{.Actor}} respondeu ao seu comentário em {{.Item}}.{{else}}{{.Actor}} mencionou você em um comentário sobre {{.Item}}.{{end}}
+
+{{.Link}}
+
+Abra o link para ler. Você pode desativar estes e-mails nas suas configurações de notificação.

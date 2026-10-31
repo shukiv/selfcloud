@@ -39,13 +39,17 @@ var wantFields = map[string][]string{
 	PurposeAccessRequest:  {"Actor", "Item", "Link", "Message", "Role"},
 	PurposeAccessDecision: {"Actor", "Item", "Link", "Role"},
 	PurposeDrop:           {"Count", "Folder", "Link"},
+	// Kind only chooses a sentence in a conditional, which fieldsOf does not count, so it is not listed.
+	PurposeComment: {"Actor", "Item", "Link"},
+	PurposeDigest:  {"Actor", "Count", "Item", "Link"},
 }
 
 // mailData carries every field any purpose uses, so one value can render each template.
 type mailData struct {
-	URL, ExpiresAt, Actor, Item, Role, Link, Message, Folder string
-	Count                                                    int
-	Approved                                                 bool
+	URL, ExpiresAt, Actor, Item, Role, Link, Message, Folder, Kind string
+	Count                                                          int
+	Approved                                                       bool
+	Entries                                                        []Entry
 }
 
 // TestEveryPurposeInEveryLanguage checks that each purpose has a template in all seven languages,

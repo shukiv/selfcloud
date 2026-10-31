@@ -163,8 +163,8 @@ again. Collabora converts unknown content as text rather than refusing it, so a 
   until the owner or the account key sets one.
 - **Webhooks.** No account has an endpoint until one is created for it.
 
-Not built yet: search (by name, label or text), comments, the
-interface's thumbnails and office button. The [feature parity list](docs/feature-parity.md) says which slice each belongs to.
+Not built yet: search (by name, label or text), the web interface for
+comments and notifications, the interface's thumbnails and office button. The [feature parity list](docs/feature-parity.md) says which slice each belongs to.
 
 ## Development
 

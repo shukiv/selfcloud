@@ -1,0 +1,8 @@
+Subject: {{.Count}} nouvelles mentions et réponses dans Selfcloud
+
+Vous avez {{.Count}} nouvelles mentions et réponses.
+
+{{range .Entries}}{{if eq .Kind "reply"}}- {{.Actor}} a répondu dans {{.Item}}{{else}}- {{.Actor}} vous a mentionné dans {{.Item}}{{end}}
+  {{.Link}}
+{{end}}
+Ouvrez chaque lien pour le lire. Vous pouvez désactiver ces e-mails dans vos paramètres de notification.

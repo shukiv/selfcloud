@@ -1,0 +1,7 @@
+Subject: {{if eq .Kind "reply"}}ردّ {{.Actor}} في {{.Item}}{{else}}ذكرك {{.Actor}} في {{.Item}}{{end}}
+
+{{if eq .Kind "reply"}}ردّ {{.Actor}} على تعليقك في {{.Item}}.{{else}}ذكرك {{.Actor}} في تعليق على {{.Item}}.{{end}}
+
+{{.Link}}
+
+افتح الرابط لقراءته. يمكنك إيقاف هذه الرسائل من إعدادات الإشعارات.

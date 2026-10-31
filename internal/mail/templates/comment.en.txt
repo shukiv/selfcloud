@@ -1,0 +1,7 @@
+Subject: {{if eq .Kind "reply"}}{{.Actor}} replied in {{.Item}}{{else}}{{.Actor}} mentioned you in {{.Item}}{{end}}
+
+{{if eq .Kind "reply"}}{{.Actor}} replied to your comment in {{.Item}}.{{else}}{{.Actor}} mentioned you in a comment on {{.Item}}.{{end}}
+
+{{.Link}}
+
+Open the link to read it. You can turn these emails off in your notification settings.

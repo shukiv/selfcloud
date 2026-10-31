@@ -124,9 +124,9 @@ space ("My files"), and a group can hold users.
 | Drive feature | Selfcloud |
 |---|---|
 | Comments on a file, replies, resolve | Built (r1): file and folder threads, one reply level, edit, delete and resolve. Plain text, 2,000 characters and 50 lines at most. Comments inside a document stay in Collabora. The account can turn comments off. The web interface is r7 (not built) |
-| @mentions, assign a comment | Mentions built (r2): a person named in a comment must reach the node; a people list suggests them. Nothing is sent yet (r3). Assignment is deferred (decision 39) |
+| @mentions, assign a comment | Mentions built (r2): a person named in a comment must reach the node; a people list suggests them. A mention and a reply notify the person in the app and by email, once an hour at most (r3, decision 43). Assignment is deferred (decision 39) |
 | Activity per file | New (r) |
-| Notifications (email and in-app) for shares, mentions, comments and requests | New (r) |
+| Notifications (email and in-app) for shares, mentions, comments and requests | Partly built (r3, decision 43): in-app and email for mentions and replies, with an email switch per user and a one-click unsubscribe. Shares and requests in the app are not built (r7); share mail is unchanged |
 | Who viewed a file (admin-controlled) | New (r): off by default, an account setting |
 | Approvals (lock, review, approve or reject) | New, later (t2): proposed after the rest |
 | Suggest mode inside documents | Planned (l): Collabora's track changes |
@@ -205,7 +205,7 @@ come **before** k.
 | p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts: p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels (all built); p5 the OpenAPI file, the design record, these rows, the smoke test and the security review (decision 36) | Medium |
 | pg | PostgreSQL as an option for the metadata store (design decision 7), after q (decision 40) | Medium |
 | q | Search by name with filters and label values (built in parts q1 and q2, decision 40); content text (q3), the web page (q4) and optional OCR (a later slice) | Large |
-| r | Comments and mentions built (r1, r2, decision 39); activity pane, notifications, who-viewed planned (r3 to r7) | Medium |
+| r | Comments, mentions and notifications built (r1 to r3, decisions 39 and 43); activity pane, who-viewed, the comment webhook and the web interface planned (r4 to r7) | Medium |
 | s | Thumbnails (built in part, s1 and s4a: images from the API and the grid's tiles), document previews, conversions and export, zip download (built, s2 and s4a) | Medium |
 | l | WOPI host for Collabora (built in parts l1 to l3; the interface button, Rename (l4) and the README example are not built) | Medium |
 | j | Webhooks (built, j1 to j4) | Small |

@@ -3760,6 +3760,135 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: List the caller's notifications, newest first
+      description: |
+        The mentions and replies that named or answered the caller, newest first, one page at a time. Each carries the
+        kind, the item's name, the actor's name and the times. No comment text is in it. A notification whose item the
+        caller no longer reaches is left out of the page, and kept in the store: it shows again if the reach returns. A
+        notification of a deleted comment is left out too. A signed-in user only: an account key and a delegated token,
+        whatever its scope, are refused.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: One page of notifications.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/notifications/unread:
+    get:
+      tags: [Notifications]
+      operationId: unreadNotifications
+      summary: Count the caller's unread notifications
+      description: |
+        The bell's count: the unread notifications whose item the caller reaches. It reads at most 100 of the newest
+        unread rows, so `count` is at most 100 and `more` is set when the count stopped there. A signed-in user only.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The count.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnreadCount" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/notifications/{ntf}/read:
+    parameters:
+      - name: ntf
+        in: path
+        required: true
+        schema: { type: string, example: "ntf_7k2m9q..." }
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      summary: Mark one of the caller's notifications read
+      description: |
+        Sets the read time of the caller's own notification. Another user's notification, and one of another account, are
+        `404`. A signed-in user only.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Marked read. }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/notifications/settings:
+    get:
+      tags: [Notifications]
+      operationId: getNotificationSettings
+      summary: Read the caller's email switch for notifications
+      description: |
+        Whether the caller gets email about mentions and replies. In-app notifications have no switch: they are on for
+        everyone. Default on. A signed-in user only.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The switch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationSettings" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Notifications]
+      operationId: setNotificationSettings
+      summary: Turn the caller's email about mentions and replies on or off
+      description: |
+        Sets the caller's own switch. No route sets another user's switch, so an account owner cannot turn email on for a
+        member. A signed-in user only.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationSettings" }
+      responses:
+        "200":
+          description: The switch as it is now.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationSettings" }
+        "400": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/notifications/unsubscribe:
+    get:
+      tags: [Notifications]
+      operationId: notificationUnsubscribePage
+      summary: The page an unsubscribe link in a notification mail opens
+      description: |
+        Shows a page with a button that turns the email off. It changes nothing, so a mail scanner that opens the link
+        does not switch the email off. The token in `t` is the only authority: no session or cookie is read. An invalid
+        token gets a page that says so, with `400`.
+      security: []
+      parameters:
+        - name: t
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: The confirmation page (HTML). }
+        "400": { description: The token is not valid (HTML). }
+    post:
+      tags: [Notifications]
+      operationId: notificationUnsubscribe
+      summary: Turn the email about mentions and replies off, by the token of a mail
+      description: |
+        Turns off the email of the user the token names, and nothing else. The POST takes the form of the page, and the
+        one-click POST of RFC 8058 that a mail client sends with `List-Unsubscribe=One-Click`; the body is not read. A
+        valid token for a user who is gone gets the same answer as one for a user who is there. The token has no expiry,
+        and it opens only this action. A page on another site cannot use it, since no cookie is read.
+      security: []
+      parameters:
+        - name: t
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: The email is off (HTML). }
+        "400": { description: The token is not valid (HTML). }
   /api/v1/recent:
     get:
       tags: [Stars]
@@ -5338,6 +5467,45 @@ components:
           description: The first replies of a top-level comment, oldest first. Absent on a reply.
           items: { $ref: "#/components/schemas/Comment" }
         replies_more: { type: boolean, description: "More replies exist; list them with ?parent= on the comments route." }
+
+    NotificationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Notification" }
+        next_cursor: { type: string }
+
+    Notification:
+      type: object
+      description: |
+        One notification. It holds no comment text. `actor_name` is the actor's display name; `actor_gone` is set when the
+        actor's user was deleted, and then there is no name.
+      required: [id, kind, node_id, item_name, created_at]
+      properties:
+        id: { type: string, example: "ntf_7k2m9q..." }
+        kind: { type: string, enum: [mention, reply] }
+        node_id: { type: string, example: "nod_7k2m9q..." }
+        item_name: { type: string }
+        actor_name: { type: string }
+        actor_gone: { type: boolean }
+        created_at: { type: string, format: date-time }
+        read_at: { type: string, format: date-time }
+
+    UnreadCount:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer, minimum: 0, maximum: 100 }
+        more: { type: boolean, description: "The count stopped at 100; more unread notifications may exist." }
+
+    NotificationSettings:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email: { type: boolean, description: "Email about mentions and replies. Default true." }
 
     CommentList:
       type: object

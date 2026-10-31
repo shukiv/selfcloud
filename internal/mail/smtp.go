@@ -74,7 +74,7 @@ func (s *SMTP) Send(ctx context.Context, m Message) error {
 	if err != nil {
 		return fmt.Errorf("mail: recipient: %w", err)
 	}
-	msg, err := buildMessage(s.from, to, m.Subject, m.Body, time.Now())
+	msg, err := buildMessageWith(s.from, to, m, time.Now())
 	if err != nil {
 		return err
 	}
@@ -150,21 +150,41 @@ func (s *SMTP) dial(ctx context.Context) (*smtp.Client, error) {
 // body with CRLF line endings. Header values are checked for line breaks first, so nothing a
 // caller supplies can add a header.
 func buildMessage(from, to *netmail.Address, subject, body string, now time.Time) ([]byte, error) {
-	if err := checkHeader("subject", subject); err != nil {
+	return buildMessageWith(from, to, Message{Subject: subject, Body: body}, now)
+}
+
+// buildMessageWith is buildMessage for a whole Message, with its optional headers: the Message-ID, and the one-click
+// unsubscribe pair of RFC 8058. Every header value is checked for line breaks before anything is written.
+func buildMessageWith(from, to *netmail.Address, m Message, now time.Time) ([]byte, error) {
+	if err := checkHeader("subject", m.Subject); err != nil {
+		return nil, err
+	}
+	if err := checkHeader("message id", m.MessageID); err != nil {
+		return nil, err
+	}
+	if err := checkHeader("unsubscribe address", m.ListUnsubscribe); err != nil {
 		return nil, err
 	}
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "From: %s\r\n", from.String())
 	fmt.Fprintf(&b, "To: %s\r\n", to.Address)
-	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))
+	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", m.Subject))
 	fmt.Fprintf(&b, "Date: %s\r\n", now.UTC().Format(time.RFC1123Z))
+	if m.MessageID != "" {
+		fmt.Fprintf(&b, "Message-ID: <%s>\r\n", m.MessageID)
+	}
+	if m.ListUnsubscribe != "" {
+		// RFC 8058: the address is an https URL, and a POST to it with this body unsubscribes.
+		fmt.Fprintf(&b, "List-Unsubscribe: <%s>\r\n", m.ListUnsubscribe)
+		b.WriteString("List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n")
+	}
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 	b.WriteString("\r\n")
 	qp := quotedprintable.NewWriter(&b)
 	// Only CRLF leaves the sender: a bare CR or LF in a body is how SMTP smuggling starts.
-	text := strings.ReplaceAll(CleanBody(body), "\n", "\r\n")
+	text := strings.ReplaceAll(CleanBody(m.Body), "\n", "\r\n")
 	if _, err := qp.Write([]byte(text)); err != nil {
 		return nil, err
 	}

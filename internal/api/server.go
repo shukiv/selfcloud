@@ -568,6 +568,16 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/comments/{cmt}", handle: s.handleDeleteComment, auth: true},
 		{method: http.MethodPost, path: "/api/v1/comments/{cmt}/resolve", handle: s.handleResolveComment, auth: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/people", handle: s.handleListPeople, auth: true},
+		// Notifications (slice r, decision 43): the signed-in user's own inbox and email switch. A token never reads them.
+		{method: http.MethodGet, path: "/api/v1/notifications", handle: s.handleListNotifications, auth: true},
+		{method: http.MethodGet, path: "/api/v1/notifications/unread", handle: s.handleUnreadNotifications, auth: true},
+		{method: http.MethodPost, path: "/api/v1/notifications/{ntf}/read", handle: s.handleReadNotification, auth: true},
+		{method: http.MethodGet, path: "/api/v1/notifications/settings", handle: s.handleGetNotifySettings, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/notifications/settings", handle: s.handlePatchNotifySettings, auth: true},
+		// The unsubscribe link of a mail: no session and no cookie, and the token in the query is the only authority. GET
+		// only shows the page; the POST, from the page or from a mail client (RFC 8058), switches the email off.
+		{method: http.MethodGet, path: notifyUnsubPath, handle: s.handleUnsubscribeForm, secretPath: true},
+		{method: http.MethodPost, path: notifyUnsubPath, handle: s.handleUnsubscribe, secretPath: true},
 		{method: http.MethodGet, path: "/api/v1/recent", handle: s.handleListRecent, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/recent", handle: s.handleClearRecent, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/recent/{nod}", handle: s.handleRemoveRecent, auth: true},
@@ -796,6 +806,8 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	go func() { defer close(noticeDone); s.runDropNotices(jobsCtx) }()
 	webhooksDone := make(chan struct{})
 	go func() { defer close(webhooksDone); s.runWebhooks(jobsCtx) }()
+	notifyDone := make(chan struct{})
+	go func() { defer close(notifyDone); s.runNotifications(jobsCtx) }()
 
 	var serveErr error
 	select {
@@ -809,6 +821,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		<-sweepDone
 		<-noticeDone
 		<-webhooksDone
+		<-notifyDone
 		<-derivedDone
 		<-convertDone
 	}()
