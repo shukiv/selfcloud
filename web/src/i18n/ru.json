@@ -148,6 +148,8 @@
   "files.zip.skipped_zero": "{count} объекта не включены: их нельзя скачать.",
   "files.zip.skipped_two": "{count} объекта не включены: их нельзя скачать.",
   "files.act.preview": "Просмотр",
+  "files.act.play": "Воспроизвести",
+  "files.act.view": "Открыть",
   "files.act.details": "Сведения",
   "files.act.versions": "Версии",
   "files.act.rename": "Переименовать",
@@ -155,6 +157,7 @@
   "files.act.copy": "Копировать в…",
   "files.act.delete": "Удалить",
   "files.act.clear": "Снять выбор",
+  "files.act.more": "Ещё",
   "files.rename.label": "Новое имя",
   "files.name.empty": "Введите имя.",
   "files.name.slash": "Имя не может содержать / или \\.",
@@ -1120,5 +1123,9 @@
   "labels.choose": "Выбрать",
   "labels.valueFor": "Значение: {name}",
   "labels.fieldFor": "Поле {name}",
-  "files.labels.heading": "Метки"
+  "files.labels.heading": "Метки",
+  "files.mark.video": "Видео",
+  "files.mark.audio": "Аудио",
+  "files.preview.unsupported": "Этот браузер не может воспроизвести этот формат.",
+  "files.select.item": "Выбрать: {name}"
 }

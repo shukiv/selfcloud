@@ -542,3 +542,33 @@ describe("a change of address closes what was open at the last one", () => {
     expect(api.deleteNode).not.toHaveBeenCalled();
   });
 });
+
+// At phone width the selection bar is one row: the main action, a More menu with the rest, and Clear. Delete stays in
+// the menu, marked as destructive.
+describe("the selection bar at phone width", () => {
+  beforeEach(() => {
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    folders.set([]);
+  });
+
+  it("keeps the main action and Clear in the bar, and puts the rest, Delete last and marked, in More", async () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q === "(max-width: 767.98px)", media: q, addEventListener() {}, removeEventListener() {} }));
+    place.role = "editor";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "notes.txt", { role: "editor" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "notes.txt" });
+    fireEvent.click(rows("notes.txt") as Element);
+    const bar = await screen.findByTestId("selection-bar");
+    expect(within(bar).getByRole("button", { name: "Preview" })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "Clear selection" })).toBeTruthy();
+    expect(within(bar).queryByRole("button", { name: "Rename" })).toBeNull();
+    expect(within(bar).queryByRole("button", { name: "Delete" })).toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "More" }));
+    const del = await screen.findByText("Delete");
+    expect(del.closest(".ant-dropdown-menu-item")?.className).toContain("ant-dropdown-menu-item-danger");
+    expect(screen.getByText("Rename")).toBeTruthy();
+  });
+});

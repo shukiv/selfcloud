@@ -10,18 +10,42 @@ import { startDownload } from "../../lib/files/ops";
 import { downloadAllowed } from "../../lib/files/roles";
 import type { Node } from "../../lib/files/types";
 import { useT } from "../../lib/i18n";
+import MediaPlayer, { type Link, type MediaFailure } from "./MediaPlayer";
 
 // Preview shows one file full screen. Images, video and audio, and PDFs load through a short signed link on the
-// content origin. Text is read on this origin, the first 1 MiB only, and shown as text, never as HTML. The Svelte
-// page has no text editing, and this one has none either.
+// content origin; a video or audio file takes a new link when the first one ends (MediaPlayer). Text is read on this
+// origin, the first 1 MiB only, and shown as text, never as HTML. The Svelte page has no text editing, and this one
+// has none either.
 // Escape closes (antd's Modal calls onCancel); the arrows step through the items, mirrored in right-to-left.
 // Tab stays inside the dialog: antd's Modal traps focus, and the dialog takes focus when it opens.
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; url?: string; text?: string; truncated?: boolean }
+  | { status: "ready"; link?: Link; text?: string; truncated?: boolean }
   | { status: "restricted" }
+  | { status: "unsupported" }
   | { status: "error" };
+
+// Loaded is an answer and the file it was given for. An answer for another file is never shown: the link in it is that
+// file's, and playing it would play the wrong file.
+interface Loaded {
+  id: string | null;
+  state: LoadState;
+}
+
+// shownState is the state of the file on screen: the answer for it, or a loading card while its answer is pending.
+export function shownState(loaded: Loaded, id: string | undefined): LoadState {
+  return id !== undefined && loaded.id === id ? loaded.state : { status: "loading" };
+}
+
+// inlineLink asks for a signed link that shows the file inline, or gives null when the address is not one the page may
+// load (safeURL). The server's end time is not read: a player decides from what it sees, not from a clock.
+async function inlineLink(id: string): Promise<Link | null> {
+  const got = await signedLink(id, "inline", 300);
+  const url = safeURL(got.url);
+  if (url === null) return null;
+  return { url };
+}
 
 // safeURL returns the address when the page may load it: http, https, or the same origin. Any other scheme, such as
 // a script scheme or a data scheme, gives null, and the preview shows its error instead of an element with that source.
@@ -49,21 +73,24 @@ export default function Preview({
 }) {
   const { t } = useT();
   const node = items[index] as Node | undefined;
-  const [loaded, setLoaded] = useState<LoadState>({ status: "loading" });
+  const [loaded, setLoaded] = useState<Loaded>({ id: null, state: { status: "loading" } });
   // A newer request makes an older answer stale.
   const token = useRef(0);
 
   useEffect(() => {
     if (!node) return;
+    const nodeID = node.id;
+    // Each answer is recorded with the file it is for.
+    const put = (state: LoadState) => setLoaded({ id: nodeID, state });
     // A file the viewer cannot show gets its card at once; no link or read is made for it. The Svelte page asks
     // for a link here too, and the answer is never shown.
     if (!previewable(node)) {
       token.current++;
-      setLoaded({ status: "ready" });
+      put({ status: "ready" });
       return;
     }
     const my = ++token.current;
-    setLoaded({ status: "loading" });
+    put({ status: "loading" });
     const stale = () => my !== token.current;
     void (async () => {
       const kind: Kind = kindOf(node);
@@ -76,26 +103,25 @@ export default function Preview({
           });
           if (stale()) return;
           if (res.status === 403) {
-            setLoaded({ status: "restricted" });
+            put({ status: "restricted" });
             return;
           }
           if (!res.ok && res.status !== 416) throw new ApiError(res.status, "internal", {}, 0);
           const text = res.status === 416 ? "" : await res.text();
           if (stale()) return;
-          setLoaded({ status: "ready", text, truncated: node.size > TEXT_PREVIEW_BYTES });
+          put({ status: "ready", text, truncated: node.size > TEXT_PREVIEW_BYTES });
           return;
         }
-        const link = await signedLink(node.id, "inline", 300);
+        const link = await inlineLink(node.id);
         if (stale()) return;
-        const url = safeURL(link.url);
-        if (url === null) {
-          setLoaded({ status: "error" });
+        if (link === null) {
+          put({ status: "error" });
           return;
         }
-        setLoaded({ status: "ready", url });
+        put({ status: "ready", link });
       } catch (err) {
         if (stale()) return;
-        setLoaded(err instanceof ApiError && err.code === "download_restricted" ? { status: "restricted" } : { status: "error" });
+        put(err instanceof ApiError && err.code === "download_restricted" ? { status: "restricted" } : { status: "error" });
       }
     })();
   }, [node?.id]);
@@ -122,12 +148,29 @@ export default function Preview({
   async function download() {
     if (!node) return;
     const ok = await startDownload(node.id);
-    if (!ok) setLoaded({ status: "restricted" });
+    if (!ok) setLoaded({ id: node.id, state: { status: "restricted" } });
   }
+
+  // remint asks for a new link to the file on screen, for a player whose link has ended.
+  const remint = async (): Promise<Link> => {
+    if (!node) throw new Error("no file");
+    const link = await inlineLink(node.id);
+    if (link === null) throw new Error("unsafe link");
+    return link;
+  };
+  // mediaFailed shows a player's failure as the first load shows its own: a refused download is the same card, and the
+  // format message is only said for a format.
+  const mediaFailed = (f: MediaFailure) => {
+    const id = node?.id ?? null;
+    if (f.kind === "unsupported") setLoaded({ id, state: { status: "unsupported" } });
+    else if (f.err instanceof ApiError && f.err.code === "download_restricted") setLoaded({ id, state: { status: "restricted" } });
+    else setLoaded({ id, state: { status: "error" } });
+  };
 
   const canDownload = node ? downloadAllowed(node) : false;
   const kindNow: Kind = node ? kindOf(node) : "file";
   const hasPreview = node ? previewable(node) : false;
+  const view = shownState(loaded, node?.id);
 
   return (
     <Modal
@@ -152,7 +195,8 @@ export default function Preview({
           <p style={{ flex: "1 1 160px", margin: 0, overflowWrap: "anywhere", fontWeight: 600 }}>
             <bdi>{node?.name ?? ""}</bdi>
           </p>
-          <span aria-live="polite" style={{ fontVariantNumeric: "tabular-nums" }}>
+          {/* A count reads left to right in every language: "2 / 5" keeps its order in Hebrew. */}
+          <span aria-live="polite" dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>
             {index + 1} / {items.length}
           </span>
           {canDownload && <Button onClick={() => void download()}>{t("files.act.download")}</Button>}
@@ -168,25 +212,25 @@ export default function Preview({
                 </Button>
               )}
             </div>
-          ) : loaded.status === "loading" ? (
+          ) : view.status === "loading" ? (
             <p role="status">{t("files.preview.loading")}</p>
-          ) : loaded.status === "restricted" ? (
+          ) : view.status === "restricted" ? (
             <Alert type="info" role="status" message={t("files.err.downloadRestricted")} />
-          ) : loaded.status === "error" ? (
+          ) : view.status === "error" ? (
             <Alert type="error" role="alert" message={t("error.generic")} />
-          ) : loaded.status === "ready" && node ? (
-            kindNow === "image" && loaded.url ? (
-              <img src={loaded.url} alt={node.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-            ) : kindNow === "pdf" && loaded.url ? (
-              <iframe title={node.name} src={loaded.url} style={{ width: "100%", height: "100%", border: 0, background: "#fff" }} />
-            ) : kindNow === "video" && loaded.url ? (
-              <video controls src={loaded.url} aria-label={node.name} style={{ maxWidth: "100%", maxHeight: "100%" }} />
-            ) : kindNow === "audio" && loaded.url ? (
-              <audio controls src={loaded.url} aria-label={node.name} />
+          ) : view.status === "unsupported" ? (
+            <Alert type="warning" role="alert" message={t("files.preview.unsupported")} />
+          ) : view.status === "ready" && node ? (
+            kindNow === "image" && view.link ? (
+              <img src={view.link.url} alt={node.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            ) : kindNow === "pdf" && view.link ? (
+              <iframe title={node.name} src={view.link.url} style={{ width: "100%", height: "100%", border: 0, background: "#fff" }} />
+            ) : (kindNow === "video" || kindNow === "audio") && view.link ? (
+              <MediaPlayer key={node.id} kind={kindNow} name={node.name} link={view.link} mint={remint} onFail={mediaFailed} />
             ) : kindNow === "text" ? (
               <div style={{ alignSelf: "stretch", width: "100%" }}>
-                {loaded.truncated && <p>{t("files.preview.truncated")}</p>}
-                <pre style={{ margin: 0, padding: 16, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{loaded.text}</pre>
+                {view.truncated && <p>{t("files.preview.truncated")}</p>}
+                <pre style={{ margin: 0, padding: 16, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{view.text}</pre>
               </div>
             ) : null
           ) : null}

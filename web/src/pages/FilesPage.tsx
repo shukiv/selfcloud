@@ -3,7 +3,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useLocation } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { Alert, Button, Form, Input, Modal, Select, Skeleton, theme as antdTheme } from "antd";
+import { Alert, Button, Dropdown, Form, Input, Modal, Select, Skeleton, theme as antdTheme } from "antd";
+import { X } from "lucide-react";
 import { useLang, useT, translatePlural } from "../lib/i18n";
 import { useStore, get } from "../lib/store";
 import { brand } from "../lib/brand";
@@ -26,7 +27,8 @@ import { clickSelect, moveFocus, selectAll, EMPTY, type Selection } from "../lib
 import { keyAction } from "../lib/files/keys";
 import { can, downloadAllowed, atLeast } from "../lib/files/roles";
 import { shareCap } from "../lib/sharing/roles";
-import { previewable } from "../lib/files/kind";
+import { kindOf, previewable } from "../lib/files/kind";
+import { tapOpens } from "../lib/files/tap";
 import { readPrefs, writePrefs, type ViewPrefs } from "../lib/files/viewPrefs";
 import { UndoStack } from "../lib/files/undo";
 import type { ConflictChoice } from "../lib/files/conflict";
@@ -59,6 +61,14 @@ const ZipDialog = lazy(() => import("../components/files/ZipDialog"));
 
 type Dialog = "newFolder" | "delete" | "pick" | "details" | "versions" | "preview" | "share" | "pickShortcut" | "shortcut" | "unavailable" | "zip" | null;
 
+// previewKey names the action that shows a file: Play for a video or audio file, View for a picture, Preview for the rest.
+function previewKey(n: Node): "files.act.play" | "files.act.view" | "files.act.preview" {
+  const k = kindOf(n);
+  if (k === "video" || k === "audio") return "files.act.play";
+  if (k === "image") return "files.act.view";
+  return "files.act.preview";
+}
+
 // Place is where the browser is, or why it cannot show it.
 type PlaceState =
   | { kind: "ready"; here: Here; personalID: string | null }
@@ -74,6 +84,30 @@ interface SelState extends Selection {
 const NO_SEL: SelState = { ...EMPTY, anchorID: null, focusID: null };
 
 const toolbarStyle = { display: "flex", flexWrap: "wrap" as const, alignItems: "center", gap: 8, width: "100%" };
+
+// useNarrowWindow says whether the window is phone width (below the md breakpoint, 768 pixels). It is a media query, so a
+// window that cannot say its width (no matchMedia) is taken as a desktop, and the desktop bar is shown.
+function useNarrowWindow(): boolean {
+  const query = "(max-width: 767.98px)";
+  const supported = typeof window !== "undefined" && typeof window.matchMedia === "function";
+  const [narrow, setNarrow] = useState(() => (supported ? window.matchMedia(query).matches : false));
+  useEffect(() => {
+    if (!supported) return;
+    const mq = window.matchMedia(query);
+    const onChange = () => setNarrow(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [supported]);
+  return narrow;
+}
+
+// BarAct is one action on the selection: its label, what it does, and whether it destroys something.
+interface BarAct {
+  key: string;
+  label: string;
+  run: () => void;
+  danger?: boolean;
+}
 
 interface RenameState {
   id: string;
@@ -111,6 +145,8 @@ export default function FilesPage() {
   const { t } = useT();
   const lang = useLang();
   const { token } = antdTheme.useToken();
+  // A phone's selection bar is one row: the main action, a More menu and Clear (see barActs below).
+  const phone = useNarrowWindow();
   const qc = useQueryClient();
   const location = useLocation();
   const path = location.pathname;
@@ -397,7 +433,21 @@ export default function FilesPage() {
     });
   }
 
+  // lastTapOpen is when a finger last opened an item. A tap soon after it is the second tap of a double tap, and the rows
+  // it would reach may be the folder's just opened (tap.ts), so it does not open anything.
+  const lastTapOpen = useRef(-Infinity);
   function onRowClick(index: number, e: Click) {
+    // A finger's tap opens the item, as a tap on a link does; a mouse's click selects it, and selects nothing else.
+    if (e.touch) {
+      const now = performance.now();
+      if (!tapOpens(lastTapOpen.current, now)) return;
+      const n = sorted[index];
+      if (n) {
+        lastTapOpen.current = now;
+        openNode(n);
+      }
+      return;
+    }
     setSelection(clickSelect(current(), ids, index, { shift: e.shiftKey, toggle: e.ctrlKey || e.metaKey }));
   }
 
@@ -910,6 +960,61 @@ export default function FilesPage() {
   const selectedNodes = picked;
   const rowLabel = titleName;
 
+  // The actions on the selection, in the order the bar shows them. A desktop bar shows them all. A phone's bar shows the
+  // main one (the preview action, or Download) and a More menu with the rest, so the bar stays one row (phoneBar).
+  const single = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  const barActs: BarAct[] = [];
+  if (single && single.kind === "file" && downloadAllowed(gated(single))) {
+    barActs.push({ key: "download", label: t("files.act.download"), run: () => void download(single) });
+  }
+  if (zipOffered(selectedNodes)) barActs.push({ key: "zip", label: t("files.act.zip"), run: () => makeZipOf(selectedNodes) });
+  if (single && previewable(single)) barActs.push({ key: "preview", label: t(previewKey(single)), run: () => openPreview(single) });
+  if (single) {
+    barActs.push({
+      key: "details",
+      label: t("files.act.details"),
+      run: () => {
+        setTarget(single);
+        setDialog("details");
+      },
+    });
+    barActs.push({
+      key: "share",
+      label: t("share.open"),
+      run: () => {
+        setTarget(single);
+        setDialog("share");
+      },
+    });
+  }
+  if (single && single.kind === "file" && atLeast(single.role, "viewer")) {
+    barActs.push({
+      key: "versions",
+      label: t("files.act.versions"),
+      run: () => {
+        setTarget(single);
+        setDialog("versions");
+      },
+    });
+  }
+  if (single && can.edit(single.role)) barActs.push({ key: "rename", label: t("files.act.rename"), run: () => startRename(single) });
+  if (single && single.kind !== "shortcut" && spaces.length > 0) {
+    barActs.push({
+      key: "shortcut",
+      label: t("files.act.shortcut"),
+      run: () => {
+        setTarget(single);
+        setDialog("pickShortcut");
+      },
+    });
+  }
+  if (allEdit) barActs.push({ key: "move", label: t("files.act.move"), run: () => startPick("move", selectedNodes) });
+  if (selectedNodes.length > 0) barActs.push({ key: "copy", label: t("files.act.copy"), run: () => startPick("copy", selectedNodes) });
+  // Delete is marked as destructive in the bar and in the More menu alike.
+  if (allEdit) barActs.push({ key: "delete", label: t("files.act.delete"), danger: true, run: () => askDelete(selectedNodes) });
+  const main = barActs.find((a) => a.key === "preview") ?? barActs.find((a) => a.key === "download");
+  const rest = barActs.filter((a) => a !== main);
+
   return (
     <section
       ref={sectionRef}
@@ -997,67 +1102,6 @@ export default function FilesPage() {
             )}
           </div>
 
-          {sel.ids.length > 0 && (
-            <div role="toolbar" aria-label={t("files.selection.label")} style={{ ...toolbarStyle, padding: "8px 12px", background: token.colorPrimaryBg, borderRadius: token.borderRadius }}>
-              <p aria-live="polite" style={{ margin: "0 8px 0 0", fontWeight: 600 }}>
-                {translatePlural(lang, "files.selected", sel.ids.length)}
-              </p>
-              {selectedNodes.length === 1 && selectedNodes[0].kind === "file" && downloadAllowed(gated(selectedNodes[0])) && (
-                <Button onClick={() => void download(selectedNodes[0])}>{t("files.act.download")}</Button>
-              )}
-              {zipOffered(selectedNodes) && <Button onClick={() => makeZipOf(selectedNodes)}>{t("files.act.zip")}</Button>}
-              {selectedNodes.length === 1 && previewable(selectedNodes[0]) && <Button onClick={() => openPreview(selectedNodes[0])}>{t("files.act.preview")}</Button>}
-              {selectedNodes.length === 1 && (
-                <Button
-                  onClick={() => {
-                    setTarget(selectedNodes[0]);
-                    setDialog("details");
-                  }}
-                >
-                  {t("files.act.details")}
-                </Button>
-              )}
-              {selectedNodes.length === 1 && (
-                <Button
-                  onClick={() => {
-                    setTarget(selectedNodes[0]);
-                    setDialog("share");
-                  }}
-                >
-                  {t("share.open")}
-                </Button>
-              )}
-              {selectedNodes.length === 1 && selectedNodes[0].kind === "file" && atLeast(selectedNodes[0].role, "viewer") && (
-                <Button
-                  onClick={() => {
-                    setTarget(selectedNodes[0]);
-                    setDialog("versions");
-                  }}
-                >
-                  {t("files.act.versions")}
-                </Button>
-              )}
-              {selectedNodes.length === 1 && can.edit(selectedNodes[0].role) && <Button onClick={() => startRename(selectedNodes[0])}>{t("files.act.rename")}</Button>}
-              {selectedNodes.length === 1 && selectedNodes[0].kind !== "shortcut" && spaces.length > 0 && (
-                <Button
-                  onClick={() => {
-                    setTarget(selectedNodes[0]);
-                    setDialog("pickShortcut");
-                  }}
-                >
-                  {t("files.act.shortcut")}
-                </Button>
-              )}
-              {allEdit && <Button onClick={() => startPick("move", selectedNodes)}>{t("files.act.move")}</Button>}
-              {selectedNodes.length > 0 && <Button onClick={() => startPick("copy", selectedNodes)}>{t("files.act.copy")}</Button>}
-              {allEdit && (
-                <Button danger onClick={() => askDelete(selectedNodes)}>
-                  {t("files.act.delete")}
-                </Button>
-              )}
-              <Button onClick={() => setSelection(EMPTY)}>{t("files.act.clear")}</Button>
-            </div>
-          )}
 
           <div>
             {sorted.length === 0 ? (
@@ -1078,8 +1122,8 @@ export default function FilesPage() {
                   renameError={rename?.error ?? null}
                   label={rowLabel}
                   onRowClick={onRowClick}
-                  onRowDoubleClick={(i) => {
-                    const n = sorted[i];
+                  onRowDoubleClick={(id) => {
+                    const n = byID.get(id);
                     if (n) openNode(n);
                   }}
                   onSelectAll={onSelectAll}
@@ -1108,6 +1152,53 @@ export default function FilesPage() {
               </>
             )}
           </div>
+
+          {/* The bar sits under the listing and stays on screen at the bottom of the window, so selecting moves no row. */}
+          {sel.ids.length > 0 && (
+            <div
+              role="toolbar"
+              aria-label={t("files.selection.label")}
+              data-testid="selection-bar"
+              style={{
+                ...toolbarStyle,
+                flexWrap: phone ? "nowrap" : "wrap",
+                position: "sticky",
+                bottom: 0,
+                zIndex: 1,
+                padding: "8px 12px",
+                background: token.colorPrimaryBg,
+                borderRadius: token.borderRadius,
+                boxShadow: token.boxShadowSecondary,
+              }}
+            >
+              <p aria-live="polite" style={{ margin: "0 8px 0 0", fontWeight: 600 }}>
+                {translatePlural(lang, "files.selected", sel.ids.length)}
+              </p>
+              {phone ? (
+                <>
+                  {main && (
+                    <Button onClick={main.run}>{main.label}</Button>
+                  )}
+                  {rest.length > 0 && (
+                    <Dropdown trigger={["click"]} menu={{ items: rest.map((a) => ({ key: a.key, label: a.label, danger: a.danger, onClick: () => a.run() })) }}>
+                      <Button aria-haspopup="menu">{t("files.act.more")}</Button>
+                    </Dropdown>
+                  )}
+                </>
+              ) : (
+                barActs.map((a) => (
+                  <Button key={a.key} danger={a.danger} onClick={a.run}>
+                    {a.label}
+                  </Button>
+                ))
+              )}
+              {phone ? (
+                <Button aria-label={t("files.act.clear")} icon={<X size={16} aria-hidden="true" />} onClick={() => setSelection(EMPTY)} />
+              ) : (
+                <Button onClick={() => setSelection(EMPTY)}>{t("files.act.clear")}</Button>
+              )}
+            </div>
+          )}
 
           {jobs.length > 0 && (
             <ul aria-label={t("files.jobs")} style={{ margin: 0, padding: 0, listStyle: "none", fontSize: token.fontSizeSM }}>

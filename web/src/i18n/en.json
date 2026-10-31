@@ -148,6 +148,8 @@
   "files.zip.skipped_few": "{count} items were left out. You cannot download them.",
   "files.zip.skipped_many": "{count} items were left out. You cannot download them.",
   "files.act.preview": "Preview",
+  "files.act.play": "Play",
+  "files.act.view": "View",
   "files.act.details": "Details",
   "files.act.versions": "Versions",
   "files.act.rename": "Rename",
@@ -155,6 +157,7 @@
   "files.act.copy": "Copy to…",
   "files.act.delete": "Delete",
   "files.act.clear": "Clear selection",
+  "files.act.more": "More",
   "files.rename.label": "New name",
   "files.name.empty": "Enter a name.",
   "files.name.slash": "A name cannot contain / or \\.",
@@ -1120,5 +1123,9 @@
   "labels.choose": "Choose",
   "labels.valueFor": "Value for {name}",
   "labels.fieldFor": "Field {name}",
-  "files.labels.heading": "Labels"
+  "files.labels.heading": "Labels",
+  "files.mark.video": "Video",
+  "files.mark.audio": "Audio",
+  "files.preview.unsupported": "This browser can't play this format.",
+  "files.select.item": "Select {name}"
 }

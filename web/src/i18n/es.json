@@ -148,6 +148,8 @@
   "files.zip.skipped_few": "Se dejaron fuera {count} elementos. No puede descargarlos.",
   "files.zip.skipped_many": "Se dejaron fuera {count} elementos. No puede descargarlos.",
   "files.act.preview": "Vista previa",
+  "files.act.play": "Reproducir",
+  "files.act.view": "Ver",
   "files.act.details": "Detalles",
   "files.act.versions": "Versiones",
   "files.act.rename": "Cambiar nombre",
@@ -155,6 +157,7 @@
   "files.act.copy": "Copiar a…",
   "files.act.delete": "Eliminar",
   "files.act.clear": "Quitar selección",
+  "files.act.more": "Más",
   "files.rename.label": "Nuevo nombre",
   "files.name.empty": "Escriba un nombre.",
   "files.name.slash": "Un nombre no puede contener / ni \\.",
@@ -1120,5 +1123,9 @@
   "labels.choose": "Elegir",
   "labels.valueFor": "Valor de {name}",
   "labels.fieldFor": "Campo {name}",
-  "files.labels.heading": "Etiquetas"
+  "files.labels.heading": "Etiquetas",
+  "files.mark.video": "Vídeo",
+  "files.mark.audio": "Audio",
+  "files.preview.unsupported": "Este navegador no puede reproducir este formato.",
+  "files.select.item": "Seleccionar {name}"
 }

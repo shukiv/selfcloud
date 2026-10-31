@@ -69,3 +69,44 @@ describe("the folder the visitor opens", () => {
     expect(screen.getByText("Early")).toBeTruthy();
   });
 });
+
+// A video on a share link plays like one in the owner's viewer: when its link has ended, the visitor's credential asks
+// for a new one, and the player goes on from where it was.
+describe("a video on a share link", () => {
+  it("asks the visitor's credential for a new link once the first has ended", async () => {
+    const clip = {
+      id: "nod_clip",
+      folder_id: "fld_a",
+      parent_id: null,
+      name: "clip.webm",
+      kind: "file",
+      size: 10,
+      mime_type: "video/webm",
+      created_at: "2026-10-01T00:00:00Z",
+      modified_at: "2026-10-01T00:00:00Z",
+      role: "viewer",
+      no_download: true,
+      editors_can_share: false,
+    } as unknown as Node;
+    api.visitorNode.mockResolvedValue(clip);
+    const ended = new Date(Date.now() - 60_000).toISOString();
+    const live = new Date(Date.now() + 300_000).toISOString();
+    api.visitorLink.mockImplementation(async (_t: string, _id: string, disposition: string) => {
+      if (disposition === "attachment") throw new Error("no download");
+      const asked = api.visitorLink.mock.calls.filter((c) => c[2] === "inline").length;
+      return asked === 1 ? { url: "https://content.example/first", expires_at: ended } : { url: "https://content.example/second", expires_at: live };
+    });
+    render(<PublicBrowse token="tok_v" root="nod_clip" onlost={vi.fn()} />);
+    const video = await vi.waitFor(() => {
+      const el = document.querySelector("video");
+      if (!el) throw new Error("no video yet");
+      return el;
+    });
+    expect(video.getAttribute("src")).toBe("https://content.example/first");
+    Object.defineProperty(video, "error", { value: { code: 4 }, configurable: true });
+    fireEvent.error(video);
+    await vi.waitFor(() => expect(document.querySelector("video")?.getAttribute("src")).toBe("https://content.example/second"));
+    expect(api.visitorLink.mock.calls.filter((c) => c[2] === "inline")).toHaveLength(2);
+    expect(api.visitorLink).toHaveBeenCalledWith("tok_v", "nod_clip", "inline");
+  });
+});

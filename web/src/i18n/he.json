@@ -148,6 +148,8 @@
   "files.zip.skipped_zero": "{count} פריטים לא נכללו: אי אפשר להוריד אותם.",
   "files.zip.skipped_few": "{count} פריטים לא נכללו: אי אפשר להוריד אותם.",
   "files.act.preview": "תצוגה מקדימה",
+  "files.act.play": "הפעלה",
+  "files.act.view": "הצגה",
   "files.act.details": "פרטים",
   "files.act.versions": "גרסאות",
   "files.act.rename": "שנו שם",
@@ -155,6 +157,7 @@
   "files.act.copy": "העתיקו אל…",
   "files.act.delete": "מחקו",
   "files.act.clear": "בטלו את הבחירה",
+  "files.act.more": "עוד",
   "files.rename.label": "שם חדש",
   "files.name.empty": "הזינו שם.",
   "files.name.slash": "שם לא יכול להכיל / או \\.",
@@ -1120,5 +1123,9 @@
   "labels.choose": "בחירה",
   "labels.valueFor": "ערך של {name}",
   "labels.fieldFor": "שדה {name}",
-  "files.labels.heading": "תוויות"
+  "files.labels.heading": "תוויות",
+  "files.mark.video": "וידאו",
+  "files.mark.audio": "שמע",
+  "files.preview.unsupported": "הדפדפן הזה אינו יכול להפעיל את הפורמט הזה.",
+  "files.select.item": "בחירה של {name}"
 }

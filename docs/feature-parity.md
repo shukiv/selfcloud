@@ -44,7 +44,7 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route |
+| Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route. Video and audio play to the end of a long file: a new link is asked for when the first one ends, and a format the browser cannot play is said so (s4c, decision 42). Double click, a tap on a phone, and a play mark on media rows |
 | Preview of office documents | Planned (s3): the API has the editor's view mode (l1 to l3), which the interface does not open yet; conversion to PDF is not built |
 | Thumbnails | Built in part (s1, s4a): JPEG, PNG and GIF thumbnails from the API, made in a child process, and shown in the grid's tiles (s4a, decision 38; the list view has no thumbnails). Document previews are built (s3, decision 37), not yet usable in production |
 | Details pane (size, type, owner, location, dates, who has access) | Built (k2): size, type, dates, creator, owner and your access. Location is in the breadcrumbs. Built (k3): "Share" and "Who has access" open the share dialog |

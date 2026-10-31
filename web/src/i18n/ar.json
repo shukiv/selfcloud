@@ -148,6 +148,8 @@
   "files.zip.skipped_many": "{count} عنصرًا لم يُدرج: لا يمكن تنزيله.",
   "files.zip.skipped_other": "{count} عنصر لم يُدرج: لا يمكن تنزيله.",
   "files.act.preview": "معاينة",
+  "files.act.play": "تشغيل",
+  "files.act.view": "عرض",
   "files.act.details": "التفاصيل",
   "files.act.versions": "الإصدارات",
   "files.act.rename": "إعادة التسمية",
@@ -155,6 +157,7 @@
   "files.act.copy": "نسخ إلى…",
   "files.act.delete": "حذف",
   "files.act.clear": "إلغاء التحديد",
+  "files.act.more": "المزيد",
   "files.rename.label": "الاسم الجديد",
   "files.name.empty": "أدخل اسمًا.",
   "files.name.slash": "لا يمكن أن يحتوي الاسم على / أو \\.",
@@ -1120,5 +1123,9 @@
   "labels.choose": "اختيار",
   "labels.valueFor": "قيمة {name}",
   "labels.fieldFor": "حقل {name}",
-  "files.labels.heading": "الوسوم"
+  "files.labels.heading": "الوسوم",
+  "files.mark.video": "فيديو",
+  "files.mark.audio": "صوت",
+  "files.preview.unsupported": "هذا المتصفح لا يستطيع تشغيل هذا التنسيق.",
+  "files.select.item": "تحديد {name}"
 }

@@ -148,6 +148,8 @@
   "files.zip.skipped_few": "{count} itens ficaram de fora. Não pode transferi-los.",
   "files.zip.skipped_many": "{count} itens ficaram de fora. Não pode transferi-los.",
   "files.act.preview": "Pré-visualizar",
+  "files.act.play": "Reproduzir",
+  "files.act.view": "Ver",
   "files.act.details": "Detalhes",
   "files.act.versions": "Versões",
   "files.act.rename": "Mudar o nome",
@@ -155,6 +157,7 @@
   "files.act.copy": "Copiar para…",
   "files.act.delete": "Apagar",
   "files.act.clear": "Limpar seleção",
+  "files.act.more": "Mais",
   "files.rename.label": "Novo nome",
   "files.name.empty": "Introduza um nome.",
   "files.name.slash": "Um nome não pode conter / nem \\.",
@@ -1120,5 +1123,9 @@
   "labels.choose": "Escolher",
   "labels.valueFor": "Valor de {name}",
   "labels.fieldFor": "Campo {name}",
-  "files.labels.heading": "Etiquetas"
+  "files.labels.heading": "Etiquetas",
+  "files.mark.video": "Vídeo",
+  "files.mark.audio": "Áudio",
+  "files.preview.unsupported": "Este navegador não consegue reproduzir este formato.",
+  "files.select.item": "Selecionar {name}"
 }

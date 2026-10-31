@@ -192,4 +192,67 @@ describe("Preview keeps the text of the file on screen", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(document.querySelector("pre")?.textContent).toBe("bee text");
   });
+
+  // A format the browser cannot read says so in words, and asks for no further link. The header keeps Download.
+  it("says a video this browser cannot play is unsupported, after one new link that fails the same way", async () => {
+    render(<Preview items={[file("hevc.mp4", "video/mp4")]} index={0} onClose={() => {}} onIndex={() => {}} />);
+    const video = await waitFor(() => {
+      const el = document.querySelector("video");
+      if (!el) throw new Error("no video yet");
+      return el;
+    });
+    Object.defineProperty(video, "error", { value: { code: 4 }, configurable: true });
+    // The first failure, before playback moved on, asks for one fresh link. The fresh link failing the same way is the format.
+    fireEvent.error(video);
+    await waitFor(() => expect(signedLink).toHaveBeenCalledTimes(2));
+    fireEvent.error(video);
+    expect(await screen.findByText("This browser can't play this format.")).toBeTruthy();
+    expect(signedLink).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0);
+  });
+
+  // Moving to the next file stops the one playing: its player is taken away with the file it showed.
+  it("pauses a video when the next file replaces it", async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const items = [file("a.mp4", "video/mp4"), file("b.mp4", "video/mp4")];
+    const { rerender } = render(<Preview items={items} index={0} onClose={() => {}} onIndex={() => {}} />);
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    pause.mockClear();
+    rerender(<Preview items={items} index={1} onClose={() => {}} onIndex={() => {}} />);
+    await waitFor(() => expect(signedLink).toHaveBeenCalledTimes(2));
+    expect(pause).toHaveBeenCalled();
+    pause.mockRestore();
+  });
+});
+
+// A video whose link is refused when it is renewed: the player asks again, and the answer says the downloads are off,
+// the same card as the first load gives, not the generic error.
+describe("Preview renews a video's link under the same rules as the first load", () => {
+  it("shows the restricted card when the renewed link is refused as a download restriction", async () => {
+    signedLink
+      .mockResolvedValueOnce({ url: "https://content.example/first", disposition: "inline", expires_at: "" })
+      .mockRejectedValueOnce(new ApiError(403, "download_restricted", {}, 0));
+    render(<Preview items={[file("clip.mp4", "video/mp4")]} index={0} onClose={() => {}} onIndex={() => {}} />);
+    const video = await waitFor(() => {
+      const el = document.querySelector("video");
+      if (!el) throw new Error("no video yet");
+      return el;
+    });
+    Object.defineProperty(video, "currentTime", { value: 0, configurable: true });
+    Object.defineProperty(video, "error", { value: { code: 4 }, configurable: true });
+    fireEvent.error(video);
+    expect(await screen.findByText("Downloads are off for this file.")).toBeTruthy();
+    expect(screen.queryByText("Something went wrong. Try again.")).toBeNull();
+  });
+});
+
+// The link on screen belongs to the file on screen. A state recorded for another file is not shown.
+describe("Preview shows only the state of the file on screen", () => {
+  it("shows a loading card for a file whose state was recorded for the file before it", async () => {
+    const { shownState } = await import("./Preview");
+    const ready = { id: "n-a.mp4", state: { status: "ready" as const, link: { url: "https://content.example/a" } } };
+    expect(shownState(ready, "n-a.mp4")).toBe(ready.state);
+    expect(shownState(ready, "n-b.mp4")).toEqual({ status: "loading" });
+    expect(shownState({ id: null, state: { status: "error" } }, "n-a.mp4")).toEqual({ status: "loading" });
+  });
 });

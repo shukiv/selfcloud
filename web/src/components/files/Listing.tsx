@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, Ref } from "react";
-import { Button, Grid, Input, Table, theme as antdTheme } from "antd";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type Ref,
+} from "react";
+import { Button, Checkbox, Grid, Input, Table, theme as antdTheme } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { Link2, Star } from "lucide-react";
 import { useLang, useT } from "../../lib/i18n";
@@ -15,11 +24,13 @@ import KindMarks from "./KindMarks";
 import Thumb from "./Thumb";
 
 
-// Click is what the page needs from a mouse event: which modifiers were held.
+// Click is what the page needs from a mouse or touch event: which modifiers were held, and whether a finger made it.
+// A finger's tap opens the item; a mouse's click selects it, and its double click opens it (the page decides).
 export interface Click {
   shiftKey: boolean;
   ctrlKey: boolean;
   metaKey: boolean;
+  touch?: boolean;
 }
 
 export interface ListingProps {
@@ -34,7 +45,8 @@ export interface ListingProps {
   renameError: string | null;
   label: string;
   onRowClick: (index: number, e: Click) => void;
-  onRowDoubleClick: (index: number) => void;
+  // onRowDoubleClick gets the ID of the item the pointer was on, so a re-sort between the clicks cannot change it.
+  onRowDoubleClick: (id: string) => void;
   onSelectAll: (checked: boolean) => void;
   onSort: (key: SortKey) => void;
   onRenameChange: (value: string) => void;
@@ -62,6 +74,10 @@ export default function Listing(p: ListingProps) {
   // Date and role columns hide below the md breakpoint (768px), as the Svelte listing did below 767px.
   const screens = Grid.useBreakpoint();
   const narrow = !screens.md;
+  const coarse = useCoarsePointer();
+  // The kind of pointer that last went down on a row. Its click is the one that follows, so a finger's tap is known
+  // to be a tap and a mouse's click is known to be a click, each by its own event.
+  const pointer = useRef<string>("mouse");
 
   // rowAttrs gives a row or a tile its role, name, selection state, roving focus and handlers. Both views use
   // it, so the keyboard model is the same in each.
@@ -71,12 +87,24 @@ export default function Listing(p: ListingProps) {
     "aria-selected": p.selected.has(n.id),
     tabIndex: p.focusID === n.id ? 0 : -1,
     "data-id": n.id,
+    onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
+      pointer.current = e.pointerType;
+    },
     onClick: (e: ReactMouseEvent<HTMLElement>) => {
       // The checkbox column has its own handler, so a click on it must not also select the row.
       if ((e.target as HTMLElement).closest(".ant-table-selection-column")) return;
-      p.onRowClick(i, e);
+      // A click in the row's own rename field places the cursor there; the item is not opened by it.
+      if (p.renameID === n.id) return;
+      p.onRowClick(i, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, touch: pointer.current === "touch" });
     },
-    onDoubleClick: () => p.onRowDoubleClick(i),
+    onDoubleClick: (e: ReactMouseEvent<HTMLElement>) => {
+      // A finger's double tap has opened the item already, on its first tap. A double click in the rename field selects
+      // a word in it, and does not open the item.
+      if (pointer.current === "touch" || p.renameID === n.id) return;
+      // The item is the one the event reached: its ID is read from the row, not from its place in the list.
+      const id = e.currentTarget.dataset.id;
+      if (id) p.onRowDoubleClick(id);
+    },
     // A key from the row's checkbox belongs to the checkbox, except the arrows that move the selection.
     onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => {
       if ((e.target as HTMLElement).closest(".ant-table-selection-column") && !e.key.startsWith("Arrow")) return;
@@ -285,6 +313,7 @@ export default function Listing(p: ListingProps) {
             {...rowAttrs(n, i)}
             role="option"
             style={{
+              position: "relative",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -299,6 +328,18 @@ export default function Listing(p: ListingProps) {
               userSelect: "none",
             }}
           >
+            {/* On a finger's screen a tile has no click that selects it, so its checkbox does. A list row has one already. */}
+            {coarse && (
+              // The wrapper stops the click: the checkbox toggles the tile, and the tile does not also open.
+              <span onClick={(e) => e.stopPropagation()} style={{ position: "absolute", insetBlockStart: 6, insetInlineStart: 6 }}>
+                <Checkbox
+                  checked={isSel}
+                  tabIndex={-1}
+                  aria-label={t("files.select.item", { name: n.name })}
+                  onChange={() => p.onRowClick(i, { shiftKey: false, ctrlKey: true, metaKey: false })}
+                />
+              </span>
+            )}
             {thumbable(n) ? (
               <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} fallback={<Icon kind={kindOf(n)} size={40} colour={n.color} />} />
             ) : (
@@ -316,6 +357,21 @@ export default function Listing(p: ListingProps) {
       })}
     </div>
   );
+}
+
+// useCoarsePointer says whether the main pointer is a finger, so a screen without a mouse gets the checkboxes a mouse
+// does without. It follows the media query, not the width of the window: a narrow desktop window keeps its mouse.
+function useCoarsePointer(): boolean {
+  const supported = typeof window !== "undefined" && typeof window.matchMedia === "function";
+  const [coarse, setCoarse] = useState(() => (supported ? window.matchMedia("(pointer: coarse)").matches : false));
+  useEffect(() => {
+    if (!supported) return;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const onChange = () => setCoarse(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [supported]);
+  return coarse;
 }
 
 // thumbable is an image the server can thumbnail: the server sends has_thumbnail on those, and on no other item.

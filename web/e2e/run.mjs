@@ -22,6 +22,7 @@ import * as p3 from './p3.mjs';
 import * as p4 from './p4.mjs';
 import * as p5 from './p5.mjs';
 import * as s4a from './s4a.mjs';
+import { mediaChecks } from './media.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -76,6 +77,11 @@ const EXPECTED = [
   {
     name: 'switch prompt',
     matches: (e) => e.source === 'network' && /\/api\/v1\/auth\/sign-in-link$/.test(e.url ?? '') && /status of 409\b/.test(e.text ?? ''),
+  },
+  // A signed link after its end: the browser's next range for it is refused, and the viewer asks for a new link (mediaChecks).
+  {
+    name: 'link ended',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/links\//.test(e.url ?? '') && /status of 410\b/.test(e.text ?? ''),
   },
   // The member's upload over its limit is refused by the server.
   {
@@ -695,6 +701,7 @@ async function main() {
     await fileBrowserChecks(page, { base, dir, teamA, teamB });
     await fileBrowserExtraChecks(page, { dir, teamA });
     await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
+    await mediaChecks(h, { page, base, accountKey, teamA });
     const home = await owner.homeChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
     await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
 

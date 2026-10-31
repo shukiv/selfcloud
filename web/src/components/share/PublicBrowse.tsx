@@ -7,6 +7,15 @@ import { ApiError } from "../../lib/apiError";
 import type { Node } from "../../lib/files/types";
 import { visitorChildren, visitorLink, visitorNode } from "../../lib/sharing/api";
 import { crumbsTo, previewKind, type NodeRef } from "../../lib/sharing/anyone";
+import { kindOf } from "../../lib/files/kind";
+import MediaPlayer, { type Link, type MediaFailure } from "../files/MediaPlayer";
+import { PlayMark } from "../files/KindMarks";
+
+// asLink reads a visitor link's answer: its address. The server's end time is not read: a player decides from what it
+// sees, not from a clock (lib/files/media.ts).
+function asLink(got: { url: string }): Link {
+  return { url: got.url };
+}
 
 // PublicBrowse shows what an anyone link opens: a folder, with its children and a path that stops at the link's root,
 // or a file with a preview and a Download button. The bearer credential is held by the page and passed in; this
@@ -31,7 +40,8 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
   const [current, setCurrent] = useState<Node | null>(null);
   const [trail, setTrail] = useState<NodeRef[]>([]);
   const [children, setChildren] = useState<Node[]>([]);
-  const [previewURL, setPreviewURL] = useState<string | null>(null);
+  const [previewLink, setPreviewLink] = useState<Link | null>(null);
+  const [playProblem, setPlayProblem] = useState(false);
   const [downloadURL, setDownloadURL] = useState<string | null>(null);
   const [downloadRestricted, setDownloadRestricted] = useState(false);
   const [busy, setBusy] = useState(true);
@@ -60,11 +70,11 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
 
   // prepareFile asks for a preview link, when the type has one, and a download link, which the server refuses when
   // no-download applies. Neither is asked for again until the file is opened again.
-  const prepareFile = async (node: Node): Promise<{ preview: string | null; download: string | null; restricted: boolean }> => {
-    let preview: string | null = null;
+  const prepareFile = async (node: Node): Promise<{ preview: Link | null; download: string | null; restricted: boolean }> => {
+    let preview: Link | null = null;
     if (previewKind(node.mime_type) !== null) {
       try {
-        preview = (await visitorLink(tokenRef.current, node.id, "inline")).url;
+        preview = asLink(await visitorLink(tokenRef.current, node.id, "inline"));
       } catch (err) {
         if (err instanceof ApiError && (err.status === 401 || err.status === 404)) throw err;
         preview = null;
@@ -92,7 +102,8 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
       const node = cache.current.get(id) ?? (await visitorNode(tokenRef.current, id));
       cache.current.set(id, node);
       if (!live()) return;
-      setPreviewURL(null);
+      setPreviewLink(null);
+      setPlayProblem(false);
       setDownloadURL(null);
       setDownloadRestricted(false);
       if (node.kind === "dir") {
@@ -104,7 +115,7 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
         setChildren([]);
         const got = await prepareFile(node);
         if (!live()) return;
-        setPreviewURL(got.preview);
+        setPreviewLink(got.preview);
         setDownloadURL(got.download);
         setDownloadRestricted(got.restricted);
       }
@@ -175,23 +186,32 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
                     <span style={{ color: "var(--ant-color-text-secondary)" }}>
                       {child.kind === "dir" ? t("share.open.folder") : t("share.open.file")}
                     </span>
+                    {(kindOf(child) === "video" || kindOf(child) === "audio") && <PlayMark kind={kindOf(child) as "video" | "audio"} />}
                   </li>
                 ))}
               </ul>
             )
           ) : (
             <>
-              {previewURL !== null && kind === "image" && (
-                <img className="public-preview" src={previewURL} alt={current.name} style={{ maxWidth: "100%" }} />
+              {previewLink !== null && kind === "image" && (
+                <img className="public-preview" src={previewLink.url} alt={current.name} style={{ maxWidth: "100%" }} />
               )}
-              {previewURL !== null && kind === "video" && (
-                <video className="public-preview" controls src={previewURL} aria-label={current.name} style={{ maxWidth: "100%" }} />
+              {previewLink !== null && (kind === "video" || kind === "audio") && (
+                // A link that ends is renewed by the same visitor credential; a refused one is the page's answer, as above.
+                <MediaPlayer
+                  key={current.id}
+                  kind={kind}
+                  name={current.name}
+                  link={previewLink}
+                  mint={() => visitorLink(tokenRef.current, current.id, "inline").then(asLink)}
+                  onFail={(f: MediaFailure) => (f.kind === "unsupported" ? setPlayProblem(true) : lost(f.err))}
+                />
               )}
-              {previewURL !== null && kind === "audio" && <audio controls src={previewURL} />}
-              {previewURL !== null && kind === "pdf" && (
-                <iframe className="public-preview" title={current.name} src={previewURL} style={{ width: "100%", minHeight: 480, border: 0 }} />
+              {playProblem && <Alert type="warning" showIcon role="alert" message={t("files.preview.unsupported")} style={{ marginTop: 12 }} />}
+              {previewLink !== null && kind === "pdf" && (
+                <iframe className="public-preview" title={current.name} src={previewLink.url} style={{ width: "100%", minHeight: 480, border: 0 }} />
               )}
-              {(previewURL === null || kind === null) && (
+              {(previewLink === null || kind === null) && (
                 <p style={{ color: "var(--ant-color-text-secondary)" }}>{t("share.open.noPreview")}</p>
               )}
 

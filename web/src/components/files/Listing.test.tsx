@@ -181,3 +181,82 @@ describe("the selection cell outside its checkbox", () => {
     expect(onRowClick).not.toHaveBeenCalled();
   });
 });
+
+// A double click opens the item the pointer was on: its ID is read from the row the event reached, so a list that
+// has moved between the clicks cannot open a neighbour.
+describe("a double click names the item it reached", () => {
+  it("passes the row's ID, not its place, in both views", () => {
+    const onRowDoubleClick = vi.fn();
+    const { unmount } = render(<Listing {...props({ onRowDoubleClick })} />);
+    fireEvent.doubleClick(rowOf("n2"));
+    expect(onRowDoubleClick).toHaveBeenLastCalledWith("n2");
+    unmount();
+    render(<Listing {...props({ view: "grid", onRowDoubleClick })} />);
+    fireEvent.doubleClick(rowOf("n1"));
+    expect(onRowDoubleClick).toHaveBeenLastCalledWith("n1");
+  });
+});
+
+// A finger's tap is a click the page reads as an open; a mouse's click is a selection. The kind of pointer is read from
+// its own pointerdown, so a touch laptop follows each interaction.
+describe("touch and mouse", () => {
+  it("marks a click that a finger made, and not one a mouse made", () => {
+    const onRowClick = vi.fn<(index: number, e: Click) => void>();
+    render(<Listing {...props({ onRowClick })} />);
+    fireEvent.pointerDown(rowOf("n2"), { pointerType: "touch" });
+    fireEvent.click(rowOf("n2"));
+    expect(onRowClick).toHaveBeenLastCalledWith(1, expect.objectContaining({ touch: true }));
+    fireEvent.pointerDown(rowOf("n1"), { pointerType: "mouse" });
+    fireEvent.click(rowOf("n1"));
+    expect(onRowClick).toHaveBeenLastCalledWith(0, expect.objectContaining({ touch: false }));
+  });
+
+  it("does not open again on a finger's double tap, which opened the item on its first tap", () => {
+    const onRowDoubleClick = vi.fn();
+    render(<Listing {...props({ onRowDoubleClick })} />);
+    fireEvent.pointerDown(rowOf("n1"), { pointerType: "touch" });
+    fireEvent.doubleClick(rowOf("n1"));
+    expect(onRowDoubleClick).not.toHaveBeenCalled();
+  });
+
+  it("gives a tile a checkbox when the main pointer is a finger, and none otherwise", () => {
+    const stub = (coarse: boolean) =>
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: coarse && query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
+    stub(true);
+    const onRowClick = vi.fn<(index: number, e: Click) => void>();
+    const { unmount } = render(<Listing {...props({ view: "grid", onRowClick })} />);
+    const box = screen.getByRole("checkbox", { name: "Select plan.txt" });
+    fireEvent.click(box);
+    expect(onRowClick).toHaveBeenCalledTimes(1);
+    expect(onRowClick).toHaveBeenLastCalledWith(0, expect.objectContaining({ ctrlKey: true }));
+    // The checkbox is not a tab stop.
+    expect(box.getAttribute("tabindex")).toBe("-1");
+    unmount();
+    stub(false);
+    render(<Listing {...props({ view: "grid" })} />);
+    expect(screen.queryByRole("checkbox", { name: "Select plan.txt" })).toBeNull();
+    vi.unstubAllGlobals();
+  });
+});
+
+// A rename field sits inside its row or tile. A tap or a double click that places the cursor in it is not a tap or a
+// double click on the item, so it neither opens the item nor loses the rename.
+describe("a rename field inside its row or tile", () => {
+  for (const view of ["list", "grid"] as const) {
+    it(`a tap in the field does not open the item (${view})`, () => {
+      const onRowClick = vi.fn<(index: number, e: Click) => void>();
+      render(<Listing {...props({ view, onRowClick, renameID: "n1", renameValue: "plan 2.txt" })} />);
+      const input = screen.getByRole("textbox", { name: "New name" });
+      fireEvent.pointerDown(input, { pointerType: "touch" });
+      fireEvent.click(input);
+      expect(onRowClick).not.toHaveBeenCalled();
+    });
+
+    it(`a double click in the field does not open the item (${view})`, () => {
+      const onRowDoubleClick = vi.fn();
+      render(<Listing {...props({ view, onRowDoubleClick, renameID: "n1", renameValue: "plan 2.txt" })} />);
+      fireEvent.doubleClick(screen.getByRole("textbox", { name: "New name" }));
+      expect(onRowDoubleClick).not.toHaveBeenCalled();
+    });
+  }
+});

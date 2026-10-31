@@ -148,6 +148,8 @@
   "files.zip.skipped_few": "{count} éléments ont été laissés de côté. Vous ne pouvez pas les télécharger.",
   "files.zip.skipped_many": "{count} éléments ont été laissés de côté. Vous ne pouvez pas les télécharger.",
   "files.act.preview": "Aperçu",
+  "files.act.play": "Lire",
+  "files.act.view": "Afficher",
   "files.act.details": "Détails",
   "files.act.versions": "Versions",
   "files.act.rename": "Renommer",
@@ -155,6 +157,7 @@
   "files.act.copy": "Copier vers…",
   "files.act.delete": "Supprimer",
   "files.act.clear": "Désélectionner",
+  "files.act.more": "Plus",
   "files.rename.label": "Nouveau nom",
   "files.name.empty": "Saisissez un nom.",
   "files.name.slash": "Un nom ne peut pas contenir / ni \\.",
@@ -1120,5 +1123,9 @@
   "labels.choose": "Choisir",
   "labels.valueFor": "Valeur de {name}",
   "labels.fieldFor": "Champ {name}",
-  "files.labels.heading": "Étiquettes"
+  "files.labels.heading": "Étiquettes",
+  "files.mark.video": "Vidéo",
+  "files.mark.audio": "Audio",
+  "files.preview.unsupported": "Ce navigateur ne peut pas lire ce format.",
+  "files.select.item": "Sélectionner {name}"
 }
