@@ -355,6 +355,10 @@ func New(opts Options) (*Server, error) {
 			"tokens.mint": newLimiter(60),
 			// Opening an editor, per person: each one makes a credential and a session row.
 			"office.open": newLimiter(60),
+			// Comment writes, per user (a token counts as its user): 30 a minute (decision 39).
+			"comment.write": newLimiter(30),
+			// People suggestions for a mention, per user, as directory searches are (decision 39).
+			"people.search": newLimiter(60),
 			// Opening a share link is a secret lookup, so it is limited per client address.
 			"share.open.ip":   newLimiter(30),
 			"share.open.user": newLimiter(60),
@@ -553,6 +557,12 @@ func (s *Server) routes() []route {
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/star", handle: s.handleStarNode, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/star", handle: s.handleUnstarNode, auth: true},
 		{method: http.MethodGet, path: "/api/v1/starred", handle: s.handleListStarred, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/comments", handle: s.handleListComments, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/comments", handle: s.handleCreateComment, auth: true},
+		{method: http.MethodPatch, path: "/api/v1/comments/{cmt}", handle: s.handleEditComment, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/comments/{cmt}", handle: s.handleDeleteComment, auth: true},
+		{method: http.MethodPost, path: "/api/v1/comments/{cmt}/resolve", handle: s.handleResolveComment, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/people", handle: s.handleListPeople, auth: true},
 		{method: http.MethodGet, path: "/api/v1/recent", handle: s.handleListRecent, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/recent", handle: s.handleClearRecent, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/recent/{nod}", handle: s.handleRemoveRecent, auth: true},

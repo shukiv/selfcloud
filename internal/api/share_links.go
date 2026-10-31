@@ -70,6 +70,9 @@ type shareLinkCreated struct {
 type sharingPolicyJSON struct {
 	PublicLinks bool `json:"public_links"`
 	AnyoneLinks int  `json:"anyone_links"`
+	// Comments is the account's comment switch (decision 39). Off closes every comment route for the account, and keeps
+	// the comments. It sits here with the other account switches a manager sets.
+	Comments bool `json:"comments"`
 }
 
 // toShareLinkJSON shows a stored link. node is the node the listing is about; sharer says whether the
@@ -1008,26 +1011,32 @@ func (s *Server) handleGetSharingPolicy(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return err
 	}
+	comments, err := s.store.CommentsOn(r.Context(), acc.ID)
+	if err != nil {
+		return err
+	}
 	n, err := s.store.CountAnyoneLinks(r.Context(), acc.ID, time.Now())
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: on, AnyoneLinks: n})
+	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: on, AnyoneLinks: n, Comments: comments})
 	return nil
 }
 
-// handleUpdateSharingPolicy sets the account's switch for links that anyone can open. Turning it off
-// pauses those links at once; turning it back on revives them. Only the account's owner or key may
-// change it, as for any account setting.
+// handleUpdateSharingPolicy sets the account's switches: the one for links that anyone can open, and the one for
+// comments (decision 39). Either may be given alone. Turning the links switch off pauses those links at once; turning it
+// back on revives them. Turning comments off keeps every comment. Only the account's owner or key may change them, as
+// for any account setting.
 func (s *Server) handleUpdateSharingPolicy(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		PublicLinks *bool `json:"public_links"`
+		Comments    *bool `json:"comments"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	if in.PublicLinks == nil {
-		return apierr.New(apierr.InvalidRequest, "public_links must be true or false")
+	if in.PublicLinks == nil && in.Comments == nil {
+		return apierr.New(apierr.InvalidRequest, "public_links or comments must be true or false")
 	}
 	acc, err := s.managedAccount(r)
 	if err != nil {
@@ -1036,19 +1045,39 @@ func (s *Server) handleUpdateSharingPolicy(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		if err := tx.SetSharingPolicy(ctx, acc.ID, *in.PublicLinks, store.Now()); err != nil {
-			return err
+		if in.PublicLinks != nil {
+			if err := tx.SetSharingPolicy(ctx, acc.ID, *in.PublicLinks, store.Now()); err != nil {
+				return err
+			}
+			if err := tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "account.sharing_policy", acc.ID,
+				map[string]any{"public_links": *in.PublicLinks})); err != nil {
+				return err
+			}
 		}
-		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "account.sharing_policy", acc.ID,
-			map[string]any{"public_links": *in.PublicLinks}))
+		if in.Comments != nil {
+			if err := tx.SetCommentsOn(ctx, acc.ID, *in.Comments, store.Now()); err != nil {
+				return err
+			}
+			return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "account.comments_policy", acc.ID,
+				map[string]any{"comments": *in.Comments}))
+		}
+		return nil
 	})
 	if err != nil {
 		return err
 	}
-	n, err := s.store.CountAnyoneLinks(r.Context(), acc.ID, time.Now())
+	on, err := s.store.SharingPolicy(ctx, acc.ID)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: *in.PublicLinks, AnyoneLinks: n})
+	comments, err := s.store.CommentsOn(ctx, acc.ID)
+	if err != nil {
+		return err
+	}
+	n, err := s.store.CountAnyoneLinks(ctx, acc.ID, time.Now())
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, sharingPolicyJSON{PublicLinks: on, AnyoneLinks: n, Comments: comments})
 	return nil
 }

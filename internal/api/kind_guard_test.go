@@ -60,6 +60,10 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/store/sharing.go":        2,
 	"internal/store/storage.go":        1,
 	"internal/store/usage.go":          2,
+	// Slice r1 added two in comments.go, both the same refusal: commentNode and the create write refuse a shortcut as
+	// not_found, since a shortcut has no comments of its own. That is a refusal on a kind the walk already reached, not
+	// an access decision: nodeAccessWith runs first, and it already refuses a shortcut to a link visitor. Decision 39.
+	"internal/api/comments.go": 2,
 	// Chunked copy (decision 34). copy_jobs.go: a batch's copy of a file (counted in the copies' file total, which the
 	// publish reports), the file selectors of the staged totals and the per-file events, and the non-folder selectors of
 	// the staged item count and the per-file events (shortcuts included, as the one-write copy reports them). None of

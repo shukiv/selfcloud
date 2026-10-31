@@ -719,10 +719,27 @@ func cleanLabelText(s string) (string, error) {
 	if utf8.RuneCountInString(s) > maxLabelTextChars {
 		return "", apierr.Newf(apierr.InvalidRequest, "a text value may be at most %d characters", maxLabelTextChars)
 	}
-	for _, r := range s {
-		if unicode.IsControl(r) || isBidiControl(r) {
-			return "", apierr.New(apierr.InvalidRequest, "the text may not hold a control or bidi control character")
-		}
+	if err := checkTextChars(s, false); err != nil {
+		return "", err
 	}
 	return s, nil
+}
+
+// arabicLetterMark is U+061C. It is a bidi control that isBidiControl does not list, so the text rule adds it.
+const arabicLetterMark = 0x061C
+
+// checkTextChars refuses a text that holds a control, a bidi control, or U+061C. It is the rule for every text a person
+// types and another person reads (decision 29, decision 39). A bidi control would change how the text reads, so it is
+// refused rather than removed. A line feed is a control character, and a label value is one line, so it is refused there.
+// A comment body is discussion, so multiline lets a line feed through; the caller has already made every break an LF.
+func checkTextChars(s string, multiline bool) error {
+	for _, r := range s {
+		if multiline && r == '\n' {
+			continue
+		}
+		if unicode.IsControl(r) || isBidiControl(r) || r == arabicLetterMark {
+			return apierr.New(apierr.InvalidRequest, "the text may not hold a control or bidi control character")
+		}
+	}
+	return nil
 }

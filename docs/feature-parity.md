@@ -123,8 +123,8 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Comments on a file, replies, resolve | New (r): file-level threads. Comments inside a document stay in Collabora |
-| @mentions, assign a comment | New (r) |
+| Comments on a file, replies, resolve | Built (r1): file and folder threads, one reply level, edit, delete and resolve. Plain text, 2,000 characters and 50 lines at most. Comments inside a document stay in Collabora. The account can turn comments off. The web interface is r7 (not built) |
+| @mentions, assign a comment | Mentions built (r2): a person named in a comment must reach the node; a people list suggests them. Nothing is sent yet (r3). Assignment is deferred (decision 39) |
 | Activity per file | New (r) |
 | Notifications (email and in-app) for shares, mentions, comments and requests | New (r) |
 | Who viewed a file (admin-controlled) | New (r): off by default, an account setting |
@@ -179,7 +179,7 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Files, permissions, revisions, comments and team-space APIs | Have for files (e). Permissions and team spaces (n1, n2) and revisions and trash (m) are built. Comments are New (r) |
+| Files, permissions, revisions, comments and team-space APIs | Have for files (e). Permissions and team spaces (n1, n2) and revisions and trash (m) are built. Comments are built (r1) |
 | Changes feed (what changed since a token) | New (t): for sync clients and API clients |
 | Push notifications | Built (j1 to j4): webhook endpoints, events, the delivery worker and quota warnings (decisions 26 to 30) |
 | Export to other formats | Built (s3, decision 37): `POST /nodes/{nod}/exports`, through Collabora's conversion. Not usable in production until a live run |
@@ -205,7 +205,7 @@ come **before** k.
 | p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts: p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels (all built); p5 the OpenAPI file, the design record, these rows, the smoke test and the security review (decision 36) | Medium |
 | pg | PostgreSQL as an option for the metadata store (design decision 7), before q | Medium |
 | q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |
-| r | Comments, mentions, activity pane, notifications, who-viewed | Medium |
+| r | Comments and mentions built (r1, r2, decision 39); activity pane, notifications, who-viewed planned (r3 to r7) | Medium |
 | s | Thumbnails (built in part, s1: images from the API), document previews, conversions and export, zip download | Medium |
 | l | WOPI host for Collabora (built in parts l1 to l3; the interface button, Rename (l4) and the README example are not built) | Medium |
 | j | Webhooks (built, j1 to j4) | Small |

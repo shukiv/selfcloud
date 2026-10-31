@@ -38,6 +38,8 @@ tags:
       Roles on any file or folder, inherited downward. A user or a group holds a role on a node,
       and reaches the node and everything below it at that role or a higher one. Inheritance only
       adds: a permission deeper down never lowers the role above it.
+  - name: Comments
+    description: Comments and replies on a file or a folder, mentions, and the people list for them (decision 39).
   - name: Sharing
     description: |
       Share links. A link gives access to a file or a folder without a permission row: an organisation
@@ -3295,7 +3297,9 @@ paths:
       summary: Set the account's sharing policy
       description: |
         Turning `public_links` off pauses every link that anyone can open, at once; turning it on
-        revives them. The account's owner or key may change it. Audited as `account.sharing_policy`.
+        revives them. Turning `comments` off closes every comment route for the account and keeps the comments;
+        turning it on shows them again. The account's owner or key may change either. Audited as
+        `account.sharing_policy` and `account.comments_policy`.
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -3493,6 +3497,204 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StarredList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/comments:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Comments]
+      operationId: listComments
+      summary: List the comments of a file or a folder
+      description: |
+        The top-level comments of the node, newest first, each with its first replies (oldest first, up to 50) and
+        its reply count. `replies_more` is set when more replies exist: list them with `?parent=` on this route.
+        With `?parent=cmt_...` the answer is the replies of that top-level comment, oldest first.
+
+        A viewer or any role above it reads comments. A delegated token reads them inside its folders, as it reads
+        the node, and an account key reads them too. A link that anyone can open does not reach this route.
+        A shortcut has no comments and answers `404`. When the account's comments are off, every answer is `403`
+        with `reason: comments_off`.
+
+        A comment is plain text. Its body is returned as the text the author typed, with no markup, and a client
+        must show it as text, never as HTML. A body is at most 2,000 characters and 50 lines. A line break is kept
+        (CR and CRLF become LF); any other control character, a bidi control character and U+061C are refused when
+        the comment is written.
+
+        A name is a display name. A comment carries no user ID. `mine` is set on the caller's own comment.
+        `author_gone` is set when the author's user was deleted: show "former member", translated, and no name.
+        A mention names a person who reached the node when the comment was written, and the list answers with the
+        name only.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+        - name: parent
+          in: query
+          required: false
+          description: A top-level comment of this node. Lists its replies, instead of the top-level comments.
+          schema: { type: string, example: "cmt_7k2m9q..." }
+      responses:
+        "200":
+          description: One page of comments.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommentList" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Comments]
+      operationId: createComment
+      summary: Comment on a file or a folder, or reply to a comment
+      description: |
+        Adds a comment, or a reply when `parent_id` names a top-level comment of this node. The caller must be a
+        signed-in user, or a delegated token with write, which acts as its user. An account key and a read-only
+        token are refused. The caller needs the commenter role or above on the node; the role is checked again
+        inside the write, so a permission removed during the request stops it.
+
+        The body is plain text of 1 to 2,000 characters, with no control or bidi control character. The write is
+        refused with `conflict` and `reason: limit` past 5,000 live comments on the node, and with `rate_limited`
+        past 30 writes a minute per user.
+
+        `mentions` are references from the people list (`/people`), at most 10, each once. A reference names the
+        person only for this node. A reference that does not open for this node is `invalid_request`. A reference
+        to a person who does not reach the node, is not active, or does not exist is dropped without an error:
+        the comment is saved and the answer is the same as for any other reference. A reply to a reply is
+        `invalid_request`. Nothing is sent to anyone for a comment in this release.
+
+        Audited as `comment.create`, with the comment's ID, whether it is a reply, and the number of references
+        sent. No text and no name is audited.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommentCreate" }
+      responses:
+        "201":
+          description: The comment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/comments/{cmt}:
+    parameters:
+      - name: cmt
+        in: path
+        required: true
+        schema: { type: string, example: "cmt_7k2m9q..." }
+    patch:
+      tags: [Comments]
+      operationId: editComment
+      summary: Edit the caller's own comment
+      description: |
+        Changes the body of a comment the signed-in user wrote, and sets `edited_at`. Only the author may edit, and
+        only as a commenter or above on the node. A token and an account key are refused. An edit does not notify
+        anyone, and it does not change who is named. Audited as `comment.edit`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommentEdit" }
+      responses:
+        "200":
+          description: The comment as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Comments]
+      operationId: deleteComment
+      summary: Delete a comment
+      description: |
+        The author, or a manager of the node, deletes a comment. A signed-in user does it; a token and an account key
+        are refused. A comment with replies stays as a tombstone, with no text and no author, so the replies keep their
+        thread; the tombstone goes when its last reply is deleted. Any other comment is removed. Audited as
+        `comment.delete`, with whether a tombstone was left.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: The comment is deleted. }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/comments/{cmt}/resolve:
+    parameters:
+      - name: cmt
+        in: path
+        required: true
+        schema: { type: string, example: "cmt_7k2m9q..." }
+    post:
+      tags: [Comments]
+      operationId: resolveComment
+      summary: Resolve or reopen a top-level comment
+      description: |
+        Any commenter or above on the node may resolve a top-level comment, or reopen it. A reply cannot be resolved.
+        A signed-in user does it; a token and an account key are refused. The resolver is recorded. Audited as
+        `comment.resolve`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommentResolve" }
+      responses:
+        "200":
+          description: The comment as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/people:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Comments]
+      operationId: listPeopleToMention
+      summary: Suggest people to name in a comment on a node
+      description: |
+        Up to five active users of the caller's account whose display name contains `q`, and who reach the node,
+        each with a reference to name them in a comment on this node (`mentions` of the comment). `q` is 2 to 100
+        characters. The list is rate limited to 60 a minute per user. Only a signed-in user may ask: a token and an
+        account key are refused. A caller who does not reach the node gets `404`; a viewer, who reaches it but may not
+        comment, gets `403`. A user who does not reach the node is never listed, whatever the name.
+
+        The answer carries references, not user IDs. A reference is good for this node only. The list checks at most
+        50 matching users for reach, so a name that many users share may show fewer than five suggestions.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 100 }
+      responses:
+        "200":
+          description: The suggestions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PersonList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/recent:
     get:
@@ -5038,9 +5240,95 @@ components:
           type: string
           description: The address that opens the link, with the secret in its fragment. Shown here only.
 
+    Comment:
+      type: object
+      description: |
+        One comment. Its body is plain text: a client shows it as text, never as HTML. A tombstone (`deleted: true`) has
+        no body, author or mentions.
+      required: [id, created_at, mentions, resolved]
+      properties:
+        id: { type: string, example: "cmt_7k2m9q..." }
+        parent_id: { type: string, description: The top-level comment this replies to. Absent on a top-level comment. }
+        deleted: { type: boolean }
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        mine: { type: boolean, description: Set on the caller's own comment. }
+        author_name: { type: string, description: The author's display name. Absent when the user has none. }
+        author_gone: { type: boolean, description: "The author's user was deleted: show \"former member\", translated." }
+        created_at: { type: string, format: date-time }
+        edited_at: { type: string, format: date-time }
+        mentions:
+          type: array
+          description: The people the comment names, who reached the node when it was written. Names only.
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: { type: string }
+        resolved: { type: boolean, description: "Set on a top-level comment. Always false on a reply." }
+        resolved_at: { type: string, format: date-time }
+        resolved_by_name: { type: string }
+        resolved_by_gone: { type: boolean }
+        reply_count: { type: integer, minimum: 0 }
+        replies:
+          type: array
+          description: The first replies of a top-level comment, oldest first. Absent on a reply.
+          items: { $ref: "#/components/schemas/Comment" }
+        replies_more: { type: boolean, description: "More replies exist; list them with ?parent= on the comments route." }
+
+    CommentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Comment" }
+        next_cursor: { type: string }
+
+    CommentCreate:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties:
+        body: { type: string, minLength: 1, maxLength: 2000, description: Plain text. No control or bidi control character. }
+        parent_id: { type: string, description: A top-level comment of the node, to reply to. }
+        mentions:
+          type: array
+          maxItems: 10
+          items: { type: string, description: A reference from the people list for this node. }
+
+    CommentEdit:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties:
+        body: { type: string, minLength: 1, maxLength: 2000, description: Plain text. No control or bidi control character. }
+
+    CommentResolve:
+      type: object
+      required: [resolved]
+      additionalProperties: false
+      properties:
+        resolved: { type: boolean }
+
+    Person:
+      type: object
+      required: [ref, name]
+      properties:
+        ref: { type: string, description: "Names this person in a comment on this node only. Not a user ID." }
+        name: { type: string }
+
+    PersonList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/Person" }
+
     SharingPolicy:
       type: object
-      required: [public_links, anyone_links]
+      required: [public_links, anyone_links, comments]
       additionalProperties: false
       properties:
         public_links: { type: boolean, description: Links that anyone can open are allowed in the account. }
@@ -5048,13 +5336,15 @@ components:
           type: integer
           minimum: 0
           description: How many of the account's links that anyone can open have not ended, live or paused by public_links.
+        comments: { type: boolean, description: "Comments are on in the account. Off refuses every comment route and keeps the comments (decision 39). Default on." }
 
     SharingPolicyUpdate:
       type: object
-      required: [public_links]
+      description: Either switch may be given alone.
       additionalProperties: false
       properties:
         public_links: { type: boolean, description: Links that anyone can open are allowed in the account. }
+        comments: { type: boolean, description: Comments are on in the account. }
 
     PermissionSet:
       type: object
