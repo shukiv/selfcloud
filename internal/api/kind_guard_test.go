@@ -36,7 +36,7 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/api/access.go":           2,
 	"internal/api/access_requests.go":  1,
 	"internal/api/download.go":         1,
-	"internal/api/links.go":            2,
+	"internal/api/links.go":            3,
 	"internal/api/lock_break.go":       1,
 	"internal/api/nodes.go":            12,
 	"internal/api/office.go":           2,

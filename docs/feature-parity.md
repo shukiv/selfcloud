@@ -8,8 +8,9 @@ from Google's help centre, admin help and Drive API v3 reference.
 
 Each feature is marked:
 
-- **Have**: built in slices a to g, or in h, which is in progress.
-- **Planned**: already in slices i to l of the design.
+- **Have**: built in slices a to i.
+- **Built (x)** and **Built in part (x)**: built in slice x. A part that is not built is named in the row.
+- **Planned (x)**: in slice x, not built yet.
 - **New**: proposed here, in one of the new slices m to u at the end.
 - **Skip**: not proposed, with the reason.
 
@@ -33,9 +34,9 @@ space ("My files"), and a group can hold users.
 | Upload files and folders, with drag and drop | Have: resumable uploads (f). Built (k2): the upload tray, folder upload and drag and drop |
 | Create blank documents, spreadsheets and presentations | Planned (l): Collabora, from templates (`TemplateSource`) |
 | Create from a template gallery | New (l+): per-account template folders |
-| Maximum file size (5 TB in Drive) | Have: settable, default 100 GiB (`upload.max_file`) |
+| Maximum file size (5 TB in Drive) | Have: settable, default 100 GiB (`upload.max_file_size`) |
 | Daily upload cap per user | New (u): `upload.daily_cap_per_user` |
-| Copy-size limit, folder depth limit, items per folder | Have (copy limit); New (u): depth and per-folder caps |
+| Copy-size limit, folder depth limit, items per folder | Built in part (copy limit): `copy.max_nodes`, 50,000 by default; a copy above 10,000 nodes runs as a chunked job (decision 34). New (u): depth and per-folder caps |
 | Convert on import, export to other formats | New (s): through Collabora's conversion API |
 | Text recognition (OCR) of scans | New, optional (q): an OCR side service; off by default |
 
@@ -44,8 +45,8 @@ space ("My files"), and a group can hold users.
 | Drive feature | Selfcloud |
 |---|---|
 | Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route |
-| Preview of office documents | New (s): read-only Collabora view, or a converted PDF |
-| Thumbnails | New (s): images in-process, documents through Collabora |
+| Preview of office documents | Planned (s3): the API has the editor's view mode (l1 to l3), which the interface does not open yet; conversion to PDF is not built |
+| Thumbnails | Built in part (s1): JPEG, PNG and GIF thumbnails from the API, made in a child process. Documents (s3) and the interface (s4) are not built |
 | Details pane (size, type, owner, location, dates, who has access) | Built (k2): size, type, dates, creator, owner and your access. Location is in the breadcrumbs. Built (k3): "Share" and "Who has access" open the share dialog |
 | Activity pane per file | New (r): from the audit log, filtered by access |
 
@@ -59,9 +60,9 @@ space ("My files"), and a group can hold users.
 | Starred | Built (p2): a star per user on any node it reaches, at most 5,000; the star shows on listings and on the Starred page |
 | Recent | Built (p2): from the user's own views (signed-in users, GET only) and edits, kept 30 days and 500 per user, clearable |
 | Home page (recent, starred, recently shared, comments waiting) | Built (p2) at `/`: Recent, Starred, Recently shared, the access requests waiting, and a storage notice at 80%. Comments wait for slice r |
-| Shortcuts (one item in several places) | New (p) |
-| Folder colours, descriptions | New (p) |
-| Labels (admin-defined metadata fields) | New (p): typed fields per account (text, number, date, user, choice) |
+| Shortcuts (one item in several places) | Built (p3): a shortcut to a file or directory of the same account, made from the Add shortcut dialog or the API |
+| Folder colours, descriptions | Built (p3): twelve palette colours on folders; a description of up to 1,000 characters on any item |
+| Labels (admin-defined metadata fields) | Built (p4): typed fields per account (text, number, date, user, choice), with restricted fields. Search by label is New (q) |
 | Sorting, grid and list views, density | Built (k2): sorting by name, modified and size (within the items loaded so far), list and grid views. Density is not built |
 | Workspaces (ad hoc groups of files) | Skip: stars and shortcuts cover the need |
 | "Suggested" files chosen by machine learning | Skip: replaced by the rules-based Home page |
@@ -180,10 +181,10 @@ space ("My files"), and a group can hold users.
 |---|---|
 | Files, permissions, revisions, comments and team-space APIs | Have for files (e). Permissions and team spaces (n1, n2) and revisions and trash (m) are built. Comments are New (r) |
 | Changes feed (what changed since a token) | New (t): for sync clients and API clients |
-| Push notifications | Planned (j): webhooks |
+| Push notifications | Built (j1 to j4): webhook endpoints, events, the delivery worker and quota warnings (decisions 26 to 30) |
 | Export to other formats | New (s) |
-| Thumbnails | New (s) |
-| "Open with" office editor | Planned (l) |
+| Thumbnails | Built in part (s1): images from the API; the interface is not built (s4) |
+| "Open with" office editor | Built in part (l1 to l3): the editor routes and the WOPI host, with no button in the interface yet; Rename (l4) is not built |
 | Embeddable file picker for client applications | New (t): a small script client apps embed, over delegated tokens (i) |
 
 ## Proposed new slices
@@ -201,13 +202,13 @@ come **before** k.
 | c2 | Sign-in links for trusted clients (built, after k) | Small |
 | i2 | Delegated tokens: per-user revoke and the all-reachable scope (built, after k) | Small |
 | o | Organisation and public links, link expiry and password, drop folders, admin policy. Built in four parts: o1 to o4 | Medium |
-| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts (p1 and p2 built): p1 per-user quota and storage pages, p2 starred, recent and Home (built), p3 shortcuts, colours and descriptions, p4 labels, p5 OpenAPI, design record and security review | Medium |
+| p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts: p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels (all built); p5 the OpenAPI file, the design record, these rows, the smoke test and the security review (decision 36) | Medium |
 | pg | PostgreSQL as an option for the metadata store (design decision 7), before q | Medium |
 | q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |
 | r | Comments, mentions, activity pane, notifications, who-viewed | Medium |
-| s | Thumbnails, document previews, conversions and export, zip download | Medium |
-| l | WOPI host for Collabora (as planned) | Medium |
-| j | Webhooks (as planned) | Small |
+| s | Thumbnails (built in part, s1: images from the API), document previews, conversions and export, zip download | Medium |
+| l | WOPI host for Collabora (built in parts l1 to l3; the interface button, Rename (l4) and the README example are not built) | Medium |
+| j | Webhooks (built, j1 to j4) | Small |
 | t | Changes feed, file picker, WebDAV, installable web app | Medium |
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Medium |
 | t2 | Approvals | Small |

@@ -194,7 +194,7 @@ under its own bearer credential. The visitor names no folder and no directory: t
 the link's directory, ignores `folder`, `parent`, `on_conflict` and `mime_type`, refuses `path` and `parents`, and
 renames a clash, so the visitor learns no name. The content type comes from the file name. The visitor's
 `uploader_name` and `uploader_email` are optional unless the link asks for them; they are stored on the upload, and
-the completed file's `node.create` entry names them with `via: share_link`. The limits are the account's quota,
+the completed file's `node.create` entry names them with `via: share_link`. The limits are the account's quota, the user's own limit when the drop lands in a personal folder (p1),
 `upload.max_file_size` and the rate limits of section 8, and at most 20 unfinished uploads per link.
 
 **Storage limits (p1).** An upload's reservation, and each byte it writes, count against the folder its upload names
@@ -1066,7 +1066,7 @@ not change. It is not a webhook event (design-j-proposal section 10), and each o
 **Measured.** `BenchmarkCopyLabelValues` (`internal/store/labels_bench_test.go`) times the one statement that copies
 the values: 10,000 nodes with two values each took about 355 ms of writer hold on the shared machine (the average of
 three runs with `-benchtime 3x`). The rest of the copy is unchanged, and a copy with no labelled field in the account skips the
-statement. The copy job holds the writer for its whole copy, as before.
+statement. A copy above 10,000 nodes runs as a job in phases (decision 34): each batch is one write, and the publish is one write.
 
 **Measured publish of a staged copy, bare move (`BenchmarkCopyPublish`, `internal/store/copy_publish_bench_test.go`).**
 The benchmark builds the database the way a real copy leaves it: the source tree is in it too (its nodes and labels),
@@ -1106,22 +1106,21 @@ above is 1.3 to 3.4 s (median) at 100,000, so the checks and reads around the mo
 the real publish; the reads before the move were measured at about 0.4 s in one run, and the snapshot check added in
 the review fixes (`CopySnapshotChanged`, one join over the snapshot rows) was not timed on its own.
 
-**Measured for the default `copy.max_nodes` of 20,000 (`BenchmarkCopyHold`, `internal/store/copy_hold_bench_test.go`).**
+**Measured for the default of 20,000 before chunking (`BenchmarkCopyHold`, `internal/store/copy_hold_bench_test.go`). The default is now 50,000 (decision 34).**
 The benchmark times one `store.Write` that does what `copyTree` does: it reads the subtree, inserts every node, and,
 with labels, copies one text value per node (`CopyLabelValues`). It ran on a database under `/var/tmp`, ext4 on the
 NVMe disk (not tmpfs), on the shared machine (8 cores, load average 5 to 7). Eight runs without labels held the writer
 for 2,273 to 4,546 ms (median 2,842 ms). Eight runs with a text label on every node held it for 2,690 to 4,927 ms
 (median 4,378 ms). The label difference is not isolated: three labelled runs were taken earlier, under load near 10, and
 held 2.7 to 3.2 s; the five slower ones came later, so run order and load are mixed in with the label cost. The worst measured hold, 4.9 s, is about half the 10 s busy timeout. The owner said "comfortably
-under": we read that as a 2x margin, which this meets, but the owner decides; a 10,000 default would halve it again.
+under": we read that as a 2x margin, which this meets, but the owner decides. The default later became 50,000, with chunking (decision 34).
 The 200,000-node numbers below are kept for history.
 
 **Measured after the review (`copy.max_nodes`, 200,000 nodes, one write).** A copy of a folder of 200,000 nodes inside
 one write took 39.5 s with no label field in the account, and 75.4 s with a labelled tree (a text field on every node).
 The writer hold is above the 10 s busy timeout in both cases, so another writer waits out the copy and can fail with
 `SQLITE_BUSY`. The difference of 36 s is the label statement and the work around it, measured as two whole runs and
-not isolated; the benchmark above suggests a smaller share, so this number is to be confirmed. The copy is not redesigned
-in this slice; the owner decides whether to cap or chunk it. The move guard's subtree walk
+not isolated; the benchmark above suggests a smaller share, so this number is to be confirmed. This was measured before the copy was chunked (decision 34), so these figures are history. The move guard's subtree walk
 (`SubtreeHasRestricted`) took 161 ms over 200,000 nodes in its worst case (no restricted value, full walk). These numbers
 were taken on the shared machine with the test databases on the home disk.
 
@@ -1169,6 +1168,7 @@ were taken on the shared machine with the test databases on the home disk.
   gives up in the same request. A rename onto the name of a choice the request does not name is still `name_taken`.
 - A count of nodes holding a value (`values`) is shown to the account owner and the account key only. A member sees
   the field, not how many items use it.
+- A copy keeps restricted values for a caller that manages the source, even when it lands in another member's My files, and that member then reads them. Decision 36 records this for review.
 - The interface offers labels on files and folders in the details panel, and the Manage > Labels page for the owner.
   Search by label is slice q.
 
@@ -1256,6 +1256,12 @@ These were reviewed in the slice n1 security review and accepted for now. They h
   query (`ROW_NUMBER() OVER (PARTITION BY user_id ...)`) inside the sweep transaction; it reads every recent row once per
   sweep, at the sweep's interval (five minutes). A view whose node or user was removed before its batch is written is
   skipped, and the rest of the batch is written.
+- **Shortcuts, colours and labels (p3, p4, p5).** A shortcut's name is visible to every reader of its directory, even one
+  who cannot reach the target, and it defaults to the target's name (decision 24). A colour and a description are shared:
+  one editor's change shows for every reader. The names of restricted label fields are visible to every member of the
+  account, since every user reads the field list (section "Labels (p4)"). A copy into another member's My files keeps
+  restricted values for a caller who manages the source (decision 36).
+
 ## 9. API outline
 
 Everything below is under `/api/v1`. The full contract will be an OpenAPI 3 document at
@@ -1313,6 +1319,16 @@ Files                                      any caller, limited to what it may re
   GET    /recent                           the caller's recent nodes, latest first, with `viewed_at`, `edited_at` and `last_at` (users only) (p2)
   DELETE /recent, DELETE /recent/{nod}     clear the recent list, or remove one entry (users only; 204) (p2)
   POST   /nodes/{nod}/shortcuts            make a shortcut in a directory: {target, name?}; contributor on the directory, reach of the target; 201 (p3)
+
+Labels (p4)
+  GET    /label-fields                     the account's label fields, restricted ones included (any user of the account, the key, a token)
+  GET|POST /accounts/{acc}/label-fields    list, or define {name, type, restricted, choices[]} (owner, key); PATCH|DELETE /accounts/{acc}/label-fields/{lbf} (owner, key)
+  GET    /nodes/{nod}/labels               the values the caller may see (a restricted field only to a manager of the node)
+  PUT|DELETE /nodes/{nod}/labels/{lbf}     set {value} or clear a value (editor; manager for a restricted field)
+
+Files, other (s1, l3)
+  GET    /nodes/{nod}/thumbnail            a JPEG, PNG or GIF thumbnail of an image (s1)
+  POST   /nodes/{nod}/unlock               a manager breaks a WOPI lock (l3, decision 32)
   PATCH  /nodes/{nod}                      + color (a palette name on a directory, or null) and description (plain text, at most 1000 characters, or null or ""); editor (p3)
   GET    /nodes/{nod}, listings            a node carries color and description; a shortcut carries target {id, kind} when the caller reaches the target, and unavailable: true when it does not or the target is gone (p3)
   GET    /directory?q=&kind=user|group|all people and groups of the account, for the share dialog (k3). Any user by session, and the account key; admins and every delegated token get `forbidden`, since a token is narrowed to its folders. `q` is 2 to 100 characters after trimming; a user matches by its email local part (prefix) or its name (substring), a group by its name (substring); `%` and `_` are literal. Active users only; at most 20 entries; rate limited per caller. Each entry carries only ID, kind, name and, for a user, email
@@ -1467,11 +1483,11 @@ Messages are English. Clients translate by code; `details` gives them the number
 
 ## 10. Webhooks, office editing and the web interface
 
-These are the last slices, so this is an outline.
+This section describes the built webhook (slice j), office (slices l1 to l3) and web-interface slices.
 
 **Webhooks.** An account registers endpoints with a URL, a secret and the events it wants:
 `user.created`, `user.verified`, `file.created`, `file.updated`, `file.deleted`, `file.moved`,
-`upload.completed`, `quota.warning` (at a configurable share of the quota), `quota.exceeded`.
+`upload.completed`, `file.restored`, `quota.warning` (at a configurable share of the quota), `quota.exceeded`, and `webhook.test`.
 Events go to an outbox table in the same transaction as the change, and a worker delivers them
 at least once, retrying with exponential backoff for up to 24 hours. Payloads name the account
 and user by ID and by `external_id`. Each delivery carries an event ID for de-duplication and a
@@ -1482,21 +1498,21 @@ them, to prevent server-side request forgery.
 
 **Office editing (WOPI).** The supported editor is **Collabora Online**, which runs as its own
 server (for example the `collabora/code` image) next to Selfcloud. Selfcloud is the WOPI host;
-Collabora is the WOPI client and serves the editor. Slice l is built and tested against
-Collabora. Other WOPI clients may work but are not a goal. Selfcloud implements `CheckFileInfo`,
-`GetFile`, `PutFile`, `Lock`, `Unlock`, `RefreshLock`, `GetLock` and `RenameFile`. The editor's
+Collabora is the WOPI client and serves the editor. Slice l (l1 to l3) is built in the API. Its tests run against a fake Collabora (`internal/wopi/wopitest`),
+not the real editor. Other WOPI clients may work but are not a goal. Selfcloud implements `CheckFileInfo`,
+`GetFile`, `PutFile`, `Lock`, `Unlock`, `RefreshLock` and `GetLock`. `RenameFile` and the other
+overrides are not built (slice l4): the request is checked, then answered 501. The editor's
 discovery URL (`office.discovery_url`, Collabora's `/hosting/discovery`) comes from config; the
 discovery document tells which file types open for viewing or editing. Requests are checked
 against the editor's proof keys. Locks expire after 30 minutes, as WOPI specifies. `PutFile` is
 copy-on-write and honours the lock. The access token is a delegated token with audience `wopi`,
 bound to one file. A client calls `POST /nodes/{nod}/office` and embeds the editor URL it gets
 back. Collabora must be allowed to call Selfcloud's WOPI address (its `aliasgroup` setting), and
-the README gives a Docker Compose example of the two together.
+the README has no Compose example of the two together (decision 32).
 
 **Web interface.** Served at `/` when `ui.enabled` (on by default). Screens: sign-in, verification
-and password set-up, password reset, TOTP set-up, the file browser (upload with progress and resume,
-download, preview of images, PDF, video and text, new folder, rename, move, copy, delete, text
-editing, opening in the office editor), and owner screens for users, folders and grants. Light, dark
+and password set-up, password reset, the file browser (upload with progress and resume,
+download, preview of images, PDF, video and text, new folder, rename, move, copy, delete), and owner screens for users, folders and grants. Text editing and opening a file in the office editor are not in the interface yet. Light, dark
 and follow-the-system themes. It works at phone width. The stack is TypeScript, React 18 with Ant Design 5,
 React Router 7 and Vite (`web/`), since the flip (decision 25). Node is needed only to build it. The first
 interface was built in four Svelte parts: **k1** (foundation and the auth pages), **k2** (file browser),
@@ -1707,7 +1723,7 @@ or style: CSS is in files, and the module preload polyfill, an inline script, is
 no font files: it uses the system font stack (decision 25), so no request leaves the origin.
 
 *Branding.* Installation-wide only: `ui.brand.name` (default `Selfcloud`), `ui.brand.accent` (a colour as
-`#rrggbb`, default `#2563EB`) and `ui.brand.logo_file` (a PNG or SVG, read at start, at most 256 KiB).
+`#rrggbb`, default `#053D8E`) and `ui.brand.logo_file` (a PNG or SVG, read at start, at most 256 KiB).
 `GET /api/v1/info` returns them under `brand`, with the logo as a URL (`/brand/logo`, or null) so
 the host's file path is never sent. `/brand/logo` is served whether or not the interface is on. An SVG logo
 is sent with a sandbox policy. Per-tenant branding is not built: every tenant sees the installation's look.
@@ -1847,12 +1863,12 @@ checks the installation admin role (`isAdmin`); a page the person may not open i
 
 | Table | Main fields |
 |---|---|
-| `accounts` | id, external_id, name, status, quota_bytes, used_bytes, used_files, reserved_bytes, tokens_not_before, public_links (0 or 1; off by default), user_quota_bytes (the default limit for each user; 0 is none) |
+| `accounts` | id, external_id, name, status, quota_bytes, used_bytes, used_files, reserved_bytes, tokens_not_before, public_links (0 or 1; off by default), user_quota_bytes (the default limit for each user; 0 is none), quota_warning_percent (80 by default) and quota_watched (decision 30, migration 0024) |
 | `api_keys` | id, account_id (null for admin keys), name, prefix, hash, expires_at, revoked_at, last_used_at |
 | `users` | id, account_id, external_id, email, display_name, locale, role, status, password_hash, totp_secret (encrypted), verified_at, tokens_not_before, quota_bytes (null follows the account default; 0 is none) |
 | `verifications` | id, user_id, purpose (verify, reset), token_hash, expires_at, used_at |
 | `sessions` | id_hash, user_id, created_at, last_seen_at, expires_at, ip, user_agent |
-| `folders` | id, account_id, external_id, name, name_key, kind (`team` or `personal`), owner_user_id (personal only; at most one personal folder per user), members_only, sharing_managers_only, no_download_for_viewers, allow_links (0 or 1; team spaces only, personal folders keep them 0; read by the share-link rules), used_bytes, used_files, reserved_bytes (the folder's share of the account's counters; they sum to the account's, p1) |
+| `folders` | id, account_id, external_id, name, name_key, kind (`team` or `personal`), owner_user_id (personal only; at most one personal folder per user), members_only, sharing_managers_only, no_download_for_viewers, allow_links (0 or 1; team spaces only, personal folders keep them 0; read by the share-link rules), used_bytes, used_files, reserved_bytes (the folder's share of the account's counters; they sum to the account's, p1), staged (1 for a chunked copy's hidden staging folder, decision 34) |
 | `groups` | id, account_id, external_id, name, name_key, created_at, updated_at |
 | `group_members` | group_id, user_id, created_at |
 | `permissions` | node_id, account_id, subject_kind (`user` or `group`), subject_id, role (viewer, commenter, contributor, editor, manager), created_at, created_by, expires_at (null: no expiry) |
@@ -1863,12 +1879,17 @@ checks the installation admin role (`isAdmin`); a page the person may not open i
 | `stars` | user_id (cascade), node_id (cascade), account_id (cascade), created_at; primary key (user_id, node_id). A user's private bookmarks, at most 5000 per user (p2) |
 | `recent` | user_id (cascade), node_id (cascade), account_id (cascade), viewed_at and edited_at (either may be null, not both), last_at; primary key (user_id, node_id). A user's private last view and edit of a file, pruned by the sweep (p2) |
 | `nodes` | id, account_id, folder_id, parent_id, name, name_key (for uniqueness), kind (dir, file or shortcut), size, mime_type, blob_id, etag, created/modified at and by, owner_id, no_download, editors_can_share (0 or 1, each inherited from ancestors), trashed_at and trashed_by (set on a trash root only), trashed_name_key (the name key before the trash), color (a palette name, directories only), description (at most 1000 characters), target_id (a shortcut's target; set NULL when the target is purged) (p3) |
+| `label_fields`, `label_choices`, `node_labels` | the account's typed label fields (name, type, restricted), their choices (archived, never deleted), and one value per field on a node (p4, migration 0023) |
+| `copy_jobs`, `copy_job_nodes` | a chunked copy's phase and failure, and the staged nodes it has written (decision 34, migration 0027) |
+| `derived` | derived files such as thumbnails, with their state (s1, decision 33, migration 0028) |
 | `versions` | id (`ver_`), account_id, node_id, blob_id, size, sha256, etag, mime_type, created_at and created_by (when that content was first written), replaced_at and replaced_by, label (at most 100 characters), keep_forever (0 or 1); indexed by (node_id, created_at) |
 | `blobs` | id, account_id, size, sha256, state (`uploading`, `live`, `orphan`), delete_after, created_at |
 | `uploads` | id, account_id, target (folder_id, parent_id or dir_path, parents, name, name_key, on_conflict, mime_type), length, durable_offset, hash_state, blob_id, created_by, created_kind, expires_at; uploader_name (100), uploader_email (254) and visitor_id, for uploads through a drop link (o3) |
 | `wopi_locks` | node_id, account_id, lock_id, holder, created_at, expires_at, version_id (decisions 31 and 32; enforced from slice l3) |
 | `wopi_sessions` | id, account_id, node_id, user_id (null for an account key), role, issued_at, expires_at, revoked_at, browser_session, served_tag (decisions 31 and 32) |
-| `webhooks`, `webhook_deliveries` | endpoint (url, secret encrypted, events); outbox (event, payload, attempts, next_attempt_at, status, last_error) |
+| `webhook_endpoints`, `webhook_endpoint_events` | an endpoint (URL, encrypted secret, disabled state and its reason) and the events it takes (slice j) |
+| `webhook_events`, `webhook_deliveries`, `webhook_quota_marks` | the outbox of events, their deliveries, and the quota warning last sent (slice j, migrations 0020 to 0024) |
+| `sign_in_links` | one-use sign-in links (slice c2) |
 | `jobs` | id, account_id, kind, status, progress, error |
 | `audit_log` | id, time, account_id, actor kind and id, action, target, ip, user_agent, outcome |
 
@@ -1968,7 +1989,7 @@ Each slice ships with tests and leaves the server runnable.
 | n1 | Sharing model: roles on any node with inheritance, groups, personal "My files", team spaces and their owners, the grants routes on top of permissions, `GET /shared`, delegated-token node scope | Built |
 | n2 | Sharing v2: access expiry, no-download, the "editors can share" switch, ownership transfer, team-space restrictions and hiding, access requests, share emails | Built |
 | m | Trash, version history, keep forever, restore, undo | Built |
-| k1 | Web interface foundation: the Svelte app embedded in the binary, its serving and headers, branding, themes, the seven languages with right-to-left layout for Arabic and Hebrew, and the sign-in, verification and password pages | Built |
+| k1 | Web interface foundation: the Svelte app embedded in the binary (removed by v4b), its serving and headers, branding, themes, the seven languages with right-to-left layout for Arabic and Hebrew, and the sign-in, verification and password pages | Built |
 | k2 | File browser: lists by role, new folder, rename, move, copy, delete, download, resumable uploads, previews, Trash, versions, undo | Built |
 | k3 | Sharing interface: share dialog, Shared with me, access requests, hidden spaces, space settings, the account directory | Built |
 | k4 | Owner pages (overview, people, groups, team spaces, audit log) and installation admin pages (tenants, admins, installation facts) | Built |
@@ -1985,9 +2006,9 @@ Each slice ships with tests and leaves the server runnable.
 | v3 | React sharing interface: Shared, Requests, OpenLink, the public browse and drop pages, the share dialog and its parts, hidden spaces and space settings | Built |
 | v4a | React rest: Home, Starred, Recent, Storage, the owner pages (Manage) and the installation admin pages (Admin) | Built |
 | v4b | The flip: removes the Svelte app, moves `webui/` to `web/` (the only interface), drops the `reactui` tag and the report-only mode so the nonce policy is enforced for everyone, and drops the self-hosted fonts for the system stack | Built |
-| p3 | Shortcuts, folder colours and descriptions (decision 24). The Go part is built, with migration 0019 (the `nodes` rebuild); the pages follow in React | Built (Go part) |
+| p3 | Shortcuts, folder colours and descriptions (decision 24). Built, with migration 0019 (the `nodes` rebuild), and the React pages for shortcuts and colours | Built |
 | p4 | Labels: typed fields the owner defines, their values, copies keeping them, Manage > Labels and the details panel (decision 29). Migration 0023 | Built |
-| p5 | The OpenAPI file, the design record and a security review of slice p | Planned |
+| p5 | The OpenAPI file, the design record, the feature-parity rows, the browser smoke test of slice p, and the security review of slice p (decision 36) | Built |
 | pg | PostgreSQL as an option for the metadata store (decision 7). It lands before q, whose full-text search gains from it | Planned |
 | q | Search: filters, label search, full text and OCR within size limits | Planned |
 | r | Comments, mentions, activity pane, notifications, who-viewed | Planned |
@@ -1995,7 +2016,7 @@ Each slice ships with tests and leaves the server runnable.
 | s2 | Zip download: the stored zip job, its limits, `Range`, the routes, the `no_download` refusal (proposal s, questions 1, 7, 10) | Planned |
 | s3 | Document previews and conversions through Collabora's conversion interface (proposal s, questions 2, 8; decision 10) | Planned |
 | s4 | The web interface's thumbnails, previews and export actions, and the security review of slice s | Planned |
-| l | WOPI host for Collabora: the editor route, CheckFileInfo, GetFile and PutFile, the WOPI token, the proof keys (decision 31), and the locks with the save that honours them, the store's lock rule on every write, and a manager's break of a lock (decision 32). Rename (l4), the read-only view, the button, the README example and the break's confirmation dialog are not built | Building (l1 to l3) |
+| l | WOPI host for Collabora: the editor route, CheckFileInfo, GetFile and PutFile, the WOPI token, the proof keys (decision 31), and the locks with the save that honours them, the store's lock rule on every write, and a manager's break of a lock (decision 32). Rename (l4), the interface's button and its read-only view, the README example and the break's confirmation dialog are not built. The API's view mode (`office.go`) is built | Built (l1 to l3) |
 | j1 | Webhook endpoints: the migration, the encrypted secret (AES-256-GCM, key derived with HKDF from the links signing key, bound to its row), the endpoint routes, the show-once secret and its rotation, the isolation tests | Built |
 | j2 | Webhook events: each change writes its event in its own transaction (the audit hook and four explicit emits), the payloads and the event list including `file.restored`, the big-folder summary (1,000 files, 5,000 deliveries, 10,000 nodes: decision 27), the personal-folder rule, the outbox atomicity tests. The worker that sends them is j3 (decision 28) | Built |
 | j3 | Webhook worker: claim, lease, per-endpoint order, signing, delivery, backoff and the give-up, the disable paths, the 100,000 pending cap, the sweep, the metrics, the delivery log, retry and test routes; the SSRF dialer and `webhooks.allow_networks`, moved here from j4 (decision 28) | Built |
@@ -3321,3 +3342,11 @@ Decided on approval:
       - **L5, verified.** A `HEAD` queued work, and a refusal was logged at warning. Fixed: a `HEAD` answers from the rows only, and a refusal is logged at information. Guards: `TestHeadStartsNoWork` (reverted to queueing, the `HEAD` answers `202` and a row is queued), `TestRefusalIsLoggedBelowWarning`. The review's point that a full queue returns `404` on a race (`ErrNoBlob` after an insert) is not changed: it is a race between a request and a concurrent removal, and the next request answers correctly. The review's point on `os.Executable` is not changed: the server reads its own binary once at start, as before.
     - **Measured, not verified here.** Docker with its default seccomp profile (not run). The Landlock behaviour on kernels other than this one (6.12, ABI 6). The disk-full path, which is read from `os/exec` and the code, not run against a full disk.
     - **Not in s1.** Metrics for the derived pool are not added. EXIF orientation is not applied. Video, HEIC, WebP and TIFF are not thumbnailed. Zip, previews, conversions and the web interface are slices s2 to s4.
+
+36. **Slice p, closing review (p5)** (2026-10-31). The review read slice p as a whole, against sections "Storage limits (p1)" to "Labels (p4)" above, and proved each defect with a test. Its interpretations, for the owner to confirm:
+    - **Job failures show no quota numbers (fixed).** A failed copy job stores its quota refusal with the code and without the numbers, because `GET /jobs` shows the stored text to every owner session and to the key (`jobFailure`, `internal/api/copy_job.go`). A refusal at the request still carries its numbers, as section 8 says. Guard: `TestCopyJobQuotaFailureHasNoNumbers`.
+    - **Links to a shortcut (fixed).** A link to a shortcut is refused as `invalid_request` with the message that a shortcut cannot be linked; it said that a folder cannot be linked. Guard: `TestShortcutLinkRefusalNamesAShortcut`.
+    - **A copy keeps restricted values into another person's files (not changed).** A copy keeps restricted values when its caller manages the source. When the copy lands in another member's My files, that member becomes a manager of the copy and reads the values. This is the same as a manager's move into that member's files, which section 8 accepts, and a manager of the source can already share the item at manager. The owner may instead want a copy to drop restricted values wherever its landing place has managers the source does not.
+    - **Not decided: user numbers in webhooks.** `quota.warning` and `quota.exceeded` for a member's My files carry that member's used bytes and limit to every account endpoint. The owner already sees those totals on the storage page, but the refusal rule (section 8, "Who learns the numbers") gives a member's numbers to the user and the key only. Open for the owner.
+    - **Not decided: a token acting for a user.** The user-scope quota numbers are given to a delegated token that acts for the charged user, where the account refusal gives a token none. Open for the owner.
+    - **Not decided: views before the download.** A view is recorded before the content is served, so a download that then fails still counts in Recent. Open.

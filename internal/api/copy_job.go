@@ -214,7 +214,8 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 				return err
 			}
 			if failed != nil {
-				return failed
+				// The jobs runner stores this error's text, and callers read its code, so it keeps the code.
+				return jobError(failed)
 			}
 			return errors.New(cj.Failure)
 		default:
@@ -234,11 +235,27 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		failed = err
 		now := store.Now()
 		if werr := s.store.Write(ctx, func(tx *store.Tx) error {
-			return tx.SetCopyPhase(ctx, job.ID, store.CopyPhaseCleanup, err.Error(), now)
+			return tx.SetCopyPhase(ctx, job.ID, store.CopyPhaseCleanup, jobFailure(err), now)
 		}); werr != nil {
 			return werr
 		}
 	}
+}
+
+// jobFailure is the text a failed copy job keeps. GET /jobs shows it to every owner session and to the key.
+func jobFailure(err error) string {
+	return jobError(err).Error()
+}
+
+// jobError is the error a failed copy job reports, with its code. GET /jobs shows its text to every owner session and to
+// the key, so a quota refusal keeps its code and drops its numbers: the numbers are for the user whose limit it was and
+// the key (quota.go, "Who learns the numbers"). A refusal at the request, which is not stored, keeps its numbers.
+func jobError(err error) error {
+	var ae *apierr.Error
+	if errors.As(err, &ae) && ae.Code == apierr.QuotaExceeded {
+		return apierr.New(apierr.QuotaExceeded, "the storage limit would be passed")
+	}
+	return err
 }
 
 // copyStage is the fault-injection point of a stage. Production never sets copyFault.

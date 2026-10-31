@@ -11,7 +11,8 @@ today.
 
 ## Build and run
 
-Go 1.26 or newer, and Node 22 for the web interface:
+Go 1.26 or newer, and Node 22 for the web interface. The web interface is TypeScript, React 18.3 with
+Ant Design 5.29, built with Vite and React Router 7 (`web/`):
 
 ```sh
 make build            # builds the web interface (web/dist), then the binary that embeds it
@@ -87,6 +88,9 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `upload.max_chunk_size` | `64MiB` | Largest upload request. Keep it at or under `90MiB` behind a proxy that caps requests at 100 MB. |
 | `upload.max_lifetime` | `168h` | Longest life of an upload from its creation, however often it is written to. |
 | `upload.max_reserved_per_account` | `1TiB` | Bytes an account with no quota may hold in unfinished uploads. |
+| `copy.max_nodes` | `50000` | Most nodes one folder copy may make; a larger copy is refused with `too_large`. A copy above 10,000 nodes runs as a background job, in phases: each batch is one write, and the publish is one write that grows with the copy (design section 8). |
+| `derived.max_bytes` | `10GiB` | Budget for the thumbnails of all accounts together; the least recently used go first. |
+| `office.enabled` | `false` | Turns on the office editor route and the WOPI host for Collabora. Needs `office.discovery_url`. |
 | `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished uploads may hold. Set `100` for a single tenant. |
 | `tokens.max_ttl` | `1h` | Longest lifetime of a delegated token. A longer `ttl` is refused. |
 | `sharing.max_expiry` | `8760h` | Longest a permission may run from the moment it is set (its `expires_at`). `0` means no cap. |
@@ -104,6 +108,17 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `ui.brand.sidebar` | none | Sidebar colours (`bg`, `text`, `caption`, `active`, `on_active`), each `#rrggbb`. Unset ones keep the default. |
 | `ui.brand.logo_file` | none | A PNG or SVG logo, at most 256 KiB, read at start and served at `/brand/logo`. Installation-wide only. |
 | `log.level`, `log.format` | `info`, `json` | |
+
+## Off by default
+
+- **Links that anyone can open, and drop folders.** An account turns them on with its own public-link setting; it starts off.
+- **The office editor.** `office.enabled` is `false`.
+- **Per-user limits.** No account has a default limit for each user (`user_quota_bytes` is `0`), so a user has none
+  until the owner or the account key sets one.
+- **Webhooks.** No account has an endpoint until one is created for it.
+
+Not built yet: search (by name, label or text), comments, document previews and conversions, zip download, the
+interface's thumbnails and office button. The [feature parity list](docs/feature-parity.md) says which slice each belongs to.
 
 ## Development
 

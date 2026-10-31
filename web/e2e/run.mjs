@@ -20,6 +20,7 @@ import { sharingChecks } from './shareDialog.mjs';
 import * as owner from './owner.mjs';
 import * as p3 from './p3.mjs';
 import * as p4 from './p4.mjs';
+import * as p5 from './p5.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -715,6 +716,8 @@ async function main() {
     await owner.signInLinkChecks(page, h, { base, accountID, accountKey, memberID, teamA, MEMBER });
     await owner.switchChecks(page, h, { base, accountID, accountKey, OWNER, MEMBER, signIn });
     await linkChecks(page, { base, accountID, accountKey }, h);
+    // Last, through the API: a restricted label and a move between team spaces. No page sees the moved file.
+    await p5.p5Checks(h, { base, accountKey, memberID, accountID, teamA, teamB });
 
     // Policy: no console error and no content-policy violation (the nonce policy is enforced here),
     // and no request to another origin.

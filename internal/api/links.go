@@ -380,6 +380,9 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
+	if n.Kind == store.KindShortcut {
+		return apierr.New(apierr.InvalidRequest, "a shortcut cannot be linked; link its target")
+	}
 	if n.Kind != store.KindFile {
 		return apierr.New(apierr.InvalidRequest, "a folder cannot be linked; link a file inside it")
 	}
