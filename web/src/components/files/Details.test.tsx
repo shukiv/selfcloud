@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
 import type { Node } from "../../lib/files/types";
 import Details from "./Details";
+
+// render wraps the drawer in a query client, which its label section needs, as the app does.
+function render(ui: ReactElement) {
+  return rtlRender(<QueryClientProvider client={createQueryClient()}>{ui}</QueryClientProvider>);
+}
 
 function file(over: Partial<Node> = {}): Node {
   return {

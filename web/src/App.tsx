@@ -42,6 +42,7 @@ const ManagePeoplePage = lazy(() => import("./pages/manage/PeoplePage"));
 const ManageGroupsPage = lazy(() => import("./pages/manage/GroupsPage"));
 const ManageSpacesPage = lazy(() => import("./pages/manage/SpacesPage"));
 const ManageStoragePage = lazy(() => import("./pages/manage/StoragePage"));
+const ManageLabelsPage = lazy(() => import("./pages/manage/LabelsPage"));
 const ManageLinksPage = lazy(() => import("./pages/manage/LinksPage"));
 const ManageAuditPage = lazy(() => import("./pages/manage/AuditPage"));
 const AdminTenantsPage = lazy(() => import("./pages/admin/TenantsPage"));
@@ -244,6 +245,7 @@ function manageSection(section: ManageSection): ReactNode {
     case "groups": return <ManageGroupsPage />;
     case "spaces": return <ManageSpacesPage />;
     case "storage": return <ManageStoragePage />;
+    case "labels": return <ManageLabelsPage />;
     case "links": return <ManageLinksPage />;
     case "audit": return <ManageAuditPage />;
   }

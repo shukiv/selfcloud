@@ -88,6 +88,10 @@ tags:
       The earlier contents of a file. Each replacement of a file's content keeps the content it replaces
       as a version, which counts toward the account's usage and quota. Versions are pruned by
       `versions.max_count` and `versions.max_age`, except those kept forever.
+  - name: Labels
+    description: |
+      Typed label fields the account owner defines, and one value per field on each node. Every reader
+      of a node sees its values; a restricted field is seen and set only by a manager of the node.
 
 paths:
   /healthz:
@@ -322,6 +326,137 @@ paths:
               schema: { $ref: "#/components/schemas/Usage" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/label-fields:
+    get:
+      tags: [Labels]
+      operationId: listLabelFields
+      summary: List the account's label fields
+      description: |
+        Every user of the account, the account key and a delegated token see the fields, restricted ones
+        included. The `values` count is shown to the account owner and the account key only.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The fields, in position order, with their choices.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabelFieldList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/label-fields:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    post:
+      tags: [Labels]
+      operationId: createLabelField
+      summary: Define a label field
+      description: |
+        The account owner or the account key. An installation admin is `forbidden`. A name is checked as a
+        file name is, and is unique in the account. An account holds at most 50 fields and a field at most
+        100 choices; past either, `conflict` with `details.reason` `limit`. A name already used is `conflict`
+        with `reason` `name_taken`. Choices belong to a choice field only.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LabelFieldInput" }
+      responses:
+        "201":
+          description: Defined.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabelField" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/label-fields/{lbf}:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/lbf"
+    patch:
+      tags: [Labels]
+      operationId: updateLabelField
+      summary: Change a label field
+      description: |
+        The account owner or the account key. Absent fields stay as they are. The type can change only while
+        the field holds no values: otherwise `conflict` with `reason` `type_locked`. Changing away from the
+        choice type drops the choices. A choice named by `id` is renamed or archived; a choice without an
+        `id` is added. Choices are never deleted, so the values that use one keep their meaning.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LabelFieldPatch" }
+      responses:
+        "200":
+          description: The field after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabelField" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Labels]
+      operationId: deleteLabelField
+      summary: Delete a label field and its values
+      description: |
+        The account owner or the account key. Its choices and every value of it are removed. The audit entry
+        records how many values there were. The web interface states that number before it deletes.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Deleted. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/labels:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Labels]
+      operationId: listNodeLabels
+      summary: The label values of a node
+      description: |
+        Every field the caller may see, with its value or null. A restricted field is left out unless the
+        caller is a manager of the node (an account key always is). A user value carries the member's display
+        name when the caller may learn names. A link visitor is refused.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The node's labels.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeLabelList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/labels/{lbf}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+      - $ref: "#/components/parameters/lbf"
+    put:
+      tags: [Labels]
+      operationId: setNodeLabel
+      summary: Set a node's value for one field
+      description: |
+        Needs the editor role on the node, and the manager role for a restricted field (`forbidden` with
+        `reason` `restricted_label` otherwise). The value is `{"value": ...}` in the field's type: text (at most
+        500 characters, no control or bidi control character), a finite number, a date `YYYY-MM-DD`, the ID of a
+        member of the account, or the ID of one of the field's choices that is not archived. The node's own row
+        is not changed. Audited as `node.label_set`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NodeLabelValue" }
+      responses:
+        "204": { description: Set. }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Labels]
+      operationId: clearNodeLabel
+      summary: Clear a node's value for one field
+      description: |
+        The same roles as setting one. Clearing a field that holds no value changes nothing and is not audited.
+        Audited as `node.label_clear` when a value goes.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Cleared. }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/storage-policy:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -3466,6 +3601,11 @@ components:
       in: path
       required: true
       schema: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    lbf:
+      name: lbf
+      in: path
+      required: true
+      schema: { type: string, example: lbf_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     ver:
       name: ver
       in: path
@@ -3596,6 +3736,85 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    LabelChoice:
+      type: object
+      required: [id, name, archived]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        archived: { type: boolean }
+    LabelField:
+      type: object
+      required: [id, name, type, restricted, choices]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [text, number, date, user, choice] }
+        restricted: { type: boolean }
+        choices: { type: array, items: { $ref: "#/components/schemas/LabelChoice" } }
+        values: { type: integer, description: "Nodes holding a value. Shown to the account owner and the account key only." }
+    LabelFieldList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/LabelField" } }
+    LabelFieldInput:
+      type: object
+      required: [name, type]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [text, number, date, user, choice] }
+        restricted: { type: boolean, default: false }
+        choices:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [name]
+            additionalProperties: false
+            properties:
+              name: { type: string }
+              archived: { type: boolean, default: false }
+    LabelFieldPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [text, number, date, user, choice] }
+        restricted: { type: boolean }
+        choices:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [name]
+            additionalProperties: false
+            properties:
+              id: { type: string, description: "Names an existing choice; absent adds a choice." }
+              name: { type: string }
+              archived: { type: boolean }
+    NodeLabelValue:
+      type: object
+      required: [value]
+      properties:
+        value:
+          description: "Text, date or choice ID as a string; a number; a member's ID for a user field."
+    NodeLabel:
+      type: object
+      required: [field_id, name, type, restricted, value]
+      properties:
+        field_id: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [text, number, date, user, choice] }
+        restricted: { type: boolean }
+        value:
+          description: "null when unset; a string, a number, {id, name} for a user, or {id, name, archived} for a choice."
+    NodeLabelList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/NodeLabel" } }
     WebhookEvent:
       description: |
         The body of every event. Selfcloud writes the bytes it will send, so the signature (slice j3) covers exactly

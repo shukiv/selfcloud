@@ -522,12 +522,21 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 		if err := tx.DeleteUserAccessRequests(ctx, acc.ID, usr); err != nil {
 			return err
 		}
+		// The values that name the user go with it (the database removes them), so the entry says how many there were.
+		labelValues, err := tx.CountUserLabelValues(ctx, acc.ID, u.ID)
+		if err != nil {
+			return err
+		}
+		var details map[string]any
+		if labelValues > 0 {
+			details = map[string]any{"labels": labelValues}
+		}
 		if err := tx.DeleteUser(ctx, acc.ID, usr); errors.Is(err, store.ErrNotFound) {
 			return notFound("user")
 		} else if err != nil {
 			return err
 		}
-		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.delete", usr, nil))
+		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.delete", usr, details))
 	})
 	if err != nil {
 		return err

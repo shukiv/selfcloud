@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { keepInView } from "./menuScroll";
 import { Alert as AntdAlert, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Space, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
-import { Clock, FolderOpen, House, Inbox, Share2, Star, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
+import { Clock, FolderOpen, House, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useT, useLang, directionOf, translatePlural } from "../lib/i18n";
 import { useStore } from "../lib/store";
@@ -93,6 +93,7 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
         { key: "/manage/groups", label: t("nav.groups"), icon: icon(Users) },
         { key: "/manage/spaces", label: t("nav.spaces"), icon: icon(FolderOpen) },
         { key: "/manage/storage", label: t("nav.manageStorage"), icon: icon(HardDrive) },
+        { key: "/manage/labels", label: t("nav.manageLabels"), icon: icon(Tags) },
         { key: "/manage/links", label: t("nav.links"), icon: icon(Share2) },
         { key: "/manage/audit", label: t("nav.audit"), icon: icon(Settings) },
       ],
@@ -137,7 +138,7 @@ function TeamRow({
         href={`/files/${team.id}`}
         aria-current={current ? "page" : undefined}
         onClick={onNavigate}
-        style={{ flex: 1, minWidth: 0, padding: "6px 8px", color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+        style={{ flex: 1, minWidth: 0, padding: "6px 8px", color, fontWeight: current ? 700 : undefined, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
       >
         <bdi>{team.name}</bdi>
         {team.hidden && <span style={{ marginInlineStart: 8, fontSize: 12, opacity: 0.8 }}>{hiddenLabel}</span>}
@@ -230,12 +231,16 @@ export default function Shell({ children }: { children: ReactNode }) {
       ? [{ type: "group" as const, key: `group-${i}`, label: s.section, children: menuLeaves(s.items) }]
       : menuLeaves(s.items),
   );
-  const selected = sections
-    .flatMap((s) => s.items)
-    .filter((it) => location.pathname === it.key || location.pathname.startsWith(it.key + "/"))
-    .sort((a, c) => c.key.length - a.key.length)
-    .slice(0, 1)
-    .map((it) => it.key);
+  // A team space lives under /files too, and its row below is the current place: My files is not.
+  const inTeam = (id: string) => location.pathname === `/files/${id}` || location.pathname.startsWith(`/files/${id}/`);
+  const selected = [...teams, ...hiddenTeams].some((team) => inTeam(team.id))
+    ? []
+    : sections
+        .flatMap((s) => s.items)
+        .filter((it) => location.pathname === it.key || location.pathname.startsWith(it.key + "/"))
+        .sort((a, c) => c.key.length - a.key.length)
+        .slice(0, 1)
+        .map((it) => it.key);
 
   const toggleRail = () => {
     setCollapsed((c) => {
@@ -312,7 +317,7 @@ export default function Shell({ children }: { children: ReactNode }) {
                 key={team.id}
                 team={team}
                 color={sidebar.text}
-                current={location.pathname === `/files/${team.id}` || location.pathname.startsWith(`/files/${team.id}/`)}
+                current={inTeam(team.id)}
                 onNavigate={() => setNavOpen(false)}
                 onHide={() => void hideSpace(team, !team.hidden)}
                 onSettings={() => setSettingsFor(team)}

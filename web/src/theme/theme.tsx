@@ -197,6 +197,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = mode;
+    document.documentElement.style.colorScheme = mode;
   }, [mode]);
 
   const setPref = useCallback((p: Pref) => {

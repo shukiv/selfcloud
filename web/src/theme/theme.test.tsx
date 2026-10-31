@@ -70,6 +70,8 @@ describe("ThemeProvider", () => {
     expect(screen.getByTestId("pref").textContent).toBe("dark");
     expect(window.localStorage.getItem("selfcloud.theme")).toBe("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
+    // The browser draws its own scrollbars from this; without it a dark page has a white gutter.
+    expect(document.documentElement.style.colorScheme).toBe("dark");
     act(() => {
       fireEvent.click(screen.getByText("system"));
     });

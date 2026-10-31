@@ -179,6 +179,23 @@ describe("Shell", () => {
       expect(mocks.loadHiddenFolders).toHaveBeenCalledTimes(1);
     });
 
+    it("marks a team space as the current place, and not My files as well", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A")]);
+      renderShell("/files/fld_a/plans");
+      const nav = await openNav();
+      expect(nav.querySelector(".ant-menu-item-selected")).toBeNull();
+      expect(within(nav).getByRole("link", { name: "Team A" }).getAttribute("aria-current")).toBe("page");
+    });
+
+    it("keeps My files as the current place inside the caller's own folder", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A"), team("fld_p", "Mine", { kind: "personal" })]);
+      renderShell("/files/fld_p/notes");
+      const nav = await openNav();
+      expect(nav.querySelector(".ant-menu-item-selected")?.textContent).toBe("My files");
+    });
+
     it("lists only team spaces, never a personal folder", async () => {
       signIn("member");
       folders.set([team("fld_a", "Team A"), team("fld_p", "Mine", { kind: "personal" })]);

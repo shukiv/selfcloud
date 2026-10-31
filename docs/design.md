@@ -1036,6 +1036,94 @@ back, but a backup is still the only recovery from a bad disk or an interrupted 
 fails that test until a reviewer decides it. Where a check accepts only a file or a directory, a shortcut is refused
 (fail closed), as the decision list in section 15 (decision 24, p3) records.
 
+### Labels (p4)
+
+**Fields.** The account owner, or the account key, defines a field with a name, a type (`text`, `number`, `date`,
+`user` or `choice`) and a restriction. The names are checked as file names are. An account holds at most 50 fields,
+and a choice field at most 100 choices, archived ones included. Choices are archived, never deleted, so a value that
+uses one keeps its meaning. The type of a field that holds values cannot change (`conflict`, `reason` `type_locked`).
+Every user of the account, the account key and a delegated token read the field list, restricted fields included.
+
+**Values.** Each node holds at most one value per field. Editors set and clear values with
+`PUT` and `DELETE /nodes/{nod}/labels/{lbf}`. A restricted field is set only by a manager of the node, and read only by
+a manager. A token has editor at most, so it never sets or reads a restricted value. A link visitor reaches no label
+at all: the route table refuses it on each label route, as it refuses any route that does not admit links.
+
+**Copies and moves.** A copy takes the values of its source, in one statement inside the copy's transaction. A copy
+carries a restricted value only when its caller is a manager of the source. Any other caller's copy keeps the
+unrestricted values and drops the restricted ones, without an error. The rule reads the caller's role on the source
+root, inside the write, for a copy made in the request and for a queued copy alike. A move and the trash keep the
+values, because a node keeps its ID. A move may not take an item that holds a restricted value anywhere in its subtree
+out of its folder, or to a place where the caller would manage it, unless the caller manages the item. The refusal is
+`forbidden`, `reason` `restricted_label`, and it says that a restricted value is there. That is the one fact it
+reveals. A move that stays in its folder with no higher role, and a move of an item with no restricted value in its
+subtree, are unaffected. A purge removes the values with the node.
+
+**What a label change does not do.** It does not write the node's own row, so the modification time and the ETag do
+not change. It is not a webhook event (design-j-proposal section 10), and each of its audit actions is classified in
+`webhookAuditNoEvent`. Nor is it an edit in Recent, a rename or a move.
+
+**Measured.** `BenchmarkCopyLabelValues` (`internal/store/labels_bench_test.go`) times the one statement that copies
+the values: 10,000 nodes with two values each took about 355 ms of writer hold on the shared machine (the average of
+three runs with `-benchtime 3x`). The rest of the copy is unchanged, and a copy with no labelled field in the account skips the
+statement. The copy job holds the writer for its whole copy, as before.
+
+**Measured after the review (`copy.max_nodes`, 200,000 nodes, one write).** A copy of a folder of 200,000 nodes inside
+one write took 39.5 s with no label field in the account, and 75.4 s with a labelled tree (a text field on every node).
+The writer hold is above the 10 s busy timeout in both cases, so another writer waits out the copy and can fail with
+`SQLITE_BUSY`. The difference of 36 s is the label statement and the work around it, measured as two whole runs and
+not isolated; the benchmark above suggests a smaller share, so this number is to be confirmed. The copy is not redesigned
+in this slice; the owner decides whether to cap or chunk it. The move guard's subtree walk
+(`SubtreeHasRestricted`) took 161 ms over 200,000 nodes in its worst case (no restricted value, full walk). These numbers
+were taken on the shared machine with the test databases on the home disk.
+
+**Interpretations made in p4, for review (the owner has not decided them):**
+- A visitor through a share link sees no labels, on any of the four routes. This is the proposal's reading of section
+  6 ("link visitors reach none of this"), and the tests hold the refusal to the route table's own answer.
+- The API accepts values on a shortcut's own row, because the rule does not single out a kind. The interface shows no
+  labels for a shortcut, so the target's labels never travel through it.
+- A value is refused, not trimmed. A text value holds no control character and no bidi embedding or isolate
+  character, and it is at most 500 characters. Descriptions are trimmed of these characters; a label is not, so the
+  text the reader sees is the text the editor typed.
+- A user value stores the member's ID. A deleted member's values go with the member (the `value_user` cascade). The
+  API answer carries the member's ID for every caller who reads the value, and the display name only for a caller who
+  may learn names (`peopleNamesSeen`). "Never the ID" is a rule for what the interface shows: the interface shows the
+  name, or that the member has none, and never the ID. A caller that is not a user or a key may still see the ID in
+  the API. Any principal kind other than those two that reaches the label routes is an open question; links are
+  refused.
+- The audit entries of `node.label_set` and `node.label_clear` name the field and its type, never the value, because a
+  restricted value is sensitive. A clear of a field with no value changes nothing and is not audited.
+- Label names are checked by the file-name rules (`names.Clean`), so a `/` or a control character is refused.
+- A copy keeps a restricted value only when its caller manages the source (see Copies and moves). The proposal says "a
+  copy keeps its labels" and does not single out restricted ones. We read the rule as the one that keeps a copy from
+  widening who can read a restricted value, and the owner should confirm it.
+- A move follows the same rule: a non-manager may not move a subtree with a restricted value out of its folder or into
+  a place where the caller would manage it. The refusal reveals that such a value exists; it reveals nothing else.
+- The owner's and the key's count of a field's values (`values`, and the total in the delete message) counts every
+  value of the account, including values on nodes in members' My files. The owner session is not meant to reach
+  My files, so the count reveals only how many values exist there, never their field, node or content. Recorded, not
+  changed.
+- The ownership transfer (`POST /nodes/{nod}/transfer-ownership`) and the hand-over of a deleted member's files (`transfer_to`) do
+  not check the restricted rule. A transfer to a My files folder makes the recipient a manager of the moved subtree,
+  so the recipient reads restricted values set by a manager other than the recipient. Who may do each: a transfer by
+  the account key, or by the item's owner as a user holding editor on it; a deleted member's files by whoever may
+  delete a member (the account key or an owner, through `managedAccount`). A transfer by the item's owner in My files
+  is a move by a manager of the item, so it is within the rule. The hand-over of a deleted member's files is not:
+  the account owner, who is not a manager of that My files folder, moves them to a recipient. This is open for the
+  owner to decide.
+- A restriction turned off makes the values readable by every reader of their items. The dialog says how many values
+  there are before the save, and the audit entry `label_field.update` carries `values` with that count.
+- A member's deletion removes the values that name the member. The audit entry `user.delete` carries `labels` with the
+  count, when it is above zero.
+- Deleting a field: the dialog reads the count when it opens, after a fresh list, so a value set since the list was
+  shown is counted.
+- Renames in one choice PATCH are applied before new choices are added, so a new choice may take a name that a rename
+  gives up in the same request. A rename onto the name of a choice the request does not name is still `name_taken`.
+- A count of nodes holding a value (`values`) is shown to the account owner and the account key only. A member sees
+  the field, not how many items use it.
+- The interface offers labels on files and folders in the details panel, and the Manage > Labels page for the owner.
+  Search by label is slice q.
+
 ### Accepted limits
 
 These were reviewed in the slice n1 security review and accepted for now. They have no code of their own.
@@ -1848,7 +1936,7 @@ Each slice ships with tests and leaves the server runnable.
 | v4a | React rest: Home, Starred, Recent, Storage, the owner pages (Manage) and the installation admin pages (Admin) | Built |
 | v4b | The flip: removes the Svelte app, moves `webui/` to `web/` (the only interface), drops the `reactui` tag and the report-only mode so the nonce policy is enforced for everyone, and drops the self-hosted fonts for the system stack | Built |
 | p3 | Shortcuts, folder colours and descriptions (decision 24). The Go part is built, with migration 0019 (the `nodes` rebuild); the pages follow in React | Built (Go part) |
-| p4 | Labels: typed fields the owner defines | Planned |
+| p4 | Labels: typed fields the owner defines, their values, copies keeping them, Manage > Labels and the details panel (decision 29). Migration 0023 | Built |
 | p5 | The OpenAPI file, the design record and a security review of slice p | Planned |
 | pg | PostgreSQL as an option for the metadata store (decision 7). It lands before q, whose full-text search gains from it | Planned |
 | q | Search: filters, label search, full text and OCR within size limits | Planned |
@@ -2661,3 +2749,16 @@ Decided on approval:
       head, `(state, finished_at)` for the retention, `(event_row_id)` for the sweep's "no delivery refers to" check, and a
       partial index on `(endpoint_id, lease_until)` for the one-request rule. Migration 0022 is unshipped and was edited in place.
 
+29. **Labels, slice p4** (2026-10-31, built to the design the owner approved; the slice p proposal's section 5 and
+    section 7 define it). The interpretations are in section 8 (Labels (p4)) and are listed for review there. The code is
+    `internal/store/labels.go`, `internal/api/labels.go` and migration 0023 (`0023_labels.sql`).
+    - Label changes are not webhook events in v1 (design-j-proposal section 10). Their five audit actions are in
+      `webhookAuditNoEvent`, with the reason "decision 29".
+    - A label change writes no node row. The node-write guard therefore counts no new site, and the kind guard no new
+      comparison: a label check does not test a node's kind, since the rule does not depend on it.
+    - A visitor through a share link sees no labels. The refusal is the route table's own (`link_route`).
+    - A copy and a move never raise who can read a restricted value unless a manager of the item makes them: a copy
+      carries restricted values only from a manager of the source, and a non-manager's move of a subtree with a
+      restricted value out of its folder, or into a place it would manage, is refused (`restricted_label`). The
+      copy's measured cost is in section 8. The ownership hand-overs are not under this rule yet, and the owner decides
+      them (section 8).

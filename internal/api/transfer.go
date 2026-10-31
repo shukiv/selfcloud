@@ -272,8 +272,11 @@ func applyReplace(ctx context.Context, tx *store.Tx, plan *transferPlan, by stri
 //
 // keepSharing says whether the copies keep editors_can_share. Only a caller that manages the destination
 // may pass it on: otherwise an editor would be handed a power the caller does not hold.
+//
+// keepRestricted says whether the copies keep the values of restricted fields. Only a caller that manages the
+// source may pass it on (copyKeepsRestricted): a copy must not widen who can read a restricted value.
 func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string, plan *transferPlan, by string,
-	keepSharing bool) (nodes int, files, bytes int64, err error) {
+	keepSharing, keepRestricted bool) (nodes int, files, bytes int64, err error) {
 	tree, err := tx.Subtree(ctx, src.AccountID, src.ID)
 	if err != nil {
 		return 0, 0, 0, err
@@ -330,6 +333,20 @@ func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string,
 			}
 		}
 	}
+	// A copy keeps its labels: each new node takes the values of the node it was copied from, in one statement.
+	hasLabels, err := tx.HasLabelFields(ctx, src.AccountID)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if hasLabels {
+		pairs := make([]store.LabelCopy, 0, len(tree))
+		for _, n := range tree {
+			pairs = append(pairs, store.LabelCopy{From: n.ID, To: newIDs[n.ID]})
+		}
+		if err := tx.CopyLabelValues(ctx, src.AccountID, pairs, keepRestricted); err != nil {
+			return 0, 0, 0, err
+		}
+	}
 	if report == store.ReportFolder {
 		root := &store.Node{ID: rootID, FolderID: plan.folderID, ParentID: plan.parent.ID}
 		if err := tx.EmitEvent(ctx, src.AccountID, "file.created", now, store.FolderEvent(root)); err != nil {
@@ -371,8 +388,12 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleEditor); err != nil {
+		_, srcRole, err := nodeAccessWith(ctx, tx, p, cur.ID)
+		if err != nil {
 			return err
+		}
+		if store.RoleRank(srcRole) < store.RoleRank(store.RoleEditor) {
+			return roleTooLow(store.RoleEditor)
 		}
 		if err := checkIfMatch(r, cur); err != nil {
 			return err
@@ -394,6 +415,28 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 		if plan.parent.ID == cur.ParentID && plan.name == cur.Name && plan.folderID == cur.FolderID {
 			out = cur
 			return nil
+		}
+		// A move never raises who can read a restricted value unless a manager of the item makes it. So a caller
+		// who does not manage the item may not take a subtree that holds one out of its folder, nor into a place
+		// where the caller would manage it. The refusal says a restricted value is there: that is the one fact it
+		// reveals. Moves that keep the item in its folder with no higher role, and moves of subtrees with no
+		// restricted value, are unaffected.
+		if store.RoleRank(srcRole) < store.RoleRank(store.RoleManager) {
+			_, landRole, err := nodeAccessWith(ctx, tx, p, plan.parent.ID)
+			if err != nil {
+				return err
+			}
+			landsOut := plan.folderID != cur.FolderID
+			if landsOut || store.RoleRank(landRole) >= store.RoleRank(store.RoleManager) {
+				restricted, err := tx.SubtreeHasRestricted(ctx, cur.AccountID, cur.ID)
+				if err != nil {
+					return err
+				}
+				if restricted {
+					return apierr.New(apierr.Forbidden, "the item holds a restricted value; only a manager of the item may move it there, so ask a manager of the item").
+						With("reason", "restricted_label")
+				}
+			}
 		}
 		srcFolder := cur.FolderID
 		from := map[string]any{"parent": cur.ParentID, "folder": cur.FolderID, "name": cur.Name}
@@ -549,8 +592,14 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleViewer); err != nil {
+		// The role on the source is read here, inside the write, so a change of permission since the
+		// request started is seen: it decides whether restricted values are copied.
+		_, srcRole, err := nodeAccessWith(ctx, tx, p, cur.ID)
+		if err != nil {
 			return err
+		}
+		if store.RoleRank(srcRole) < store.RoleRank(store.RoleViewer) {
+			return roleTooLow(store.RoleViewer)
 		}
 		_, dest, err := resolveDestination(ctx, tx, p, cur, in)
 		if err != nil {
@@ -574,7 +623,7 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		count, files, bytes, err := copyTree(ctx, tx, cur, rootID, plan, p.ID, keep)
+		count, files, bytes, err := copyTree(ctx, tx, cur, rootID, plan, p.ID, keep, copyKeepsRestricted(srcRole))
 		if err != nil {
 			return err
 		}
@@ -736,7 +785,7 @@ func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
 		if err != nil {
 			return err
 		}
-		count, files, bytes, err := copyTree(ctx, tx, src, pl.Root, plan, p.ID, keep)
+		count, files, bytes, err := copyTree(ctx, tx, src, pl.Root, plan, p.ID, keep, copyKeepsRestricted(role))
 		if err != nil {
 			return err
 		}

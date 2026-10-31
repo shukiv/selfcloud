@@ -89,6 +89,11 @@ var webhookAuditNoEvent = map[string]string{
 	"webhook.disabled":       "the worker's disable (or the overflow cap in a change): an administrative record, not an event",
 	"webhook.retry":          "a failed delivery queued again by an owner's account key: not an event",
 	"webhook.test":           "a test event queued by the account key: the event is the test itself, not a change",
+	"label_field.create":     "label fields are not on the event list (decision 29)",
+	"label_field.update":     "label fields are not on the event list (decision 29)",
+	"label_field.delete":     "label fields are not on the event list (decision 29)",
+	"node.label_set":         "label values are not on the event list (decision 29)",
+	"node.label_clear":       "label values are not on the event list (decision 29)",
 }
 
 // nodeWriteSite is one pinned count of node-writing calls or statements in one file, with what each one

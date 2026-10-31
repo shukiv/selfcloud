@@ -11,6 +11,7 @@ import { kindOf } from "../../lib/files/kind";
 import type { Node } from "../../lib/files/types";
 import Icon from "./Icon";
 import Appearance from "./Appearance";
+import Labels from "./Labels";
 
 // Details is the side drawer for one node. The Share button shows only when the caller may share the node;
 // "Who has access" always shows, and both open the share dialog. onChanged is told of a colour or description saved.
@@ -113,6 +114,7 @@ export default function Details({
         </p>
       )}
       <Appearance key={node.id} node={node} onChanged={onChanged} />
+      <Labels key={`labels-${node.id}`} node={node} />
       {node.kind === "file" && canVersions && (
         <Button block style={{ marginBlockStart: 16 }} onClick={onVersions}>
           {t("files.details.versions")}

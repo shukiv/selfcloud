@@ -45,6 +45,13 @@ type noDownloadReader interface {
 	SubtreeHasNoDownload(ctx context.Context, accountID, nodeID string) (bool, error)
 }
 
+// copyKeepsRestricted says whether a copy made at the source's role keeps the values of restricted labels. Only a
+// manager of the source keeps them; any other role, or no role at all, drops them, so a copy never widens who can
+// read a restricted value.
+func copyKeepsRestricted(srcRole string) bool {
+	return store.RoleRank(srcRole) >= store.RoleRank(store.RoleManager)
+}
+
 // copyRestricted reports whether the no-download rule refuses a copy of n by a caller at role. A
 // viewer or commenter may not copy a node the rule covers, nor a subtree that holds one, since the copy
 // would carry the restricted contents out. Contributors and above copy freely, and the copy keeps its
