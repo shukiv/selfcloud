@@ -2253,7 +2253,8 @@ paths:
         needs `read` on the source and `write` on the target folder. A folder of up to 10,000
         nodes is copied in this request. A larger one answers `202` with a job (`node.copy`); the
         job's `target` is the new root node, and the job checks access again when it runs. A tree
-        above `copy.max_nodes` is `too_large`, with `details.max_nodes` and `details.nodes`.
+        above `copy.max_nodes` (default 20,000; the operator may raise it, and a higher limit holds the writer longer)
+        is `too_large`, with `details.max_nodes` and `details.nodes`.
         Copy `on_conflict` works as for a move.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:

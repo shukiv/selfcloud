@@ -1068,6 +1068,16 @@ the values: 10,000 nodes with two values each took about 355 ms of writer hold o
 three runs with `-benchtime 3x`). The rest of the copy is unchanged, and a copy with no labelled field in the account skips the
 statement. The copy job holds the writer for its whole copy, as before.
 
+**Measured for the default `copy.max_nodes` of 20,000 (`BenchmarkCopyHold`, `internal/store/copy_hold_bench_test.go`).**
+The benchmark times one `store.Write` that does what `copyTree` does: it reads the subtree, inserts every node, and,
+with labels, copies one text value per node (`CopyLabelValues`). It ran on a database under `/var/tmp`, ext4 on the
+NVMe disk (not tmpfs), on the shared machine (8 cores, load average 5 to 7). Eight runs without labels held the writer
+for 2,273 to 4,546 ms (median 2,842 ms). Eight runs with a text label on every node held it for 2,690 to 4,927 ms
+(median 4,378 ms). The label difference is not isolated: three labelled runs were taken earlier, under load near 10, and
+held 2.7 to 3.2 s; the five slower ones came later, so run order and load are mixed in with the label cost. The worst measured hold, 4.9 s, is about half the 10 s busy timeout. The owner said "comfortably
+under": we read that as a 2x margin, which this meets, but the owner decides; a 10,000 default would halve it again.
+The 200,000-node numbers below are kept for history.
+
 **Measured after the review (`copy.max_nodes`, 200,000 nodes, one write).** A copy of a folder of 200,000 nodes inside
 one write took 39.5 s with no label field in the account, and 75.4 s with a labelled tree (a text field on every node).
 The writer hold is above the 10 s busy timeout in both cases, so another writer waits out the copy and can fail with
@@ -1295,7 +1305,7 @@ Files                                      any caller, limited to what it may re
   PATCH  /nodes/{nod}                      {name, no_download, editors_can_share}: rename in place (editor); no_download (editor); editors_can_share (manager); optional If-Match with the etag (412 on a mismatch)
   POST   /nodes/{nod}/move                 {folder, parent | path, name, on_conflict: fail | rename | replace}; optional If-Match, as PATCH
   POST   /nodes/{nod}/copy                 same; read on the source, write on the target; 202 and a job
-                                           above 10,000 nodes, too_large above copy.max_nodes
+                                           above 10,000 nodes, too_large above copy.max_nodes (default 20,000)
   DELETE /nodes/{nod}                      to the trash (editor); ?permanent=true deletes for good (manager)
   POST   /nodes/{nod}/restore              restore a trashed node: its trasher or a manager, and editor on the parent
   GET    /trash                            the trashed items the caller may restore; ?folder=, paged, newest first
