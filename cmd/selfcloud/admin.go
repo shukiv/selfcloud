@@ -39,6 +39,9 @@ Commands:
                                  create a pending admin user; print its set-password link and token
   recount-usage [-account ID]    recompute usage and reserved bytes from the files and uploads
                                  (all accounts unless -account is given), and print the change
+  search-rebuild                 empty the search index and queue every folder, so the search job makes
+                                 it again from the nodes (the repair for full-text tables that disagree;
+                                 the job runs in the server, so searches stay partial until it has run)
   new-signing-key -i-lost-the-old-key
                                  make a new signing key when the old one is lost for good. It refuses
                                  when a key exists, and it invalidates the webhook secrets, the signed
@@ -75,6 +78,8 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return adminCreateAdmin(args, stdout, stderr)
 	case "recount-usage":
 		return adminRecountUsage(args, stdout, stderr)
+	case "search-rebuild":
+		return adminSearchRebuild(args, stdout, stderr)
 	case "rewrap-secrets":
 		return adminRewrapSecrets(args, stdout, stderr)
 	case "new-signing-key":
@@ -353,6 +358,28 @@ func adminCreateAdmin(args []string, stdout, stderr io.Writer) int {
 // usageDetails is a usage record as the audit log and the command's output show it.
 func usageDetails(u store.Usage) map[string]any {
 	return map[string]any{"used_bytes": u.Bytes, "used_files": u.Files, "reserved_bytes": u.Reserved}
+}
+
+// adminSearchRebuild empties the search rows and their full-text tables, and queues every folder. The search job of the
+// server makes the rows again, in batches, so the index is partial until that job has run. It is the repair the sweep
+// reports as a full-text table that disagrees with its rows (decision 40).
+func adminSearchRebuild(args []string, stdout, stderr io.Writer) int {
+	st, _, code := adminStore("search-rebuild", args, stderr, 0, nil)
+	if st == nil {
+		return code
+	}
+	defer st.Close()
+	if err := st.SearchRebuild(context.Background()); err != nil {
+		fmt.Fprintln(stderr, "selfcloud admin search-rebuild:", err)
+		return 1
+	}
+	left, err := st.SearchBacklogLeft(context.Background())
+	if err != nil {
+		fmt.Fprintln(stderr, "selfcloud admin search-rebuild:", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "search index emptied; %d folder ranges queued for the search job\n", left)
+	return 0
 }
 
 // adminRecountUsage recomputes each account's counters from its files and uploads, one transaction

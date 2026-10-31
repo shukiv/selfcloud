@@ -90,6 +90,9 @@ tags:
       The earlier contents of a file. Each replacement of a file's content keeps the content it replaces
       as a version, which counts toward the account's usage and quota. Versions are pruned by
       `versions.max_count` and `versions.max_age`, except those kept forever.
+  - name: Search
+    description: |
+      Search by name, with filters and label values, over the nodes the caller reaches (slice q, decision 40).
   - name: Labels
     description: |
       Typed label fields the account owner defines, and one value per field on each node. Every reader
@@ -326,6 +329,67 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Usage" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/search:
+    get:
+      tags: [Search]
+      operationId: searchNames
+      summary: Search the names the caller reaches, and filter by label values
+      description: |
+        A page of nodes whose name matches `q` (every term must match), with the filters applied. A term of three or
+        more characters is a substring of the name; a shorter term matches the start of a word. Names are compared
+        folded: case, accents and Hebrew or Arabic vowel marks do not count. The answer has no total. A page the scan
+        budget cut short carries `next_cursor` even when it is empty; the cursor is valid only for the same request and
+        caller, and after a key rotation it is refused (`invalid_request`): start the search again.
+        Only nodes the caller reaches are returned, and a restricted label matches only for a manager of the node.
+        An account key reaches every node of its account; a token, including one minted by an account key, sees only its
+        folders and node scope. A share-link visitor is refused. Content search (`in=content`) is not available yet.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 200 }, description: "Terms, separated by spaces. At most 8 terms, each at most 64 bytes, each at least 2 characters. Optional when a filter is given." }
+        - { name: in, in: query, required: false, schema: { type: string, enum: [name] }, description: "Where to search. Only name for now." }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [file, dir, shortcut] } }
+        - { name: ext, in: query, required: false, schema: { type: string }, description: "Comma-separated extensions without dots, at most 8." }
+        - { name: modified_after, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Unix milliseconds, inclusive." }
+        - { name: modified_before, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Unix milliseconds, exclusive." }
+        - { name: size_min, in: query, required: false, schema: { type: integer, minimum: 0 } }
+        - { name: size_max, in: query, required: false, schema: { type: integer, minimum: 0 } }
+        - { name: label, in: query, required: false, schema: { type: string }, description: "field_id:value, repeatable, at most 4. A text value is a prefix (case-sensitive); a number or a date is a value or low..high; a user or a choice is its ID." }
+        - { name: scope, in: query, required: false, schema: { type: string }, description: "A directory the caller reaches. The search is below it." }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+        - { $ref: "#/components/parameters/cursor" }
+      responses:
+        "200":
+          description: A page of nodes, each with the caller's role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeList" }
+        "400":
+          description: A parameter is out of bounds, or the cursor is not valid for this search (invalid_request).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: A share-link visitor (link_route).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Search is turned off, or the scope is not a directory the caller reaches.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: More than search.rate_per_minute searches in a minute.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: The search ran past search.timeout (unavailable).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/label-fields:

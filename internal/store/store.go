@@ -114,6 +114,11 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		s.Close()
 		return nil, fmt.Errorf("store: personal folders: %w", err)
 	}
+	// An upgrade leaves every folder on the search backlog (migration 0032); the job that indexes it is queued here.
+	if err := s.ensureSearchJob(ctx); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("store: search index: %w", err)
+	}
 	if err := s.Ping(ctx); err != nil {
 		s.Close()
 		return nil, err

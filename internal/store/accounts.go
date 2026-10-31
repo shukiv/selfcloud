@@ -190,6 +190,10 @@ func (tx *Tx) DeleteAccount(ctx context.Context, id string) error {
 	if _, err := tx.q.ExecContext(ctx, "DELETE FROM wopi_sessions WHERE account_id = ?", id); err != nil {
 		return err
 	}
+	// The account's search rows go by cascade, but their full-text rows do not, so they go first (decision 40).
+	if err := tx.dropSearchAccount(ctx, id); err != nil {
+		return err
+	}
 	_, err := tx.q.ExecContext(ctx, "DELETE FROM accounts WHERE id = ?", id)
 	return err
 }

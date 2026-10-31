@@ -365,6 +365,10 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 	if err != nil {
 		return err
 	}
+	// The folder's nodes go by cascade; their full-text search rows must go first (decision 40).
+	if err := tx.dropSearchFolder(ctx, accountID, folderID); err != nil {
+		return err
+	}
 	err = rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM folders WHERE account_id = ? AND id = ?",
 		accountID, folderID))
 	if err != nil {

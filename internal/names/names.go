@@ -75,3 +75,18 @@ func invisible(r rune) bool {
 func invalid(msg string) error {
 	return apierr.New(apierr.InvalidName, msg)
 }
+
+// SearchForm is the form a name is searched by: its combining marks are removed (accents, and the Hebrew and Arabic
+// vowel marks, so a word written with them matches one written without), and it is case-folded, in NFC. The search
+// index and the search query both use it, so they agree. It is not the stored name: the stored name keeps its marks.
+func SearchForm(s string) string {
+	d := norm.NFD.String(s)
+	var b strings.Builder
+	b.Grow(len(d))
+	for _, r := range d {
+		if !unicode.Is(unicode.Mn, r) {
+			b.WriteRune(r)
+		}
+	}
+	return norm.NFC.String(cases.Fold().String(b.String()))
+}

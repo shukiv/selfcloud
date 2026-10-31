@@ -33,6 +33,13 @@ type ReachRow struct {
 // reads. within names a node the caller's token is confined to, or "" for none.
 func (s *Store) ReachRows(ctx context.Context, accountID, userID, userRole string, nodeIDs []string,
 	within string) ([]ReachRow, error) {
+	return ReachRowsIn(ctx, s.r, accountID, userID, userRole, nodeIDs, within)
+}
+
+// ReachRowsIn is ReachRows on the given querier, so a search can read the facts in the same snapshot as its candidates
+// (Store.Read). The rules are the same; only the querier differs.
+func ReachRowsIn(ctx context.Context, q Querier, accountID, userID, userRole string, nodeIDs []string,
+	within string) ([]ReachRow, error) {
 	if len(nodeIDs) == 0 {
 		return nil, nil
 	}
@@ -90,7 +97,7 @@ func (s *Store) ReachRows(ctx context.Context, accountID, userID, userRole strin
 		LEFT JOIN ranks ON ranks.origin = n.id
 		LEFT JOIN trash ON trash.origin = n.id
 		LEFT JOIN scope ON scope.origin = n.id`
-	rows, err := s.r.QueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

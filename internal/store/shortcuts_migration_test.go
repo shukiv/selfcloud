@@ -151,10 +151,10 @@ func TestUpgradeFrom0018RebuildsNodes(t *testing.T) {
 		t.Fatalf("schema version = %d, want %d", v, len(migs))
 	}
 	// The open adds rows of its own (the migration row, and a personal folder with its root for each user),
-	// so the counts may only grow, and the seeded rows must all be there.
+	// so the counts may only grow, and the seeded rows must all be there. The jobs table may grow too: an upgrade that leaves folders on the search backlog queues the search job (decision 40).
 	after := tableCounts(t, s.w)
 	for name, n := range before {
-		if name != "schema_migrations" && name != "folders" && name != "nodes" && after[name] != n {
+		if name != "schema_migrations" && name != "folders" && name != "nodes" && name != "jobs" && after[name] != n {
 			t.Errorf("rows of %s: %d before, %d after", name, n, after[name])
 		}
 	}

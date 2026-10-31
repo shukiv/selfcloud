@@ -38,7 +38,7 @@ space ("My files"), and a group can hold users.
 | Daily upload cap per user | New (u): `upload.daily_cap_per_user` |
 | Copy-size limit, folder depth limit, items per folder | Built in part (copy limit): `copy.max_nodes`, 50,000 by default; a copy above 10,000 nodes runs as a chunked job (decision 34). New (u): depth and per-folder caps |
 | Convert on import, export to other formats | Export built (s3, decision 37): a fixed list of formats through Collabora's conversion API, not usable in production until a live run. Convert on import: New (s) |
-| Text recognition (OCR) of scans | New, optional (q): an OCR side service; off by default |
+| Text recognition (OCR) of scans | New, optional, a later slice after q (decision 40): an OCR side service; off by default |
 
 ## 2. Viewing and preview
 
@@ -112,11 +112,11 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Search by name | New (q) |
-| Filters: type, owner, location, modified and created date, starred, shared with me, trashed | New (q): filter chips in the interface, a query parameter in the API |
-| Search by label values | New (q) |
-| Full-text search inside documents | New (q): text extracted through Collabora's converter and indexed with SQLite FTS5, or PostgreSQL full text later. Lifts a first-release non-goal |
-| Search text recognised in scans | New, optional (q): needs the OCR service |
+| Search by name | Built (q1, q2, decision 40): a query parameter in the API; the interface is q4 (planned) |
+| Filters: type, owner, location, modified and created date, starred, shared with me, trashed | Partly built (q2, decision 40): kind, extension, modified and size, scope, label values. Owner, location and the others are not in v1; the chips are q4 (planned) |
+| Search by label values | Built (q2, decision 40): typed predicates in the API (text prefix, number and date ranges, user and choice) |
+| Full-text search inside documents | Planned (q3, decision 40): text extracted through Collabora's converter and indexed with SQLite FTS5, or PostgreSQL full text later. Lifts a first-release non-goal |
+| Search text recognised in scans | Planned, optional (a later slice after q, decision 40): needs an OCR service that is not in the image |
 | "/" to focus search | Planned (k) |
 
 ## 8. Collaboration
@@ -203,8 +203,8 @@ come **before** k.
 | i2 | Delegated tokens: per-user revoke and the all-reachable scope (built, after k) | Small |
 | o | Organisation and public links, link expiry and password, drop folders, admin policy. Built in four parts: o1 to o4 | Medium |
 | p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts: p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels (all built); p5 the OpenAPI file, the design record, these rows, the smoke test and the security review (decision 36) | Medium |
-| pg | PostgreSQL as an option for the metadata store (design decision 7), before q | Medium |
-| q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |
+| pg | PostgreSQL as an option for the metadata store (design decision 7), after q (decision 40) | Medium |
+| q | Search by name with filters and label values (built in parts q1 and q2, decision 40); content text (q3), the web page (q4) and optional OCR (a later slice) | Large |
 | r | Comments and mentions built (r1, r2, decision 39); activity pane, notifications, who-viewed planned (r3 to r7) | Medium |
 | s | Thumbnails (built in part, s1 and s4a: images from the API and the grid's tiles), document previews, conversions and export, zip download (built, s2 and s4a) | Medium |
 | l | WOPI host for Collabora (built in parts l1 to l3; the interface button, Rename (l4) and the README example are not built) | Medium |
@@ -214,4 +214,4 @@ come **before** k.
 | t2 | Approvals | Small |
 
 Roughly, this doubles the remaining work. Slices n and q are the largest. The PostgreSQL option
-(decision 7) becomes more useful with full-text search, so it lands before q, as slice pg.
+(decision 7) was first scheduled before q. The owner decided on 2026-10-31 that it comes after q (decision 40).

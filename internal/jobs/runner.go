@@ -27,6 +27,22 @@ type Handler func(ctx context.Context, job *store.Job) error
 // The runner puts the job back at the back of the queue, so other jobs run first, and does not finish it.
 var ErrYield = errors.New("job yields its turn")
 
+// retryError is returned by RetryAfter. The runner puts the job back in the queue, due after the delay, and does not
+// finish it, so a failure that may pass is retried after a wait instead of ending the job.
+type retryError struct {
+	after time.Duration
+	err   error
+}
+
+func (e *retryError) Error() string { return e.err.Error() }
+func (e *retryError) Unwrap() error { return e.err }
+
+// RetryAfter wraps err so the runner retries the job after d. A job that is not due waits in the queue, and other
+// jobs run first. Whoever queues new work for the job may bring it forward (store.Tx.WakeJobs).
+func RetryAfter(d time.Duration, err error) error {
+	return &retryError{after: d, err: err}
+}
+
 // Runner runs queued jobs.
 type Runner struct {
 	store    *store.Store
@@ -94,6 +110,14 @@ func (r *Runner) RunPending(ctx context.Context) error {
 				return err
 			}
 			r.log.Info("job yielded", "job", job.ID, "kind", job.Kind)
+			continue
+		}
+		var re *retryError
+		if errors.As(jobErr, &re) {
+			r.log.Warn("job will retry", "job", job.ID, "kind", job.Kind, "after", re.after, "error", re.err)
+			if err := r.store.RetryJob(context.WithoutCancel(ctx), job.ID, re.after, re.err.Error()); err != nil {
+				return err
+			}
 			continue
 		}
 		if jobErr != nil {

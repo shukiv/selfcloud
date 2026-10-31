@@ -65,6 +65,7 @@ type Config struct {
 	Blobs     BlobsConfig     `yaml:"blobs"`
 	Derived   DerivedConfig   `yaml:"derived"`
 	Zip       ZipConfig       `yaml:"zip"`
+	Search    SearchConfig    `yaml:"search"`
 	Copy      CopyConfig      `yaml:"copy"`
 	Sharing   SharingConfig   `yaml:"sharing"`
 	Trash     TrashConfig     `yaml:"trash"`
@@ -262,6 +263,42 @@ type DerivedConfig struct {
 	ConvertAccountQueue int `yaml:"convert_account_queue"`
 	// MaxConvertBytes is the largest file one conversion may return. A larger answer fails the conversion.
 	MaxConvertBytes ByteSize `yaml:"max_convert_bytes"`
+}
+
+// SearchConfig controls search by name and label values (design section 9, slice q, decision 40). Off, the route answers
+// not_found; the index is still kept, so turning it back on needs no backfill.
+type SearchConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// MaxQueryBytes is the longest q, in bytes.
+	MaxQueryBytes int `yaml:"max_query_bytes"`
+	// MaxTerms is the most terms one q may have.
+	MaxTerms int `yaml:"max_terms"`
+	// ScanBudget is the most candidates one request reads and checks. A request that uses it up returns a short page
+	// with a cursor. It must be at least the largest page (50).
+	ScanBudget int `yaml:"scan_budget"`
+	// Timeout is the longest one request may take.
+	Timeout Duration `yaml:"timeout"`
+	// RatePerMinute is the searches one caller may start a minute.
+	RatePerMinute int `yaml:"rate_per_minute"`
+}
+
+// validateSearch checks the search block.
+func validateSearch(s SearchConfig, bad func(string, ...any)) {
+	if s.MaxQueryBytes < 1 || s.MaxQueryBytes > 1000 {
+		bad("search.max_query_bytes must be between 1 and 1000, got %d", s.MaxQueryBytes)
+	}
+	if s.MaxTerms < 1 || s.MaxTerms > 16 {
+		bad("search.max_terms must be between 1 and 16, got %d", s.MaxTerms)
+	}
+	if s.ScanBudget < 50 {
+		bad("search.scan_budget must be at least 50 (the largest page), got %d", s.ScanBudget)
+	}
+	if s.Timeout.D() <= 0 {
+		bad("search.timeout must be positive")
+	}
+	if s.RatePerMinute < 1 {
+		bad("search.rate_per_minute must be at least 1, got %d", s.RatePerMinute)
+	}
 }
 
 // validateDerived checks the derived block. The memory must hold a decode of the largest image the pixel cap allows,
@@ -506,6 +543,8 @@ func Defaults() *Config {
 		Zip: ZipConfig{MaxEntries: 100_000, MaxBytes: 10 * GiB, MaxDisk: 30 * GiB, MaxDiskPerAccount: 10 * GiB,
 			TTL:             Duration(24 * time.Hour),
 			MaxPerPrincipal: 2, MaxPerAccount: 4, MaxUnfinished: 8},
+		Search: SearchConfig{Enabled: true, MaxQueryBytes: 200, MaxTerms: 8, ScanBudget: 500,
+			Timeout: Duration(2 * time.Second), RatePerMinute: 60},
 		Copy:     CopyConfig{MaxNodes: 50000},
 		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
 		Trash:    TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
@@ -648,6 +687,7 @@ func (c *Config) Validate() error {
 		bad("blobs.delete_grace is negative")
 	}
 	validateDerived(c.Derived, bad)
+	validateSearch(c.Search, bad)
 	validateZip(c.Zip, bad)
 	if c.Copy.MaxNodes <= 0 {
 		bad("copy.max_nodes must be positive")

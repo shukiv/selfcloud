@@ -143,8 +143,9 @@ var unscopedNodeReads = map[string]struct {
 	n      int
 	reason string
 }{
-	"nodes.go": {2, "blob garbage collection: whether a blob is still named by a node (EXISTS over nodes.blob_id). A staged node names its blob, so the blob is kept, as a copy's nodes always have kept it; the read returns no node"},
-	"trash.go": {2, "trash listing and expiry over trashed_at: a staged node is never trashed (a copy never copies a trashed node, and a trashed source fails the copy), so no staged node matches"},
+	"nodes.go":        {2, "blob garbage collection: whether a blob is still named by a node (EXISTS over nodes.blob_id). A staged node names its blob, so the blob is kept, as a copy's nodes always have kept it; the read returns no node"},
+	"search_index.go": {1, "the largest rowid of the nodes table (NodeRowIDMax, decision 40): one number, read by a copy to bound the rowid range it queues. It reveals no node, and the range is read through a folder ID, so a staged folder is never a search item"},
+	"trash.go":        {2, "trash listing and expiry over trashed_at: a staged node is never trashed (a copy never copies a trashed node, and a trashed source fails the copy), so no staged node matches"},
 }
 
 // TestAccountWideNodeReadsAreClassified fails when a read of nodes that is not scoped by an ID appears, moves or goes in

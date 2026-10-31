@@ -76,9 +76,10 @@ func (s *Store) ClaimJob(ctx context.Context) (*Job, error) {
 	var j *Job
 	err := s.Write(ctx, func(tx *Tx) error {
 		var err error
+		now := millis(Now())
 		j, err = scanJob(tx.q.QueryRowContext(ctx, `UPDATE jobs SET status = 'running', updated_at = ?
-			WHERE id = (SELECT id FROM jobs WHERE status = 'queued' ORDER BY created_at, id LIMIT 1)
-			RETURNING `+jobCols, millis(Now())))
+			WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND created_at <= ? ORDER BY created_at, id LIMIT 1)
+			RETURNING `+jobCols, now, now))
 		return err
 	})
 	return j, err
@@ -93,6 +94,25 @@ func (s *Store) YieldJob(ctx context.Context, id string) error {
 			"UPDATE jobs SET status = 'queued', created_at = ?, updated_at = ? WHERE id = ? AND status = 'running'",
 			millis(Now()), millis(Now()), id))
 	})
+}
+
+// RetryJob puts a running job back in the queue, due after the delay. The job keeps its place in kind order and is not
+// claimed before it is due (ClaimJob). msg is the error it failed with.
+func (s *Store) RetryJob(ctx context.Context, id string, after time.Duration, msg string) error {
+	now := Now()
+	return s.Write(ctx, func(tx *Tx) error {
+		return rowsAffected(tx.q.ExecContext(ctx,
+			"UPDATE jobs SET status = 'queued', created_at = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+			millis(now.Add(after)), msg, millis(now), id))
+	})
+}
+
+// WakeJobs brings the queued jobs of a kind that are waiting for a retry to now, so new work for them runs at once.
+func (tx *Tx) WakeJobs(ctx context.Context, kind string) error {
+	now := millis(tx.clock())
+	_, err := tx.q.ExecContext(ctx, "UPDATE jobs SET created_at = ? WHERE kind = ? AND status = 'queued' AND created_at > ?",
+		now, kind, now)
+	return err
 }
 
 func (s *Store) FinishJob(ctx context.Context, id string, jobErr error) error {

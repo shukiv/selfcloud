@@ -102,6 +102,12 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `zip.max_per_principal` | `2` | Unfinished zips one caller may have at once. |
 | `zip.max_per_account` | `4` | Unfinished zips an account may have at once. |
 | `zip.max_unfinished` | `8` | Unfinished zips the installation may have at once; each holds its file and its plan in memory. |
+| `search.enabled` | `true` | Turns the search route on. Off, `/api/v1/search` answers `not_found`; the index is still kept, so turning it on again needs no backfill. |
+| `search.max_query_bytes` | `200` | Longest `q`, in bytes (1 to 1000). |
+| `search.max_terms` | `8` | Most terms one `q` may have (1 to 16). A term is at least 2 characters and at most 64 bytes. |
+| `search.scan_budget` | `500` | Candidates one request reads and checks for access. A request that uses it up returns a short page with a cursor. At least 50. |
+| `search.timeout` | `2s` | Longest one search may take; past it the answer is `unavailable`. |
+| `search.rate_per_minute` | `60` | Searches one caller may start a minute. |
 | `office.enabled` | `false` | Turns on the office editor route and the WOPI host for Collabora. Needs `office.discovery_url`. |
 | `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished uploads may hold. Set `100` for a single tenant. |
 | `tokens.max_ttl` | `1h` | Longest lifetime of a delegated token. A longer `ttl` is refused. |

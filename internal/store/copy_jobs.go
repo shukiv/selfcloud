@@ -315,7 +315,7 @@ func (tx *Tx) StagedCopyBatch(ctx context.Context, j *CopyJob, limit int, keepRe
 			c.EditorsCanShare = false
 		}
 		c.ETag = id.New("etg")
-		if err := tx.InsertNode(ctx, &c); err != nil {
+		if err := tx.InsertNodeNoIndex(ctx, &c); err != nil {
 			return 0, false, err
 		}
 		copied++
@@ -411,6 +411,11 @@ func (tx *Tx) StagedFiles(ctx context.Context, j *CopyJob, limit int) ([]*Node, 
 // its root go, the reservation is released (the caller charges the destination with applyUsage first), and the copy
 // is done. One statement moves the rows, so the write is bounded by the tree's size and not by a batch's.
 func (tx *Tx) PublishStaged(ctx context.Context, j *CopyJob, folderID, parentID, name, key string, at time.Time) error {
+	// The staged nodes keep their rowids when they move, so their range is the range the search job reads.
+	lo, hi, err := tx.FolderRowIDRange(ctx, j.AccountID, j.StagingFolderID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.q.ExecContext(ctx, `UPDATE nodes SET folder_id = ?,
 		owner_id = COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), owner_id)
 		WHERE account_id = ? AND folder_id = ? AND parent_id IS NOT NULL`,
@@ -427,6 +432,16 @@ func (tx *Tx) PublishStaged(ctx context.Context, j *CopyJob, folderID, parentID,
 	}
 	if _, err := tx.q.ExecContext(ctx, `DELETE FROM folders WHERE account_id = ? AND id = ? AND staged = 1`,
 		j.AccountID, j.StagingFolderID); err != nil {
+		return err
+	}
+	// The published nodes have no search rows yet. The search job indexes their rowid range in batches, after this
+	// write (decision 40); the backlog row commits with the publish, so a crash loses nothing. An empty range queues
+	// nothing.
+	from := lo - 1 // the range is exclusive below: its first row is lo
+	if lo == 0 {   // no rows: rowids start at 1
+		from = hi
+	}
+	if err := tx.QueueSearchRange(ctx, j.AccountID, folderID, from, hi); err != nil {
 		return err
 	}
 	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE copy_jobs SET phase = 'done', reserved_bytes = 0, updated_at = ?

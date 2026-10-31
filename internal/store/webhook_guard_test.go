@@ -149,7 +149,8 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../api/ownership.go SetSubtreeOwner":                              {1, lockGuarded, "a change of owner inside a team space: nothing is reported, the item does not move"},
 	"../api/shortcuts.go InsertNode":                                   {1, lockAdds, "node.shortcut: file.created with kind shortcut and no target"},
 	"../api/transfer.go ClearSubtreeEditorsCanShare":                   {1, lockGuarded, "the editors_can_share flag, which is not in the payload"},
-	"../api/transfer.go InsertNode":                                    {1, lockAdds, "copyTree: each file made is reported by an explicit file.created (the audit names only the root)"},
+	"../api/transfer.go InsertNode":                                    {1, lockAdds, "copyTree of a small copy (up to store.SearchSmallCopy nodes): each node made, indexed in the same write (decision 40)"},
+	"../api/transfer.go InsertNodeNoIndex":                             {1, lockAdds, "copyTree: each file made is reported by an explicit file.created (the audit names only the root)"},
 	"../api/transfer.go MoveSubtree":                                   {1, lockGuarded, "node.move: each file below the moved node reports file.moved"},
 	"../api/transfer.go TrashNode":                                     {1, lockGuarded, "applyReplace trashes what a copy or move displaces: the caller's node.trash reports it as file.deleted"},
 	"../api/transfer.go UpdateNode":                                    {1, lockGuarded, "node.move: the node's folder and parent change, reported as file.moved"},
@@ -170,7 +171,7 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../store/accounts.go DeleteAccount DELETE FROM accounts":          {1, lockClears, "the account's delete: its locks and sessions are cleared in the same write"},
 	"../store/accounts.go InsertAccount INSERT INTO accounts":          {1, lockAdds, "a new account: no lock can hold it"},
 	"../store/accounts.go UpdateAccount UPDATE accounts":               {1, lockFree, "the account's settings and quota: no file changes"},
-	"../store/copy_jobs.go InsertNode":                                 {1, lockAdds, "a chunked copy's batch (decision 34): the copies are staged and report nothing; the publish reports them (api/copy_job.go copyPublish)"},
+	"../store/copy_jobs.go InsertNodeNoIndex":                          {1, lockAdds, "a chunked copy's batch (decision 34): the copies are staged and report nothing; the publish reports them (api/copy_job.go copyPublish)"},
 	"../store/copy_jobs.go CreateStagingFolder INSERT INTO folders":    {1, lockAdds, "a new staging folder row: no lock can hold it; nothing is reported"},
 	"../store/copy_jobs.go CreateStagingFolder INSERT INTO nodes":      {1, lockAdds, "the staging folder's root: staged, reports nothing; no lock can hold a new node"},
 	"../store/copy_jobs.go PublishStaged UPDATE nodes":                 {2, lockAdds, "PublishStaged's two statements move and rename the staged tree, which no editor can hold (it is not in a folder anyone sees); the publish reports the copy with copyPublish"},
@@ -182,7 +183,8 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../store/folders.go InsertFolder INSERT INTO folders":             {1, lockAdds, "a new folder row: no lock can hold it; nothing is reported"},
 	"../store/folders.go InsertFolder INSERT INTO nodes":               {1, lockAdds, "the root node of a new folder: a folder, which reports nothing"},
 	"../store/folders.go UpdateFolder UPDATE folders":                  {1, lockFree, "a folder's name and settings: a rename changes no path an editor holds"},
-	"../store/nodes.go InsertNode INSERT INTO nodes":                   {1, lockAdds, "the InsertNode method itself; its callers are classified above"},
+	"../store/nodes.go InsertNodeNoIndex INSERT INTO nodes":            {1, lockAdds, "the insert itself, which InsertNode and the bulk paths (no index) share; its callers are classified above"},
+	"../store/nodes.go InsertNodeNoIndex":                              {1, lockAdds, "InsertNode's call of the insert, which then makes the node's search rows (decision 40)"},
 	"../store/nodes.go MoveSubtree UPDATE nodes":                       {1, lockGuarded, "MoveSubtree: every node below the moved node; refused while a file below is open (guardNode)"},
 	"../store/nodes.go UpdateNodeHeld UPDATE nodes":                    {1, lockGuarded, "UpdateNodeHeld: refused for a change of a file's name, place, content or owner and a folder's place or owner; a description, colour or flag passes"},
 	"../store/share_links.go SetSharingPolicy UPDATE accounts":         {1, lockFree, "the account's sharing policy: no file changes"},
@@ -213,7 +215,7 @@ var webhookAuditCalls = map[string]int{"auditEntry": 2, "auditAs": 2, "addUser":
 
 // nodeWriterMethods are the store calls that change a node row, a version, a folder or an account, and so are
 // covered by a lock rule.
-var nodeWriterMethods = map[string]bool{"InsertNode": true, "UpdateNode": true, "UpdateNodeHeld": true,
+var nodeWriterMethods = map[string]bool{"InsertNode": true, "InsertNodeNoIndex": true, "UpdateNode": true, "UpdateNodeHeld": true,
 	"TrashNode": true, "Untrash": true, "PurgeNode": true, "MoveSubtree": true, "MoveFolderContents": true,
 	"ClearSubtreeEditorsCanShare": true, "newNode": true, "SetSubtreeOwner": true, "replaceContent": true,
 	"UpdateVersion": true, "DeleteVersion": true, "DeleteFolder": true, "DeleteAccount": true}

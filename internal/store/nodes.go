@@ -294,8 +294,18 @@ func isWithin(ctx context.Context, q querier, accountID, id, ancestor string) (b
 	return found, err
 }
 
-// InsertNode adds a node. It returns ErrConflict if a sibling has the same name key.
+// InsertNode adds a node and indexes it for search in the same write. It returns ErrConflict if a sibling has the same
+// name key.
 func (tx *Tx) InsertNode(ctx context.Context, n *Node) error {
+	if err := tx.InsertNodeNoIndex(ctx, n); err != nil {
+		return err
+	}
+	return tx.indexNode(ctx, n.ID)
+}
+
+// InsertNodeNoIndex is InsertNode without the search row. A bulk copy uses it, and then calls QueueSearch for the folder
+// once, so the rows are made by the search job in batches and not in this write (decision 40).
+func (tx *Tx) InsertNodeNoIndex(ctx context.Context, n *Node) error {
 	// A node in a personal folder belongs to the folder's user, whoever creates or copies it there.
 	// Anywhere else its owner is the one given, or else its creator.
 	owner := n.OwnerID
@@ -351,7 +361,11 @@ func (tx *Tx) UpdateNodeHeld(ctx context.Context, n *Node, holder string) error 
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// The name may have changed, so the search row follows the node in this write (decision 40).
+	return tx.indexNode(ctx, n.ID)
 }
 
 // changesLockedPlace reports whether the write n makes a change that a live lock refuses (decision 32). For a file those

@@ -186,6 +186,10 @@ func (tx *Tx) PurgeNode(ctx context.Context, accountID, id string) (files, bytes
 	if err != nil {
 		return 0, 0, err
 	}
+	// The search rows go with the nodes by cascade, but their full-text rows do not, so they go first (decision 40).
+	if err := tx.dropSearchSubtree(ctx, accountID, id); err != nil {
+		return 0, 0, err
+	}
 	if err := rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM nodes WHERE account_id = ? AND id = ?", accountID, id)); err != nil {
 		return 0, 0, err
 	}

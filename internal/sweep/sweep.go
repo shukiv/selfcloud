@@ -88,7 +88,9 @@ type Sweeper struct {
 	versionAge   time.Duration
 	derived      *derived.Cache
 	zips         *derived.ZipFiles
-	log          *slog.Logger
+	// searchChecked is when the search rows were last checked; see searchCheckEvery.
+	searchChecked time.Time
+	log           *slog.Logger
 	// webhookEventCursor is where the next pass over the webhook events starts (see pruneWebhooks).
 	webhookEventCursor int64
 }
@@ -129,10 +131,13 @@ type Result struct {
 	Permissions    int   // permissions expired more than permissionGrace ago, removed and audited
 	AccessRequests int64 // decided access requests older than accessRequestRetention, removed
 	Purged         int   // trashed items past trash.retention, purged with their contents
-	CopiesCleaned  int   // chunked copies whose staged rows were removed after their job finished
-	Versions       int   // versions past versions.max_count or versions.max_age, pruned
-	Links          int   // share links that ended more than a day ago, removed with their open uploads
-	Recent         int64 // recent entries past recentRetention, or beyond recentPerUser for their user, removed
+	SearchRepaired bool  // the search rows were missing or extra, and the repair queued the missing ones (decision 40)
+	// SearchFTSMismatch is set when a full-text table disagrees with the search rows; the admin rebuild fixes it.
+	SearchFTSMismatch bool
+	CopiesCleaned     int   // chunked copies whose staged rows were removed after their job finished
+	Versions          int   // versions past versions.max_count or versions.max_age, pruned
+	Links             int   // share links that ended more than a day ago, removed with their open uploads
+	Recent            int64 // recent entries past recentRetention, or beyond recentPerUser for their user, removed
 	// Webhook deliveries past their retention, events no delivery refers to, and expired previous secrets cleared.
 	WebhookDeliveries int
 	WebhookEvents     int
@@ -181,6 +186,31 @@ func (w *Sweeper) Run(ctx context.Context) {
 	}
 }
 
+// searchCheckEvery is how often the sweep checks the search rows against the nodes. It is low on purpose: a check counts
+// every node of the installation.
+const searchCheckEvery = time.Hour
+
+// searchCheck compares the search rows with the nodes (store.SearchCheck). It repairs missing and extra rows, and
+// reports a full-text table that disagrees with the rows, which only the admin rebuild can fix.
+func (w *Sweeper) searchCheck(ctx context.Context, res *Result) error {
+	d, err := w.st.SearchCheck(ctx)
+	if err != nil {
+		return err
+	}
+	if d.Missing > 0 || d.Extra > 0 {
+		w.log.Warn("search rows disagree with the nodes; repairing", "missing", d.Missing, "extra", d.Extra)
+		if err := w.st.SearchRepair(ctx); err != nil {
+			return err
+		}
+		res.SearchRepaired = true
+	}
+	if d.FTSMismatch {
+		w.log.Error("search full-text tables disagree with the search rows; run selfcloud admin search-rebuild")
+		res.SearchFTSMismatch = true
+	}
+	return nil
+}
+
 // Once makes one pass, judging expiry and grace against now.
 func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	var res Result
@@ -207,6 +237,16 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	}
 	if res.CopiesCleaned, err = w.cleanupCopies(ctx); err != nil {
 		return res, err
+	}
+	// The search rows are checked at most once every searchCheckEvery: a missing or extra row is repaired, and the
+	// search job indexes what is missing. A full-text table that disagrees with its rows is only reported; the admin
+	// command selfcloud admin search-rebuild makes it again. A check that fails is logged and counted, and the sweep goes on.
+	if now.Sub(w.searchChecked) >= searchCheckEvery {
+		w.searchChecked = now
+		if serr := w.searchCheck(ctx, &res); serr != nil {
+			w.log.Error("search check", "error", serr)
+			res.Failed++
+		}
 	}
 	if w.zips != nil {
 		// A zip past its expiry, and a zip whose job is gone, are removed in bounded steps. A file that cannot be

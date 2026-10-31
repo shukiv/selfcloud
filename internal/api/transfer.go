@@ -293,6 +293,13 @@ func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string,
 	if err != nil {
 		return 0, 0, 0, err
 	}
+	// A small copy indexes its nodes in this write. A larger one records the rowid range it makes, and the search job
+	// indexes that range in batches (decision 40). The copy is one transaction, so no other write falls inside the range.
+	small := len(tree) <= store.SearchSmallCopy
+	rowsBefore, err := tx.NodeRowIDMax(ctx)
+	if err != nil {
+		return 0, 0, 0, err
+	}
 	newIDs := map[string]string{}
 	for i, n := range tree {
 		c := *n
@@ -321,8 +328,14 @@ func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string,
 			bytes += c.Size
 			files++
 		}
-		if err := tx.InsertNode(ctx, &c); err != nil {
-			return 0, 0, 0, storeNameErr(err)
+		var insertErr error
+		if small {
+			insertErr = tx.InsertNode(ctx, &c)
+		} else {
+			insertErr = tx.InsertNodeNoIndex(ctx, &c)
+		}
+		if insertErr != nil {
+			return 0, 0, 0, storeNameErr(insertErr)
 		}
 		// The audit entry of a copy names only its root, so each file the copy makes reports itself here, unless the
 		// copy is too big to report file by file (store.ReportFor): then the new folder reports once, below.
@@ -330,6 +343,15 @@ func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string,
 			if err := tx.EmitEvent(ctx, c.AccountID, "file.created", now, store.FileEvent(&c)); err != nil {
 				return 0, 0, 0, err
 			}
+		}
+	}
+	if !small {
+		rowsAfter, err := tx.NodeRowIDMax(ctx)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		if err := tx.QueueSearchRange(ctx, src.AccountID, plan.folderID, rowsBefore, rowsAfter); err != nil {
+			return 0, 0, 0, err
 		}
 	}
 	// A copy keeps its labels: each new node takes the values of the node it was copied from, in one statement.

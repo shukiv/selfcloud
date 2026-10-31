@@ -71,6 +71,11 @@ var reviewedNodeKindSites = map[string]int{
 	// copy_job.go: the publish's shortcut check, which decides only whether the edit is recorded in Recent, as copyTree's.
 	"internal/store/copy_jobs.go": 6,
 	"internal/api/copy_job.go":    1,
+	// Search (decision 40). search.go: the scope check refuses a scope that is not a directory with invalid_request; the
+	// reach check of the scope ran first, so this is a refusal of a bad argument, not an access decision. search_index.go:
+	// the extension of a file's search row is read from a file's name only. Neither decides access.
+	"internal/api/search.go":         1,
+	"internal/store/search_index.go": 1,
 }
 
 // TestNodeKindComparisonsAreReviewed fails when a node-kind comparison appears, moves or goes in internal/api or

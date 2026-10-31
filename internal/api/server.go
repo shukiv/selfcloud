@@ -90,6 +90,8 @@ type Server struct {
 	contentScheme string
 	// links signs and verifies signed download links; see links.go.
 	links *linkKeys
+	// searchFailures counts the failed search batches in a row, for the retry wait; see runSearchIndex.
+	searchFailures atomic.Int64
 	// tokens signs and verifies delegated tokens; see tokens.go.
 	tokens *tokenKeys
 	// wopiTokens signs and verifies WOPI access tokens under a key of their own; office holds Collabora's discovery
@@ -335,6 +337,8 @@ func New(opts Options) (*Server, error) {
 			"access.request": newLimiterRate(20, time.Hour),
 			// Listing the pending requests, per caller: the scan reads up to 5,000 rows a call.
 			"access.list": newLimiter(60),
+			// Searches, per caller: each one reads up to the scan budget and checks access to every candidate.
+			"search": newLimiter(cfg.Search.RatePerMinute),
 			// Directory searches are typed, so one caller searching while it types stays well inside this.
 			"directory.search": newLimiter(60),
 			// Access-request mail has buckets of its own, so requests cannot spend the mail a user needs to
@@ -385,6 +389,7 @@ func New(opts Options) (*Server, error) {
 	s.jobs.Handle(jobAccountDelete, s.runAccountDelete)
 	s.jobs.Handle(jobCopyNode, s.runCopyJob)
 	s.jobs.Handle(jobZip, s.runZipJob)
+	s.jobs.Handle(store.SearchJobKind, s.runSearchIndex)
 	s.copySyncNodes = syncCopyNodes
 	s.copyYield = copyYieldAfter
 	s.zipYield = zipYieldAfter
@@ -582,6 +587,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage", handle: s.handleAccountStorage, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage/largest", handle: s.handleAccountLargest, auth: true},
 		{method: http.MethodGet, path: "/api/v1/me/storage/largest", handle: s.handleMyLargest, session: true},
+		// Search by name and label values. A share-link visitor is refused (no link flag); a token may search within its scope.
+		{method: http.MethodGet, path: "/api/v1/search", handle: s.handleSearch, auth: true},
 		{method: http.MethodGet, path: "/api/v1/label-fields", handle: s.handleListLabelFields, auth: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/label-fields", handle: s.handleCreateLabelField, auth: true},
 		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/label-fields/{lbf}", handle: s.handleUpdateLabelField, auth: true},
