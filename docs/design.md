@@ -1253,6 +1253,7 @@ Inside an account                          account key, admin key, or owner sess
   POST                  /accounts/{acc}/webhooks/{hook}/test          one webhook.test event (slice j3)
   GET                   /accounts/{acc}/webhooks/{hook}/deliveries    delivery log, newest first (slice j3)
   POST                  /accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry   queue a failed delivery again (slice j3)
+  GET|PUT|DELETE       /accounts/{acc}/quota-warning                 the share of the quota at which quota.warning is sent, 1 to 99; DELETE is 80 (slice j4)
 
 Files                                      any caller, limited to what it may reach
   GET    /folders                          team spaces the caller reaches at the root, plus its personal folder; ?hidden=true lists only the hidden ones
@@ -1946,7 +1947,8 @@ Each slice ships with tests and leaves the server runnable.
 | j1 | Webhook endpoints: the migration, the encrypted secret (AES-256-GCM, key derived with HKDF from the links signing key, bound to its row), the endpoint routes, the show-once secret and its rotation, the isolation tests | Built |
 | j2 | Webhook events: each change writes its event in its own transaction (the audit hook and four explicit emits), the payloads and the event list including `file.restored`, the big-folder summary (1,000 files, 5,000 deliveries, 10,000 nodes: decision 27), the personal-folder rule, the outbox atomicity tests. The worker that sends them is j3 (decision 28) | Built |
 | j3 | Webhook worker: claim, lease, per-endpoint order, signing, delivery, backoff and the give-up, the disable paths, the 100,000 pending cap, the sweep, the metrics, the delivery log, retry and test routes; the SSRF dialer and `webhooks.allow_networks`, moved here from j4 (decision 28) | Built |
-| j | Webhooks: the quota warnings, rewrap and the slice security review (j4 remains) | Building |
+| j4 | Quota warnings (`quota.warning`, `quota.exceeded`, once per crossing), the level setting and its route, the rewrap of secrets (`selfcloud admin rewrap-secrets`), the sweep of stale quota marks, the openapi for them (decision 30) | Built |
+| j | Webhooks: the slice review of j1 to j4 (`review-j3.md`, `review-j4.md`). Its j4 fixes are in decision 30; its j3 fixes are the ones the code cites as "review finding", not re-verified in this round | Built |
 | t | Changes feed, file picker, WebDAV, installable web app | Planned |
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Planned |
 | t2 | Approvals | Planned |
@@ -2573,9 +2575,9 @@ Decided on approval:
     - **Not in j2 (built in j3, decision 28).** The 100,000 pending cap (proposal question 10) is not checked here. It needs a count of pending
       deliveries per endpoint, and the worker's disable path (j3) owns it. j2 on main has no worker, so the outbox
       grows with its changes until the worker of j3 is on main. Since j3 (decision 28), the worker sends them, and the cap
-      and the sweep are in place. Main is not a release until j4 lands: the quota warnings and the rewrap are still open. The worker, signing and delivery (j3). `quota.warning` and `quota.exceeded` (j4, with
-      `AdjustUsage`). `webhook.test`, whose route is a later part. The types are in the schema and the Events list, but
-      nothing emits them yet.
+      and the sweep are in place. `webhook.test` is sent by its route (j3). The quota events, `quota.warning` and
+      `quota.exceeded`, are sent since j4 (decision 30). The slice review of j is done (`review-j3.md`, `review-j4.md`); what
+      still blocks the release is in decision 30.
     - **Cost, measured.** The proposal has no performance section, so the brief's rule was applied as measured. Store
       benchmarks (`internal/store/webhook_events_bench_test.go`, pure-Go SQLite, one change per transaction, machine
       shared with other sessions at load 8 to 11): a file and its audit entry cost about 270 to 290 µs without the
@@ -2748,6 +2750,134 @@ Decided on approval:
       on the endpoint, `generation` on the delivery, and four indexes: `(endpoint_id, state, generation, event_row_id)` for the
       head, `(state, finished_at)` for the retention, `(event_row_id)` for the sweep's "no delivery refers to" check, and a
       partial index on `(endpoint_id, lease_until)` for the one-request rule. Migration 0022 is unshipped and was edited in place.
+    - **Still open after j3.** The quota warnings and the rewrap are built in j4 (decision 30). The slice review of j is done;
+      its j4 fixes are in decision 30, and the release statement is there too.
+
+30. **Quota warnings, the rewrap of secrets and the quota-warning route, slice j4** (2026-10-31, built on the owner-approved
+    proposal, with every recommendation (a); questions 3 and 9 are the two the brief names). The
+    interpretations below are for review. The code is `internal/store/webhook_quota.go` (levels, marks, the watch flag),
+    `internal/store/webhook_seal.go` and `internal/api/webhook_rewrap.go` (the rewrap), `internal/api/quota_warning.go` (the
+    route), and migration `0024_quota_warning.sql`. Number 30 is taken here; the p4 lane takes 29.
+    - **Levels.** A level is measured on used bytes, the bytes the tree holds. A reservation alone crosses no level, so an
+      upload in progress sends nothing (`TestReservationsDoNotCountTowardTheLevel`). The refusal check still counts used plus
+      reserved bytes, as before. The account's level is taken against its quota (`accounts.quota_bytes`); a user's against the
+      limit of its personal folder (`users.quota_bytes`, or the account default `user_quota_bytes` when the user's follows it).
+      `quota.warning` is sent at the account's warning percent, and `quota.exceeded` at 100. A level is reached at or above its
+      share, so exactly 100 percent sends `quota.exceeded`, and the docs say "reached", not "passed". A limit of 0 is no limit,
+      and no level is reached. The percent is a whole number from 1 to 99: the proposal gives 80 as the default and puts
+      `quota.exceeded` at 100, so 100 has no setting of its own, and the route refuses 0, 100 and anything that is not a whole
+      number. The setting is the column `accounts.quota_warning_percent` (`NOT NULL DEFAULT 80`), so DELETE sets it back to 80.
+    - **Once per crossing, by marks.** A mark in `webhook_quota_marks` says a scope is past a level. The check runs once per
+      write transaction, before commit (`settleQuotas`), on the state the transaction leaves. A scope at or above a level with
+      no mark sends the event and writes the mark, in the same transaction. A scope below a level has that level's mark
+      deleted, so a later crossing sends again. A transaction that moves a scope up and back down inside itself sends nothing,
+      and a dip within a transaction does not fire a second time. One transaction that passes both levels sends
+      `quota.warning`, then `quota.exceeded`. A scope above a level with no mark is announced by the next transaction that
+      touches it.
+    - **Which changes check.** Every usage change goes through `AdjustFolders` or `settleAccount`: uploads and their reservations
+      (`uploads.go`), version writes and prunes, copies, folder moves (`MoveUsage`), trash and purge, and a deleted user's files.
+      The account is checked on each of them. A user is checked when a change touched that user's personal folder; a team space
+      has no user limit. Trashed items still count (decision 21), so a trash sends nothing and a purge does. A folder deleted
+      with its counters (`DeleteFolder`) checks the account. Two paths move counters without a change, and send nothing:
+      `RecountAccount` (`selfcloud admin recount-usage`), and an edit of a limit or of the quota, which send nothing (the edits clear
+      marks, see below). The sweep removes the marks
+      that no longer hold (`PruneQuotaMarks`): a level the scope is back under, a limit that is gone, a user that is deleted,
+      and every mark of an account that nothing watches. So a recount can delay a crossing by one sweep, and cannot make one
+      repeat. I don't know of a path that moves usage and is not covered.
+    - **The hot path.** Whether an account is watched is the column `accounts.quota_watched`, read in the statement that already
+      reads the account's counters (`adjustAccount`), so an account nobody watches runs the same statements as in j3. The
+      endpoint writes keep the column (`syncQuotaWatch`): it runs in the transaction of each insert, update and delete of an
+      endpoint and of each disable, sets the flag from the active endpoints that subscribe to a quota event, and removes the
+      account's marks when the flag goes to 0. The first version asked the endpoint tables in each usage change, as a correlated
+      subquery; that cost about 30 to 55 µs more per account read on the test machine (a micro-benchmark, plain read 18 to 24 µs),
+      so the column replaced it. The brief's rule, no read per file while nothing subscribes, is met: no endpoint query is made
+      on the hot path at all.
+    - **A subscriber added later.** An account nobody watches has no marks. A subscriber added later starts from none, so the next
+      change that leaves a scope above a level announces it. A crossing that happened while nobody watched is not announced, and a
+      subscription sends nothing for the past. A paused endpoint does not watch: pausing the last watcher removes the marks, and
+      resuming starts from none. An overflow that disables the last watcher leaves no mark, because the mark is written only while
+      the account is still watched (`TestAnOverflowThatDisablesTheLastWatcherLeavesNoMark`).
+    - **Payload.** `webhook.Quota`: `scope` (`account` or `user`), `id` (the account's or the user's ID), `percent`, `used_bytes`
+      and `limit_bytes`. No file or folder name, and no path. The envelope is the one of j2.
+    - **The percent.** Changing the level sends nothing. It clears the account's warning marks in the same transaction, and the
+      new level applies from the next transaction that touches a scope: a level lowered below a scope's use is announced then,
+      and a level raised above it sends again at the next crossing.
+    - **The rewrap (`selfcloud admin rewrap-secrets`).** It reads the current links key and the previous one, and never makes a
+      key. A missing current key is an error, since a new one would make every secret unreadable. A previous key that the
+      configuration names must exist and be readable, as the server requires; a previous key the configuration does not name,
+      and that is not there, counts as gone. It works in batches of 100 endpoints, one write each. A secret the current key
+      opens is left alone. A secret only the previous key opens is sealed again under the current key, and the write names the
+      blob it replaces, so a rotation made meanwhile is not overwritten: that endpoint is counted `skipped` and the next run
+      reaches it. A secret that neither key opens is counted `unreadable`. The default run disables nothing and exits 1, so the
+      operator decides. With `-disable-unreadable` it disables each active or paused endpoint with reason `secret_unreadable`,
+      and its queue is cleared by the generation rule of decision 28. A disabled endpoint keeps its reason. A grace copy that
+      cannot be read counts as unreadable while its grace period runs; after that it is counted `expired` and left, since
+      nothing signs with it. An endpoint disabled as `secret_unreadable` whose secret opens again goes to paused with its reason
+      cleared, and is counted `restored`; it does not send until its owner sets it active. Each change writes a `webhook.rewrap`
+      audit entry that names the endpoint and never a secret: `previous` (false or true) for a sealing, `restored` for a restore.
+      Its output is counts only: `endpoints=… rewrapped=… unreadable=… disabled=… restored=… expired=… skipped=…`. It exits 1 on
+      an error, or when `unreadable` is above 0 without `-disable-unreadable`. Running it twice is safe: the second run seals
+      nothing. Interrupting it is safe: each batch is committed. The distroless image's entrypoint is the binary, so
+      `docker exec <container> selfcloud admin rewrap-secrets` runs it with no shell.
+    - **The metric the proposal asked for.** No new metric was added. `selfcloud_webhook_endpoints_disabled{reason="secret_unreadable"}`
+      (j3) is the count the proposal named. It counts the endpoints disabled for an unreadable secret. After a rewrap run with
+      `-disable-unreadable` it covers every unreadable active or paused endpoint; a run without the flag disables none, so it does
+      not move. An endpoint disabled for another reason that also holds an unreadable secret is not counted there until its
+      reason changes, and no metric counts secrets directly.
+    - **The route.** `GET|PUT|DELETE /accounts/{acc}/quota-warning`. GET is read by the account key and an owner
+      (`webhookReader`). PUT and DELETE are the account key only: an owner and a token are refused, an installation admin is
+      refused, another account's key gets 404, and no credential gets 401. The member 404 on every method is the deliberate match
+      of `managedAccount` described above. The openapi lists GET as `getQuotaWarning`.
+    - **Migration 0024.** `0024_quota_warning.sql`: `quota_warning_percent` and `quota_watched`, and a backfill of the flag. It
+      follows p4's `0023_labels.sql`, so the numbering has no gap and no placeholder.
+    - **A fresh links key refuses the start, on every start.** When the default signing key file is absent and the database holds
+      any webhook endpoint, the start is refused before any key is made, so a refused start leaves no key file and changes no
+      endpoint. The refusal names both ways forward: put the earlier key file back into the keys directory, or, if the key is
+      lost for good, run `selfcloud admin new-signing-key -i-lost-the-old-key`. Every start refuses until the operator acts. The
+      check is `refuseFreshLinkKey`, called from `api.New` before `loadLinkKeys`. Tested through `api.New`
+      (`TestFreshKeyRefusalHoldsThroughNew`): two refused starts in a row, no key file afterwards, the endpoint unchanged; a start
+      with the earlier key restored proceeds and leaves that key untouched; a new install with no endpoint starts and makes its key.
+      The earlier version made the key first and refused after it, so the second start went on with the new key. That is fixed.
+    - **The escape for a lost key.** `selfcloud admin new-signing-key -i-lost-the-old-key` makes the default signing key (or the
+      configured one) when none is there. It refuses without the flag and refuses when a key exists; it never prints the key, and
+      it names the path. It is run with the server stopped. A `signing.prev.key` that is there is left alone and still verifies
+      what it signed. What it invalidates, each checked in a test:
+      - webhook secrets: a secret sealed under the lost key does not open under the new one (`TestNewSigningKeyInvalidatesWhatItSays`).
+        The endpoint is not disabled at the start. It goes `secret_unreadable` at its next delivery attempt
+        (`webhook_worker.go`), and its owner rotates the secret;
+      - delegated tokens: a token minted before the change is refused with 401 by a server started after it
+        (`TestNewSigningKeyInvalidatesWhatItSays`);
+      - signed download links and visitor credentials: their keys are derived from the signing key, and the test checks that the
+        MAC and the derived credential key change. It does not run a full link or credential round trip, so that is checked by
+        derivation, not by an end-to-end test.
+    - **The member 404 on GET.** `GET /accounts/{acc}/quota-warning` gives a member 404, not 403. That is a deliberate match of
+      `managedAccount`, which answers 404 to a principal that does not manage the account, as every webhook route does.
+      `TestQuotaWarningReadByKeyAndOwner` asserts it.
+    - **Delivery log (decision 18).** The owner's delivery-log metadata is unchanged in this slice. This is a reading of
+      decision 18, not a new rule.
+    - **Audit classification.** `account.quota_warning` and `webhook.rewrap` are in `webhookAuditNoEvent` (`webhook_guard_test.go`),
+      each with its reason.
+    - **Measured.** Store benchmarks, `internal/store/webhook_quota_bench_test.go`: one usage change in its own transaction
+      (`BenchmarkUsageWrite…`) and b.N changes in one transaction (`BenchmarkUsageCalls…`), three runs each at 3,000 iterations, on
+      an 8-thread machine at load 7 to 9, so the numbers are rough. The j3 base and the j4 tree were run one after the other.
+      No endpoint: j3 about 222 to 234 µs per write and 123 to 140 µs per call; j4 about 163 to 180 µs and 118 to 130 µs. One file
+      endpoint: j4 about 173 to 204 µs per write. A quota endpoint, with the change crossing no level: j4 about 201 to 235 µs per
+      write and 138 to 160 µs per call, against 196 to 232 µs and 117 to 145 µs for j3, which does not check quota. The difference
+      of an unwatched account is inside the noise on this machine: no statement is added on that path, and a run earlier in the
+      session measured the two within a few tens of microseconds in either direction. The j4b changes (the end-of-transaction
+      check, the edits, the rewrap) were not measured again. The unwatched path runs the same statements; the end-of-transaction
+      step does nothing when no watched account was touched.
+    - **Sweep.** The sweep's new step is `PruneQuotaMarks`, one write, after the expired grace secrets are cleared.
+    - **Release blocker.** Nothing in the j4 review blocks the webhook release. Each j4 finding is fixed in code and tested (findings
+      1, 2, 3 and 8 at the store and api level; finding 4 through `api.New`; finding 5 is a decision, not a change, and finding 6 is
+      not reviewed here). Not verified in this round, and so not claimed: the j3 review's fixes beyond the code citations (its
+      findings 1 to 8 are cited as "review finding" in the code, and I did not re-test each), the cost at millions of rows
+      (not measured), and whether any target deployment has NAT64 or SIIT routes (j3 finding 7). Those three are what remain
+      open before release.
+    - **Mutation proof.** Each guard of this slice was removed in a scratch copy, one at a time, and its named test was run.
+      Every guard is caught by a test that fails on its assertion, except the per-transaction check: the per-call form of it no
+      longer exists, so no faithful mutant is built for it. The one-fire-per-transaction property rests on `settleQuotas` being the
+      only check site.
 
 29. **Labels, slice p4** (2026-10-31, built to the design the owner approved; the slice p proposal's section 5 and
     section 7 define it). The interpretations are in section 8 (Labels (p4)) and are listed for review there. The code is

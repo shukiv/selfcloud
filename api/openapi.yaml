@@ -786,6 +786,55 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/WebhookDelivery" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/quota-warning:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Webhooks]
+      operationId: getQuotaWarning
+      summary: Read the share of the quota at which quota.warning is sent
+      description: The account key and an owner read it. A member gets 404, as every webhook route answers it.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The level now in force.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuotaWarning" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Webhooks]
+      operationId: setQuotaWarning
+      summary: Set the share of the quota at which quota.warning is sent
+      description: |
+        Account key only. The level applies to the account's quota and to each user's limit on its personal folder.
+        quota.exceeded is always at 100 percent. Audited as `account.quota_warning`, with the number only.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuotaWarning" }
+      responses:
+        "200":
+          description: The level now in force.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuotaWarning" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Webhooks]
+      operationId: resetQuotaWarning
+      summary: Set the warning level back to the default, 80 percent
+      description: Account key only. Audited as `account.quota_warning`.
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: The level now in force, which is the default.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuotaWarning" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/tokens:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -3819,15 +3868,15 @@ components:
       description: |
         The body of every event. Selfcloud writes the bytes it will send, so the signature (slice j3) covers exactly
         what the receiver reads. The event ID is the same on every attempt; receivers de-duplicate on it.
-        An endpoint may subscribe to quota.warning, quota.exceeded and webhook.test, which the listed types do not
-        include. The test route sends webhook.test (slice j3); quota events come with slice j4, and this build sends none.
+        The data of quota.warning and quota.exceeded is QuotaEventData. The test route sends webhook.test, whose data is
+        an empty object. A quota event is sent once when its level is crossed, and again only after usage drops below it.
       type: object
       required: [id, type, time, account, data]
       properties:
         id: { type: string, example: evt_5m2k8x1v0c3d9q7r4t6w8y0z2a }
         type:
           type: string
-          enum: [file.created, file.updated, file.moved, file.deleted, file.restored, upload.completed, user.created, user.verified]
+          enum: [file.created, file.updated, file.moved, file.deleted, file.restored, upload.completed, user.created, user.verified, quota.warning, quota.exceeded, webhook.test]
         time: { type: string, format: date-time }
         account:
           type: object
@@ -4609,6 +4658,28 @@ components:
         accent_text: { $ref: "#/components/schemas/Hex" }
         accent_soft: { $ref: "#/components/schemas/Hex" }
         accent_border: { $ref: "#/components/schemas/Hex" }
+
+    QuotaWarning:
+      type: object
+      description: The share of the account's quota, and of each user's limit, at which quota.warning is sent.
+      required: [percent]
+      properties:
+        percent: { type: integer, minimum: 1, maximum: 99, example: 80 }
+
+    QuotaEventData:
+      description: |
+        The data of quota.warning and quota.exceeded (decision 30). `scope` is `account`, or `user` for a user's limit on
+        its personal folder, and then `id` is the user's ID. `used_bytes` is what the quota counts: used plus reserved.
+        `percent` is the level: the account's setting for quota.warning, and 100 for quota.exceeded. No file or folder
+        name is in the event.
+      type: object
+      required: [scope, id, percent, used_bytes, limit_bytes]
+      properties:
+        scope: { type: string, enum: [account, user] }
+        id: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        percent: { type: integer, example: 80 }
+        used_bytes: { type: integer, format: int64 }
+        limit_bytes: { type: integer, format: int64 }
 
     Limits:
       type: object

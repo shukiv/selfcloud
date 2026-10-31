@@ -33,6 +33,17 @@ type Folder struct {
 	Subtree  bool   `json:"subtree"`
 }
 
+// Quota is the data of quota.warning and quota.exceeded (decision 30): the scope the level was crossed in, the scope's
+// ID, the level, and the numbers. Scope is "account", or "user" for a user's limit on its personal folder. Nothing
+// names a file or a folder path.
+type Quota struct {
+	Scope      string `json:"scope"`
+	ID         string `json:"id"`
+	Percent    int64  `json:"percent"`     // the level as a share of the limit: the account's warning percent, or 100
+	UsedBytes  int64  `json:"used_bytes"`  // what the quota counts: used bytes plus reserved bytes
+	LimitBytes int64  `json:"limit_bytes"` // the limit the share is taken of
+}
+
 // User is the data of a user event: the user's ID and its external ID. No email address and no name.
 type User struct {
 	ID         string  `json:"id"`

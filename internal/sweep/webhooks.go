@@ -46,6 +46,10 @@ func (w *Sweeper) pruneWebhooks(ctx context.Context, now time.Time, res *Result)
 		}
 	}
 	var err error
-	res.WebhookSecrets, err = w.st.ClearExpiredPreviousSecrets(ctx, now)
+	if res.WebhookSecrets, err = w.st.ClearExpiredPreviousSecrets(ctx, now); err != nil {
+		return err
+	}
+	// Quota marks that a path did not keep right (decision 30). The writes keep them right, so this normally removes nothing.
+	res.WebhookQuotaMarks, err = w.st.PruneQuotaMarks(ctx)
 	return err
 }

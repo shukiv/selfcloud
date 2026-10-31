@@ -160,6 +160,12 @@ func (tx *Tx) InsertAccount(ctx context.Context, a *Account) error {
 // UpdateAccount writes a's name, external ID, status, quota and token cut-off. Usage counters
 // are not touched; they change only alongside the files they count.
 func (tx *Tx) UpdateAccount(ctx context.Context, a *Account) error {
+	// A changed quota clears the account's quota marks, so the next change above a level is announced (webhook_quota.go).
+	var old int64
+	if err := tx.q.QueryRowContext(ctx, "SELECT quota_bytes FROM accounts WHERE id = ?", a.ID).Scan(&old); err != nil &&
+		!errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE accounts SET external_id = ?, name = ?,
 		status = ?, quota_bytes = ?, tokens_not_before = ?, updated_at = ? WHERE id = ?`,
 		nullString(a.ExternalID), a.Name, a.Status, a.QuotaBytes, millis(a.TokensNotBefore),
@@ -167,7 +173,10 @@ func (tx *Tx) UpdateAccount(ctx context.Context, a *Account) error {
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
-	return err
+	if err != nil || old == a.QuotaBytes {
+		return err
+	}
+	return tx.forgetAccountQuotaMarks(ctx, a.ID)
 }
 
 // DeleteAccount removes the account and, by cascade, everything that belongs to it in the

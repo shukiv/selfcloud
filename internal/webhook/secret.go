@@ -111,6 +111,32 @@ func (s *Sealer) Seal(plain []byte, b Binding) ([]byte, error) {
 	return s.current.Seal(out, nonce[:], plain, b.aad()), nil
 }
 
+// Rewrap returns blob sealed under the current key for the row and column named by b. changed is false,
+// and blob is returned as it is, when the current key opens it already. A blob that only the previous key
+// opens is opened and sealed again under the current key, with a new nonce, and changed is true. Any blob
+// that neither key opens is ErrUnreadable.
+func (s *Sealer) Rewrap(blob []byte, b Binding) (out []byte, changed bool, err error) {
+	if len(blob) < NonceLen+s.current.Overhead() {
+		return nil, false, ErrUnreadable
+	}
+	nonce, body := blob[:NonceLen], blob[NonceLen:]
+	if _, err := s.current.Open(nil, nonce, body, b.aad()); err == nil {
+		return blob, false, nil
+	}
+	if s.previous == nil {
+		return nil, false, ErrUnreadable
+	}
+	plain, err := s.previous.Open(nil, nonce, body, b.aad())
+	if err != nil {
+		return nil, false, ErrUnreadable
+	}
+	out, err = s.Seal(plain, b)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
+}
+
 // Open decrypts blob for the row and column named by b, under the current key or else the previous
 // one. Any failure is ErrUnreadable.
 func (s *Sealer) Open(blob []byte, b Binding) ([]byte, error) {

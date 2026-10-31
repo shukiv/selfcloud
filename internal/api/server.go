@@ -186,6 +186,9 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("api: public_url: %w", err)
 	}
 	cfg := opts.Config
+	if err := refuseFreshLinkKey(context.Background(), opts.Store, cfg.DataDir, cfg.Links); err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
 	links, err := loadLinkKeys(cfg.DataDir, cfg.Links)
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
@@ -383,6 +386,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/test", handle: s.handleTestWebhook, auth: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries", handle: s.handleListWebhookDeliveries, auth: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry", handle: s.handleRetryWebhookDelivery, auth: true},
+		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handlePutQuotaWarning, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handleGetQuotaWarning, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handleDeleteQuotaWarning, auth: true},
 		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true},
 
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/folders", handle: s.handleCreateFolder, auth: true},

@@ -261,6 +261,12 @@ func (tx *Tx) InsertUser(ctx context.Context, u *User) error {
 // ErrNotFound if the user is not in the account, and ErrConflict if the external ID is taken.
 func (tx *Tx) UpdateUser(ctx context.Context, u *User) error {
 	clause, cargs := accountClause(u.AccountID)
+	// A changed limit clears the user's quota marks, so the next change above a level is announced (webhook_quota.go).
+	var old sql.NullInt64
+	if err := tx.q.QueryRowContext(ctx, "SELECT quota_bytes FROM users WHERE id = ?", u.ID).Scan(&old); err != nil &&
+		!errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	args := append([]any{nullString(u.ExternalID), u.DisplayName, u.Locale, u.Role, u.Status,
 		nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.UpdatedAt), nullInt(u.QuotaBytes), u.ID}, cargs...)
 	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE users SET external_id = ?, display_name = ?,
@@ -269,15 +275,25 @@ func (tx *Tx) UpdateUser(ctx context.Context, u *User) error {
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
-	return err
+	var next sql.NullInt64
+	if u.QuotaBytes != nil {
+		next = sql.NullInt64{Int64: *u.QuotaBytes, Valid: true}
+	}
+	if err != nil || old == next {
+		return err
+	}
+	return tx.deleteUserQuotaMarks(ctx, u.ID)
 }
 
 // DeleteUser removes a user of accountID ("" for an admin), with its sessions and tokens. It returns ErrNotFound
 // if there is no such user.
 func (tx *Tx) DeleteUser(ctx context.Context, accountID, id string) error {
 	clause, cargs := accountClause(accountID)
-	return rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM users WHERE id = ? AND "+clause,
-		append([]any{id}, cargs...)...))
+	if err := rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM users WHERE id = ? AND "+clause,
+		append([]any{id}, cargs...)...)); err != nil {
+		return err
+	}
+	return tx.deleteUserQuotaMarks(ctx, id)
 }
 
 // Verification is a single-use token that proves control of a user's email address: a

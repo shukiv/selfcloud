@@ -190,7 +190,10 @@ func (tx *Tx) InsertWebhookEndpoint(ctx context.Context, e *WebhookEndpoint) err
 	if err != nil {
 		return err
 	}
-	return tx.writeEvents(ctx, e)
+	if err := tx.writeEvents(ctx, e); err != nil {
+		return err
+	}
+	return tx.syncQuotaWatch(ctx, e.AccountID)
 }
 
 // UpdateWebhookEndpoint rewrites the endpoint named by e.ID within e.AccountID, with its event list. It
@@ -210,7 +213,10 @@ func (tx *Tx) UpdateWebhookEndpoint(ctx context.Context, e *WebhookEndpoint) err
 		"DELETE FROM webhook_endpoint_events WHERE endpoint_id = ? AND account_id = ?", e.ID, e.AccountID); err != nil {
 		return err
 	}
-	return tx.writeEvents(ctx, e)
+	if err := tx.writeEvents(ctx, e); err != nil {
+		return err
+	}
+	return tx.syncQuotaWatch(ctx, e.AccountID)
 }
 
 func (tx *Tx) writeEvents(ctx context.Context, e *WebhookEndpoint) error {
@@ -227,6 +233,9 @@ func (tx *Tx) writeEvents(ctx context.Context, e *WebhookEndpoint) error {
 // DeleteWebhookEndpoint removes an endpoint of accountID with its events. Another account's endpoint
 // is ErrNotFound.
 func (tx *Tx) DeleteWebhookEndpoint(ctx context.Context, accountID, id string) error {
-	return rowsAffected(tx.q.ExecContext(ctx,
-		"DELETE FROM webhook_endpoints WHERE account_id = ? AND id = ?", accountID, id))
+	if err := rowsAffected(tx.q.ExecContext(ctx,
+		"DELETE FROM webhook_endpoints WHERE account_id = ? AND id = ?", accountID, id)); err != nil {
+		return err
+	}
+	return tx.syncQuotaWatch(ctx, accountID)
 }

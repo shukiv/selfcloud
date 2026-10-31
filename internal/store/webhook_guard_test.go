@@ -94,6 +94,8 @@ var webhookAuditNoEvent = map[string]string{
 	"label_field.delete":     "label fields are not on the event list (decision 29)",
 	"node.label_set":         "label values are not on the event list (decision 29)",
 	"node.label_clear":       "label values are not on the event list (decision 29)",
+	"webhook.rewrap":         "a webhook secret sealed again under the current key by the admin command: the secret is the same, nothing is reported",
+	"account.quota_warning":  "the quota-warning level is a setting, not a change of usage: the quota.warning event is the report",
 }
 
 // nodeWriteSite is one pinned count of node-writing calls or statements in one file, with what each one

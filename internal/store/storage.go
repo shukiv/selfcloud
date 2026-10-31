@@ -19,8 +19,17 @@ func (f scanFunc) Scan(dest ...any) error { return f(dest...) }
 // SetUserQuotaDefault sets the limit each user gets when its own limit follows the account's default. 0 is
 // no limit.
 func (tx *Tx) SetUserQuotaDefault(ctx context.Context, accountID string, bytes int64, at time.Time) error {
-	return rowsAffected(tx.q.ExecContext(ctx, "UPDATE accounts SET user_quota_bytes = ?, updated_at = ? WHERE id = ?",
-		bytes, millis(at), accountID))
+	var old int64
+	if err := tx.q.QueryRowContext(ctx, "SELECT user_quota_bytes FROM accounts WHERE id = ?", accountID).Scan(&old); err != nil &&
+		!errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err := rowsAffected(tx.q.ExecContext(ctx, "UPDATE accounts SET user_quota_bytes = ?, updated_at = ? WHERE id = ?",
+		bytes, millis(at), accountID)); err != nil || old == bytes {
+		return err
+	}
+	// A changed default clears the marks of the users whose limit follows it (webhook_quota.go).
+	return tx.forgetDefaultUserQuotaMarks(ctx, accountID)
 }
 
 // StorageUser is a user of an account with the counters of its personal folder.

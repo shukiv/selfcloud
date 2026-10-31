@@ -16,6 +16,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/shukiv/selfcloud/internal/api"
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/id"
@@ -38,6 +39,14 @@ Commands:
                                  create a pending admin user; print its set-password link and token
   recount-usage [-account ID]    recompute usage and reserved bytes from the files and uploads
                                  (all accounts unless -account is given), and print the change
+  new-signing-key -i-lost-the-old-key
+                                 make a new signing key when the old one is lost for good. It refuses
+                                 when a key exists, and it invalidates the webhook secrets, the signed
+                                 download links, the delegated tokens and the visitor credentials
+  rewrap-secrets                 seal each webhook secret that only the previous links key opens under
+                                 the current key. Exits 1 if a secret neither key opens, unless
+                                 -disable-unreadable disables those endpoints. Run it before the previous
+                                 key file is removed. Safe to run again
 `
 
 // cliActor is the audit log's name for these commands.
@@ -66,6 +75,10 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return adminCreateAdmin(args, stdout, stderr)
 	case "recount-usage":
 		return adminRecountUsage(args, stdout, stderr)
+	case "rewrap-secrets":
+		return adminRewrapSecrets(args, stdout, stderr)
+	case "new-signing-key":
+		return adminNewSigningKey(args, stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, adminUsage)
 		return 0
@@ -401,5 +414,70 @@ func adminRecountUsage(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "account=%s used_bytes=%d->%d used_files=%d->%d reserved_bytes=%d->%d\n",
 			acc, before.Bytes, after.Bytes, before.Files, after.Files, before.Reserved, after.Reserved)
 	}
+	return 0
+}
+
+// adminRewrapSecrets seals each webhook secret that only the previous links key opens under the current key (design
+// section 10, decision 30). A secret that neither key opens is reported; with -disable-unreadable its endpoint is
+// disabled as secret_unreadable, and without it the command exits 1 so the operator decides. It prints counts only. It
+// reads the configuration as the server does, so -config and SELFCLOUD_CONFIG apply.
+func adminRewrapSecrets(args []string, stdout, stderr io.Writer) int {
+	var disable bool
+	cfg, _, code := loadConfig("admin rewrap-secrets", args, stderr, 0, func(fs *flag.FlagSet) {
+		fs.BoolVar(&disable, "disable-unreadable", false,
+			"disable each endpoint whose secret neither key opens (reason secret_unreadable)")
+	})
+	if cfg == nil {
+		return code
+	}
+	ctx := context.Background()
+	log := newLogger(config.LogConfig{Level: "warn", Format: cfg.Log.Format}, stderr)
+	st, err := openStore(ctx, cfg, log)
+	if err != nil {
+		fmt.Fprintf(stderr, "selfcloud admin rewrap-secrets: %v\n", err)
+		return 1
+	}
+	defer st.Close()
+	c, err := api.RewrapWebhookSecrets(ctx, st, cfg, store.Now(), disable)
+	fmt.Fprintf(stdout, "endpoints=%d rewrapped=%d unreadable=%d disabled=%d restored=%d expired=%d skipped=%d\n",
+		c.Endpoints, c.Rewrapped, c.Unreadable, c.Disabled, c.Restored, c.Expired, c.Skipped)
+	if err != nil {
+		fmt.Fprintln(stderr, "selfcloud admin rewrap-secrets:", err)
+		return 1
+	}
+	if c.Unreadable > 0 && !disable {
+		fmt.Fprintf(stderr, "selfcloud admin rewrap-secrets: %d secret(s) neither links key opens; "+
+			"run again with -disable-unreadable to disable their endpoints\n", c.Unreadable)
+		return 1
+	}
+	return 0
+}
+
+// adminNewSigningKey makes a new links signing key for an operator whose key is lost for good. It refuses unless the flag
+// confirms the loss, and it refuses when a key is already there. The key is never printed. What it invalidates: the
+// secrets of every webhook endpoint (each endpoint goes secret_unreadable at its next delivery attempt, and its owner
+// rotates the secret), the signed download links, the delegated tokens, and the visitor share credentials. Run it with
+// the server stopped.
+func adminNewSigningKey(args []string, stdout, stderr io.Writer) int {
+	var lost bool
+	cfg, _, code := loadConfig("admin new-signing-key", args, stderr, 0, func(fs *flag.FlagSet) {
+		fs.BoolVar(&lost, "i-lost-the-old-key", false, "confirm that the old signing key is lost for good")
+	})
+	if cfg == nil {
+		return code
+	}
+	if !lost {
+		fmt.Fprintln(stderr, "selfcloud admin new-signing-key: refused. This makes a new signing key and invalidates the "+
+			"webhook secrets, the signed download links, the delegated tokens and the visitor credentials. "+
+			"Pass -i-lost-the-old-key to confirm the old key is lost for good.")
+		return 2
+	}
+	path, err := api.NewSigningKey(cfg.DataDir, cfg.Links)
+	if err != nil {
+		fmt.Fprintf(stderr, "selfcloud admin new-signing-key: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "made a new signing key at %s; the key is not printed. Start the server; each webhook endpoint "+
+		"goes secret_unreadable at its next delivery attempt and its owner rotates the secret.\n", path)
 	return 0
 }

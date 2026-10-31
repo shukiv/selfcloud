@@ -16,6 +16,7 @@ package api
 // the current signing key and, after a rotation, the previous one.
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -103,6 +104,37 @@ func loadLinkKeys(dataDir string, cfg config.LinksConfig) (*linkKeys, error) {
 	return k, nil
 }
 
+// refuseFreshLinkKey refuses a start that would make the default signing key while the database holds webhook endpoints.
+// Their secrets were sealed under a key that is no longer there, so none of them opens. It runs before loadLinkKeys, so a
+// refused start creates no key and changes nothing, and every start refuses until the operator acts: either the earlier
+// key file goes back into the keys directory, or, when the key is lost for good, `selfcloud admin new-signing-key` makes a
+// new one. An existing key, or a configured signing key file, is never refused here.
+func refuseFreshLinkKey(ctx context.Context, st *store.Store, dataDir string, cfg config.LinksConfig) error {
+	if cfg.SigningKeyFile != "" {
+		return nil
+	}
+	dir := filepath.Join(dataDir, "keys")
+	_, err := os.Stat(filepath.Join(dir, keyFileName))
+	switch {
+	case err == nil:
+		return nil
+	case !errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("keys: %w", err)
+	}
+	n, err := st.WebhookEndpointCount(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+	return fmt.Errorf("the signing key %s is missing from %s, but the database holds %d webhook endpoint(s) sealed under "+
+		"it; nothing was created or changed. Either put the earlier key file back into that directory and start again, "+
+		"or, if the key is lost for good, run `selfcloud admin new-signing-key -i-lost-the-old-key`, which makes a new "+
+		"key and invalidates the endpoints' secrets, signed links, delegated tokens and visitor credentials",
+		keyFileName, dir, n)
+}
+
 // createKeyFile makes a new random key at path if nothing is there. The key is written to a
 // temporary file and linked into place, so a crash leaves either no key or a whole one, and an
 // existing key is never replaced.
@@ -132,6 +164,31 @@ func createKeyFile(path, dir string) error {
 		return fmt.Errorf("keys: %w", err)
 	}
 	return nil
+}
+
+// NewSigningKey makes the default signing key (or the configured one) for an operator whose key is lost for good. It
+// never replaces a key: an existing key is an error. It returns the path it made. The key itself is never printed. The
+// previous key file, if there is one, is left alone and still verifies what it signed.
+func NewSigningKey(dataDir string, cfg config.LinksConfig) (string, error) {
+	path := cfg.SigningKeyFile
+	if path == "" {
+		path = filepath.Join(dataDir, "keys", keyFileName)
+	}
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return "", fmt.Errorf("a signing key already exists at %s; nothing was changed", path)
+	case !errors.Is(err, fs.ErrNotExist):
+		return "", fmt.Errorf("keys: %w", err)
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("keys: %w", err)
+	}
+	if err := createKeyFile(path, dir); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // readKeyFile reads a signing key. It refuses a key that anyone but its owner can read, and one

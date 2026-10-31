@@ -36,12 +36,20 @@ type Tx struct {
 	log *slog.Logger
 	// fanouts holds, per account, what the transaction emits events to (webhook_events.go).
 	fanouts map[string]*webhookFanout
+	// quota holds the accounts whose usage this transaction changed, for the quota check before commit (webhook_quota.go).
+	quota map[string]*quotaTouch
 }
 
 // Write runs fn in a write transaction and commits if fn returns nil. Errors from fn are
-// returned unchanged.
+// returned unchanged. Before the commit, the quota levels of the accounts fn changed are checked on the state it left.
 func (s *Store) Write(ctx context.Context, fn func(tx *Tx) error) error {
-	return s.write(ctx, func(t *sql.Tx) error { return fn(&Tx{q: t, log: s.log}) })
+	return s.write(ctx, func(t *sql.Tx) error {
+		tx := &Tx{q: t, log: s.log}
+		if err := fn(tx); err != nil {
+			return err
+		}
+		return tx.settleQuotas(ctx)
+	})
 }
 
 // Page selects one page of a list.

@@ -368,7 +368,7 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 		return err
 	}
 	// The folder's counters went with its row; the account loses its share.
-	return tx.adjustAccount(ctx, accountID, UsageChange{Bytes: -bytes, Files: -files, Reserved: -reserved})
+	return tx.settleAccount(ctx, accountID, UsageChange{Bytes: -bytes, Files: -files, Reserved: -reserved}, nil)
 }
 
 // CountFolderEntries returns how many files and directories a folder holds below its root. A

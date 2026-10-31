@@ -58,46 +58,84 @@ func (tx *Tx) MoveUsage(ctx context.Context, accountID, from, to string, c Usage
 // `selfcloud admin recount-usage` corrects the numbers.
 func (tx *Tx) AdjustFolders(ctx context.Context, accountID string, parts ...FolderChange) error {
 	var net UsageChange
+	var owners []string
 	for _, p := range parts {
 		if p.FolderID == "" {
 			return errors.New("store: a usage change must name its folder")
 		}
-		if err := tx.adjustFolder(ctx, accountID, p.FolderID, p.Change); err != nil {
+		owner, err := tx.adjustFolder(ctx, accountID, p.FolderID, p.Change)
+		if err != nil {
 			return err
+		}
+		if owner != "" {
+			owners = append(owners, owner)
 		}
 		net.Bytes += p.Change.Bytes
 		net.Files += p.Change.Files
 		net.Reserved += p.Change.Reserved
 	}
-	return tx.adjustAccount(ctx, accountID, net)
+	return tx.settleAccount(ctx, accountID, net, owners)
 }
 
-// adjustFolder applies c to one folder's counters, clamped at zero as the account's are.
-func (tx *Tx) adjustFolder(ctx context.Context, accountID, folderID string, c UsageChange) error {
-	var cur Usage
-	err := tx.q.QueryRowContext(ctx, "SELECT used_bytes, used_files, reserved_bytes FROM folders WHERE account_id = ? AND id = ?",
-		accountID, folderID).Scan(&cur.Bytes, &cur.Files, &cur.Reserved)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
+// settleAccount applies the net change to the account and, when an endpoint watches a quota event, notes the account and
+// the owners of the personal folders the change touched. The quota levels are checked once, when the transaction is about
+// to commit (settleQuotas), on the state it leaves, so a change that dips and returns is not announced. The account row
+// just written says whether anyone watches, so a change in an account that nobody watches notes nothing.
+func (tx *Tx) settleAccount(ctx context.Context, accountID string, net UsageChange, owners []string) error {
+	acc, err := tx.adjustAccount(ctx, accountID, net)
 	if err != nil {
 		return err
+	}
+	if acc.Watched {
+		tx.noteQuota(accountID, owners...)
+	}
+	return nil
+}
+
+// adjustFolder applies c to one folder's counters, clamped at zero as the account's are. It returns the folder's owner
+// when it is a personal folder. The row it reads holds the owner, so a change to a team space costs no more than it did.
+func (tx *Tx) adjustFolder(ctx context.Context, accountID, folderID string, c UsageChange) (owner string, err error) {
+	var cur Usage
+	var ownerID sql.NullString
+	err = tx.q.QueryRowContext(ctx, "SELECT used_bytes, used_files, reserved_bytes, owner_user_id FROM folders WHERE account_id = ? AND id = ?",
+		accountID, folderID).Scan(&cur.Bytes, &cur.Files, &cur.Reserved, &ownerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
 	}
 	next := clampUsage(tx, accountID, "folder "+folderID, cur, c)
 	_, err = tx.q.ExecContext(ctx, `UPDATE folders SET used_bytes = ?, used_files = ?, reserved_bytes = ?
 		WHERE account_id = ? AND id = ?`, next.Bytes, next.Files, next.Reserved, accountID, folderID)
-	return err
+	return ownerID.String, err
 }
 
-// adjustAccount applies c to the account's counters, clamped at zero.
-func (tx *Tx) adjustAccount(ctx context.Context, accountID string, c UsageChange) error {
-	cur, err := tx.usage(ctx, accountID)
-	if err != nil {
-		return err
+// accountAfter is an account as a change leaves it: its counters, and whether an active endpoint subscribes to a quota
+// event (Watched). adjustAccount reads that in the statement that reads the counters, so asking costs no extra statement.
+type accountAfter struct {
+	Usage
+	Watched bool
+}
+
+// adjustAccount applies c to the account's counters, clamped at zero, and returns the account after the change.
+func (tx *Tx) adjustAccount(ctx context.Context, accountID string, c UsageChange) (accountAfter, error) {
+	var cur accountAfter
+	err := tx.q.QueryRowContext(ctx, `SELECT used_bytes, used_files, reserved_bytes, quota_watched = 1
+		FROM accounts WHERE id = ?`, accountID).
+		Scan(&cur.Bytes, &cur.Files, &cur.Reserved, &cur.Watched)
+	if errors.Is(err, sql.ErrNoRows) {
+		return cur, ErrNotFound
 	}
-	next := clampUsage(tx, accountID, "account", cur, c)
-	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE accounts SET used_bytes = ?, used_files = ?,
-		reserved_bytes = ? WHERE id = ?`, next.Bytes, next.Files, next.Reserved, accountID))
+	if err != nil {
+		return cur, err
+	}
+	cur.Usage = clampUsage(tx, accountID, "account", cur.Usage, c)
+	if err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE accounts SET used_bytes = ?, used_files = ?,
+		reserved_bytes = ? WHERE id = ?`, cur.Bytes, cur.Files, cur.Reserved, accountID)); err != nil {
+		return cur, err
+	}
+	return cur, nil
 }
 
 // clampUsage is cur with c added, each counter kept at zero or above, with a warning when that happened.

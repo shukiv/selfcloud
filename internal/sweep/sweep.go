@@ -127,6 +127,7 @@ type Result struct {
 	WebhookDeliveries int
 	WebhookEvents     int
 	WebhookSecrets    int64
+	WebhookQuotaMarks int // quota marks that no longer hold (decision 30)
 }
 
 // recentRetention is how long a recent entry is kept after its last use, and recentPerUser how many a user keeps.

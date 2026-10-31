@@ -229,17 +229,33 @@ func (s *Store) DisableWebhookEndpoint(ctx context.Context, accountID, endpointI
 // and the worker never sends them, even after a re-enable (decision 28). The transaction's fanout forgets the
 // endpoint, so later events of the transaction skip it.
 func (tx *Tx) disableInTx(ctx context.Context, accountID, endpointID, reason string, at time.Time, url string) error {
+	_, err := tx.disableFrom(ctx, accountID, endpointID, reason, at, url, WebhookActive)
+	return err
+}
+
+// disableFrom disables an endpoint whose state is one of from, as disableInTx does, and reports whether it changed one.
+// The rewrap of secrets (decision 30) also disables a paused endpoint, which the worker never does.
+func (tx *Tx) disableFrom(ctx context.Context, accountID, endpointID, reason string, at time.Time, url string,
+	from ...string) (bool, error) {
+	states, err := json.Marshal(from)
+	if err != nil {
+		return false, err
+	}
 	n, err := rowsOf(tx.q.ExecContext(ctx, `UPDATE webhook_endpoints SET state = ?, disabled_reason = ?, updated_at = ?,
 		generation = generation + 1, stale_queue = 1
-		WHERE id = ? AND account_id = ? AND state = ?`,
-		WebhookDisabled, reason, millis(at), endpointID, accountID, WebhookActive))
+		WHERE id = ? AND account_id = ? AND state IN (SELECT value FROM json_each(?))`,
+		WebhookDisabled, reason, millis(at), endpointID, accountID, string(states)))
 	if err != nil || n == 0 {
-		return err
+		return false, err
 	}
 	if f, ok := tx.fanouts[accountID]; ok {
 		f.drop(endpointID)
 	}
-	return tx.InsertAudit(ctx, &AuditEntry{Time: at, AccountID: accountID, ActorKind: "system", ActorID: "webhooks",
+	// The endpoint no longer counts as a watcher, so the account's quota flag and marks follow it (webhook_quota.go).
+	if err := tx.syncQuotaWatch(ctx, accountID); err != nil {
+		return false, err
+	}
+	return true, tx.InsertAudit(ctx, &AuditEntry{Time: at, AccountID: accountID, ActorKind: "system", ActorID: "webhooks",
 		Action: "webhook.disabled", Target: endpointID,
 		Details: map[string]any{"reason": reason, "url": webhook.Origin(url)}})
 }
