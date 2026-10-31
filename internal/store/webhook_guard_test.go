@@ -32,6 +32,7 @@ var webhookAuditNoEvent = map[string]string{
 	"node.link":              "share links are not on the event list",
 	"node.office":            "opening an editor is not a change to the file; the edits the editor saves are node.write, which reports file.updated",
 	"node.copy":              "emitted per created node by copyTree (api/transfer.go), not from this audit entry",
+	"node.zip":               "a stored zip is a download made by its caller, not a change to a file; decision 35 emits no webhook event for it",
 	"upload.create":          "an upload begun is not a change to a file; upload.completed reports the file",
 	"upload.delete":          "an upload dropped is not on the event list",
 	"upload.expire":          "an upload expired is not on the event list",

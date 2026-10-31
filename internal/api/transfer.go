@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -691,11 +690,7 @@ func (s *Server) runCopyJobWhole(ctx context.Context, job *store.Job) error {
 		}
 		// Queued work is checked again: a copy whose caller was revoked since the job was queued
 		// writes nothing. Expiry alone does not count, because the copy was allowed when it was asked.
-		d, err := tx.Delegation(ctx, job.AccountID, callerKeyID(p), p.UserID)
-		if errors.Is(err, store.ErrNotFound) || (err == nil && !callerLive(p, d, time.Now())) {
-			return apierr.New(apierr.Forbidden, "the caller of this copy no longer has access; nothing was copied")
-		}
-		if err != nil {
+		if err := copyActorLive(ctx, tx, p, job.AccountID); err != nil {
 			return err
 		}
 		src, err := tx.Node(ctx, job.AccountID, pl.Source)

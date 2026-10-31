@@ -44,6 +44,7 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/api/share_links.go":      2,
 	"internal/api/shortcuts.go":        5,
 	"internal/api/thumbnails.go":       2,
+	"internal/api/zips.go":             5,
 	"internal/api/tokens.go":           1,
 	"internal/api/transfer.go":         11,
 	"internal/api/uploads.go":          2,

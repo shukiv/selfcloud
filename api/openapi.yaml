@@ -938,6 +938,114 @@ paths:
               schema: { $ref: "#/components/schemas/AuditList" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/zips:
+    post:
+      tags: [Files]
+      operationId: createZip
+      summary: Make a zip of files and folders
+      description: |
+        Makes one zip of the nodes named, as a job, and answers `202` with the job (its `Location` is
+        `/api/v1/jobs/{job}`). Each node must be readable by the caller. A folder is zipped with everything
+        in it that the caller can read. A shortcut is not zipped: it is left out and counted in
+        `X-Selfcloud-Skipped`. A node the no-download rule restricts for the caller (a viewer or commenter)
+        refuses the zip, as a copy does. The zip is a snapshot of the tree at the time the job reads it,
+        and each file is read from the contents it had then.
+
+        The zip is stored, and kept for `zip.ttl` after it is made. It is served with `Range`, so an
+        interrupted download resumes. It does not count toward the account's quota; the stored zips are
+        limited by the server's `zip.max_disk` and each account's `zip.max_disk_per_account`. A zip is for the
+        caller who made it, with the credential it came in on, and no one else.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nodes]
+              properties:
+                nodes:
+                  type: array
+                  minItems: 1
+                  maxItems: 1000
+                  items: { type: string }
+      responses:
+        "202":
+          description: The zip is being made. Its job is at `Location`; when it succeeds, the zip is at `/api/v1/zips/{zip}` (the job's target).
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/zips/{zip}:
+    parameters:
+      - name: zip
+        in: path
+        required: true
+        schema: { type: string, example: "zip_7k2m9q..." }
+    get:
+      tags: [Files]
+      operationId: getZip
+      summary: Download a zip made by the caller
+      description: |
+        Only the caller who made the zip, with the same credential (a token is read only by that token), may
+        read it; for anyone else it is `404`. Each call re-checks
+        that the caller can still read every node the zip was made from, and that none is in the trash:
+        a revoked or trashed one refuses the download, and so does an expired zip. The no-download rule
+        is not checked again: a zip stays until it expires once it is made. A zip still being made
+        answers `202`. A `Range` request resumes a download, and `If-Range` is honoured.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: Range
+          in: header
+          required: false
+          schema: { type: string, example: "bytes=1048576-" }
+      responses:
+        "200":
+          description: The zip.
+          headers:
+            ETag: { schema: { type: string, description: "The SHA-256 of the zip, quoted." } }
+            Accept-Ranges: { schema: { type: string } }
+            X-Selfcloud-Skipped: { schema: { type: integer, description: "Nodes left out: shortcuts and nodes the caller cannot read." } }
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "202":
+          description: The zip is still being made. Ask again after `Retry-After` seconds.
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state: { type: string, enum: [pending] }
+        "206":
+          description: The part of the zip asked for by `Range`.
+        "304":
+          description: "Not modified: the `If-None-Match` ETag is current."
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "416": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Files]
+      operationId: deleteZip
+      summary: Delete a zip made by the caller
+      description: Removes the zip now, rather than at its expiry. A zip still being made is refused with `409`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: The zip is deleted. }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/jobs/{job}:
     parameters:
       - name: job

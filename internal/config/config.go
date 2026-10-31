@@ -64,6 +64,7 @@ type Config struct {
 	Storage   StorageConfig   `yaml:"storage"`
 	Blobs     BlobsConfig     `yaml:"blobs"`
 	Derived   DerivedConfig   `yaml:"derived"`
+	Zip       ZipConfig       `yaml:"zip"`
 	Copy      CopyConfig      `yaml:"copy"`
 	Sharing   SharingConfig   `yaml:"sharing"`
 	Trash     TrashConfig     `yaml:"trash"`
@@ -157,6 +158,51 @@ type StorageConfig struct {
 }
 
 // CopyConfig controls copying folders.
+// ZipConfig is the stored zip download (design section 14, slice s2, decision 35). A zip is made as a job and kept
+// for TTL. The limits are checked before the first byte is written.
+type ZipConfig struct {
+	// MaxEntries is the most entries (files and folders) one zip may hold. The default, 100,000, is a placeholder: the
+	// owner's figure for a typical folder is not known.
+	MaxEntries int `yaml:"max_entries"`
+	// MaxBytes is the most bytes of files one zip may hold, counted on the tree as it was read. Larger zips are refused.
+	MaxBytes ByteSize `yaml:"max_bytes"`
+	// MaxDisk is the disk for all stored zips together: the ready ones and the bytes the unfinished ones reserve.
+	// A zip that would pass it is refused before it writes anything. It is separate from derived.max_bytes, so
+	// thumbnails are never evicted for a zip.
+	MaxDisk ByteSize `yaml:"max_disk"`
+	// MaxDiskPerAccount is the share of MaxDisk one account's zips may hold, ready and reserved together, so one
+	// account cannot use the whole budget and starve the others. It is enforced in the same write as MaxDisk.
+	MaxDiskPerAccount ByteSize `yaml:"max_disk_per_account"`
+	// TTL is how long a finished zip is kept. The sweep removes it after that.
+	TTL Duration `yaml:"ttl"`
+	// MaxPerPrincipal is how many unfinished zips one caller may have at once.
+	MaxPerPrincipal int `yaml:"max_per_principal"`
+	// MaxPerAccount is how many unfinished zips an account may have at once, across its callers.
+	MaxPerAccount int `yaml:"max_per_account"`
+	// MaxUnfinished is how many unfinished zips the installation may have at once. Each one holds its open file and
+	// its entry list in memory until it finishes, so this bounds the memory.
+	MaxUnfinished int `yaml:"max_unfinished"`
+}
+
+// validateZip checks the zip block.
+func validateZip(z ZipConfig, bad func(string, ...any)) {
+	if z.MaxEntries < 1 || z.MaxEntries > 1_000_000 {
+		bad("zip.max_entries must be between 1 and 1,000,000")
+	}
+	if z.MaxBytes <= 0 || z.MaxDisk < z.MaxBytes {
+		bad("zip.max_bytes must be positive, and zip.max_disk must be at least zip.max_bytes")
+	}
+	if z.MaxDiskPerAccount <= 0 || z.MaxDiskPerAccount > z.MaxDisk {
+		bad("zip.max_disk_per_account must be positive and at most zip.max_disk")
+	}
+	if z.TTL < Duration(time.Minute) {
+		bad("zip.ttl must be at least one minute")
+	}
+	if z.MaxPerPrincipal < 1 || z.MaxPerAccount < z.MaxPerPrincipal || z.MaxUnfinished < z.MaxPerAccount {
+		bad("zip.max_per_principal, zip.max_per_account and zip.max_unfinished must be 1 or more, each at least the one before")
+	}
+}
+
 type CopyConfig struct {
 	// MaxNodes is the most nodes one copy may make. Larger copies are refused with too_large. The default, 50,000, is
 	// the largest measured size (20,000, 50,000, 100,000) whose longest write of a chunked copy is at most 5 s, worst of
@@ -430,6 +476,9 @@ func Defaults() *Config {
 		Derived: DerivedConfig{MaxBytes: 10 * GiB, ThumbSizes: []int{256, 1024}, MaxSourceBytes: 50 * MiB,
 			MaxPixels: 50_000_000, Timeout: Duration(60 * time.Second), Workers: 2, Queue: 256,
 			MemoryBytes: 1 * GiB, CPUSeconds: 30},
+		Zip: ZipConfig{MaxEntries: 100_000, MaxBytes: 10 * GiB, MaxDisk: 30 * GiB, MaxDiskPerAccount: 10 * GiB,
+			TTL:             Duration(24 * time.Hour),
+			MaxPerPrincipal: 2, MaxPerAccount: 4, MaxUnfinished: 8},
 		Copy:     CopyConfig{MaxNodes: 50000},
 		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
 		Trash:    TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
@@ -572,6 +621,7 @@ func (c *Config) Validate() error {
 		bad("blobs.delete_grace is negative")
 	}
 	validateDerived(c.Derived, bad)
+	validateZip(c.Zip, bad)
 	if c.Copy.MaxNodes <= 0 {
 		bad("copy.max_nodes must be positive")
 	}

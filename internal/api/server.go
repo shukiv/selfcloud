@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -118,6 +119,16 @@ type Server struct {
 	copySyncNodes int
 	// copyYield is how long a chunked copy runs before it yields its turn to the queue (copyBatches). A test lowers it.
 	copyYield time.Duration
+	// zipYield is how long a zip job runs in one turn before it yields its turn to the queue (runZipJob). A test lowers it.
+	zipYield time.Duration
+	// zipFault, when set, is called at each stage of a zip job and fails it when it returns an error (tests only).
+	zipFault func(stage string) error
+	// zipWalkFault, when set, is asked about each node a zip's walk reaches; an error it returns is the node's access
+	// error (tests only).
+	zipWalkFault func(nodeID string) error
+	// zipFiles holds the stored zips (decision 35); zips holds the ones being made, between the turns of their jobs.
+	zipFiles *derived.ZipFiles
+	zips     zipRegistry
 	// copyFault, when set, is called at each stage of a chunked copy and fails it when it returns an error (tests
 	// only). copyHold, when set, receives the writer hold of each write a chunked copy makes (measurement only).
 	copyFault func(stage string) error
@@ -201,6 +212,14 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
+	zdir := opts.Config.Derived.Dir
+	if zdir == "" {
+		zdir = filepath.Join(opts.Config.DataDir, "derived")
+	}
+	zipFiles, err := derived.NewZipFiles(zdir, opts.Store, opts.Config.Zip.TTL.D())
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
 	// Pending thumbnails are work a previous process never finished. Clearing them here, before any request is
 	// served, means no queued job can be lost to the clearing.
 	if _, err := dpool.Recover(context.Background()); err != nil {
@@ -260,6 +279,7 @@ func New(opts Options) (*Server, error) {
 		store:         opts.Store,
 		blobs:         blobs,
 		derivedPool:   dpool,
+		zipFiles:      zipFiles,
 		trusted:       trusted,
 		metrics:       newMetrics(),
 		jobs:          jobs.New(opts.Store, log),
@@ -341,7 +361,9 @@ func New(opts Options) (*Server, error) {
 			"links.create": newLimiter(120),
 			// Thumbnail requests that start new work, per caller. A read of a thumbnail already made is not charged.
 			"thumb.enqueue": newLimiter(300),
-			"links.serve":   newLimiter(600),
+			// Zips asked for, per caller: each one is a job that reads a whole subtree.
+			"zip.create":  newLimiter(60),
+			"links.serve": newLimiter(600),
 		},
 	}
 	s.views = newViewRecorder(opts.Store, log)
@@ -351,8 +373,10 @@ func New(opts Options) (*Server, error) {
 	}
 	s.jobs.Handle(jobAccountDelete, s.runAccountDelete)
 	s.jobs.Handle(jobCopyNode, s.runCopyJob)
+	s.jobs.Handle(jobZip, s.runZipJob)
 	s.copySyncNodes = syncCopyNodes
 	s.copyYield = copyYieldAfter
+	s.zipYield = zipYieldAfter
 	s.emptyTrashLimit = emptyTrashMax
 	s.trashScanLimit = trashScanMax
 	s.freeBytes = fsutil.FreeBytes
@@ -494,6 +518,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true},
+		{method: http.MethodPost, path: "/api/v1/zips", handle: s.handleCreateZip, auth: true},
+		{method: http.MethodGet, path: "/api/v1/zips/{zip}", handle: s.handleGetZip, auth: true},
+		{method: http.MethodDelete, path: "/api/v1/zips/{zip}", handle: s.handleDeleteZip, auth: true},
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true},
@@ -715,7 +742,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
 		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
 		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(),
-		Derived: s.derivedPool.Cache(), Logger: s.log})
+		Derived: s.derivedPool.Cache(), Zips: s.zipFiles, Logger: s.log})
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
 	derivedDone := make(chan struct{})
 	go func() { defer close(derivedDone); s.derivedPool.Run(jobsCtx) }()

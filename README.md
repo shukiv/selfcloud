@@ -90,6 +90,14 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `upload.max_reserved_per_account` | `1TiB` | Bytes an account with no quota may hold in unfinished uploads. |
 | `copy.max_nodes` | `50000` | Most nodes one folder copy may make; a larger copy is refused with `too_large`. A copy above 10,000 nodes runs as a background job, in phases: each batch is one write, and the publish is one write that grows with the copy (design section 8). |
 | `derived.max_bytes` | `10GiB` | Budget for the thumbnails of all accounts together; the least recently used go first. |
+| `zip.max_entries` | `100000` | Most nodes one zip may read and hold, across all its roots; nodes left out for access count too. A larger walk is refused with `too_large`. |
+| `zip.max_bytes` | `10GiB` | Most bytes of files one zip may hold, counted on the tree as it was read. |
+| `zip.max_disk` | `30GiB` | Disk for all stored zips together, ready and unfinished; a zip that would pass it is refused before it writes. |
+| `zip.max_disk_per_account` | `10GiB` | One account's share of `zip.max_disk`; refused with `storage_full` when its zips would pass it. |
+| `zip.ttl` | `24h` | How long a finished zip is kept after it is made. |
+| `zip.max_per_principal` | `2` | Unfinished zips one caller may have at once. |
+| `zip.max_per_account` | `4` | Unfinished zips an account may have at once. |
+| `zip.max_unfinished` | `8` | Unfinished zips the installation may have at once; each holds its file and its plan in memory. |
 | `office.enabled` | `false` | Turns on the office editor route and the WOPI host for Collabora. Needs `office.discovery_url`. |
 | `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished uploads may hold. Set `100` for a single tenant. |
 | `tokens.max_ttl` | `1h` | Longest lifetime of a delegated token. A longer `ttl` is refused. |

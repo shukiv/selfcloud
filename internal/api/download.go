@@ -322,6 +322,29 @@ func parseRangeNumber(s string) (int64, error) {
 // serveFile sends a file's contents. wantInline is what the caller asked for; the response is
 // inline only when the policy allows it. corp is the Cross-Origin-Resource-Policy to send. Every
 // response carries the same safety headers, so a file is never sent without them.
+// applyRange checks a Range header against the file, and drops it when If-Range does not hold. A range that is not
+// satisfiable is an error, with the Content-Range header that says so, set on h.
+func applyRange(h http.Header, r *http.Request, etag string, mod time.Time, size int64) error {
+	if r.Header.Get("Range") == "" {
+		return nil
+	}
+	if !ifRangeHolds(r, etag, mod) {
+		r.Header.Del("Range")
+		return nil
+	}
+	norm, err := normalizeRanges(r.Header.Get("Range"), size)
+	if err != nil {
+		h.Set("Content-Range", fmt.Sprintf("bytes */%d", size))
+		return err
+	}
+	if norm == "" {
+		r.Header.Del("Range")
+	} else {
+		r.Header.Set("Range", norm)
+	}
+	return nil
+}
+
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, n *store.Node, wantInline bool, corp string) error {
 	ctype, disp := n.MimeType, dispAttachment
 	if wantInline {
@@ -364,21 +387,8 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, n *store.Node
 			fmt.Errorf("blob %s holds %d bytes, the node says %d", n.BlobID, fi.Size(), n.Size))
 	}
 
-	if r.Header.Get("Range") != "" {
-		if !ifRangeHolds(r, n.ETag, mod) {
-			r.Header.Del("Range")
-		} else {
-			norm, err := normalizeRanges(r.Header.Get("Range"), n.Size)
-			if err != nil {
-				h.Set("Content-Range", fmt.Sprintf("bytes */%d", n.Size))
-				return err
-			}
-			if norm == "" {
-				r.Header.Del("Range")
-			} else {
-				r.Header.Set("Range", norm)
-			}
-		}
+	if err := applyRange(h, r, n.ETag, mod, n.Size); err != nil {
+		return err
 	}
 	setValidators(h, n.ETag, mod)
 	h.Set("Accept-Ranges", "bytes")

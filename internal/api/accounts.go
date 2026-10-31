@@ -356,6 +356,9 @@ func (s *Server) runAccountDelete(ctx context.Context, job *store.Job) error {
 		return err
 	}
 	// The account's thumbnails go with its blobs. Their rows went with the account, in the transaction above.
+	if err := s.zipFiles.RemoveAccount(job.Target); err != nil {
+		return err
+	}
 	return s.derivedPool.Cache().Files().RemoveAccount(job.Target)
 }
 

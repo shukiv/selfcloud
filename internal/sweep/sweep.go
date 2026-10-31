@@ -46,7 +46,9 @@ type Options struct {
 	VersionsMaxAge   time.Duration
 	// Derived is the cache of derived files (thumbnails). Nil means there are none to sweep, as in tests.
 	Derived *derived.Cache
-	Logger  *slog.Logger
+	// Zips holds the stored zip downloads (decision 35). Nil means there are none to sweep, as in tests.
+	Zips   *derived.ZipFiles
+	Logger *slog.Logger
 }
 
 // permissionGrace is how long an expired permission keeps its row. A permission grants nothing once it
@@ -85,6 +87,7 @@ type Sweeper struct {
 	versionCount int
 	versionAge   time.Duration
 	derived      *derived.Cache
+	zips         *derived.ZipFiles
 	log          *slog.Logger
 	// webhookEventCursor is where the next pass over the webhook events starts (see pruneWebhooks).
 	webhookEventCursor int64
@@ -107,7 +110,7 @@ func New(o Options) *Sweeper {
 	}
 	return &Sweeper{st: o.Store, blobs: o.Blobs, grace: o.DeleteGrace, interval: o.Interval,
 		uploadExpiry: o.UploadExpiry, maxLifetime: o.UploadMaxLifetime, trashKeep: o.TrashRetention,
-		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, derived: o.Derived, log: log}
+		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, derived: o.Derived, zips: o.Zips, log: log}
 }
 
 // Result counts what one pass did.
@@ -142,6 +145,9 @@ type Result struct {
 	DerivedTemp    int
 	DerivedOrphans int
 	DerivedCleared int64
+	// ZipsExpired is the stored zips removed past their expiry; ZipsAbandoned the unfinished ones whose job is gone.
+	ZipsExpired   int
+	ZipsAbandoned int
 }
 
 // derivedFailedAge is how long a failed derived row is kept before the sweep clears it.
@@ -201,6 +207,16 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	}
 	if res.CopiesCleaned, err = w.cleanupCopies(ctx); err != nil {
 		return res, err
+	}
+	if w.zips != nil {
+		// A zip past its expiry, and a zip whose job is gone, are removed in bounded steps. A file that cannot be
+		// removed is logged and counted, and the sweep goes on.
+		zs, zerr := w.zips.Sweep(ctx, now, 500)
+		res.ZipsExpired, res.ZipsAbandoned = zs.Expired, zs.Abandoned
+		if zerr != nil {
+			w.log.Error("stored zips", "error", zerr)
+			res.Failed++
+		}
 	}
 	if w.derived != nil {
 		// Each derived step logs its own failure and carries on: one file that cannot be removed must not stop the

@@ -371,14 +371,29 @@ func recordOrCheckRestricted(ctx context.Context, tx *store.Tx, cj *store.CopyJo
 	return nil
 }
 
-// copyActorLive refuses a copy whose caller was revoked since it was asked for. The check reads the same delegation the
-// one-write copy reads.
-func copyActorLive(ctx context.Context, tx *store.Tx, p *auth.Principal, accountID string) error {
-	d, err := tx.Delegation(ctx, accountID, callerKeyID(p), p.UserID)
+// delegationReader is the read that tells whether a caller is still live: a *store.Store or a *store.Tx.
+type delegationReader interface {
+	Delegation(ctx context.Context, accountID, keyID, userID string) (*store.Delegation, error)
+}
+
+// callerActive refuses work whose caller was revoked, disabled or expired since the work was asked for. Every job that
+// acts for a caller uses it, at each turn and in its final write, so the rule is one rule. It returns refusal as the
+// Forbidden message.
+func callerActive(ctx context.Context, q delegationReader, p *auth.Principal, accountID, refusal string) error {
+	d, err := q.Delegation(ctx, accountID, callerKeyID(p), p.UserID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && !callerLive(p, d, time.Now())) {
-		return apierr.New(apierr.Forbidden, "the caller of this copy no longer has access; nothing was copied")
+		return apierr.New(apierr.Forbidden, refusal)
 	}
 	return err
+}
+
+// copyRefusedGone is the refusal of a copy whose caller is no longer live.
+const copyRefusedGone = "the caller of this copy no longer has access; nothing was copied"
+
+// copyActorLive refuses a copy whose caller was revoked since it was asked for. The check reads the same delegation the
+// one-write copy reads.
+func copyActorLive(ctx context.Context, q delegationReader, p *auth.Principal, accountID string) error {
+	return callerActive(ctx, q, p, accountID, copyRefusedGone)
 }
 
 // copyBatches copies the snapshot in batches. Each batch is one write: its guard, its rows and its cursor. A batch

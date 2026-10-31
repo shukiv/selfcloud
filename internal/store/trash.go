@@ -29,17 +29,22 @@ func (tx *Tx) TrashState(ctx context.Context, accountID, id string) (self, above
 // read from the same walk, so the access rules cannot disagree with each other.
 func trashState(ctx context.Context, q querier, accountID, id string) (self, above bool, err error) {
 	var s, a int64
-	err = q.QueryRowContext(ctx, `WITH RECURSIVE chain(nid, parent, depth) AS (
+	err = q.QueryRowContext(ctx, trashChainSQL, accountID, id, accountID).Scan(&s, &a)
+	return s == 1, a == 1, err
+}
+
+// trashChainSQL reads the trash marks of a node and its ancestors (args: account, node, account). The final join
+// reaches each chain node by its primary key. It must not filter on account_id there: that made SQLite scan the
+// whole nodes table once per call, so a walk of n nodes cost O(n²) (decision 35). The chain is account-scoped already,
+// because every step of the recursion is. TestTrashChainSQLDoesNotScanNodes reads its plan.
+const trashChainSQL = `WITH RECURSIVE chain(nid, parent, depth) AS (
 			SELECT id, parent_id, 0 FROM nodes WHERE account_id = ? AND id = ?
 			UNION ALL
 			SELECT p.id, p.parent_id, c.depth + 1 FROM nodes p JOIN chain c ON p.id = c.parent WHERE p.account_id = ?
 		)
 		SELECT COALESCE(MAX(CASE WHEN c.depth = 0 AND n.trashed_at IS NOT NULL THEN 1 ELSE 0 END), 0),
 			COALESCE(MAX(CASE WHEN c.depth > 0 AND n.trashed_at IS NOT NULL THEN 1 ELSE 0 END), 0)
-		FROM chain c JOIN nodes n ON n.id = c.nid AND n.account_id = ?`,
-		accountID, id, accountID, accountID).Scan(&s, &a)
-	return s == 1, a == 1, err
-}
+		FROM chain c JOIN nodes n ON n.id = c.nid`
 
 // TrashNode moves node id of accountID to the trash. The node keeps its parent, its contents and its
 // permissions; it gets its trash mark, and its name key becomes a reserved value, so a new item may take

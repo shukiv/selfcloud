@@ -158,7 +158,7 @@ space ("My files"), and a group can hold users.
 | Keyboard shortcuts and a shortcut list (ctrl+/) | Built in part (k2): arrows, Enter, Space, F2, Delete, Backspace, Escape and Ctrl+A in the file list. The shortcut list (ctrl+/) is not built |
 | Multi-select, right-click menu, grid and list, density, dark mode | Built in part (k2): multi-select, grid and list, dark mode (k1). No right-click menu, no density |
 | Upload progress panel | Built (k2): the upload tray, with pause, resume, cancel and retry |
-| Download progress, download a selection as zip | New (s): streamed zip, no temporary copy |
+| Download progress, download a selection as zip | Built (s2, decision 35): a stored zip made as a job, served with `Range`, kept for `zip.ttl` and only for its maker. The streamed zip with no temporary copy (row 160's alternative) is not built |
 | Copy link, open in new tab | Planned (k), not in k2 |
 | Cut, paste, paste as shortcut | New (p/k) |
 
