@@ -225,20 +225,26 @@ func TestExportAnUnlistedFormatIsRefusedBeforeAnyRequest(t *testing.T) {
 	}
 }
 
-// TestConvertibleTypesAreTheDiscoveryOnes: a file whose type discovery does not list for conversion is refused with
-// unsupported_media_type. The fake lists docx on its own host, and xlsx only on another host, which is dropped.
-func TestConvertibleTypesAreTheDiscoveryOnes(t *testing.T) {
+// TestConvertibleTypesAreTheEditTypesOnTheDiscoveryHost: discovery has no conversion action live, so the types are those
+// Collabora lists for editing on the discovery host. The fake lists docx and xlsx for edit on its own host, pdf for view
+// only, and odt for edit on another host, which is dropped. A pdf or an odt is refused with unsupported_media_type and
+// never sent; an xlsx is accepted.
+func TestConvertibleTypesAreTheEditTypesOnTheDiscoveryHost(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
 	fx.useConverter(t)
 	runConversions(t, fx.s)
 	odt := putNode(t, fx.s, fx.key, fx.fld.ID, "/notes.odt", "hi")
+	pdf := putNode(t, fx.s, fx.key, fx.fld.ID, "/scan.pdf", "hi")
 	xlsx := putNode(t, fx.s, fx.key, fx.fld.ID, "/sheet.xlsx", "hi")
 	wantError(t, previewGet(t, fx, odt.ID, ""), 415, apierr.UnsupportedMedia)
-	wantError(t, previewGet(t, fx, xlsx.ID, ""), 415, apierr.UnsupportedMedia)
+	wantError(t, previewGet(t, fx, pdf.ID, ""), 415, apierr.UnsupportedMedia)
 	wantError(t, exportPost(t, fx, odt.ID, "pdf"), 415, apierr.UnsupportedMedia)
-	if n := fx.col.ConvertHits(); n != 0 {
-		t.Errorf("%d conversions were asked for types discovery does not list", n)
+	if got := previewGet(t, fx, xlsx.ID, ""); got.Code != http.StatusAccepted && got.Code != http.StatusOK {
+		t.Errorf("an xlsx is listed for edit, answered %d", got.Code)
+	}
+	if n := fx.col.ConvertHits(); n > 1 {
+		t.Errorf("%d conversions were sent, want only the xlsx", n)
 	}
 }
 

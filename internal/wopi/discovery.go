@@ -321,13 +321,14 @@ func (doc *Document) Openable(ext, mode string) bool {
 	return ok
 }
 
-// ConvertibleFrom reports whether the document lists a conversion action for extension ext, the source types the
-// conversion client accepts (decision 37). The action is read as the discovery parser reads every action: only one on
-// the discovery host is kept.
+// ConvertibleFrom reports whether extension ext is a type the converter takes as a source (decision 37). Live Collabora
+// 26.04.5.2 lists no convert-to action in its discovery at all, so the answer is the edit action: the types Collabora
+// opens for editing on the discovery host. The action is read as the parser reads every action, so one on another host
+// does not count. Whether the converter is available is the capabilities' business, not this document's.
 func (doc *Document) ConvertibleFrom(ext string) bool {
 	if doc == nil {
 		return false
 	}
-	_, ok := doc.actions[strings.ToLower(ext)]["convert-to"]
+	_, ok := doc.actions[strings.ToLower(ext)]["edit"]
 	return ok
 }

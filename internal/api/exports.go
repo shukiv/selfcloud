@@ -85,6 +85,21 @@ func convertUnavailable() error {
 		Retry(time.Minute)
 }
 
+// failedAnswer is the answer for a failed conversion whose row is due for a retry: an outage, or a counted time-out. The caller
+// is told the converter is unavailable, and when to ask again. A refusal is not answered here, so the caller's own answer
+// stands for it (decision 37).
+func failedAnswer(d *store.Derived) error {
+	at, ok := derived.Transient(d)
+	if !ok {
+		return nil
+	}
+	wait := time.Until(at).Round(time.Second)
+	if wait < time.Second {
+		wait = time.Second
+	}
+	return apierr.New(apierr.Unavailable, "the document converter is not available right now; ask again shortly").Retry(wait)
+}
+
 // readyFallback returns the newest ready row of a blob's kind made for extension ext, under any build of the converter, or
 // nil. A route uses it when the converter's build cannot be had, so a file already made is still served (decision 37).
 func (s *Server) readyFallback(ctx context.Context, accountID, blobID, kind, ext string) (*store.Derived, error) {
@@ -100,13 +115,13 @@ func (s *Server) readyFallback(ctx context.Context, accountID, blobID, kind, ext
 	return nil, nil
 }
 
-// convertSource checks what a conversion of node n would take: its extension must be one the converter's discovery lists for
-// conversion (unsupported_media_type otherwise), and its size must be within derived.max_source_bytes (too_large otherwise).
-// A discovery document that lists no conversion at all means the converter has none to offer: unavailable, not unsupported.
+// convertSource checks what a conversion of node n would take: its extension must be a type the converter's discovery lists
+// for editing (unsupported_media_type otherwise), and its size must be within derived.max_source_bytes (too_large otherwise).
+// Discovery has no convert-to action live, so the availability of conversion is the capabilities' (convertKey), not this.
 func (s *Server) convertSource(ctx context.Context, n *store.Node) (string, error) {
 	ext := fileExt(n.Name)
 	doc, err := s.office.Get(ctx)
-	if err != nil || !doc.ConvertsAny() {
+	if err != nil {
 		return "", convertUnavailable()
 	}
 	if !doc.ConvertibleFrom(ext) {
@@ -278,6 +293,9 @@ func (s *Server) answerConverted(w http.ResponseWriter, r *http.Request, n *stor
 		writeJSON(w, http.StatusAccepted, map[string]string{"state": "pending"})
 		return nil
 	}
+	if err := failedAnswer(ans.Row); err != nil {
+		return err
+	}
 	return notFound("preview")
 }
 
@@ -369,6 +387,9 @@ func (s *Server) handleCreateExport(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	if ans.State == store.DerivedFailed {
+		if err := failedAnswer(ans.Row); err != nil {
+			return err
+		}
 		return apierr.New(apierr.UnsupportedMedia, "this document could not be exported to that format").With("reason", "failed")
 	}
 	w.Header().Set("Location", "/api/v1/nodes/"+nodeID+"/exports/"+ans.ID)
@@ -429,6 +450,9 @@ func (s *Server) handleGetExport(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusAccepted, map[string]string{"state": "pending"})
 		return nil
+	}
+	if err := failedAnswer(d); err != nil {
+		return err
 	}
 	return notFound("export")
 }

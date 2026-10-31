@@ -64,12 +64,36 @@ func TestParseDocumentKeepsOnlyTheDiscoveryHostsActions(t *testing.T) {
 	if strings.ContainsAny(got, "<>") {
 		t.Errorf("placeholders must be removed from the editor URL, got %q", got)
 	}
-	want := col.Origin() + "/browser/dist/cool.html?WOPISrc=" + url.QueryEscape(src)
+	want := col.Origin() + "/browser/42745e44dd/cool.html?WOPISrc=" + url.QueryEscape(src)
 	if got != want {
 		t.Errorf("editor URL = %q, want %q", got, want)
 	}
 	if _, ok := doc.EditorURL("odt", "edit", src); ok {
 		t.Error("the dropped foreign action must not give a URL")
+	}
+}
+
+// TestConvertibleFromIsTheEditTypesOnTheDiscoveryHost: live Collabora's discovery lists no convert-to action, so
+// ConvertibleFrom reads the edit actions on the discovery host instead. A view-only type, an edit on another host, and an
+// unlisted type are all not convertible (decision 37).
+func TestConvertibleFromIsTheEditTypesOnTheDiscoveryHost(t *testing.T) {
+	t.Parallel()
+	col := wopitest.New(t)
+	doc, err := wopi.NewDiscovery(col.DiscoveryURL(), col.Client(), nil).Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !doc.ConvertibleFrom("docx") || !doc.ConvertibleFrom("XLSX") {
+		t.Error("a type listed for edit on the discovery host must be convertible (extension case-insensitive)")
+	}
+	if doc.ConvertibleFrom("pdf") {
+		t.Error("pdf is listed for view only; it must not be convertible")
+	}
+	if doc.ConvertibleFrom("odt") {
+		t.Error("an edit whose URL is on another host must be dropped, so odt is not convertible")
+	}
+	if doc.ConvertibleFrom("exe") {
+		t.Error("a type Collabora does not list must not be convertible")
 	}
 }
 

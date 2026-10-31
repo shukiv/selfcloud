@@ -28,12 +28,12 @@ type convertState struct {
 	inflight    int
 	maxInflight int
 	capsDown    bool // capabilities answer 503
-	unlisted    bool // discovery lists no conversion action
 }
 
-// SetConvertMode sets what the conversion endpoint answers: "ok", "refuse" (400), "fail" (503), "wrongtype" (a text
-// answer), "wrongmagic" (a PDF type with HTML bytes), "big" (more bytes than the size), "redirect" (302 to the fake),
-// or "stall" (waits until the request is cancelled).
+// SetConvertMode sets what the conversion endpoint answers: "ok" (the default), "refuse" (500 with X-Error-Kind:
+// savefailed and no body, the live answer to a document the converter cannot save), "badrequest" (400 with text, not
+// seen live), "fail" (503, not seen live), "wrongtype" (a text answer), "wrongmagic" (octet-stream with HTML bytes),
+// "big" (more bytes than the size), "redirect" (302 to the fake), or "stall" (waits until the request is cancelled).
 func (c *Collabora) SetConvertMode(mode string) {
 	c.conv.mu.Lock()
 	defer c.conv.mu.Unlock()
@@ -67,20 +67,6 @@ func (c *Collabora) SetCapabilitiesDown(down bool) {
 	c.conv.mu.Lock()
 	defer c.conv.mu.Unlock()
 	c.conv.capsDown = down
-}
-
-// SetConvertListed sets whether discovery lists any conversion action. A real discovery document may list none.
-func (c *Collabora) SetConvertListed(listed bool) {
-	c.conv.mu.Lock()
-	defer c.conv.mu.Unlock()
-	c.conv.unlisted = !listed
-}
-
-// ConvertListed reports whether discovery lists conversion actions.
-func (c *Collabora) ConvertListed() bool {
-	c.conv.mu.Lock()
-	defer c.conv.mu.Unlock()
-	return !c.conv.unlisted
 }
 
 // ConvertHits returns how many conversion requests the fake received.
@@ -141,7 +127,11 @@ func (c *Collabora) serveConvert(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"convert-to":{"available":%t,"endpoint":"/cool/convert-to"},"productVersion":"24.04.7.2","productVersionHash":%q}`,
+		if hash == "" {
+			hash = "42745e44dd"
+		}
+		// Trimmed from Collabora Online 26.04.5.2's /hosting/capabilities, the live answer.
+		fmt.Fprintf(w, `{"convert-to":{"available":%t,"endpoint":"/cool/convert-to"},"productVersion":"26.04.5.2","productVersionHash":%q}`,
 			!off, hash)
 		return
 	}
@@ -179,6 +169,11 @@ func (c *Collabora) serveConvert(w http.ResponseWriter, r *http.Request) {
 	}
 	switch mode {
 	case "refuse":
+		// Live: 500, X-Error-Kind savefailed, no body (a document of another kind than the format asked for).
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("X-Error-Kind", "savefailed")
+		w.WriteHeader(http.StatusInternalServerError)
+	case "badrequest":
 		http.Error(w, "SECRET-CONVERTER-TEXT for "+name, http.StatusBadRequest)
 	case "fail":
 		http.Error(w, "SECRET-CONVERTER-TEXT overloaded", http.StatusServiceUnavailable)
@@ -193,10 +188,10 @@ func (c *Collabora) serveConvert(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		io.WriteString(w, "not the format asked for")
 	case "wrongmagic":
-		w.Header().Set("Content-Type", out.ctype)
+		setLiveAnswerHeaders(w, format)
 		io.WriteString(w, "<html>not a file</html>")
 	case "big":
-		w.Header().Set("Content-Type", out.ctype)
+		setLiveAnswerHeaders(w, format)
 		w.Write(fileBytes(out.magic, size))
 	default: // "ok"
 		if stall > 0 {
@@ -206,9 +201,18 @@ func (c *Collabora) serveConvert(w http.ResponseWriter, r *http.Request) {
 			case <-time.After(stall):
 			}
 		}
-		w.Header().Set("Content-Type", out.ctype)
+		setLiveAnswerHeaders(w, format)
 		w.Write(fileBytes(out.magic, size))
 	}
+}
+
+// setLiveAnswerHeaders sets the headers a live conversion answer carries (Collabora 26.04.5.2): application/octet-stream
+// whatever the format, the format as the attachment's name, and an Etag of the build.
+func setLiveAnswerHeaders(w http.ResponseWriter, format string) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="source.%s"`, format))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Etag", `"42745e44dd"`)
 }
 
 // fileBytes returns a file of n bytes that starts with magic. A size under the magic's length gives the magic whole.

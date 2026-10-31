@@ -142,9 +142,22 @@ func answerFor(d *store.Derived) Answer {
 	case store.DerivedReady:
 		return Answer{State: store.DerivedReady, Row: d, ID: d.ID}
 	case store.DerivedFailed:
-		return Answer{State: store.DerivedFailed, ID: d.ID}
+		return Answer{State: store.DerivedFailed, Row: d, ID: d.ID}
 	}
 	return Answer{State: store.DerivedPending, ID: d.ID}
+}
+
+// Transient reports whether a failed row is one the caller should ask for again later: an outage, or a time-out that is
+// counted. It returns the time the row may be queued again. A refusal is not transient, though it also has a retry time
+// (a day on), so the row's error is what tells them apart.
+func Transient(d *store.Derived) (time.Time, bool) {
+	if d == nil || d.State != store.DerivedFailed || d.RetryAt.IsZero() {
+		return time.Time{}, false
+	}
+	if d.Error == msgUnavailable || d.Error == msgConvertTimeout {
+		return d.RetryAt, true
+	}
+	return time.Time{}, false
 }
 
 // Request answers for a thumbnail of blobID at size. A ready file is returned as it is. A file not yet made is queued,
@@ -172,7 +185,7 @@ func (p *Pool) Request(ctx context.Context, accountID, blobID string, size int, 
 			missing = true
 		case store.DerivedFailed:
 			if d.RetryAt.IsZero() || p.now().Before(d.RetryAt) {
-				return Answer{State: store.DerivedFailed}, nil
+				return Answer{State: store.DerivedFailed, Row: d, ID: d.ID}, nil
 			}
 			retry = true
 		default:

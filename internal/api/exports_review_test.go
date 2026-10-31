@@ -133,19 +133,52 @@ func TestConverterKeyCarriesTheExtension(t *testing.T) {
 	}
 }
 
-// TestConversionIsUnavailableWhenDiscoveryListsNoConversion: a discovery document with no conversion action at all makes the
-// converter unavailable, not the type unsupported, and nothing is sent.
-func TestConversionIsUnavailableWhenDiscoveryListsNoConversion(t *testing.T) {
+// TestConversionNeedsNoConvertToInDiscovery: live Collabora 26.04.5.2 lists no convert-to action in discovery at all; it
+// offers conversion in /hosting/capabilities (convert-to.available). Conversion is therefore available with the capabilities
+// alone, and the discovery document needs no conversion action (decision 37, verified live).
+func TestConversionNeedsNoConvertToInDiscovery(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
 	fx.useConverter(t)
 	runConversions(t, fx.s)
-	fx.col.SetConvertListed(false)
-	wantError(t, previewGet(t, fx, fx.doc.ID, ""), 503, apierr.Unavailable)
-	wantError(t, exportPost(t, fx, fx.doc.ID, "pdf"), 503, apierr.Unavailable)
-	if n := fx.col.ConvertHits(); n != 0 {
-		t.Errorf("%d conversions were sent to a converter that lists none", n)
+	got := previewGet(t, fx, fx.doc.ID, "")
+	if got.Code != http.StatusAccepted && got.Code != http.StatusOK {
+		t.Fatalf("preview answered %d %s, want the conversion queued or served", got.Code, got.Body.String())
 	}
+	waitPreview(t, fx, fx.doc.ID, "")
+	wantStatus(t, exportPost(t, fx, fx.doc.ID, "pdf"), http.StatusAccepted)
+	if n := fx.col.ConvertHits(); n == 0 {
+		t.Error("no conversion reached the converter")
+	}
+}
+
+// TestOutageAnswersUnavailableUntilItsRetry: while a failed conversion is due for a retry (an outage, or a counted time-out),
+// the caller is told the converter is unavailable and to ask again, with Retry-After. It is not told the document cannot be
+// exported or previewed, which is what a refusal says. Found live: Collabora killed during an export made the next request
+// answer 415 "failed" for a minute.
+func TestOutageAnswersUnavailableUntilItsRetry(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	fx.useConverter(t)
+	runConversions(t, fx.s)
+	fx.col.SetConvertMode("fail")
+	rec := exportPost(t, fx, fx.doc.ID, "odt")
+	wantStatus(t, rec, http.StatusAccepted)
+	id := decode[map[string]string](t, rec)["id"]
+	waitRowState(t, fx, fx.doc, "export_odt", store.DerivedFailed)
+
+	again := exportPost(t, fx, fx.doc.ID, "odt")
+	wantError(t, again, http.StatusServiceUnavailable, apierr.Unavailable)
+	if again.Header().Get("Retry-After") == "" {
+		t.Error("an outage answer carries no Retry-After")
+	}
+	wantError(t, call(t, fx.s, "GET", "/api/v1/nodes/"+fx.doc.ID+"/exports/"+id, fx.key, nil),
+		http.StatusServiceUnavailable, apierr.Unavailable)
+
+	// The preview is a kind of its own: the same outage on the PDF preview is answered the same way.
+	wantStatus(t, previewGet(t, fx, fx.doc.ID, ""), http.StatusAccepted)
+	waitRowState(t, fx, fx.doc, "pdf", store.DerivedFailed)
+	wantError(t, previewGet(t, fx, fx.doc.ID, ""), http.StatusServiceUnavailable, apierr.Unavailable)
 }
 
 // TestReadyFilesAreServedWhileCapabilitiesAreDown: a file already made is still served when the converter's build cannot be

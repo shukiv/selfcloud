@@ -33,8 +33,9 @@ var (
 	ErrUnsupported = errors.New("office: the format is not supported")
 	// ErrRefused is a 4xx answer: Collabora will not convert this document.
 	ErrRefused = errors.New("office: the converter refused the document")
-	// ErrUnavailable is a 5xx answer, a connection failure, a reset, a body that stopped early, or a capabilities
-	// document that cannot be had. It is an outage of the converter, not a judgement about the document.
+	// ErrUnavailable is a 5xx answer other than 500 (500 is a refusal, see Convert), a connection failure, a reset, a body
+	// that stopped early, or a capabilities document that cannot be had. It is an outage of the converter, not a judgement
+	// about the document.
 	ErrUnavailable = errors.New("office: the converter is unavailable")
 	// ErrTooLarge is an answer over the output limit.
 	ErrTooLarge = errors.New("office: the converted file is over the output limit")
@@ -202,13 +203,20 @@ func (c *Client) Convert(ctx context.Context, src io.Reader, size int64, ext, fo
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.CopyN(io.Discard, resp.Body, 4<<10)
-		if resp.StatusCode >= 500 {
+		switch {
+		case resp.StatusCode == http.StatusInternalServerError:
+			// Live Collabora 26.04.5.2 answers 500 (X-Error-Kind: savefailed, no body) when it cannot save the document as the
+			// format asked for, as with a spreadsheet asked for as a text document. Every 500 seen live is that refusal.
+			return ErrRefused
+		case resp.StatusCode >= 500:
 			return ErrUnavailable
 		}
 		return ErrRefused
 	}
+	// Live, every format comes back as application/octet-stream with Content-Disposition, so the type is accepted in
+	// either form and the file signature below decides what the bytes are.
 	ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	if err != nil || ct != f.ctype {
+	if err != nil || (ct != f.ctype && ct != "application/octet-stream") {
 		return ErrBadOutput
 	}
 	sig := make([]byte, len(f.magic))

@@ -121,6 +121,34 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `ui.brand.logo_file` | none | A PNG or SVG logo, at most 256 KiB, read at start and served at `/brand/logo`. Installation-wide only. |
 | `log.level`, `log.format` | `info`, `json` | |
 
+## Office editing and conversion (Collabora Online)
+
+`office.enabled` turns on the editor and the document previews and exports. Both use a Collabora Online server, which
+Selfcloud reaches at `office.discovery_url` (an https address ending in `/hosting/discovery`). Settings the operator must
+make, found by running against Collabora Online 26.04.5.2 (the image `collabora/code`):
+
+- **A WOPI proof key.** Collabora must have one at `/etc/coolwsd/proof_key`. The image starts without it and logs
+  `Could not open proof RSA key`. Without it the discovery document has no `proof-key`, and Selfcloud refuses it, so
+  every office route answers `unavailable`. Create it with Collabora's own tool (`coolconfig generate-proof-key`) or
+  with `openssl genrsa`, and mount it.
+- **`server_name` must match the discovery address.** Set Collabora's `server_name` to the host and port of
+  `office.discovery_url` (for example `office.example.com:9980`). Collabora writes that host into every editor and
+  discovery address. With a bare host, the discovery's addresses lack the port, Selfcloud keeps none of them, and every
+  preview and export answers `unsupported_media_type`.
+- **Trust.** Collabora's certificate must be trusted by Selfcloud, as `office.discovery_url` must be https. In a
+  container, mount the CA and set `SSL_CERT_FILE` to it.
+- **Allowed hosts.** Conversion takes requests only from the addresses in Collabora's `net.post_allow` list. The shipped
+  list covers `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and loopback, so a Docker or LAN address is allowed. Any other
+  address needs an entry.
+- **Time.** Collabora's `limit_convert_secs` (100 s by default) and Selfcloud's `derived.timeout` (60 s) both limit a
+  conversion. On the test host (arm64), a 167-page document took about 5 s; a 834-page document (40,000 paragraphs) took
+  about 56 s and passed the 60 s limit, so a preview or export of such a document is a counted time-out. Raise
+  `derived.timeout` for large documents, or keep the documents small.
+
+A conversion is refused when Collabora cannot save the document as the format asked (a spreadsheet asked for as a text
+document, for example). A stopped Collabora is an outage: Selfcloud answers `unavailable` with `Retry-After` and tries
+again. Collabora converts unknown content as text rather than refusing it, so a corrupt file yields a PDF of its bytes.
+
 ## Off by default
 
 - **Links that anyone can open, and drop folders.** An account turns them on with its own public-link setting; it starts off.
@@ -129,7 +157,7 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
   until the owner or the account key sets one.
 - **Webhooks.** No account has an endpoint until one is created for it.
 
-Not built yet: search (by name, label or text), comments, document previews and conversions, zip download, the
+Not built yet: search (by name, label or text), comments, the
 interface's thumbnails and office button. The [feature parity list](docs/feature-parity.md) says which slice each belongs to.
 
 ## Development

@@ -153,6 +153,26 @@ func TestConvertClassifiesEveryAnswer(t *testing.T) {
 		{"overloaded", func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, secret, http.StatusServiceUnavailable)
 		}, ErrUnavailable, 1 << 20, true},
+		// Live Collabora 26.04.5.2: a document the converter cannot save (a spreadsheet asked for as a text document, for
+		// example) answers 500 with X-Error-Kind: savefailed and no body. That is a refusal, not an outage.
+		{"cannot save the document (live: 500, savefailed)", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Error-Kind", "savefailed")
+			w.WriteHeader(http.StatusInternalServerError)
+		}, ErrRefused, 1 << 20, true},
+		{"500 without a kind is also a refusal", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}, ErrRefused, 1 << 20, true},
+		// Live Collabora 26.04.5.2 sends application/octet-stream with Content-Disposition for every format. The
+		// magic bytes decide the file, not the type.
+		{"live answer: octet-stream with the PDF signature", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Disposition", `attachment; filename="source.pdf"`)
+			w.Write([]byte("%PDF-1.7\n"))
+		}, nil, 1 << 20, false},
+		{"octet-stream with HTML bytes", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Write([]byte("<html>not a pdf</html>"))
+		}, ErrBadOutput, 1 << 20, true},
 		{"text instead of PDF", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/plain")
 			w.Write([]byte("%PDF-1.4 but text"))

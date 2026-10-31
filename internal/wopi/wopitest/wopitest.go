@@ -168,18 +168,14 @@ func (c *Collabora) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	c.mu.Unlock()
 	w.Header().Set("Content-Type", "text/xml")
-	fmt.Fprint(w, discoveryXML(c.srv.URL, cur, old, c.onlyEdit.Load(), c.ConvertListed()))
+	fmt.Fprint(w, discoveryXML(c.srv.URL, cur, old, c.onlyEdit.Load()))
 }
 
-// discoveryXML is a discovery document with the actions the tests use: edit and view for docx, view for pdf, and an
-// edit of odt whose URL is on another host, which Selfcloud must drop.
-func discoveryXML(origin string, cur, old *rsa.PrivateKey, onlyEdit, listConvert bool) string {
-	convert := func(line string) string {
-		if !listConvert {
-			return ""
-		}
-		return line
-	}
+// discoveryXML is a discovery document shaped like Collabora Online 26.04.5.2's, trimmed to the actions the tests use.
+// Live, the document lists edit, view and editnew actions per extension, and NO convert-to action at all: conversion is
+// not in discovery (captured from the live server with the proof key mounted; see decision 37). The fake keeps that.
+// Each action here is on the origin host, except one edit of odt on another host, which Selfcloud must drop.
+func discoveryXML(origin string, cur, old *rsa.PrivateKey, onlyEdit bool) string {
 	view := func(line string) string {
 		if onlyEdit {
 			return ""
@@ -204,27 +200,30 @@ func discoveryXML(origin string, cur, old *rsa.PrivateKey, onlyEdit, listConvert
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
 <wopi-discovery>
-  <net-zone name="external-https">
-    <app name="writer">
-      <action name="edit" ext="docx" urlsrc="%[1]s/browser/dist/cool.html?&lt;rbs=1&amp;&gt;"/>
-      %[8]s
-      %[6]s
-    </app>
-    <app name="impress">
-      %[7]s
-    </app>
-    <app name="foreign">
-      <action name="edit" ext="odt" urlsrc="https://elsewhere.example/browser/dist/cool.html?"/>
-      %[9]s
-    </app>
-  </net-zone>
-  <proof-key value="" oldvalue="" modulus="%[2]s" exponent="%[3]s" oldmodulus="%[4]s" oldexponent="%[5]s"/>
+    <net-zone name="external-https">
+        <app name="writer">
+            <action default="true" ext="docx" name="edit" urlsrc="%[1]s/browser/42745e44dd/cool.html?"/>
+            %[6]s
+            <action ext="docx" name="editnew" urlsrc="%[1]s/browser/42745e44dd/cool.html?"/>
+        </app>
+        <app name="calc">
+            <action default="true" ext="xlsx" name="edit" urlsrc="%[1]s/browser/42745e44dd/cool.html?"/>
+        </app>
+        <app name="foreign">
+            <action default="true" ext="odt" name="edit" urlsrc="https://elsewhere.example/browser/42745e44dd/cool.html?"/>
+        </app>
+        <app name="application/pdf">
+            %[7]s
+        </app>
+        <app name="Capabilities">
+            <action ext="" name="getinfo" urlsrc="%[1]s/hosting/capabilities"/>
+        </app>
+    </net-zone>
+    <proof-key value="" oldvalue="" modulus="%[2]s" exponent="%[3]s" oldmodulus="%[4]s" oldexponent="%[5]s"/>
 </wopi-discovery>
 `, origin, mod(cur), exp(cur), mod(old), exp(old),
-		view(fmt.Sprintf(`<action name="view" ext="docx" urlsrc="%s/browser/dist/cool.html?"/>`, origin)),
-		view(fmt.Sprintf(`<action name="view" ext="pdf" urlsrc="%s/browser/dist/view.html?"/>`, origin)),
-		convert(fmt.Sprintf(`<action name="convert-to" ext="docx" urlsrc="%s/cool/convert-to"/>`, origin)),
-		convert(`<action name="convert-to" ext="xlsx" urlsrc="https://elsewhere.example/cool/convert-to"/>`))
+		view(fmt.Sprintf(`<action name="view" ext="docx" urlsrc="%s/browser/42745e44dd/cool.html?"/>`, origin)),
+		view(fmt.Sprintf(`<action name="view" ext="pdf" urlsrc="%s/browser/42745e44dd/view.html?"/>`, origin)))
 }
 
 // Discovery returns a wopi.Discovery for the fake, which trusts its certificate.
