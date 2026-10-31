@@ -13,13 +13,11 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/blob"
-	"github.com/shukiv/selfcloud/internal/fsutil"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
 	"github.com/shukiv/selfcloud/internal/thumb"
@@ -95,6 +93,10 @@ type job struct {
 	blobID    string
 	derivedID string
 	size      int
+	// format, ext and guard are set by a conversion (convert.go) and are empty for a thumbnail.
+	format string
+	ext    string
+	guard  func(context.Context) error
 }
 
 // NewPool returns a Pool. It starts nothing until Run.
@@ -132,16 +134,17 @@ func (p *Pool) Converter() string { return p.converter }
 type Answer struct {
 	State string         // store.DerivedReady, store.DerivedPending or store.DerivedFailed; "" when there is no row
 	Row   *store.Derived // set when ready
+	ID    string         // the row's ID, set for a conversion's answer (convert.go)
 }
 
 func answerFor(d *store.Derived) Answer {
 	switch d.State {
 	case store.DerivedReady:
-		return Answer{State: store.DerivedReady, Row: d}
+		return Answer{State: store.DerivedReady, Row: d, ID: d.ID}
 	case store.DerivedFailed:
-		return Answer{State: store.DerivedFailed}
+		return Answer{State: store.DerivedFailed, ID: d.ID}
 	}
-	return Answer{State: store.DerivedPending}
+	return Answer{State: store.DerivedPending, ID: d.ID}
 }
 
 // Request answers for a thumbnail of blobID at size. A ready file is returned as it is. A file not yet made is queued,
@@ -431,72 +434,12 @@ func (p *Pool) logRefusal(code int, j job) {
 
 // finish moves a finished file into place and records it ready, if the budget and the disk allow.
 func (p *Pool) finish(ctx context.Context, j job, tmp string, size int64, sha string) {
-	c := p.o.Cache
-	final, err := c.Files().Path(j.accountID, j.derivedID)
-	if err != nil {
-		p.discard(tmp)
-		p.drop(ctx, j)
-		return
-	}
-	free, err := fsutil.FreeBytes(c.Files().Root())
-	if err != nil || free < p.o.MinFree+uint64(size) {
-		p.discard(tmp)
-		p.log.Warn("no room for a derived file; it will be made again on request", "derived", j.derivedID)
+	switch p.o.Cache.Install(ctx, j.accountID, j.derivedID, tmp, size, sha, p.o.MinFree) {
+	case installNoRoom:
 		p.transient(ctx, j, msgDisk)
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(final), 0o700); err != nil {
-		p.discard(tmp)
-		p.log.Error("cannot create a derived directory", "error", err)
+	case installDropped:
 		p.drop(ctx, j)
-		return
 	}
-	if err := os.Rename(tmp, final); err != nil {
-		p.discard(tmp)
-		p.log.Error("cannot place a derived file", "error", err)
-		p.drop(ctx, j)
-		return
-	}
-	// The budget is checked and the row completed in one write, so two finishing workers cannot both pass it. When
-	// the budget is full, the least recently used files are evicted once, and the check is made again.
-	for attempt := 0; attempt < 2; attempt++ {
-		var done, over bool
-		err := c.st.Write(ctx, func(tx *store.Tx) error {
-			total, err := tx.ReadyDerivedBytes(ctx)
-			if err != nil {
-				return err
-			}
-			if total+size > c.maxBytes {
-				over = true
-				return nil
-			}
-			done, err = tx.CompleteDerived(ctx, j.accountID, j.derivedID, size, sha, time.Now())
-			return err
-		})
-		if err != nil {
-			p.discardFinal(final)
-			p.log.Error("cannot record a derived file", "error", err)
-			p.drop(context.WithoutCancel(ctx), j)
-			return
-		}
-		if done {
-			return
-		}
-		if !over {
-			// The row went while the file was made: its blob was removed. The file goes with it.
-			p.discardFinal(final)
-			return
-		}
-		if attempt == 0 {
-			if _, err := c.Evict(ctx, size); err != nil {
-				p.log.Error("cannot evict derived files for the budget", "error", err)
-				break
-			}
-		}
-	}
-	p.discardFinal(final)
-	p.log.Warn("the derived budget is full; the file will be made again on request", "derived", j.derivedID)
-	p.drop(ctx, j)
 }
 
 // fail records a job as failed for good: the image's own refusal, which is sticky for its key.
@@ -513,57 +456,20 @@ func (p *Pool) transient(ctx context.Context, j job, reason string) {
 // record writes the outcome of a job. Once the context is cancelled, nothing is recorded: a shutdown is not an
 // outcome of the image, and the row is left for the next start to clear.
 func (p *Pool) record(ctx context.Context, j job, reason string, transient bool) {
-	if ctx.Err() != nil {
-		return
-	}
-	at := p.now()
-	row, err := p.o.Store.DerivedByID(ctx, j.accountID, j.derivedID)
-	if errors.Is(err, store.ErrNotFound) {
-		return
-	}
-	if err != nil {
-		p.log.Error("cannot read a derived row", "error", err, "derived", j.derivedID)
-		return
-	}
-	attempts := row.Attempts + 1
-	var retryAt time.Time
-	if transient {
-		if attempts < maxAttempts {
-			retryAt = at.Add(retryBackoff[attempts-1])
-		} else {
-			reason = fmt.Sprintf("%s (gave up after %d attempts)", reason, attempts)
-		}
-	}
-	err = p.o.Store.Write(ctx, func(tx *store.Tx) error {
-		_, err := tx.FailDerived(ctx, j.accountID, j.derivedID, reason, at, attempts, retryAt)
-		return err
-	})
-	if err != nil {
-		p.log.Error("cannot record a failed derived file", "error", err)
-	}
+	failRow(ctx, p.o.Store, p.now, p.log, j, reason, transient)
 }
 
 // drop removes a pending row, so a later request queues the work again.
 func (p *Pool) drop(ctx context.Context, j job) {
-	err := p.o.Store.Write(ctx, func(tx *store.Tx) error {
-		_, err := tx.DeletePendingDerived(ctx, j.accountID, j.derivedID)
-		return err
-	})
-	if err != nil {
-		p.log.Error("cannot remove a pending derived row", "error", err)
-	}
+	dropRow(ctx, p.o.Store, p.log, j)
 }
 
 func (p *Pool) discard(tmp string) {
-	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
-		p.log.Error("cannot remove a derived temporary file", "error", err)
-	}
+	discardTemp(p.log, tmp)
 }
 
 func (p *Pool) discardFinal(final string) {
-	if err := os.Remove(final); err != nil && !errors.Is(err, os.ErrNotExist) {
-		p.log.Error("cannot remove a derived file", "error", err)
-	}
+	discardFinal(p.log, final)
 }
 
 // runChild runs `exe thumb` with the source on its stdin and returns its exit code. An exit by signal is -1. A

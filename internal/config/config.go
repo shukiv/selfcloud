@@ -253,6 +253,15 @@ type DerivedConfig struct {
 	MemoryBytes ByteSize `yaml:"memory"`
 	// CPUSeconds is the CPU time one decode may use.
 	CPUSeconds int `yaml:"cpu_seconds"`
+	// ConvertWorkers is how many conversions run at once through Collabora (design decision 37). It is separate from
+	// Workers: a conversion waits on the network, not the CPU. It needs office.enabled.
+	ConvertWorkers int `yaml:"convert_workers"`
+	// ConvertQueue is how many conversions may wait, over all accounts. A request past it is refused with a retry-later.
+	ConvertQueue int `yaml:"convert_queue"`
+	// ConvertAccountQueue is how many of those places one account may hold, so one account cannot fill the queue (decision 37).
+	ConvertAccountQueue int `yaml:"convert_account_queue"`
+	// MaxConvertBytes is the largest file one conversion may return. A larger answer fails the conversion.
+	MaxConvertBytes ByteSize `yaml:"max_convert_bytes"`
 }
 
 // validateDerived checks the derived block. The memory must hold a decode of the largest image the pixel cap allows,
@@ -297,6 +306,23 @@ func validateDerived(d DerivedConfig, bad func(string, ...any)) {
 	}
 	if d.CPUSeconds < 1 {
 		bad("derived.cpu_seconds must be at least 1")
+	}
+	if d.ConvertWorkers < 1 || d.ConvertWorkers > 16 {
+		bad("derived.convert_workers must be between 1 and 16")
+	}
+	if d.ConvertQueue < 1 || d.ConvertQueue > 1024 {
+		bad("derived.convert_queue must be between 1 and 1024")
+	}
+	if d.ConvertAccountQueue < 1 || d.ConvertAccountQueue > d.ConvertQueue {
+		bad("derived.convert_account_queue must be between 1 and derived.convert_queue")
+	}
+	if d.MaxConvertBytes <= 0 || d.MaxConvertBytes > 4*GiB {
+		bad("derived.max_convert_bytes must be positive and at most 4GiB")
+	}
+	// A converted file is kept in the budget, and one larger than the budget could never be kept: the budget must hold the
+	// largest file a conversion may return (decision 37).
+	if d.MaxBytes < d.MaxConvertBytes {
+		bad("derived.max_bytes must be at least derived.max_convert_bytes, so one conversion's output fits the budget")
 	}
 }
 
@@ -475,7 +501,8 @@ func Defaults() *Config {
 		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
 		Derived: DerivedConfig{MaxBytes: 10 * GiB, ThumbSizes: []int{256, 1024}, MaxSourceBytes: 50 * MiB,
 			MaxPixels: 50_000_000, Timeout: Duration(60 * time.Second), Workers: 2, Queue: 256,
-			MemoryBytes: 1 * GiB, CPUSeconds: 30},
+			MemoryBytes: 1 * GiB, CPUSeconds: 30, ConvertWorkers: 2, ConvertQueue: 32, ConvertAccountQueue: 8,
+			MaxConvertBytes: 500 * MiB},
 		Zip: ZipConfig{MaxEntries: 100_000, MaxBytes: 10 * GiB, MaxDisk: 30 * GiB, MaxDiskPerAccount: 10 * GiB,
 			TTL:             Duration(24 * time.Hour),
 			MaxPerPrincipal: 2, MaxPerAccount: 4, MaxUnfinished: 8},

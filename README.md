@@ -95,6 +95,10 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `zip.max_disk` | `30GiB` | Disk for all stored zips together, ready and unfinished; a zip that would pass it is refused before it writes. |
 | `zip.max_disk_per_account` | `10GiB` | One account's share of `zip.max_disk`; refused with `storage_full` when its zips would pass it. |
 | `zip.ttl` | `24h` | How long a finished zip is kept after it is made. |
+| `derived.convert_workers` | `2` | Document conversions (previews and exports) that run through Collabora at once. Needs `office.enabled`. |
+| `derived.convert_queue` | `32` | Document conversions that may wait, over all accounts. A request past it is refused with a retry-later. |
+| `derived.convert_account_queue` | `8` | Places of the conversion queue one account may hold, so one account cannot fill it. At most `derived.convert_queue`. |
+| `derived.max_convert_bytes` | `500MiB` | The largest file one conversion may return. A larger answer fails the conversion. |
 | `zip.max_per_principal` | `2` | Unfinished zips one caller may have at once. |
 | `zip.max_per_account` | `4` | Unfinished zips an account may have at once. |
 | `zip.max_unfinished` | `8` | Unfinished zips the installation may have at once; each holds its file and its plan in memory. |

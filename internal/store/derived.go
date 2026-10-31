@@ -306,3 +306,24 @@ func scanDerived(r rowScanner) (*Derived, error) {
 	}
 	return &d, nil
 }
+
+// DerivedReadyRows returns the ready rows of a blob's kind in an account, newest use first, whatever their converter key.
+// The office route uses it when the converter cannot be asked, to serve a file already made (decision 37).
+func (s *Store) DerivedReadyRows(ctx context.Context, accountID, blobID, kind string) ([]*Derived, error) {
+	rows, err := s.r.QueryContext(ctx, `SELECT `+derivedCols+` FROM derived
+		WHERE account_id = ? AND blob_id = ? AND kind = ? AND state = ? ORDER BY last_used_at DESC`,
+		accountID, blobID, kind, DerivedReady)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Derived
+	for rows.Next() {
+		d, err := scanDerived(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}

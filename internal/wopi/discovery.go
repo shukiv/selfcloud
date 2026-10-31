@@ -320,3 +320,14 @@ func (doc *Document) Openable(ext, mode string) bool {
 	_, ok := doc.actions[strings.ToLower(ext)][mode]
 	return ok
 }
+
+// ConvertibleFrom reports whether the document lists a conversion action for extension ext, the source types the
+// conversion client accepts (decision 37). The action is read as the discovery parser reads every action: only one on
+// the discovery host is kept.
+func (doc *Document) ConvertibleFrom(ext string) bool {
+	if doc == nil {
+		return false
+	}
+	_, ok := doc.actions[strings.ToLower(ext)]["convert-to"]
+	return ok
+}

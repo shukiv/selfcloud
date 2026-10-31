@@ -26,6 +26,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/fsutil"
 	"github.com/shukiv/selfcloud/internal/jobs"
 	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/office"
 	"github.com/shukiv/selfcloud/internal/store"
 	"github.com/shukiv/selfcloud/internal/sweep"
 	"github.com/shukiv/selfcloud/internal/web"
@@ -65,6 +66,10 @@ type Server struct {
 	blobs blob.Store
 	// derivedPool makes thumbnails in child processes, and keeps their rows and files; see thumbnails.go.
 	derivedPool *derived.Pool
+	// conv is the Collabora conversion client and convertPool the pool that runs conversions; both are nil while
+	// office.enabled is off. See exports.go (decision 37).
+	conv        *office.Client
+	convertPool *derived.ConvertPool
 	trusted     []netip.Prefix
 	metrics     *metrics
 	jobs        *jobs.Runner
@@ -362,8 +367,10 @@ func New(opts Options) (*Server, error) {
 			// Thumbnail requests that start new work, per caller. A read of a thumbnail already made is not charged.
 			"thumb.enqueue": newLimiter(300),
 			// Zips asked for, per caller: each one is a job that reads a whole subtree.
-			"zip.create":  newLimiter(60),
-			"links.serve": newLimiter(600),
+			"zip.create": newLimiter(60),
+			// Conversions (previews and exports) that start new work, per caller. A read of one already made is not charged.
+			"convert.enqueue": newLimiter(120),
+			"links.serve":     newLimiter(600),
 		},
 	}
 	s.views = newViewRecorder(opts.Store, log)
@@ -391,6 +398,17 @@ func New(opts Options) (*Server, error) {
 	}
 	if cfg.Office.Enabled {
 		s.office = wopi.NewDiscovery(cfg.Office.DiscoveryURL, nil, nil)
+		d := cfg.Derived
+		conv, err := office.New(cfg.Office.DiscoveryURL, nil, office.Options{Concurrent: d.ConvertWorkers,
+			Timeout: d.Timeout.D(), MaxOutput: int64(d.MaxConvertBytes)})
+		if err != nil {
+			return nil, fmt.Errorf("api: office: %w", err)
+		}
+		s.conv = conv
+		s.convertPool = derived.NewConvertPool(derived.ConvertOptions{Store: opts.Store, Blobs: blobs,
+			Cache: s.derivedPool.Cache(), Conv: convertAdapter{s: s}, Workers: d.ConvertWorkers, Queue: d.ConvertQueue, PerAccount: d.ConvertAccountQueue,
+			Timeout: d.Timeout.D(), MaxSourceBytes: int64(d.MaxSourceBytes), MaxOutputBytes: int64(d.MaxConvertBytes),
+			MinFree: uint64(cfg.Storage.MinFree), Log: log})
 	}
 	if cfg.UI.Enabled {
 		var officeURL string
@@ -518,6 +536,10 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/preview", handle: s.handleGetPreview, auth: true},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/preview", handle: s.handleGetPreview, auth: true},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/exports", handle: s.handleCreateExport, auth: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/exports/{drv}", handle: s.handleGetExport, auth: true},
 		{method: http.MethodPost, path: "/api/v1/zips", handle: s.handleCreateZip, auth: true},
 		{method: http.MethodGet, path: "/api/v1/zips/{zip}", handle: s.handleGetZip, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/zips/{zip}", handle: s.handleDeleteZip, auth: true},
@@ -746,6 +768,13 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
 	derivedDone := make(chan struct{})
 	go func() { defer close(derivedDone); s.derivedPool.Run(jobsCtx) }()
+	convertDone := make(chan struct{})
+	go func() {
+		defer close(convertDone)
+		if s.convertPool != nil {
+			s.convertPool.Run(jobsCtx)
+		}
+	}()
 	noticeDone := make(chan struct{})
 	go func() { defer close(noticeDone); s.runDropNotices(jobsCtx) }()
 	webhooksDone := make(chan struct{})
@@ -758,7 +787,14 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	}
 	s.draining.Store(true)
 	stopJobs() // an interrupted job is run again on the next start
-	defer func() { <-jobsDone; <-sweepDone; <-noticeDone; <-webhooksDone; <-derivedDone }()
+	defer func() {
+		<-jobsDone
+		<-sweepDone
+		<-noticeDone
+		<-webhooksDone
+		<-derivedDone
+		<-convertDone
+	}()
 	s.log.Info("shutting down", "timeout", s.cfg.ShutdownTimeout.String())
 
 	shCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout.D())

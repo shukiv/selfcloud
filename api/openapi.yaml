@@ -938,6 +938,161 @@ paths:
               schema: { $ref: "#/components/schemas/AuditList" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/nodes/{nod}/preview:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Files]
+      operationId: getPreview
+      summary: A preview of a document, as PDF or as the first page in PNG
+      description: |
+        The document converted by Collabora Online's conversion interface (decision 37). `format` is `pdf`
+        (the whole document) or `png` (the first page as an image). The first request queues the conversion
+        and answers `202` with `Retry-After`; later requests answer `202` until the file is ready, then `200`.
+        A conversion that fails for the document (refused, or an answer of the wrong type) answers `404` for
+        its key. A failure of the converter or the host answers `404` until a retry time, then the conversion
+        is queued again, up to three attempts.
+
+        Only the types the converter's discovery document lists for conversion are converted; another type
+        answers `415`. A source over `derived.max_source_bytes` answers `413` before anything is sent. The
+        route is off, and answers `404`, while `office.enabled` is false.
+
+        A preview is a converted copy of the whole document, so the no-download rule refuses it: a caller
+        whose downloads are restricted gets `403` with `download_restricted`.
+
+        A HEAD request answers from the stored rows and queues nothing.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: format
+          in: query
+          description: "`pdf` (the default) or `png`, the first page as an image."
+          schema: { type: string, enum: [pdf, png] }
+      responses:
+        "200":
+          description: The preview.
+          headers:
+            ETag: { schema: { type: string, description: "The SHA-256 of the file, quoted." } }
+            Content-Security-Policy: { schema: { type: string } }
+            Content-Disposition: { schema: { type: string, description: "inline, with the document's name and the preview's extension." } }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+        "202":
+          description: The preview is being made. Ask again after `Retry-After` seconds.
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state: { type: string, enum: [pending] }
+        "303":
+          description: On a server with `content_url` set, a ready preview is at the signed link in `Location`.
+        "400": { description: The format is not `pdf` or `png`. }
+        "403": { description: The no-download rule refuses the preview (`download_restricted`). }
+        "404": { description: Not found, the converter failed for this document, or office editing is off. }
+        "413": { description: The source is over `derived.max_source_bytes` (`too_large`). }
+        "415": { description: The converter does not convert this type (`unsupported_media_type`). }
+        "429": { description: The conversions are busy (`rate_limited`), with `Retry-After`. }
+        "503": { description: The converter is not available (`unavailable`), with `Retry-After`. }
+    head:
+      tags: [Files]
+      operationId: headPreview
+      summary: The state of a preview, without starting work
+      description: |
+        Answers as `GET` does, from the stored rows: `200` with the headers when the file is ready, `202` while
+        it is being made, `404` otherwise. It queues nothing.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [pdf, png] }
+      responses:
+        "200": { description: The preview is ready. }
+        "202": { description: The preview is being made. }
+        "404": { description: No preview is ready, or office editing is off. }
+  /api/v1/nodes/{nod}/exports:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Files]
+      operationId: createExport
+      summary: Queue an export of a document in another format
+      description: |
+        Queues a conversion of the document to `format` (decision 37). The answer is `202` with the export's `id`
+        and a `Location` header naming its file. An export already made is not queued again. A conversion is a
+        download: the result is a derived file, never a node in the account's folders.
+
+        The format is one of the fixed list (`docx`, `odp`, `ods`, `odt`, `pdf`, `pptx`, `xlsx`); any other value
+        answers `400`. The same source rules as a preview apply. A caller under the no-download rule is refused
+        with `403` and `download_restricted`, as a download is.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [format]
+              properties:
+                format: { type: string, enum: [docx, odp, ods, odt, pdf, pptx, xlsx] }
+      responses:
+        "202":
+          description: The export is queued or already made. Follow `Location` for the file.
+          headers:
+            Location: { schema: { type: string } }
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, description: "The export's ID (drv_...)." }
+                  state: { type: string, enum: [pending, ready] }
+                  format: { type: string }
+        "400": { description: The format is not on the fixed list. }
+        "403": { description: The no-download rule refuses the export (`download_restricted`). }
+        "404": { description: Not found, or office editing is off. }
+        "413": { description: The source is over `derived.max_source_bytes` (`too_large`). }
+        "415": { description: The converter does not convert this type, or the export failed (`unsupported_media_type`). }
+        "429": { description: The conversions are busy (`rate_limited`), with `Retry-After`. }
+        "503": { description: The converter is not available (`unavailable`), with `Retry-After`. }
+  /api/v1/nodes/{nod}/exports/{drv}:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+      - name: drv
+        in: path
+        required: true
+        description: The export's ID, from the answer to `POST /exports`.
+        schema: { type: string }
+    get:
+      tags: [Files]
+      operationId: getExport
+      summary: An export of a document
+      description: |
+        The exported file, as an attachment, with `Range` support so an interrupted download resumes. It answers
+        `202` while the export is being made. Access and the no-download rule are checked on every call. An export
+        made by another converter build, or under other limits, is not served as current, and answers `404`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The exported file.
+          headers:
+            ETag: { schema: { type: string, description: "The SHA-256 of the file, quoted." } }
+            Content-Disposition: { schema: { type: string, description: "attachment, with the document's name and the export's extension." } }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "202":
+          description: The export is being made. Ask again after `Retry-After` seconds.
+          headers:
+            Retry-After: { schema: { type: integer } }
+        "206": { description: The requested range. }
+        "403": { description: The no-download rule refuses the download (`download_restricted`). }
+        "404": { description: Not found, failed, or office editing is off. }
   /api/v1/zips:
     post:
       tags: [Files]

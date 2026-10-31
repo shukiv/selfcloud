@@ -37,7 +37,7 @@ space ("My files"), and a group can hold users.
 | Maximum file size (5 TB in Drive) | Have: settable, default 100 GiB (`upload.max_file_size`) |
 | Daily upload cap per user | New (u): `upload.daily_cap_per_user` |
 | Copy-size limit, folder depth limit, items per folder | Built in part (copy limit): `copy.max_nodes`, 50,000 by default; a copy above 10,000 nodes runs as a chunked job (decision 34). New (u): depth and per-folder caps |
-| Convert on import, export to other formats | New (s): through Collabora's conversion API |
+| Convert on import, export to other formats | Export built (s3, decision 37): a fixed list of formats through Collabora's conversion API, not usable in production until a live run. Convert on import: New (s) |
 | Text recognition (OCR) of scans | New, optional (q): an OCR side service; off by default |
 
 ## 2. Viewing and preview
@@ -46,7 +46,7 @@ space ("My files"), and a group can hold users.
 |---|---|
 | Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route |
 | Preview of office documents | Planned (s3): the API has the editor's view mode (l1 to l3), which the interface does not open yet; conversion to PDF is not built |
-| Thumbnails | Built in part (s1): JPEG, PNG and GIF thumbnails from the API, made in a child process. Documents (s3) and the interface (s4) are not built |
+| Thumbnails | Built in part (s1): JPEG, PNG and GIF thumbnails from the API, made in a child process. Document previews are built (s3, decision 37), not yet usable in production. The interface (s4) is not built |
 | Details pane (size, type, owner, location, dates, who has access) | Built (k2): size, type, dates, creator, owner and your access. Location is in the breadcrumbs. Built (k3): "Share" and "Who has access" open the share dialog |
 | Activity pane per file | New (r): from the audit log, filtered by access |
 
@@ -182,7 +182,7 @@ space ("My files"), and a group can hold users.
 | Files, permissions, revisions, comments and team-space APIs | Have for files (e). Permissions and team spaces (n1, n2) and revisions and trash (m) are built. Comments are New (r) |
 | Changes feed (what changed since a token) | New (t): for sync clients and API clients |
 | Push notifications | Built (j1 to j4): webhook endpoints, events, the delivery worker and quota warnings (decisions 26 to 30) |
-| Export to other formats | New (s) |
+| Export to other formats | Built (s3, decision 37): `POST /nodes/{nod}/exports`, through Collabora's conversion. Not usable in production until a live run |
 | Thumbnails | Built in part (s1): images from the API; the interface is not built (s4) |
 | "Open with" office editor | Built in part (l1 to l3): the editor routes and the WOPI host, with no button in the interface yet; Rename (l4) is not built |
 | Embeddable file picker for client applications | New (t): a small script client apps embed, over delegated tokens (i) |

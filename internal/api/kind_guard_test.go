@@ -32,10 +32,14 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // refuse whatever is not a file for the same reason (decision 32). Slice l3b added one in store/nodes.go
 // (changesLockedPlace: a directory's write passes a lock unless it moves; anything else takes the file rule, so a shortcut
 // is guarded as a file, which fails closed) and one in api/lock_break.go (the break refuses whatever is not a file).
+// Slice s3 added three in exports.go, one for each conversion route (preview, export create and export download). Each
+// refuses whatever is not a file with not_found, which fails closed; access is nodeAccess, which runs first. Decision 37
+// records them.
 var reviewedNodeKindSites = map[string]int{
 	"internal/api/access.go":           2,
 	"internal/api/access_requests.go":  1,
 	"internal/api/download.go":         1,
+	"internal/api/exports.go":          3,
 	"internal/api/links.go":            3,
 	"internal/api/lock_break.go":       1,
 	"internal/api/nodes.go":            12,

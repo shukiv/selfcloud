@@ -217,6 +217,9 @@ func validLinkDisposition(d string) bool {
 	if validDisposition(d) {
 		return true
 	}
+	if rest, ok := strings.CutPrefix(d, previewDispPrefix); ok {
+		return rest == "pdf" || rest == "png"
+	}
 	rest, ok := strings.CutPrefix(d, thumbDispPrefix)
 	return ok && len(rest) > 0 && len(rest) <= 4 && allDigits(rest)
 }

@@ -477,6 +477,10 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 	if strings.HasPrefix(c.disp, thumbDispPrefix) {
 		return s.serveThumbLink(w, r, n, c.disp)
 	}
+	// A preview link (preview_<format>) names a converted file, which only the server signs (decision 37).
+	if strings.HasPrefix(c.disp, previewDispPrefix) {
+		return s.serveConvertedLink(w, r, n, c.disp)
+	}
 	return s.serveFile(w, r, n, c.disp == dispInline, corpCrossOrigin)
 }
 

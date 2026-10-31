@@ -30,15 +30,18 @@ func TestDerivedRefusals(t *testing.T) {
 		mutate func(*DerivedConfig)
 		want   string
 	}{
-		"no budget":          {func(d *DerivedConfig) { d.MaxBytes = 0 }, "max_bytes"},
-		"size too small":     {func(d *DerivedConfig) { d.ThumbSizes = []int{16} }, "outside 32 to 4096"},
-		"size listed twice":  {func(d *DerivedConfig) { d.ThumbSizes = []int{256, 256} }, "listed twice"},
-		"no sizes":           {func(d *DerivedConfig) { d.ThumbSizes = nil }, "one to four"},
-		"no pixel cap":       {func(d *DerivedConfig) { d.MaxPixels = 0 }, "max_pixels"},
-		"memory under floor": {func(d *DerivedConfig) { d.MemoryBytes = 64 << 20 }, "floor"},
-		"no timeout":         {func(d *DerivedConfig) { d.Timeout = 0 }, "timeout"},
-		"no workers":         {func(d *DerivedConfig) { d.Workers = 0 }, "workers"},
-		"no cpu":             {func(d *DerivedConfig) { d.CPUSeconds = 0 }, "cpu_seconds"},
+		"no budget":                {func(d *DerivedConfig) { d.MaxBytes = 0 }, "max_bytes"},
+		"size too small":           {func(d *DerivedConfig) { d.ThumbSizes = []int{16} }, "outside 32 to 4096"},
+		"size listed twice":        {func(d *DerivedConfig) { d.ThumbSizes = []int{256, 256} }, "listed twice"},
+		"no sizes":                 {func(d *DerivedConfig) { d.ThumbSizes = nil }, "one to four"},
+		"no pixel cap":             {func(d *DerivedConfig) { d.MaxPixels = 0 }, "max_pixels"},
+		"memory under floor":       {func(d *DerivedConfig) { d.MemoryBytes = 64 << 20 }, "floor"},
+		"no timeout":               {func(d *DerivedConfig) { d.Timeout = 0 }, "timeout"},
+		"no workers":               {func(d *DerivedConfig) { d.Workers = 0 }, "workers"},
+		"no cpu":                   {func(d *DerivedConfig) { d.CPUSeconds = 0 }, "cpu_seconds"},
+		"account share over queue": {func(d *DerivedConfig) { d.ConvertAccountQueue = 33 }, "convert_account_queue"},
+		"account share none":       {func(d *DerivedConfig) { d.ConvertAccountQueue = 0 }, "convert_account_queue"},
+		"budget under one output":  {func(d *DerivedConfig) { d.MaxBytes = 100 * MiB }, "max_convert_bytes"},
 	}
 	for name, c := range cases {
 		d := Defaults().Derived

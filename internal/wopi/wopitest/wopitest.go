@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,6 +25,12 @@ import (
 
 // DiscoveryPath is the path Collabora serves discovery at, which office.discovery_url must end in.
 const DiscoveryPath = "/hosting/discovery"
+
+// capabilitiesPath and convertPrefix are the paths of the conversion interface (convert.go).
+const (
+	capabilitiesPath = "/hosting/capabilities"
+	convertPrefix    = "/cool/convert-to"
+)
 
 // Collabora is a fake Collabora with its own TLS server.
 type Collabora struct {
@@ -41,6 +48,9 @@ type Collabora struct {
 	onlyEdit atomic.Bool
 	// hits counts the discovery requests received.
 	hits atomic.Int32
+
+	// conv holds the conversion endpoint's controls and record (convert.go).
+	conv convertState
 }
 
 // New starts a fake Collabora with two fresh 2048-bit proof keys. It is closed when the test ends.
@@ -133,6 +143,10 @@ func Ticks(t time.Time) int64 {
 
 // serve answers discovery. Every other path is not found.
 func (c *Collabora) serve(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == capabilitiesPath || strings.HasPrefix(r.URL.Path, convertPrefix) {
+		c.serveConvert(w, r)
+		return
+	}
 	if r.URL.Path == "/redirect" {
 		http.Redirect(w, r, DiscoveryPath, http.StatusFound)
 		return
@@ -154,12 +168,18 @@ func (c *Collabora) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	c.mu.Unlock()
 	w.Header().Set("Content-Type", "text/xml")
-	fmt.Fprint(w, discoveryXML(c.srv.URL, cur, old, c.onlyEdit.Load()))
+	fmt.Fprint(w, discoveryXML(c.srv.URL, cur, old, c.onlyEdit.Load(), c.ConvertListed()))
 }
 
 // discoveryXML is a discovery document with the actions the tests use: edit and view for docx, view for pdf, and an
 // edit of odt whose URL is on another host, which Selfcloud must drop.
-func discoveryXML(origin string, cur, old *rsa.PrivateKey, onlyEdit bool) string {
+func discoveryXML(origin string, cur, old *rsa.PrivateKey, onlyEdit, listConvert bool) string {
+	convert := func(line string) string {
+		if !listConvert {
+			return ""
+		}
+		return line
+	}
 	view := func(line string) string {
 		if onlyEdit {
 			return ""
@@ -187,6 +207,7 @@ func discoveryXML(origin string, cur, old *rsa.PrivateKey, onlyEdit bool) string
   <net-zone name="external-https">
     <app name="writer">
       <action name="edit" ext="docx" urlsrc="%[1]s/browser/dist/cool.html?&lt;rbs=1&amp;&gt;"/>
+      %[8]s
       %[6]s
     </app>
     <app name="impress">
@@ -194,13 +215,16 @@ func discoveryXML(origin string, cur, old *rsa.PrivateKey, onlyEdit bool) string
     </app>
     <app name="foreign">
       <action name="edit" ext="odt" urlsrc="https://elsewhere.example/browser/dist/cool.html?"/>
+      %[9]s
     </app>
   </net-zone>
   <proof-key value="" oldvalue="" modulus="%[2]s" exponent="%[3]s" oldmodulus="%[4]s" oldexponent="%[5]s"/>
 </wopi-discovery>
 `, origin, mod(cur), exp(cur), mod(old), exp(old),
 		view(fmt.Sprintf(`<action name="view" ext="docx" urlsrc="%s/browser/dist/cool.html?"/>`, origin)),
-		view(fmt.Sprintf(`<action name="view" ext="pdf" urlsrc="%s/browser/dist/view.html?"/>`, origin)))
+		view(fmt.Sprintf(`<action name="view" ext="pdf" urlsrc="%s/browser/dist/view.html?"/>`, origin)),
+		convert(fmt.Sprintf(`<action name="convert-to" ext="docx" urlsrc="%s/cool/convert-to"/>`, origin)),
+		convert(`<action name="convert-to" ext="xlsx" urlsrc="https://elsewhere.example/cool/convert-to"/>`))
 }
 
 // Discovery returns a wopi.Discovery for the fake, which trusts its certificate.
