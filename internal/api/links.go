@@ -274,7 +274,7 @@ func parseLinkToken(tok string) (linkClaims, []byte, []byte, error) {
 	}
 	parts := strings.Split(string(payload), "|")
 	if len(parts) != 4 || !id.Valid("nod", parts[0]) || !id.Valid("acc", parts[1]) ||
-		!validDisposition(parts[2]) || !allDigits(parts[3]) {
+		!validLinkDisposition(parts[2]) || !allDigits(parts[3]) {
 		return c, nil, nil, errLinkMalformed
 	}
 	exp, err := strconv.ParseInt(parts[3], 10, 64)
@@ -469,6 +469,10 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 		return apierr.New(apierr.AccountSuspended, "the account is suspended")
 	default:
 		return linkNotFound()
+	}
+	// A thumbnail link (thumb_<size>) names a derived file, not the contents.
+	if strings.HasPrefix(c.disp, thumbDispPrefix) {
+		return s.serveThumbLink(w, r, n, c.disp)
 	}
 	return s.serveFile(w, r, n, c.disp == dispInline, corpCrossOrigin)
 }

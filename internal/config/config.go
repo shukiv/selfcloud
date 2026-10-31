@@ -27,6 +27,8 @@ import (
 	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/shukiv/selfcloud/internal/thumb"
 )
 
 // EnvPrefix starts every environment variable name.
@@ -61,6 +63,7 @@ type Config struct {
 	Store     StoreConfig     `yaml:"store"`
 	Storage   StorageConfig   `yaml:"storage"`
 	Blobs     BlobsConfig     `yaml:"blobs"`
+	Derived   DerivedConfig   `yaml:"derived"`
 	Copy      CopyConfig      `yaml:"copy"`
 	Sharing   SharingConfig   `yaml:"sharing"`
 	Trash     TrashConfig     `yaml:"trash"`
@@ -175,6 +178,80 @@ type TrashConfig struct {
 	// Retention is how long a deleted item stays in the trash. The retention sweep purges it after that,
 	// and the listing shows that time as purge_at. It must be positive.
 	Retention Duration `yaml:"retention"`
+}
+
+// DerivedConfig controls the files made from file contents, such as thumbnails (design section 14, slice s1).
+// They are kept apart from the blobs, have their own budget, and do not count toward any quota.
+type DerivedConfig struct {
+	// Dir holds the derived files. Empty means data_dir/derived.
+	Dir string `yaml:"dir"`
+	// MaxBytes is the budget for the derived files of all accounts together. Past it, the least recently
+	// used files are removed.
+	MaxBytes ByteSize `yaml:"max_bytes"`
+	// ThumbSizes are the longer edges, in pixels, that thumbnails are made at. The smallest is the size
+	// has_thumbnail refers to, and the size a thumbnail request takes by default.
+	ThumbSizes []int `yaml:"thumb_sizes"`
+	// MaxSourceBytes is the largest source a thumbnail is made from.
+	MaxSourceBytes ByteSize `yaml:"max_source_bytes"`
+	// MaxPixels is the most pixels a source image may have. The header is read first, so a larger image is
+	// refused before any of its pixels are allocated.
+	MaxPixels int64 `yaml:"max_pixels"`
+	// Timeout is how long one decode may take.
+	Timeout Duration `yaml:"timeout"`
+	// Workers is how many decodes run at once. Each runs in a child process.
+	Workers int `yaml:"workers"`
+	// Queue is how many thumbnails may wait for a worker. A request past it is refused with a retry-later.
+	Queue int `yaml:"queue"`
+	// MemoryBytes is how much memory one decode may map beyond what the runtime holds at start (the child's
+	// address-space limit). It must hold the pixels of max_pixels: see validateDerived.
+	MemoryBytes ByteSize `yaml:"memory"`
+	// CPUSeconds is the CPU time one decode may use.
+	CPUSeconds int `yaml:"cpu_seconds"`
+}
+
+// validateDerived checks the derived block. The memory must hold a decode of the largest image the pixel cap allows,
+// read at the source size cap, and a thumbnail at each configured size: see thumb.MemoryFloor.
+func validateDerived(d DerivedConfig, bad func(string, ...any)) {
+	if d.MaxBytes <= 0 {
+		bad("derived.max_bytes must be positive")
+	}
+	if len(d.ThumbSizes) == 0 || len(d.ThumbSizes) > 4 {
+		bad("derived.thumb_sizes must name one to four sizes")
+	}
+	seen := map[int]bool{}
+	for _, s := range d.ThumbSizes {
+		switch {
+		case s < 32 || s > 4096:
+			bad("derived.thumb_sizes: %d is outside 32 to 4096", s)
+		case seen[s]:
+			bad("derived.thumb_sizes: %d is listed twice", s)
+		}
+		seen[s] = true
+	}
+	if d.MaxSourceBytes <= 0 || d.MaxSourceBytes > 1*GiB {
+		bad("derived.max_source_bytes must be positive and at most 1GiB")
+	}
+	if d.MaxPixels <= 0 {
+		bad("derived.max_pixels must be positive")
+	}
+	for _, s := range d.ThumbSizes {
+		if floor := thumb.MemoryFloor(d.MaxPixels, int64(d.MaxSourceBytes), s); int64(d.MemoryBytes) < floor {
+			bad("derived.memory is %d bytes, below %d, the floor for derived.max_pixels, max_source_bytes and the "+
+				"thumb_sizes entry %d", d.MemoryBytes, floor, s)
+		}
+	}
+	if d.Timeout <= 0 {
+		bad("derived.timeout must be positive")
+	}
+	if d.Workers < 1 || d.Workers > 64 {
+		bad("derived.workers must be between 1 and 64")
+	}
+	if d.Queue < 1 {
+		bad("derived.queue must be positive")
+	}
+	if d.CPUSeconds < 1 {
+		bad("derived.cpu_seconds must be at least 1")
+	}
 }
 
 // VersionsConfig controls the version history of files: the earlier contents kept when a file's content
@@ -350,12 +427,15 @@ func Defaults() *Config {
 		Store:           StoreConfig{Driver: "sqlite"},
 		Storage:         StorageConfig{MinFree: 1 * GiB},
 		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
-		Copy:            CopyConfig{MaxNodes: 50000},
-		Sharing:         SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
-		Trash:           TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
-		Versions:        VersionsConfig{MaxCount: 100, MaxAge: Duration(30 * 24 * time.Hour), MaxKept: 200},
-		Links:           LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
-		Tokens:          TokensConfig{MaxTTL: Duration(time.Hour)},
+		Derived: DerivedConfig{MaxBytes: 10 * GiB, ThumbSizes: []int{256, 1024}, MaxSourceBytes: 50 * MiB,
+			MaxPixels: 50_000_000, Timeout: Duration(60 * time.Second), Workers: 2, Queue: 256,
+			MemoryBytes: 1 * GiB, CPUSeconds: 30},
+		Copy:     CopyConfig{MaxNodes: 50000},
+		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
+		Trash:    TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
+		Versions: VersionsConfig{MaxCount: 100, MaxAge: Duration(30 * 24 * time.Hour), MaxKept: 200},
+		Links:    LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
+		Tokens:   TokensConfig{MaxTTL: Duration(time.Hour)},
 		Upload: UploadConfig{
 			MaxFileSize:           100 * GiB,
 			MaxChunkSize:          64 * MiB,
@@ -491,6 +571,7 @@ func (c *Config) Validate() error {
 	if c.Blobs.DeleteGrace < 0 {
 		bad("blobs.delete_grace is negative")
 	}
+	validateDerived(c.Derived, bad)
 	if c.Copy.MaxNodes <= 0 {
 		bad("copy.max_nodes must be positive")
 	}

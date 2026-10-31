@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/blob"
+	"github.com/shukiv/selfcloud/internal/derived"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -43,7 +44,9 @@ type Options struct {
 	// VersionsMaxCount and VersionsMaxAge are versions.max_count and versions.max_age. Zero means no limit.
 	VersionsMaxCount int
 	VersionsMaxAge   time.Duration
-	Logger           *slog.Logger
+	// Derived is the cache of derived files (thumbnails). Nil means there are none to sweep, as in tests.
+	Derived *derived.Cache
+	Logger  *slog.Logger
 }
 
 // permissionGrace is how long an expired permission keeps its row. A permission grants nothing once it
@@ -81,6 +84,7 @@ type Sweeper struct {
 	trashKeep    time.Duration
 	versionCount int
 	versionAge   time.Duration
+	derived      *derived.Cache
 	log          *slog.Logger
 	// webhookEventCursor is where the next pass over the webhook events starts (see pruneWebhooks).
 	webhookEventCursor int64
@@ -103,7 +107,7 @@ func New(o Options) *Sweeper {
 	}
 	return &Sweeper{st: o.Store, blobs: o.Blobs, grace: o.DeleteGrace, interval: o.Interval,
 		uploadExpiry: o.UploadExpiry, maxLifetime: o.UploadMaxLifetime, trashKeep: o.TrashRetention,
-		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, log: log}
+		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, derived: o.Derived, log: log}
 }
 
 // Result counts what one pass did.
@@ -131,7 +135,17 @@ type Result struct {
 	WebhookEvents     int
 	WebhookSecrets    int64
 	WebhookQuotaMarks int // quota marks that no longer hold (decision 30)
+	// DerivedEvicted is the ready derived files removed to keep the derived budget; DerivedTemp the abandoned
+	// temporary files of the derived workers; DerivedOrphans the derived files no row names; DerivedCleared the
+	// failed rows of 30 days ago or more, which the next request queues again.
+	DerivedEvicted int
+	DerivedTemp    int
+	DerivedOrphans int
+	DerivedCleared int64
 }
+
+// derivedFailedAge is how long a failed derived row is kept before the sweep clears it.
+const derivedFailedAge = 30 * 24 * time.Hour
 
 // recentRetention is how long a recent entry is kept after its last use, and recentPerUser how many a user keeps.
 const (
@@ -187,6 +201,28 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	}
 	if res.CopiesCleaned, err = w.cleanupCopies(ctx); err != nil {
 		return res, err
+	}
+	if w.derived != nil {
+		// Each derived step logs its own failure and carries on: one file that cannot be removed must not stop the
+		// steps after it, for ever.
+		var derr error
+		if res.DerivedEvicted, derr = w.derived.Evict(ctx, 0); derr != nil {
+			w.log.Error("derived eviction", "error", derr)
+			res.Failed++
+		}
+		// A worker's temporary file lives for at most its decode's time limit, so an hour old is abandoned.
+		if res.DerivedTemp, derr = w.derived.Files().RemoveStaleTemp(now.Add(-time.Hour)); derr != nil {
+			w.log.Error("derived temporary files", "error", derr)
+			res.Failed++
+		}
+		if res.DerivedOrphans, derr = w.derived.RemoveOrphans(ctx); derr != nil {
+			w.log.Error("derived orphans", "error", derr)
+			res.Failed++
+		}
+		if res.DerivedCleared, derr = w.derived.ClearFailed(ctx, now.Add(-derivedFailedAge)); derr != nil {
+			w.log.Error("derived failures", "error", derr)
+			res.Failed++
+		}
 	}
 	if res.Versions, err = w.pruneVersions(ctx, now); err != nil {
 		return res, err
@@ -301,6 +337,15 @@ func (w *Sweeper) removeDue(ctx context.Context, now time.Time, res *Result) err
 		}
 		progress := 0
 		for _, b := range due {
+			// The blob's derived files go first: a derived row cascades with its blob, and a cascade removes no
+			// file, so the rows and their files are removed here, while the blob's id still names them.
+			if w.derived != nil {
+				if err := w.derived.RemoveBlob(ctx, b.AccountID, b.ID); err != nil {
+					w.log.Error("cannot remove derived files of a blob", "blob", b.ID, "account", b.AccountID, "error", err)
+					res.Failed++
+					continue
+				}
+			}
 			if err := w.blobs.Remove(b.AccountID, b.ID); err != nil {
 				w.log.Error("cannot remove blob file", "blob", b.ID, "account", b.AccountID, "error", err)
 				res.Failed++

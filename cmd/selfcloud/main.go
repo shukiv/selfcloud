@@ -22,6 +22,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/fsutil"
 	"github.com/shukiv/selfcloud/internal/mail"
 	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/thumb"
 	"github.com/shukiv/selfcloud/internal/version"
 )
 
@@ -56,6 +57,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return admin(args[1:], stdout, stderr)
 	case "healthcheck":
 		return healthcheck(args[1:], stderr)
+	case "thumb":
+		// The decoder's child process (internal/thumb). It is started by the server, with limits, and reads no config.
+		return thumb.Child(args[1:], os.Stdin, stdout, stderr)
 	case "version", "-version", "--version":
 		fmt.Fprintln(stdout, version.Version)
 		return 0

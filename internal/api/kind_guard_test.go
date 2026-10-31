@@ -20,6 +20,9 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // and decided: a check that accepts only a file or a directory refuses a shortcut (fails closed), and an SQL count of
 // bytes counts files only, so a shortcut takes no quota. A new comparison, or a moved one, changes a count here, and
 // the reviewer decides it again before the count is updated. docs/design.md section 15 (decision 24, p3) records them.
+// Slice s1 added two in thumbnails.go, each reviewed: the thumbnail route refuses a node that is not a file (a folder
+// or a shortcut fails closed, with not_found), and has_thumbnail is set only on a file, so other kinds stay without it.
+// Neither decides access; access is nodeAccess, which runs first. Decision 33 records them.
 // Slice j2 added three, each reviewed for event emission and neither an access decision: copyTree reports a file.created for
 // each node that is not a directory and counts them for the big-folder rule (transfer.go), the outbox skips a directory
 // when it reports a subtree (store/webhook_events.go), and the threshold count excludes directories in SQL
@@ -40,6 +43,7 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/api/office_locks.go":     3,
 	"internal/api/share_links.go":      2,
 	"internal/api/shortcuts.go":        5,
+	"internal/api/thumbnails.go":       2,
 	"internal/api/tokens.go":           1,
 	"internal/api/transfer.go":         11,
 	"internal/api/uploads.go":          2,

@@ -352,7 +352,11 @@ func (s *Server) runAccountDelete(ctx context.Context, job *store.Job) error {
 	if err != nil {
 		return err
 	}
-	return s.blobs.RemoveAccount(job.Target)
+	if err := s.blobs.RemoveAccount(job.Target); err != nil {
+		return err
+	}
+	// The account's thumbnails go with its blobs. Their rows went with the account, in the transaction above.
+	return s.derivedPool.Cache().Files().RemoveAccount(job.Target)
 }
 
 // usageJSON is an account's usage, as GET /accounts/{acc}/usage returns it. The quota and the

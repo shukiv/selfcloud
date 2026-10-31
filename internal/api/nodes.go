@@ -153,6 +153,9 @@ type nodeJSON struct {
 	// Color is a directory's palette colour and Description the item's text. Every reader sees them.
 	Color       string `json:"color,omitempty"`
 	Description string `json:"description,omitempty"`
+	// HasThumbnail is set on an image file: true when its smallest thumbnail is ready. It is absent for other kinds
+	// and for a link visitor (withThumbnails).
+	HasThumbnail *bool `json:"has_thumbnail,omitempty"`
 	// Target is what a shortcut points to, for a caller who reaches it. Unavailable is set on a shortcut whose
 	// target the caller cannot reach or that was purged: the answer is the same for all three, and never names
 	// the target. Both are set by withTargets, and a link visitor gets neither (see nodeJSONFor).
@@ -420,6 +423,9 @@ func (s *Server) handleStatNode(w http.ResponseWriter, r *http.Request) error {
 	if err := s.withTargets(r.Context(), p, &out); err != nil {
 		return err
 	}
+	if err := s.withThumbnails(r.Context(), p, n.AccountID, &out); err != nil {
+		return err
+	}
 	if p.Kind == auth.KindUser {
 		if err := s.withStarred(r, p.UserID, []*nodeJSON{&out}); err != nil {
 			return err
@@ -485,6 +491,9 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 			return err
 		}
 		if err := s.withTargets(ctx, p, ptrs...); err != nil {
+			return err
+		}
+		if err := s.withThumbnails(ctx, p, dir.AccountID, ptrs...); err != nil {
 			return err
 		}
 		if p.Kind == auth.KindUser {

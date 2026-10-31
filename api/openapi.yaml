@@ -2529,6 +2529,92 @@ paths:
         "409": { description: "The file's lock refuses the save: no lock, or another lock. `X-WOPI-Lock` is the lock on the file, or empty." }
         "413": { description: The body is over the limit, or the quota would be passed. }
         "500": { description: The proof does not verify, or the discovery document is not available. }
+  /api/v1/nodes/{nod}/thumbnail:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Files]
+      operationId: getThumbnail
+      summary: A thumbnail of an image file
+      description: |
+        A JPEG thumbnail of a JPEG, PNG or GIF file, at `size` pixels on its longer edge. The first
+        request for a size queues the work and answers `202` with `Retry-After`; later requests answer
+        `202` until the thumbnail is ready, then `200`. A thumbnail is made once per file version and
+        size, and shared by every node that holds the same contents. A file whose thumbnail cannot be
+        made because of the file (corrupt, over a size or pixel limit, or not an image) answers `404` on
+        every later request. A failure of the server or the host (a time limit, a stopped decoder, a full
+        disk) answers `404` until a retry time, then the work is queued again, up to three attempts; after
+        that it answers `404`. A failure is kept for the limits it was made under, and is cleared 30 days
+        after it happened.
+
+        Reading a thumbnail is viewing, not downloading, so the no-download rule does not refuse it. A
+        link visitor gets `link_route`: the route is not open to links. A thumbnail is not a view, so it
+        does not appear in Recent.
+
+        When `content_url` is set, a ready thumbnail answers `303` with a signed link on the content
+        origin, where the image is fetched.
+
+        Thumbnails are made in a child process with a memory limit, a CPU limit and a time limit. They
+        do not count toward any quota: the server's `derived.max_bytes` budget limits them.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: size
+          in: query
+          description: The longer edge in pixels; one of the server's configured sizes. The smallest by default.
+          schema: { type: integer, example: 256 }
+      responses:
+        "200":
+          description: The thumbnail.
+          headers:
+            ETag: { schema: { type: string, description: "The SHA-256 of the thumbnail, quoted." } }
+            Content-Security-Policy: { schema: { type: string } }
+            Cross-Origin-Resource-Policy: { schema: { type: string } }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "202":
+          description: The thumbnail is being made. Ask again after `Retry-After` seconds.
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state: { type: string, enum: [pending] }
+        "303":
+          description: On a server with `content_url` set, the thumbnail is at the signed link in `Location`.
+          headers:
+            Location: { schema: { type: string } }
+        "304":
+          description: "Not modified: the `If-None-Match` ETag is current."
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "429":
+          description: The queue, the account's share of it, or the caller's budget of new thumbnails is full. `Retry-After` gives the wait.
+          headers:
+            Retry-After: { schema: { type: integer } }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    head:
+      tags: [Files]
+      operationId: headThumbnail
+      summary: The status and headers of a thumbnail, without the body
+      description: |
+        The status and headers `GET` would send, with no body, and the same access rules. A HEAD starts no
+        work: it never queues a thumbnail. A thumbnail not yet made answers `404`; the `GET` that follows
+        starts it. A `202` from a HEAD means a `GET` has already queued it.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: size
+          in: query
+          schema: { type: integer }
+      responses:
+        "200": { description: The thumbnail is ready. }
+        "202": { description: The thumbnail is being made. }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{nod}/content:
     parameters:
       - $ref: "#/components/parameters/nod"
@@ -4269,6 +4355,7 @@ components:
         created_by: { type: string, description: "The ID of the user, or of the key, that made the node." }
         owner_id: { type: string, description: "The ID of the user that owns the node." }
         has_link: { type: boolean, description: "Set in a listing of children, and omitted when false: the item carries a link the caller may know of. A visitor never gets it." }
+        has_thumbnail: { type: boolean, description: "On an image file (JPEG, PNG or GIF): true when its smallest thumbnail is ready, false when not. Absent for other kinds, and absent for a link visitor." }
         starred: { type: boolean, description: "The caller's own star on the node. Set for a signed-in user and for a token acting as its user, on stat, listings and the shared list, false when not starred. Absent for keys, admins and link visitors." }
         color: { type: string, description: "A directory's palette colour; absent when none, and absent for a link visitor." }
         description: { type: string, description: "The item's plain-text description; absent when none, and absent for a link visitor." }

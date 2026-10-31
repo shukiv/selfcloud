@@ -21,6 +21,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/blob"
 	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/derived"
 	"github.com/shukiv/selfcloud/internal/fsutil"
 	"github.com/shukiv/selfcloud/internal/jobs"
 	"github.com/shukiv/selfcloud/internal/mail"
@@ -55,18 +56,20 @@ type Options struct {
 
 // Server serves the HTTP API.
 type Server struct {
-	cfg       *config.Config
-	ui        *web.Handler // nil when ui.enabled is false
-	logo      *web.Logo    // nil when no ui.brand.logo_file is set
-	log       *slog.Logger
-	store     *store.Store
-	blobs     blob.Store
-	trusted   []netip.Prefix
-	metrics   *metrics
-	jobs      *jobs.Runner
-	mailer    mail.Sender // nil when mail is not configured
-	templates *mail.Templates
-	limits    map[string]*limiter // rate limiters by "endpoint.dimension"
+	cfg   *config.Config
+	ui    *web.Handler // nil when ui.enabled is false
+	logo  *web.Logo    // nil when no ui.brand.logo_file is set
+	log   *slog.Logger
+	store *store.Store
+	blobs blob.Store
+	// derivedPool makes thumbnails in child processes, and keeps their rows and files; see thumbnails.go.
+	derivedPool *derived.Pool
+	trusted     []netip.Prefix
+	metrics     *metrics
+	jobs        *jobs.Runner
+	mailer      mail.Sender // nil when mail is not configured
+	templates   *mail.Templates
+	limits      map[string]*limiter // rate limiters by "endpoint.dimension"
 	// limitClock is the time the rate limiters read. Production keeps time.Now; tests freeze it.
 	limitClock func() time.Time
 	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (round 2, item 1).
@@ -194,6 +197,15 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
+	dpool, err := newDerivedPool(opts.Config, opts.Store, blobs, log)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	// Pending thumbnails are work a previous process never finished. Clearing them here, before any request is
+	// served, means no queued job can be lost to the clearing.
+	if _, err := dpool.Recover(context.Background()); err != nil {
+		return nil, fmt.Errorf("api: derived files: %w", err)
+	}
 	pub, err := url.Parse(opts.Config.PublicURL)
 	if err != nil {
 		return nil, fmt.Errorf("api: public_url: %w", err)
@@ -247,6 +259,7 @@ func New(opts Options) (*Server, error) {
 		log:           log,
 		store:         opts.Store,
 		blobs:         blobs,
+		derivedPool:   dpool,
 		trusted:       trusted,
 		metrics:       newMetrics(),
 		jobs:          jobs.New(opts.Store, log),
@@ -326,7 +339,9 @@ func New(opts Options) (*Server, error) {
 			// Signed links: creation per principal; serving per client address, generous enough
 			// for a player seeking through a video.
 			"links.create": newLimiter(120),
-			"links.serve":  newLimiter(600),
+			// Thumbnail requests that start new work, per caller. A read of a thumbnail already made is not charged.
+			"thumb.enqueue": newLimiter(300),
+			"links.serve":   newLimiter(600),
 		},
 	}
 	s.views = newViewRecorder(opts.Store, log)
@@ -478,6 +493,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/shortcuts", handle: s.handleCreateShortcut, auth: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/content", handle: s.handleGetContent, auth: true, link: true},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/permissions", handle: s.handleListNodePermissions, auth: true},
@@ -697,8 +714,11 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	sw := sweep.New(sweep.Options{Store: s.store, Blobs: s.blobs, DeleteGrace: s.cfg.Blobs.DeleteGrace.D(),
 		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
 		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
-		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(), Logger: s.log})
+		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(),
+		Derived: s.derivedPool.Cache(), Logger: s.log})
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
+	derivedDone := make(chan struct{})
+	go func() { defer close(derivedDone); s.derivedPool.Run(jobsCtx) }()
 	noticeDone := make(chan struct{})
 	go func() { defer close(noticeDone); s.runDropNotices(jobsCtx) }()
 	webhooksDone := make(chan struct{})
@@ -711,7 +731,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	}
 	s.draining.Store(true)
 	stopJobs() // an interrupted job is run again on the next start
-	defer func() { <-jobsDone; <-sweepDone; <-noticeDone; <-webhooksDone }()
+	defer func() { <-jobsDone; <-sweepDone; <-noticeDone; <-webhooksDone; <-derivedDone }()
 	s.log.Info("shutting down", "timeout", s.cfg.ShutdownTimeout.String())
 
 	shCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout.D())
