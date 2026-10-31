@@ -113,6 +113,14 @@ type Server struct {
 	handler  http.Handler
 	// copySyncNodes is the largest copy made in the request; see syncCopyNodes.
 	copySyncNodes int
+	// copyYield is how long a chunked copy runs before it yields its turn to the queue (copyBatches). A test lowers it.
+	copyYield time.Duration
+	// copyFault, when set, is called at each stage of a chunked copy and fails it when it returns an error (tests
+	// only). copyHold, when set, receives the writer hold of each write a chunked copy makes (measurement only).
+	copyFault func(stage string) error
+	copyHold  func(phase string, hold time.Duration)
+	// copyBatchRows, when above zero, fixes the rows per copy batch instead of sizing them from the measured hold (tests).
+	copyBatchRows int
 	// emptyTrashLimit is the most roots one empty-trash call purges; see handleEmptyTrash. A test lowers it.
 	emptyTrashLimit int
 	// trashScanLimit is the most trash roots one listing or empty-trash call examines; see trashScanMax.
@@ -329,6 +337,7 @@ func New(opts Options) (*Server, error) {
 	s.jobs.Handle(jobAccountDelete, s.runAccountDelete)
 	s.jobs.Handle(jobCopyNode, s.runCopyJob)
 	s.copySyncNodes = syncCopyNodes
+	s.copyYield = copyYieldAfter
 	s.emptyTrashLimit = emptyTrashMax
 	s.trashScanLimit = trashScanMax
 	s.freeBytes = fsutil.FreeBytes

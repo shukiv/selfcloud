@@ -1068,6 +1068,44 @@ the values: 10,000 nodes with two values each took about 355 ms of writer hold o
 three runs with `-benchtime 3x`). The rest of the copy is unchanged, and a copy with no labelled field in the account skips the
 statement. The copy job holds the writer for its whole copy, as before.
 
+**Measured publish of a staged copy, bare move (`BenchmarkCopyPublish`, `internal/store/copy_publish_bench_test.go`).**
+The benchmark builds the database the way a real copy leaves it: the source tree is in it too (its nodes and labels),
+and the staged rows carry derived IDs and are written in a shuffled order. The timed write is the one `UPDATE` of
+`folder_id` that moves the staged rows, with the root update, the reservation and the audit. Three runs per size, under
+`/var/tmp`, on a shared machine:
+
+| nodes   | hold, run 1 | run 2   | run 3   | median  |
+|---------|-------------|---------|---------|---------|
+| 20,000  | 268 ms      | 341 ms  | 370 ms  | 341 ms  |
+| 50,000  | 1,405 ms    | 1,268 ms| 1,256 ms| 1,268 ms|
+| 100,000 | 2,826 ms    | 3,380 ms| 5,671 ms| 3,380 ms|
+
+The earlier version of this benchmark (sorted IDs, no source tree in the database) held 1.4 to 2.1 s at 100,000. It
+understated the move, which is why it is replaced. Which of the two differences (the source tree, or the order of the
+IDs) costs the most was not isolated.
+
+**Measured publish of a real chunked copy, end to end (`TestMeasureChunkedCopyAt100k`, decision 34).** The longest write
+of each phase, with three runs per size (`MEASURE` lines, `internal/api/copy_measure_test.go`). The publish is one write;
+`batch` is the longest of a copy's batch writes; the rest is the snapshot and the cleanup.
+
+| nodes   | publish, runs 1 / 2 / 3       | worst publish | longest batch, worst run | overall worst |
+|---------|-------------------------------|---------------|--------------------------|---------------|
+| 20,000  | 0.46 s / 0.90 s / 0.88 s      | 0.90 s        | 0.71 s                   | 0.90 s        |
+| 50,000  | 1.22 s / 1.44 s / 1.56 s      | 1.56 s        | 1.03 s                   | 1.56 s        |
+| 100,000 | 7.06 s / 7.87 s / 4.16 s      | 7.87 s        | 1.31 s                   | 7.87 s        |
+
+The machine's load varied between the runs (load average 4.5 to 16), and the spread is large at 100,000, so three runs are
+the least a rule can rest on, not a precise figure. The publish is the longest write at every size; the batches stay
+between 0.3 s and 1.3 s, under the 5 s rule, though above the 400 ms the batch sizer aims at (a batch holds the writer
+for its whole write, and the sizer reacts after the fact). Before the review fixes the same measurement gave 2.39 s,
+2.84 s and 3.01 s at 50,000 (worst 3.01 s) and 3.22 s, 4.96 s and 6.54 s at 100,000 (worst 6.54 s). The load was not the
+same in the two matrices, and the cause of the difference was not isolated; the 100,000 worst case is over 5 s in both.
+
+The rule (the largest measured size whose worst longest write is at most 5 s) gives 50,000 as the default. The bare move
+above is 1.3 to 3.4 s (median) at 100,000, so the checks and reads around the move account for part of the 4 to 8 s of
+the real publish; the reads before the move were measured at about 0.4 s in one run, and the snapshot check added in
+the review fixes (`CopySnapshotChanged`, one join over the snapshot rows) was not timed on its own.
+
 **Measured for the default `copy.max_nodes` of 20,000 (`BenchmarkCopyHold`, `internal/store/copy_hold_bench_test.go`).**
 The benchmark times one `store.Write` that does what `copyTree` does: it reads the subtree, inserts every node, and,
 with labels, copies one text value per node (`CopyLabelValues`). It ran on a database under `/var/tmp`, ext4 on the
@@ -1305,7 +1343,7 @@ Files                                      any caller, limited to what it may re
   PATCH  /nodes/{nod}                      {name, no_download, editors_can_share}: rename in place (editor); no_download (editor); editors_can_share (manager); optional If-Match with the etag (412 on a mismatch)
   POST   /nodes/{nod}/move                 {folder, parent | path, name, on_conflict: fail | rename | replace}; optional If-Match, as PATCH
   POST   /nodes/{nod}/copy                 same; read on the source, write on the target; 202 and a job
-                                           above 10,000 nodes, too_large above copy.max_nodes (default 20,000)
+                                           above 10,000 nodes, too_large above copy.max_nodes (default 50,000)
   DELETE /nodes/{nod}                      to the trash (editor); ?permanent=true deletes for good (manager)
   POST   /nodes/{nod}/restore              restore a trashed node: its trasher or a manager, and editor on the parent
   GET    /trash                            the trashed items the caller may restore; ?folder=, paged, newest first
@@ -3090,3 +3128,154 @@ Decided on approval:
         5. The unverified Collabora behaviours (a) to (f) above.
         6. Sign-out and disable do not release a lock; it lapses within 30 minutes. A restore across a session is tested in the store, not through the API.
     - **Slice l3b is one commit with l3.** Migration 0026 is edited in place (it has not shipped), and no schema change was made in l3b.
+
+34. **Chunked folder copy** (built on the owner's decisions of 2026-10-31: the staging folder is the mechanism; the default
+    moves with this change, to 50,000, the largest of 20,000, 50,000 and 100,000 whose worst longest write, over three runs
+    of the real copy, is at most 5 s). A copy above the sync limit
+    (10,000 nodes) is a job in phases. It stays hidden until one write publishes it, and a failure leaves nothing visible,
+    charges nothing and holds no reservation. Migration 0027.
+
+    **Mechanism.** A staging folder is a folder row with `folders.staged = 1`, added by `ALTER TABLE ... ADD COLUMN`, so
+    the foreign keys and the `kind` CHECK are unchanged. Every folder read filters `staged = 0`, and
+    `store/staged_guard_test.go` fails a new folder read that does not, unless it is classified there with a reason. The
+    nodes are built in the staging folder, one batch at a time, under its root. The publish moves them into the destination
+    with one `UPDATE` of `folder_id`, sets the new root's parent and name, deletes the staging root and folder, and settles
+    the reservation, in one write. Rejected: a column on `nodes` filtered in every node statement (about 100 statements),
+    and a side table for the folder list (the same filter in more places).
+
+    **Enumeration.** Every folder read in `internal/store`, and what can see a staged folder or node. A staged node has no
+    ID a caller was given, and no grant, link or permission can name its folder, so a read that starts from an ID a caller
+    gave finds nothing staged. The checked list:
+
+    | Read | Rule |
+    |---|---|
+    | `Folder`, `FolderByNameKey`, `FolderByExternalID`, `PersonalFolder` (both) | filtered `staged = 0` |
+    | `Folders` (the list), `pageFolders`, `pageFoldersAliased`, `FolderTotals` | filtered `staged = 0` |
+    | the folder count of usage | filtered `staged = 0` |
+    | `LargestFiles` (the page query and the outer join) | filtered `staged = 0` in both. Found in review: the page read a staged file, and the outer join only hid it on output |
+    | node access (`nodeRoleIn`, `nodeAccessWith`, `GET /nodes/{root}`, children, the job's target) | reads the folder through `Folder`, so a staged node is `not_found` for every caller, owners included |
+    | account counters (`usage.go`) | the copy's reservation is counted, as an upload's is; staged bytes and files are not (`RecountAccount` writes 0 for a staging folder) |
+    | permissions, grants, groups, links, shortcuts, sharing, hidden spaces | name a node or folder by an ID the caller holds; a staged one has none. Classified in the guard with the reason |
+    | `RootReachedFolders` and the root-permission join | a staging root has no permission, so the join finds none |
+    | personal-folder owner lookups | a personal folder is never staged: staged folders are team folders |
+    | webhook outbox, fan-out and `EmitTreeEvents` | events are written at publish only; a staged node reports nothing |
+    | `ExpiredTrash`, purge | a staged node is never trashed |
+    | label values count (`CountFieldValues`) | counts staged values too, because deleting the field removes them too. A field deleted during a copy also drops the staged values, so the published copy has fewer labels. The race is stated |
+    | account delete | the account row cascades to its folders, nodes and copy rows |
+    | backup | a copy of the database holds staged rows and their `copy_jobs` row; a restored job is requeued and resumes |
+    | metrics | no folder or node query |
+    | changes or sync feed | none exists; the webhook outbox is the only feed |
+
+    **Guards** (`internal/store/staged_guard_test.go`). A folder read counts as filtered only when `staged` is in the SQL
+    literal it sits in, so a filter in another literal of the same function does not count. The folder map records the
+    unfiltered folder reads per file: `storage.go` went from 4 to 2 (`LargestFiles` filters in its own statement), and the
+    reasons in `folders.go` changed, not its count.
+    A node read is a `FROM nodes`, a `JOIN nodes`, or a use of the `nodeSelect` statement. The guard reads the condition
+    that follows each one, across the literals a Go expression adds to it, and a read is scoped only when that condition
+    names an ID, a folder or parent ID, or a node ID with `=` or `IN`. A read with no such condition must be classified.
+    The first version of this guard was vacuous: a condition that only said `folder` matched the select list, and a
+    `nodeSelect` use had no `FROM` in its own literal, so it was never seen. The review's two planted reads
+    (`nodeSelect + " WHERE n.account_id = ? AND n.name_key LIKE ?"` and `SELECT n.id, n.parent_id FROM nodes n WHERE
+    n.account_id = ?`) now fail the test, which reports `zz_plant.go: 2 unscoped node reads not classified` (the plant file
+    was removed afterwards). The classified reads are four: two blob-reference checks in `nodes.go` and two trash reads in
+    `trash.go`, for which no staged node can match. The `RootNodeIDs` read, scoped by `folder_id IN`, is not counted.
+
+    **Phases** (`copy_jobs.phase`). `snapshot`: the source's untrashed subtree is read in one statement, so it is one
+    consistent view, with each node's parent and depth, in depth order; a tree over `copy.max_nodes` fails the copy with
+    nothing copied. The rows are stored in batches of 5,000, with their parents. An earlier version read the tree a page
+    at a time, with a keyset over a walk that changed between pages; it could list a node twice or miss one, so it is
+    gone. `copy`: the batches. `publish`: one write. `done`: the snapshot rows are dropped in steps. `cleanup`: after a
+    failure, the staged nodes are removed deepest first in steps of 2,000, then the reservation is released and the folder
+    and row are removed. A failed job reaches `cleanup`; a restart or the sweep resumes it. A chunked job whose copy row is
+    gone fails with `copy_state_lost`, and never runs as a one-write copy; a job queued before chunked copies had rows
+    (no `chunked` flag in its payload) still runs as a one-write copy.
+
+    **Rules, as built.**
+    - *Hidden until done:* the staged tree is unreachable (above). The 202 names the new root, which is `not_found` until
+      the publish.
+    - *Batches:* each batch is one write: the caller's guard, the next rows and the cursor, so a failed batch is rolled back
+      whole. The size follows the measured hold: halved above 400 ms, grown below 200 ms, between 100 and 5,000 rows.
+      `batchSizer` is tested with fixed inputs, not with timing.
+    - *Restart:* the phase and cursor are in the database. Batch IDs are derived from the job and the source ID
+      (`id.Derive`), and a batch is atomic, so a rerun names the same nodes and makes none twice. An interrupted snapshot
+      is reset first.
+    - *Reservation:* the bytes of the files the copy will make are reserved at the request: untrashed files, no versions
+      (`CopyableTotals`; a trashed file was counted before, which refused some copies for quota they did not need). The
+      destination user's limit is checked at the request too, not only at the publish, because the reservation sits in
+      the team staging folder, where no user limit applies. `checkUsage` refuses an over-quota copy before anything is
+      written. The reservation is `reserved_bytes` on the staging folder, which is how an unfinished upload
+      shows. It is released exactly once: the publish and the cleanup each set `copy_jobs.reserved_bytes` to zero in the write
+      that releases it. The publish charges the copy's real bytes and files, from the staged rows.
+    - *Access:* the caller is checked at the request, at every batch (delegation live, source readable, `no_download` and the
+      restricted-label rule: `copyGuard`), and at the publish (destination role, name, and the sharing rule the copies were
+      made with). A change at any of them fails the copy, and nothing becomes visible.
+    - *Restricted labels:* the first batch records `keep_restricted` (a manager of the source keeps restricted values; any
+      other role drops them). Every later batch and the publish must give the same answer, or the copy fails with a conflict.
+      The queue must write the undecided value `-1`: it wrote `0`, which every manager copy then read as a decision to drop
+      them, so every manager copy failed at its first batch. The failure tests assert the error text, so such a failure
+      cannot pass them, and `TestManagerCopyKeepsRestrictedAndSucceeds` checks that a manager's copy succeeds.
+    - *Name:* checked at the request for a fast refusal and again at the publish with the request's `on_conflict`: `fail`
+      fails the job, `rename` takes `name (1)`, `replace` is file over file only. The name is not held between the two.
+    - *Source change during the copy (the rule):* a copy never succeeds with a tree whose structure differs from its
+      snapshot, and never hides the difference. Each snapshot row records its node and the node's parent. A snapshot node
+      that is trashed, deleted or under another parent when its batch copies it fails the copy with `source_changed`, and
+      so does a node whose parent is not staged; the publish checks every snapshot row again, inside its write
+      (`CopySnapshotChanged`), so a directory moved after its batch fails too. The failure is an ordinary failed job:
+      nothing is visible, the reservation is released, the caller retries. A snapshot listing a node twice fails the same
+      way (`InsertCopySnapshot` refuses it). A rename, or new content, is not structural: the node is copied as read at
+      its batch, and the copy takes the new name or content. A node created after the snapshot is not in it, so it is
+      not copied, and a file moved into the tree after the snapshot is not copied either. Tested: trashed, deleted and
+      moved deeper or out, at the batch and at the publish; a directory moved after its batch; a rename; a file moved in
+      (`TestSourceChangesDuringACopy`), and the duplicate (`TestInsertCopySnapshotRefusesANodeTwice`). Mutation proofs:
+      removing the publish check fails the three "after its batch" cases. Removing the batch parent check fails no test,
+      because the publish check catches the same moves at the end; the batch check only stops the copy earlier.
+    - *Fairness:* an account may have two chunked copies queued or running (`too_many_copies`, a `conflict`, refused at the
+      request before anything is staged, `TestTooManyUnfinishedCopiesRefused`). A running copy yields its turn after
+      `copyYieldAfter` (30 s, a server constant): after a batch that has rows left, the handler returns `jobs.ErrYield`, the runner puts the job at
+      the back of the queue (its `created_at` is now) and runs the next job, and the copy resumes from its cursor
+      (`TestChunkedCopyYieldsToQueuedJobs`: a job queued behind the copy runs before it ends).
+    - *on_conflict:* validated at the request for both paths. A small copy used to accept a bad value when no name clashed
+      (the value was read only at a clash), and a chunked copy stored it and failed with a server error. Both now answer
+      `invalid_request` (`TestCopyOnConflictIsValidatedOnBothPaths`; the mutant that accepts `bogus` makes the small copy
+      answer 201).
+    - *Events:* the publish reports one `file.created` per non-folder node, shortcuts included, as the one-write copy does.
+      The usage charge counts files only, as it did. The test copies the same tree (five files and a shortcut) both ways:
+      the one-write copy makes 6 events, and the chunked copy made 5 before this fix (`TestChunkedCopyReportsWhatTheOneWriteCopyReports`).
+    - *Sweep and counts while a copy runs:* the sweep's reservation check compares the accounts' reserved bytes with the
+      uploads' bytes plus the copies' reserved bytes; before, every sweep during a copy logged a false warning
+      (`TestReservationTotalsCountsACopy`). The field list's value counts leave out staged values
+      (`TestLabelListCountLeavesOutAStagedCopy`). Counts that decide a deletion (`CountFieldValues`,
+      `CountUserLabelValues`) still count staged values, because the deletion removes them.
+    - *Source change, earlier design:* a node created after the snapshot is not copied; the rest of the rule is above.
+      The content of a file is read at its batch, as before.
+    - *Events and audit:* nothing is written before the publish. The publish reports with `ReportFor`, as `copyTree` does:
+      one `file.created` per file below the threshold, or one folder summary above it. `node.copy` is written once, at publish.
+    - *Blobs:* a copy shares its source's blobs by reference, as copies always have. A failed copy's staged rows are deleted,
+      which drops those references, and the blobs are collected by reference as before. The copy keeps no refcount of its own.
+    - *Sweep:* `internal/sweep` finishes the cleanup of every copy whose job has failed or succeeded, in bounded steps. It
+      never touches a copy whose job is queued or running.
+    - *Cancel:* there is no cancel route for a copy, and none is added. A copy ends by publishing or by failing.
+
+    **Limit.** The default `copy.max_nodes` is 50,000. The rule is the largest of 20,000, 50,000 and 100,000 whose worst
+    longest write, over three runs of the real copy, is at most 5 s. At 100,000 the worst run's publish held the writer for
+    7.87 s, so 100,000 is out; 50,000 has a worst of 1.56 s, so it is the default (section 8 has the table). An operator may
+    raise it, and the cost is the publish's hold, which grows with the tree.
+
+    **Measured, a full copy with a label on every node, per phase** (`TestMeasureChunkedCopyAt100k`, run with
+    `SELFCLOUD_MEASURE_COPY=1` and `SELFCLOUD_MEASURE_NODES`; database under `/var/tmp`, ext4 on NVMe; a shared machine,
+    load average 4.5 to 16 across the runs; one small write every 100 ms during the copy). The publish is the only write
+    per copy, and it is the longest write at every size:
+    - 20,000 nodes, publish 0.46, 0.90, 0.88 s; longest batch 0.33, 0.71, 0.37 s; total 6.7 to 11.9 s.
+    - 50,000 nodes, publish 1.22, 1.44, 1.56 s; longest batch 0.45, 0.50, 1.03 s; total 20.8 to 26.9 s.
+    - 100,000 nodes, publish 7.06, 7.87, 4.16 s; longest batch 0.99, 1.31, 0.48 s; total 55 to 146 s.
+    The publish, not a batch, is the write over 5 s. Inside the publish, the move of the staged rows (one `UPDATE` of
+    `folder_id`) is most of the time: in an instrumented run at 100,000 it was 3.35 s of a 4.1 s publish, and the other
+    steps (the guard, the destination, the totals, the audit) took about 0.7 s, the deletes of the staging folder and the
+    job update 2 ms. The check added in the review fixes (`CopySnapshotChanged`) is inside the publish too; it was not timed
+    on its own, so its share of the 100,000 publish is not known.
+    The batches stay between 0.3 s and 1.3 s, above the 400 ms the batch sizer aims at: a batch holds the writer for its
+    whole write, and the sizer reacts after it. Under the 5 s rule, so not a blocker, but not what the sizer targets.
+    Earlier runs, before the review fixes, held the publish at 2.39, 2.84 and 3.01 s at 50,000 and 3.22, 4.96 and 6.54 s at
+    100,000, on a different load; the 100,000 worst case was over 5 s in both.
+    The "longest write" of a run is the largest single hold, including the wait for the writer; the copy's own writes do
+    not wait for each other, so this is mostly the write's time. One run is three values; the spread is wide at 100,000.

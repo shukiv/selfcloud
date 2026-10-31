@@ -8,6 +8,7 @@ package id
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base32"
 	"strings"
 )
@@ -33,4 +34,11 @@ func Valid(prefix, s string) bool {
 	}
 	_, err := enc.DecodeString(rest)
 	return err == nil
+}
+
+// Derive returns the ID of prefix that seed names. The same seed always gives the same ID. A chunked copy derives
+// each new node's ID from its job and the source's ID, so a batch that runs again names the same nodes.
+func Derive(prefix, seed string) string {
+	sum := sha256.Sum256([]byte(seed))
+	return prefix + "_" + enc.EncodeToString(sum[:16])
 }

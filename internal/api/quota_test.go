@@ -6,7 +6,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"path"
 	"strings"
 	"testing"
 	"time"
@@ -144,19 +143,12 @@ func TestQuotaCopyJobIsChecked(t *testing.T) {
 	s, _, key, accID, f := quotaSetup(t, 100)
 	s.copySyncNodes = 0 // every copy becomes a job
 	a := nodeOf(t, writeFile(t, s, key, f.ID, "/a.bin", strings.Repeat("a", 60)))
+	// A chunked copy reserves its whole cost when it is asked for (decision 34): 60 more would reach 120 of 100, so the
+	// request is refused before any job or staging folder is made.
 	rec := call(t, s, "POST", "/api/v1/nodes/"+a.ID+"/copy", key, map[string]any{"name": "c.bin"})
-	wantStatus(t, rec, 202)
-	job, err := s.store.Job(context.Background(), path.Base(rec.Header().Get("Location")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The job checks the quota when it runs: 60 more would reach 120 of 100.
-	err = s.runCopyJob(context.Background(), job)
-	if apierr.From(err).Code != apierr.QuotaExceeded {
-		t.Fatalf("copy job error = %v; want quota_exceeded", err)
-	}
-	if u := usageOf(t, s, key, accID); u.UsedBytes != 60 || u.Files != 1 {
-		t.Errorf("usage after refused copy job = %+v", u)
+	wantStatus(t, rec, 507)
+	if u := usageOf(t, s, key, accID); u.UsedBytes != 60 || u.Files != 1 || u.ReservedBytes != 0 {
+		t.Errorf("usage after refused copy = %+v", u)
 	}
 }
 

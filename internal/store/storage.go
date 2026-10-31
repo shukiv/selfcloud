@@ -105,7 +105,7 @@ type FolderTotal struct {
 // FolderTotals lists the folders of accountID with their counters, oldest first. teamOnly leaves out the
 // personal folders.
 func (s *Store) FolderTotals(ctx context.Context, accountID string, teamOnly bool) ([]FolderTotal, error) {
-	q := "SELECT " + folderCols + ", used_bytes, used_files, reserved_bytes FROM folders WHERE account_id = ?"
+	q := "SELECT " + folderCols + ", used_bytes, used_files, reserved_bytes FROM folders WHERE account_id = ? AND staged = 0"
 	if teamOnly {
 		q += " AND kind = 'team'"
 	}
@@ -173,14 +173,14 @@ func (s *Store) LargestFiles(ctx context.Context, accountID, folderID, kind stri
 			UNION ALL
 			SELECT c.id FROM nodes c JOIN trashed t ON c.parent_id = t.nid WHERE c.account_id = ?
 		), page AS (
-			SELECT n.id, n.folder_id, n.name, n.size, n.modified_at FROM nodes n JOIN folders f ON f.id = n.folder_id
+			SELECT n.id, n.folder_id, n.name, n.size, n.modified_at FROM nodes n JOIN folders f ON f.id = n.folder_id AND f.staged = 0
 			WHERE n.account_id = ? AND n.kind = 'file'`+cond+`
 			ORDER BY n.size DESC, n.id DESC LIMIT ?
 		)
 		SELECT pg.id, pg.folder_id, f.name, pg.name, pg.size,
 			(SELECT COALESCE(SUM(v.size), 0) FROM versions v WHERE v.node_id = pg.id),
 			pg.modified_at, pg.id IN (SELECT nid FROM trashed)
-		FROM page pg JOIN folders f ON f.id = pg.folder_id
+		FROM page pg JOIN folders f ON f.id = pg.folder_id AND f.staged = 0
 		ORDER BY pg.size DESC, pg.id DESC`,
 		append([]any{accountID, accountID, accountID}, args...)...)
 	if err != nil {

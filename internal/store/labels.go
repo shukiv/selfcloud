@@ -303,8 +303,12 @@ func labelFieldsIn(ctx context.Context, q querier, accountID string, counts bool
 		return nil, err
 	}
 	if counts {
-		vrows, err := q.QueryContext(ctx, `SELECT field_id, COUNT(*) FROM node_labels
-			WHERE account_id = ? GROUP BY field_id`, accountID)
+		// The count shown in the list leaves out the values of a staged copy: a copy is not visible until it publishes.
+		// (Where a count decides a deletion, CountFieldValues and CountUserLabelValues, staged values count, because
+		// the deletion removes them.)
+		vrows, err := q.QueryContext(ctx, `SELECT v.field_id, COUNT(*) FROM node_labels v
+			JOIN nodes n ON n.id = v.node_id JOIN folders f ON f.id = n.folder_id AND f.staged = 0
+			WHERE v.account_id = ? GROUP BY v.field_id`, accountID)
 		if err != nil {
 			return nil, err
 		}

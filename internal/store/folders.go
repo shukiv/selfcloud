@@ -88,38 +88,38 @@ func scanFolder(row interface{ Scan(...any) error }) (*Folder, error) {
 // ErrNotFound.
 func (s *Store) Folder(ctx context.Context, accountID, id string) (*Folder, error) {
 	return scanFolder(s.r.QueryRowContext(ctx,
-		"SELECT "+folderCols+" FROM folders WHERE account_id = ? AND id = ?", accountID, id))
+		"SELECT "+folderCols+" FROM folders WHERE account_id = ? AND id = ? AND staged = 0", accountID, id))
 }
 
 // Folder returns the folder of accountID with the given ID.
 func (tx *Tx) Folder(ctx context.Context, accountID, id string) (*Folder, error) {
 	return scanFolder(tx.q.QueryRowContext(ctx,
-		"SELECT "+folderCols+" FROM folders WHERE account_id = ? AND id = ?", accountID, id))
+		"SELECT "+folderCols+" FROM folders WHERE account_id = ? AND id = ? AND staged = 0", accountID, id))
 }
 
 // FolderByNameKey returns the folder of accountID with the given name key.
 func (tx *Tx) FolderByNameKey(ctx context.Context, accountID, nameKey string) (*Folder, error) {
 	return scanFolder(tx.q.QueryRowContext(ctx,
-		"SELECT "+folderCols+" FROM folders WHERE account_id = ? AND name_key = ?", accountID, nameKey))
+		"SELECT "+folderCols+" FROM folders WHERE account_id = ? AND name_key = ? AND staged = 0", accountID, nameKey))
 }
 
 // FolderByExternalID returns the folder of accountID with the given external ID.
 func (tx *Tx) FolderByExternalID(ctx context.Context, accountID, externalID string) (*Folder, error) {
 	return scanFolder(tx.q.QueryRowContext(ctx,
-		"SELECT "+folderCols+" FROM folders WHERE account_id = ? AND external_id = ?", accountID, externalID))
+		"SELECT "+folderCols+" FROM folders WHERE account_id = ? AND external_id = ? AND staged = 0", accountID, externalID))
 }
 
 // PersonalFolder returns the personal folder of userID in accountID. It returns ErrNotFound for a
 // user without one, which only a user made before migration 0009 can be until the backfill runs.
 func (s *Store) PersonalFolder(ctx context.Context, accountID, userID string) (*Folder, error) {
-	return scanFolder(s.r.QueryRowContext(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ? AND "+
-		"kind = 'personal' AND owner_user_id = ?", accountID, userID))
+	return scanFolder(s.r.QueryRowContext(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ? AND staged = 0 AND "+
+		"kind = 'personal' AND owner_user_id = ? AND staged = 0", accountID, userID))
 }
 
 // PersonalFolder returns the personal folder of userID in accountID, read inside the transaction.
 func (tx *Tx) PersonalFolder(ctx context.Context, accountID, userID string) (*Folder, error) {
-	return scanFolder(tx.q.QueryRowContext(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ? AND "+
-		"kind = 'personal' AND owner_user_id = ?", accountID, userID))
+	return scanFolder(tx.q.QueryRowContext(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ? AND staged = 0 AND "+
+		"kind = 'personal' AND owner_user_id = ? AND staged = 0", accountID, userID))
 }
 
 // FolderFilter narrows a folder list. Empty fields do not narrow.
@@ -131,7 +131,7 @@ type FolderFilter struct {
 
 // Folders lists the folders of accountID, oldest first, narrowed by f.
 func (s *Store) Folders(ctx context.Context, accountID string, f FolderFilter, p Page) ([]*Folder, string, error) {
-	where := []string{"account_id = ?"}
+	where := []string{"account_id = ?", "staged = 0"}
 	args := []any{accountID}
 	if f.ExternalID != "" {
 		where = append(where, "external_id = ?")
@@ -160,7 +160,7 @@ func (s *Store) pageFolders(ctx context.Context, cond string, args []any, p Page
 		args = append(args, ms, parts[1])
 	}
 	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, "SELECT "+folderCols+" FROM folders WHERE "+cond+
+	rows, err := s.r.QueryContext(ctx, "SELECT "+folderCols+" FROM folders WHERE staged = 0 AND "+cond+
 		" ORDER BY created_at, id LIMIT ?", args...)
 	if err != nil {
 		return nil, "", err
@@ -240,7 +240,7 @@ func (s *Store) pageFoldersAliased(ctx context.Context, cond string, args []any,
 		args = append(args, ms, parts[1])
 	}
 	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, "SELECT "+prefixed("f.", folderCols)+" FROM folders f WHERE "+cond+
+	rows, err := s.r.QueryContext(ctx, "SELECT "+prefixed("f.", folderCols)+" FROM folders f WHERE f.staged = 0 AND "+cond+
 		" ORDER BY f.created_at, f.id LIMIT ?", args...)
 	if err != nil {
 		return nil, "", err

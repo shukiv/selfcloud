@@ -85,6 +85,16 @@ func (s *Store) ClaimJob(ctx context.Context) (*Job, error) {
 }
 
 // FinishJob records a job's outcome; jobErr nil means success.
+// YieldJob puts a running job back in the queue at the back: its created_at is now, so the queue, which runs the oldest
+// first, runs the jobs queued meanwhile before it. The job keeps its state, and runs again from it.
+func (s *Store) YieldJob(ctx context.Context, id string) error {
+	return s.Write(ctx, func(tx *Tx) error {
+		return rowsAffected(tx.q.ExecContext(ctx,
+			"UPDATE jobs SET status = 'queued', created_at = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+			millis(Now()), millis(Now()), id))
+	})
+}
+
 func (s *Store) FinishJob(ctx context.Context, id string, jobErr error) error {
 	status, msg := JobSucceeded, ""
 	if jobErr != nil {

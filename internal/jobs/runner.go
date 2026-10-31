@@ -23,6 +23,10 @@ const pollInterval = 30 * time.Second
 // Handler does one job.
 type Handler func(ctx context.Context, job *store.Job) error
 
+// ErrYield is returned by a handler that has used its time for this turn and can resume later from its stored state.
+// The runner puts the job back at the back of the queue, so other jobs run first, and does not finish it.
+var ErrYield = errors.New("job yields its turn")
+
 // Runner runs queued jobs.
 type Runner struct {
 	store    *store.Store
@@ -83,6 +87,14 @@ func (r *Runner) RunPending(ctx context.Context) error {
 		if ctx.Err() != nil {
 			// Interrupted by shutdown: leave it running, so the next start runs it again.
 			return ctx.Err()
+		}
+		if errors.Is(jobErr, ErrYield) {
+			// The job used its time budget: it goes to the back of the queue, and runs again from its state.
+			if err := r.store.YieldJob(context.WithoutCancel(ctx), job.ID); err != nil {
+				return err
+			}
+			r.log.Info("job yielded", "job", job.ID, "kind", job.Kind)
+			continue
 		}
 		if jobErr != nil {
 			r.log.Error("job failed", "job", job.ID, "kind", job.Kind, "error", jobErr)

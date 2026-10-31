@@ -155,11 +155,11 @@ type StorageConfig struct {
 
 // CopyConfig controls copying folders.
 type CopyConfig struct {
-	// MaxNodes is the most nodes one copy may make. Larger copies are refused with too_large. The default,
-	// 20,000, keeps the one write that makes a copy inside the 10 s busy_timeout on the measured machine
-	// (design.md section 8, "Measured"). Each node a copy adds holds the writer for 0.1 to 0.25 ms on that
-	// machine, so a higher value holds the writer longer: other writers wait, and one that waits past busy_timeout fails
-	// with SQLITE_BUSY. Raise it only with that cost in mind.
+	// MaxNodes is the most nodes one copy may make. Larger copies are refused with too_large. The default, 50,000, is
+	// the largest measured size (20,000, 50,000, 100,000) whose longest write of a chunked copy is at most 5 s, worst of
+	// three runs on the measured machine: 1.6 s at 50,000 and 7.9 s at 100,000 (design.md decision 34, section 8). The
+	// copy's batches are bounded separately. A higher value makes the publish hold the writer longer: other writers
+	// wait, and one that waits past busy_timeout fails with SQLITE_BUSY. Raise it only with that cost in mind.
 	MaxNodes int `yaml:"max_nodes"`
 }
 
@@ -350,7 +350,7 @@ func Defaults() *Config {
 		Store:           StoreConfig{Driver: "sqlite"},
 		Storage:         StorageConfig{MinFree: 1 * GiB},
 		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
-		Copy:            CopyConfig{MaxNodes: 20000},
+		Copy:            CopyConfig{MaxNodes: 50000},
 		Sharing:         SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
 		Trash:           TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
 		Versions:        VersionsConfig{MaxCount: 100, MaxAge: Duration(30 * 24 * time.Hour), MaxKept: 200},

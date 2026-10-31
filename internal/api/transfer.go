@@ -513,13 +513,15 @@ func (s *Server) handleMoveNode(w http.ResponseWriter, r *http.Request) error {
 // copyPayload is what a queued copy needs. The new root's ID is fixed here, so a repeat of the job
 // can tell that the copy is done.
 type copyPayload struct {
-	Source     string       `json:"source"`
-	Root       string       `json:"root"`
-	Folder     string       `json:"folder"`
-	Parent     string       `json:"parent"`
-	Name       string       `json:"name,omitempty"`
-	OnConflict string       `json:"on_conflict,omitempty"`
-	Actor      actorPayload `json:"actor"`
+	Source     string `json:"source"`
+	Root       string `json:"root"`
+	Folder     string `json:"folder"`
+	Parent     string `json:"parent"`
+	Name       string `json:"name,omitempty"`
+	OnConflict string `json:"on_conflict,omitempty"`
+	// Chunked marks a job made as a chunked copy (copy_jobs holds its state); a job without it is a one-write copy.
+	Chunked bool         `json:"chunked,omitempty"`
+	Actor   actorPayload `json:"actor"`
 }
 
 // actorPayload is the caller a queued copy runs for. The job checks access again as this caller,
@@ -545,6 +547,13 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 	var in transferBody
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
+	}
+	// Checked here for both paths: a small copy used to accept a bad value when no name clashed, and a chunked copy
+	// stored it and failed with a server error.
+	switch in.OnConflict {
+	case "", "fail", "rename", "replace":
+	default:
+		return apierr.New(apierr.InvalidRequest, "on_conflict must be fail, rename or replace")
 	}
 	src, role, err := s.nodeAccess(r, r.PathValue("nod"))
 	if err != nil {
@@ -578,7 +587,7 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 		return s.tooManyNodes(nodes)
 	}
 	if nodes > s.copySyncNodes {
-		return s.queueCopy(w, r, src, in, p)
+		return s.queueChunkedCopy(w, r, src, in, p)
 	}
 
 	rootID := id.New("nod")
@@ -663,59 +672,11 @@ func (s *Server) handleCopyNode(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// queueCopy checks the copy's plan now, so a conflict is answered at once, then queues the copy as a
-// job. The job's target is the new root node.
-func (s *Server) queueCopy(w http.ResponseWriter, r *http.Request, src *store.Node, in transferBody,
-	p *auth.Principal) error {
-	ctx := r.Context()
-	rootID := id.New("nod")
-	var job *store.Job
-	s.atWrite()
-	err := s.store.Write(ctx, func(tx *store.Tx) error {
-		cur, err := tx.Node(ctx, src.AccountID, src.ID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nodeNotFound()
-		}
-		if err != nil {
-			return err
-		}
-		if _, err := requireNodeRole(ctx, tx, p, cur.ID, store.RoleViewer); err != nil {
-			return err
-		}
-		_, dest, err := resolveDestination(ctx, tx, p, cur, in)
-		if err != nil {
-			return err
-		}
-		if _, err := requireNodeRole(ctx, tx, p, dest.ID, store.RoleContributor); err != nil {
-			return err
-		}
-		plan, err := planTransfer(ctx, tx, p, cur, in, false)
-		if err != nil {
-			return err
-		}
-		body, err := json.Marshal(copyPayload{Source: cur.ID, Root: rootID, Folder: plan.folderID,
-			Parent: plan.parent.ID, Name: in.Name, OnConflict: in.OnConflict, Actor: actorOf(p)})
-		if err != nil {
-			return err
-		}
-		now := store.Now()
-		job = &store.Job{ID: id.New("job"), AccountID: cur.AccountID, Kind: jobCopyNode, Target: rootID,
-			Status: store.JobQueued, Payload: string(body), CreatedAt: now, UpdatedAt: now}
-		return tx.InsertJob(ctx, job)
-	})
-	if err != nil {
-		return err
-	}
-	s.jobs.Wake()
-	w.Header().Set("Location", "/api/v1/jobs/"+job.ID)
-	writeJSON(w, http.StatusAccepted, toJobJSON(job))
-	return nil
-}
-
-// runCopyJob makes a queued copy. It is safe to repeat: when the new root already exists, the copy
-// was made, and the job does nothing. It checks access as the caller who queued it, so a grant
-// revoked since then stops the copy.
-func (s *Server) runCopyJob(ctx context.Context, job *store.Job) error {
+// runCopyJobWhole makes a queued copy that predates the chunked copy (migration 0027) and has no copy row: in one
+// write. It is safe to repeat: when the new root already exists, the copy was made, and the job does nothing. It
+// checks access as the caller who queued it, so a grant revoked since then stops the copy. runCopyJob, in
+// copy_job.go, runs every copy queued since.
+func (s *Server) runCopyJobWhole(ctx context.Context, job *store.Job) error {
 	var pl copyPayload
 	if err := json.Unmarshal([]byte(job.Payload), &pl); err != nil {
 		return fmt.Errorf("copy job payload: %w", err)

@@ -211,12 +211,15 @@ func (tx *Tx) RecountAccount(ctx context.Context, accountID string) (before, aft
 	if err != nil {
 		return before, after, err
 	}
+	// A staging folder (migration 0027) counts nothing until its copy publishes: its staged nodes are not usage, and
+	// its reservation is the copy's, held in copy_jobs, so it is kept as it is here.
 	if _, err = tx.q.ExecContext(ctx, `UPDATE folders SET
-		used_bytes = (SELECT COALESCE(SUM(n.size), 0) FROM nodes n WHERE n.folder_id = folders.id AND n.kind = 'file')
-			+ (SELECT COALESCE(SUM(v.size), 0) FROM versions v JOIN nodes n ON n.id = v.node_id WHERE n.folder_id = folders.id),
-		used_files = (SELECT COUNT(*) FROM nodes n WHERE n.folder_id = folders.id AND n.kind = 'file'),
+		used_bytes = CASE WHEN staged = 1 THEN 0 ELSE (SELECT COALESCE(SUM(n.size), 0) FROM nodes n WHERE n.folder_id = folders.id AND n.kind = 'file')
+			+ (SELECT COALESCE(SUM(v.size), 0) FROM versions v JOIN nodes n ON n.id = v.node_id WHERE n.folder_id = folders.id) END,
+		used_files = CASE WHEN staged = 1 THEN 0 ELSE (SELECT COUNT(*) FROM nodes n WHERE n.folder_id = folders.id AND n.kind = 'file') END,
 		reserved_bytes = (SELECT COALESCE(SUM(CASE WHEN u.visitor_id = '' THEN u.length ELSE u.durable_offset END), 0)
 			FROM uploads u WHERE u.folder_id = folders.id)
+			+ (SELECT COALESCE(SUM(j.reserved_bytes), 0) FROM copy_jobs j WHERE j.staging_folder_id = folders.id)
 		WHERE account_id = ?`, accountID); err != nil {
 		return before, after, err
 	}
@@ -265,13 +268,14 @@ func (s *Store) UsageTotals(ctx context.Context) (used, reserved int64, err erro
 // the unfinished uploads. They agree unless the counters have drifted; the sweep compares them.
 func (tx *Tx) ReservationTotals(ctx context.Context) (counted, declared int64, err error) {
 	err = tx.q.QueryRowContext(ctx, `SELECT (SELECT COALESCE(SUM(reserved_bytes), 0) FROM accounts),
-		(SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads)`).Scan(&counted, &declared)
+		(SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads)
+		+ (SELECT COALESCE(SUM(reserved_bytes), 0) FROM copy_jobs)`).Scan(&counted, &declared)
 	return counted, declared, err
 }
 
 // CountFolders counts the top-level folders of an account.
 func (s *Store) CountFolders(ctx context.Context, accountID string) (int64, error) {
 	var n int64
-	err := s.r.QueryRowContext(ctx, "SELECT COUNT(*) FROM folders WHERE account_id = ?", accountID).Scan(&n)
+	err := s.r.QueryRowContext(ctx, "SELECT COUNT(*) FROM folders WHERE account_id = ? AND staged = 0", accountID).Scan(&n)
 	return n, err
 }

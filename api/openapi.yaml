@@ -2252,10 +2252,22 @@ paths:
         so nothing is copied on disk, but the account is charged for the copy in full. The caller
         needs `read` on the source and `write` on the target folder. A folder of up to 10,000
         nodes is copied in this request. A larger one answers `202` with a job (`node.copy`); the
-        job's `target` is the new root node, and the job checks access again when it runs. A tree
-        above `copy.max_nodes` (default 20,000; the operator may raise it, and a higher limit holds the writer longer)
-        is `too_large`, with `details.max_nodes` and `details.nodes`.
-        Copy `on_conflict` works as for a move.
+        job's `target` is the new root node, and the job checks access again when it runs. The job
+        builds the copy in batches, in a staging folder that no listing, lookup or count shows, and
+        publishes it in one write: until then the new root is `not_found`, and a failed job leaves
+        nothing behind. A tree above `copy.max_nodes` (default 50,000; the operator may raise it, and
+        a higher limit holds the writer longer in the publish) is `too_large`, with `details.max_nodes`
+        and `details.nodes`.
+        Copy `on_conflict` works as for a move; a value other than `fail`, `rename` or `replace` is
+        `invalid_request` for either size of copy. The reservation is the bytes of the files the copy
+        will make: trashed nodes and versions are not counted.
+        An account has at most two chunked copies queued or running; a third is `conflict` with
+        `details.reason: too_many_copies`, and nothing is staged. A job yields its turn after about
+        30 seconds and goes to the back of the queue, so other jobs run; it resumes from its stored state.
+        A copy never succeeds with a source tree whose structure changed after its snapshot. A node of
+        the snapshot that was trashed, deleted or moved fails the job with `source_changed` (in
+        `error`), and nothing becomes visible. A rename or new content is copied as it is read. A file
+        created after the snapshot is not copied.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true

@@ -122,6 +122,7 @@ type Result struct {
 	Permissions    int   // permissions expired more than permissionGrace ago, removed and audited
 	AccessRequests int64 // decided access requests older than accessRequestRetention, removed
 	Purged         int   // trashed items past trash.retention, purged with their contents
+	CopiesCleaned  int   // chunked copies whose staged rows were removed after their job finished
 	Versions       int   // versions past versions.max_count or versions.max_age, pruned
 	Links          int   // share links that ended more than a day ago, removed with their open uploads
 	Recent         int64 // recent entries past recentRetention, or beyond recentPerUser for their user, removed
@@ -182,6 +183,9 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 		return res, err
 	}
 	if res.Purged, err = w.purgeTrash(ctx, now); err != nil {
+		return res, err
+	}
+	if res.CopiesCleaned, err = w.cleanupCopies(ctx); err != nil {
 		return res, err
 	}
 	if res.Versions, err = w.pruneVersions(ctx, now); err != nil {

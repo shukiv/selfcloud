@@ -51,6 +51,13 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/store/sharing.go":        2,
 	"internal/store/storage.go":        1,
 	"internal/store/usage.go":          2,
+	// Chunked copy (decision 34). copy_jobs.go: a batch's copy of a file (counted in the copies' file total, which the
+	// publish reports), the file selectors of the staged totals and the per-file events, and the non-folder selectors of
+	// the staged item count and the per-file events (shortcuts included, as the one-write copy reports them). None of
+	// these decides access.
+	// copy_job.go: the publish's shortcut check, which decides only whether the edit is recorded in Recent, as copyTree's.
+	"internal/store/copy_jobs.go": 6,
+	"internal/api/copy_job.go":    1,
 }
 
 // TestNodeKindComparisonsAreReviewed fails when a node-kind comparison appears, moves or goes in internal/api or
