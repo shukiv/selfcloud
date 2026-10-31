@@ -239,6 +239,10 @@ type LinksConfig struct {
 type WebhooksConfig struct {
 	// AllowHTTP admits http:// endpoint URLs. Off by default: an endpoint must be HTTPS. For development only.
 	AllowHTTP bool `yaml:"allow_http"`
+	// AllowNetworks are the networks (CIDRs, or single addresses) a webhook may connect to even though the deny table
+	// refuses them, such as a same-host application on a private Docker network. Empty by default, so a fresh install
+	// refuses private addresses (decision 28).
+	AllowNetworks []string `yaml:"allow_networks"`
 }
 
 // TokensConfig controls delegated tokens, the short-lived credentials an account key mints for a
@@ -422,6 +426,9 @@ func (c *Config) Validate() error {
 	}
 	if _, err := ParsePrefixes(c.TrustedProxies); err != nil {
 		bad("trusted_proxies: %v", err)
+	}
+	if _, err := ParsePrefixes(c.Webhooks.AllowNetworks); err != nil {
+		bad("webhooks.allow_networks: %v", err)
 	}
 	if c.ShutdownTimeout <= 0 {
 		bad("shutdown_timeout must be positive")

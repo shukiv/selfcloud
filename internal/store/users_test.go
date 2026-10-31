@@ -12,7 +12,7 @@ import (
 )
 
 // newAccountRow adds an account and returns its ID.
-func newAccountRow(t *testing.T, s *Store, name string) string {
+func newAccountRow(t testing.TB, s *Store, name string) string {
 	t.Helper()
 	acc := &Account{ID: id.New("acc"), Name: name, Status: AccountActive, CreatedAt: Now(), UpdatedAt: Now()}
 	if err := s.Write(context.Background(), func(tx *Tx) error { return tx.InsertAccount(context.Background(), acc) }); err != nil {

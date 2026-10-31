@@ -82,6 +82,8 @@ type Sweeper struct {
 	versionCount int
 	versionAge   time.Duration
 	log          *slog.Logger
+	// webhookEventCursor is where the next pass over the webhook events starts (see pruneWebhooks).
+	webhookEventCursor int64
 }
 
 // New returns a Sweeper. It does nothing until Run or Once is called.
@@ -121,6 +123,10 @@ type Result struct {
 	Versions       int   // versions past versions.max_count or versions.max_age, pruned
 	Links          int   // share links that ended more than a day ago, removed with their open uploads
 	Recent         int64 // recent entries past recentRetention, or beyond recentPerUser for their user, removed
+	// Webhook deliveries past their retention, events no delivery refers to, and expired previous secrets cleared.
+	WebhookDeliveries int
+	WebhookEvents     int
+	WebhookSecrets    int64
 }
 
 // recentRetention is how long a recent entry is kept after its last use, and recentPerUser how many a user keeps.
@@ -179,6 +185,9 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 		return res, err
 	}
 	if res.Links, err = w.expireShareLinks(ctx, now); err != nil {
+		return res, err
+	}
+	if err := w.pruneWebhooks(ctx, now, &res); err != nil {
 		return res, err
 	}
 	err = w.st.Write(ctx, func(tx *store.Tx) error {

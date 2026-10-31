@@ -52,6 +52,8 @@ func newTestServerWith(t *testing.T, mailer mail.Sender, mutate ...func(*config.
 		t.Fatal(err)
 	}
 	s.limitClock = frozenLimitClock
+	// Webhook names resolve through a stub, so no test does DNS. A test that needs other addresses replaces the client.
+	s.webhookClient = testWebhookClient(cfg, nil)
 	return s
 }
 

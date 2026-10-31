@@ -48,7 +48,7 @@ func eventTypes(t *testing.T, s *Store, accountID string) []string {
 }
 
 // newEndpointState is newEndpointRow with a state. A disabled endpoint gets the reason "failing".
-func newEndpointState(t *testing.T, s *Store, accountID, url, state string, events ...string) *WebhookEndpoint {
+func newEndpointState(t testing.TB, s *Store, accountID, url, state string, events ...string) *WebhookEndpoint {
 	t.Helper()
 	now := Now()
 	e := &WebhookEndpoint{ID: id.New("whk"), AccountID: accountID, URL: url, Events: events, State: state,

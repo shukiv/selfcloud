@@ -11,7 +11,7 @@ import (
 )
 
 // openTest opens a fresh database in a temporary directory.
-func openTest(t *testing.T) *Store {
+func openTest(t testing.TB) *Store {
 	t.Helper()
 	s, err := Open(context.Background(), Options{Path: filepath.Join(t.TempDir(), "test.db")})
 	if err != nil {

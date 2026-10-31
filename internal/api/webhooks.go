@@ -10,6 +10,7 @@ package api
 // account, endpoint and column (internal/webhook).
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -200,18 +201,26 @@ func cleanWebhookURL(raw string, allowHTTP bool) (string, error) {
 
 var dnsLabel = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 
-// parseHostLiteral reports whether host is an IP literal or a DNS name of letters, digits and hyphens.
+// parseHostLiteral reports whether host is an IP literal or a DNS name of letters, digits and hyphens. The last label
+// must hold a letter: "127.1", "2130706433" and "0x7f.1" are numeric forms that some resolvers read as addresses, so
+// they are not names (decision 28).
 func parseHostLiteral(host string) bool {
 	if net.ParseIP(host) != nil {
 		return true
 	}
-	for _, label := range strings.Split(host, ".") {
+	labels := strings.Split(host, ".")
+	for _, label := range labels {
 		if !dnsLabel.MatchString(label) {
 			return false
 		}
 	}
+	if !strings.ContainsFunc(labels[len(labels)-1], isASCIILetter) {
+		return false
+	}
 	return len(host) <= 253
 }
+
+func isASCIILetter(r rune) bool { return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') }
 
 // cleanEvents checks the events an endpoint wants: at least one, each in the fixed list. A repeat is
 // kept once, and the list is returned sorted.
@@ -243,16 +252,44 @@ func cleanWebhookDescription(s string) (string, error) {
 	return s, nil
 }
 
-// urlOrigin is the part of an endpoint URL that may be shown to anyone but the account key: its scheme
-// and host, with the port if it has one. The path, the query, the fragment and any user name are dropped,
-// because a token may sit in any of them. "" when the URL does not parse. Audit entries, an owner's
-// reads, and (in slice j3) the worker's logs and last_error all use this one helper.
-func urlOrigin(raw string) string {
+// urlOrigin is the part of an endpoint URL that may be shown to anyone but the account key (webhook.Origin).
+// Audit entries, an owner's reads, the worker's logs and last_error all use this one helper.
+func urlOrigin(raw string) string { return webhook.Origin(raw) }
+
+// errWebhookURLRefused is the answer to an endpoint URL whose host may not be connected to. It is one message for
+// a denied address, a name that does not resolve and a lookup that times out, so it never says whether a name
+// resolves or what it resolved to (decision 28).
+func errWebhookURLRefused() error {
+	return apierr.New(apierr.InvalidRequest, "url cannot be used: its host is not allowed")
+}
+
+// checkWebhookURL checks the host of an endpoint URL against the deny table, by the addresses it resolves to. It runs
+// before any write, since a lookup can take up to RegisterTimeout.
+func (s *Server) checkWebhookURL(ctx context.Context, raw string) error {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ""
+	if err != nil {
+		return errWebhookURLRefused()
 	}
-	return u.Scheme + "://" + u.Host
+	if err := s.webhookClient.CheckURL(ctx, u.Hostname()); err != nil {
+		return errWebhookURLRefused()
+	}
+	return nil
+}
+
+// checkChangedWebhookURL checks a URL that an update sets, unless the endpoint already has it, so a change of its
+// description does not wait on a lookup.
+func (s *Server) checkChangedWebhookURL(ctx context.Context, accountID, endpointID, raw string) error {
+	cur, err := s.store.WebhookEndpoint(ctx, accountID, endpointID)
+	if errors.Is(err, store.ErrNotFound) {
+		return notFound("webhook")
+	}
+	if err != nil {
+		return err
+	}
+	if cur.URL == raw {
+		return nil
+	}
+	return s.checkWebhookURL(ctx, raw)
 }
 
 // webhookOf loads the endpoint named in the path, within the account.
@@ -290,6 +327,9 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	ctx := r.Context()
+	if err := s.checkWebhookURL(ctx, u); err != nil {
+		return err
+	}
 	now := store.Now()
 	e := &store.WebhookEndpoint{ID: id.New("whk"), AccountID: acc.ID, URL: u, Description: desc, Events: evs,
 		State: store.WebhookActive, CreatedBy: principalOf(r).ID, CreatedAt: now, UpdatedAt: now}
@@ -355,7 +395,11 @@ func (s *Server) handleGetWebhook(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, webhookFor(r, e))
+	recent, err := s.store.RecentWebhookDeliveries(r.Context(), acc.ID, e.ID, recentDeliveries)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, webhookDetail{webhookFor(r, e), deliveriesJSON(recent)})
 	return nil
 }
 
@@ -400,6 +444,11 @@ func (s *Server) handleUpdateWebhook(w http.ResponseWriter, r *http.Request) err
 		}
 	}
 	ctx := r.Context()
+	if in.URL != nil {
+		if err := s.checkChangedWebhookURL(ctx, acc.ID, r.PathValue("hook"), newURL); err != nil {
+			return err
+		}
+	}
 	s.atWrite()
 	var e *store.WebhookEndpoint
 	err = s.store.Write(ctx, func(tx *store.Tx) error {

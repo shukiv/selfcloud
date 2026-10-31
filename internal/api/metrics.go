@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -90,6 +91,83 @@ func newTotalsCollector(st *store.Store, log *slog.Logger) *totalsCollector {
 			"Bytes of files held by all accounts.", nil, nil),
 		reserved: prometheus.NewDesc("selfcloud_storage_reserved_bytes",
 			"Declared lengths of unfinished uploads, summed over all accounts.", nil, nil),
+	}
+}
+
+// webhookCollector reports the webhook worker's queue at each scrape (design section 10). Its labels are the delivery
+// states and the disable reasons, never a URL or an endpoint ID.
+type webhookCollector struct {
+	st       *store.Store
+	log      *slog.Logger
+	depth    *prometheus.Desc
+	states   *prometheus.Desc
+	disabled *prometheus.Desc
+	now      func() time.Time
+	// mu guards the cached queue stats: a scrape reads the queue at most once per webhookStatsTTL (review finding 8).
+	mu        sync.Mutex
+	cached    store.WebhookStats
+	cachedAt  time.Time
+	haveCache bool
+}
+
+// webhookStatsTTL is how long a read of the webhook queue stands in for the next scrape. The read costs about 110 ms
+// at a million deliveries, measured in internal/store (TestWebhookScaleMeasure), so a scrape per 5 s would hold a
+// reader for a fifth of the time.
+const webhookStatsTTL = 30 * time.Second
+
+// queueStats returns the webhook queue stats, read from the store unless the cached read is less than webhookStatsTTL
+// old.
+func (c *webhookCollector) queueStats(ctx context.Context) (store.WebhookStats, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := c.now()
+	if c.haveCache && now.Sub(c.cachedAt) < webhookStatsTTL {
+		return c.cached, nil
+	}
+	st, err := c.st.WebhookQueueStats(ctx)
+	if err != nil {
+		return st, err
+	}
+	c.cached, c.cachedAt, c.haveCache = st, now, true
+	return st, nil
+}
+
+func newWebhookCollector(st *store.Store, log *slog.Logger) *webhookCollector {
+	return &webhookCollector{
+		st:  st,
+		log: log,
+		now: time.Now,
+		depth: prometheus.NewDesc("selfcloud_webhook_queue_depth",
+			"Pending webhook deliveries, over all endpoints.", nil, nil),
+		states: prometheus.NewDesc("selfcloud_webhook_deliveries",
+			"Webhook deliveries held by the outbox, by state.", []string{"state"}, nil),
+		disabled: prometheus.NewDesc("selfcloud_webhook_endpoints_disabled",
+			"Disabled webhook endpoints, by reason.", []string{"reason"}, nil),
+	}
+}
+
+// Describe implements prometheus.Collector.
+func (c *webhookCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.depth
+	ch <- c.states
+	ch <- c.disabled
+}
+
+// Collect implements prometheus.Collector. A failed read reports nothing rather than a false zero.
+func (c *webhookCollector) Collect(ch chan<- prometheus.Metric) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	st, err := c.queueStats(ctx)
+	if err != nil {
+		c.log.Warn("metrics: cannot read the webhook queue", "error", err)
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(c.depth, prometheus.GaugeValue, float64(st.QueueDepth))
+	for _, state := range []string{"pending", "delivered", "failed"} {
+		ch <- prometheus.MustNewConstMetric(c.states, prometheus.GaugeValue, float64(st.Deliveries[state]), state)
+	}
+	for _, reason := range []string{store.WebhookDisabledFailing, store.WebhookDisabledOverflow, store.WebhookDisabledSecret} {
+		ch <- prometheus.MustNewConstMetric(c.disabled, prometheus.GaugeValue, float64(st.DisabledEndpoints[reason]), reason)
 	}
 }
 

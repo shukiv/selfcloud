@@ -11,7 +11,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/id"
 )
 
-func newEndpointRow(t *testing.T, s *Store, accountID, url string, events ...string) *WebhookEndpoint {
+func newEndpointRow(t testing.TB, s *Store, accountID, url string, events ...string) *WebhookEndpoint {
 	t.Helper()
 	now := Now()
 	e := &WebhookEndpoint{ID: id.New("whk"), AccountID: accountID, URL: url, Events: events, State: WebhookActive,

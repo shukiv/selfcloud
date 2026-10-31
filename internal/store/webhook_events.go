@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/id"
@@ -63,11 +64,25 @@ const (
 	ReportFolder
 )
 
+// WebhookPendingLimit is the most pending deliveries an endpoint may hold (decision 28). A change that would add one
+// more does not fail: its delivery is recorded failed with last_error overflow, and the endpoint is disabled.
+const WebhookPendingLimit = 100000
+
+// webhookEndpointRef is an active endpoint as a fan-out sees it: its URL (for the audit origin) and its pending
+// count, which the transaction moves as it queues deliveries.
+type webhookEndpointRef struct {
+	url        string
+	pending    int
+	generation int64
+}
+
 // webhookFanout is what one transaction needs to emit for one account: the active endpoints that subscribe to
-// each event type, in ID order, and the account's external ID. It is read at the first emission for the account in
-// the transaction. Endpoints change only in their own transactions, so the read holds for this one.
+// each event type, in ID order, the endpoints themselves, and the account's external ID. It is read at the first
+// emission for the account in the transaction. Endpoints change only in their own transactions, so the read holds
+// for this one, except for an endpoint this transaction disables, which is dropped from the fanout (overflow).
 type webhookFanout struct {
 	subs       map[string][]string
+	endpoints  map[string]*webhookEndpointRef
 	externalID *string
 }
 
@@ -78,7 +93,7 @@ func (tx *Tx) fanout(ctx context.Context, accountID string) (*webhookFanout, err
 	if f, ok := tx.fanouts[accountID]; ok {
 		return f, nil
 	}
-	f := &webhookFanout{subs: map[string][]string{}}
+	f := &webhookFanout{subs: map[string][]string{}, endpoints: map[string]*webhookEndpointRef{}}
 	if err := tx.activeSubscriptions(ctx, accountID, f); err != nil {
 		return nil, err
 	}
@@ -92,7 +107,7 @@ func (tx *Tx) fanout(ctx context.Context, accountID string) (*webhookFanout, err
 // activeSubscriptions fills f with the active endpoints of accountID, by the event type each subscribes to, and
 // with the account's external ID. The account is read in the same statement, so a change pays one query for it.
 func (tx *Tx) activeSubscriptions(ctx context.Context, accountID string, f *webhookFanout) error {
-	rows, err := tx.q.QueryContext(ctx, `SELECT e.id, s.event, a.external_id FROM webhook_endpoints e
+	rows, err := tx.q.QueryContext(ctx, `SELECT e.id, e.url, e.pending_count, e.generation, s.event, a.external_id FROM webhook_endpoints e
 		JOIN webhook_endpoint_events s ON s.endpoint_id = e.id AND s.account_id = e.account_id
 		JOIN accounts a ON a.id = e.account_id
 		WHERE e.account_id = ? AND e.state = ? ORDER BY e.id, s.event`, accountID, WebhookActive)
@@ -101,10 +116,15 @@ func (tx *Tx) activeSubscriptions(ctx context.Context, accountID string, f *webh
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var endpoint, event string
+		var endpoint, url, event string
+		var pending int
+		var generation int64
 		var ext sql.NullString
-		if err := rows.Scan(&endpoint, &event, &ext); err != nil {
+		if err := rows.Scan(&endpoint, &url, &pending, &generation, &event, &ext); err != nil {
 			return err
+		}
+		if f.endpoints[endpoint] == nil {
+			f.endpoints[endpoint] = &webhookEndpointRef{url: url, pending: pending, generation: generation}
 		}
 		f.subs[event] = append(f.subs[event], endpoint)
 		if f.externalID == nil && ext.Valid {
@@ -114,10 +134,13 @@ func (tx *Tx) activeSubscriptions(ctx context.Context, accountID string, f *webh
 	return rows.Err()
 }
 
-// EmitEvent queues an event of accountID in tx: one webhook_events row, and one pending delivery for each active
-// endpoint of the account that subscribes to eventType. An account with no such endpoint gets no row, so an event
-// exists exactly when a delivery waits for it. The event commits or rolls back with tx, which is what ties it to its
-// change. data is the event's data (package webhook); it is never read from the audit details.
+// EmitEvent queues an event of accountID in tx: one webhook_events row, and one delivery for each active endpoint of
+// the account that subscribes to eventType. An account with no such endpoint gets no row, so an event exists exactly
+// when a delivery waits for it. The event commits or rolls back with tx, which is what ties it to its change. data is
+// the event's data (package webhook); it is never read from the audit details.
+//
+// An endpoint at WebhookPendingLimit gets its delivery recorded as failed with last_error overflow, and is disabled
+// with reason overflow in the same transaction (decision 28). The change does not fail.
 func (tx *Tx) EmitEvent(ctx context.Context, accountID, eventType string, at time.Time, data any) error {
 	f, err := tx.fanout(ctx, accountID)
 	if err != nil {
@@ -141,25 +164,115 @@ func (tx *Tx) EmitEvent(ctx context.Context, accountID, eventType string, at tim
 	if err != nil {
 		return err
 	}
-	// One statement writes the deliveries. The IDs and endpoints go in as one JSON array, which json_each reads, so the
-	// statement count per event is two, not one per subscriber.
+	// The overflow check reads the maintained count, so it costs the same however many deliveries are pending.
 	type delivery struct {
-		ID       string `json:"id"`
-		Endpoint string `json:"endpoint"`
+		ID         string `json:"id"`
+		Endpoint   string `json:"endpoint"`
+		State      string `json:"state"`
+		LastError  string `json:"last_error"`
+		Generation int64  `json:"generation"`
 	}
 	list := make([]delivery, 0, len(endpoints))
+	var queued, overflowed []string
 	for _, endpoint := range endpoints {
-		list = append(list, delivery{ID: id.New("dlv"), Endpoint: endpoint})
+		ref := f.endpoints[endpoint]
+		if ref.pending >= WebhookPendingLimit {
+			overflowed = append(overflowed, endpoint)
+			list = append(list, delivery{ID: id.New("dlv"), Endpoint: endpoint, State: "failed", LastError: "overflow", Generation: ref.generation})
+			continue
+		}
+		ref.pending++
+		queued = append(queued, endpoint)
+		list = append(list, delivery{ID: id.New("dlv"), Endpoint: endpoint, State: "pending", Generation: ref.generation})
 	}
 	raw, err := json.Marshal(list)
 	if err != nil {
 		return err
 	}
+	// One statement writes the deliveries. The IDs, endpoints, states and generations go in as one JSON array, which
+	// json_each reads, so the statement count per event is constant, not one per subscriber.
 	_, err = tx.q.ExecContext(ctx, `INSERT INTO webhook_deliveries (id, account_id, endpoint_id, event_row_id,
-		state, attempts, next_attempt_at, created_at)
-		SELECT json_extract(value, '$.id'), ?, json_extract(value, '$.endpoint'), ?, 'pending', 0, ?, ?
-		FROM json_each(?)`, accountID, row, millis(at), millis(at), string(raw))
+		state, attempts, next_attempt_at, last_error, finished_at, created_at, generation)
+		SELECT json_extract(value, '$.id'), ?, json_extract(value, '$.endpoint'), ?, json_extract(value, '$.state'), 0, ?,
+			json_extract(value, '$.last_error'), CASE WHEN json_extract(value, '$.state') = 'failed' THEN ? END, ?,
+			json_extract(value, '$.generation')
+		FROM json_each(?)`, accountID, row, millis(at), millis(at), millis(at), string(raw))
+	if err != nil {
+		return err
+	}
+	if err := tx.bumpPending(ctx, queued, 1); err != nil {
+		return err
+	}
+	for _, endpoint := range overflowed {
+		if err := tx.disableInTx(ctx, accountID, endpoint, WebhookDisabledOverflow, at, f.endpoints[endpoint].url); err != nil {
+			return err
+		}
+		f.drop(endpoint)
+	}
+	return nil
+}
+
+// bumpPending adds delta to the pending count of each endpoint in endpoints. An empty list is a no-op.
+func (tx *Tx) bumpPending(ctx context.Context, endpoints []string, delta int) error {
+	if len(endpoints) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(endpoints)
+	if err != nil {
+		return err
+	}
+	_, err = tx.q.ExecContext(ctx, `UPDATE webhook_endpoints SET pending_count = pending_count + ?
+		WHERE id IN (SELECT value FROM json_each(?))`, delta, string(raw))
 	return err
+}
+
+// drop removes an endpoint from f, for the rest of the transaction.
+func (f *webhookFanout) drop(endpoint string) {
+	delete(f.endpoints, endpoint)
+	for ev, list := range f.subs {
+		f.subs[ev] = slices.DeleteFunc(list, func(e string) bool { return e == endpoint })
+	}
+}
+
+// EmitTestEvent queues one webhook.test event for one endpoint of accountID, in tx, and returns its event ID: the
+// endpoint receives it whatever it subscribes to. The caller checks that the endpoint is active and has room. The
+// event has an empty data object.
+func (tx *Tx) EmitTestEvent(ctx context.Context, accountID, endpointID string, at time.Time) (string, error) {
+	var ext sql.NullString
+	if err := tx.q.QueryRowContext(ctx, "SELECT external_id FROM accounts WHERE id = ?", accountID).Scan(&ext); err != nil {
+		return "", err
+	}
+	eventID := id.New("evt")
+	body, err := webhook.Body(eventID, "webhook.test", at, accountID, nullableString(ext), struct{}{})
+	if err != nil {
+		return "", err
+	}
+	res, err := tx.q.ExecContext(ctx, `INSERT INTO webhook_events (event_id, account_id, type, payload, created_at)
+		VALUES (?, ?, 'webhook.test', ?, ?)`, eventID, accountID, string(body), millis(at))
+	if err != nil {
+		return "", err
+	}
+	row, err := res.LastInsertId()
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.q.ExecContext(ctx, `INSERT INTO webhook_deliveries (id, account_id, endpoint_id, event_row_id,
+		state, attempts, next_attempt_at, created_at, generation)
+		VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, (SELECT generation FROM webhook_endpoints WHERE id = ?))`,
+		id.New("dlv"), accountID, endpointID, row, millis(at), millis(at), endpointID); err != nil {
+		return "", err
+	}
+	if err := tx.bumpPending(ctx, []string{endpointID}, 1); err != nil {
+		return "", err
+	}
+	return eventID, nil
+}
+
+func nullableString(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	return &s.String
 }
 
 // countSubtree counts the nodes of the subtree of rootID, the root included, and its files (files and shortcuts,

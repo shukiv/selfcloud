@@ -1162,6 +1162,9 @@ Inside an account                          account key, admin key, or owner sess
   GET                   /accounts/{acc}/audit
   POST|GET              /accounts/{acc}/webhooks
   PATCH|DELETE          /accounts/{acc}/webhooks/{hook}
+  POST                  /accounts/{acc}/webhooks/{hook}/test          one webhook.test event (slice j3)
+  GET                   /accounts/{acc}/webhooks/{hook}/deliveries    delivery log, newest first (slice j3)
+  POST                  /accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry   queue a failed delivery again (slice j3)
 
 Files                                      any caller, limited to what it may reach
   GET    /folders                          team spaces the caller reaches at the root, plus its personal folder; ?hidden=true lists only the hidden ones
@@ -1853,8 +1856,9 @@ Each slice ships with tests and leaves the server runnable.
 | s | Thumbnails, document previews, conversions and export, zip download | Planned |
 | l | WOPI host for Collabora | Planned |
 | j1 | Webhook endpoints: the migration, the encrypted secret (AES-256-GCM, key derived with HKDF from the links signing key, bound to its row), the endpoint routes, the show-once secret and its rotation, the isolation tests | Built |
-| j2 | Webhook events: each change writes its event in its own transaction (the audit hook and four explicit emits), the payloads and the event list including `file.restored`, the big-folder summary (1,000 files, 5,000 deliveries, 10,000 nodes: decision 27), the personal-folder rule, the outbox atomicity tests. Main has no worker yet (decision 27) | Built |
-| j | Webhooks: the worker, the dialer, the quota warnings, rewrap (j3 and j4 remain) | Building |
+| j2 | Webhook events: each change writes its event in its own transaction (the audit hook and four explicit emits), the payloads and the event list including `file.restored`, the big-folder summary (1,000 files, 5,000 deliveries, 10,000 nodes: decision 27), the personal-folder rule, the outbox atomicity tests. The worker that sends them is j3 (decision 28) | Built |
+| j3 | Webhook worker: claim, lease, per-endpoint order, signing, delivery, backoff and the give-up, the disable paths, the 100,000 pending cap, the sweep, the metrics, the delivery log, retry and test routes; the SSRF dialer and `webhooks.allow_networks`, moved here from j4 (decision 28) | Built |
+| j | Webhooks: the quota warnings, rewrap and the slice security review (j4 remains) | Building |
 | t | Changes feed, file picker, WebDAV, installable web app | Planned |
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Planned |
 | t2 | Approvals | Planned |
@@ -2392,7 +2396,8 @@ Decided on approval:
     - **Responses that show a secret** carry `Cache-Control: no-store`, as token answers do.
     - **Previous links key.** Decryption also tries the previous links key, so a rotation of the links key does not
       lose secrets. The rewrap command is slice j4, as the proposal says.
-    - **Not in j1.** The address deny list at registration and the resolution of the host are for slice j4. Note for
+    - **Not in j1 (later parts).** The address deny list and the resolution of the host are slice j3 (decision 28). The test
+      route, the delivery log and the retry route are j3 as well. The quota-warning route is j4. Note for
       j4: its guard must check the addresses actually resolved at delivery, and must not rely on `net.ParseIP` of the
       host string, because `parseHostLiteral` accepts forms such as `127.1`, `2130706433`, `0x7f.1` and `localhost`,
       which name loopback without being an IP literal. A private IP literal is accepted now and nothing is sent
@@ -2477,9 +2482,10 @@ Decided on approval:
       emission for the account. A mapped change to an account with no endpoint pays that query; the owner's estimate is about 60 µs per change (not re-measured here).
       `TestEndpointMadeByAnotherInstanceReceivesEvents` opens two `Store` instances on one file: an endpoint made through
       one reaches an event written through the other.
-    - **Not in j2.** The 100,000 pending cap (proposal question 10) is not checked. It needs a count of pending
+    - **Not in j2 (built in j3, decision 28).** The 100,000 pending cap (proposal question 10) is not checked here. It needs a count of pending
       deliveries per endpoint, and the worker's disable path (j3) owns it. j2 on main has no worker, so the outbox
-      grows with its changes until j3's sweep and cap land. Main is not a release until j3 lands. The worker, signing and delivery (j3). `quota.warning` and `quota.exceeded` (j4, with
+      grows with its changes until the worker of j3 is on main. Since j3 (decision 28), the worker sends them, and the cap
+      and the sweep are in place. Main is not a release until j4 lands: the quota warnings and the rewrap are still open. The worker, signing and delivery (j3). `quota.warning` and `quota.exceeded` (j4, with
       `AdjustUsage`). `webhook.test`, whose route is a later part. The types are in the schema and the Events list, but
       nothing emits them yet.
     - **Cost, measured.** The proposal has no performance section, so the brief's rule was applied as measured. Store
@@ -2513,4 +2519,145 @@ Decided on approval:
       silently. A mapped audit entry whose node or user is missing fails its change: every mapped action names a row its
       change has just written, so a missing one is a bug, and the change must not commit without its event. This interpretation
       stands after review (2026-10-30).
+28. **Webhook worker, dialer and routes, slice j3** (2026-10-31, built on the owner-approved proposal, with the dialer and the
+    `allow_networks` setting moved from j4 into j3 by the lead, so that no connection is ever made without its guard). The
+    interpretations below are for review. The code is `internal/store/webhook_deliveries.go` (the queries), `internal/webhook`
+    (the deny table, the one client, signing, the schedule, `Origin`) and `internal/api/webhook_worker.go` (the loop, which
+    stays in `api` because `store` imports `webhook`; a loop in `webhook` would be an import cycle).
+    - **Order (proposal question 5).** A claim takes only the oldest pending delivery of each active endpoint, the head. The
+      head is leased while it is in flight and not due while it waits on its backoff, so no later delivery of that endpoint is
+      sent meanwhile. Tested in `TestWorkerKeepsEachEndpointInOrder` and `TestClaimTakesOnlyTheHeadOfAnEndpoint`. Up to 8
+      requests are in flight (`TestWorkerSendsToEightEndpointsAtOnce`, which sees exactly 8 of 12).
+    - **One request per endpoint (review finding 4).** A claim refuses an endpoint that holds any unexpired lease, so a retry of
+      an old failed delivery can never run beside the endpoint's head in flight. A retry resets `attempts` and
+      `first_attempt_at`, so it has a fresh 24-hour window and its first wait is 30 seconds, not an hour
+      (`TestRetryDoesNotRunBesideAnInFlightHead`, `TestRetryGivesAFreshWindow`).
+    - **Outcome tied to its claim (review finding 5).** A claim's lease end, in milliseconds, is the claim's token. An outcome
+      applies only while the delivery still holds that lease. An outcome whose lease has lapsed, because a later claim took the
+      delivery, changes no counter and clears no lease (`TestOutcomeOfALapsedLeaseChangesNothing`).
+    - **Fairness between accounts (review finding 1).** A lane keeps its token for at most 2 seconds (`webhookLaneBudget`,
+      measured on the real clock): it sends its endpoint's next deliveries until that budget passes, then gives the token
+      back. The claim ranks the due heads by account first (a window over the account, then the due time), so the next claim
+      serves each account's oldest due head before any account's second one. A single-account install still uses every slot,
+      because the ranking only orders work that is already due. The disabled-queue cleanup runs on its own ticker, not behind
+      the token wait. `TestWorkerOneAccountDoesNotStarveAnother`: an account with 50 endpoints owed six deliveries each, and a
+      second account with one. Over three runs on the test machine the second account's delivery started 4 ms, 5 ms and 305 ms
+      after the worker started, against a bound of 5 seconds. Before the fix the same test failed with 10.96 seconds.
+    - **Lease and tokens.** A claim takes up to 50 deliveries in one write, with a 2-minute lease. A lane waits for one of the
+      8 request slots inside its lease. At 50 lanes and 8 slots, with a 10-second attempt, the longest wait is about 63 seconds,
+      so a live send is not claimed twice. A crashed worker's delivery is claimed again after the lease, with the same event ID
+      (`TestWorkerLeaseRecoversACrash`).
+    - **Schedule (proposal question 6).** The first retry is 30 seconds after the failed attempt, doubling to a base of 1 hour.
+      Jitter adds up to 20 percent of the base, so a wait is in [base, 1.2 base] and the longest is 72 minutes. The 24-hour window
+      starts at the delivery's first attempt, which the claim records in the new column `first_attempt_at` (migration 0022),
+      not at the event's creation: a delivery can wait behind a failing one for hours. A retry is never scheduled past that
+      point, so the last attempt is at exactly 24 hours, and the failure there gives the delivery up as `failed`.
+    - **Disable with reason failing.** A failure disables the endpoint when it is at least 24 hours after the later of the
+      endpoint's last success and this delivery's first attempt. Deliveries of an endpoint go in order, so nothing else was
+      sent in that window, and the give-up and the disable usually fall at the same attempt. Interpretation: if an earlier
+      delivery was given up without a success in between, the window starts later than "the last success" would put it, so
+      the disable is later, not earlier. A 410 gives the delivery up and disables the endpoint at once. Both write the audit entry
+      `webhook.disabled` with the reason and the origin of the URL, in the same write as the change they follow.
+    - **Queues of disabled endpoints.** A disable does not fail the endpoint's pending deliveries in its own write, because a
+      queue can hold 100,000 rows. Each worker round fails up to 2,000 of them, one write per endpoint, with `last_error` set to
+      the reason. Measured: one such write (2,000 rows) took 36 ms on the test machine (`BenchmarkFailDisabledBatch`, a loaded
+      machine, one run of 100).
+    - **Generations: a re-enabled endpoint never sends its old queue (review findings 2 and 3).** A disable raises the
+      endpoint's `generation` and sets `stale_queue`. Every delivery takes its endpoint's generation when it is queued: fan-out,
+      test event and retry. A claim takes only deliveries of the endpoint's current generation, and the head is the oldest of
+      those. The cleanup (`FailStaleDeliveries`) fails the pending deliveries of an older generation whatever the endpoint's
+      state is by then, so an owner who changes the URL or rotates the secret of a disabled endpoint, or activates it in one
+      request, sends none of the old queue. Each cleanup write moves `pending_count` by the rows it changed, and clears
+      `stale_queue` when it finds no more. A stale delivery keeps the endpoint's reason as its `last_error` while the endpoint
+      stays disabled; after a re-enable the reason is gone and the token `disabled` is used. Tested by
+      `TestReEnabledEndpointSendsNoOldQueue` (no claim takes the old queue, the cleanup fails exactly the three of it, and
+      `pending_count` equals the pending rows after each step), `TestFailStaleDeliveriesTakesOnlyTheOldGeneration`, and
+      `TestWorkerGivesUpAfter24HoursAndDisables`. No 409 is needed, so the owner does not wait.
+    - **Decision 28 consequences the owner should know.** (a) A poison head blocks its endpoint: one event that the receiver
+      answers with 4xx or 5xx holds that endpoint's queue, with its backoff, until the 24-hour give-up. Then the endpoint is
+      disabled and its queue fails, and each delivery of it must be retried by hand. The retry route cannot skip a head that is
+      still pending. A "skip this delivery" action is not built. (b) With `webhooks.allow_networks` set, `last_error` (`connect`,
+      `timeout`, `tls`, `status <code>`) and `last_code` tell an owner whether a host inside those allowed networks is reachable.
+      That is a port-scan oracle for the allowed networks only. With the default empty list, a denied address gives
+      `address_refused` only for a name the owner already controls, because registration refuses such a name with one message.
+      (c) Any port is allowed on a public host; no port is restricted. (d) `GiveUpAfter` is 24 hours from the first attempt, and
+      no retry is scheduled past it. But a delivery whose lease lapses after that point (a stall of the worker or a clock step)
+      gets one more attempt before it is given up. This is not fixed: it needs a worker stall longer than the 2-minute lease
+      and a delivery already 24 hours old, and the attempt is recorded the same way. (e) The URL and the secret are read at the
+      claim, so one request already claimed may go to the old URL, with the old secret, after the owner changes either (review
+      finding 6). The fix would be a re-read at the send, and it is not made: no wrong state results, and the window is one
+      request per lane.
+    - **Secret that cannot be read.** Disables the endpoint with `secret_unreadable`, and nothing is sent to it. Other endpoints
+      carry on (`TestWorkerUnreadableSecretDisablesOnlyItsEndpoint`).
+    - **Overflow (proposal question 10), decision in the store.** `webhook_endpoints.pending_count` is maintained in the writer:
+      an event adds one to each queued endpoint, each outcome takes one away, and a disable does not change it. The check in
+      `EmitEvent` reads that count, so its cost does not depend on the queue. The alternative, a bounded probe of the pending
+      rows, walks up to 100,001 index entries per event. Measured on the test machine, with 100,000 pending deliveries:
+      `BenchmarkPendingProbeAtCap` 30.6 ms per probe; `BenchmarkEmitAtCap`, one event with the check, the counter and the
+      delivery, 1.24 ms, against 1.17 ms for an event with no endpoint (`BenchmarkEmitNoEndpoints`). The benchmarks ran 100
+      iterations on a machine shared with other work, so these are rough, but the difference is two orders of magnitude.
+      At the cap the change still commits. Its delivery is recorded `failed` with `last_error` `overflow`, and the endpoint
+      is disabled with reason `overflow` and audited, in the same transaction. The transaction's fanout forgets the endpoint, so
+      the next event of that transaction reaches no endpoint from it (`TestOverflowAtTheLimit`). The queued deliveries stay
+      pending, and the cleanup fails them. The cap is 100,000: a placeholder until real volumes are known (question 10).
+    - **Retry and test routes.** The test route queues one `webhook.test` event for one endpoint, whatever it subscribes to.
+      It refuses a paused or disabled endpoint (conflict, `reason: state`) and a full queue (`reason: limit`). The retry route
+      queues a failed delivery again with a fresh 24-hour window and its attempts reset to 0, in the endpoint's current
+      generation, and refuses a delivery that is not failed, a disabled
+      endpoint and a full queue. Both are the account key's, as the other endpoint writes are; an owner gets 403. Both are
+      audited (`webhook.test`, `webhook.retry`), and both are classified in the guard with a reason.
+    - **Delivery log and detail.** The log is newest first by event row, which keeps the order of events made in one millisecond, and its cursor is that row. The detail holds the newest
+      five deliveries. A delivery shows its event's ID and type, never its payload, and `last_error` is one of the fixed
+      tokens below, so an owner can read it.
+    - **Errors, and what the worker stores and logs (proposal section 6).** `last_error` is one of `address_refused`,
+      `resolve`, `timeout`, `connect`, `tls`, `redirect`, `status <code>`, `overflow`, or a disable reason. The error text is
+      never stored, since it can hold the URL. The log lines name the origin, the endpoint and the event ID, never a query,
+      a path, a body, a secret or a signature. `TestWorkerNeverStoresOrLogsTheURL` makes a transport error whose text carries
+      the URL and checks both the row and the log.
+    - **The client (proposal section 5).** One `webhook.Client` makes every connection. Its transport dials a checked address
+      directly, and a name is looked up once per connection. A host is refused when any address it resolves to is denied, so a
+      mixed answer cannot slip a private address past. The deny table is the proposal's list plus `192.0.0.0/24`,
+      `198.18.0.0/15`, the documentation ranges and 6to4, which is checked as the IPv4 address in bytes 2 to 5. The IPv4-mapped
+      form is checked as the IPv4 address it holds. Review finding 7 changed the IPv6 part (`TestDenyTableRestOfIPv6AndSIIT`).
+      IPv6 is allowed only inside `2000::/3`, and everything outside it is denied: the IPv4-compatible `::/96`, the translated
+      `::ffff:0:0:0/96` (SIIT), NAT64 `64:ff9b::/96` and `64:ff9b:1::/48`, site-local `fec0::/10`, the discard prefix `100::/64`,
+      and the rest. Inside `2000::/3`, Teredo `2001::/32`, `2001:2::/48`, `2001:10::/28`, `2001:20::/28`, `2001:db8::/32` and
+      `3fff::/20` are denied. The IPv4 part adds `192.88.99.0/24` (6to4 relay anycast). So a public IPv4 address in a NAT64 or
+      compatible form is refused, not checked as public. An operator can allow such a form only by listing that form in `webhooks.allow_networks`,
+      since the allow list compares parsed values and does not unwrap these forms.
+      Addresses are compared as parsed values (`netip`), never as text (`guard_test.go`). The allow list, `webhooks.allow_networks`, lets
+      through only the networks listed, by parsed value, and nothing else. No proxy, no redirect, a 10-second limit covering
+      the lookup, the connect, the handshake and the answer, 4 KiB of answer read and discarded, 8 connections per host, TLS
+      verified for the URL's name while the connection goes to the checked address. Tested against a stub resolver that answers
+      a public address and then a private one (`TestMixedAnswerIsRefused`, `TestRebindingRefusedAtDelivery`), with
+      `HTTP_PROXY` set (`TestProxyEnvironmentIsIgnored`), with a stalled answer, a streaming answer and a redirect.
+    - **Registration.** The host is checked by the addresses it resolves to, within 5 seconds, before any write. A denied
+      address, a name that does not resolve, a mixed answer, a lookup that times out, and a numeric form such as `127.1` or
+      `2130706433` all get one message: "url cannot be used: its host is not allowed", an `invalid_request`. The message never
+      says whether a name resolves or what it resolved to (`TestRegistrationRefusesWithoutSayingWhy`). A change of URL is
+      checked; a change that keeps the URL is not looked up. The numeric-host rule was found while reading j1's parser for this
+      slice; `TestNumericHostsAreNotNames` failed on j1's parser before the rule was added.
+    - **Sweep (proposal section 2).** Delivered rows go after 7 days and failed rows after 30, in batches of 500 per write;
+      events that no delivery names go after; and an expired grace secret is cleared. Review finding 8: the event prune walks
+      the events from a cursor kept on the sweeper, by row ID, in batches of 500, at most 200 batches per sweep. Each write reads
+      and deletes only its own batch, so no write scans the table. Measured on a store of 1,000,000 events and 1,000,000
+      deliveries (`TestWebhookScaleMeasure`, run with `SELFCLOUD_SCALE=1`): one prune batch at the far end of the table, all of
+      its events named, 0.64 ms median; the full walk of 1,000,000 events deleting all of them took 6.6 seconds in 2,001 batches,
+      about 3.3 ms each. The earlier query, which scanned from the first row for each batch, was not measured at this size.
+    - **Metrics.** `selfcloud_webhook_queue_depth` (the sum of the maintained counts), `selfcloud_webhook_deliveries{state}` and
+      `selfcloud_webhook_endpoints_disabled{reason}`. No label holds a URL or an endpoint ID. The queue is read at most once
+      every 30 seconds (`webhookStatsTTL`), so a scrape reports the queue as it was up to 30 seconds earlier. Measured at
+      1,000,000 deliveries (`TestWebhookScaleMeasure`): the counts by state took 113 ms median on a warm cache, and 293 ms on the
+      first run after seeding, which is over the 100 ms limit, so the cache applies. `TestWebhookMetricsReadTheQueueEvery30Seconds`
+      checks the window. (An earlier measurement at 200,000 deliveries was 47 ms, `BenchmarkQueueStats`.)
+    - **Measured writer holds.** One claim plus 50 outcomes, as one tick of the worker with 50 deliveries, took 166 ms on the
+      loaded test machine (`BenchmarkClaimAndRecordFifty`), about 3 ms per write, which is mostly the commit. The writes are short
+      and none is held across a request.
+    - **Not built, and a dependency on pg.** The claim is SQLite SQL. PostgreSQL (slice pg) needs `FOR UPDATE SKIP LOCKED` in the
+      claim and a rewrite of the head query, which the proposal already says. I don't know yet whether pg will want a second
+      writer for the claim; that decision belongs to pg.
+    - **Migration 0022.** `pending_count` (backfilled from the pending rows), `first_attempt_at`, `generation` and `stale_queue`
+      on the endpoint, `generation` on the delivery, and four indexes: `(endpoint_id, state, generation, event_row_id)` for the
+      head, `(state, finished_at)` for the retention, `(event_row_id)` for the sweep's "no delivery refers to" check, and a
+      partial index on `(endpoint_id, lease_until)` for the one-request rule. Migration 0022 is unshipped and was edited in place.
 

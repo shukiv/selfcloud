@@ -84,6 +84,12 @@ type Server struct {
 	tokens *tokenKeys
 	// webhookSeal encrypts webhook secrets at rest; see internal/webhook.
 	webhookSeal *webhook.Sealer
+	// webhookClient is the one client every webhook connection goes through (internal/webhook/client.go). It checks
+	// each address it dials. Tests replace it with one that has a stub resolver.
+	webhookClient *webhook.Client
+	// webhookClock and webhookJitter drive the worker's schedule. Tests replace them with a fake clock.
+	webhookClock  func() time.Time
+	webhookJitter func() float64
 	// shares signs and verifies the visitor credentials of links that anyone can open; see
 	// share_credentials.go. guard counts the wrong passwords those links take; see share_open.go.
 	shares *shareKeys
@@ -188,6 +194,12 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
+	allowNetworks, err := config.ParsePrefixes(cfg.Webhooks.AllowNetworks)
+	if err != nil {
+		return nil, fmt.Errorf("api: webhooks.allow_networks: %w", err)
+	}
+	webhookClient := webhook.NewClient(webhook.ClientOptions{Resolver: net.DefaultResolver, Allow: allowNetworks,
+		AllowHTTP: cfg.Webhooks.AllowHTTP})
 	tokens, err := deriveTokenKeys(links)
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
@@ -226,6 +238,9 @@ func New(opts Options) (*Server, error) {
 		links:         links,
 		tokens:        tokens,
 		webhookSeal:   webhookSeal,
+		webhookClient: webhookClient,
+		webhookClock:  time.Now,
+		webhookJitter: webhook.Jitter,
 		shares:        shares,
 		guard:         newShareGuard(),
 		corsAllowed:   corsAllowed,
@@ -304,7 +319,7 @@ func New(opts Options) (*Server, error) {
 	s.freeBytes = fsutil.FreeBytes
 	s.uploadSlots = map[string]*uploadSlot{}
 	s.uploadSlotWait = 5 * time.Second
-	s.metrics.reg.MustRegister(newTotalsCollector(opts.Store, log))
+	s.metrics.reg.MustRegister(newTotalsCollector(opts.Store, log), newWebhookCollector(opts.Store, log))
 
 	if cfg.UI.Brand.LogoFile != "" {
 		if s.logo, err = web.LoadLogo(cfg.UI.Brand.LogoFile); err != nil {
@@ -365,6 +380,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleUpdateWebhook, auth: true},
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleDeleteWebhook, auth: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/secret", handle: s.handleRotateWebhookSecret, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/test", handle: s.handleTestWebhook, auth: true},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries", handle: s.handleListWebhookDeliveries, auth: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry", handle: s.handleRetryWebhookDelivery, auth: true},
 		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true},
 
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/folders", handle: s.handleCreateFolder, auth: true},
@@ -632,6 +650,8 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
 	noticeDone := make(chan struct{})
 	go func() { defer close(noticeDone); s.runDropNotices(jobsCtx) }()
+	webhooksDone := make(chan struct{})
+	go func() { defer close(webhooksDone); s.runWebhooks(jobsCtx) }()
 
 	var serveErr error
 	select {
@@ -640,7 +660,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	}
 	s.draining.Store(true)
 	stopJobs() // an interrupted job is run again on the next start
-	defer func() { <-jobsDone; <-sweepDone; <-noticeDone }()
+	defer func() { <-jobsDone; <-sweepDone; <-noticeDone; <-webhooksDone }()
 	s.log.Info("shutting down", "timeout", s.cfg.ShutdownTimeout.String())
 
 	shCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout.D())

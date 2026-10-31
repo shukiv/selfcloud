@@ -80,6 +80,8 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `public_url` | `http://localhost:8080` | Address clients reach the server at. |
 | `data_dir` | `data` | Database and file contents. Use a local disk, not a network share. |
 | `trusted_proxies` | none | Proxies whose `client_ip_header` is believed. |
+| `webhooks.allow_networks` | none | Networks a webhook may reach although the deny table refuses them (for example a Docker network a same-host application runs on). Webhooks refuse loopback, private, link-local and other reserved addresses otherwise. |
+| `webhooks.allow_http` | `false` | Admit `http://` webhook URLs. For development only. |
 | `client_ip_header` | `X-Forwarded-For` | Or a single-address header such as `CF-Connecting-IP`. |
 | `upload.max_file_size` | `100GiB` | Largest file. |
 | `upload.max_chunk_size` | `64MiB` | Largest upload request. Keep it at or under `90MiB` behind a proxy that caps requests at 100 MB. |

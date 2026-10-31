@@ -238,6 +238,15 @@ func TestWebhookURLRules(t *testing.T) {
 		"too long":     "https://hooks.example.com/" + strings.Repeat("a", 2048),
 		"empty":        "",
 		"query secret": "ftp://hooks.example.com/in?token=" + secretQuery,
+		// Numeric host forms that some resolvers read as an address are not DNS names (decision 28).
+		"short ipv4":   "https://127.1/in",
+		"single label": "https://2130706433/in",
+		"hex octet":    "https://0x7f.1/in",
+		"private ipv4": "https://10.0.0.5/in",
+		"link local":   "https://169.254.169.254/latest",
+		"loopback v6":  "https://[::1]/in",
+		"doc ipv4":     "https://203.0.113.9/in",
+		"doc ipv6":     "https://[2001:db8::1]/in",
 	}
 	for name, u := range refused {
 		rec := call(t, fx.s, "POST", fx.base(), fx.key, map[string]any{"url": u, "events": []string{"file.created"}})
@@ -249,8 +258,8 @@ func TestWebhookURLRules(t *testing.T) {
 	for _, u := range map[string]string{
 		"https":           "https://hooks.example.com/in",
 		"https with port": "https://hooks.example.com:8443/in",
-		"ipv4 literal":    "https://203.0.113.9/in",
-		"ipv6 literal":    "https://[2001:db8::1]/in",
+		"ipv4 literal":    "https://93.184.216.34/in",
+		"ipv6 literal":    "https://[2606:2800:220:1:248:1893:25c8:1946]/in",
 		"max length":      "https://hooks.example.com/" + strings.Repeat("a", 2048-len("https://hooks.example.com/")),
 	} {
 		wantStatus(t, call(t, fx.s, "POST", fx.base(), fx.key, map[string]any{"url": u, "events": []string{"file.created"}}), 201)

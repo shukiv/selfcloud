@@ -86,6 +86,9 @@ var webhookAuditNoEvent = map[string]string{
 	"webhook.update":         "webhook administration is not an event",
 	"webhook.delete":         "webhook administration is not an event",
 	"webhook.secret":         "webhook administration is not an event",
+	"webhook.disabled":       "the worker's disable (or the overflow cap in a change): an administrative record, not an event",
+	"webhook.retry":          "a failed delivery queued again by an owner's account key: not an event",
+	"webhook.test":           "a test event queued by the account key: the event is the test itself, not a change",
 }
 
 // nodeWriteSite is one pinned count of node-writing calls or statements in one file, with what each one

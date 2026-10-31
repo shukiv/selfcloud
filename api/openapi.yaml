@@ -517,14 +517,14 @@ paths:
       description: |
         The account key and an owner of the account. No secret is ever returned. The account key sees the full
         `url`; an owner sees only its scheme, host and port, because the URL may hold a token in its path or
-        query.
+        query. The answer also holds the newest five deliveries (`recent_deliveries`), as the delivery log route gives them.
       security: [{ bearer: [] }, { session: [] }]
       responses:
         "200":
-          description: The endpoint.
+          description: The endpoint, with its newest five deliveries.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Webhook" }
+              schema: { $ref: "#/components/schemas/WebhookDetail" }
         default: { $ref: "#/components/responses/Error" }
     patch:
       tags: [Webhooks]
@@ -579,6 +579,77 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/WebhookShown" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/webhooks/{hook}/test:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/hook"
+    post:
+      tags: [Webhooks]
+      operationId: testWebhook
+      summary: Send a test event to one endpoint
+      description: |
+        Account key only. Queues one `webhook.test` event for this endpoint, whatever events it subscribes to, and
+        answers with its event ID. The endpoint must be active: a paused or disabled one is a conflict with
+        `reason: state`, and a full queue (100,000 pending deliveries) is a conflict with `reason: limit`. The
+        audit log records the test without the URL's path or query.
+      security: [{ bearer: [] }]
+      responses:
+        "202":
+          description: Queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [event_id]
+                properties:
+                  event_id: { type: string, example: evt_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/webhooks/{hook}/deliveries:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/hook"
+    get:
+      tags: [Webhooks]
+      operationId: listWebhookDeliveries
+      summary: The delivery log of an endpoint
+      description: |
+        The account key and an owner of the account. Newest first. Each row names the event and the state of its
+        delivery; `last_error` is a fixed token (`address_refused`, `resolve`, `timeout`, `connect`, `tls`,
+        `redirect`, `status <code>`, `overflow`, `disabled` (a queue a disable left behind), or a disable reason), never a URL
+        or a body. A delivered row is
+        kept for 7 days and a failed one for 30; then it goes.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: The deliveries, newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookDeliveryList" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+      - $ref: "#/components/parameters/hook"
+      - $ref: "#/components/parameters/dlv"
+    post:
+      tags: [Webhooks]
+      operationId: retryWebhookDelivery
+      summary: Queue a failed delivery again
+      description: |
+        Account key only. Only a failed delivery is retried, and it is due at once with a fresh 24-hour window. A
+        disabled endpoint is a conflict with `reason: state` until its URL is changed or its secret rotated, and a
+        full queue is a conflict with `reason: limit`.
+      security: [{ bearer: [] }]
+      responses:
+        "202":
+          description: Queued again.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookDelivery" }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/tokens:
     parameters:
@@ -3409,13 +3480,16 @@ components:
     grp:
       name: grp
       in: path
+    dlv:
+      name: dlv
+      in: path
+      required: true
+      schema: { type: string, example: dlv_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     hook:
       name: hook
       in: path
       required: true
       schema: { type: string, example: whk_5m2k8x1v0c3d9q7r4t6w8y0z2a }
-      required: true
-      schema: { type: string, example: grp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     subject:
       name: subject
       in: path
@@ -3527,7 +3601,7 @@ components:
         The body of every event. Selfcloud writes the bytes it will send, so the signature (slice j3) covers exactly
         what the receiver reads. The event ID is the same on every attempt; receivers de-duplicate on it.
         An endpoint may subscribe to quota.warning, quota.exceeded and webhook.test, which the listed types do not
-        include. This build sends none of them: quota events come with slice j4, and webhook.test with its route.
+        include. The test route sends webhook.test (slice j3); quota events come with slice j4, and this build sends none.
       type: object
       required: [id, type, time, account, data]
       properties:
@@ -4391,6 +4465,42 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/Webhook" }
+        next_cursor: { type: string }
+
+    WebhookDetail:
+      type: object
+      description: An endpoint with its newest five deliveries. Never carries its secret.
+      allOf:
+        - $ref: "#/components/schemas/Webhook"
+      required: [recent_deliveries]
+      properties:
+        recent_deliveries:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/WebhookDelivery" }
+
+    WebhookDelivery:
+      type: object
+      required: [id, event_id, type, state, attempts, next_attempt_at, created_at]
+      properties:
+        id: { type: string, example: dlv_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        event_id: { type: string, example: evt_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        type: { type: string }
+        state: { type: string, enum: [pending, delivered, failed] }
+        attempts: { type: integer }
+        last_code: { type: [integer, "null"], description: "The HTTP status of the last answer, when there was one." }
+        last_error: { type: [string, "null"], description: "A fixed token, never a URL or a body. At most 200 characters." }
+        next_attempt_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+
+    WebhookDeliveryList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/WebhookDelivery" }
         next_cursor: { type: string }
 
     Error:
