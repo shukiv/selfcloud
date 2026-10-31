@@ -12,7 +12,7 @@ import (
 // Events is the fixed list of event types an endpoint may subscribe to (design section 10). The store's
 // schema holds the same list as a CHECK, so the database refuses any other name too.
 var Events = []string{
-	"file.created", "file.deleted", "file.moved", "file.updated",
+	"file.created", "file.deleted", "file.moved", "file.restored", "file.updated",
 	"quota.exceeded", "quota.warning",
 	"upload.completed",
 	"user.created", "user.verified",

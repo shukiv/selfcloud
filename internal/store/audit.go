@@ -69,7 +69,11 @@ func (tx *Tx) InsertAudit(ctx context.Context, e *AuditEntry) error {
 		return err
 	}
 	e.ID, err = res.LastInsertId()
-	return err
+	if err != nil {
+		return err
+	}
+	// The change this entry records reports its event in the same transaction (webhook_events.go).
+	return tx.emitAudit(ctx, e)
 }
 
 // AuditLog lists an account's audit entries, newest first. A reader that sees everything (the account

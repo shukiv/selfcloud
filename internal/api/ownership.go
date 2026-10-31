@@ -152,6 +152,11 @@ func (s *Server) handleTransferOwnership(w http.ResponseWriter, r *http.Request)
 			}
 		}
 		out = cur
+		// The item and every file below it changed folder, so each file reports the move. A team-space transfer above
+		// changes the owner alone, and reports nothing.
+		if err := tx.EmitTreeEvents(ctx, "file.moved", n.AccountID, cur.ID, store.Now()); err != nil {
+			return err
+		}
 		// The audit entry is private to the new owner, since the item now lives in its My files.
 		return tx.InsertAudit(ctx, s.auditEntry(r, n.AccountID, "node.transfer", cur.ID,
 			map[string]any{"from": prev, "to": to.ID, "folder": dest.ID}, dest.ID))

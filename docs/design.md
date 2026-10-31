@@ -667,7 +667,7 @@ hold the manager role on it; the account key may restore anything. The role is w
 trashed. The caller must also hold editor on the destination, the original parent. If that parent is gone or is
 itself in the trash, the node goes to the root of its folder, which needs editor too; without it the answer is
 `conflict`. A name the destination now has is taken by renaming, as a copy is: "name (1).ext". Audited as
-`node.restore`.
+`node.restore`, which reports `file.restored` for each file it brings back (decision 27).
 
 **Permanent delete.** `DELETE /nodes/{nod}?permanent=true` deletes a live node at once, and needs manager.
 `DELETE /trash/{nod}` purges a node already in the trash, with the same role. `POST /trash/empty`, with an optional
@@ -1853,7 +1853,8 @@ Each slice ships with tests and leaves the server runnable.
 | s | Thumbnails, document previews, conversions and export, zip download | Planned |
 | l | WOPI host for Collabora | Planned |
 | j1 | Webhook endpoints: the migration, the encrypted secret (AES-256-GCM, key derived with HKDF from the links signing key, bound to its row), the endpoint routes, the show-once secret and its rotation, the isolation tests | Built |
-| j | Webhooks: events, the outbox, the worker, the dialer (j2 to j4 remain) | Building |
+| j2 | Webhook events: each change writes its event in its own transaction (the audit hook and four explicit emits), the payloads and the event list including `file.restored`, the big-folder summary (1,000 files, 5,000 deliveries, 10,000 nodes: decision 27), the personal-folder rule, the outbox atomicity tests. Main has no worker yet (decision 27) | Built |
+| j | Webhooks: the worker, the dialer, the quota warnings, rewrap (j3 and j4 remain) | Building |
 | t | Changes feed, file picker, WebDAV, installable web app | Planned |
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Planned |
 | t2 | Approvals | Planned |
@@ -2399,4 +2400,117 @@ Decided on approval:
     - **Choices not in the proposal.** A URL with a fragment is refused. An installation admin key reads no webhooks.
       One delivery per endpoint per event (a UNIQUE constraint). The config key is `webhooks.allow_http` only.
       The schema's CHECK keeps `disabled_reason` set exactly when the state is disabled.
+    - **Slice j2** (event emission) is recorded in decision 27, below. Its interpretations are for review there.
+27. **Event emission, slice j2** (2026-10-30, the owner approved the proposal with every recommendation (a)). The
+    interpretations below are for review. The code is `internal/store/webhook_events.go`, and the guard tests are in
+    `internal/store/webhook_guard_test.go`.
+    - **The hook.** `InsertAudit` reports the change that its audit entry records, in the change's transaction. The
+      action-to-event map is `webhookAuditEvents`: `node.create` and `node.shortcut` give `file.created`;
+      `node.write`, `node.rename` and `node.version.restore` give `file.updated`; `node.move` gives `file.moved`;
+      `node.trash` gives `file.deleted`; `node.restore` gives `file.restored`; `user.create` gives `user.created`, and also `user.verified` when the user is
+      verified at once; `user.verify` gives `user.verified`. Each payload is built from the row the change left, never
+      from the audit details, so a drop upload's visitor name and email never reach a payload.
+    - **Explicit emits.** Four paths cannot be described by one audit entry, so they emit themselves: a copy reports
+      each file it makes (`copyTree`, since its audit names only the root), or one folder summary above 1,000 files; an upload reports `upload.completed` after
+      its file event (no audit action exists for it); a deleted user's files report `file.moved` each (the audit
+      names the recipient only); and an ownership transfer into a user's My files reports `file.moved` for each file
+      below (`ownership.go`).
+    - **Folders.** A folder reports nothing. Trashing, moving or restoring a folder reports each file below it, because
+      each file's row changes, and a folder with no file reports nothing. Renaming a folder reports nothing, since no
+      file row changes. Directory events stay out of v1 (question 7).
+    - **Big folders (owner decision, 2026-10-30), with two further limits (round 3).** A change too large to report
+      file by file reports the folder once instead: one event of the same type (`file.deleted`, `file.moved`,
+      `file.restored` or `file.created` for a copy) whose data is a `WebhookFolderData` with `kind` `dir` and `subtree`
+      `true`, and no file named in it. A change is too large when any of these holds, decided by `ReportFor`, which
+      every subtree emit and every copy calls:
+      1. more than `WebhookFolderThreshold` (1,000) files (the owner's rule);
+      2. more than `WebhookDeliveryLimit` (5,000) deliveries, that is the files times the active endpoints that
+         subscribe to the type. At five endpoints or fewer the first limit is the binding one, so the owner's rule
+         stands unchanged there; above five endpoints it is tightened (1,000 files with six endpoints is a summary);
+      3. more than `WebhookNodeCap` (10,000) nodes in the tree, the root included, whatever its file count. The walk
+         that counts a tree (`countSubtree`) stops at 10,001 rows, so a huge tree costs the cap and no more, and the
+         tree is never loaded. A tree over the cap reports the folder even when it holds no file, because a walk that
+         stops at the cap cannot tell whether a file lies beyond it.
+      A tree with no file within the cap reports nothing. The receiver lists the folder through the API. The flag and
+      the three limits are documented in `api/openapi.yaml`. Tests hold the boundaries on each path: 1,000 by 5 per
+      file, 1,001 by 1 summary, 1,000 by 6 summary, 100 by 50 per file, 101 by 50 summary, a tree of 10,000 nodes per
+      file and of 10,002 a summary, and the copy at 1,000 by 5 and by 6 (`TestPerFileBoundaries`,
+      `TestNodeCapBoundary`, `TestWebhookCopyFanoutLimit`).
+      **Interpretation.** The owner's rule holds at five endpoints or fewer. Above five, the change reports the folder
+      sooner than the rule's 1,000 files, which is the reason for the second limit. A replacing move or copy emits
+      twice: the displaced node's event and the moved or copied node's event. Each is bounded by the limits, so the
+      total is bounded by twice the limit, not once. Splitting a large folder into smaller moves is accepted: it is a
+      way around the limit that costs the caller, not the receiver.
+    - **Shortcuts.** A shortcut reports `file.created` with `kind` `shortcut` and no target. The proposal's payload
+      carries `kind`, so shortcuts are in its event set. The brief warned that a shortcut event must not carry a target,
+      and the test holds it to that.
+    - **`file.updated` covers rename.** The proposal does not say whether a rename counts. A rename changes the name in
+      the payload, so it counts.
+    - **Restore (owner decision, 2026-10-30).** A restore reports `file.restored` per file, with the same big-folder
+      rule. It is on the fixed event list and in the store's CHECK, through migration 0021, which rebuilds the two
+      outbox tables with the new list (migration 0020 is not edited). This reverses the first draft, which reported
+      no restore.
+    - **Not reported.** `node.purge`, with the sweep's purge, as question 7 says. `node.version.update` and `node.version.delete`, `node.sharing`, `node.appearance`, `node.link`,
+      and the link, permission, grant, group, folder, sign-in, token, key, account and administration actions. Each one
+      has a reason in `webhookAuditNoEvent`. A change of owner inside a team space (`node.transfer` without a move)
+      reports nothing, because it moves nothing.
+    - **No row without a subscriber.** An event is written only when at least one active endpoint of the account
+      subscribes to its type. The brief said "if it commits, the event exists". I read that as: the event exists when a
+      delivery waits for it. The sweep's rule (delete events that no delivery refers to) assumes the same.
+    - **Paused and disabled endpoints get no delivery row.** A change made while an endpoint is paused is not queued
+      for it. This is the proposal's section 2 rule applied as written. It is a consequence, not an extra decision.
+    - **Payloads.** The envelope is the proposal's: `id`, `type`, `time`, `account` (`id`, `external_id`, which is `null`
+      when unset) and `data`. File events carry `id`, `folder_id`, `kind`, `size`, `name` and `parent_id`. User events
+      carry `id` and `external_id`. `upload.completed` adds `upload_id`, since the proposal left its fields open. The
+      stored bytes are the bytes the worker will sign. The proposal's question 2 said the worker would join the account's
+      external ID at send time. Reading it into the stored payload instead is one query in the transaction, and it makes
+      j3 simpler. This is a change from that wording.
+    - **Personal folders (decision 18).** Only the account key manages endpoints, and an owner reads them without the
+      secret (decision 26). So no endpoint belongs to a user, and every endpoint receives My files events. The rule holds
+      by construction, and `TestWebhookPersonalFileReachesAccountKeyEndpoint` pins it. If an owner-managed endpoint is
+      ever added, the fan-out must filter by the endpoint's creator before that change lands.
+    - **Isolation.** The fan-out query filters on the account. A composite foreign key also refuses a delivery to another
+      account's endpoint, which a test shows by removing the filter: the change then fails with a constraint error.
+    - **No in-memory set (owner decision, 2026-10-30).** The first draft kept a set of accounts that may have an
+      endpoint, loaded at `Open`. It was removed: a second process writing endpoints to the same database would not
+      have been seen until a restart. Now the fan-out asks the database inside each transaction, at the first
+      emission for the account. A mapped change to an account with no endpoint pays that query; the owner's estimate is about 60 µs per change (not re-measured here).
+      `TestEndpointMadeByAnotherInstanceReceivesEvents` opens two `Store` instances on one file: an endpoint made through
+      one reaches an event written through the other.
+    - **Not in j2.** The 100,000 pending cap (proposal question 10) is not checked. It needs a count of pending
+      deliveries per endpoint, and the worker's disable path (j3) owns it. j2 on main has no worker, so the outbox
+      grows with its changes until j3's sweep and cap land. Main is not a release until j3 lands. The worker, signing and delivery (j3). `quota.warning` and `quota.exceeded` (j4, with
+      `AdjustUsage`). `webhook.test`, whose route is a later part. The types are in the schema and the Events list, but
+      nothing emits them yet.
+    - **Cost, measured.** The proposal has no performance section, so the brief's rule was applied as measured. Store
+      benchmarks (`internal/store/webhook_events_bench_test.go`, pure-Go SQLite, one change per transaction, machine
+      shared with other sessions at load 8 to 11): a file and its audit entry cost about 270 to 290 µs without the
+      outbox and about the same in an account with no endpoint; with one active endpoint about 680 to 820 µs; with five,
+      about 965 to 1,333 µs. A single `EmitEvent` costs about 0.2 to 0.3 µs with no endpoint and about 85 µs with one.
+      A copy of N files with one endpoint therefore adds about 85 µs times N inside one transaction. The copy job's
+      limit is 200,000 nodes, which would add about 17 seconds of writer time at one endpoint. This is the cost the
+      owner should weigh. The big-folder rule bounds it for a folder: at exactly 1,000 files the writer hold of a trash
+      is about 3 to 13 ms with no endpoint and about 290 to 370 ms with five (`BenchmarkTrashFolder1000NoEndpoints`,
+      `BenchmarkTrashFolder1000FiveEndpoints`, the store's `webhook_folder_bench_test.go`; 1,000 events and 5,000
+      deliveries). Load average on the machine was about 10 on 8 threads during that run, so these are rough.
+      **Round 3 (the reviewer's measurements, same machine, load 4 to 7).** A trash of 1,000 files with 100 endpoints
+      reports the folder once and holds the writer about 14 ms; before the delivery limit it wrote 100,000 delivery rows
+      and held the writer 12.06 s, past the 10 s `busy_timeout`. A trash of 1,000 files with 5 endpoints still reports
+      each file, at about 309 ms, the same as before within noise. One `EmitEvent` with 50 subscribers fell from 3.34 ms
+      to 2.44 ms when the deliveries became one `INSERT ... SELECT` from `json_each` (about 67 down to 49 µs per
+      delivery; `BenchmarkEmitFiftyEndpoints`). The decision on a 300,000-node tree (a count of at most 10,001 rows,
+      then `ReportFor`) takes about 337 ms per call (`BenchmarkDecision300kNodes`, 20 runs). The reviewer measured the
+      old unbounded count at 2.3 s on the same shape of tree; I did not re-measure the old count.
+      **Event IDs.** Receivers see the event's `id` (an `evt_` ID, written into the payload), not the row's counter. The
+      counter (`webhook_events.id`) is internal, read only by the deliveries. Migration 0021 now carries it over
+      (`sqlite_sequence`), so a deleted top row's ID is not issued again; `TestMigration0021KeepsEventCounter` pins it.
+      The migration is edited in place because 0021 is on this unpushed branch and has not shipped.
+    - **Guard tests.** `webhook_guard_test.go` and `kind_guard_test.go` are tripwires: they fail when a path is added or
+      moved without a reviewer deciding it, and they do not prove the decision is right. Accepted (owner, 2026-10-30).
+    - **Atomicity, both ways.** A forced failure after the audit entry rolls back the change and its event. A SQL
+      trigger that refuses the event insert rolls back the change, through the API too. A change that commits writes its
+      event, and the guard tests classify every audit action and every node-writing call, so a new path is not missed
+      silently. A mapped audit entry whose node or user is missing fails its change: every mapped action names a row its
+      change has just written, so a missing one is a bug, and the change must not commit without its event. This interpretation
+      stands after review (2026-10-30).
 

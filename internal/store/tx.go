@@ -34,6 +34,8 @@ type querier interface {
 type Tx struct {
 	q   *sql.Tx
 	log *slog.Logger
+	// fanouts holds, per account, what the transaction emits events to (webhook_events.go).
+	fanouts map[string]*webhookFanout
 }
 
 // Write runs fn in a write transaction and commits if fn returns nil. Errors from fn are

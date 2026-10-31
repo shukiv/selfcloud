@@ -280,15 +280,15 @@ func TestFailedRebuildRollsBack(t *testing.T) {
 	}
 }
 
-// TestRebuildMigrationIsMarkedForeignKeysOff keeps the runner's mode on the right migration: the rebuild runs with
-// foreign keys off, and no other migration does.
+// TestRebuildMigrationIsMarkedForeignKeysOff keeps the runner's mode on the right migration: the rebuilds run with
+// foreign keys off (19 rebuilds nodes, 21 rebuilds the outbox tables), and no other migration does.
 func TestRebuildMigrationIsMarkedForeignKeysOff(t *testing.T) {
 	migs, err := loadMigrations()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range migs {
-		want := m.version == 19
+		want := m.version == 19 || m.version == 21
 		if m.foreignKeysOff != want {
 			t.Errorf("migration %s: foreignKeysOff = %v, want %v", m.name, m.foreignKeysOff, want)
 		}

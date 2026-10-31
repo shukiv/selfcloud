@@ -20,24 +20,29 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // and decided: a check that accepts only a file or a directory refuses a shortcut (fails closed), and an SQL count of
 // bytes counts files only, so a shortcut takes no quota. A new comparison, or a moved one, changes a count here, and
 // the reviewer decides it again before the count is updated. docs/design.md section 15 (decision 24, p3) records them.
+// Slice j2 added three, each reviewed for event emission and neither an access decision: copyTree reports a file.created for
+// each node that is not a directory and counts them for the big-folder rule (transfer.go), the outbox skips a directory
+// when it reports a subtree (store/webhook_events.go), and the threshold count excludes directories in SQL
+// (store/webhook_events.go countSubtree). Decision 27 records them.
 var reviewedNodeKindSites = map[string]int{
-	"internal/api/access.go":          2,
-	"internal/api/access_requests.go": 1,
-	"internal/api/download.go":        1,
-	"internal/api/links.go":           2,
-	"internal/api/nodes.go":           12,
-	"internal/api/share_links.go":     2,
-	"internal/api/shortcuts.go":       5,
-	"internal/api/tokens.go":          1,
-	"internal/api/transfer.go":        9,
-	"internal/api/uploads.go":         2,
-	"internal/api/versions.go":        3,
-	"internal/api/views.go":           1,
-	"internal/store/folders.go":       1,
-	"internal/store/nodes.go":         3,
-	"internal/store/sharing.go":       2,
-	"internal/store/storage.go":       1,
-	"internal/store/usage.go":         2,
+	"internal/api/access.go":           2,
+	"internal/api/access_requests.go":  1,
+	"internal/api/download.go":         1,
+	"internal/api/links.go":            2,
+	"internal/api/nodes.go":            12,
+	"internal/api/share_links.go":      2,
+	"internal/api/shortcuts.go":        5,
+	"internal/api/tokens.go":           1,
+	"internal/api/transfer.go":         11,
+	"internal/api/uploads.go":          2,
+	"internal/api/versions.go":         3,
+	"internal/api/views.go":            1,
+	"internal/store/folders.go":        1,
+	"internal/store/nodes.go":          3,
+	"internal/store/webhook_events.go": 3,
+	"internal/store/sharing.go":        2,
+	"internal/store/storage.go":        1,
+	"internal/store/usage.go":          2,
 }
 
 // TestNodeKindComparisonsAreReviewed fails when a node-kind comparison appears, moves or goes in internal/api or

@@ -279,6 +279,18 @@ func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string,
 		return 0, 0, 0, err
 	}
 	now := store.Now()
+	// The tree is already in memory, and the copy is capped at copy.max_nodes. The files are counted as the store
+	// counts them (files and shortcuts, not folders), and the store decides how the copy reports (decision 27).
+	var treeFiles int
+	for _, n := range tree {
+		if n.Kind != store.KindDir {
+			treeFiles++
+		}
+	}
+	report, err := tx.ReportFor(ctx, src.AccountID, "file.created", len(tree), treeFiles)
+	if err != nil {
+		return 0, 0, 0, err
+	}
 	newIDs := map[string]string{}
 	for i, n := range tree {
 		c := *n
@@ -309,6 +321,19 @@ func copyTree(ctx context.Context, tx *store.Tx, src *store.Node, rootID string,
 		}
 		if err := tx.InsertNode(ctx, &c); err != nil {
 			return 0, 0, 0, storeNameErr(err)
+		}
+		// The audit entry of a copy names only its root, so each file the copy makes reports itself here, unless the
+		// copy is too big to report file by file (store.ReportFor): then the new folder reports once, below.
+		if report == store.ReportEachFile && c.Kind != store.KindDir {
+			if err := tx.EmitEvent(ctx, c.AccountID, "file.created", now, store.FileEvent(&c)); err != nil {
+				return 0, 0, 0, err
+			}
+		}
+	}
+	if report == store.ReportFolder {
+		root := &store.Node{ID: rootID, FolderID: plan.folderID, ParentID: plan.parent.ID}
+		if err := tx.EmitEvent(ctx, src.AccountID, "file.created", now, store.FolderEvent(root)); err != nil {
+			return 0, 0, 0, err
 		}
 	}
 	return len(tree), files, bytes, nil

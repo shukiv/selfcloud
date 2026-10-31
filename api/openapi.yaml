@@ -3224,6 +3224,130 @@ paths:
           description: The range is not satisfiable.
         default: { $ref: "#/components/responses/Error" }
 
+webhooks:
+  file.created:
+    post:
+      tags: [Webhooks]
+      operationId: fileCreatedEvent
+      summary: A file or a shortcut was created
+      description: |
+        Sent to each active endpoint of the account that subscribes to file.created. The body is WebhookEvent,
+        whose data is WebhookFileData. A shortcut has kind shortcut and no target. Events of a user's My files go
+        only to endpoints made by the account key. A copy of a folder reports each file it makes, unless the copy is too large to
+        report file by file (see WebhookFolderData); then it sends one event for the new folder.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  file.updated:
+    post:
+      tags: [Webhooks]
+      operationId: fileUpdatedEvent
+      summary: A file's contents or name changed
+      description: |
+        Sent for a content write (PUT, an upload that replaces a file, a version restore) and for a rename. The
+        data is WebhookFileData, as the file is after the change.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  file.moved:
+    post:
+      tags: [Webhooks]
+      operationId: fileMovedEvent
+      summary: A file moved to another place, into another folder or into another user's My files
+      description: |
+        Sent for a move, for an ownership transfer into My files, for each file below a moved folder, and for each
+        file moved when a deleted user's files go to another user. The data is WebhookFileData, as the file is
+        after the move. A change too large to report file by file sends one event for the folder instead, with kind dir and
+        subtree true, and no event for its files (see WebhookFolderData). A change is too large when it
+        touches more than 1,000 files, when its files times the endpoints subscribed to the type exceed 5,000,
+        or when its tree holds more than 10,000 nodes.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  file.deleted:
+    post:
+      tags: [Webhooks]
+      operationId: fileDeletedEvent
+      summary: A file was moved to the trash
+      description: |
+        Sent when a file, or a file below a trashed folder, goes to the trash. A purge sends nothing.
+        The data is WebhookFileData. A change too large to report file by file sends one event for the folder instead, with kind dir and
+        subtree true, and no event for its files (see WebhookFolderData). A change is too large when it
+        touches more than 1,000 files, when its files times the endpoints subscribed to the type exceed 5,000,
+        or when its tree holds more than 10,000 nodes.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  file.restored:
+    post:
+      tags: [Webhooks]
+      operationId: fileRestoredEvent
+      summary: A file was restored from the trash
+      description: |
+        Sent for each file that a restore brings back, and for a restored folder's files. The data is
+        WebhookFileData, as the file is after the restore. A change too large to report file by file sends one event for the folder instead, with kind dir and
+        subtree true, and no event for its files (see WebhookFolderData). A change is too large when it
+        touches more than 1,000 files, when its files times the endpoints subscribed to the type exceed 5,000,
+        or when its tree holds more than 10,000 nodes.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  upload.completed:
+    post:
+      tags: [Webhooks]
+      operationId: uploadCompletedEvent
+      summary: A resumable upload was completed
+      description: |
+        Sent after the file event of the same upload. The data is WebhookUploadCompletedData: the file, and the
+        upload's ID.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  user.created:
+    post:
+      tags: [Webhooks]
+      operationId: userCreatedEvent
+      summary: A user was created in the account
+      description: |
+        The data is WebhookUserData: the user's ID and external ID, and no email address or name.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  user.verified:
+    post:
+      tags: [Webhooks]
+      operationId: userVerifiedEvent
+      summary: A user was verified
+      description: |
+        Sent when a user is verified at creation, or when a verification link is used. The data is WebhookUserData.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+
 components:
   securitySchemes:
     bearer:
@@ -3398,6 +3522,72 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    WebhookEvent:
+      description: |
+        The body of every event. Selfcloud writes the bytes it will send, so the signature (slice j3) covers exactly
+        what the receiver reads. The event ID is the same on every attempt; receivers de-duplicate on it.
+        An endpoint may subscribe to quota.warning, quota.exceeded and webhook.test, which the listed types do not
+        include. This build sends none of them: quota events come with slice j4, and webhook.test with its route.
+      type: object
+      required: [id, type, time, account, data]
+      properties:
+        id: { type: string, example: evt_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        type:
+          type: string
+          enum: [file.created, file.updated, file.moved, file.deleted, file.restored, upload.completed, user.created, user.verified]
+        time: { type: string, format: date-time }
+        account:
+          type: object
+          required: [id, external_id]
+          properties:
+            id: { type: string, example: acc_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+            external_id: { type: [string, "null"] }
+        data:
+          oneOf:
+            - $ref: "#/components/schemas/WebhookFileData"
+            - $ref: "#/components/schemas/WebhookFolderData"
+            - $ref: "#/components/schemas/WebhookUserData"
+            - $ref: "#/components/schemas/WebhookUploadCompletedData"
+    WebhookFileData:
+      description: The file or shortcut as the change left it. Never its contents, a link, or a shortcut's target.
+      type: object
+      required: [id, folder_id, kind, size, name, parent_id]
+      properties:
+        id: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        folder_id: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        kind: { type: string, enum: [file, shortcut] }
+        size: { type: integer, format: int64 }
+        name: { type: string, description: The name in Unicode NFC. }
+        parent_id: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2b }
+    WebhookFolderData:
+      description: |
+        The folder a change touched when the change was too large to report file by file: more than 1,000 files, more
+        than 5,000 deliveries (files times subscribed endpoints), or more than 10,000 nodes. It names no file: the
+        receiver lists the folder through the API to see what changed. subtree is always true, and kind is always
+        dir. A smaller change reports each file instead (WebhookFileData), and a change to no file reports nothing.
+      type: object
+      required: [id, folder_id, kind, parent_id, subtree]
+      properties:
+        id: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        folder_id: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        kind: { type: string, enum: [dir] }
+        parent_id: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2b }
+        subtree: { type: boolean, enum: [true] }
+    WebhookUserData:
+      description: The user by ID and external ID. No email address and no name.
+      type: object
+      required: [id, external_id]
+      properties:
+        id: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        external_id: { type: [string, "null"] }
+    WebhookUploadCompletedData:
+      description: The file the upload made or replaced, and the upload's ID.
+      allOf:
+        - $ref: "#/components/schemas/WebhookFileData"
+        - type: object
+          required: [upload_id]
+          properties:
+            upload_id: { type: string, example: upl_5m2k8x1v0c3d9q7r4t6w8y0z2a }
     Folder:
       type: object
       required: [id, external_id, name, created_at, updated_at]
@@ -4150,7 +4340,7 @@ components:
         description: { type: [string, "null"], maxLength: 200 }
         events:
           type: array
-          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, upload.completed, quota.warning, quota.exceeded, webhook.test] }
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test] }
         state: { type: string, enum: [active, paused, disabled] }
         disabled_reason: { type: [string, "null"], enum: [failing, overflow, secret_unreadable, null] }
         consecutive_failures: { type: integer }
@@ -4179,7 +4369,7 @@ components:
           type: array
           minItems: 1
           uniqueItems: false
-          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, upload.completed, quota.warning, quota.exceeded, webhook.test] }
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test] }
         description: { type: string, maxLength: 200 }
 
     WebhookUpdate:
@@ -4190,7 +4380,7 @@ components:
         events:
           type: array
           minItems: 1
-          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, upload.completed, quota.warning, quota.exceeded, webhook.test] }
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test] }
         description: { type: string, maxLength: 200, description: Empty clears it. }
         state: { type: string, enum: [active, paused], description: A disabled endpoint cannot be set to active alone. }
 

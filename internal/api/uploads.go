@@ -28,6 +28,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/names"
 	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/webhook"
 )
 
 // Resumable uploads follow tus 1.0.0 (design section 5). The protocol is built in: creation,
@@ -1212,6 +1213,11 @@ func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Up
 		// releases the reservation and the usage takes the bytes in the same transaction. Nothing is checked
 		// against the quota here. The reservation was checked when the upload was created, so a quota lowered
 		// while the upload was going does not strand a file that has been written in full.
+		// The upload reports the file it made or replaced. The audit entry above reports the file itself.
+		if err := tx.EmitEvent(ctx, cur.AccountID, "upload.completed", now,
+			webhook.UploadCompleted{UploadID: cur.ID, File: store.FileEvent(out)}); err != nil {
+			return err
+		}
 		// A user who completes an upload has edited the file (replaced or created). Drop visitors record nothing.
 		if err := noteEdit(ctx, tx, p, cur.AccountID, out.ID); err != nil {
 			return err

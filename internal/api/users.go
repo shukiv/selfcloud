@@ -602,6 +602,10 @@ func (s *Server) moveDeletedFiles(ctx context.Context, tx *store.Tx, r *http.Req
 	if err := tx.ClearSubtreeEditorsCanShare(ctx, accountID, dir.ID); err != nil {
 		return err
 	}
+	// Each file that moved into the new directory reports the move. The audit entry below names the recipient only.
+	if err := tx.EmitTreeEvents(ctx, "file.moved", accountID, dir.ID, now); err != nil {
+		return err
+	}
 	// The entry is not private to the recipient, so owners can see that a move was made and to whom. It
 	// therefore names the recipient only: not the count of entries, which would show how large the deleted
 	// user's My files was, nor the recipient's personal folder or the new directory.
