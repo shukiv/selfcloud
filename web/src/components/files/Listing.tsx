@@ -11,6 +11,7 @@ import type { SortDir, SortKey } from "../../lib/files/sort";
 import type { Node } from "../../lib/files/types";
 import type { ViewMode } from "../../lib/files/viewPrefs";
 import Icon from "./Icon";
+import KindMarks from "./KindMarks";
 
 
 // Click is what the page needs from a mouse event: which modifiers were held.
@@ -187,9 +188,10 @@ export default function Listing(p: ListingProps) {
         ...sortHead("name", t("files.col.name")),
         render: (_v, n) => (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0, maxWidth: "100%" }}>
-            <Icon kind={kindOf(n)} size={22} />
+            <Icon kind={kindOf(n)} size={22} colour={n.color} />
             {nameField(n)}
             {linkBadge(n)}
+            <KindMarks node={n} />
             {starMark(n)}
             {starButton(n)}
             {renameErr(n)}
@@ -296,9 +298,10 @@ export default function Listing(p: ListingProps) {
               userSelect: "none",
             }}
           >
-            <Icon kind={kindOf(n)} size={40} />
+            <Icon kind={kindOf(n)} size={40} colour={n.color} />
             {p.renameID === n.id ? nameField(n) : <bdi style={{ overflowWrap: "anywhere" }}>{n.name}</bdi>}
             {linkBadge(n)}
+            <KindMarks node={n} />
             {starMark(n)}
             {starButton(n)}
             <span style={{ color: token.colorTextSecondary, fontSize: token.fontSizeSM }}>{sizeOf(n, lang)}</span>
@@ -310,6 +313,7 @@ export default function Listing(p: ListingProps) {
   );
 }
 
+// sizeOf is a file's size. A folder and a shortcut have none to show.
 function sizeOf(n: Node, lang: string): string {
-  return n.kind === "dir" ? "" : formatBytes(n.size, lang);
+  return n.kind === "file" ? formatBytes(n.size, lang) : "";
 }

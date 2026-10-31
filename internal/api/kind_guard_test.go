@@ -21,7 +21,7 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // bytes counts files only, so a shortcut takes no quota. A new comparison, or a moved one, changes a count here, and
 // the reviewer decides it again before the count is updated. docs/design.md section 15 (decision 24, p3) records them.
 var reviewedNodeKindSites = map[string]int{
-	"internal/api/access.go":          1,
+	"internal/api/access.go":          2,
 	"internal/api/access_requests.go": 1,
 	"internal/api/download.go":        1,
 	"internal/api/links.go":           2,

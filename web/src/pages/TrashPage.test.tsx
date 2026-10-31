@@ -67,6 +67,24 @@ function renderTrash(items: TrashItem[]) {
 // row waits for the listing to arrive, then returns the item's list entry.
 const row = async (name: string) => (await screen.findByText(name)).closest("li") as HTMLElement;
 
+describe("TrashPage marks a shortcut and a coloured folder in words", () => {
+  beforeEach(() => {
+    signIn();
+    api.getMe.mockResolvedValue({ personal_folder_id: "f1" });
+    api.statOrNull.mockResolvedValue({ id: "p1", parent_id: null, name: "Plans" });
+  });
+  afterEach(() => session.set(null));
+
+  it("says Shortcut and Unavailable on a shortcut, and names a folder's colour", async () => {
+    renderTrash([
+      { ...item("s1", "Gone link", "editor"), kind: "shortcut", unavailable: true },
+      { ...item("d1", "Reports", "editor"), kind: "dir", color: "teal" },
+    ]);
+    expect(within(await row_("Gone link")).getByText("Unavailable")).toBeTruthy();
+    expect(within(await row_("Reports")).getByText("Colour: Teal")).toBeTruthy();
+  });
+});
+
 describe("TrashPage", () => {
   beforeEach(() => {
     signIn();

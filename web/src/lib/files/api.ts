@@ -104,6 +104,16 @@ export function restoreNode(nod: string): Promise<Node> {
   return api<Node>('POST', `/api/v1/nodes/${nod}/restore`);
 }
 
+// createShortcut makes a shortcut to target in the directory dir. The name is the one the directory's readers will see.
+export function createShortcut(dir: string, target: string, name: string): Promise<Node> {
+  return api<Node>('POST', `/api/v1/nodes/${dir}/shortcuts`, { body: { target, name } });
+}
+
+// updateAppearance sets a node's colour and description. A null colour clears it; so does an empty description.
+export function updateAppearance(nod: string, body: { color?: string | null; description?: string | null }): Promise<Node> {
+  return api<Node>('PATCH', `/api/v1/nodes/${nod}`, { body });
+}
+
 export function mkdir(folder: string, path: string): Promise<Node> {
   return api<Node>('POST', `/api/v1/folders/${folder}/directories`, { body: { path, parents: false } });
 }

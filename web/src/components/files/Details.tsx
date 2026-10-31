@@ -10,9 +10,10 @@ import { detailsPersonLabel } from "../../lib/files/people";
 import { kindOf } from "../../lib/files/kind";
 import type { Node } from "../../lib/files/types";
 import Icon from "./Icon";
+import Appearance from "./Appearance";
 
 // Details is the side drawer for one node. The Share button shows only when the caller may share the node;
-// "Who has access" always shows, and both open the share dialog.
+// "Who has access" always shows, and both open the share dialog. onChanged is told of a colour or description saved.
 export default function Details({
   node,
   canVersions,
@@ -20,6 +21,7 @@ export default function Details({
   onClose,
   onVersions,
   onShare,
+  onChanged,
 }: {
   node: Node;
   canVersions: boolean;
@@ -27,6 +29,7 @@ export default function Details({
   onClose: () => void;
   onVersions: () => void;
   onShare: () => void;
+  onChanged?: (next: Node) => void;
 }) {
   const { t } = useT();
   const lang = useLang();
@@ -51,7 +54,7 @@ export default function Details({
       width="min(420px, 100vw)"
       title={
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon kind={kindOf(node)} size={24} />
+          <Icon kind={kindOf(node)} size={24} colour={node.color} />
           <bdi>{node.name}</bdi>
         </span>
       }
@@ -104,6 +107,12 @@ export default function Details({
           </>
         )}
       </dl>
+      {node.kind === "shortcut" && node.unavailable && (
+        <p role="note" style={{ marginBlockStart: 16 }}>
+          {t("shortcut.unavailableBody")}
+        </p>
+      )}
+      <Appearance key={node.id} node={node} onChanged={onChanged} />
       {node.kind === "file" && canVersions && (
         <Button block style={{ marginBlockStart: 16 }} onClick={onVersions}>
           {t("files.details.versions")}

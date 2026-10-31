@@ -3,6 +3,38 @@
 /* A reset and the few rules antd does not give: the page margin, the system font stack the
    interface uses, the skip link, and tables that scroll inside their card. Layout and colour
    come from the theme. */
+/* The folder colours (lib/files/palette.ts). Each name has one shade for light and one for dark; each keeps 3:1 against
+   its page, which palette.test.ts checks. */
+:root {
+  --colour-red: #cf1322;
+  --colour-orange: #d46b08;
+  --colour-yellow: #ad8b00;
+  --colour-green: #389e0d;
+  --colour-teal: #08979c;
+  --colour-blue: #1677ff;
+  --colour-indigo: #2f54eb;
+  --colour-purple: #722ed1;
+  --colour-pink: #c41d7f;
+  --colour-brown: #873800;
+  --colour-slate: #5c6b7a;
+  --colour-grey: #595959;
+}
+
+:root[data-theme="dark"] {
+  --colour-red: #ff7875;
+  --colour-orange: #ffa940;
+  --colour-yellow: #ffd666;
+  --colour-green: #95de64;
+  --colour-teal: #5cdbd3;
+  --colour-blue: #69b1ff;
+  --colour-indigo: #85a5ff;
+  --colour-purple: #b37feb;
+  --colour-pink: #ff85c0;
+  --colour-brown: #d4a373;
+  --colour-slate: #a9b6c4;
+  --colour-grey: #bfbfbf;
+}
+
 html,
 body {
   margin: 0;

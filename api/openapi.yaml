@@ -1868,7 +1868,8 @@ paths:
       description: |
         A visitor of a link that anyone can open may call this with its credential, for a node the
         link reaches, and gets the link's role. A visitor sees no `created_by` or `owner_id`, and no
-        `parent_id` at the link's own node.
+        `parent_id` at the link's own node. A visitor's stat of a shortcut is `not_found`, the same
+        answer as a stat of an item outside the link.
         For a file: its size, media type, `etag` (a strong ETag that changes with every write)
         and `sha256` of the contents. A folder's root is a directory with no `parent_id`.
       security: [{ bearer: [] }, { session: [] }]

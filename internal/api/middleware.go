@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ type reqInfo struct {
 	principal  *auth.Principal // set once the route has authenticated the caller
 	session    *store.Session  // set when the caller signed in with a session cookie
 	err        *apierr.Error
+	clientGone bool // the client went away before the answer: logged as a disconnect, not a failure
 	sw         *statusWriter
 }
 
@@ -148,7 +150,15 @@ func (s *Server) finish(r *http.Request, sw *statusWriter, info *reqInfo, d time
 	if status == 0 {
 		status = http.StatusOK
 	}
-	s.metrics.observe(r.Method, info.route, status, d, sw.bytes)
+	// A quota refusal answers 507, but it is the client's answer to a full storage limit, not a server failure: it is
+	// logged below ERROR and counted under its own label, so an alert on 5xx does not fire for it. A full disk
+	// (storage_full) is still a 507 server failure.
+	quota := info.err != nil && info.err.Code == apierr.QuotaExceeded
+	statusLabel := strconv.Itoa(status)
+	if quota {
+		statusLabel = "quota_refused"
+	}
+	s.metrics.observe(r.Method, info.route, statusLabel, d, sw.bytes)
 
 	level := slog.LevelInfo
 	switch {
@@ -156,7 +166,7 @@ func (s *Server) finish(r *http.Request, sw *statusWriter, info *reqInfo, d time
 		level = slog.LevelDebug
 	case quietRoutes[info.route]:
 		level = slog.LevelWarn // a failing probe repeats every few seconds; the cause is logged once each time
-	case status >= 500:
+	case status >= 500 && !quota:
 		level = slog.LevelError
 	}
 	if !s.log.Enabled(r.Context(), level) {
@@ -178,7 +188,11 @@ func (s *Server) finish(r *http.Request, sw *statusWriter, info *reqInfo, d time
 			attrs = append(attrs, slog.String("cause", info.err.Err.Error()))
 		}
 	}
-	s.log.LogAttrs(r.Context(), level, "request", attrs...)
+	msg := "request"
+	if info.clientGone {
+		msg = "client disconnected"
+	}
+	s.log.LogAttrs(r.Context(), level, msg, attrs...)
 }
 
 // drain answers 503 to everything but the liveness probe once shutdown has begun.

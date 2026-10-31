@@ -3,13 +3,30 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 )
+
+// statusClientClosed records a request whose client went away before the answer, as nginx does (499). Nothing is sent
+// to such a client, so the status is only for the log and the metrics, where it is not a server failure.
+const statusClientClosed = 499
+
+// clientGone reports whether a failure is the client going away: the request's own context was canceled, and the
+// failure is that cancel. A server-side deadline, or a cancel that is not the request's own, is still a server failure.
+func clientGone(r *http.Request, e *apierr.Error) bool {
+	if e.Code != apierr.Internal || r.Context().Err() != context.Canceled || !errors.Is(e.Err, context.Canceled) {
+		return false
+	}
+	// A cancel the server made at its shutdown deadline carries errServerShutdown as its cause: the client may still be
+	// there, so it is a server failure, with the JSON error sent.
+	return !errors.Is(context.Cause(r.Context()), errServerShutdown)
+}
 
 // errorBody is the JSON shape of every error response.
 type errorBody struct {
@@ -38,6 +55,14 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	if info != nil {
 		reqID = info.id
 		info.err = e
+		if clientGone(r, e) {
+			// Nothing is sent to a client that has gone. The request is logged as a disconnect, below ERROR.
+			info.clientGone = true
+			if !info.wroteHeader() {
+				w.WriteHeader(statusClientClosed)
+			}
+			return
+		}
 		if info.wroteHeader() {
 			// Part of a response has gone out; a JSON error now would corrupt it.
 			s.log.Error("error after the response started", "request_id", reqID, "error", e)

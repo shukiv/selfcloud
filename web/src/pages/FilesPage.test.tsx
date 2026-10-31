@@ -514,3 +514,31 @@ describe("sharing from the browser", () => {
     expect(await screen.findByText("request for nod_dddddddd")).toBeTruthy();
   });
 });
+
+describe("a change of address closes what was open at the last one", () => {
+  it("a preview that was open is closed when the address changes, so it is not left on top of the new place", async () => {
+    const { router } = renderAt(`${FOLDER}?preview=n2`);
+    await screen.findByRole("dialog");
+    await act(async () => {
+      await router.navigate(`${FOLDER}/nod_bbbbbbbb`);
+    });
+    // Wait for the new place to be shown, so the check is made on the page as a person sees it.
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("a delete confirmation that was open is closed when the address changes, so it cannot act on the old selection", async () => {
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByRole("dialog");
+    await act(async () => {
+      await router.navigate(`${FOLDER}/nod_bbbbbbbb`);
+    });
+    // Wait for the new place to be shown: the page draws no dialog at all while it loads.
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(screen.queryByRole("button", { name: "Move to trash" })).toBeNull();
+    expect(api.deleteNode).not.toHaveBeenCalled();
+  });
+});

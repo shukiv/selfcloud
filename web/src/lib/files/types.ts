@@ -10,8 +10,16 @@ export interface Node {
   folder_id: string;
   parent_id: string | null;
   name: string;
-  kind: 'dir' | 'file';
+  kind: 'dir' | 'file' | 'shortcut';
   size: number;
+  // color is a directory's palette name, and description the item's plain text. Every reader sees them; a link visitor
+  // gets neither (the API leaves them out).
+  color?: string;
+  description?: string;
+  // target is what a shortcut points to, for a caller who reaches it. unavailable is set on a shortcut whose target the
+  // caller cannot reach or that was purged. The target's ID is never sent to a caller who cannot reach it.
+  target?: { id: string; kind: 'dir' | 'file' | 'shortcut' };
+  unavailable?: boolean;
   mime_type?: string;
   etag?: string;
   sha256?: string;

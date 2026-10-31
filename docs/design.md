@@ -1015,6 +1015,7 @@ made, uploaded or moved into it. It takes no quota, since the counters count `ki
 - A copy of a shortcut is a new shortcut to the same target. A copy of a tree copies its shortcuts, never their targets.
 - A permission on a shortcut shows it to the person it names, and grants no reach to the target.
 - A shortcut cannot be shared by link. Its target can.
+- A link visitor's stat of a shortcut is `not_found`, as for an item outside the link. Its listing leaves shortcuts out.
 
 **Colours and descriptions.** A directory's colour is one of the twelve palette names (`store.Colors`). A description is
 plain text of at most 1000 characters; control characters other than line breaks are removed, and it is stored and sent
@@ -2143,8 +2144,9 @@ Decided on approval:
     - Link visitors do not see colour or description, on a stat or in a listing. Decision 6's "every reader" means the
       signed-in readers of the item, and section 6 of the proposal strips both for visitors. The lead corrected this
       reading on review (2026-10-30): a description may hold private notes that the sharer did not mean to publish.
-    - A link visitor's listing leaves shortcuts out. A visitor's stat of a shortcut gives its name and kind only: no
-      `target` and no `unavailable`.
+    - A link visitor's listing leaves shortcuts out. A visitor's stat of a shortcut is `not_found`, the same answer as
+      a stat of an item outside the link: a visitor learns nothing of a shortcut, not even its name or kind.
+      (Corrected on the automated review of e493443, 2026-10-30.)
     - `target` is omitted, not sent as null, when the caller does not reach the target. `unavailable: true` marks the
       shortcut in both cases (unreachable, and purged). A target's `kind` is given only to a caller who reaches it.
     - A shortcut cannot point at a shortcut or at a folder's root. The proposal did not say so; both are refused.
@@ -2163,6 +2165,16 @@ Decided on approval:
     - An ownership transfer of a shortcut takes the same path as any node's. Not tested; a shortcut holds no bytes, so none move.
     - Migration 0019 rebuilds the `nodes` table. Its backup note is in section 8 (p3). Its SQL is in
       `internal/store/migrations/0019_shortcuts.sql`.
+    - A quota refusal (`quota_exceeded`, 507) is logged below ERROR and counted under the metrics status label
+      `quota_refused`, not as a server failure. `storage_full` (also 507) stays a server failure, as the disk is the
+      server's fault. The label is the reading the coordinator review of p3 gave (finding 10).
+    - A request the server itself cancels at the shutdown deadline answers 500 and is logged as a server failure, not as
+      a client disconnect. The server gives its cancel the cause `errServerShutdown`; a client that goes away keeps the
+      499 path (finding 1).
+    - Accepted, not fixed: a link visitor's listing drops its shortcuts after the page is read (`api/nodes.go`, the loop
+      that skips `store.KindShortcut`), so a visitor's page can come back shorter than its limit. `next_cursor` still
+      follows the last row read. Filtering in the store query would change the query; the coordinator review of p3 accepted
+      the note without code.
     - Kind comparisons (node kind, Go and SQL, 48 in 16 files, counted by the guard test). The proposal said 31; I could not
       reproduce 31, and the guard counts every match of the pattern in `internal/api` and `internal/store`, excluding folder,
       job and principal kinds. The decision for each is:
@@ -2180,7 +2192,9 @@ Decided on approval:
         move and copy destination (98), `api/share_links.go` drop link (374). Each refuses a shortcut, `invalid_request` or
         a path error. Kept.
       - *New, for the shortcut kind:* `api/nodes.go` toNodeJSON default `unavailable` (223), the shortcut-only children
-        refusal (542), the visitor listing omission (468), the colour-on-directory rule (879); `api/shortcuts.go` target
+        refusal (542), the visitor listing omission (468), the colour-on-directory rule (879); `api/access.go`
+        `nodeAccessIn` refusing a shortcut to a link visitor (added with the review of e493443, so every route answers as
+        for an item outside the link); `api/shortcuts.go` target
         lookups (39, 79), the creation directory check (121, 144) and the target-is-not-a-shortcut check (194); and
         `api/share_links.go` link refusal (368). Each is covered by a test in `shortcuts_test.go`.
       - *Replace and conflicts:* `api/transfer.go` replace (193, two comparisons): a shortcut neither replaces nor is
@@ -2227,6 +2241,24 @@ Decided on approval:
       directive from the first line only; a `foreign_key_check` failure names the tables; bidirectional controls
       (U+202A-202E, U+2066-2069) are stripped from descriptions, and ZWJ, ZWNJ, LRM and RLM are kept; `""` clears a
       colour as null does; a copy of a shortcut is not recorded as an edit in Recent, sync or queued.
+    Interpretations made in p3's web pages, for review (the owner has not decided them):
+    - "Add shortcut" is in the selection toolbar, for one selected item that is not a shortcut. The destination is chosen
+      with the move tree (`PickDestination`, mode `shortcut`) and must be a directory, since a space's root cannot hold a
+      shortcut. The name dialog starts with the target's name and shows it, editable, before the shortcut is made.
+    - Opening a reachable shortcut goes to `/n/{target}`, the target's own address. Opening an unavailable one shows a
+      dialog with Request access on the shortcut (decision 5). No page shows the target's ID for an unavailable shortcut.
+    - Listings sort folders, then shortcuts, then files, under every key.
+    - Each colour name has a light and a dark shade in `web/src/index.css`, and each keeps 3:1 against its page
+      (`palette.test.ts`). A folder's icon takes its colour, and the colour's name is also said in text for screen readers.
+    - An editor sets the colour and description in the details drawer, and sends both together. A cleared colour or an
+      empty description is sent as null. A reader sees the colour's name and the description as text: `dir="auto"`,
+      line breaks kept, never HTML.
+    - A shortcut's icon is its own, whatever its target is, so an unavailable target shows nothing of what it is. A
+      shortcut has no size to show.
+    - A shortcut has no colour or description control in the interface, and a reader sees none either. The owner has
+      not decided whether a shortcut may carry a description; the server's description rule does not check the kind.
+    - Not checked in the browser: Home, Starred and Recent show shortcuts only as their own rows do; no shortcut mark is
+      added there. Arabic was not looked at in a browser; only Hebrew was (the layout shots).
 25. **React web interface, slice v** (2026-10-30, owner's decisions). It replaces decision 8, and amends decision 22.
     - Stack: React 18.3 and Ant Design 5.29, pinned exactly, with TanStack Query, React Router 7 (the router is
       built on `react-router-dom`), i18next and lucide icons. Node is needed only

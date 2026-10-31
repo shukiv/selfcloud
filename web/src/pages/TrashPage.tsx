@@ -16,6 +16,7 @@ import { atLeast } from "../lib/files/roles";
 import { kindOf } from "../lib/files/kind";
 import type { Page, TrashItem } from "../lib/files/types";
 import Icon from "../components/files/Icon";
+import KindMarks from "../components/files/KindMarks";
 
 // Trash lists items deleted but not yet gone for good. Restore brings one back; deleting for good cannot be
 // undone, so it asks first.
@@ -204,6 +205,7 @@ export default function TrashPage() {
               <div style={{ flex: "1 1 200px", minWidth: 0 }}>
                 <p className="name" style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>
                   <bdi>{it.name}</bdi>
+                  <KindMarks node={it} />
                 </p>
                 <p style={{ margin: 0, fontSize: 14, opacity: 0.75 }}>
                   {placeOf(it) && `${t("trash.was", { place: placeOf(it) })} · `}

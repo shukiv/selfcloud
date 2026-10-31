@@ -12,6 +12,7 @@ import { go } from "../lib/router";
 import { session, sessionChanged, sessionKey, signingOut } from "../lib/session";
 import { queryKey, refreshTree } from "../lib/query";
 import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/files/folders";
+import { keepTargetOnSave } from "../lib/files/appearance";
 import { childrenPage, copyNode, deleteNode, getJob, getMe, mkdir, moveNode, renameNode, restoreNode, serverLimits, type Transfer } from "../lib/files/api";
 import { locate, joinPath, type Here } from "../lib/files/location";
 import { starNode, unstarNode } from "../lib/stars";
@@ -36,6 +37,9 @@ import Details from "../components/files/Details";
 import Preview from "../components/files/Preview";
 import Versions from "../components/files/Versions";
 import PickDestination, { type Destination } from "../components/files/PickDestination";
+import AddShortcut from "../components/files/AddShortcut";
+import RequestAccess from "../components/share/RequestAccess";
+import { openShortcut } from "../lib/files/shortcut";
 import Conflict from "../components/files/Conflict";
 import FocusOnOpen from "../components/FocusOnOpen";
 import UndoToast from "../components/UndoToast";
@@ -50,7 +54,7 @@ const ShareDialog = lazy(() => import("../components/share/ShareDialog"));
 // Sharing from this page: the Share button in the selection bar (when the caller may share the item), Share and
 // "Who has access" in Details, and the access request on a not-found directory.
 
-type Dialog = "newFolder" | "delete" | "pick" | "details" | "versions" | "preview" | "share" | null;
+type Dialog = "newFolder" | "delete" | "pick" | "details" | "versions" | "preview" | "share" | "pickShortcut" | "shortcut" | "unavailable" | null;
 
 // Place is where the browser is, or why it cannot show it.
 type PlaceState =
@@ -139,6 +143,10 @@ export default function FilesPage() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [pickMode, setPickMode] = useState<"move" | "copy">("move");
   const [target, setTarget] = useState<Node | null>(null);
+  // dialogRef is the dialog as of the last render, for a callback that may run after the dialog has changed.
+  const dialogRef = useRef<Dialog>(null);
+  dialogRef.current = dialog;
+  const [shortcutDest, setShortcutDest] = useState<Destination | null>(null);
   // A change of person (a sign-out, or a sign-in as someone else) closes whatever dialog was open: its answers
   // were given to the previous person.
   const sessionID = sessionKey(useStore(session));
@@ -196,10 +204,15 @@ export default function FilesPage() {
   const items = useMemo<Node[]>(() => (childrenQ.data?.pages ?? []).flatMap((p) => p.items), [childrenQ.data]);
   const hasMore = childrenQ.hasNextPage === true;
 
-  // A place change starts with nothing selected and no notice, as a fresh load did.
+  // A place change starts with nothing selected and no notice, as a fresh load did. It also closes whatever dialog
+  // or preview was open: a dialog belongs to the address it was opened at, and Back or a link must not leave it on
+  // top. This runs before the effect that opens a ?preview= address, so that address still opens its preview.
   useEffect(() => {
     setSel(NO_SEL);
     setNotice(null);
+    setDialog(null);
+    setTarget(null);
+    setPreviewItems([]);
   }, [path]);
 
   // Redirect /files to the caller's own folder.
@@ -398,6 +411,18 @@ export default function FilesPage() {
   }
 
   function openNode(n: Node) {
+    if (n.kind === "shortcut") {
+      // A reachable target opens at its own address; an unavailable one asks for access on the shortcut, and the
+      // target's ID is shown nowhere.
+      const got = openShortcut(n);
+      if (got.kind === "go") {
+        go(got.to);
+      } else {
+        setTarget(n);
+        setDialog("unavailable");
+      }
+      return;
+    }
     if (n.kind === "dir") {
       if (here) go(filesURL(here.folder, n.id));
       return;
@@ -974,6 +999,16 @@ export default function FilesPage() {
                 </Button>
               )}
               {selectedNodes.length === 1 && can.edit(selectedNodes[0].role) && <Button onClick={() => startRename(selectedNodes[0])}>{t("files.act.rename")}</Button>}
+              {selectedNodes.length === 1 && selectedNodes[0].kind !== "shortcut" && spaces.length > 0 && (
+                <Button
+                  onClick={() => {
+                    setTarget(selectedNodes[0]);
+                    setDialog("pickShortcut");
+                  }}
+                >
+                  {t("files.act.shortcut")}
+                </Button>
+              )}
               {allEdit && <Button onClick={() => startPick("move", selectedNodes)}>{t("files.act.move")}</Button>}
               {selectedNodes.length > 0 && <Button onClick={() => startPick("copy", selectedNodes)}>{t("files.act.copy")}</Button>}
               {allEdit && (
@@ -1110,6 +1145,38 @@ export default function FilesPage() {
         <PickDestination mode={pickMode} spaces={spaces} onPick={(dest) => void runTransfer(pickMode, pending, dest)} onClose={() => setDialog(null)} />
       )}
 
+      {dialog === "pickShortcut" && (
+        <PickDestination
+          mode="shortcut"
+          spaces={spaces}
+          onPick={(dest) => {
+            setShortcutDest(dest);
+            setDialog("shortcut");
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      {dialog === "shortcut" && target && shortcutDest && (
+        <AddShortcut
+          target={target}
+          dest={shortcutDest}
+          onDone={(made) => {
+            setDialog(null);
+            setNotice(t("files.shortcut.created", { name: made.name }));
+            void reload();
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      {dialog === "unavailable" && target && (
+        <Modal open title={t("shortcut.dialog")} footer={null} onCancel={() => setDialog(null)} maskClosable={false} destroyOnHidden>
+          <p>{t("shortcut.unavailableBody")}</p>
+          <RequestAccess nodeID={target.id} />
+        </Modal>
+      )}
+
       {dialog === "details" && target && (
         <Details
           node={target}
@@ -1118,6 +1185,11 @@ export default function FilesPage() {
           onVersions={() => setDialog("versions")}
           onShare={() => setDialog("share")}
           onClose={() => setDialog(null)}
+          onChanged={(next) => {
+            // A save answered late must not change another item: it applies only to the item the drawer shows now.
+            setTarget((cur) => keepTargetOnSave(cur, next, dialogRef.current === "details"));
+            void reload();
+          }}
         />
       )}
 

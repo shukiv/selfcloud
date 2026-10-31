@@ -6,7 +6,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -63,11 +62,13 @@ var knownMethods = map[string]bool{
 	http.MethodPatch: true, http.MethodDelete: true, http.MethodOptions: true,
 }
 
-func (m *metrics) observe(method, route string, status int, d time.Duration, bytes int64) {
+// statusLabel is the status a request is counted under. A quota refusal is counted under its own label, not as a 5xx
+// server failure: it answers 507 to the client, but it is the storage limit doing its job (see finish).
+func (m *metrics) observe(method, route, statusLabel string, d time.Duration, bytes int64) {
 	if !knownMethods[method] {
 		method = "other"
 	}
-	m.requests.WithLabelValues(method, route, strconv.Itoa(status)).Inc()
+	m.requests.WithLabelValues(method, route, statusLabel).Inc()
 	m.duration.WithLabelValues(method, route).Observe(d.Seconds())
 	m.sent.WithLabelValues(route).Add(float64(bytes))
 }

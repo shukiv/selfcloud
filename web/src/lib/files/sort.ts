@@ -20,8 +20,10 @@ export function sortNodes(nodes: Node[], key: SortKey, dir: SortDir, lang: strin
         return collator.compare(a.name, b.name);
     }
   };
+  // Folders come first, then shortcuts, then files: each group is sorted by the key.
+  const group = (n: Node) => (n.kind === 'dir' ? 0 : n.kind === 'shortcut' ? 1 : 2);
   return [...nodes].sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1;
+    if (group(a) !== group(b)) return group(a) - group(b);
     const c = compare(a, b) * sign;
     return c !== 0 ? c : collator.compare(a.name, b.name);
   });

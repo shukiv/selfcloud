@@ -3,7 +3,7 @@
 import type { Node } from './types';
 
 // The kinds the interface shows an icon and a preview for.
-export type Kind = 'folder' | 'image' | 'pdf' | 'video' | 'audio' | 'text' | 'office' | 'archive' | 'file';
+export type Kind = 'folder' | 'image' | 'pdf' | 'video' | 'audio' | 'text' | 'office' | 'archive' | 'file' | 'shortcut';
 
 const IMAGE = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml']);
 const TEXT = new Set([
@@ -44,6 +44,8 @@ export function baseType(mime: string | undefined): string {
 // kindOf classifies a node by its kind and media type.
 export function kindOf(node: Pick<Node, 'kind' | 'mime_type'>): Kind {
   if (node.kind === 'dir') return 'folder';
+  // A shortcut has its own icon whatever its target is: an unavailable target must not show what it is.
+  if (node.kind === 'shortcut') return 'shortcut';
   const mt = baseType(node.mime_type);
   if (IMAGE.has(mt)) return 'image';
   if (mt === 'application/pdf') return 'pdf';

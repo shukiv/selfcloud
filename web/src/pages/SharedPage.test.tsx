@@ -51,6 +51,18 @@ afterEach(() => {
   session.set(null);
 });
 
+describe("shared with me marks a shortcut in words", () => {
+  it("says Unavailable for a shortcut whose target is out of reach", async () => {
+    stubFetch(() => ({
+      status: 200,
+      body: { items: [{ ...item("nod_3", "Gone link", "mateo"), kind: "shortcut", unavailable: true }], next_cursor: null },
+    }));
+    renderPage();
+    const list = await screen.findByRole("list", { name: "Shared with me" });
+    expect(within(within(list).getAllByRole("listitem")[0]).getByText("Unavailable")).toBeTruthy();
+  });
+});
+
 describe("shared with me", () => {
   it("lists the items in the order the server gives, and names the owner only when it is the caller", async () => {
     stubFetch((c: Call) =>

@@ -15,6 +15,10 @@ export type NodeLinkPlan =
 // which is what makes the parent the root and not a directory.
 export function planNodeLink(node: Node, parent: Node | null): NodeLinkPlan {
   if (node.parent_id === null) return { kind: 'folder', folder: node.folder_id };
+  if (parent === null && node.kind === 'shortcut') {
+    // A shortcut is never a directory of its own: with its folder out of reach there is nothing to select it in.
+    return { kind: 'folder', folder: node.folder_id };
+  }
   if (parent === null) {
     // The folder listing cannot be reached. A file is shown on its own; a directory is opened on its own,
     // since a shared directory's folder root is not reachable and would answer not found.

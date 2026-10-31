@@ -18,6 +18,7 @@ import { freePort, launchBrowser, Page } from './cdp.mjs';
 import { linkChecks } from './sharePublic.mjs';
 import { sharingChecks } from './shareDialog.mjs';
 import * as owner from './owner.mjs';
+import * as p3 from './p3.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -587,6 +588,7 @@ async function main() {
     await rawPut(base, `/api/v1/folders/${teamB}/files?path=%2Freadme.txt`, accountKey, 'read me\n');
     check(true, 'two team spaces made; the member edits one and reads the other');
     await owner.p1Setup({ api, rawPut }, base, accountKey, memberID, randomBytes);
+    const p3ids = await p3.p3Setup({ api, rawPut }, base, accountKey, { accountID, teamA, teamB });
 
     const launched = await launchBrowser(await findBrowser(), join(dir, 'chrome-profile'));
     browser = launched.proc;
@@ -697,6 +699,7 @@ async function main() {
     await owner.homeOwnerChecks(page, h, home);
     await owner.ownerChecks(page, h, { base, sink, waitForMail, INVITEE });
     await owner.p1OwnerChecks(page, h, { MEMBER });
+    await p3.p3OwnerChecks(page, h, { teamA, projectsID: p3ids.projectsID });
     await signOut(page);
     await signIn(page, ADMIN);
     await owner.adminChecks(page, h, { base, adminKey, TENANT });
@@ -704,6 +707,7 @@ async function main() {
     await signIn(page, MEMBER);
     await owner.memberNotFound(page, h);
     await owner.p1MemberChecks(page, h, { dir, writeFile, randomBytes, join });
+    await p3.p3MemberChecks(page, h, { teamA, teamB, ...p3ids });
     await owner.signInLinkChecks(page, h, { base, accountID, accountKey, memberID, teamA, MEMBER });
     await owner.switchChecks(page, h, { base, accountID, accountKey, OWNER, MEMBER, signIn });
     await linkChecks(page, { base, accountID, accountKey }, h);

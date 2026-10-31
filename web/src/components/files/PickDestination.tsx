@@ -38,7 +38,7 @@ export default function PickDestination({
   onPick,
   onClose,
 }: {
-  mode: "move" | "copy";
+  mode: "move" | "copy" | "shortcut";
   spaces: FolderAccess[];
   onPick: (dest: Destination) => void;
   onClose: () => void;
@@ -59,9 +59,10 @@ export default function PickDestination({
   const [, bump] = useState(0);
 
   const place = selected !== null ? places.current.get(selected) : undefined;
-  const canPick = place !== undefined && atLeast(place.role, "contributor");
-  const title = mode === "move" ? t("files.pick.move") : t("files.pick.copy");
-  const submit = mode === "move" ? t("files.pick.submitMove") : t("files.pick.submitCopy");
+  // A shortcut goes in a directory, so a space's root cannot be chosen for it.
+  const canPick = place !== undefined && atLeast(place.role, "contributor") && (mode !== "shortcut" || place.dir !== null);
+  const title = mode === "move" ? t("files.pick.move") : mode === "shortcut" ? t("files.pick.shortcut") : t("files.pick.copy");
+  const submit = mode === "move" ? t("files.pick.submitMove") : mode === "shortcut" ? t("files.pick.submitShortcut") : t("files.pick.submitCopy");
 
   // loadChildren reads one page of a place's directories. A reset replaces the children, a later page adds to them.
   async function loadChildren(key: string, reset: boolean) {

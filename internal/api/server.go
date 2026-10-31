@@ -34,6 +34,10 @@ import (
 // sweepInterval is how often housekeeping runs: blob removal, expired sessions and tokens.
 const sweepInterval = 5 * time.Minute
 
+// errServerShutdown is the cause the server gives when it cancels requests at its shutdown deadline. A request
+// cancelled with it is a server-side failure, not a client that went away (respond.go clientGone).
+var errServerShutdown = errors.New("server shutdown: requests cancelled at the deadline")
+
 // shutdownGrace is how long requests get to wrap up after their contexts are cancelled at the
 // shutdown deadline, before their connections are closed.
 const shutdownGrace = 5 * time.Second
@@ -588,8 +592,8 @@ func (s *Server) Run(ctx context.Context) error {
 // long transfers can save their progress, and after shutdownGrace their connections are
 // closed.
 func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
-	baseCtx, cancelBase := context.WithCancel(context.WithoutCancel(ctx))
-	defer cancelBase()
+	baseCtx, cancelBase := context.WithCancelCause(context.WithoutCancel(ctx))
+	defer cancelBase(nil)
 	// The view recorder outlives the HTTP shutdown, so views recorded while requests finish are written. Its last
 	// batch is written before Serve returns, while the store is still open.
 	viewsCtx, stopViews := context.WithCancel(baseCtx)
@@ -644,7 +648,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	defer s.bg.Wait()
 	if err := hs.Shutdown(shCtx); errors.Is(err, context.DeadlineExceeded) {
 		s.log.Warn("requests still running at the shutdown deadline; cancelling them")
-		cancelBase()
+		cancelBase(errServerShutdown)
 		grace, cancelGrace := context.WithTimeout(context.Background(), shutdownGrace)
 		defer cancelGrace()
 		if err := hs.Shutdown(grace); err != nil {

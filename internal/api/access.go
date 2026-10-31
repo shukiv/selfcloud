@@ -101,6 +101,11 @@ func nodeAccessIn(ctx context.Context, rd accessReader, p *auth.Principal, nodeI
 	if store.RoleRank(role) == 0 {
 		return nil, "", nodeNotFound()
 	}
+	// A link visitor learns nothing of a shortcut, not even that it exists: every route answers as for an item outside
+	// the link (decision 24). Checked here, so no route can answer with a kind-based refusal instead.
+	if p != nil && p.Kind == auth.KindShareLink && n.Kind == store.KindShortcut {
+		return nil, "", nodeNotFound()
+	}
 	return n, role, nil
 }
 

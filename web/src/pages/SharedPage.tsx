@@ -14,6 +14,7 @@ import { kindOf } from "../lib/files/kind";
 import { sharedWithMe } from "../lib/sharing/api";
 import type { Node, Page } from "../lib/files/types";
 import Icon from "../components/files/Icon";
+import KindMarks from "../components/files/KindMarks";
 
 // Shared with me: the items other people shared with the caller, each at the role it has, in the order the server
 // gives them. An item opens in its folder, through its address (/n/{nod}), like any link a share mail carries.
@@ -86,6 +87,7 @@ export default function SharedPage() {
                 <a href={`/n/${n.id}`} style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere", fontWeight: 600 }}>
                   <bdi>{n.name}</bdi>
                 </a>
+                <KindMarks node={n} />
                 <Tag>{t(`role.${n.role ?? "viewer"}`)}</Tag>
                 <span style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
                   {t("shared.lastChange", { date: formatDate(n.modified_at, lang) })}
