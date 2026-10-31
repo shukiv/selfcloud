@@ -770,9 +770,16 @@ func (s *Server) zipFailed(ctx context.Context, z *store.Zip, w *zipWork, cause 
 	} else if cause != nil && !errors.Is(cause, context.Canceled) && !errors.Is(cause, context.DeadlineExceeded) {
 		reason = cause.Error()
 	}
+	// The code and reason of a refusal are kept apart from the text, so the job route can name them to the interface.
+	var code, errReason string
+	var refusal *apierr.Error
+	if errors.As(cause, &refusal) {
+		code = string(refusal.Code)
+		errReason, _ = refusal.Details["reason"].(string)
+	}
 	s.atWrite()
 	if err := s.store.Write(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-		return tx.FailZip(ctx, z.ID, reason)
+		return tx.FailZip(ctx, z.ID, code, errReason, reason)
 	}); err != nil {
 		s.log.Error("cannot record a failed zip", "zip", z.ID, "error", err)
 	}

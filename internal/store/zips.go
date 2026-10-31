@@ -26,6 +26,8 @@ type Zip struct {
 	SnapshotAt  time.Time
 	ExpiresAt   time.Time
 	Error       string
+	ErrorCode   string // the API error code of a failure, or ""; the interface translates it
+	ErrorReason string // the details' reason of that code, or ""
 	CreatedAt   time.Time
 	Roots       []string
 }
@@ -38,14 +40,14 @@ const (
 )
 
 const zipCols = `id, account_id, created_by, created_kind, created_cred, state, size, sha256, entries, skipped, reserved,
-	snapshot_at, expires_at, error, created_at`
+	snapshot_at, expires_at, error, created_at, error_code, error_reason`
 
 func scanZip(row interface{ Scan(...any) error }) (*Zip, error) {
 	var z Zip
 	var snap, exp sql.NullInt64
 	var created int64
 	if err := row.Scan(&z.ID, &z.AccountID, &z.CreatedBy, &z.CreatedKind, &z.CreatedCred, &z.State, &z.Size, &z.SHA256, &z.Entries,
-		&z.Skipped, &z.Reserved, &snap, &exp, &z.Error, &created); err != nil {
+		&z.Skipped, &z.Reserved, &snap, &exp, &z.Error, &created, &z.ErrorCode, &z.ErrorReason); err != nil {
 		return nil, err
 	}
 	if snap.Valid {
@@ -91,7 +93,9 @@ func (s *Store) zipRoots(ctx context.Context, zipID string) ([]string, error) {
 
 // InsertZip stores a new pending zip and its roots.
 func (tx *Tx) InsertZip(ctx context.Context, z *Zip) error {
-	_, err := tx.q.ExecContext(ctx, `INSERT INTO zips (`+zipCols+`) VALUES (?, ?, ?, ?, ?, ?, 0, '', 0, 0, 0, NULL, NULL, '', ?)`,
+	_, err := tx.q.ExecContext(ctx, `INSERT INTO zips (id, account_id, created_by, created_kind, created_cred, state, size, sha256,
+		entries, skipped, reserved, snapshot_at, expires_at, error, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, 0, '', 0, 0, 0, NULL, NULL, '', ?)`,
 		z.ID, z.AccountID, z.CreatedBy, z.CreatedKind, z.CreatedCred, ZipPending, millis(z.CreatedAt))
 	if err != nil {
 		return err
@@ -213,13 +217,14 @@ func (tx *Tx) CompleteZip(ctx context.Context, id string, size int64, sha string
 	return n == 1, err
 }
 
-// FailZip makes a pending zip failed, with a short reason. Its reservation is released.
-func (tx *Tx) FailZip(ctx context.Context, id, reason string) error {
+// FailZip makes a pending zip failed, with a short reason and the code and reason of the refusal, if it has one.
+// Its reservation is released.
+func (tx *Tx) FailZip(ctx context.Context, id, code, errReason, reason string) error {
 	if len(reason) > 200 {
 		reason = reason[:200]
 	}
-	_, err := tx.q.ExecContext(ctx, `UPDATE zips SET state = 'failed', reserved = 0, error = ?
-		WHERE id = ? AND state = 'pending'`, reason, id)
+	_, err := tx.q.ExecContext(ctx, `UPDATE zips SET state = 'failed', reserved = 0, error = ?, error_code = ?, error_reason = ?
+		WHERE id = ? AND state = 'pending'`, reason, code, errReason, id)
 	return err
 }
 

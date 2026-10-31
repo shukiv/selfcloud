@@ -46,7 +46,7 @@ space ("My files"), and a group can hold users.
 |---|---|
 | Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route |
 | Preview of office documents | Planned (s3): the API has the editor's view mode (l1 to l3), which the interface does not open yet; conversion to PDF is not built |
-| Thumbnails | Built in part (s1): JPEG, PNG and GIF thumbnails from the API, made in a child process. Document previews are built (s3, decision 37), not yet usable in production. The interface (s4) is not built |
+| Thumbnails | Built in part (s1, s4a): JPEG, PNG and GIF thumbnails from the API, made in a child process, and shown in the grid's tiles (s4a, decision 38; the list view has no thumbnails). Document previews are built (s3, decision 37), not yet usable in production |
 | Details pane (size, type, owner, location, dates, who has access) | Built (k2): size, type, dates, creator, owner and your access. Location is in the breadcrumbs. Built (k3): "Share" and "Who has access" open the share dialog |
 | Activity pane per file | New (r): from the audit log, filtered by access |
 
@@ -158,7 +158,7 @@ space ("My files"), and a group can hold users.
 | Keyboard shortcuts and a shortcut list (ctrl+/) | Built in part (k2): arrows, Enter, Space, F2, Delete, Backspace, Escape and Ctrl+A in the file list. The shortcut list (ctrl+/) is not built |
 | Multi-select, right-click menu, grid and list, density, dark mode | Built in part (k2): multi-select, grid and list, dark mode (k1). No right-click menu, no density |
 | Upload progress panel | Built (k2): the upload tray, with pause, resume, cancel and retry |
-| Download progress, download a selection as zip | Built (s2, decision 35): a stored zip made as a job, served with `Range`, kept for `zip.ttl` and only for its maker. The streamed zip with no temporary copy (row 160's alternative) is not built |
+| Download progress, download a selection as zip | Built (s2, decision 35; the interface in s4a, decision 38): a stored zip made as a job, served with `Range`, kept for `zip.ttl` and only for its maker. The interface offers Download as zip for a folder and a selection, shows the job's progress as a spinner (the job has no percentage), and names the items left out. The streamed zip with no temporary copy (row 160's alternative) is not built |
 | Copy link, open in new tab | Planned (k), not in k2 |
 | Cut, paste, paste as shortcut | New (p/k) |
 
@@ -183,7 +183,7 @@ space ("My files"), and a group can hold users.
 | Changes feed (what changed since a token) | New (t): for sync clients and API clients |
 | Push notifications | Built (j1 to j4): webhook endpoints, events, the delivery worker and quota warnings (decisions 26 to 30) |
 | Export to other formats | Built (s3, decision 37): `POST /nodes/{nod}/exports`, through Collabora's conversion. Not usable in production until a live run |
-| Thumbnails | Built in part (s1): images from the API; the interface is not built (s4) |
+| Thumbnails | Built in part (s1, s4a): images from the API; the grid's tiles show them (s4a, decision 38) |
 | "Open with" office editor | Built in part (l1 to l3): the editor routes and the WOPI host, with no button in the interface yet; Rename (l4) is not built |
 | Embeddable file picker for client applications | New (t): a small script client apps embed, over delegated tokens (i) |
 
@@ -206,7 +206,7 @@ come **before** k.
 | pg | PostgreSQL as an option for the metadata store (design decision 7), before q | Medium |
 | q | Search: filters and chips, label search, full text (FTS5), optional OCR | Large |
 | r | Comments and mentions built (r1, r2, decision 39); activity pane, notifications, who-viewed planned (r3 to r7) | Medium |
-| s | Thumbnails (built in part, s1: images from the API), document previews, conversions and export, zip download | Medium |
+| s | Thumbnails (built in part, s1 and s4a: images from the API and the grid's tiles), document previews, conversions and export, zip download (built, s2 and s4a) | Medium |
 | l | WOPI host for Collabora (built in parts l1 to l3; the interface button, Rename (l4) and the README example are not built) | Medium |
 | j | Webhooks (built, j1 to j4) | Small |
 | t | Changes feed, file picker, WebDAV, installable web app | Medium |

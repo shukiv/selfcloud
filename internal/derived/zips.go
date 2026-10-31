@@ -121,7 +121,7 @@ func (z *ZipFiles) Sweep(ctx context.Context, now time.Time, limit int) (ZipSwee
 	}
 	for _, zp := range abandoned {
 		if err := z.st.Write(ctx, func(tx *store.Tx) error {
-			return tx.FailZip(ctx, zp.ID, "the job that made this zip did not finish")
+			return tx.FailZip(ctx, zp.ID, "", "", "the job that made this zip did not finish")
 		}); err != nil {
 			return out, err
 		}

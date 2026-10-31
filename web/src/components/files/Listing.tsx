@@ -12,6 +12,7 @@ import type { Node } from "../../lib/files/types";
 import type { ViewMode } from "../../lib/files/viewPrefs";
 import Icon from "./Icon";
 import KindMarks from "./KindMarks";
+import Thumb from "./Thumb";
 
 
 // Click is what the page needs from a mouse event: which modifiers were held.
@@ -298,7 +299,11 @@ export default function Listing(p: ListingProps) {
               userSelect: "none",
             }}
           >
-            <Icon kind={kindOf(n)} size={40} colour={n.color} />
+            {thumbable(n) ? (
+              <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} fallback={<Icon kind={kindOf(n)} size={40} colour={n.color} />} />
+            ) : (
+              <Icon kind={kindOf(n)} size={40} colour={n.color} />
+            )}
             {p.renameID === n.id ? nameField(n) : <bdi style={{ overflowWrap: "anywhere" }}>{n.name}</bdi>}
             {linkBadge(n)}
             <KindMarks node={n} />
@@ -311,6 +316,11 @@ export default function Listing(p: ListingProps) {
       })}
     </div>
   );
+}
+
+// thumbable is an image the server can thumbnail: the server sends has_thumbnail on those, and on no other item.
+function thumbable(n: Node): boolean {
+  return n.kind === "file" && n.has_thumbnail !== undefined;
 }
 
 // sizeOf is a file's size. A folder and a shortcut have none to show.

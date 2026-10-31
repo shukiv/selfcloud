@@ -14,14 +14,17 @@ import (
 )
 
 type jobJSON struct {
-	ID         string     `json:"id"`
-	Kind       string     `json:"kind"`
-	Target     string     `json:"target"` // what the job acts on: for node.copy, the new copy's root
-	Status     string     `json:"status"`
-	Error      string     `json:"error,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	FinishedAt *time.Time `json:"finished_at"`
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Target string `json:"target"` // what the job acts on: for node.copy, the new copy's root
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+	// error_code and error_reason name why a zip job failed, for the interface to translate; error is the server's text.
+	ErrorCode   string     `json:"error_code,omitempty"`
+	ErrorReason string     `json:"error_reason,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	FinishedAt  *time.Time `json:"finished_at"`
 }
 
 func toJobJSON(j *store.Job) jobJSON {
@@ -88,6 +91,16 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) error {
 	if p := principalOf(r); !p.ManagesAccount(job.AccountID) && !queuedBy(job, p) {
 		return notFound("job")
 	}
-	writeJSON(w, http.StatusOK, toJobJSON(job))
+	out := toJobJSON(job)
+	if job.Kind == jobZip && job.Status == store.JobFailed {
+		z, err := s.store.Zip(r.Context(), job.AccountID, job.Target)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if z != nil {
+			out.ErrorCode, out.ErrorReason = z.ErrorCode, z.ErrorReason
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 	return nil
 }

@@ -17,6 +17,7 @@ import { childrenPage, copyNode, deleteNode, getJob, getMe, mkdir, moveNode, ren
 import { locate, joinPath, type Here } from "../lib/files/location";
 import { starNode, unstarNode } from "../lib/stars";
 import { fileErrorText } from "../lib/files/fileErrors";
+import { makeZip, type ZipPhase } from "../lib/files/zips";
 import { nameProblem, nameMessageKey, uploadTargetFor, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
 import { parseFilesPath, filesURL, type FilesRoute } from "../lib/files/route";
 import { trimCrumbs, type Crumb } from "../lib/files/breadcrumbs";
@@ -50,11 +51,13 @@ import NotFoundPage from "./NotFoundPage";
 //
 // The share dialog is loaded on first use: it is not part of the file browser's first load.
 const ShareDialog = lazy(() => import("../components/share/ShareDialog"));
+// The zip dialog is loaded on first use, as the share dialog is.
+const ZipDialog = lazy(() => import("../components/files/ZipDialog"));
 
 // Sharing from this page: the Share button in the selection bar (when the caller may share the item), Share and
 // "Who has access" in Details, and the access request on a not-found directory.
 
-type Dialog = "newFolder" | "delete" | "pick" | "details" | "versions" | "preview" | "share" | "pickShortcut" | "shortcut" | "unavailable" | null;
+type Dialog = "newFolder" | "delete" | "pick" | "details" | "versions" | "preview" | "share" | "pickShortcut" | "shortcut" | "unavailable" | "zip" | null;
 
 // Place is where the browser is, or why it cannot show it.
 type PlaceState =
@@ -141,6 +144,17 @@ export default function FilesPage() {
   };
 
   const [dialog, setDialog] = useState<Dialog>(null);
+  // zip is what the zip dialog shows, and zipStop stops watching the zip. The page starts a zip, and stops it when the
+  // dialog goes: closing the dialog, or a place change, ends the watch, so no download starts behind the person's back.
+  const [zip, setZip] = useState<ZipPhase | null>(null);
+  const zipStop = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (dialog === "zip") return;
+    zipStop.current?.();
+    zipStop.current = null;
+    setZip(null);
+  }, [dialog]);
+  useEffect(() => () => zipStop.current?.(), []);
   const [pickMode, setPickMode] = useState<"move" | "copy">("move");
   const [target, setTarget] = useState<Node | null>(null);
   // dialogRef is the dialog as of the last render, for a callback that may run after the dialog has changed.
@@ -835,6 +849,30 @@ export default function FilesPage() {
     if (!ok) setNotice(t("files.err.downloadRestricted"));
   }
 
+  // makeZipOf makes a zip of the items selected and opens the dialog that shows it. The download starts by itself when
+  // the zip is ready, as a browser link.
+  function makeZipOf(items: Node[]) {
+    zipStop.current?.();
+    setZip({ kind: "making" });
+    setDialog("zip");
+    zipStop.current = makeZip(
+      items.map((n) => n.id),
+      {
+        lang,
+        onReady: (skipped, zipID) => setZip({ kind: "ready", skipped, zip: zipID }),
+        onFailed: (text) => setZip({ kind: "failed", text }),
+        onGiveUp: () => setZip({ kind: "slow" }),
+      },
+    );
+  }
+
+  // zipOffered is the zip action for a selection: a folder, or several items. A shortcut is never zipped, and an item the
+  // no-download rule keeps from the caller is not offered (the server refuses it again).
+  function zipOffered(items: Node[]): boolean {
+    if (items.length === 0 || (items.length === 1 && items[0].kind !== "dir")) return false;
+    return items.every((n) => n.kind !== "shortcut" && downloadAllowed(gated(n)));
+  }
+
   function changePrefs(next: ViewPrefs) {
     setPrefs(next);
     writePrefs(next);
@@ -967,6 +1005,7 @@ export default function FilesPage() {
               {selectedNodes.length === 1 && selectedNodes[0].kind === "file" && downloadAllowed(gated(selectedNodes[0])) && (
                 <Button onClick={() => void download(selectedNodes[0])}>{t("files.act.download")}</Button>
               )}
+              {zipOffered(selectedNodes) && <Button onClick={() => makeZipOf(selectedNodes)}>{t("files.act.zip")}</Button>}
               {selectedNodes.length === 1 && previewable(selectedNodes[0]) && <Button onClick={() => openPreview(selectedNodes[0])}>{t("files.act.preview")}</Button>}
               {selectedNodes.length === 1 && (
                 <Button
@@ -1200,6 +1239,12 @@ export default function FilesPage() {
       )}
 
       {dialog === "versions" && target && <Versions node={gated(target)} onChanged={() => void reload()} onClose={() => setDialog(null)} />}
+
+      {dialog === "zip" && zip && (
+        <Suspense fallback={null}>
+          <ZipDialog phase={zip} onClose={() => setDialog(null)} />
+        </Suspense>
+      )}
 
       {dialog === "preview" && previewItems.length > 0 && (
         <Preview items={previewItems} index={previewIndex} onIndex={(i) => setPreviewIndex(i)} onClose={() => setDialog(null)} />

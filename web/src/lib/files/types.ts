@@ -36,6 +36,9 @@ export interface Node {
   owner_name?: string;
   // has_link is set when the item carries a share link the caller may know of (the children listing only).
   has_link?: boolean;
+  // has_thumbnail is set on an image file the server can thumbnail (JPEG, PNG or GIF): true once its smallest
+  // thumbnail is ready, false until then. Absent for every other item.
+  has_thumbnail?: boolean;
   // starred is set for a signed-in caller (the caller's own star); absent for keys, admins and link visitors.
   starred?: boolean;
 }
@@ -129,7 +132,11 @@ export interface Job {
   kind: string;
   target: string;
   status: 'queued' | 'running' | 'succeeded' | 'failed';
+  // error is the server's own text, which the interface does not show. error_code and error_reason name a failed zip's
+  // refusal, for the interface to translate.
   error?: string;
+  error_code?: string;
+  error_reason?: string;
   finished_at: string | null;
 }
 

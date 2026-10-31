@@ -6108,7 +6108,9 @@ components:
         status:
           type: string
           enum: [queued, running, succeeded, failed]
-        error: { type: string, description: Why the job failed. }
+        error: { type: string, description: Why the job failed. The server's own text, for people who read logs; the interface does not show it. }
+        error_code: { type: string, description: "For a failed zip job, the API error code of its refusal (too_large, storage_full), or absent." }
+        error_reason: { type: string, description: "For a failed zip job, the reason of that refusal (zip_disk, zip_account_disk), or absent." }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         finished_at: { type: [string, "null"], format: date-time }

@@ -96,6 +96,11 @@ export function getJob(job: string): Promise<Job> {
   return api<Job>('GET', `/api/v1/jobs/${job}`);
 }
 
+// createZipJob asks for a zip of the nodes named. The answer is the job; its target is the zip.
+export function createZipJob(nodes: string[]): Promise<Job> {
+  return api<Job>('POST', '/api/v1/zips', { body: { nodes } });
+}
+
 export function deleteNode(nod: string): Promise<void> {
   return api<void>('DELETE', `/api/v1/nodes/${nod}`);
 }

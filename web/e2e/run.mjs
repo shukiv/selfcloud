@@ -21,6 +21,7 @@ import * as owner from './owner.mjs';
 import * as p3 from './p3.mjs';
 import * as p4 from './p4.mjs';
 import * as p5 from './p5.mjs';
+import * as s4a from './s4a.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -693,6 +694,7 @@ async function main() {
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
     await fileBrowserChecks(page, { base, dir, teamA, teamB });
     await fileBrowserExtraChecks(page, { dir, teamA });
+    await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
     const home = await owner.homeChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
     await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
 
@@ -731,7 +733,8 @@ async function main() {
     check(page.expectedAnswers.get('dropped connection')?.length >= 1, 'the connection the run dropped was refused while it was down, and counted');
     check(page.expectedAnswers.get('start-up probe')?.length >= 1, 'the start-up probe of an anonymous visitor was refused, and counted');
     check(page.expectedAnswers.get('used sign-in link')?.length === 1, 'the used sign-in link was refused once, on the second visit');
-    const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:'));
+    // A blob: address is the page's own object (a thumbnail the page made from a same-origin answer), not a request elsewhere.
+    const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:') && !u.startsWith('blob:' + base + '/'));
     check(foreign.length === 0, `every request is same-origin (${foreign.length} foreign: ${foreign.join(' ')})`);
     console.log(`requests seen: ${page.requests.length}, all on ${base}`);
     console.log('e2e passed');

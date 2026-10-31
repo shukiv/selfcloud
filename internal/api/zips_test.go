@@ -611,3 +611,40 @@ func createZipWithCred(t *testing.T, fx *sharingFixture, cred string, nodes ...s
 	wantStatus(t, rec, 202)
 	return decode[jobJSON](t, rec)
 }
+
+// A failed zip job names its refusal by code and reason, so the interface can translate it (decision 38). The
+// text stays the server's, and no other field changes.
+func TestFailedZipJobNamesItsCode(t *testing.T) {
+	fx := zipFixture(t, func(c *config.Config) { c.Zip.MaxEntries = 3 })
+	job := createZip(t, fx, nil, fx.a.ID)
+	if j := runZip(t, fx, job.ID); j.Status != "failed" {
+		t.Fatalf("job %s, want failed on the entry limit", j.Status)
+	}
+	got := decode[jobJSON](t, rawCall(t, fx.s, "GET", "/api/v1/jobs/"+job.ID, fx.key, "", nil))
+	if got.ErrorCode != "too_large" || got.ErrorReason != "" || got.Error == "" {
+		t.Errorf("job error code %q reason %q text %q, want too_large with no reason and the server's text", got.ErrorCode, got.ErrorReason, got.Error)
+	}
+}
+
+func TestFailedZipJobNamesItsStorageReason(t *testing.T) {
+	fx := zipFixture(t, func(c *config.Config) {
+		c.Zip.MaxBytes = 1 << 20
+		c.Zip.MaxDisk = 1 << 20
+		c.Zip.MaxDiskPerAccount = 1 << 20
+	})
+	mkdirs(t, fx.s, fx.key, fx.fld.ID, "/big")
+	putNode(t, fx.s, fx.key, fx.fld.ID, "/big/one.bin", incompressible(600<<10))
+	first := createZip(t, fx, nil, rootOf(t, fx, fx.fld.ID))
+	if j := runZip(t, fx, first.ID); j.Status != "succeeded" {
+		t.Fatalf("first zip %s: %s", j.Status, j.Error)
+	}
+	putNode(t, fx.s, fx.key, fx.fld.ID, "/a/two.bin", incompressible(600<<10))
+	second := createZip(t, fx, nil, fx.a.ID)
+	if j := runZip(t, fx, second.ID); j.Status != "failed" {
+		t.Fatalf("second zip %s, want failed on the disk budget", j.Status)
+	}
+	got := decode[jobJSON](t, rawCall(t, fx.s, "GET", "/api/v1/jobs/"+second.ID, fx.key, "", nil))
+	if got.ErrorCode != "storage_full" || got.ErrorReason != "zip_disk" {
+		t.Errorf("job error code %q reason %q, want storage_full with zip_disk", got.ErrorCode, got.ErrorReason)
+	}
+}
