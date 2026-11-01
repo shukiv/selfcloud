@@ -277,6 +277,9 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
     check(inTarget.includes('f03.txt'), 'Ctrl+V moved f03.txt into Target');
     await press(page, 'Backspace');
     await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'w1-long'`, 10000);
+    // The listing may still show the row from its cache until its refetch ends: wait for the row to leave, then check. A row
+    // that never leaves still fails the check.
+    await page.waitFor(`!document.querySelector(${q(itemSel('f03.txt'))})`, 10000).catch(() => undefined);
     check(!(await listed(page)).includes('f03.txt'), 'f03.txt is no longer in the folder it left');
     // And back: cut it inside Target, go up with Alt+Up, paste.
     await openByDoubleClick(page, 'Target');

@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiError";
+import { Pager } from "../../lib/files/pager";
 import type { Node } from "../../lib/files/types";
+
+// The playlist loads lazily, so the first wait for a video allows for that load.
+configure({ asyncUtilTimeout: 5000 });
+
+// mediaOf is the playlist a video opens with: the file alone, with no more of its folder.
+const mediaOf = (node: Node) => ({ start: node, folder: new Pager([node], null, async () => ({ items: [] })) });
 
 const signedLink = vi.fn();
 const startDownload = vi.fn();
@@ -152,6 +159,27 @@ describe("Preview", () => {
   });
 });
 
+describe("Preview's Download in a playlist", () => {
+  it("shows the same downloads-off notice as the normal path when the server refuses the download", async () => {
+    startDownload.mockResolvedValue(false);
+    const a = file("a.mp4", "video/mp4");
+    const folder = new Pager([a], null, async () => ({ items: [] }));
+    render(<Preview items={[a]} index={0} onClose={() => {}} onIndex={() => {}} media={{ start: a, folder }} />);
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    expect(startDownload).toHaveBeenCalledWith("n-a.mp4");
+    expect(await screen.findByText("Downloads are off for this file.")).toBeTruthy();
+  });
+
+  it("does not put the focus on Close when it opens, so a Space press reaches the player", async () => {
+    const a = file("a.mp4", "video/mp4");
+    const folder = new Pager([a], null, async () => ({ items: [] }));
+    render(<Preview items={[a]} index={0} onClose={() => {}} onIndex={() => {}} media={{ start: a, folder }} />);
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Close" }));
+  });
+});
+
 describe("Preview direction icons", () => {
   it("draws the previous and next chevrons as icons that mirror in right to left", () => {
     const items = [file("a.png", "image/png"), file("b.png", "image/png")];
@@ -195,7 +223,8 @@ describe("Preview keeps the text of the file on screen", () => {
 
   // A format the browser cannot read says so in words, and asks for no further link. The header keeps Download.
   it("says a video this browser cannot play is unsupported, after one new link that fails the same way", async () => {
-    render(<Preview items={[file("hevc.mp4", "video/mp4")]} index={0} onClose={() => {}} onIndex={() => {}} />);
+    const hevc = file("hevc.mp4", "video/mp4");
+    render(<Preview items={[hevc]} index={0} onClose={() => {}} onIndex={() => {}} media={mediaOf(hevc)} />);
     const video = await waitFor(() => {
       const el = document.querySelector("video");
       if (!el) throw new Error("no video yet");
@@ -211,14 +240,17 @@ describe("Preview keeps the text of the file on screen", () => {
     expect(screen.getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0);
   });
 
-  // Moving to the next file stops the one playing: its player is taken away with the file it showed.
-  it("pauses a video when the next file replaces it", async () => {
+  // Moving to the next file of the playlist stops the one playing: its player is taken away with the file it showed.
+  it("pauses a video when the playlist moves to the next file", async () => {
     const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
-    const items = [file("a.mp4", "video/mp4"), file("b.mp4", "video/mp4")];
-    const { rerender } = render(<Preview items={items} index={0} onClose={() => {}} onIndex={() => {}} />);
+    const a = file("a.mp4", "video/mp4");
+    const b = file("b.mp4", "video/mp4");
+    const folder = new Pager([a, b], null, async () => ({ items: [] }));
+    render(<Preview items={[a]} index={0} onClose={() => {}} onIndex={() => {}} media={{ start: a, folder }} />);
     await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
     pause.mockClear();
-    rerender(<Preview items={items} index={1} onClose={() => {}} onIndex={() => {}} />);
+    // The playlist's Next is the player's own: a video's steps are on its bar.
+    fireEvent.click(screen.getByRole("button", { name: "Next file" }));
     await waitFor(() => expect(signedLink).toHaveBeenCalledTimes(2));
     expect(pause).toHaveBeenCalled();
     pause.mockRestore();
@@ -232,7 +264,8 @@ describe("Preview renews a video's link under the same rules as the first load",
     signedLink
       .mockResolvedValueOnce({ url: "https://content.example/first", disposition: "inline", expires_at: "" })
       .mockRejectedValueOnce(new ApiError(403, "download_restricted", {}, 0));
-    render(<Preview items={[file("clip.mp4", "video/mp4")]} index={0} onClose={() => {}} onIndex={() => {}} />);
+    const clip = file("clip.mp4", "video/mp4");
+    render(<Preview items={[clip]} index={0} onClose={() => {}} onIndex={() => {}} media={mediaOf(clip)} />);
     const video = await waitFor(() => {
       const el = document.querySelector("video");
       if (!el) throw new Error("no video yet");

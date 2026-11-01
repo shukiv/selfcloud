@@ -39,6 +39,8 @@ import { session, sessionChanged, sessionKey, signingOut } from "../lib/session"
 import { queryKey, refreshTree } from "../lib/query";
 import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/files/folders";
 import { keepTargetOnSave } from "../lib/files/appearance";
+import { folderPageReader } from "../lib/files/folderPages";
+import { focusAfterClose } from "../lib/files/focusAfterClose";
 import { childrenPage, copyNode, deleteNode, getJob, getMe, mkdir, moveNode, renameNode, restoreNode, serverLimits, statOrNull, type Transfer } from "../lib/files/api";
 import { locate, joinPath, type Here } from "../lib/files/location";
 import { starNode, unstarNode } from "../lib/stars";
@@ -64,7 +66,9 @@ import { manager, uploads } from "../lib/files/uploads";
 import Breadcrumbs, { type Place } from "../components/files/Breadcrumbs";
 import Listing, { type Click, useCoarsePointer } from "../components/files/Listing";
 import Details from "../components/files/Details";
-import Preview from "../components/files/Preview";
+import Preview, { type MediaSeed } from "../components/files/Preview";
+import { Pager } from "../lib/files/pager";
+import { isPlayable } from "../lib/files/queue";
 import Versions from "../components/files/Versions";
 import PickDestination, { type Destination } from "../components/files/PickDestination";
 import AddShortcut from "../components/files/AddShortcut";
@@ -282,6 +286,8 @@ export default function FilesPage() {
   const [pending, setPending] = useState<Node[]>([]);
   const [previewItems, setPreviewItems] = useState<Node[]>([]);
   const [previewIndex, setPreviewIndex] = useState(0);
+  // previewMedia is the playlist a video or audio file opened (or the selection played), with the folder's files to read on.
+  const [previewMedia, setPreviewMedia] = useState<MediaSeed | null>(null);
   const [newName, setNewName] = useState("");
   const [newNameError, setNewNameError] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Array<{ id: string; status: Job["status"] }>>([]);
@@ -627,6 +633,29 @@ export default function FilesPage() {
     const list = sorted.filter((x) => previewable(x));
     setPreviewItems(list.map(gated));
     setPreviewIndex(Math.max(0, list.findIndex((x) => x.id === n.id)));
+    // A video or audio file opens the folder's playlist, from that file; other files keep the steps through the list.
+    setPreviewMedia(isPlayable(n) ? { start: gated(n), folder: folderPager() } : null);
+    setDialog("preview");
+  }
+
+  // folderPager reads the folder's playable files, a page at a time, from the listing as it has them: the loaded files in
+  // the listing's order, then the pages the listing has not read yet.
+  function folderPager(): Pager {
+    const pages = childrenQ.data?.pages ?? [];
+    const cursor = pages.length > 0 ? (pages[pages.length - 1].next_cursor ?? null) : null;
+    const folder = folderID as string;
+    const dir = dirID;
+    // The cursor belongs to the listing's sort, so the pages are read with the same sort (lib/files/folderPages.ts).
+    return new Pager(sorted.map(gated), cursor, folderPageReader(folder, dir, prefs.sort));
+  }
+
+  // playSelected plays the selected files that can play, in the listing's order, from the first of them.
+  function playSelected() {
+    const list = sorted.filter((x) => selected.has(x.id) && isPlayable(x)).map(gated);
+    if (list.length === 0) return;
+    setPreviewItems(list);
+    setPreviewIndex(0);
+    setPreviewMedia({ start: list[0], folder: folderPager(), selection: list });
     setDialog("preview");
   }
 
@@ -1295,6 +1324,17 @@ export default function FilesPage() {
       },
     },
     {
+      key: "playSelected",
+      label: t("files.act.playSelected"),
+      icon: <Play {...ic} />,
+      group: 1,
+      hidden: !items.some(isPlayable),
+      // Play selected plays the playable files of a selection of two or more, as a playlist.
+      fits: selectedNodes.length > 1 && selectedNodes.some(isPlayable),
+      enabled: true,
+      run: () => playSelected(),
+    },
+    {
       key: "details",
       label: t("files.act.details"),
       icon: <Info {...ic} />,
@@ -1800,7 +1840,20 @@ export default function FilesPage() {
       )}
 
       {dialog === "preview" && previewItems.length > 0 && (
-        <Preview items={previewItems} index={previewIndex} onIndex={(i) => setPreviewIndex(i)} onClose={() => setDialog(null)} />
+        <Preview
+          items={previewItems}
+          index={previewIndex}
+          onIndex={(i) => setPreviewIndex(i)}
+          onClose={(current) => {
+            // The focus goes back to the row of the file on screen at close, else the row that opened the viewer, else the
+            // listing itself (focusAfterClose skips a row that has gone). After the close, when the rows are still there.
+            const candidates = [current?.id, previewMedia?.start.id, previewItems[previewIndex]?.id];
+            requestAnimationFrame(() => focusAfterClose(listRef.current, candidates)?.focus());
+            setDialog(null);
+            setPreviewMedia(null);
+          }}
+          media={previewMedia ?? undefined}
+        />
       )}
 
       {conflict && (

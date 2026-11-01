@@ -253,3 +253,379 @@ a {
     top: 116px !important;
   }
 }
+
+/* The media player (components/files/MediaPlayer.tsx, MediaControls.tsx, MediaPlaylist.tsx and MediaQueue.tsx). The bar reads
+   left to right in every language: it is dir="ltr" and its antd sliders are direction ltr. A video's bar is a dark scrim
+   over the picture, with light controls, in both page themes. An audio's bar and the playlist panel take the page's
+   colours from the palette (set inline), so they follow the theme. A video's bar fades out while it plays (--hidden) and
+   stays while focus is in it. Touch targets are 44 px on a coarse pointer, at any width. Only the playlist panel scrolls
+   in the viewer: the player stays where it is. */
+.media-stage {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.media-stage[data-kind="audio"] {
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+.media-stage:fullscreen {
+  border-radius: 0;
+  height: 100%;
+}
+.media-picture {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  background: #000;
+}
+.media-sound {
+  width: 100%;
+  margin: 8px 0;
+}
+.media-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: opacity 200ms ease;
+}
+.media-stage[data-kind="video"] .media-controls {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+}
+/* The video's buttons are bare: light icons with no filled background. The focus ring stays visible. */
+.media-stage[data-kind="video"] .media-btn.ant-btn {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: #fff;
+}
+.media-stage[data-kind="video"] .media-btn.ant-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+.media-btn.ant-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.media-controls--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+/* The note that the browser waits for a press (the autoplay rule). It sits above the seek row, in the bar's own colours. */
+.media-press {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: inherit;
+}
+.media-seek-row,
+.media-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.media-seek {
+  position: relative;
+  flex: 1 1 160px;
+  min-width: 120px;
+}
+/* The seek bar's base is the bar's own text colour at low strength, so it shows on a video's scrim and on a page's card. */
+.media-seek::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.3;
+}
+.media-seek .ant-slider {
+  position: relative;
+  z-index: 1;
+  margin: 8px 0;
+}
+/* The rail is left to the base and the buffered part, so only the played part is drawn over them. */
+.media-seek .ant-slider-rail {
+  background: transparent;
+}
+.media-buffered {
+  position: absolute;
+  top: 50%;
+  inset-inline-start: 0;
+  height: 4px;
+  transform: translateY(-50%);
+  background: currentColor;
+  opacity: 0.5;
+  border-radius: 2px;
+}
+.media-time {
+  font-variant-numeric: tabular-nums;
+  min-width: 3.2em;
+  text-align: center;
+}
+.media-spacer {
+  flex: 1 1 0;
+}
+.media-volume {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 140px;
+}
+.media-volume .ant-slider {
+  flex: 1 1 auto;
+  margin: 0;
+}
+.media-btn.ant-btn {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+}
+.media-speed {
+  width: 84px;
+}
+/* The viewer's playlist: on a phone the player is on top and the panel below it scrolls; on a wide screen the panel is a
+   column beside the player, and scrolls too. Only the panel scrolls. */
+.media-playlist {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.media-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+.media-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+.media-screen .media-stage {
+  width: 100%;
+}
+.media-queue {
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  overflow: auto;
+}
+.media-queue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.media-queue-title {
+  margin: 0;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.media-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.media-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* One row is one line at every width: grip, name (ellipsis, full name on hover), the playing mark and the More button. */
+.media-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  min-height: 44px;
+}
+.media-row--on {
+  font-weight: 600;
+}
+.media-row--off {
+  opacity: 0.6;
+}
+.media-grip,
+.media-title {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  padding: 0;
+}
+.media-grip {
+  cursor: grab;
+  flex: 0 0 auto;
+  width: 32px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+.media-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.media-title bdi {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-title:disabled {
+  cursor: default;
+}
+.media-state {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.media-row-buttons {
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+.media-queue-empty,
+.media-queue-more {
+  margin: 0;
+}
+.media-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid;
+  padding-top: 8px;
+}
+
+/* Touch: a coarse pointer gets 44 px targets at any width. */
+@media (pointer: coarse) {
+  .media-btn.ant-btn,
+  .media-queue .ant-btn,
+  .media-row-buttons .ant-btn,
+  .media-grip,
+  .media-title {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .media-btn.ant-btn {
+    height: 44px;
+  }
+  /* The speed list and the sliders' handles are touch targets too. A handle is drawn as before (its ring is 14 px, centred
+     in the 44 px box); the box is what a finger hits. The margins keep the centre where the rail's centre is. */
+  .media-speed.ant-select,
+  .media-speed .ant-select-selector {
+    height: 44px;
+    min-height: 44px;
+  }
+  .media-speed .ant-select-selection-item,
+  .media-speed .ant-select-selection-placeholder {
+    line-height: 42px;
+  }
+  /* The volume's own block is wider here, so its rail keeps 100 px or more after the 44 px button, the gap and the margins
+     (140 px left about 48 px of rail on a tablet). Under 600 px the block is the bar's full width, from the rule below. */
+  .media-volume {
+    width: 220px;
+  }
+  /* Half of a handle reaches past the rail's end, so each slider keeps 22 px either side: the handle then sits in the bar's
+     column, and over neither the time beside the seek bar nor the edge of the bar. */
+  .media-seek .ant-slider,
+  .media-volume-slider.ant-slider {
+    margin-inline: 22px;
+  }
+  .media-seek .ant-slider-handle,
+  .media-volume-slider .ant-slider-handle {
+    width: 44px;
+    height: 44px;
+    margin-inline-start: -22px;
+    margin-block-start: -20px;
+  }
+  .media-seek .ant-slider-handle::after,
+  .media-volume-slider .ant-slider-handle::after {
+    width: 14px;
+    height: 14px;
+    inset-inline-start: 15px;
+    inset-block-start: 15px;
+  }
+}
+
+@media (max-width: 600px) {
+  .media-volume {
+    width: 100%;
+  }
+  .media-btn.ant-btn {
+    flex: 0 0 auto;
+    height: 44px;
+    min-width: 44px;
+  }
+  .media-volume {
+    min-height: 44px;
+  }
+  /* On a phone the picture takes less of the height, so the playlist below it has room. */
+  .media-picture {
+    max-height: 40vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-controls {
+    transition: none;
+  }
+}
+
+@media (min-width: 900px) {
+  .media-playlist {
+    flex-direction: row;
+    align-items: stretch;
+  }
+  .media-main {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+  .media-queue {
+    flex: 0 0 340px;
+  }
+}

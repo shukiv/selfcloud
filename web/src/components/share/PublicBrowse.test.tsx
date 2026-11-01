@@ -97,11 +97,14 @@ describe("a video on a share link", () => {
       return asked === 1 ? { url: "https://content.example/first", expires_at: ended } : { url: "https://content.example/second", expires_at: live };
     });
     render(<PublicBrowse token="tok_v" root="nod_clip" onlost={vi.fn()} />);
-    const video = await vi.waitFor(() => {
-      const el = document.querySelector("video");
-      if (!el) throw new Error("no video yet");
-      return el;
-    });
+    const video = await vi.waitFor(
+      () => {
+        const el = document.querySelector("video");
+        if (!el) throw new Error("no video yet");
+        return el;
+      },
+      { timeout: 5000 },
+    );
     expect(video.getAttribute("src")).toBe("https://content.example/first");
     Object.defineProperty(video, "error", { value: { code: 4 }, configurable: true });
     fireEvent.error(video);

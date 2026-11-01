@@ -7,7 +7,7 @@ import { readPref, writePref, PREF_THEME } from "../lib/prefs";
 import { useStore } from "../lib/store";
 import { brand, resolveBrand } from "../lib/brand";
 import { readNonce } from "../csp/nonce";
-import { RADIUS, SIDEBAR, type Palette, type Sidebar } from "./tokens";
+import { LIGHT, RADIUS, SIDEBAR, type Palette, type Sidebar } from "./tokens";
 
 // The theme has three parts: the mode (light or dark, from the person's choice or the device), the
 // palette of that mode with the installation's brand applied, and the antd token set built from
@@ -241,6 +241,13 @@ export function useTheme(): ThemeState {
 /** The palette of the mode being painted, with the brand applied. */
 export function usePalette(): Palette {
   return useTheme().palette;
+}
+
+// usePaletteOrLight is usePalette for a component that may render outside the provider (a unit test, a bare page): with no
+// provider it takes the light palette.
+export function usePaletteOrLight(): Palette {
+  const v = useContext(ThemeCtx);
+  return v ? v.palette : (LIGHT as Palette);
 }
 
 /** The sidebar colours, with the brand applied. */

@@ -2,6 +2,8 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { Gate, NO_RENEWALS, PROGRESS_SECONDS, afterProgress, mediaVerdict, takeRenewal, type Renewals } from "../../lib/files/media";
+import { refusedPlay } from "../../lib/files/mediaKeys";
+import MediaControls, { type Nav } from "./MediaControls";
 
 // MediaPlayer plays one video or audio file from a signed link. The link ends at a fixed time, and the server refuses
 // every request for it after that, so a seek or a resume past the end fails. Then the player asks for a new link and
@@ -9,6 +11,7 @@ import { Gate, NO_RENEWALS, PROGRESS_SECONDS, afterProgress, mediaVerdict, takeR
 // is renewed once if playback had not moved on, and a stall is renewed a few times at most. Only a media error reaches
 // onFail; a stall never does, and the player simply keeps buffering when it has no links left to ask for.
 // The owner of the player keys it by file, so moving to another file unmounts this one, which pauses it.
+// The bar under the picture is MediaControls. The element has no controls of its own.
 
 export interface Link {
   url: string;
@@ -23,14 +26,28 @@ interface Props {
   // mint asks for a new link to the same file. It may throw; the player reports the throw as an error.
   mint: () => Promise<Link>;
   onFail: (f: MediaFailure) => void;
+  // nav adds Previous and Next to the bar, when the player is in a playlist.
+  nav?: Nav;
+  // loop repeats the file by the element's own loop, so the repeat needs no request and no new file.
+  loop?: boolean;
+  // onEnded and onPlaying tell the playlist when the file ends and when it has started to play.
+  onEnded?: () => void;
+  onPlaying?: () => void;
+  // autoPlay starts the file as it mounts: the playlist sets it once it has moved on from the first file.
+  autoPlay?: boolean;
 }
 
 // STALL_MS is how long a player may wait for data while playing before it asks for a new link. Some browsers report a
 // refused range as a stall and no error at all.
 const STALL_MS = 4000;
 
-export default function MediaPlayer({ kind, name, link, mint, onFail }: Props) {
+export default function MediaPlayer({ kind, name, link, mint, onFail, nav, loop = false, onEnded, onPlaying, autoPlay = false }: Props) {
   const el = useRef<HTMLMediaElement | null>(null);
+  // mediaEl and stageEl are the same elements as state, so the bar renders once they exist.
+  const [mediaEl, setMediaEl] = useState<HTMLMediaElement | null>(null);
+  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
+  // needPress is set when the browser refused to play for want of a gesture: the bar says so until the file plays.
+  const [needPress, setNeedPress] = useState(false);
   const [current, setCurrent] = useState<Link>(link);
   const renewals = useRef<Renewals>(NO_RENEWALS);
   const gate = useRef(new Gate());
@@ -50,6 +67,10 @@ export default function MediaPlayer({ kind, name, link, mint, onFail }: Props) {
   failRef.current = onFail;
   const currentRef = useRef(current);
   currentRef.current = current;
+  const endedRef = useRef(onEnded);
+  endedRef.current = onEnded;
+  const playingRef = useRef(onPlaying);
+  playingRef.current = onPlaying;
 
   const clearStall = () => {
     if (stall.current !== null) clearTimeout(stall.current);
@@ -126,7 +147,7 @@ export default function MediaPlayer({ kind, name, link, mint, onFail }: Props) {
     if (!media || !r) return;
     resume.current = null;
     media.currentTime = r.at;
-    if (r.play) void media.play().catch(() => undefined);
+    if (r.play) media.play().catch((err: unknown) => refusedNote(err));
   };
 
   const onWaiting = () => {
@@ -144,22 +165,41 @@ export default function MediaPlayer({ kind, name, link, mint, onFail }: Props) {
     if (media) renewals.current = afterProgress(renewals.current, media.currentTime);
   };
 
+  const onPlay = () => {
+    clearStall();
+    setNeedPress(false);
+    playingRef.current?.();
+  };
+  // refusedNote shows the press-Play note when the browser refused to play for want of a gesture. Any other rejection is
+  // left as it was (the element's own error events report a file that cannot play).
+  const refusedNote = (err: unknown) => {
+    if (refusedPlay(err)) setNeedPress(true);
+  };
+
   const attach = (node: HTMLMediaElement | null) => {
     el.current = node;
+    setMediaEl(node);
   };
   const handlers = {
     onError,
     onLoadedMetadata: onLoaded,
     onWaiting,
-    onPlaying: clearStall,
+    onPlaying: onPlay,
     onCanPlay: clearStall,
     onEmptied: clearStall,
     onTimeUpdate: onTime,
+    onEnded: () => endedRef.current?.(),
   };
   // A timeline reads left to right in every language, so the controls are not mirrored.
-  return kind === "video" ? (
-    <video ref={attach} src={current.url} aria-label={name} controls dir="ltr" style={{ maxWidth: "100%", maxHeight: "100%" }} {...handlers} />
-  ) : (
-    <audio ref={attach} src={current.url} aria-label={name} controls dir="ltr" {...handlers} />
+  return (
+    <div ref={setStageEl} className="media-stage" data-kind={kind} dir="ltr" data-testid="media-stage">
+      {kind === "video" ? (
+        // playsInline keeps the picture in its place on iPhone, where a video would otherwise open the system player.
+        <video ref={attach} src={current.url} aria-label={name} dir="ltr" loop={loop} autoPlay={autoPlay} playsInline className="media-picture" {...handlers} />
+      ) : (
+        <audio ref={attach} src={current.url} aria-label={name} dir="ltr" loop={loop} autoPlay={autoPlay} className="media-sound" {...handlers} />
+      )}
+      <MediaControls media={mediaEl} kind={kind} stage={stageEl} nav={nav} needPress={needPress} onNeedPress={setNeedPress} />
+    </div>
   );
 }

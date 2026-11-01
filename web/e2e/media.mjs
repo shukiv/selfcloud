@@ -8,6 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pngOf } from './s4a.mjs';
+import { playerChecks } from './player.mjs';
 
 const media = fileURLToPath(new URL('./media/', import.meta.url));
 const q = (v) => JSON.stringify(v);
@@ -642,6 +643,9 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await page.waitFor(`!!document.querySelector('[data-testid="preview"] video')`, 20000);
     await page.evaluate(`document.querySelector('[data-testid="preview"] video').pause()`);
   });
+
+  // The player and its playlist (slice x1): own controls, keys, queue, paging, skips and the link count.
+  await playerChecks(h, { page, base, accountKey, teamA, linkMints, setTheme });
 
   // With SELFCLOUD_E2E_SHOTS set to a folder, the run also saves the listing with a selection and a playing video, at
   // desktop and phone width, in light and dark, in English and Hebrew. Nothing is checked in this step.

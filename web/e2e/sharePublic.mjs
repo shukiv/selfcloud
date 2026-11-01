@@ -191,7 +191,8 @@ async function dropLinkChecks(page, { base, accountID, accountKey, fld, plans },
   await h.selectRow(page, 'Plans');
   await h.clickButton(page, 'Share');
   await page.waitFor(`!!document.getElementById('share-request-files')`);
-  // Turning Request files on makes the link; the name request is then saved on it.
+  // Turning Request files on makes the link; the name request is then saved on it. The section shows before its switch does.
+  await page.waitFor(`!!document.querySelector('section.request button[role="switch"]')`, 15000);
   await page.evaluate(`(() => { const box = document.querySelector('section.request button[role="switch"]'); box.click(); return true; })()`);
   await page.waitFor(`!!document.querySelector('section.request .made input')`, 15000);
   const url = await page.evaluate(`document.querySelector('section.request .made input').value`);

@@ -1,0 +1,478 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { useEffect, useRef, useState } from "react";
+import { Alert, Button } from "antd";
+import { ApiError } from "../../lib/apiError";
+import { useT } from "../../lib/i18n";
+import { kindOf } from "../../lib/files/kind";
+import { Pager } from "../../lib/files/pager";
+import {
+  addEnd,
+  addNext,
+  advance,
+  appendPage,
+  back,
+  choose,
+  cycleRepeat,
+  failed,
+  move,
+  newQueue,
+  played,
+  remove,
+  restricted,
+  toggleShuffle,
+  type Queue,
+} from "../../lib/files/queue";
+import type { Node } from "../../lib/files/types";
+import MediaPlayer, { type Link, type MediaFailure } from "./MediaPlayer";
+import MediaQueue from "./MediaQueue";
+
+// MediaPlaylist plays a list of video and audio files one after another, with the panel that shows the list. The list is
+// the folder's playable files, read a page at a time as the player reaches their end (Pager), or the selection the person
+// chose to play. The queue decides what plays (lib/files/queue.ts); this component starts the link of each file, reports
+// the outcome back to the queue, and moves on. A file that fails is marked, its message stays on screen for SKIP_MS, and
+// then the next file plays. A file the person may not download gets no link and is skipped at once.
+
+// SKIP_MS is how long a failed file stays on screen, with its message, before the next file plays.
+export const SKIP_MS = 2500;
+
+// Status is the state of the link of the file on screen.
+// restricted: the server refused the link because the person may not download the file; it is shown, then skipped.
+type Status = "loading" | "ready" | "error" | "unsupported" | "restricted";
+
+interface Current {
+  id: string;
+  status: Status;
+  link?: Link;
+}
+
+export interface MediaPlaylistProps {
+  // start is the file that plays first.
+  start: Node;
+  // folder reads the folder's playable files, a page at a time.
+  folder: Pager;
+  // selection, when given, is the list to play instead of the folder's files. The folder is then used only by the add
+  // panel.
+  selection?: Node[];
+  // fetchLink asks for a link to a file the person may play; it throws when the link is refused (ApiError
+  // download_restricted, when the person may not download the file).
+  fetchLink: (node: Node) => Promise<Link>;
+  // onPosition is told the file on screen's place in the list, "2 / 3", so the viewer's header can show it.
+  onPosition?: (pos: { position: number; total: string }) => void;
+  // onCurrent is told which file is on screen, so the viewer can show its name.
+  onCurrent?: (node: Node | null) => void;
+  // onLost is asked when the link to a file is refused (401 or 404). It answers whether the share itself is gone, after
+  // a check of the share: true stops the playlist; false makes the refusal that one file's failure, and the playlist moves on.
+  onLost?: (err: unknown) => Promise<boolean>;
+}
+
+export default function MediaPlaylist({ start, folder, selection, fetchLink, onPosition, onCurrent, onLost }: MediaPlaylistProps) {
+  const { t } = useT();
+  const lostRef = useRef(onLost);
+  lostRef.current = onLost;
+  const paged = selection === undefined;
+  const [q, setQ] = useState<Queue>(() => {
+    const base = paged ? folder.loaded : selection;
+    const list = base.some((n) => n.id === start.id) ? base : [start, ...base];
+    return newQueue(list, start.id, { shuffle: false, repeat: "off" });
+  });
+  // qRef is the queue as it is now. Steps that wait for a page read it, not the value the render had.
+  const qRef = useRef(q);
+  const [current, setCurrent] = useState<Current | null>(null);
+  // stop says why the playlist has no file to play: the end of the list, or no file in it could play. Null while a file plays.
+  // "lost" is a share that has gone (the share's own check said so); "unreadable" is a page of the folder that could not be
+  // read, so the playlist cannot tell whether a file is still to come. The others are the queue's reasons (lib/files/queue.ts).
+  const [stop, setStop] = useState<null | "end" | "failed" | "none" | "empty" | "lost" | "unreadable">(null);
+  const [busy, setBusy] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
+  const [adding, setAdding] = useState(false);
+  // skip is the pause before a failed file is passed over, and the file it is for. The timer acts only while that file is
+  // still on screen: a choice the person makes meanwhile cancels it (cancelSkip).
+  const skip = useRef<{ timer: ReturnType<typeof setTimeout>; id: string } | null>(null);
+  // epoch counts the files the playlist starts. The player is keyed by it, so a file that plays again (the only file under
+  // repeat all) starts from the beginning.
+  const [epoch, setEpoch] = useState(0);
+  const fetchRef = useRef(fetchLink);
+  fetchRef.current = fetchLink;
+  // ticket numbers the steps and picks. A step that is not the latest one does nothing once its wait ends: a pick or a
+  // newer Next made meanwhile wins.
+  const ticket = useRef(0);
+  // alive is false once the viewer has closed, so no page is read for a playlist nobody sees.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      ticket.current++;
+    };
+  }, []);
+  // shuffling is set while a shuffle is loading the folder for its round; a second press meanwhile does nothing.
+  const shuffling = useRef(false);
+
+  const commit = (next: Queue) => {
+    qRef.current = next;
+    setQ(next);
+  };
+
+  const cancelSkip = () => {
+    if (skip.current !== null) clearTimeout(skip.current.timer);
+    skip.current = null;
+  };
+  useEffect(() => cancelSkip, []);
+
+  const currentId = q.current;
+  const currentNode = currentId === null ? undefined : q.entries.find((e) => e.node.id === currentId)?.node;
+
+  // loadMore reads the next page of the folder into the queue. It says whether the folder gave a page ("ok"), had no more
+  // ("end"), or could not be read ("failed": the panel offers to try again, and the folder keeps its page).
+  const loadMore = async (): Promise<"ok" | "end" | "failed"> => {
+    if (!paged || qRef.current.capped) return "end";
+    setBusy(true);
+    try {
+      const r = await folder.more();
+      if (!alive.current) return "end";
+      if (r.kind === "failed") {
+        setMoreFailed(true);
+        return "failed";
+      }
+      setMoreFailed(false);
+      if (r.kind === "end") return "end";
+      commit(appendPage(qRef.current, r.items).queue);
+      return "ok";
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  };
+
+  // step moves to the next file that can play, reading pages of the folder while the queue has nothing further loaded.
+  // It ends when a file is chosen, the queue stops, or a page cannot be read. Each page read is one step of the loop, and
+  // the folder is finite. A step superseded by a later pick or step does nothing when its wait ends.
+  const step = async (from: Queue): Promise<void> => {
+    const my = ++ticket.current;
+    let cur = from;
+    for (;;) {
+      const a = advance(cur, paged && !cur.capped && folder.hasMore);
+      if (a.kind === "play") {
+        if (my !== ticket.current) return;
+        commit(a.queue);
+        setStop(null);
+        setEpoch((e) => e + 1);
+        return;
+      }
+      if (a.kind === "stop") {
+        if (my !== ticket.current) return;
+        commit(a.queue);
+        setStop(a.reason);
+        return;
+      }
+      const r = await loadMore();
+      if (my !== ticket.current || !alive.current) return;
+      if (r === "failed") {
+        setStop("unreadable");
+        return;
+      }
+      cur = qRef.current;
+    }
+  };
+
+  // The link of the file on screen. A refused link marks the file restricted and moves on at once; any other failure
+  // marks it failed and moves on after the pause.
+  useEffect(() => {
+    if (!currentNode) return;
+    const id = currentNode.id;
+    const failedAt = () => scheduleSkip(id);
+    // A file the person may not download gets no request at all: the queue already knows it.
+    const mark = qRef.current.entries.find((e) => e.node.id === id)?.mark;
+    if (mark !== "ok") {
+      void step(qRef.current);
+      return;
+    }
+    let live = true;
+    setCurrent({ id, status: "loading" });
+    fetchRef.current(currentNode).then(
+      (link) => {
+        if (live) setCurrent({ id, status: "ready", link });
+      },
+      (err: unknown) => {
+        if (!live) return;
+        if (err instanceof ApiError && err.code === "download_restricted") {
+          setCurrent({ id, status: "restricted" });
+          commit(restricted(qRef.current, id));
+          failedAt();
+          return;
+        }
+        const fail = () => {
+          setCurrent({ id, status: "error" });
+          commit(failed(qRef.current, id));
+          failedAt();
+        };
+        // A refused credential (401) or a link that is gone (404) may mean the share is gone. The share decides, after
+        // its own check; a file's 404 alone is that file's failure.
+        if (lostRef.current && err instanceof ApiError && (err.status === 401 || err.status === 404)) {
+          void lostRef.current(err).then((lost) => {
+            if (!live) return;
+            if (lost) {
+              cancelSkip();
+              setStop("lost");
+              return;
+            }
+            fail();
+          });
+          return;
+        }
+        fail();
+      },
+    );
+    return () => {
+      live = false;
+    };
+    // The link is asked for when the file on screen changes, or when the playlist starts a file again. The other values
+    // are read through refs.
+  }, [currentId, epoch]);
+
+  useEffect(() => {
+    onCurrent?.(currentNode ?? null);
+    // Only the file on screen matters here.
+  }, [currentId]);
+
+  // scheduleSkip moves on to the next file after the pause that lets the message be read. It acts only if the file that
+  // failed is still the one on screen.
+  const scheduleSkip = (id: string) => {
+    cancelSkip();
+    const timer = setTimeout(() => {
+      skip.current = null;
+      if (qRef.current.current !== id) return;
+      void step(qRef.current);
+    }, SKIP_MS);
+    skip.current = { timer, id };
+  };
+
+  // pick makes a file the person chose the one on screen: any pending skip is cancelled, the failure run starts again,
+  // and a stop is cleared, so the player mounts for the file.
+  const pick = (next: Queue) => {
+    cancelSkip();
+    ticket.current++;
+    commit({ ...next, run: 0 });
+    setStop(null);
+    setEpoch((e) => e + 1);
+  };
+
+  // onFail is the player's report that the file could not play. A link the player could not renew (401 or 404) is asked
+  // of onLost, the same as a refused link on the file's first request: the share may be gone, and then the page answers.
+  const onFail = (f: MediaFailure) => {
+    if (currentId === null) return;
+    const id = currentId;
+    if (f.kind === "error" && f.err instanceof ApiError && f.err.code === "download_restricted") {
+      setCurrent({ id, status: "restricted" });
+      commit(restricted(qRef.current, id));
+      scheduleSkip(id);
+      return;
+    }
+    const fail = () => {
+      if (qRef.current.current !== id) return;
+      setCurrent({ id, status: f.kind === "unsupported" ? "unsupported" : "error" });
+      commit(failed(qRef.current, id));
+      scheduleSkip(id);
+    };
+    if (f.kind === "error" && lostRef.current && f.err instanceof ApiError && (f.err.status === 401 || f.err.status === 404)) {
+      void lostRef.current(f.err).then((lost) => {
+        if (!alive.current || qRef.current.current !== id) return;
+        if (lost) {
+          cancelSkip();
+          setStop("lost");
+          return;
+        }
+        fail();
+      });
+      return;
+    }
+    fail();
+  };
+
+  // onPlaying: the file has started, so a run of failures starts again.
+  const onPlaying = () => {
+    if (currentId !== null) commit(played(qRef.current, currentId));
+  };
+
+  // next and previous are the person's choices: a pending skip is cancelled, and the failure run starts again.
+  const next = () => {
+    cancelSkip();
+    void step({ ...qRef.current, run: 0 });
+  };
+  const previous = () => {
+    const b = back(qRef.current);
+    if (b) pick(b.queue);
+  };
+
+  const kind = currentNode ? kindOf(currentNode) : "file";
+  const playable = kind === "video" || kind === "audio";
+  const shownStatus = current && currentNode && current.id === currentNode.id ? current.status : "loading";
+  const position = currentId === null ? 0 : q.entries.findIndex((e) => e.node.id === currentId) + 1;
+  const total = `${q.entries.length}${paged && folder.hasMore ? "+" : ""}`;
+  useEffect(() => {
+    onPosition?.({ position, total });
+    // Only the place in the list matters here.
+  }, [position, total]);
+
+  // The panel's actions. Each one is a change of the queue; the file on screen changes only when the queue says so.
+  const removeEntry = (id: string) => {
+    const was = qRef.current.current === id;
+    commit(remove(qRef.current, id));
+    if (was) {
+      cancelSkip();
+      void step({ ...remove(qRef.current, id), run: 0 });
+    }
+  };
+
+  // shuffleToggle turns shuffle on or off. Turning it on reads the folder up to the queue's cap first, so the round covers
+  // every file the queue can hold, not only the pages loaded so far. The reading stops at the cap or at the end of the
+  // folder (or when a page cannot be read), so it is bounded. No link is asked for by reading a page.
+  // A press while the folder is still being read does nothing: the round is already being dealt, and a second toggle would
+  // turn it off again. The reading stops when the viewer closes, and when a page cannot be read (the round is then dealt
+  // from the files loaded).
+  const shuffleToggle = async () => {
+    if (qRef.current.shuffle) {
+      commit(toggleShuffle(qRef.current));
+      return;
+    }
+    if (shuffling.current) return;
+    shuffling.current = true;
+    try {
+      while (alive.current && paged && !qRef.current.capped && folder.hasMore) {
+        if ((await loadMore()) === "failed") break;
+      }
+      if (alive.current) commit(toggleShuffle(qRef.current));
+    } finally {
+      shuffling.current = false;
+    }
+  };
+
+  // The add panel offers the folder's files that are not in the queue, in a selection too: the folder is what it adds from.
+  const candidates = folder.loaded.filter((n) => !q.entries.some((e) => e.node.id === n.id));
+
+  return (
+    <div className="media-playlist" data-testid="media-playlist">
+      <div className="media-main">
+        <div className="media-screen" data-testid="media-screen">
+          {stop === "end" ? (
+            <p role="status">{t("files.media.ended")}</p>
+          ) : stop === "lost" ? (
+            <Alert type="warning" role="alert" showIcon message={t("files.media.lost")} />
+          ) : stop === "failed" ? (
+            <Alert
+              type="info"
+              role="status"
+              showIcon
+              message={t("files.media.stoppedFailures")}
+              action={
+                <Button size="small" onClick={next}>
+                  {t("files.media.carryOn")}
+                </Button>
+              }
+            />
+          ) : stop === "none" ? (
+            <Alert type="info" role="status" showIcon message={t("files.media.stoppedNone")} />
+          ) : stop === "empty" ? (
+            <Alert type="info" role="status" showIcon message={t("files.media.stoppedEmpty")} />
+          ) : stop === "unreadable" ? (
+            <Alert
+              type="warning"
+              role="alert"
+              showIcon
+              message={t("files.media.stoppedUnreadable")}
+              action={
+                <Button size="small" onClick={() => void step({ ...qRef.current, run: 0 })}>
+                  {t("files.media.retry")}
+                </Button>
+              }
+            />
+          ) : currentNode === undefined ? (
+            <p role="status">{t("files.media.ended")}</p>
+          ) : shownStatus === "loading" ? (
+            <p role="status">{t("files.preview.loading")}</p>
+          ) : shownStatus === "restricted" ? (
+            <Alert
+              type="info"
+              role="alert"
+              showIcon
+              message={t("files.err.downloadRestricted")}
+              action={
+                <Button size="small" onClick={next}>
+                  {t("files.media.next")}
+                </Button>
+              }
+            />
+          ) : shownStatus === "error" || shownStatus === "unsupported" ? (
+            <div>
+              <Alert
+                type="warning"
+                role="alert"
+                showIcon
+                message={t("files.media.skipped")}
+                description={shownStatus === "unsupported" ? t("files.preview.unsupported") : undefined}
+                action={
+                  <Button size="small" onClick={next}>
+                    {t("files.media.next")}
+                  </Button>
+                }
+              />
+            </div>
+          ) : current?.link && playable ? (
+            <MediaPlayer
+              key={`${currentNode.id}:${epoch}`}
+              kind={kind === "video" ? "video" : "audio"}
+              name={currentNode.name}
+              link={current.link}
+              mint={() => fetchRef.current(currentNode)}
+              onFail={onFail}
+              onEnded={next}
+              onPlaying={onPlaying}
+              loop={q.repeat === "one"}
+              autoPlay={epoch > 0}
+              nav={{ next, previous }}
+            />
+          ) : null}
+        </div>
+
+        {/* One message for an unreadable folder: when the playlist has stopped as unreadable, its alert above says it. */}
+        {moreFailed && stop !== "unreadable" && (
+          <Alert
+            type="warning"
+            role="alert"
+            showIcon
+            message={t("files.media.stoppedUnreadable")}
+            action={
+              <Button size="small" onClick={() => void loadMore()}>
+                {t("files.media.retry")}
+              </Button>
+            }
+            style={{ marginTop: 8 }}
+          />
+        )}
+      </div>
+
+      <MediaQueue
+        entries={q.entries}
+        currentId={currentId}
+        repeat={q.repeat}
+        shuffle={q.shuffle}
+        capped={q.capped || (paged && folder.cut)}
+        moreLeft={paged && folder.hasMore && !q.capped && !folder.cut}
+        busy={busy}
+        candidates={candidates}
+        adding={adding}
+        onAddOpen={() => setAdding((v) => !v)}
+        onAdd={(n, where) => commit(where === "next" ? addNext(qRef.current, n) : addEnd(qRef.current, n))}
+        onLoadMore={() => void loadMore()}
+        onPlay={(id) => {
+          const entry = qRef.current.entries.find((e) => e.node.id === id);
+          if (entry && entry.mark !== "restricted") pick(choose(qRef.current, id));
+        }}
+        onRemove={removeEntry}
+        onMove={(id, delta) => commit(move(qRef.current, id, delta))}
+        onShuffle={() => void shuffleToggle()}
+        onRepeat={() => commit(cycleRepeat(qRef.current))}
+      />
+    </div>
+  );
+}
