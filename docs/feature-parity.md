@@ -213,6 +213,9 @@ come **before** k.
 | t | Changes feed, file picker, WebDAV, installable web app | Medium |
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Medium |
 | t2 | Approvals | Small |
+| sort | Folder listings sorted by the server, so a long folder sorted by size or date is right from the first page (decision 47) | Small |
+| w | A normal file manager, approved 2026-10-31 (`design.md` section 14). w1: a toolbar always on top, a right-click menu, Ctrl+C, Ctrl+X and Ctrl+V. w2: drag to move, a folder tree, rubber-band selection | Medium |
+| x | A built-in video and audio player, approved 2026-10-31 (`design.md` section 14). x1: own controls, playlist, queue, shuffle, repeat, auto-next. x2: audio while browsing, resume, subtitles. x3: cover art and tags. x4: saved playlists. Server conversion of video is deferred by the owner | Medium |
 
 Roughly, this doubles the remaining work. Slices n and q are the largest. The PostgreSQL option
 (decision 7) was first scheduled before q. The owner decided on 2026-10-31 that it comes after q (decision 40).
