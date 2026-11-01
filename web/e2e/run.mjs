@@ -682,13 +682,13 @@ async function main() {
       passed = true;
       return;
     }
-    const home = await owner.homeChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
+    const mine = await owner.myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
     await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
 
     // The owner's management pages, then the installation admin's, then a member who opens the owner's pages.
     await signOut(page);
     await signIn(page, OWNER);
-    await owner.homeOwnerChecks(page, h, home);
+    await owner.sharedWithOwnerChecks(page, h, mine);
     await owner.ownerChecks(page, h, { base, sink, waitForMail, INVITEE });
     await owner.p1OwnerChecks(page, h, { MEMBER });
     await p3.p3OwnerChecks(page, h, { teamA, projectsID: p3ids.projectsID });

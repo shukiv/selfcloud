@@ -51,8 +51,8 @@ export function mayOpen(target: Target, user: User | undefined): boolean {
   return target.area === 'manage' ? user.role === 'owner' : user.role === 'admin';
 }
 
-// homeFor is the page the root address opens for a person: an admin's home is the tenants list, since an
-// admin has no drive of its own. Anyone else opens Home at the root; My files stays at /files.
+// homeFor is the page a person lands on: the root address and a sign-in both go there. An admin's home is the tenants
+// list, since an admin has no drive of its own. Anyone else lands on My files (decision 53).
 export function homeFor(user: User | undefined): string {
-  return user?.role === 'admin' ? '/admin/tenants' : '/';
+  return user?.role === 'admin' ? '/admin/tenants' : '/files';
 }

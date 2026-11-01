@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { beforeAll, describe, expect, it } from 'vitest';
+import en from '../i18n/en.json';
+import es from '../i18n/es.json';
+import fr from '../i18n/fr.json';
+import pt from '../i18n/pt.json';
+import ru from '../i18n/ru.json';
+import ar from '../i18n/ar.json';
+import he from '../i18n/he.json';
 import {
   chooseLang,
   directionOf,
@@ -108,5 +115,32 @@ describe('setLang', () => {
     expect(translate('he', 'login.submit')).toBe('התחברו');
     await setLang('en');
     expect(document.documentElement.dir).toBe('ltr');
+  });
+});
+
+// The catalogue keys of the Starred and Recent pages and the star button. They were checked with the Home page's keys
+// until decision 53 removed Home; each must exist in all seven catalogues, and the placeholders the code fills must stay.
+describe('Starred, Recent and star catalogues', () => {
+  const CATALOGUES: Record<string, Record<string, string>> = { en, es, fr, pt, ru, ar, he };
+  const KEYS = Object.keys(en).filter(
+    (k) => k === 'nav.starred' || k === 'nav.recent' || k.startsWith('starred.') || k.startsWith('recent.') || k.startsWith('star.'),
+  );
+
+  it('has English text for every key, and every catalogue has every key', () => {
+    expect(KEYS.length).toBeGreaterThan(15);
+    for (const k of KEYS) {
+      expect(translate('en', k), k).not.toBe(k);
+      for (const l of LANGUAGES) expect(CATALOGUES[l][k], `${l} ${k}`).toBeTypeOf('string');
+    }
+  });
+
+  it('keeps the placeholders the code fills, in every language', () => {
+    for (const l of LANGUAGES) {
+      expect(CATALOGUES[l]['starred.on'], l).toContain('{date}');
+      expect(CATALOGUES[l]['recent.opened'], l).toContain('{date}');
+      expect(CATALOGUES[l]['recent.changed'], l).toContain('{date}');
+      expect(CATALOGUES[l]['recent.removeName'], l).toContain('{name}');
+      expect(CATALOGUES[l]['star.button'], l).toContain('{name}');
+    }
   });
 });

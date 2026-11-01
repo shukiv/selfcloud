@@ -10,7 +10,7 @@ import { applyBrand, brand, passwordMinLength } from "./lib/brand";
 import { maxExpiryDays } from "./lib/sharing/limits";
 import { go, signInURL } from "./lib/router";
 import { afterSignIn } from "./lib/next";
-import { isAdmin, session } from "./lib/session";
+import { session } from "./lib/session";
 import { homeFor, mayOpen, targetOf, type ManageSection, type Target } from "./lib/routes";
 import type { User } from "./lib/types";
 import { antdLocaleOf, directionOf, matchLang, setLang, useLang, useT, type Lang } from "./lib/i18n";
@@ -32,7 +32,6 @@ const TrashPage = lazy(() => import("./pages/TrashPage"));
 const SharedPage = lazy(() => import("./pages/SharedPage"));
 const RequestsPage = lazy(() => import("./pages/RequestsPage"));
 const OpenLinkPage = lazy(() => import("./pages/OpenLinkPage"));
-const HomePage = lazy(() => import("./pages/HomePage"));
 const StarredPage = lazy(() => import("./pages/StarredPage"));
 const RecentPage = lazy(() => import("./pages/RecentPage"));
 const StoragePage = lazy(() => import("./pages/StoragePage"));
@@ -54,17 +53,17 @@ const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 // agree on what an address means.
 type View =
   | "login" | "verify" | "reset" | "forgot" | "sign-in" | "share-link"
-  | "home" | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage"
+  | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage"
   | "manage" | "admin" | "change-password" | "notfound";
 
 const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "forgot", "sign-in", "share-link"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
-const DRIVE_VIEWS: View[] = ["home", "files", "node", "starred", "recent", "shared", "requests", "trash", "storage"];
+const DRIVE_VIEWS: View[] = ["files", "node", "starred", "recent", "shared", "requests", "trash", "storage"];
 
 export function viewFor(path: string): View {
-  if (path === "/") return "home";
-  if (path === "/files" || path.startsWith("/files/")) return "files";
+  // The root is My files: the gate sends a person there (or to the admin's home) with a replace, so it is never drawn.
+  if (path === "/" || path === "/files" || path.startsWith("/files/")) return "files";
   if (path.startsWith("/n/")) return "node";
   const target = targetOf(path);
   if (target !== null) return target.area;
@@ -250,7 +249,8 @@ export function Gate() {
   if (!signedIn) {
     return <Navigate to={signInURL(path + search)} replace />;
   }
-  if (path === "/" && isAdmin(me.user)) {
+  // The root is a person's home, not a page: My files, or the tenants list for an admin. A replace, so Back leaves the root.
+  if (path === "/") {
     return <Navigate to={homeFor(me.user)} replace />;
   }
   return (
@@ -299,7 +299,6 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "shared": return <SharedPage />;
     case "requests": return <RequestsPage />;
     case "notfound": return <NotFoundPage />;
-    case "home": return <HomePage />;
     case "starred": return <StarredPage />;
     case "recent": return <RecentPage />;
     case "storage": return <StoragePage />;

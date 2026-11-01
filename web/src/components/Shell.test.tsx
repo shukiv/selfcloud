@@ -100,13 +100,26 @@ describe("Shell", () => {
     const nav = await openNav();
     const names = within(nav).getAllByRole("menuitem").map((m) => m.textContent);
     expect(names).toContain("My files");
+    // The root is My files now: there is no Home entry, and the sidebar starts with My files.
+    expect(names).not.toContain("Home");
+    expect(names[0]).toBe("My files");
     expect(names).not.toContain("Requests");
     expect(names).not.toContain("People");
   });
 
+  it("the logo opens My files for a member, and the admin home for an admin", async () => {
+    signIn("member");
+    const { unmount } = renderShell("/files");
+    expect(document.querySelector("header a")?.getAttribute("href")).toBe("/files");
+    unmount();
+    signIn("admin");
+    renderShell("/admin/tenants");
+    expect(document.querySelector("header a")?.getAttribute("href")).toBe("/admin/tenants");
+  });
+
   it("gives an owner the Requests entry and the owner's pages", async () => {
     signIn("owner");
-    renderShell("/");
+    renderShell("/files");
     const nav = await openNav();
     const names = within(nav).getAllByRole("menuitem").map((m) => m.textContent);
     expect(names).toContain("Requests");
@@ -352,16 +365,40 @@ describe("the Requests entry", () => {
   it("is shown with its count to a member who has requests waiting to be decided, and is not shown otherwise", async () => {
     signIn("member");
     mocks.listAccessRequests.mockResolvedValue({ items: [{ id: "arq_a" }, { id: "arq_b" }] });
-    renderShell("/");
+    renderShell("/files");
     const drawer = await openNav();
     const entry = await waitFor(() => within(drawer).getByRole("menuitem", { name: /Requests/ }));
     expect(entry.textContent).toContain("2 waiting");
   });
 
+  // Home read the count each time it was opened, and My files is the landing page now (decision 53): the count is read again
+  // when the person comes to My files, so a request that came in while signed in shows there.
+  it("reads the count again when the person comes to My files, where Home read it before", async () => {
+    signIn("member");
+    mocks.listAccessRequests.mockResolvedValue({ items: [] });
+    const router = createMemoryRouter([{ path: "*", element: <Shell><p>page body</p></Shell> }], { initialEntries: ["/trash"] });
+    render(
+      <ThemeProvider>
+        <Direction>
+          <RouterProvider router={router} />
+        </Direction>
+      </ThemeProvider>,
+    );
+    await waitFor(() => expect(mocks.listAccessRequests).toHaveBeenCalledTimes(1));
+    mocks.listAccessRequests.mockResolvedValue({ items: [{ id: "arq_a" }] });
+    await act(async () => {
+      await router.navigate("/files");
+    });
+    await waitFor(() => expect(mocks.listAccessRequests).toHaveBeenCalledTimes(2));
+    const drawer = await openNav();
+    const entry = await waitFor(() => within(drawer).getByRole("menuitem", { name: /Requests/ }));
+    expect(entry.textContent).toContain("1 waiting");
+  });
+
   it("is not shown to a member with nothing waiting", async () => {
     signIn("member");
     mocks.listAccessRequests.mockResolvedValue({ items: [] });
-    renderShell("/");
+    renderShell("/files");
     const drawer = await openNav();
     await waitFor(() => within(drawer).getByRole("menuitem", { name: /Shared with me/ }));
     expect(within(drawer).queryByRole("menuitem", { name: /Requests/ })).toBeNull();

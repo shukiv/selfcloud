@@ -40,8 +40,8 @@ export function switchPrompts() {
   return asks;
 }
 
-// Home, Starred and Recent, as the member: a star, an open, a clear; the owner then sees what was shared with it.
-export async function homeChecks(page, h, { base, accountKey, memberID, ownerID, teamA }) {
+// My files, Starred and Recent, as the member: a star, an open, a clear; the owner then sees what was shared with it.
+export async function myFilesChecks(page, h, { base, accountKey, memberID, ownerID, teamA }) {
   const note = 'home-note.txt';
   const shared = 'home-shared.txt';
   await h.rawPut(base, `/api/v1/folders/${teamA}/files?path=%2F${note}`, accountKey, 'a note for home\n');
@@ -61,13 +61,10 @@ export async function homeChecks(page, h, { base, accountKey, memberID, ownerID,
   await page.waitFor(`document.querySelector(${q(rowSel(note) + ' button[aria-pressed]')}).getAttribute('aria-pressed') === 'true'`);
   h.check(true, 'a member stars a file from the listing, and the star button is pressed');
 
-  // Starred lists it, and so does Home.
+  // Starred lists it. (Home had its own starred section until decision 53; this page holds the same list.)
   await h.clickNav(page, 'Starred');
   await page.waitFor(`location.pathname === '/starred' && !!document.querySelector('.items a[href="/n/${noteID}"]')`);
   h.check(true, 'the starred file is listed in Starred');
-  await h.clickNav(page, 'Home');
-  await page.waitFor(`location.pathname === '/' && !!document.querySelector('[aria-labelledby="home-starred"] a[href="/n/${noteID}"]')`, 15000);
-  h.check(true, 'the starred file shows on Home');
 
   // Opening the file (through its address) records it in Recent. The server writes views in batches every two seconds.
   await h.navigateTo(page, `/n/${noteID}`);
@@ -97,11 +94,11 @@ async function rootChild(h, base, folder, key, name) {
   return found.id;
 }
 
-// homeOwnerChecks: the owner's Home shows the item the member shared with it, in Recently shared.
-export async function homeOwnerChecks(page, h, { sharedID }) {
-  await h.navigateTo(page, '/');
-  await page.waitFor(`location.pathname === '/' && !!document.querySelector('[aria-labelledby="home-shared"] a[href="/n/${sharedID}"]')`, 15000);
-  h.check(true, 'the owner sees a recently shared item on Home');
+// sharedWithOwnerChecks: the owner's Shared with me lists the item the member shared with it.
+export async function sharedWithOwnerChecks(page, h, { sharedID }) {
+  await h.navigateTo(page, '/shared');
+  await page.waitFor(`location.pathname === '/shared' && !!document.querySelector('.shared a[href="/n/${sharedID}"]')`, 15000);
+  h.check(true, 'the owner sees a recently shared item in Shared with me');
 }
 
 // ownerChecks is the owner's management pages, end to end. The owner invites a person by email; the run takes the

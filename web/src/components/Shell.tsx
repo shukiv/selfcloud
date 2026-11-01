@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { keepInView } from "./menuScroll";
 import { Alert as AntdAlert, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
-import { Clock, FolderOpen, House, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
+import { Clock, FolderOpen, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useT, useLang, directionOf, translatePlural } from "../lib/i18n";
 import { useStore } from "../lib/store";
@@ -17,6 +17,7 @@ import { pendingRequests, refreshPendingRequests } from "../lib/sharing/requestC
 import type { FolderAccess } from "../lib/files/types";
 import { signOut } from "../lib/auth";
 import { endImpersonation } from "../lib/impersonation";
+import { homeFor } from "../lib/routes";
 import { readPref, writePref } from "../lib/prefs";
 import { useSidebar } from "../theme/theme";
 import { RADIUS } from "../theme/tokens";
@@ -42,7 +43,7 @@ interface NavItem {
   icon: ReactNode;
 }
 
-const icon = (C: typeof House) => <C size={18} strokeWidth={1.75} aria-hidden="true" />;
+const icon = (C: typeof FolderOpen) => <C size={18} strokeWidth={1.75} aria-hidden="true" />;
 
 // The sidebar's entries for the caller. An installation admin has no drive, so it sees the
 // administration pages only; an owner also sees the owner's pages.
@@ -64,7 +65,6 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
     ];
   }
   const main: NavItem[] = [
-    { key: "/", label: t("nav.home"), icon: icon(House) },
     { key: "/files", label: t("nav.files"), icon: icon(FolderOpen) },
     { key: "/starred", label: t("nav.starred"), icon: icon(Star) },
     { key: "/recent", label: t("nav.recent"), icon: icon(Clock) },
@@ -227,10 +227,12 @@ export default function Shell({ children }: { children: ReactNode }) {
     });
   }, [admin]);
   // The count of requests waiting for the caller is read for each person, so the entry shows the right count. An
-  // installation admin has no requests of its own, and the server refuses the read: it is not sent (as Svelte).
+  // installation admin has no requests of its own, and the server refuses the read: it is not sent (as Svelte). It is read
+  // again when the person comes to My files, where Home read it until decision 53 made My files the landing page.
+  const atFiles = location.pathname.startsWith("/files");
   useEffect(() => {
     if (me && !admin) void refreshPendingRequests();
-  }, [sessionID]);
+  }, [sessionID, atFiles]);
   const pending = useStore(pendingRequests);
   const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n));
   const items: MenuProps["items"] = sections.flatMap((s, i) =>
@@ -465,7 +467,7 @@ export default function Shell({ children }: { children: ReactNode }) {
             )}
             {/* One line in the 56px bar: a long brand name is cut short, never wrapped over the bar's edge. */}
             <a
-              href={admin ? "/admin/tenants" : "/"}
+              href={homeFor(me?.user)}
               style={{ fontWeight: 700, color: token.colorText, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
             >
               <bdi>{b.name}</bdi>
@@ -501,7 +503,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               )}
             </div>
           </Layout.Header>
-          <Layout.Content id="main" tabIndex={-1} style={{ padding: isMobile ? 14 : 28, outline: "none" }}>
+          <Layout.Content id="main" tabIndex={-1} style={{ padding: isMobile ? 14 : 28, outline: "none", "--sc-page-pad": isMobile ? "14px" : "28px" } as CSSProperties}>
             {note && (
               <div style={{ marginBottom: 16 }}>
                 <Alert message={{ key: note }} tone="success" />

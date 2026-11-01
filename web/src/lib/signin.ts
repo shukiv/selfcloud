@@ -16,11 +16,10 @@ export function looksLikeToken(s: string): boolean {
   return /^[A-Za-z0-9_-]{43}$/.test(s);
 }
 
-// signInTarget is the page a sign-in opens: the path the server gave, checked again here, or the
-// home page of files when that path is not usable or is the root. An admin's root is its own home.
+// signInTarget is the page a sign-in opens: the path the server gave, checked again here, or the person's home
+// (My files, or the tenants list for an admin) when that path is not usable or is the root.
 export function signInTarget(next: string | null | undefined, user?: User): string {
-  const path = afterSignIn(next ?? '', user);
-  return path === '/' ? '/files' : path;
+  return afterSignIn(next ?? '', user);
 }
 
 // SwitchPrompt names the two users in a sign-in link's question: the one this browser is signed in as, and

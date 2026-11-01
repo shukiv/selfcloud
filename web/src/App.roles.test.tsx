@@ -17,7 +17,6 @@ vi.mock("./pages/NodeLinkPage", async () => (await import("./test/stubPage")).st
 vi.mock("./pages/TrashPage", async () => (await import("./test/stubPage")).stubPage("trash"));
 vi.mock("./pages/SharedPage", async () => (await import("./test/stubPage")).stubPage("shared"));
 vi.mock("./pages/RequestsPage", async () => (await import("./test/stubPage")).stubPage("requests"));
-vi.mock("./pages/HomePage", async () => (await import("./test/stubPage")).stubPage("home"));
 vi.mock("./pages/StarredPage", async () => (await import("./test/stubPage")).stubPage("starred"));
 vi.mock("./pages/RecentPage", async () => (await import("./test/stubPage")).stubPage("recent"));
 vi.mock("./pages/StoragePage", async () => (await import("./test/stubPage")).stubPage("storage"));
@@ -45,8 +44,8 @@ function person(role: User["role"]): Session {
   } as unknown as Session;
 }
 
-// reach renders the gate at an address, signed in as a role, and says what the page shows.
-async function reach(role: User["role"], path: string): Promise<{ text: string; address: string }> {
+// reach renders the gate at an address, signed in as a role, and says what the page shows and how the address got there.
+async function reach(role: User["role"], path: string): Promise<{ text: string; address: string; action: string }> {
   session.set(person(role));
   window.history.replaceState(null, "", path);
   const router = createAppRouter([{ path: "*", element: <Gate /> }]);
@@ -62,8 +61,9 @@ async function reach(role: User["role"], path: string): Promise<{ text: string; 
     return said;
   });
   const address = window.location.pathname;
+  const action = router.state.historyAction;
   view.unmount();
-  return { text, address };
+  return { text, address, action };
 }
 
 const NOT_FOUND = "Page not found";
@@ -107,28 +107,35 @@ describe("an installation admin reaches the admin pages and no drive page", () =
     expect((await reach("admin", "/admin/installation")).text).toBe("stub admin installation");
   });
 
-  it.each(["/", "/files", "/files/fld_a", "/n/nod_a", "/starred", "/recent", "/shared", "/requests", "/trash", "/storage"])(
+  it.each(["/files", "/files/fld_a", "/n/nod_a", "/starred", "/recent", "/shared", "/requests", "/trash", "/storage"])(
     "%s, a drive page, is the not-found view, or the admin home for the root",
     async (path) => {
-      const got = await reach("admin", path);
-      if (path === "/") {
-        // The root is the admin's home, the tenants list, not Home.
-        expect(got.address).toBe("/admin/tenants");
-        expect(got.text).toBe("stub admin tenants");
-      } else {
-        expect(got.text).toContain(NOT_FOUND);
-      }
+      expect((await reach("admin", path)).text).toContain(NOT_FOUND);
     },
   );
+
+  it("the root is the admin's home, the tenants list, reached with a replace", async () => {
+    const got = await reach("admin", "/");
+    expect(got.address).toBe("/admin/tenants");
+    expect(got.text).toBe("stub admin tenants");
+    expect(got.action).toBe("REPLACE");
+  });
 
   it("the change-password page stays open to an admin", async () => {
     expect((await reach("admin", "/change-password")).text).toBe("stub change-password");
   });
 });
 
-describe("a member and an owner reach their drive pages", () => {
-  it.each(["member", "owner"] as const)("%s opens Home, Starred, Recent and Storage", async (role) => {
-    expect((await reach(role, "/")).text).toBe("stub home");
+describe("a member and an owner land on My files, and the root is not a page of its own", () => {
+  it.each(["member", "owner"] as const)("%s at the root goes to /files with a replace, so Back leaves the root", async (role) => {
+    const got = await reach(role, "/");
+    expect(got.address).toBe("/files");
+    expect(got.text).toBe("stub files");
+    // A push would leave the root in the history, and Back would come back to it and be sent on again.
+    expect(got.action).toBe("REPLACE");
+  });
+
+  it.each(["member", "owner"] as const)("%s opens Starred, Recent and Storage", async (role) => {
     expect((await reach(role, "/starred")).text).toBe("stub starred");
     expect((await reach(role, "/recent")).text).toBe("stub recent");
     expect((await reach(role, "/storage")).text).toBe("stub storage");

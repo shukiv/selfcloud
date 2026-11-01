@@ -679,3 +679,12 @@ tr[data-drop-state="refused"] > td {
 .files-list .ant-table-wrapper {
   overflow: visible;
 }
+
+/* The file page fills the room under the header, whatever else sits above it, so its section can reach the window's bottom. */
+#main:has(> .files-layout) {
+  display: flex;
+  flex-direction: column;
+}
+#main > .files-layout {
+  flex: 1 0 auto;
+}

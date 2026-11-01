@@ -109,3 +109,15 @@ export function pageQuery(params: { limit?: number; cursor?: string | null; extr
 // The size of one page of each list the storage pages read.
 export const LARGEST_PAGE = 20;
 export const PEOPLE_PAGE = 50;
+
+// STORAGE_NOTICE_SHARE is the share of the person's own limit at which My files says how full it is (decision 53).
+export const STORAGE_NOTICE_SHARE = 0.8;
+
+// storageNoticePercent returns the percentage of the person's limit that is held, rounded down, when it is at least
+// 80% of a real limit. A null or zero limit is no limit, and gives null. The result is never above 100.
+export function storageNoticePercent(s: MeStorage | null): number | null {
+  if (!s || s.quota_bytes === null || s.quota_bytes <= 0) return null;
+  const share = heldBytes(s) / s.quota_bytes;
+  if (share < STORAGE_NOTICE_SHARE) return null;
+  return Math.min(100, Math.floor(share * 100));
+}

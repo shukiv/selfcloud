@@ -85,6 +85,7 @@ import Conflict from "../components/files/Conflict";
 import FocusOnOpen from "../components/FocusOnOpen";
 import UndoToast from "../components/UndoToast";
 import NotFoundPage from "./NotFoundPage";
+import StorageNotice from "../components/storage/StorageNotice";
 
 // The file browser: a folder or a directory, its items, and what the signed-in person may do with them.
 // The server checks every operation again; the buttons only show what the role allows.
@@ -424,9 +425,10 @@ export default function FilesPage() {
     return () => window.removeEventListener("keydown", listen);
   }, []);
 
-  // Redirect /files to the caller's own folder.
+  // Redirect /files to the caller's own folder, unless the person has already gone elsewhere: right after signing in the
+  // read of the person is still going on, and a click made meanwhile moves the address before this page is replaced.
   useEffect(() => {
-    if (place?.kind === "redirect") go(place.to, { replace: true });
+    if (place?.kind === "redirect" && window.location.pathname === "/files") go(place.to, { replace: true });
   }, [place]);
 
   // The title a person had before the browser is given back when the browser is left.
@@ -1331,6 +1333,8 @@ export default function FilesPage() {
   }
 
   const titleName = here.dir?.name ?? here.folderName ?? t("nav.files");
+  // My files is the person's own folder, and its subfolders: the storage notice shows there only.
+  const ownFolder = personalID !== null && here.folder === personalID;
   const selectedNodes = picked;
   const rowLabel = titleName;
 
@@ -1657,7 +1661,7 @@ export default function FilesPage() {
       // section, so a file dragged in from the desktop is not uploaded by a drop on it.
       <aside
         data-testid="folder-tree"
-        style={{ flex: "none", inlineSize: 240, position: "sticky", insetBlockStart: HEADER_H + 8, maxBlockSize: `calc(100dvh - ${HEADER_H + 24}px)`, overflow: "auto" }}
+        style={{ flex: "none", inlineSize: 240, position: "sticky", insetBlockStart: HEADER_H + 8, maxBlockSize: `calc(100dvh - ${HEADER_H}px - 2 * var(--sc-page-pad, 28px))`, overflow: "auto" }}
       >
         <Suspense fallback={<Skeleton active paragraph={{ rows: 4 }} title={false} />}>
           <FolderTree
@@ -1684,8 +1688,10 @@ export default function FilesPage() {
       onDrop={onDrop}
       onContextMenu={onSpaceContext}
       // The rows keep their own height: a short folder must not stretch the header and the toolbar apart. The room under the
-      // rows is the upload tray's, so the last rows can be scrolled clear of it.
-      style={{ position: "relative", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, flex: "1 1 0", minWidth: 0, minHeight: "calc(100dvh - 140px)", alignContent: "start", paddingBlockEnd: room }}
+      // rows is the upload tray's, so the last rows can be scrolled clear of it. The section takes the room there is (see
+      // ".files-layout" in index.css) and runs over the page's own padding to the window's bottom, so a rubber band, a right-click
+      // or a dropped file works on all the empty space below the rows.
+      style={{ position: "relative", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, flex: "1 1 0", alignSelf: "stretch", minWidth: 0, marginBlockEnd: "calc(-1 * var(--sc-page-pad, 28px))", alignContent: "start", paddingBlockEnd: room }}
     >
       <header style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
         {wide && (
@@ -1792,6 +1798,9 @@ export default function FilesPage() {
               </>
             )}
           </div>
+
+          {/* The storage notice is in the person's own folder only, below the toolbar, so it never moves the toolbar. */}
+          {ownFolder && <StorageNotice />}
 
           <div>
             {sorted.length === 0 ? (

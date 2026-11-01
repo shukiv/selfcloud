@@ -15,6 +15,8 @@ import { locate } from "../lib/files/location";
 import { clipboard, setClip } from "../lib/files/clipboard";
 import { get } from "../lib/store";
 import { fileErrorText } from "../lib/files/fileErrors";
+import { translate } from "../lib/i18n";
+import { myStorage } from "../lib/storage/api";
 
 // The API, the place reader, the uploads and the stars are replaced, so each test states what the server answers.
 const api = vi.hoisted(() => ({
@@ -63,6 +65,11 @@ vi.mock("../lib/files/uploads", async () => {
   return { uploads: uploadList.store, manager: uploadsMock, conflictAsk: writable<string | null>(null) };
 });
 vi.mock("../lib/stars", () => ({ starNode: vi.fn(), unstarNode: vi.fn() }));
+// The storage figures are read by the notice on My files; the test states them in the store and does not read them.
+vi.mock("../lib/storage/api", async (orig) => ({
+  ...(await orig<typeof import("../lib/storage/api")>()),
+  refreshMyStorage: vi.fn(async () => undefined),
+}));
 // The access request on a missing directory is replaced by a stub that names the item it was given.
 vi.mock("../components/share/RequestAccess", async () => {
   const React = await import("react");
@@ -1662,5 +1669,77 @@ describe("slice w2: the folder tree in the page", () => {
     });
     await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
     expect(api.moveNode.mock.calls[0][1]).toMatchObject({ folder: "fld_aaaaaaaa", parent: "d1" });
+  });
+});
+
+// My files (decision 53): the storage notice shows in the person's own folder only, below the toolbar, and a person with
+// no personal folder gets the not-found page, not a blank one.
+describe("My files: the storage notice and a person with no folder", () => {
+  const OWN = "/files/fld_mineaaaa";
+  const MINE = "fld_mineaaaa";
+  const near = (used: number) => ({ used_bytes: used, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 1000 - used });
+
+  beforeEach(() => api.getMe.mockResolvedValue({ personal_folder_id: MINE }));
+  afterEach(() => myStorage.set(null));
+
+  it("shows the notice in the person's own folder at 80%, below the toolbar", async () => {
+    myStorage.set(near(900));
+    renderAt(OWN);
+    const notice = await screen.findByText(translate("en", "home.storageNotice", { percent: "90" }));
+    const toolbar = await screen.findByRole("toolbar");
+    // The toolbar comes first in the page: the notice never moves it.
+    expect(toolbar.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("does not show the notice below 80%", async () => {
+    myStorage.set(near(500));
+    renderAt(OWN);
+    await screen.findByRole("toolbar");
+    expect(screen.queryByRole("meter")).toBeNull();
+    expect(screen.queryByText(translate("en", "home.storageNotice", { percent: "50" }))).toBeNull();
+  });
+
+  it("does not show the notice in a team space", async () => {
+    myStorage.set(near(900));
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(screen.queryByText(translate("en", "home.storageNotice", { percent: "90" }))).toBeNull();
+  });
+
+  it("a person with no personal folder sees the not-found page, not a blank one", async () => {
+    api.getMe.mockResolvedValue({ personal_folder_id: null });
+    renderAt("/files");
+    expect(await screen.findByText(translate("en", "app.notFound.title"))).toBeTruthy();
+    expect(screen.queryByRole("toolbar")).toBeNull();
+  });
+
+  describe("the way from /files to the person's own folder", () => {
+    const before = window.location.pathname;
+    afterEach(() => window.history.replaceState(null, "", before));
+
+    // renderWaitingForMe opens /files with the read of the person still going on, as it is right after signing in.
+    function renderWaitingForMe() {
+      window.history.replaceState(null, "", "/files");
+      let answer: (me: { personal_folder_id: string }) => void = () => undefined;
+      api.getMe.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+      const { qc } = renderAt("/files");
+      return { qc, answer };
+    }
+
+    it("goes to the folder once the person is read", async () => {
+      const { answer } = renderWaitingForMe();
+      answer({ personal_folder_id: MINE });
+      await waitFor(() => expect(window.location.pathname).toBe(OWN));
+    });
+
+    it("leaves alone a person who already went elsewhere", async () => {
+      const { qc, answer } = renderWaitingForMe();
+      // The person clicks Shared with me before the read ends: the address has moved, the page has not yet.
+      window.history.pushState(null, "", "/shared");
+      answer({ personal_folder_id: MINE });
+      await waitFor(() => expect(qc.isFetching()).toBe(0));
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(window.location.pathname).toBe("/shared");
+    });
   });
 });

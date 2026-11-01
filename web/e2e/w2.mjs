@@ -368,6 +368,26 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     check((await selectedNames(page)).length === 0, 'a click on empty space clears the selection');
   });
 
+  await step('a rubber band can start anywhere below the rows, down to the bottom of the window, and the page does not scroll for it', async () => {
+    await open(shortURL, 'List', 's01.txt');
+    const size = await page.evaluate(`({ h: innerHeight, over: document.documentElement.scrollHeight - innerHeight })`);
+    check(size.over <= 0, `a short folder gives the page nothing to scroll (${size.over})`);
+    // A notice above the page, or anything else that pushes the section down, adds no scrolling either: the section's height
+    // comes from the room there is, not from a sum of what is expected above it. The folder tree is set aside here: its own
+    // limit is a sum, so a tree that fills the window under a notice does let the page scroll while the notice shows, which is
+    // harmless, and the next check holds it to the window without a notice.
+    const pushed = await page.evaluate(`(() => { const main = document.querySelector('#main'); const tree = document.querySelector('[data-testid="folder-tree"]'); const was = tree.style.display; tree.style.display = 'none'; const d = document.createElement('div'); d.style.height = '32px'; d.style.flex = 'none'; main.prepend(d); const over = document.documentElement.scrollHeight - innerHeight; const sec = document.querySelector('section.browser').getBoundingClientRect().bottom; d.remove(); tree.style.display = was; return { over, bottom: Math.round(sec) }; })()`);
+    check(pushed.over <= 0, `something 32 px high above the page adds no scrolling (${JSON.stringify(pushed)})`);
+    check(pushed.bottom === size.h, `and the section still reaches the window's bottom (${JSON.stringify(pushed)})`);
+    // A folder tree too long for the window scrolls inside itself and adds no scrolling to the page.
+    const tallTree = await page.evaluate(`(() => { const t = document.querySelector('[data-testid="folder-tree"]').firstElementChild; const was = t.style.minHeight; t.style.minHeight = '2000px'; const over = document.documentElement.scrollHeight - innerHeight; t.style.minHeight = was; return over; })()`);
+    check(tallTree <= 0, `a folder tree too long for the window adds no scrolling (${tallTree})`);
+    const last = await page.evaluate(`(() => { const r = [...document.querySelectorAll('[role="row"][aria-label]')].pop().getBoundingClientRect(); return { right: r.right, left: r.left, top: r.top }; })()`);
+    const mid = await dragTo(page, { x: last.right - 40, y: size.h - 6 }, { x: last.left + 120, y: last.top + 6 }, { during: () => bandBox(page) });
+    check(mid !== null, `a press 6 px above the window's bottom starts a band (${JSON.stringify(mid)})`);
+    await clearSelection(page);
+  });
+
   await step('a press on a button, a checkbox or a row starts no band', async () => {
     await open(shortURL, 'List', 's01.txt');
     const button = await centre(page, '[data-testid="view-toggle"]');

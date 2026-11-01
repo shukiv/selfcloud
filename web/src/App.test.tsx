@@ -22,7 +22,7 @@ function renderAt(path: string) {
 
 describe("viewFor", () => {
   it("reads the address the way the Svelte build does", () => {
-    expect(viewFor("/")).toBe("home");
+    expect(viewFor("/")).toBe("files");
     expect(viewFor("/files/abc")).toBe("files");
     expect(viewFor("/n/abc")).toBe("node");
     expect(viewFor("/manage/people")).toBe("manage");
@@ -50,7 +50,7 @@ describe("Gate", () => {
     expect(await screen.findByText("Forgot password")).toBeTruthy();
   });
 
-  it("does not send a signed-in person from sign-in back to sign-in: a next of /login goes straight home", async () => {
+  it("does not send a signed-in person from sign-in back to sign-in: a next of /login goes straight to My files", async () => {
     session.set({
       user: { id: "u1", email: "m@example.com", display_name: "M", role: "member", locale: "en" } as never,
       account: null,
@@ -68,7 +68,7 @@ describe("Gate", () => {
         </Direction>
       </ThemeProvider>,
     );
-    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/files"));
     expect(visited).not.toContain("/login");
   });
 });

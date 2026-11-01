@@ -54,9 +54,10 @@ describe('mayOpen', () => {
 });
 
 describe('homeFor', () => {
-  it('sends an admin to the tenants list and everyone else to the drive', () => {
+  it('sends an admin to the tenants list and everyone else to My files, never to a page of its own', () => {
     expect(homeFor(admin)).toBe('/admin/tenants');
-    expect(homeFor(owner)).toBe('/');
-    expect(homeFor(undefined)).toBe('/');
+    expect(homeFor(owner)).toBe('/files');
+    expect(homeFor(member)).toBe('/files');
+    expect(homeFor(undefined)).toBe('/files');
   });
 });

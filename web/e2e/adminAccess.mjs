@@ -331,7 +331,7 @@ async function runSteps(page, { base, accountID, sink }) {
   check((page.expectedAnswers.get('wrong-admin-password') ?? []).length === 1, 'a wrong admin password is refused once, and the dialog stays open');
   await page.setInput('#signin-as-admin', ADMIN.password);
   await clickButton(page, L('tenant.signInAs.submit', { name: MATEO.name }), '.ant-modal');
-  await page.waitFor(`!!document.querySelector('[data-testid="impersonation-banner"]') && location.pathname === '/'`, 15000);
+  await page.waitFor(`!!document.querySelector('[data-testid="impersonation-banner"]') && location.pathname.startsWith('/files/')`, 15000);
   const banner = await textOf(page, '[data-testid="impersonation-banner"]');
   check(banner.includes(L('impersonation.banner', { name: MATEO.name })), 'signed in as the member, the banner names the member');
   check(
@@ -340,11 +340,12 @@ async function runSteps(page, { base, accountID, sink }) {
     'the banner has the way back, and the account menu shows the member',
   );
   await waitText(page, L('nav.files'));
-  check(true, 'the member lands on the home page, with My files in the sidebar');
+  const landedAt = await page.evaluate('location.pathname');
+  check(landedAt.startsWith('/files/fld_'), `the member lands on My files, with My files in the sidebar (at ${landedAt})`);
   const homeHeights = await page.evaluate(`[document.documentElement.scrollHeight, window.innerHeight, document.body.scrollHeight, document.querySelector('[data-testid="impersonation-banner"]')?.getBoundingClientRect().height]`);
   check(
     homeHeights[0] <= homeHeights[1] + 1,
-    `with the banner on, the home page makes no page scrollbar (page ${homeHeights[0]}px, window ${homeHeights[1]}px, body ${homeHeights[2]}px, banner ${homeHeights[3]}px)`,
+    `with the banner on, My files makes no page scrollbar (page ${homeHeights[0]}px, window ${homeHeights[1]}px, body ${homeHeights[2]}px, banner ${homeHeights[3]}px)`,
   );
   await shot(page, '05-banner-member-home');
 
@@ -436,7 +437,7 @@ async function runSteps(page, { base, accountID, sink }) {
   await page.setInput('#reset-password', BY_EMAIL);
   await page.setInput('#reset-confirm', BY_EMAIL);
   await page.evaluate(`document.querySelector('form button[type="submit"]').click()`);
-  await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') && location.pathname === '/'`, 15000);
+  await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') && location.pathname.startsWith('/files/')`, 15000);
   check((await accountMenu(page)).includes(MATEO.name), 'the emailed link sets the password, and the member is signed in with it');
   await signOutFromMenu(page);
   await signIn(page, ADMIN);
@@ -466,7 +467,7 @@ async function runSteps(page, { base, accountID, sink }) {
   await page.setInput('#reset-password', BY_LINK);
   await page.setInput('#reset-confirm', BY_LINK);
   await page.evaluate(`document.querySelector('form button[type="submit"]').click()`);
-  await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') && location.pathname === '/'`, 15000);
+  await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') && location.pathname.startsWith('/files/')`, 15000);
   check((await accountMenu(page)).includes(RITA.name), 'the link sets the password, and the member is signed in with it');
   await signOutFromMenu(page);
 
@@ -512,7 +513,7 @@ async function runSteps(page, { base, accountID, sink }) {
   await page.setInput('#change-password', PERMANENT);
   await page.setInput('#change-confirm', PERMANENT);
   await clickButton(page, L('change.submit'));
-  await page.waitFor(`location.pathname === '/' && !!document.querySelector('[data-testid="account-menu"]')`, 15000);
+  await page.waitFor(`location.pathname.startsWith('/files/') && !!document.querySelector('[data-testid="account-menu"]')`, 15000);
   check((await accountMenu(page)).includes(DANA.name), 'after the change, the member lands in the app');
   await shot(page, '10-after-change-home');
 }

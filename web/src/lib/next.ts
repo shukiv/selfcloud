@@ -31,8 +31,8 @@ export function safeNext(raw: string | null | undefined): string {
 
 // afterSignIn is where a signed-in person goes from a sign-in page: safeNext, except that a path
 // back to the sign-in page goes home. Without this, /login?next=/login sends a signed-in person to
-// the sign-in page again, and then home only because the second hop has no next. Home is the
-// person's own home (homeFor): an admin's is the tenants list. The sign-in goes there in one step;
+// the sign-in page again, and then home only because the second hop has no next. The home is the
+// person's own (homeFor): My files, or for an admin the tenants list. The sign-in goes there in one step;
 // going to "/" first and letting the gate send an admin on was a second navigation that could be
 // lost, and the page stayed blank (v4a).
 export function afterSignIn(raw: string | null | undefined, user?: User): string {

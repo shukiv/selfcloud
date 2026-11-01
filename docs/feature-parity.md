@@ -63,13 +63,13 @@ space ("My files"), and a group can hold users.
 | Team spaces ("Shared drives") | Have in effect: the account's top-level folders. Built (n1): role tiers on the root, and owners as managers. Settings built (n2) |
 | Starred | Built (p2): a star per user on any node it reaches, at most 5,000; the star shows on listings and on the Starred page |
 | Recent | Built (p2): from the user's own views (signed-in users, GET only) and edits, kept 30 days and 500 per user, clearable |
-| Home page (recent, starred, recently shared, comments waiting) | Built (p2) at `/`: Recent, Starred, Recently shared, the access requests waiting, and a storage notice at 80%. Comments wait for slice r |
+| Home page (recent, starred, recently shared, comments waiting) | Replaced (decision 53): there is no Home page. A person lands on My files. Recent, Starred and Shared with me are their own pages, the access requests waiting show with their count in the sidebar, and a storage notice at 80% shows on My files. Comments wait for slice r |
 | Shortcuts (one item in several places) | Built (p3): a shortcut to a file or directory of the same account, made from the Add shortcut dialog or the API |
 | Folder colours, descriptions | Built (p3): twelve palette colours on folders; a description of up to 1,000 characters on any item |
 | Labels (admin-defined metadata fields) | Built (p4): typed fields per account (text, number, date, user, choice), with restricted fields. Search by label is New (q) |
 | Sorting, grid and list views, density | Built (k2): sorting by name, modified and size, list and grid views; the sort covers the whole folder, done by the server (slice sort, decision 47), for the web listing and for the API's `sort` and `order` on the children routes. Density is not built |
 | Workspaces (ad hoc groups of files) | Skip: stars and shortcuts cover the need |
-| "Suggested" files chosen by machine learning | Skip: replaced by the rules-based Home page |
+| "Suggested" files chosen by machine learning | Skip: replaced by rules, not machine learning: the Recent, Starred and Shared with me pages, and the sidebar's requests count (decision 53) |
 
 ## 4. Sharing and permissions
 

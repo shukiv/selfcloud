@@ -46,11 +46,11 @@ describe('safeNext', () => {
 describe('afterSignIn', () => {
   it('goes where safeNext says, except back to a sign-in page', () => {
     expect(afterSignIn('/files?x=1')).toBe('/files?x=1');
-    expect(afterSignIn('/login')).toBe('/');
-    expect(afterSignIn('/login?next=/files')).toBe('/');
-    expect(afterSignIn('/login/')).toBe('/');
+    expect(afterSignIn('/login')).toBe('/files');
+    expect(afterSignIn('/login?next=/files')).toBe('/files');
+    expect(afterSignIn('/login/')).toBe('/files');
     expect(afterSignIn('/sign-in?x=1')).toBe('/sign-in?x=1');
-    expect(afterSignIn(null)).toBe('/');
+    expect(afterSignIn(null)).toBe('/files');
   });
 });
 
@@ -70,9 +70,10 @@ describe("afterSignIn goes straight to the home of the person's role", () => {
     expect(afterSignIn("/admin/installation", admin)).toBe("/admin/installation");
   });
 
-  it("a member with no next goes home, and a path back to the sign-in page still goes home", () => {
-    expect(afterSignIn(null, member)).toBe("/");
-    expect(afterSignIn("/login", member)).toBe("/");
+  it("a member with no next goes straight to My files, and a path back to the sign-in page does too", () => {
+    expect(afterSignIn(null, member)).toBe("/files");
+    expect(afterSignIn("/login", member)).toBe("/files");
+    expect(afterSignIn("/", member)).toBe("/files");
   });
 });
 

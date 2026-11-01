@@ -61,7 +61,7 @@ describe("sign in as a tenant user", () => {
     expect(get(session)?.csrf).toBe("member-csrf");
     expect(get(session)?.impersonation).toEqual({ endsAt: "2026-10-31T13:00:00Z" });
     expect(calls[0].body).toEqual({ admin_password: "admin-pass-1" });
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/files");
   });
 
   it("a user who must change the password first is not signed in, and the reason is said", async () => {
