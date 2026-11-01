@@ -40,6 +40,8 @@ tags:
       adds: a permission deeper down never lowers the role above it.
   - name: Comments
     description: Comments and replies on a file or a folder, mentions, and the people list for them (decision 39).
+  - name: Activity
+    description: The history of one file or folder, read from the audit log and cut down to what the caller may see (decision 50).
   - name: Sharing
     description: |
       Share links. A link gives access to a file or a folder without a permission row: an organisation
@@ -3926,6 +3928,70 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/activity:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Activity]
+      operationId: listNodeActivity
+      summary: List the activity of a file or a folder, newest first
+      description: |
+        What was done to the node, from the audit log, newest first, a page at a time. The caller needs the viewer role
+        or above on the node; a delegated token reads it inside its folders, and an account key reads it too. A node the
+        caller does not reach, one in the trash or below one, a shortcut, and a node of another account are all `404`.
+        A link that anyone can open does not reach this route (`403`, `reason: link_route`).
+
+        The kinds, and who reads them:
+
+        - `content`: created, written, renamed, moved, trashed, restored, a version restored, copied. Viewer and up.
+        - `comment`: a comment made or deleted. Viewer and up. Left out while the account's comments are off.
+        - `access`: a permission set or expired. A manager of the node and the account key only.
+        - `label`: a label set or cleared. A manager of the node and the account key only. A label of a restricted
+          field is listed to a manager only, and a field that no longer exists is listed with `field_gone`.
+
+        A caller below the role a kind needs, asking for it with `kind=`, gets an empty page, not an error. An action
+        that is in no kind is never listed. The links made on a node are not listed: their entries name the link, not
+        the node.
+
+        The answer holds no ID of a person, a node, a group, a field or a version. A person is a display name. `gone`
+        is set on a person who no longer reaches the node or no longer exists, and then there is no name: show "former
+        member", translated. `details` holds only the keys listed in the schema for the entry's action. A rename keeps
+        neither the old name nor the new one, a move neither parent, a copy not its source: the node's own name is on
+        the node. An entry made while the node was in a personal folder is listed to the owner of the folder the node
+        is in now and to the account key, and an entry made while the node was in another person's personal folder
+        is listed to that person and the account key.
+
+        The filters are in the query, so a page holds only entries the caller may see. One read looks at no more than
+        10,000 of the node's entries: when a kind matches few of them, the page can be short, or empty, and still carry
+        a `next_cursor`. A client keeps following `next_cursor` until it is absent; a full page is not promised. A
+        cursor is sealed. It opens only for the same account, caller, node and `kind`, and a cursor that does not open
+        is `400`. `limit` and `kind` are checked before the node is looked at; the cursor is checked after the
+        caller is known to reach the node.
+
+        The route is limited to 120 reads a minute per caller and 1,200 a minute per account (`429`, with
+        `Retry-After`). At most 40 distinct people and 40 groups named in one page are looked up; beyond that, a
+        person is not checked: the actor has kind `other`, or the subject has no name, and neither is marked `gone`
+        (nobody looked, so nothing is said). The caller's own entries are exempt.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+        - name: kind
+          in: query
+          required: false
+          description: Only entries of this kind. Omit it for every kind the caller may read.
+          schema: { type: string, enum: [content, comment, access, label] }
+      responses:
+        "200":
+          description: One page of activity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActivityList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/notifications:
     get:
       tags: [Notifications]
@@ -5713,6 +5779,71 @@ components:
       additionalProperties: false
       properties:
         email: { type: boolean, description: "Email about mentions and replies. Default true." }
+
+    ActivityList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Activity" }
+        next_cursor: { type: string }
+
+    Activity:
+      type: object
+      description: |
+        One entry of a node's history. `id` is opaque; it is not the audit log's ID. It is stable while the server's
+        links signing key is, and changes for every entry when that key is rotated. `details` holds only the keys
+        below for the entry's `action`, and none of them is an ID or the name of another node:
+
+        - `node.create`: `kind` (`file` or `dir`), `via` (`share_link` for a visitor's upload).
+        - `comment.create`: `reply`.
+        - `permission.set`, `permission.expired`: `role`, `subject_kind` (`user` or `group`), `subject_name`,
+          `subject_gone`. A user subject has a name only while that user reaches the node.
+        - `node.label_set`, `node.label_clear`: `field_name`, `field_gone`.
+        - Every other listed action has no details.
+
+        The actor is a kind and a display name; the interface needs no ID to say who did it.
+      required: [id, time, kind, action, actor]
+      properties:
+        id: { type: string }
+        time: { type: string, format: date-time }
+        kind: { type: string, enum: [content, comment, access, label] }
+        action:
+          type: string
+          enum:
+            - node.create
+            - node.write
+            - node.rename
+            - node.move
+            - node.trash
+            - node.restore
+            - node.version.restore
+            - node.copy
+            - comment.create
+            - comment.delete
+            - permission.set
+            - permission.expired
+            - node.label_set
+            - node.label_clear
+        actor: { $ref: "#/components/schemas/ActivityActor" }
+        details: { type: object, additionalProperties: true }
+
+    ActivityActor:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [user, account_key, system, visitor, admin, other]
+          description: |
+            `user` is a member of the account. `account_key` is the account's API key, `system` the server itself,
+            `visitor` a visitor of a link, and `admin` an installation admin who acted while signed in as a member
+            (named by no one; shown only to a caller who manages the account, the account key or an owner). To every
+            other caller such an entry has kind `other`, with no name. `other` is also any kind not listed.
+        name: { type: string, description: "The member's display name. Absent when the member has none, or is gone." }
+        gone: { type: boolean, description: "The member no longer reaches the node or no longer exists. Show 'former member'." }
+        mine: { type: boolean, description: "The caller did it." }
 
     CommentList:
       type: object

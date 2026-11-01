@@ -144,6 +144,10 @@ type Server struct {
 	// only). copyHold, when set, receives the writer hold of each write a chunked copy makes (measurement only).
 	copyFault func(stage string) error
 	copyHold  func(phase string, hold time.Duration)
+	// activityCeiling, when set, replaces the most audit rows one activity read looks at (tests only).
+	activityCeiling int
+	// activityWalks, when set, replaces the most distinct people one activity read walks for reach (tests only).
+	activityWalks int
 	// copyBatchRows, when above zero, fixes the rows per copy batch instead of sizing them from the measured hold (tests).
 	copyBatchRows int
 	// emptyTrashLimit is the most roots one empty-trash call purges; see handleEmptyTrash. A test lowers it.
@@ -386,6 +390,10 @@ func New(opts Options) (*Server, error) {
 			"comment.write": newLimiter(30),
 			// People suggestions for a mention, per user, as directory searches are (decision 39).
 			"people.search": newLimiter(60),
+			// The activity of a node: a read costs a scan and a reach walk per person, so it is limited per caller and per
+			// account (decision 50).
+			"activity":         newLimiter(120),
+			"activity.account": newLimiter(1200),
 			// Opening a share link is a secret lookup, so it is limited per client address.
 			"share.open.ip":   newLimiter(30),
 			"share.open.user": newLimiter(60),
@@ -610,6 +618,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/comments/{cmt}", handle: s.handleDeleteComment, auth: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/comments/{cmt}/resolve", handle: s.handleResolveComment, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/people", handle: s.handleListPeople, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/activity", handle: s.handleNodeActivity, auth: true, imp: impAllow},
 		// Notifications (slice r, decision 43): the signed-in user's own inbox and email switch. A token never reads them.
 		{method: http.MethodGet, path: "/api/v1/notifications", handle: s.handleListNotifications, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/notifications/unread", handle: s.handleUnreadNotifications, auth: true, imp: impRefuse},

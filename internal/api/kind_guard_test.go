@@ -64,6 +64,9 @@ var reviewedNodeKindSites = map[string]int{
 	// not_found, since a shortcut has no comments of its own. That is a refusal on a kind the walk already reached, not
 	// an access decision: nodeAccessWith runs first, and it already refuses a shortcut to a link visitor. Decision 39.
 	"internal/api/comments.go": 2,
+	// Slice r4 added one in activity.go: the activity route refuses a shortcut as not_found, as the comment routes do,
+	// after nodeAccessWith has run. A refusal that grants nothing. Decision 50.
+	"internal/api/activity.go": 1,
 	// Chunked copy (decision 34). copy_jobs.go: a batch's copy of a file (counted in the copies' file total, which the
 	// publish reports), the file selectors of the staged totals and the per-file events, and the non-folder selectors of
 	// the staged item count and the per-file events (shortcuts included, as the one-write copy reports them). None of
