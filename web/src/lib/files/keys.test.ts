@@ -48,10 +48,40 @@ describe("keyAction", () => {
     expect(keyAction(press("Backspace"), list)).toEqual({ kind: "up" });
   });
 
-  it("treats Alt+ArrowUp as an arrow: it moves up a row, as the Svelte listing does", () => {
-    // The old chain tested ArrowUp before the Alt combination, so the parent-folder branch was unreachable there
-    // too. The test pins what the page does today; it is a finding, not a goal.
-    expect(keyAction(press("ArrowUp", { altKey: true }), list)).toEqual({ kind: "move", delta: -1, extend: false });
+  it("goes up a folder with Alt+ArrowUp, as with Backspace, and does not move the row", () => {
+    expect(keyAction(press("ArrowUp", { altKey: true }), list)).toEqual({ kind: "up" });
+    expect(keyAction(press("ArrowUp", { altKey: true }), grid)).toEqual({ kind: "up" });
+  });
+
+  it("maps Ctrl or Cmd plus C, X and V to copy, cut and paste, in either case", () => {
+    expect(keyAction(press("c", { ctrlKey: true }), list)).toEqual({ kind: "copy" });
+    expect(keyAction(press("C", { metaKey: true }), list)).toEqual({ kind: "copy" });
+    expect(keyAction(press("x", { ctrlKey: true }), list)).toEqual({ kind: "cut" });
+    expect(keyAction(press("X", { metaKey: true }), list)).toEqual({ kind: "cut" });
+    expect(keyAction(press("v", { ctrlKey: true }), list)).toEqual({ kind: "paste" });
+    expect(keyAction(press("V", { metaKey: true }), grid)).toEqual({ kind: "paste" });
+  });
+
+  it("leaves plain C, X and V, and Shift with them, to the browser", () => {
+    expect(keyAction(press("c"), list)).toBeNull();
+    expect(keyAction(press("x"), list)).toBeNull();
+    expect(keyAction(press("v"), list)).toBeNull();
+    expect(keyAction(press("v", { ctrlKey: true, shiftKey: true }), list)).toBeNull();
+  });
+
+  it("reads the letter of Ctrl or Cmd keys from the key's position when the layout's letter is not Latin", () => {
+    // Hebrew, Russian and Arabic layouts type another letter on the key of C, X, V and A; the position says which key it is.
+    expect(keyAction({ ...press("ב", { ctrlKey: true }), code: "KeyC" }, list)).toEqual({ kind: "copy" });
+    expect(keyAction({ ...press("ח", { ctrlKey: true }), code: "KeyX" }, list)).toEqual({ kind: "cut" });
+    expect(keyAction({ ...press("м", { metaKey: true }), code: "KeyV" }, list)).toEqual({ kind: "paste" });
+    expect(keyAction({ ...press("ש", { ctrlKey: true }), code: "KeyA" }, list)).toEqual({ kind: "selectAll" });
+  });
+
+  it("keeps the Latin letter of a layout that moves the keys: the letter typed is the one that acts", () => {
+    // Dvorak types C on the key that the position calls J. The typed letter wins whenever it is a Latin letter.
+    expect(keyAction({ ...press("c", { ctrlKey: true }), code: "KeyJ" }, list)).toEqual({ kind: "copy" });
+    // On the same Dvorak layout the key at position C types j, which is not copy.
+    expect(keyAction({ ...press("j", { ctrlKey: true }), code: "KeyC" }, list)).toBeNull();
   });
 
   it("selects all with Ctrl or Cmd plus A, in either case, and ignores plain A", () => {

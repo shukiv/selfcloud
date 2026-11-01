@@ -85,7 +85,7 @@ export async function p3OwnerChecks(page, h, { teamA, projectsID }) {
   await shot(page, 'owner-add-shortcut.png');
   await page.setInput('#shortcut-name', 'Report link.txt');
   await h.clickButton(page, 'Create shortcut');
-  await page.waitFor(`[...document.querySelectorAll('[role="status"]')].some((s) => s.textContent.includes('Shortcut added: Report link.txt'))`, 15000);
+  await page.waitFor(`[...document.querySelectorAll('[role="status"], .ant-message-notice')].some((s) => s.textContent.includes('Shortcut added: Report link.txt'))`, 15000);
   h.check(true, 'the owner names the shortcut in the dialog, and it is created with that name');
 
   await h.navigateTo(page, `/files/${teamA}/${projectsID}`);

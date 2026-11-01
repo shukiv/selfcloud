@@ -6,16 +6,22 @@ import { fileErrorText } from "../lib/files/fileErrors";
 import { formatBytes, formatRate } from "../lib/files/format";
 import { conflictAsk, manager, uploads, type UploadItem } from "../lib/files/uploads";
 import { useLang, useT } from "../lib/i18n";
+import { trayRoom } from "../lib/files/trayRoom";
 import { useStore } from "../lib/store";
 import Conflict from "./files/Conflict";
 
 // UploadTray lists the uploads: their progress, their state, and the controls each state allows. It is
 // collapsible to a header that shows the overall progress. It holds no upload state of its own: the manager
 // is a module singleton, and it is never started from an effect (StrictMode runs effects twice).
+// It folds itself away when every upload has ended without a failure, and an error opens it again, so a failure is seen.
+// Its height is reported to trayRoom, so the listing keeps its last rows clear of it.
 const ACTIVE = ["queued", "uploading", "waiting", "conflict", "awaiting_name"];
 const WAITING = ["uploading", "queued", "waiting"];
 const CANCELLABLE = ["uploading", "queued", "waiting", "paused", "interrupted", "awaiting_name"];
 const FINISHED = ["done", "skipped", "cancelled", "failed"];
+const ENDED = ["done", "skipped", "cancelled"];
+// NEEDS is a state that waits for the person: a name, a resume, or a wait the person may end. A tray that folded opens for it.
+const NEEDS = ["awaiting_name", "paused", "interrupted", "waiting"];
 
 export default function UploadTray() {
   const { t, tp } = useT();
@@ -23,6 +29,37 @@ export default function UploadTray() {
   const list = useStore(uploads);
   const ask = useStore(conflictAsk);
   const [open, setOpen] = useState(true);
+  const card = useRef<HTMLDivElement>(null);
+  const ended = list.length > 0 && list.every((u) => ENDED.includes(u.status));
+  const failed = list.some((u) => u.status === "failed");
+  const needsYou = list.some((u) => NEEDS.includes(u.status));
+  const wasEnded = useRef(false);
+  useEffect(() => {
+    if (failed || needsYou) setOpen(true);
+    else if (ended && !wasEnded.current) setOpen(false);
+    wasEnded.current = ended;
+  }, [ended, failed, needsYou]);
+  // A new upload opens the tray too, so a folded tray shows what was just added.
+  const known = useRef(new Set<number>());
+  useEffect(() => {
+    let fresh = false;
+    for (const u of list) {
+      if (!known.current.has(u.id)) fresh = true;
+      known.current.add(u.id);
+    }
+    if (fresh && known.current.size > 0 && list.some((u) => !ENDED.includes(u.status))) setOpen(true);
+  }, [list]);
+  const shown = list.length > 0 || ask !== null;
+  useEffect(() => {
+    const el = card.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => trayRoom.set(Math.ceil(el.getBoundingClientRect().height) + 16));
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      trayRoom.set(0);
+    };
+  }, [shown]);
   const [nameDraft, setNameDraft] = useState<Record<number, string>>({});
   const [announce, setAnnounce] = useState("");
   const [resumeFor, setResumeFor] = useState<number | null>(null);
@@ -79,6 +116,7 @@ export default function UploadTray() {
   return (
     <>
       <Card
+        ref={card}
         size="small"
         role="region"
         aria-labelledby="upload-tray-title"

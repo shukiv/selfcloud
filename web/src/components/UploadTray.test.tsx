@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/apiError";
 import { conflictAsk, uploads, type UploadItem } from "../lib/files/uploads";
@@ -93,6 +93,8 @@ describe("UploadTray", () => {
   it("a done upload has no progress bar and can be dismissed", () => {
     uploads.set([item({ id: 5, status: "done", offset: 1000 })]);
     const { container } = render(<UploadTray />);
+    // Every upload has ended, so the tray has folded itself: its list opens again on the person's request.
+    fireEvent.click(screen.getByRole("button", { name: "Show" }));
     expect(container.querySelector("progress")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(manager.dismiss).toHaveBeenCalledWith(5);
@@ -150,5 +152,56 @@ describe("UploadTray cancel", () => {
     uploads.set([item({ id: 1, status: "done", name: "done.pdf" })]);
     render(<UploadTray />);
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+});
+
+// The tray folds itself away when every upload has ended, and an error keeps it open, so a failure is seen.
+describe("UploadTray by itself", () => {
+  beforeEach(() => {
+    conflictAsk.set(null);
+    uploads.set([]);
+  });
+
+  it("collapses to its header when the last upload ends", () => {
+    uploads.set([item({ id: 1, status: "uploading", offset: 500 })]);
+    render(<UploadTray />);
+    expect(screen.getByRole("list")).toBeTruthy();
+    act(() => uploads.set([item({ id: 1, status: "done" })]));
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.getByRole("button", { name: "Show" })).toBeTruthy();
+  });
+
+  it("stays open when an upload failed, and opens again when a failure comes after the person folded it", () => {
+    uploads.set([item({ id: 1, status: "uploading", offset: 500 }), item({ id: 2, name: "b.pdf", status: "uploading", offset: 0 })]);
+    render(<UploadTray />);
+    act(() => uploads.set([item({ id: 1, status: "done" }), item({ id: 2, name: "b.pdf", status: "uploading", offset: 0 })]));
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+    expect(screen.queryByRole("list")).toBeNull();
+    act(() => uploads.set([item({ id: 1, status: "done" }), item({ id: 2, name: "b.pdf", status: "failed", error: null })]));
+    expect(screen.getByRole("list")).toBeTruthy();
+  });
+
+  it("reopens when a new upload arrives after the tray folded", () => {
+    uploads.set([item({ id: 1, status: "done" })]);
+    render(<UploadTray />);
+    expect(screen.queryByRole("list")).toBeNull();
+    act(() => uploads.set([item({ id: 1, status: "done" }), item({ id: 2, name: "c.pdf", status: "queued", offset: 0 })]));
+    expect(screen.getByRole("list")).toBeTruthy();
+  });
+
+  it.each(["awaiting_name", "paused", "interrupted", "waiting"] as const)("reopens when a running upload becomes %s, after the person folded it", (status) => {
+    uploads.set([item({ id: 1, status: "uploading", offset: 500 }), item({ id: 2, name: "b.pdf", status: "uploading", offset: 0 })]);
+    render(<UploadTray />);
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+    expect(screen.queryByRole("list")).toBeNull();
+    act(() => uploads.set([item({ id: 1, status: "uploading", offset: 500 }), item({ id: 2, name: "b.pdf", status, offset: 0 })]));
+    expect(screen.getByRole("list")).toBeTruthy();
+  });
+
+  it("a failure among the uploads keeps the tray open when the others end", () => {
+    uploads.set([item({ id: 1, status: "uploading", offset: 500 }), item({ id: 2, name: "b.pdf", status: "uploading", offset: 0 })]);
+    render(<UploadTray />);
+    act(() => uploads.set([item({ id: 1, status: "failed", error: null }), item({ id: 2, name: "b.pdf", status: "done" })]));
+    expect(screen.getByRole("list")).toBeTruthy();
   });
 });

@@ -24,6 +24,7 @@ import * as s4a from './s4a.mjs';
 import { sortChecks } from './sort.mjs';
 import { mediaChecks } from './media.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
+import { w1Checks } from './w1.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -210,10 +211,30 @@ async function clickMenu(page, text) {
 
 // clickButton clicks the enabled button whose text is exactly text, once it is on the page.
 async function clickButton(page, text) {
-  await page.waitFor(
-    `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`,
-    10000,
-  );
+  // The selection panel's icons carry their names as labels: one that is there is pressed directly.
+  const panelButton = `[...document.querySelectorAll('[data-testid="selection-panel"] button')].find((x) => x.getAttribute('aria-label') === ${q(text)} && !x.disabled)`;
+  if (await page.evaluate(`!!${panelButton}`)) {
+    await page.evaluate(`${panelButton}.click()`);
+    return;
+  }
+  // Some toolbar actions live in the New and More menus: those are chosen from the menu that holds them. Any other button
+  // is waited for on the page, as before (a dialog's, or a row's).
+  const NEW_MENU = ['New folder', 'Upload files', 'Upload folder'];
+  const MENU_ONLY = [...NEW_MENU, 'Details', 'Versions', 'Add shortcut', 'Cut', 'Copy', 'Paste', 'Move to…', 'Copy to…', 'Download as zip'];
+  if (!MENU_ONLY.includes(text)) {
+    await page.waitFor(
+      `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`,
+      10000,
+    );
+    return;
+  }
+  const holder = NEW_MENU.includes(text) ? 'New' : 'More';
+  // The panel's More is an icon with its name as the label; the toolbar's New and More are words.
+  const toolbarButton = `[...document.querySelectorAll('[data-testid="browser-toolbar"] button, [data-testid="selection-panel"] button')].find((x) => x.textContent.trim() === ${q(holder)} || x.getAttribute('aria-label') === ${q(holder)})`;
+  await page.waitFor(`!!${toolbarButton}`, 10000);
+  await page.evaluate(`${toolbarButton}.click()`);
+  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(text)} && !i.classList.contains('ant-dropdown-menu-item-disabled'))`, 10000);
+  await page.evaluate(`[...document.querySelectorAll('.ant-dropdown-menu-item')].find((i) => i.textContent.trim() === ${q(text)}).click()`);
 }
 
 // rowAppears and rowGone wait for a row of the listing.
@@ -283,9 +304,16 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   check(true, 'My files opens the personal folder');
   await clickMenu(page, 'Team A');
   await page.waitFor(`location.pathname === '/files/${teamA}'`);
-  await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Team A' && [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Upload files')`);
+  await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Team A' && [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'New')`);
   const buttons = await buttonTexts(page);
-  check(buttons.includes('New folder') && buttons.includes('Upload files'), `an editor sees New folder and Upload files (${JSON.stringify(buttons)})`);
+  check(buttons.includes('New'), `an editor sees the New menu on the toolbar (${JSON.stringify(buttons)})`);
+  // The label alone says nothing about what the menu holds: it is opened, its items are read, and it is closed again.
+  await page.evaluate(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].find((x) => x.textContent.trim() === 'New').click()`);
+  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((i) => i.textContent.trim() === 'New folder')`, 10000);
+  const newItems = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown-menu-item')].map((i) => i.textContent.trim())`);
+  check(newItems.includes('New folder') && newItems.includes('Upload files'), `the New menu holds New folder and Upload files (${JSON.stringify(newItems)})`);
+  await press(page, 'body', 'Escape');
+  await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
 
   // New folder, with the server's name checks.
   await clickButton(page, 'New folder');
@@ -375,20 +403,24 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   await clickButton(page, 'Close');
   await page.waitFor(`!document.querySelector('[data-testid="preview"]')`);
 
-  // Hebrew: the list turns right to left and the actions are translated.
+  // Hebrew: the list turns right to left and the actions are translated. The selection is dropped first: while one is
+  // selected the selection panel takes the toolbar's row, and the New button is not there.
+  await page.evaluate(`document.querySelector('[data-testid="selection-clear"]')?.click()`);
+  await page.waitFor(`!document.querySelector('[data-testid="selection-panel"]')`, 10000);
   await chooseLanguage(page, 'עברית');
-  await page.waitFor(`document.documentElement.dir === 'rtl' && [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'העלו קבצים')`);
+  await page.waitFor(`document.documentElement.dir === 'rtl' && [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'חדש')`);
   const rtlRows = await page.evaluate(`!!document.querySelector('.ant-table') && getComputedStyle(document.querySelector('.ant-table')).direction === 'rtl' || document.documentElement.dir === 'rtl'`);
   check(rtlRows, 'in Hebrew the list is right to left and the actions are translated');
   await chooseLanguage(page, 'English');
-  await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Upload files')`);
+  await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'New')`);
 
   // A viewer of Team B: no rename, no delete, no upload.
   await clickMenu(page, 'Team B');
   await page.waitFor(`location.pathname === '/files/${teamB}'`);
   await rowAppears(page, 'readme.txt');
   await selectRow(page, 'readme.txt');
-  const viewer = await buttonTexts(page);
+  // The panel's icons have no text: their names (aria-label) are read too.
+  const viewer = [...(await buttonTexts(page)), ...(await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].map((b) => b.getAttribute('aria-label'))`))];
   for (const hidden of ['New folder', 'Upload files', 'Upload folder', 'Rename', 'Delete']) {
     check(!viewer.includes(hidden), `a viewer of Team B has no ${hidden}`);
   }
@@ -638,6 +670,7 @@ async function main() {
     await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
     await sortChecks(h, { page, base, accountKey, teamA });
     await mediaChecks(h, { page, base, accountKey, teamA });
+    await w1Checks(h, { page, base, accountKey, teamA, teamB, dir });
     const home = await owner.homeChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
     await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
 

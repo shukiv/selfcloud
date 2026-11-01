@@ -445,6 +445,10 @@ export default function Shell({ children }: { children: ReactNode }) {
               borderBottom: `1px solid ${token.colorBorderSecondary}`,
               height: 56,
               lineHeight: "56px",
+              // The top bar stays on screen as a long page scrolls: a file listing's toolbar sits just below it, at 56 pixels.
+              position: "sticky",
+              top: 0,
+              zIndex: 10,
             }}
           >
             {isMobile && (

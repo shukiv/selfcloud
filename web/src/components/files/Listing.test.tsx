@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
 import Listing, { type Click, type ListingProps } from "./Listing";
@@ -121,6 +121,45 @@ describe("Listing: grid view", () => {
     fireEvent.click(screen.getByRole("button", { name: "Star plan.txt" }));
     expect((p.onStar as ReturnType<typeof vi.fn>).mock.calls[0][0].id).toBe("n1");
     expect(p.onRowClick).not.toHaveBeenCalled();
+  });
+});
+
+// The sort arrow: the sorted column shows its direction, the other columns keep an empty box of the same width, and the
+// arrow is hidden from the header's name, which stays the label alone.
+describe("the sort arrow on the list header", () => {
+  const headerButtons = (c: HTMLElement) => Array.from(c.querySelectorAll<HTMLButtonElement>("thead button"));
+
+  it("points up on the sorted column when the sort is ascending, and at no other column", () => {
+    const { container } = render(<Listing {...props({ sortKey: "name", sortDir: "asc" })} />);
+    const up = headerButtons(container).filter((b) => b.querySelector("svg.lucide-arrow-up"));
+    expect(up.length).toBe(1);
+    expect(up[0].textContent?.trim()).toBe("Name");
+    expect(container.querySelectorAll("thead svg.lucide-arrow-down").length).toBe(0);
+  });
+
+  it("points down when the sort is descending", () => {
+    const { container } = render(<Listing {...props({ sortKey: "size", sortDir: "desc" })} />);
+    const down = headerButtons(container).filter((b) => b.querySelector("svg.lucide-arrow-down"));
+    expect(down.length).toBe(1);
+    expect(down[0].textContent?.trim()).toBe("Size");
+    expect(container.querySelectorAll("thead svg.lucide-arrow-up").length).toBe(0);
+  });
+
+  it("keeps an empty box of the same width on every other column, so the labels do not move", () => {
+    const { container } = render(<Listing {...props({ sortKey: "name", sortDir: "asc" })} />);
+    const buttons = headerButtons(container);
+    expect(buttons.length).toBeGreaterThan(1);
+    for (const b of buttons) {
+      const box = b.querySelector<HTMLElement>('span[aria-hidden="true"]');
+      expect(box).not.toBeNull();
+      expect(box?.style.width).toBe("14px");
+    }
+  });
+
+  it("leaves the header's accessible name as the label alone", () => {
+    render(<Listing {...props({ sortKey: "name", sortDir: "asc" })} />);
+    expect(screen.getByRole("button", { name: "Name" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Size" })).toBeTruthy();
   });
 });
 
@@ -259,4 +298,106 @@ describe("a rename field inside its row or tile", () => {
       expect(onRowDoubleClick).not.toHaveBeenCalled();
     });
   }
+});
+
+// The right-click menu and the cut state: the listing reports a right-click on a row and dims the cut items.
+describe("the listing's right-click and cut state", () => {
+  it("reports a right-click on a row with the row's index and the pointer's place, and takes the browser's menu away", () => {
+    const onRowContext = vi.fn();
+    render(<Listing {...props({ onRowContext } as Partial<ListingProps>)} />);
+    const row = screen.getByRole("row", { name: "notes.txt" });
+    const notPrevented = fireEvent.contextMenu(row, { clientX: 40, clientY: 90 });
+    expect(onRowContext).toHaveBeenCalledWith("n2", 1, 40, 90);
+    expect(notPrevented).toBe(false);
+  });
+
+  it("leaves a right-click in the rename field to the browser's own menu", () => {
+    const onRowContext = vi.fn();
+    render(<Listing {...props({ onRowContext, renameID: "n1", renameValue: "plan.txt" } as Partial<ListingProps>)} />);
+    const field = screen.getByRole("textbox", { name: "New name" });
+    const notPrevented = fireEvent.contextMenu(field, { clientX: 1, clientY: 1 });
+    expect(onRowContext).not.toHaveBeenCalled();
+    expect(notPrevented).toBe(true);
+  });
+
+  it("dims the items that are cut, in the list and in the tiles", () => {
+    const cutIDs = new Set(["n1"]);
+    const { unmount } = render(<Listing {...props({ cutIDs } as Partial<ListingProps>)} />);
+    expect(screen.getByRole("row", { name: "plan.txt" }).style.opacity).toBe("0.5");
+    expect(screen.getByRole("row", { name: "notes.txt" }).style.opacity).toBe("");
+    unmount();
+    render(<Listing {...props({ view: "grid", cutIDs } as Partial<ListingProps>)} />);
+    expect(screen.getByRole("option", { name: "plan.txt" }).style.opacity).toBe("0.5");
+  });
+
+  it("a long press on a finger opens the menu at the press, and the tap that ends it opens nothing", () => {
+    vi.useFakeTimers();
+    try {
+      const onRowContext = vi.fn();
+      const onRowClick = vi.fn();
+      render(<Listing {...props({ onRowContext, onRowClick } as Partial<ListingProps>)} />);
+      const row = screen.getByRole("row", { name: "plan.txt" });
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 30, clientY: 60 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(onRowContext).toHaveBeenCalledWith("n1", 0, 30, 60);
+      fireEvent.click(row);
+      expect(onRowClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a finger that moves more than 10 pixels is scrolling, so no menu opens; 10 pixels or less still holds the press", () => {
+    vi.useFakeTimers();
+    try {
+      const onRowContext = vi.fn();
+      render(<Listing {...props({ onRowContext } as Partial<ListingProps>)} />);
+      const row = screen.getByRole("row", { name: "plan.txt" });
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 30, clientY: 60 });
+      fireEvent.pointerMove(row, { pointerType: "touch", clientX: 30, clientY: 71 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(onRowContext).not.toHaveBeenCalled();
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 30, clientY: 60 });
+      fireEvent.pointerMove(row, { pointerType: "touch", clientX: 30, clientY: 70 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(onRowContext).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the mousedown after a long press is stopped before the window's later listeners, so the menu it opened stays", () => {
+    vi.useFakeTimers();
+    try {
+      const onRowContext = vi.fn();
+      render(<Listing {...props({ onRowContext } as Partial<ListingProps>)} />);
+      const row = screen.getByRole("row", { name: "plan.txt" });
+      fireEvent.pointerDown(row, { pointerType: "touch", clientX: 30, clientY: 60 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(onRowContext).toHaveBeenCalled();
+      // A listener added after the listing, as the menu's outside-click listener is when the menu opens.
+      const later = vi.fn();
+      window.addEventListener("mousedown", later, true);
+      try {
+        fireEvent.mouseDown(row);
+        expect(later).not.toHaveBeenCalled();
+        // A new press begins with its pointerdown, and its mousedown is let through.
+        fireEvent.pointerDown(row, { pointerType: "mouse" });
+        fireEvent.mouseDown(row);
+        expect(later).toHaveBeenCalledTimes(1);
+      } finally {
+        window.removeEventListener("mousedown", later, true);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

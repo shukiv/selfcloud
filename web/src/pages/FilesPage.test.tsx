@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
+import { App as AntdApp } from "antd";
 import { createQueryClient } from "../lib/query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/apiError";
@@ -11,6 +12,9 @@ import { session, type Session } from "../lib/session";
 import { writable } from "../lib/store";
 import { folders } from "../lib/files/folders";
 import { locate } from "../lib/files/location";
+import { clipboard, setClip } from "../lib/files/clipboard";
+import { get } from "../lib/store";
+import { fileErrorText } from "../lib/files/fileErrors";
 
 // The API, the place reader, the uploads and the stars are replaced, so each test states what the server answers.
 const api = vi.hoisted(() => ({
@@ -116,13 +120,27 @@ export function node(id: string, name: string, extra: Partial<Node> = {}): Node 
 }
 
 // renderAt mounts the page at an address, in a router and a query client of its own.
+// chooseMore opens the toolbar's More menu and picks the action with this name from it.
+async function chooseMore(name: string) {
+  fireEvent.click(screen.getByRole("button", { name: "More" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name }));
+}
+
+// chooseNew opens the New menu and picks the item with this name from it.
+async function chooseNew(name: string) {
+  fireEvent.click(screen.getByRole("button", { name: "New" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name }));
+}
+
 function renderAt(path: string, client?: QueryClient) {
   // The app's own client: the same stale window and retry rules, so a test sees what a person sees.
   const qc = client ?? createQueryClient();
   const router = createMemoryRouter([{ path: "*", element: <FilesPage /> }], { initialEntries: [path] });
   const view = render(
     <QueryClientProvider client={qc}>
-      <RouterProvider router={router} />
+      <AntdApp>
+        <RouterProvider router={router} />
+      </AntdApp>
     </QueryClientProvider>,
   );
   return { qc, router, ...view };
@@ -139,7 +157,7 @@ beforeEach(() => {
   api.getMe.mockResolvedValue({ personal_folder_id: "fld_me" });
   api.serverLimits.mockResolvedValue({ max_chunk_size: 1048576, max_file_size: 1 });
   api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined });
-  api.statOrNull.mockResolvedValue(null);
+  api.statOrNull.mockImplementation(async (id: string) => (id === "n1" ? node("n1", "alpha.txt") : id === "n2" ? node("n2", "beta.txt") : null));
   uploadList.store.set([]);
 });
 
@@ -309,7 +327,7 @@ describe("a rename refreshes what shows the name", () => {
     const { qc } = renderAt(`${FOLDER}?select=n1`);
     await waitFor(() => expect(rows("Reports")?.getAttribute("aria-selected")).toBe("true"));
     const spy = vi.spyOn(qc, "invalidateQueries");
-    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    await chooseMore("Rename");
     const input = document.querySelector("input.rename") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Archive" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -332,7 +350,7 @@ describe("a session change stops the work it started", () => {
     await screen.findByRole("row", { name: "alpha.txt" });
     fireEvent.click(rows("alpha.txt") as Element);
     fireEvent.click(rows("beta.txt") as Element, { ctrlKey: true });
-    fireEvent.click(screen.getByRole("button", { name: "Move to…" }));
+    fireEvent.click(within(await screen.findByTestId("selection-panel")).getByRole("button", { name: "Move to…" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(await within(dialog).findByText("Team A"));
     fireEvent.click(await within(dialog).findByRole("button", { name: "Move here" }));
@@ -361,9 +379,7 @@ describe("a drop onto a dialog is not a drop onto the folder behind it", () => {
   it("does not start an upload for a file dropped on an open dialog", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
-    fireEvent.click(rows("alpha.txt") as Element);
-    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    await chooseNew("New folder");
     const dialog = await screen.findByRole("dialog");
     const file = new File(["x"], "dropped.txt", { type: "text/plain" });
     fireEvent.drop(dialog, { dataTransfer: { files: [file], types: ["Files"], items: [] } });
@@ -396,7 +412,7 @@ describe("the dialogs close on Escape only", () => {
   it("keeps the new-folder dialog open when the mask behind it is clicked", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
-    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    await chooseNew("New folder");
     await screen.findByRole("dialog");
     const mask = document.querySelector(".ant-modal-wrap") as HTMLElement;
     fireEvent.mouseDown(mask);
@@ -444,28 +460,26 @@ describe("sharing from the browser", () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     selectOnly("alpha.txt");
-    await screen.findByRole("button", { name: "Details" });
+    await screen.findByRole("button", { name: "Delete" });
     expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
   });
 
-  it("offers Share in the selection bar to every caller for one picked item, as Svelte does (the dialog limits what each role sees)", async () => {
-    place.role = "viewer";
-    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "viewer" })], next_cursor: undefined });
-    const first = renderAt(FOLDER);
+  it.each([
+    ["a viewer", "viewer", {}, false],
+    ["a commenter", "commenter", {}, false],
+    ["an editor who may not share", "editor", { editors_can_share: false }, false],
+    ["a manager", "manager", {}, true],
+  ] as const)("shows Share to %s only when the caller may share the item", async (_label, role, extra, shown) => {
+    place.role = role;
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role, ...extra })], next_cursor: undefined });
+    renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     selectOnly("alpha.txt");
-    expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
-    first.unmount();
-
-    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "editor", editors_can_share: false })], next_cursor: undefined });
-    const second = renderAt(FOLDER);
-    await screen.findByRole("row", { name: "alpha.txt" });
-    selectOnly("alpha.txt");
-    expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
-    second.unmount();
+    const toolbar = await screen.findByTestId("selection-panel");
+    expect(within(toolbar).queryByRole("button", { name: "Share" }) !== null).toBe(shown);
   });
 
-  it("offers no Share bar button when the picks are not exactly one item", async () => {
+  it("disables Share when the picks are not exactly one item, and does not hide it", async () => {
     place.role = "manager";
     api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "manager" }), node("n2", "beta.txt", { role: "manager" })], next_cursor: undefined });
     renderAt(FOLDER);
@@ -473,7 +487,7 @@ describe("sharing from the browser", () => {
     selectOnly("alpha.txt");
     expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
     fireEvent.click(await screen.findByRole("row", { name: "beta.txt" }), { ctrlKey: true });
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Share" })).toBeNull());
+    await waitFor(() => expect((screen.getByRole("button", { name: "Share" }) as HTMLButtonElement).disabled).toBe(true));
   });
 
   it("Details shows Who has access to every caller, and its own Share only where Share is offered", async () => {
@@ -482,7 +496,7 @@ describe("sharing from the browser", () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     selectOnly("alpha.txt");
-    fireEvent.click(await screen.findByRole("button", { name: "Details" }));
+    await chooseMore("Details");
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByRole("button", { name: "Who has access" })).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: "Share" })).toBeNull();
@@ -590,21 +604,466 @@ describe("the selection bar at phone width", () => {
     folders.set([]);
   });
 
-  it("keeps the main action and Clear in the bar, and puts the rest, Delete last and marked, in More", async () => {
-    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q === "(max-width: 767.98px)", media: q, addEventListener() {}, removeEventListener() {} }));
+  it("at phone width the selection panel is on top, with Clear, the count and icons, and the rest in More", async () => {
     place.role = "editor";
     api.childrenPage.mockResolvedValue({ items: [node("n1", "notes.txt", { role: "editor" })], next_cursor: undefined });
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "notes.txt" });
     fireEvent.click(rows("notes.txt") as Element);
-    const bar = await screen.findByTestId("selection-bar");
-    expect(within(bar).getByRole("button", { name: "Preview" })).toBeTruthy();
-    expect(within(bar).getByRole("button", { name: "Clear selection" })).toBeTruthy();
-    expect(within(bar).queryByRole("button", { name: "Rename" })).toBeNull();
-    expect(within(bar).queryByRole("button", { name: "Delete" })).toBeNull();
-    fireEvent.click(within(bar).getByRole("button", { name: "More" }));
-    const del = await screen.findByText("Delete");
-    expect(del.closest(".ant-dropdown-menu-item")?.className).toContain("ant-dropdown-menu-item-danger");
-    expect(screen.getByText("Rename")).toBeTruthy();
+    const panel = await screen.findByTestId("selection-panel");
+    expect(within(panel).getByRole("button", { name: "Clear selection" })).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Download" })).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Delete" })).toBeTruthy();
+    expect(within(panel).queryByRole("button", { name: "Rename" })).toBeNull();
+    fireEvent.click(within(panel).getByRole("button", { name: "More" }));
+    const del = await screen.findByText("Rename");
+    expect(del.closest(".ant-dropdown-menu-item")).toBeTruthy();
+    // No bar under the listing: the panel is the only selection UI.
+    expect(screen.queryByTestId("selection-bar")).toBeNull();
+  });
+});
+
+// The actions sit in the top toolbar, and the same list feeds the right-click menu. Ctrl+C, Ctrl+X and Ctrl+V work within
+// the tab, Alt+Up goes up a folder, and a key typed in a field is left to the field.
+describe("the toolbar, the right-click menu and the clipboard keys", () => {
+  beforeEach(() => {
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
+  });
+  afterEach(() => {
+    folders.set([]);
+  });
+
+  it("keeps the actions in the top toolbar: the usual row until something is selected, then the panel; no bar under the listing", async () => {
+    place.role = "editor";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const toolbar = screen.getByRole("toolbar", { name: "Folder actions" });
+    expect(within(toolbar).queryByTestId("selection-panel")).toBeNull();
+    fireEvent.click(rows("alpha.txt") as Element);
+    const panel = await within(toolbar).findByTestId("selection-panel");
+    expect((within(panel).getByRole("button", { name: "Download" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByTestId("selection-bar")).toBeNull();
+  });
+
+  it("a viewer's toolbar and menu never offer Delete, Move, Rename, Cut or Paste", async () => {
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "viewer" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    const toolbar = screen.getByRole("toolbar", { name: "Folder actions" });
+    for (const name of ["Delete", "Move to…", "Rename", "Cut", "Paste"]) expect(within(toolbar).queryByRole("button", { name })).toBeNull();
+    fireEvent.contextMenu(rows("alpha.txt") as Element);
+    expect(await screen.findByRole("menuitem", { name: "Copy to…" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+  });
+
+  it("a right-click on an item that is not selected selects it, and opens the menu with the same actions", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.contextMenu(rows("beta.txt") as Element, { clientX: 100, clientY: 200 });
+    await waitFor(() => expect(rows("beta.txt")?.getAttribute("aria-selected")).toBe("true"));
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("false");
+    expect(await screen.findByRole("menuitem", { name: "Download" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeTruthy();
+  });
+
+  it("a right-click on a selected item keeps the whole selection", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(rows("beta.txt") as Element, { ctrlKey: true });
+    fireEvent.contextMenu(rows("alpha.txt") as Element);
+    await screen.findByRole("menuitem", { name: "Delete" });
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("true");
+    expect(rows("beta.txt")?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("a right-click on empty space offers New folder, Upload and Paste, and Paste is disabled with nothing copied", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(document.querySelector(".browser") as Element);
+    expect(await screen.findByRole("menuitem", { name: "New folder" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Paste" }).getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("Ctrl+X and then Ctrl+V move the selected item into this folder, dim it until then, and empty the clipboard", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    api.moveNode.mockResolvedValue(node("n1", "alpha.txt"));
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    await waitFor(() => expect((rows("alpha.txt") as HTMLElement).style.opacity).toBe("0.5"));
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
+    expect(api.moveNode.mock.calls[0][0]).toBe("n1");
+    expect(api.moveNode.mock.calls[0][1]).toMatchObject({ folder: "fld_aaaaaaaa", path: "/" });
+    await waitFor(() => expect((rows("alpha.txt") as HTMLElement).style.opacity).toBe(""));
+  });
+
+  // A closed Delete dialog stays in the DOM, so the shortcut guard must look at what is on screen, not at what is there.
+  it("Delete, then Cancel, then Ctrl+X still cuts the selected item", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(within(await screen.findByTestId("selection-panel")).getByRole("button", { name: "Delete" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    // jsdom runs no close motion. When the motion ends, rc-dialog sets the wrapper's inline display to none and leaves the
+    // dialog in the DOM; that end state is set here, so the shortcut guard meets the same page a browser shows.
+    await waitFor(() => expect(document.querySelector(".ant-modal-wrap")).not.toBeNull());
+    (document.querySelector(".ant-modal-wrap") as HTMLElement).style.display = "none";
+    fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    await waitFor(() => expect((rows("alpha.txt") as HTMLElement).style.opacity).toBe("0.5"));
+  });
+
+  // A row cannot take a text selection (tiles cannot either), so Shift+click then Ctrl+C copies the files, not stray text.
+  it("a row cannot take a text selection, so Shift+click then Ctrl+C copies the files", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "beta.txt" });
+    expect((rows("alpha.txt") as HTMLElement).style.userSelect).toBe("none");
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(rows("beta.txt") as Element, { shiftKey: true });
+    fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
+    await waitFor(() => expect(get(clipboard)?.mode).toBe("copy"));
+    expect(get(clipboard)?.nodes.map((n) => n.id)).toEqual(["n1", "n2"]);
+  });
+
+  // Text selected elsewhere on the page is still copied as text: Ctrl+C does not take the files then.
+  it("text selected on the page is copied as text, and Ctrl+C does not take the picked files", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    const range = document.createRange();
+    range.selectNodeContents(document.querySelector(".ant-breadcrumb") ?? document.body);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
+    window.getSelection()?.removeAllRanges();
+    expect(get(clipboard)).toBeNull();
+  });
+
+  // A long count is cut with an ellipsis, so its full text is in the title, and it is the live region that is read out.
+  it("the selection count keeps its full text in a title, and is the live region", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(rows("beta.txt") as Element, { ctrlKey: true });
+    const panel = await screen.findByTestId("selection-panel");
+    const count = within(panel).getByText("2 selected");
+    expect(count.getAttribute("title")).toBe("2 selected");
+    expect(count.getAttribute("aria-live")).toBe("polite");
+  });
+
+  // The More button of the panel says what it is on hover, as the icons do.
+  it("More in the selection panel has a tooltip", async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({ ...original(query), matches: false })) as typeof window.matchMedia;
+    try {
+      renderAt(FOLDER);
+      await screen.findByRole("row", { name: "alpha.txt" });
+      fireEvent.click(rows("alpha.txt") as Element);
+      const panel = await screen.findByTestId("selection-panel");
+      fireEvent.mouseEnter(within(panel).getByRole("button", { name: "More" }));
+      expect(await screen.findByRole("tooltip", { name: "More" })).toBeTruthy();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  // Rows keep the scroll margin of the sticky header and toolbar, so the focused row is never left under them.
+  it("a row scrolls into view below the sticky header and toolbar", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect((rows("alpha.txt") as HTMLElement).style.scrollMarginTop).toBe("112px");
+  });
+
+  // After a confirmed delete from the panel, the panel goes with the selection, and the focus must not be lost to the body.
+  it("after a confirmed delete from the panel, the focus goes to the listing", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined });
+    api.deleteNode.mockImplementation(async () => {
+      api.childrenPage.mockResolvedValue({ items: [node("n2", "beta.txt")], next_cursor: undefined });
+    });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "beta.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(within(await screen.findByTestId("selection-panel")).getByRole("button", { name: "Delete" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
+    await waitFor(() => expect(api.deleteNode).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId("selection-panel")).toBeNull());
+    await waitFor(() => expect((document.activeElement as HTMLElement | null)?.dataset.id).toBe("n2"));
+  });
+
+  it("with a dialog open, Ctrl+X does nothing to the listing", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(within(await screen.findByTestId("selection-panel")).getByRole("button", { name: "Delete" }));
+    await screen.findByRole("dialog");
+    fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect((rows("alpha.txt") as HTMLElement).style.opacity).toBe("");
+  });
+
+  it("Ctrl+C and then Ctrl+V copy into this folder, and the source stays where it is", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    api.copyNode.mockResolvedValue({ ...node("n3", "alpha.txt") });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(api.copyNode).toHaveBeenCalledTimes(1));
+    expect(api.copyNode.mock.calls[0][0]).toBe("n1");
+    expect(api.moveNode).not.toHaveBeenCalled();
+    expect((rows("alpha.txt") as HTMLElement).style.opacity).toBe("");
+  });
+
+  it("Ctrl+V is refused for a viewer, with a clear message, and nothing is sent", async () => {
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "viewer" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    expect(await screen.findByText("You cannot paste into this folder.")).toBeTruthy();
+    expect(api.copyNode).not.toHaveBeenCalled();
+    expect(api.moveNode).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+X on items the caller cannot move is refused, and nothing is cut", async () => {
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "viewer" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    expect(await screen.findByText("You cannot move some of these items, so none were cut.")).toBeTruthy();
+    expect((rows("alpha.txt") as HTMLElement).style.opacity).toBe("");
+  });
+
+  it("Escape cancels a cut, and the items are no longer dimmed", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    await waitFor(() => expect((rows("alpha.txt") as HTMLElement).style.opacity).toBe("0.5"));
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect((rows("alpha.txt") as HTMLElement).style.opacity).toBe(""));
+    expect(api.moveNode).not.toHaveBeenCalled();
+  });
+
+  it("Alt+ArrowUp goes up a folder, as Backspace does", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    renderAt(`${FOLDER}/nod_reports1`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.keyDown(document.body, { key: "ArrowUp", altKey: true });
+    // Outside the app there is no router to go by, so the address is read from the window's history.
+    await waitFor(() => expect(window.location.pathname).toBe(FOLDER));
+  });
+
+  it("Ctrl+V typed in the rename field pastes nothing", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
+    fireEvent.keyDown(rows("alpha.txt") as Element, { key: "F2" });
+    const field = await screen.findByRole("textbox", { name: "New name" });
+    fireEvent.keyDown(field, { key: "v", ctrlKey: true });
+    fireEvent.keyDown(field, { key: "Backspace" });
+    expect(api.copyNode).not.toHaveBeenCalled();
+    expect(api.moveNode).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="toolbar"]')).toBeTruthy();
+  });
+});
+
+describe("the review round: pastes, the clipboard's lifetime, the menus and the narrow toolbar", () => {
+  beforeEach(() => {
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false } as never]);
+    clipboard.set(null);
+  });
+  afterEach(() => {
+    folders.set([]);
+    clipboard.set(null);
+  });
+
+  it("a paste that is running is not started again, and a key held down pastes once", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+    let finish: (v: Node) => void = () => undefined;
+    api.copyNode.mockReturnValue(new Promise<Node>((resolve) => (finish = resolve)));
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true, repeat: true });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(api.copyNode).toHaveBeenCalledTimes(1));
+    finish(node("n3", "alpha.txt"));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalled());
+    expect(api.copyNode).toHaveBeenCalledTimes(1);
+  });
+
+  it("Ctrl+C with text selected on the page is left to the browser: no item is copied", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    const range = document.createRange();
+    range.selectNodeContents(document.getElementById("browser-title") as HTMLElement);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    const notPrevented = fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
+    window.getSelection()?.removeAllRanges();
+    expect(notPrevented).toBe(true);
+    expect(get(clipboard)).toBeNull();
+  });
+
+  it("a viewer's right-click on empty space keeps the browser's menu, since the place has nothing to offer", async () => {
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "viewer" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const section = document.querySelector("section.browser") as HTMLElement;
+    expect(fireEvent.contextMenu(section, { clientX: 40, clientY: 50 })).toBe(true);
+    expect(document.querySelector(".ant-dropdown:not(.ant-dropdown-hidden)")).toBeNull();
+  });
+
+  it("the clipboard lasts for the tab: a visit that comes back keeps it, and a change of person empties it", async () => {
+    setClip("cut", [node("n1", "alpha.txt")]);
+    const first = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    first.unmount();
+    expect(get(clipboard)?.mode).toBe("cut");
+    const second = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(get(clipboard)?.mode).toBe("cut");
+    second.unmount();
+    session.set(signedAs("u2"));
+    await waitFor(() => expect(get(clipboard)).toBeNull());
+  });
+
+  it("a sign-out empties the clipboard too, and the page need not be open for it", () => {
+    setClip("copy", [node("n1", "alpha.txt")]);
+    session.set(null);
+    expect(get(clipboard)).toBeNull();
+  });
+
+  it("a paste where one item fails keeps that item cut, takes the moved one off the clipboard, and shows the reason", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined });
+    const refused = new ApiError(400, "invalid_request", {}, 0);
+    api.moveNode.mockImplementation(async (id: string) => {
+      if (id === "n2") throw refused;
+      return node(id, id === "n1" ? "alpha.txt" : "beta.txt");
+    });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "beta.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(rows("beta.txt") as Element, { ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(get(clipboard)?.nodes.map((n) => n.id)).toEqual(["n2"]));
+    expect(get(clipboard)?.mode).toBe("cut");
+    expect(await screen.findByText(`beta.txt: ${fileErrorText(refused, "en")}`)).toBeTruthy();
+  });
+
+  // The clipboard holds the items as they were when they were cut, so each paste re-reads them: the move uses the etag the server
+  // has now, not the one from the cut.
+  it("a paste moves each item with its current etag, not the one it had when it was cut", async () => {
+    setClip("cut", [node("n1", "alpha.txt", { etag: "old" })]);
+    api.statOrNull.mockResolvedValue(node("n1", "alpha.txt", { etag: "fresh" }));
+    api.moveNode.mockResolvedValue(node("n1", "alpha.txt"));
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
+    expect(api.moveNode.mock.calls[0][2]).toBe("fresh");
+  });
+
+  // An item deleted since the cut is not sent to the server: it leaves the clipboard, and the notice names it.
+  it("a paste drops an item that no longer exists from the clipboard, and names it in the notice", async () => {
+    setClip("cut", [node("n1", "alpha.txt", { etag: "e1" }), node("n9", "gone.txt")]);
+    const refused = new ApiError(400, "invalid_request", {}, 0);
+    api.moveNode.mockRejectedValue(refused);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(get(clipboard)?.nodes.map((n) => n.id)).toEqual(["n1"]));
+    expect(api.moveNode.mock.calls.map((c) => c[0])).toEqual(["n1"]);
+    expect(await screen.findByText(/^gone\.txt: /)).toBeTruthy();
+  });
+
+  // Seven items fail for two different reasons: the notice names the first five, each with its own reason, and says how many more.
+  it("a paste where many items fail names five of them with their reasons, then says how many more", async () => {
+    const names = ["a0.txt", "a1.txt", "a2.txt", "a3.txt", "a4.txt", "a5.txt", "a6.txt"];
+    setClip("cut", names.map((nm, i) => node(`m${i}`, nm)));
+    api.statOrNull.mockImplementation(async (id: string) => node(id, names[Number(id.slice(1))]));
+    const refused = new ApiError(400, "invalid_request", {}, 0);
+    const locked = new ApiError(423, "locked", {}, 0);
+    api.moveNode.mockImplementation(async (id: string) => {
+      throw Number(id.slice(1)) < 2 ? refused : locked;
+    });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    expect(await screen.findByText("and 2 more")).toBeTruthy();
+    expect(screen.getByText(`a0.txt: ${fileErrorText(refused, "en")}`)).toBeTruthy();
+    expect(screen.getByText(`a1.txt: ${fileErrorText(refused, "en")}`)).toBeTruthy();
+    expect(screen.getByText(`a4.txt: ${fileErrorText(locked, "en")}`)).toBeTruthy();
+    expect(screen.queryByText(/^a5\.txt: /)).toBeNull();
+    expect(get(clipboard)?.nodes.length).toBe(7);
+  });
+
+  it("on a narrow window the panel keeps Share and Download as icons, and Delete goes into its More menu", async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({ ...original(query), matches: false })) as typeof window.matchMedia;
+    try {
+      renderAt(FOLDER);
+      await screen.findByRole("row", { name: "alpha.txt" });
+      fireEvent.click(rows("alpha.txt") as Element);
+      const panel = await screen.findByTestId("selection-panel");
+      expect(within(panel).getByRole("button", { name: "Download" })).toBeTruthy();
+      expect(within(panel).queryByRole("button", { name: "Delete" })).toBeNull();
+      fireEvent.click(within(panel).getByRole("button", { name: "More" }));
+      expect(await screen.findByRole("menuitem", { name: "Delete" })).toBeTruthy();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it("the right-click menu of one file leaves out Download as zip, and groups its actions with dividers", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 50, clientY: 60 });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).queryByRole("menuitem", { name: "Download as zip" })).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: "Rename" })).toBeTruthy();
+    expect(menu.querySelectorAll(".ant-dropdown-menu-item-divider").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("Shift+F10 on a focused row opens its menu with the focus in it, and Escape gives the focus back to the row", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const row = rows("alpha.txt") as HTMLElement;
+    row.focus();
+    fireEvent.keyDown(row, { key: "F10", shiftKey: true });
+    const menu = await screen.findByRole("menu");
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape", keyCode: 27 });
+    await waitFor(() => expect(document.activeElement).toBe(row));
   });
 });

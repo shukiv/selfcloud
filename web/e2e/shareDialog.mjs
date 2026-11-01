@@ -31,10 +31,30 @@ async function clickOn(page, selector, timeout = 10000) {
 }
 
 async function clickButton(page, text) {
-  await page.waitFor(
-    `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`,
-    10000,
-  );
+  // The selection panel's icons carry their names as labels: one that is there is pressed directly.
+  const panelButton = `[...document.querySelectorAll('[data-testid="selection-panel"] button')].find((x) => x.getAttribute('aria-label') === ${q(text)} && !x.disabled)`;
+  if (await page.evaluate(`!!${panelButton}`)) {
+    await page.evaluate(`${panelButton}.click()`);
+    return;
+  }
+  // Some toolbar actions live in the New and More menus: those are chosen from the menu that holds them. Any other button
+  // is waited for on the page, as before (a dialog's, or a row's).
+  const NEW_MENU = ['New folder', 'Upload files', 'Upload folder'];
+  const MENU_ONLY = [...NEW_MENU, 'Details', 'Versions', 'Add shortcut', 'Cut', 'Copy', 'Paste', 'Move to…', 'Copy to…', 'Download as zip'];
+  if (!MENU_ONLY.includes(text)) {
+    await page.waitFor(
+      `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`,
+      10000,
+    );
+    return;
+  }
+  const holder = NEW_MENU.includes(text) ? 'New' : 'More';
+  // The panel's More is an icon with its name as the label; the toolbar's New and More are words.
+  const toolbarButton = `[...document.querySelectorAll('[data-testid="browser-toolbar"] button, [data-testid="selection-panel"] button')].find((x) => x.textContent.trim() === ${q(holder)} || x.getAttribute('aria-label') === ${q(holder)})`;
+  await page.waitFor(`!!${toolbarButton}`, 10000);
+  await page.evaluate(`${toolbarButton}.click()`);
+  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(text)} && !i.classList.contains('ant-dropdown-menu-item-disabled'))`, 10000);
+  await page.evaluate(`[...document.querySelectorAll('.ant-dropdown-menu-item')].find((i) => i.textContent.trim() === ${q(text)}).click()`);
 }
 
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
@@ -198,7 +218,8 @@ export async function sharingChecks(page, ctx) {
   const viewerButtons = await buttonTexts(page);
   check(!viewerButtons.includes('Upload files') && !viewerButtons.includes('New folder'), 'a viewer of the shared folder cannot upload or make folders');
   await selectRow(page, 'notes.txt');
-  const viewerSel = await buttonTexts(page);
+  // The selection panel's icons have no text: their names (aria-label) are read too.
+  const viewerSel = [...(await buttonTexts(page)), ...(await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].map((b) => b.getAttribute('aria-label'))`))];
   check(!viewerSel.includes('Rename') && !viewerSel.includes('Delete'), 'a viewer cannot rename or delete');
   check(viewerSel.includes('Download'), 'a viewer can download, since the space does not forbid it');
 
@@ -311,7 +332,7 @@ export async function publicLinksDeleteAllChecks(page, ctx) {
   await page.waitFor(`!!document.querySelector('[role="dialog"]') && !!document.querySelector('[role="dialog"]').textContent.includes(${q(`${before} link`)})`, 15000);
   check(true, `the confirmation names the count of public links (${before})`);
   await page.evaluate(`(() => { const b = [...document.querySelectorAll('[role="dialog"] button')].find((x) => x.textContent.trim() === 'Delete all public links' && !x.disabled); if (!b) return false; b.click(); return true; })()`);
-  await page.waitFor(`[...document.querySelectorAll('[role="status"]')].some((x) => x.textContent.includes(${q(`${before} public link`)}))`, 15000);
+  await page.waitFor(`[...document.querySelectorAll('[role="status"], .ant-message-notice')].some((x) => x.textContent.includes(${q(`${before} public link`)}))`, 15000);
   await page.waitFor(
     `![...document.querySelectorAll('.item-name')].some((x) => x.textContent === 'Public' || x.textContent === 'Inbox') && [...document.querySelectorAll('.item-name')].some((x) => x.textContent === 'Shared')`,
     15000,

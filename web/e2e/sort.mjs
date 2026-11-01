@@ -12,6 +12,14 @@ const firstRow = (page) =>
     return { text: row ? row.textContent : '', scrollY: window.scrollY };
   })()`);
 
+// setView shows List through the view toggle, which names the view it switches to (data-view); the words change with the
+// language, so it is found by its test id.
+async function setView(page, view) {
+  const want = view === 'List' ? 'list' : 'grid';
+  await page.waitFor(`!!document.querySelector('[data-testid="view-toggle"]')?.dataset.view`, 10000);
+  await page.evaluate(`(() => { const b = document.querySelector('[data-testid="view-toggle"]'); if (b.dataset.view === ${JSON.stringify(want)}) b.click(); })()`);
+}
+
 export async function sortChecks(h, { page, base, accountKey, teamA }) {
   const { check } = h;
   const files = 120;
@@ -31,7 +39,7 @@ export async function sortChecks(h, { page, base, accountKey, teamA }) {
   // The page is loaded again so the listing reads the folders that were just made, at desktop width.
   await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await page.goto(`${page.base}/files/${teamA}`);
-  await h.clickButton(page, 'List');
+  await setView(page, 'List');
   await h.rowAppears(page, 'sort-long');
   await h.openRow(page, 'sort-long');
   await h.rowAppears(page, 'item-001.txt');
@@ -50,7 +58,7 @@ export async function sortChecks(h, { page, base, accountKey, teamA }) {
 
   // The same folder in Hebrew names: the sort is still by size, and the sort the person chose is kept for the next folder.
   await page.goto(`${page.base}/files/${teamA}`);
-  await h.clickButton(page, 'List');
+  await setView(page, 'List');
   await h.rowAppears(page, 'סדר-ארוך');
   await h.openRow(page, 'סדר-ארוך');
   await page.waitFor(`(() => { const r = document.querySelector('.ant-table-tbody tr.ant-table-row'); return !!r && r.textContent.includes(${q('ת-גדול.bin')}); })()`, 15000);

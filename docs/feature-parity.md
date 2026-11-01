@@ -155,12 +155,12 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Keyboard shortcuts and a shortcut list (ctrl+/) | Built in part (k2): arrows, Enter, Space, F2, Delete, Backspace, Escape and Ctrl+A in the file list. The shortcut list (ctrl+/) is not built |
-| Multi-select, right-click menu, grid and list, density, dark mode | Built in part (k2): multi-select, grid and list, dark mode (k1). No right-click menu, no density |
-| Upload progress panel | Built (k2): the upload tray, with pause, resume, cancel and retry |
+| Keyboard shortcuts and a shortcut list (ctrl+/) | Built in part (k2, w1): arrows, Enter, Space, F2, Delete, Escape and Ctrl+A in the file list; Backspace and Alt+Up go up a folder, Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste within the tab (w1, decision 44). The shortcut list (ctrl+/) is not built |
+| Multi-select, right-click menu, grid and list, density, dark mode | Built in part (k2, w1): multi-select, grid and list, dark mode (k1). The right-click menu, with a long press on a finger, is built (w1, decision 44), on a row, a selection and empty space. Density is not built. The selection actions are in a toolbar above the listing, not in a bar over the rows (w1) |
+| Upload progress panel | Built (k2): the upload tray, with pause, resume, cancel and retry. It folds itself when the uploads end, and an error keeps it open; the listing keeps its last rows clear of it (w1, decision 44) |
 | Download progress, download a selection as zip | Built (s2, decision 35; the interface in s4a, decision 38): a stored zip made as a job, served with `Range`, kept for `zip.ttl` and only for its maker. The interface offers Download as zip for a folder and a selection, shows the job's progress as a spinner (the job has no percentage), and names the items left out. The streamed zip with no temporary copy (row 160's alternative) is not built |
 | Copy link, open in new tab | Planned (k), not in k2 |
-| Cut, paste, paste as shortcut | New (p/k) |
+| Cut, paste, paste as shortcut | Built in part (w1, decision 44): cut, copy and paste with Ctrl+X, Ctrl+C and Ctrl+V within the tab, over the existing move and copy routes and their undo; a cut item is dimmed until it is pasted or Escape cancels it. The system clipboard is not used. Paste as shortcut is not built |
 
 ## 12. Admin and security
 

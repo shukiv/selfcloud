@@ -3,7 +3,6 @@
 import i18next, { type FormatterModule } from 'i18next';
 import { useMemo } from 'react';
 import type { Locale as AntdLocale } from 'antd/es/locale';
-import en from '../i18n/en.json';
 import { useStore, derived, get, writable } from './store';
 import { PREF_LANG, readPref, writePref } from './prefs';
 
@@ -38,10 +37,11 @@ export function directionOf(l: Lang): 'ltr' | 'rtl' {
   return l === 'ar' || l === 'he' ? 'rtl' : 'ltr';
 }
 
-// Catalogues: English is bundled; the others load on first use, before the language is set.
+// Catalogues load on first use, before the language is set. English is the fallback for every language, so the entry
+// point reads it before the first render (main.tsx): no raw key is shown while a catalogue is on its way.
 type Catalogue = { default: Record<string, string> };
 const loaders: Record<Lang, () => Promise<Catalogue>> = {
-  en: async () => ({ default: en }),
+  en: () => import('../i18n/en.json'),
   es: () => import('../i18n/es.json'),
   fr: () => import('../i18n/fr.json'),
   pt: () => import('../i18n/pt.json'),
@@ -50,7 +50,7 @@ const loaders: Record<Lang, () => Promise<Catalogue>> = {
   he: () => import('../i18n/he.json'),
 };
 
-const loaded = new Set<Lang>(['en']);
+const loaded = new Set<Lang>();
 
 // formatValue writes a number with the digits of its language. Other values are already strings.
 function formatValue(value: unknown, _format: string | undefined, lng: string | undefined): string {
@@ -71,7 +71,8 @@ const formatter = {
 i18next.use(formatter).init({
   lng: 'en',
   fallbackLng: 'en',
-  resources: { en: { common: en } },
+  // The catalogues are added by loadLang: English before the first render, the others when they are chosen.
+  resources: {},
   defaultNS: 'common',
   ns: ['common'],
   keySeparator: false,

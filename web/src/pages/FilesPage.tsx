@@ -1,10 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { Alert, Button, Dropdown, Form, Input, Modal, Select, Skeleton, theme as antdTheme } from "antd";
-import { X } from "lucide-react";
+import { App, Alert, Button, ConfigProvider, Dropdown, Form, Input, Modal, Skeleton, Tooltip, theme as antdTheme } from "antd";
+import {
+  ClipboardPaste,
+  Copy,
+  CopyPlus,
+  Download,
+  Eye,
+  FileArchive,
+  FolderInput,
+  FolderPlus,
+  FolderUp,
+  History,
+  ArrowUpDown,
+  Info,
+  LayoutGrid,
+  Link2,
+  List,
+  MoreHorizontal,
+  Pencil,
+  Play,
+  Plus,
+  Scissors,
+  Share2,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { useLang, useT, translatePlural } from "../lib/i18n";
 import { useStore, get } from "../lib/store";
 import { brand } from "../lib/brand";
@@ -14,7 +39,7 @@ import { session, sessionChanged, sessionKey, signingOut } from "../lib/session"
 import { queryKey, refreshTree } from "../lib/query";
 import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/files/folders";
 import { keepTargetOnSave } from "../lib/files/appearance";
-import { childrenPage, copyNode, deleteNode, getJob, getMe, mkdir, moveNode, renameNode, restoreNode, serverLimits, type Transfer } from "../lib/files/api";
+import { childrenPage, copyNode, deleteNode, getJob, getMe, mkdir, moveNode, renameNode, restoreNode, serverLimits, statOrNull, type Transfer } from "../lib/files/api";
 import { locate, joinPath, type Here } from "../lib/files/location";
 import { starNode, unstarNode } from "../lib/stars";
 import { fileErrorText } from "../lib/files/fileErrors";
@@ -24,7 +49,9 @@ import { parseFilesPath, filesURL, type FilesRoute } from "../lib/files/route";
 import { trimCrumbs, type Crumb } from "../lib/files/breadcrumbs";
 import { nextSort, type SortDir, type SortKey } from "../lib/files/sort";
 import { clickSelect, moveFocus, selectAll, EMPTY, type Selection } from "../lib/files/selection";
-import { keyAction } from "../lib/files/keys";
+import { isTextField, keyAction } from "../lib/files/keys";
+import { clearClip, clipboard, cutIDs, setClip } from "../lib/files/clipboard";
+import { trayRoom } from "../lib/files/trayRoom";
 import { can, downloadAllowed, atLeast } from "../lib/files/roles";
 import { shareCap } from "../lib/sharing/roles";
 import { kindOf, previewable } from "../lib/files/kind";
@@ -35,7 +62,7 @@ import type { ConflictChoice } from "../lib/files/conflict";
 import type { Job, Node, Page } from "../lib/files/types";
 import { manager, uploads } from "../lib/files/uploads";
 import Breadcrumbs, { type Place } from "../components/files/Breadcrumbs";
-import Listing, { type Click } from "../components/files/Listing";
+import Listing, { type Click, useCoarsePointer } from "../components/files/Listing";
 import Details from "../components/files/Details";
 import Preview from "../components/files/Preview";
 import Versions from "../components/files/Versions";
@@ -83,33 +110,51 @@ interface SelState extends Selection {
 
 const NO_SEL: SelState = { ...EMPTY, anchorID: null, focusID: null };
 
-const toolbarStyle = { display: "flex", flexWrap: "wrap" as const, alignItems: "center", gap: 8, width: "100%" };
 
-// BAR_SETTLE_MS is how long a new selection bar lets clicks pass through it: the usual longest gap in a double click.
-const BAR_SETTLE_MS = 500;
-
-// useNarrowWindow says whether the window is phone width (below the md breakpoint, 768 pixels). It is a media query, so a
-// window that cannot say its width (no matchMedia) is taken as a desktop, and the desktop bar is shown.
-function useNarrowWindow(): boolean {
-  const query = "(max-width: 767.98px)";
+// useRoomy says whether the window is at least 360 pixels wide. Below it the selection panel keeps two icons, and the rest go in
+// its More menu, so the panel never runs past the window's edge; a window that cannot say its width is taken as roomy.
+function useRoomy(): boolean {
+  const query = "(min-width: 360px)";
   const supported = typeof window !== "undefined" && typeof window.matchMedia === "function";
-  const [narrow, setNarrow] = useState(() => (supported ? window.matchMedia(query).matches : false));
+  const [roomy, setRoomy] = useState(() => (supported ? window.matchMedia(query).matches : true));
   useEffect(() => {
     if (!supported) return;
     const mq = window.matchMedia(query);
-    const onChange = () => setNarrow(mq.matches);
+    const onChange = () => setRoomy(mq.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, [supported]);
-  return narrow;
+  return roomy;
 }
 
-// BarAct is one action on the selection: its label, what it does, and whether it destroys something.
+// BarAct is one action: its label and icon, what it does, and whether it destroys something. A hidden action is one the
+// caller may never perform here, or one that does not fit the selection's kind, so it is not shown at all; a disabled one
+// needs a selection that is not there now. group orders the menus: a divider separates the groups.
 interface BarAct {
   key: string;
   label: string;
+  icon: ReactNode;
+  group: number;
+  // fits is false when the selection is of a kind the action does not apply to; a menu leaves such an action out.
+  fits: boolean;
   run: () => void;
   danger?: boolean;
+  hidden: boolean;
+  enabled: boolean;
+}
+
+// MenuAt is the right-click menu: where it opens, and whether it offers the item's actions or the place's. The place is
+// logical (inline from the start edge, block from the top), so it is right in a right-to-left page too.
+interface MenuAt {
+  inline: number;
+  block: number;
+  scope: "selection" | "space";
+}
+
+// menuAt turns a pointer's place in the window into the logical place of the menu, measured from the start edge of the page.
+function menuAt(x: number, y: number, scope: MenuAt["scope"]): MenuAt {
+  const rtl = document.documentElement.dir === "rtl";
+  return { inline: rtl ? window.innerWidth - x : x, block: y, scope };
 }
 
 interface RenameState {
@@ -144,12 +189,26 @@ async function loadPlace(route: FilesRoute): Promise<PlaceState> {
   }
 }
 
+// dialogOpen says whether a dialog is on screen. antd keeps a closed modal in the DOM (its wrapper is display none) and a
+// closed drawer too (it loses the open class), so a plain query for the role finds a dialog that is not there.
+function dialogOpen(): boolean {
+  return Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).some((d) => {
+    const modal = d.closest<HTMLElement>(".ant-modal-wrap");
+    if (modal) return getComputedStyle(modal).display !== "none";
+    const drawer = d.closest<HTMLElement>(".ant-drawer");
+    if (drawer) return drawer.classList.contains("ant-drawer-open");
+    return getComputedStyle(d).display !== "none" && getComputedStyle(d).visibility !== "hidden";
+  });
+}
+
 export default function FilesPage() {
   const { t } = useT();
   const lang = useLang();
   const { token } = antdTheme.useToken();
-  // A phone's selection bar is one row: the main action, a More menu and Clear (see barActs below).
-  const phone = useNarrowWindow();
+  const coarse = useCoarsePointer();
+  const roomy = useRoomy();
+  // Action notices are toasts: a toast covers no row, where an alert above the listing pushed every row down.
+  const { message } = App.useApp();
   const qc = useQueryClient();
   const location = useLocation();
   const path = location.pathname;
@@ -159,7 +218,20 @@ export default function FilesPage() {
   const folderList = useStore(folders);
   const hiddenList = useStore(hiddenFolders);
   const uploadList = useStore(uploads);
-
+  const clip = useStore(clipboard);
+  // room is the space the upload tray covers at the bottom of the page: the last rows are scrolled clear of it.
+  const room = useStore(trayRoom);
+  // menu is the right-click menu while it is open (see onRowContext and onSpaceContext).
+  const [menu, setMenu] = useState<MenuAt | null>(null);
+  // menuFromKey says the menu was opened from the keyboard, so it takes the focus; menuOrigin is the row it returns to when it
+  // closes unchosen; menuChosen says an item was picked, so the focus goes to what the item opened instead.
+  const menuFromKey = useRef(false);
+  const menuOrigin = useRef<HTMLElement | null>(null);
+  const menuChosen = useRef(false);
+  // pasting says a paste is running, so a second paste (a held key, a double press) waits for it rather than repeating it.
+  const pasting = useRef(false);
+  // toolbarFocus says the focus is in the toolbar, so a button disabled under it hands the focus to the listing.
+  const toolbarFocus = useRef(false);
 
   // Nothing is read without a session: a sign-out clears the session before the page leaves, and a read that
   // followed it would be refused.
@@ -204,6 +276,7 @@ export default function FilesPage() {
   // were given to the previous person.
   const sessionID = sessionKey(useStore(session));
   useEffect(() => {
+    // The clipboard is emptied by lib/files/clipboard when the person changes, wherever the page is.
     setDialog((d) => (d === "share" ? null : d));
   }, [sessionID]);
   const [pending, setPending] = useState<Node[]>([]);
@@ -277,7 +350,40 @@ export default function FilesPage() {
     setDialog(null);
     setTarget(null);
     setPreviewItems([]);
+    setMenu(null);
   }, [path]);
+
+  // A menu opened from the keyboard takes the focus: its list is focused, so the arrow keys move in it.
+  useEffect(() => {
+    if (!menu || !menuFromKey.current) return;
+    menuFromKey.current = false;
+    const frame = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(".ant-dropdown:not(.ant-dropdown-hidden) [role='menu']")?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [menu]);
+
+  // A toolbar button disabled while it has the focus (Clear, or Delete once its items are gone) takes the focus with it, to the
+  // body. The focus goes to the listing's current row instead.
+  useEffect(() => {
+    // Focus left in a dialog (the delete's own button, which stays in the DOM when it closes) counts as lost too.
+    const active = document.activeElement;
+    const inDialog = !!active?.closest(".ant-modal-wrap");
+    if (!toolbarFocus.current || (active && active !== document.body && !inDialog)) return;
+    toolbarFocus.current = false;
+    // The current row may be gone (a delete), so the first row takes the focus then.
+    (listRef.current?.querySelector<HTMLElement>("[data-id][tabindex='0']") ?? listRef.current?.querySelector<HTMLElement>("[data-id]"))?.focus();
+  }, [sel.ids.length]);
+
+  // Keys go to the page, not only to a row: Ctrl+C, X and V, and Backspace or Alt+Up, work wherever the focus is in the
+  // tab. The listener reads the page as of the last render, through a ref, so it never acts on an old selection.
+  const onShortcutRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  onShortcutRef.current = onShortcut;
+  useEffect(() => {
+    const listen = (e: KeyboardEvent) => onShortcutRef.current(e);
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, []);
 
   // Redirect /files to the caller's own folder.
   useEffect(() => {
@@ -393,18 +499,9 @@ export default function FilesPage() {
   const ids = useMemo(() => sorted.map((n) => n.id), [sorted]);
   const byID = useMemo(() => new Map(sorted.map((n) => [n.id, n])), [sorted]);
   const selected = useMemo(() => new Set(sel.ids), [sel.ids]);
-  // The bar can appear under the pointer, over the row just clicked. For its first moments clicks pass through it, so the
-  // second click of a double click reaches the row and not one of the bar's buttons.
+  // cutSet is the items a cut has taken, dimmed in the listing (memoised, so the listing is not redrawn for nothing).
+  const cutSet = useMemo(() => cutIDs(clip), [clip]);
   const hasSelection = sel.ids.length > 0;
-  const [barSettled, setBarSettled] = useState(false);
-  useEffect(() => {
-    if (!hasSelection) {
-      setBarSettled(false);
-      return;
-    }
-    const timer = setTimeout(() => setBarSettled(true), BAR_SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [hasSelection]);
   const picked = sel.ids.map((id) => byID.get(id)).filter((n): n is Node => n !== undefined);
   const rovingID = sel.focusID && byID.has(sel.focusID) ? sel.focusID : (ids[0] ?? null);
   const view = prefs.view;
@@ -497,7 +594,7 @@ export default function FilesPage() {
           : data,
       );
     } catch (err) {
-      if (!changed() && !signingOut()) setNotice(fileErrorText(err, lang));
+      if (!changed() && !signingOut()) void message.error(fileErrorText(err, lang));
     }
   }
 
@@ -592,10 +689,6 @@ export default function FilesPage() {
           askDelete(picked);
         }
         return;
-      case "up":
-        e.preventDefault();
-        goUp();
-        return;
       case "selectAll":
         e.preventDefault();
         setSelection(selectAll(ids));
@@ -610,6 +703,124 @@ export default function FilesPage() {
     if (!here || !here.dir) return;
     const parent = here.trail.length > 0 ? here.trail[here.trail.length - 1].id : null;
     go(filesURL(here.folder, parent));
+  }
+
+  // onShortcut takes the keys that act on the page as a whole: up a folder (Backspace, Alt+Up), copy, cut, paste, and
+  // Escape to cancel a cut. It does nothing while a person types in a field, or while a dialog is open.
+  function onShortcut(e: KeyboardEvent) {
+    if (e.defaultPrevented || renameRef.current || isTextField(e.target) || dialogRef.current !== null || conflict !== null) return;
+    if (dialogOpen()) return;
+    if (!here) return;
+    // The context-menu key and Shift+F10 open the menu of the focused row, as a right click does.
+    if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+      e.preventDefault();
+      openMenuFromFocus();
+      return;
+    }
+    const rtl = document.documentElement.dir === "rtl";
+    const action = keyAction(e, { cols: columns(), grid: view === "grid", rtl, count: ids.length });
+    switch (action?.kind) {
+      case "up":
+        e.preventDefault();
+        goUp();
+        return;
+      // A key held down acts once. A text selected on the page is left to the browser's own copy.
+      case "copy":
+        if (picked.length === 0 || e.repeat || window.getSelection()?.toString()) return;
+        e.preventDefault();
+        copyPicked();
+        return;
+      case "cut":
+        if (picked.length === 0 || e.repeat) return;
+        e.preventDefault();
+        cutPicked();
+        return;
+      case "paste":
+        if (!clip || e.repeat) return;
+        e.preventDefault();
+        void pasteHere();
+        return;
+      case "escape":
+        if (clip?.mode === "cut") clearClip();
+        return;
+    }
+  }
+
+  // openMenuFromFocus opens the menu of the focused row, or the place's menu when no row has the focus, from the keyboard. The
+  // row is selected first, as a right click selects it. Focus goes into the menu, and back to the row when it closes unchosen.
+  function openMenuFromFocus() {
+    const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const row = focused?.closest<HTMLElement>("[data-id]") ?? null;
+    const anchor = row ?? focused ?? sectionRef.current;
+    if (!anchor) return;
+    const box = anchor.getBoundingClientRect();
+    const id = row?.dataset.id;
+    if (id && !sel.ids.includes(id)) {
+      const index = ids.indexOf(id);
+      setSelection({ ids: [id], anchor: index, focus: index });
+    }
+    menuOrigin.current = anchor;
+    menuFromKey.current = true;
+    menuChosen.current = false;
+    setMenu(menuAt(box.left + 24, box.top + Math.min(box.height, 48), row ? "selection" : "space"));
+  }
+
+  // copyPicked and cutPicked put the selection on the clipboard. A cut needs the right to move every item picked, and a
+  // refused cut says so and takes nothing.
+  function copyPicked() {
+    setClip("copy", picked);
+    void message.info(t("files.clip.copied"));
+  }
+
+  function cutPicked() {
+    if (!allEdit) {
+      void message.warning(t("files.cut.refused"));
+      return;
+    }
+    setClip("cut", picked);
+    void message.info(t("files.clip.cut"));
+  }
+
+  // pasteHere puts the clipboard into this folder: a copy, or a move for a cut. A place the caller cannot write to refuses it.
+  // An item already in this place is not moved to it again; a name taken here goes through the conflict flow, as a move does.
+  async function pasteHere() {
+    if (pasting.current) return;
+    const pasted = clip;
+    if (!pasted || !here) return;
+    if (!canUploadHere) {
+      void message.warning(t("files.paste.refused"));
+      return;
+    }
+    const nodes = pasted.mode === "cut" ? pasted.nodes.filter((n) => !(n.folder_id === here.folder && (n.parent_id ?? null) === dirID)) : pasted.nodes;
+    if (nodes.length === 0) {
+      clearClip();
+      return;
+    }
+    pasting.current = true;
+    try {
+      await runTransfer(pasted.mode === "cut" ? "move" : "copy", nodes, { folder: here.folder, dir: dirID }, true);
+    } finally {
+      pasting.current = false;
+    }
+  }
+
+  // onRowContext opens the menu of an item: a right-click, or a finger held on it. An item not yet selected is selected
+  // first, so the menu acts on what it shows; a selected one keeps the whole selection.
+  function onRowContext(id: string, index: number, x: number, y: number) {
+    if (!sel.ids.includes(id)) setSelection({ ids: [id], anchor: index, focus: index });
+    setMenu(menuAt(x, y, "selection"));
+  }
+
+  // onSpaceContext opens the menu of the empty space in the browser. A row, a field, a dialog or the toolbar keeps the
+  // browser's own menu or its own; the row's menu has already taken its right-click.
+  function onSpaceContext(e: ReactMouseEvent<HTMLElement>) {
+    if (e.defaultPrevented) return;
+    const target = e.target;
+    if (!(target instanceof HTMLElement) || target.closest('[role="toolbar"], nav, input, textarea, select, [contenteditable], .ant-modal, .ant-dropdown, .ant-drawer, [role="dialog"]')) return;
+    // A place with nothing to offer keeps the browser's own menu: the menu is not opened, and nothing is prevented.
+    if (!spaceActs.some((a) => !a.hidden)) return;
+    e.preventDefault();
+    setMenu(menuAt(e.clientX, e.clientY, "space"));
   }
 
   // ---- rename ----
@@ -681,6 +892,8 @@ export default function FilesPage() {
       }
     }
     if (done.length > 0) {
+      // The panel's Delete button goes with the selection, so the focus is handed to the listing (see the effect on the selection).
+      toolbarFocus.current = true;
       const label = t("files.undo.deleted");
       undoStack.current?.push(label, async () => {
         let bad = 0;
@@ -696,7 +909,7 @@ export default function FilesPage() {
       });
       showUndo(label);
     }
-    if (failed > 0) setNotice(t("files.err.someFailed", { count: failed }));
+    if (failed > 0) void message.error(t("files.err.someFailed", { count: failed }));
     await reload();
   }
 
@@ -724,14 +937,55 @@ export default function FilesPage() {
     resolve?.({ choice, remember });
   }
 
-  async function runTransfer(mode: "move" | "copy", nodes: Node[], dest: Destination) {
+  // issueNotice names the items a paste could not change: up to five, then how many more.
+  function issueNotice(issues: Array<{ name: string; reason: string }>) {
+    const shown = issues.slice(0, 5);
+    const more = issues.length - shown.length;
+    return (
+      <span>
+        {issues.length > 1 && <span style={{ display: "block" }}>{t("files.err.someFailed", { count: issues.length })}</span>}
+        {shown.map((i, k) => (
+          <span key={k} style={{ display: "block" }}>{`${i.name}: ${i.reason}`}</span>
+        ))}
+        {more > 0 && <span style={{ display: "block" }}>{t("files.err.andMore", { count: more })}</span>}
+      </span>
+    );
+  }
+
+  // runTransfer moves or copies the picked nodes into dest. fromClip says they came off the clipboard: each is read again first,
+  // so a move carries the etag the server has now, and one that no longer exists is not sent and is named. A cut that moved, or
+  // that no longer exists, leaves the clipboard; the ones that failed stay cut for another try.
+  async function runTransfer(mode: "move" | "copy", picked: Node[], dest: Destination, fromClip = false) {
     setDialog(null);
     const changed = sessionChanged();
     const moved: Array<{ node: Node; from: { folder: string; parent?: string; name: string } }> = [];
+    const issues: Array<{ name: string; reason: string }> = [];
+    const gone = new Set<string>();
     let batch: ConflictChoice | null = null;
-    let failed = 0;
     let jobsStarted = 0;
     const base: Transfer = dest.dir ? { folder: dest.folder, parent: dest.dir } : { folder: dest.folder, path: "/" };
+    const nodes: Node[] = [];
+    for (const n of picked) {
+      if (!fromClip) {
+        nodes.push(n);
+        continue;
+      }
+      let cur: Node | null;
+      try {
+        cur = await statOrNull(n.id);
+      } catch (err) {
+        if (changed() || !mounted.current) return;
+        issues.push({ name: n.name, reason: fileErrorText(err, lang) });
+        continue;
+      }
+      if (changed() || !mounted.current) return;
+      if (cur === null) {
+        gone.add(n.id);
+        issues.push({ name: n.name, reason: t("files.err.notFound") });
+        continue;
+      }
+      nodes.push(cur);
+    }
     for (const n of nodes) {
       let choice: ConflictChoice | null = batch;
       for (;;) {
@@ -760,8 +1014,7 @@ export default function FilesPage() {
             choice = answer.choice;
             continue;
           }
-          failed++;
-          setNotice(fileErrorText(err, lang));
+          issues.push({ name: n.name, reason: fileErrorText(err, lang) });
           break;
         }
       }
@@ -782,8 +1035,16 @@ export default function FilesPage() {
       });
       showUndo(label);
     }
-    if (failed > 0) setNotice(t("files.err.someFailed", { count: failed }));
-    else if (mode === "copy" && jobsStarted === 0) setNotice(t("files.copy.done"));
+    const current = get(clipboard);
+    if (fromClip && current) {
+      const drop = new Set(gone);
+      if (current.mode === "cut") for (const m of moved) drop.add(m.node.id);
+      const rest = current.nodes.filter((c) => !drop.has(c.id));
+      if (rest.length === 0) clearClip();
+      else if (rest.length !== current.nodes.length) setClip(current.mode, rest);
+    }
+    if (issues.length > 0) void message.error(issueNotice(issues));
+    else if (mode === "copy" && jobsStarted === 0) void message.success(t("files.copy.done"));
     await reload();
   }
 
@@ -855,7 +1116,7 @@ export default function FilesPage() {
       await mkdir(here.folder, folderPath);
       if (changed()) return;
       setDialog(null);
-      setNotice(t("files.newFolder.created", { name }));
+      void message.success(t("files.newFolder.created", { name }));
       await reload();
     } catch (err) {
       if (!changed()) setNewNameError(fileErrorText(err, lang));
@@ -874,7 +1135,7 @@ export default function FilesPage() {
       else skipped++;
     }
     if (batch.length > 0) manager.add(batch);
-    if (skipped > 0) setNotice(t("files.upload.noPath"));
+    if (skipped > 0) void message.warning(t("files.upload.noPath"));
   }
 
   function onFilesPicked(e: ChangeEvent<HTMLInputElement>) {
@@ -923,7 +1184,7 @@ export default function FilesPage() {
   async function download(n: Node) {
     if (!downloadAllowed(n)) return;
     const ok = await startDownload(n.id).catch(() => false);
-    if (!ok) setNotice(t("files.err.downloadRestricted"));
+    if (!ok) void message.warning(t("files.err.downloadRestricted"));
   }
 
   // makeZipOf makes a zip of the items selected and opens the dialog that shows it. The download starts by itself when
@@ -959,11 +1220,6 @@ export default function FilesPage() {
     changePrefs({ ...prefs, sort: nextSort(prefs.sort, key) });
   }
 
-  function reverseSort() {
-    const dir: SortDir = prefs.sort.dir === "asc" ? "desc" : "asc";
-    changePrefs({ ...prefs, sort: { key: prefs.sort.key, dir } });
-  }
-
   // ---- render ----
 
 
@@ -987,60 +1243,240 @@ export default function FilesPage() {
   const selectedNodes = picked;
   const rowLabel = titleName;
 
-  // The actions on the selection, in the order the bar shows them. A desktop bar shows them all. A phone's bar shows the
-  // main one (the preview action, or Download) and a More menu with the rest, so the bar stays one row (phoneBar).
+  // barActs is the one list of actions: the toolbar shows it, the right-click menu of a row or a selection is built from it,
+  // and at phone width the one-row bar takes its main action and a More menu from it. Each action is hidden when the caller
+  // may never perform it in this listing (the listing is read for that), and disabled when the selection does not allow it
+  // now. So the three places cannot disagree about permissions.
   const single = selectedNodes.length === 1 ? selectedNodes[0] : null;
-  const barActs: BarAct[] = [];
-  if (single && single.kind === "file" && downloadAllowed(gated(single))) {
-    barActs.push({ key: "download", label: t("files.act.download"), run: () => void download(single) });
-  }
-  if (zipOffered(selectedNodes)) barActs.push({ key: "zip", label: t("files.act.zip"), run: () => makeZipOf(selectedNodes) });
-  if (single && previewable(single)) barActs.push({ key: "preview", label: t(previewKey(single)), run: () => openPreview(single) });
-  if (single) {
-    barActs.push({
+  const editable = items.some((n) => can.edit(n.role));
+  const downloadable = items.some((n) => n.kind === "file" && downloadAllowed(gated(n)));
+  const zippable = items.some((n) => n.kind !== "shortcut" && downloadAllowed(gated(n)));
+  const versionable = items.some((n) => n.kind === "file" && atLeast(n.role, "viewer"));
+  const shortcutable = spaces.length > 0 && items.some((n) => n.kind !== "shortcut");
+  const shareable = items.some((n) => canShareItem(n));
+  const ic = { size: 16, "aria-hidden": true } as const;
+  // Each action's fits says whether the selection is of a kind it applies to. The toolbar does not change with the selection
+  // (an action that does not fit is disabled there); the menus leave such an action out.
+  const pickedFile = selectedNodes.length === 0 || selectedNodes.some((n) => n.kind === "file");
+  const acts: BarAct[] = [
+    {
+      key: "download",
+      label: t("files.act.download"),
+      icon: <Download {...ic} />,
+      group: 1,
+      hidden: !downloadable,
+      fits: pickedFile,
+      enabled: single !== null && single.kind === "file" && downloadAllowed(gated(single)),
+      run: () => {
+        if (single) void download(single);
+      },
+    },
+    {
+      key: "zip",
+      label: t("files.act.zip"),
+      icon: <FileArchive {...ic} />,
+      group: 1,
+      hidden: !zippable,
+      // A zip is for folders and selections: one file is downloaded, so no zip is offered for it.
+      fits: single?.kind !== "file",
+      enabled: zipOffered(selectedNodes),
+      run: () => makeZipOf(selectedNodes),
+    },
+    {
+      key: "preview",
+      label: single ? t(previewKey(single)) : t("files.act.preview"),
+      icon: single && previewKey(single) === "files.act.play" ? <Play {...ic} /> : <Eye {...ic} />,
+      group: 1,
+      hidden: !items.some(previewable),
+      fits: selectedNodes.length === 0 || selectedNodes.some(previewable),
+      enabled: single !== null && previewable(single),
+      run: () => {
+        if (single) openPreview(single);
+      },
+    },
+    {
       key: "details",
       label: t("files.act.details"),
+      icon: <Info {...ic} />,
+      group: 2,
+      hidden: false,
+      fits: true,
+      enabled: single !== null,
       run: () => {
+        if (!single) return;
         setTarget(single);
         setDialog("details");
       },
-    });
-    barActs.push({
+    },
+    {
       key: "share",
       label: t("share.open"),
+      icon: <Share2 {...ic} />,
+      group: 2,
+      // Hidden from a caller who may share none of the listed items, as a role that can never share sees no share action. For
+      // one item it is disabled unless that item may be shared (the share dialog limits what each role sees of it).
+      hidden: !shareable,
+      fits: true,
+      enabled: single !== null && canShareItem(single),
       run: () => {
+        if (!single) return;
         setTarget(single);
         setDialog("share");
       },
-    });
-  }
-  if (single && single.kind === "file" && atLeast(single.role, "viewer")) {
-    barActs.push({
+    },
+    {
       key: "versions",
       label: t("files.act.versions"),
+      icon: <History {...ic} />,
+      group: 2,
+      hidden: !versionable,
+      fits: pickedFile,
+      enabled: single !== null && single.kind === "file" && atLeast(single.role, "viewer"),
       run: () => {
+        if (!single) return;
         setTarget(single);
         setDialog("versions");
       },
-    });
-  }
-  if (single && can.edit(single.role)) barActs.push({ key: "rename", label: t("files.act.rename"), run: () => startRename(single) });
-  if (single && single.kind !== "shortcut" && spaces.length > 0) {
-    barActs.push({
+    },
+    {
+      key: "rename",
+      label: t("files.act.rename"),
+      icon: <Pencil {...ic} />,
+      group: 3,
+      hidden: !editable,
+      fits: true,
+      enabled: single !== null && can.edit(single.role),
+      run: () => {
+        if (single) startRename(single);
+      },
+    },
+    {
       key: "shortcut",
       label: t("files.act.shortcut"),
+      icon: <Link2 {...ic} />,
+      group: 3,
+      hidden: !shortcutable,
+      fits: selectedNodes.length === 0 || selectedNodes.some((n) => n.kind !== "shortcut"),
+      enabled: single !== null && single.kind !== "shortcut",
       run: () => {
+        if (!single) return;
         setTarget(single);
         setDialog("pickShortcut");
       },
+    },
+    { key: "cut", label: t("files.act.cut"), icon: <Scissors {...ic} />, group: 4, hidden: !editable, fits: true, enabled: allEdit, run: cutPicked },
+    { key: "copyClip", label: t("files.act.copyClip"), icon: <Copy {...ic} />, group: 4, hidden: false, fits: true, enabled: selectedNodes.length > 0, run: copyPicked },
+    { key: "paste", label: t("files.act.paste"), icon: <ClipboardPaste {...ic} />, group: 4, hidden: !canUploadHere, fits: true, enabled: clip !== null, run: () => void pasteHere() },
+    { key: "move", label: t("files.act.move"), icon: <FolderInput {...ic} />, group: 4, hidden: !editable, fits: true, enabled: allEdit, run: () => startPick("move", selectedNodes) },
+    { key: "copy", label: t("files.act.copy"), icon: <CopyPlus {...ic} />, group: 4, hidden: false, fits: true, enabled: selectedNodes.length > 0, run: () => startPick("copy", selectedNodes) },
+    // Delete is marked as destructive in the toolbar and in the menus alike.
+    { key: "delete", label: t("files.act.delete"), icon: <Trash2 {...ic} />, group: 5, hidden: !editable, fits: true, enabled: allEdit, danger: true, run: () => askDelete(selectedNodes) },
+  ];
+  // The rights decide what is hidden, so the toolbar keeps its shape as the selection changes.
+  const barActs = acts.filter((a) => !a.hidden);
+  // The panel keeps its icons in order; the rest of the selection actions are in its More menu.
+  const panelKeys = roomy ? ["share", "download", "move", "delete"] : ["share", "download"];
+  const panelIcons = panelKeys.map((k) => barActs.find((a) => a.key === k)).filter((a): a is BarAct => a !== undefined);
+  const panelMore = barActs.filter((a) => !panelKeys.includes(a.key));
+  // newActs is the New menu: a folder, and the files or a folder uploaded. spaceActs is the menu of the empty space: the same,
+  // and a paste. Both follow the toolbar's rules.
+  const newActs: BarAct[] = [
+    { key: "newFolder", label: t("files.act.newFolder"), icon: <FolderPlus {...ic} />, group: 1, hidden: !canMakeFolder, fits: true, enabled: true, run: openNewFolder },
+    { key: "upload", label: t("files.act.upload"), icon: <Upload {...ic} />, group: 1, hidden: !canUploadHere, fits: true, enabled: true, run: () => fileInputRef.current?.click() },
+    { key: "uploadFolder", label: t("files.act.uploadFolder"), icon: <FolderUp {...ic} />, group: 1, hidden: !canUploadFolder, fits: true, enabled: true, run: () => folderInputRef.current?.click() },
+  ];
+  const spaceActs: BarAct[] = [
+    ...newActs,
+    { key: "paste", label: t("files.act.paste"), icon: <ClipboardPaste {...ic} />, group: 2, hidden: !canUploadHere, fits: true, enabled: clip !== null, run: () => void pasteHere() },
+  ];
+  // menuItems turns actions into the items of a menu: a divider between the groups, the hidden and the non-fitting actions left
+  // out, and a disabled one shown greyed. Choosing an item closes the menu before the action runs.
+  const menuItems = (list: BarAct[]) => {
+    const shown = list.filter((a) => !a.hidden && a.fits);
+    return shown.flatMap((a, i) => {
+      const item = {
+        key: a.key,
+        label: a.label,
+        icon: a.icon,
+        danger: a.danger,
+        disabled: !a.enabled,
+        // A finger needs 44 pixels: the antd menu's own height does not reach a dropdown's items, so the height is set here.
+        style: touchItem,
+        onClick: () => {
+          menuChosen.current = true;
+          setMenu(null);
+          a.run();
+        },
+      };
+      return i > 0 && shown[i - 1].group !== a.group ? [{ type: "divider" as const, key: `${a.key}-divider` }, item] : [item];
     });
-  }
-  if (allEdit) barActs.push({ key: "move", label: t("files.act.move"), run: () => startPick("move", selectedNodes) });
-  if (selectedNodes.length > 0) barActs.push({ key: "copy", label: t("files.act.copy"), run: () => startPick("copy", selectedNodes) });
-  // Delete is marked as destructive in the bar and in the More menu alike.
-  if (allEdit) barActs.push({ key: "delete", label: t("files.act.delete"), danger: true, run: () => askDelete(selectedNodes) });
-  const main = barActs.find((a) => a.key === "preview") ?? barActs.find((a) => a.key === "download");
-  const rest = barActs.filter((a) => a !== main);
+  };
+  // On a touch screen the toolbar buttons and the menus' items are a finger's size, 44 pixels.
+  const menuTheme = coarse ? { components: { Menu: { itemHeight: 44 } } } : {};
+  // A toolbar button is a 44 pixel target on a finger, icon-only ones included (their width is set too).
+  const touchSize = coarse ? { minHeight: 44, minWidth: 44 } : undefined;
+  // A menu item is 44 pixels tall: its padding is taken out of the height, so the item is not taller than the target.
+  const touchItem = coarse ? { height: 44, paddingBlock: 0, lineHeight: "44px" } : undefined;
+  // Clear disables itself once the selection is empty, so the focus moves to the listing first: a disabled button drops it.
+  const clearPicked = () => {
+    listRef.current?.querySelector<HTMLElement>("[data-id][tabindex='0']")?.focus();
+    setSelection(EMPTY);
+  };
+  // The sort menu lists the fields, then the direction; the current field and direction are marked. Choosing a field keeps
+  // the direction, so the menu sets the order it shows rather than toggling it as a column click does.
+  const sortMenu = {
+    selectable: true,
+    selectedKeys: [`sort:${prefs.sort.key}`, `dir:${prefs.sort.dir}`],
+    items: [
+      { key: "sort:name", label: t("files.sort.name"), style: touchItem },
+      { key: "sort:modified", label: t("files.sort.modified"), style: touchItem },
+      { key: "sort:size", label: t("files.sort.size"), style: touchItem },
+      { type: "divider" as const, key: "sort-divider" },
+      { key: "dir:asc", label: t("files.sort.asc"), style: touchItem },
+      { key: "dir:desc", label: t("files.sort.desc"), style: touchItem },
+    ],
+    onClick: ({ key }: { key: string }) => {
+      if (key.startsWith("sort:")) changePrefs({ ...prefs, sort: { key: key.slice(5) as SortKey, dir: prefs.sort.dir } });
+      else changePrefs({ ...prefs, sort: { key: prefs.sort.key, dir: key.slice(4) as SortDir } });
+    },
+  };
+  // The view toggle shows the view it switches to.
+  const switchTo = view === "list" ? { to: "grid" as const, label: t("files.view.grid") } : { to: "list" as const, label: t("files.view.list") };
+  // The toolbar is one row that stays on screen above the listing: the shell's header is 56 pixels, and the rows scroll under it.
+  // The selection panel takes the toolbar's row while something is selected: one full-width bar at the same height, above the
+  // listing (on every width, as in Google Drive). X clears, then the count, then icons with tooltips; the rest are in More.
+  const countText = translatePlural(lang, "files.selected", sel.ids.length);
+  const selectionPanel = (
+    <div
+      role="group"
+      aria-label={t("files.selection.label")}
+      data-testid="selection-panel"
+      style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, flex: "1 1 auto", height: coarse ? 44 : 32, padding: "0 4px", borderRadius: token.borderRadiusLG, background: token.colorPrimaryBg }}
+    >
+      <Tooltip title={t("files.act.clear")}>
+        <Button data-testid="selection-clear" aria-label={t("files.act.clear")} icon={<X {...ic} />} onClick={clearPicked} style={{ flex: "none", ...touchSize }} />
+      </Tooltip>
+      {/* A long count (in a long language, or with many items) is cut with an ellipsis; the full text is in the title and is read out. */}
+      <span aria-live="polite" title={countText} style={{ fontWeight: 600, flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {countText}
+      </span>
+      {panelIcons.map((a) => (
+        <Tooltip key={a.key} title={a.label}>
+          <Button aria-label={a.label} danger={a.danger} disabled={!a.enabled} icon={a.icon} onClick={a.run} style={{ flex: "none", ...touchSize }} />
+        </Tooltip>
+      ))}
+      {panelMore.length > 0 && (
+        <ConfigProvider theme={menuTheme}>
+          <Dropdown trigger={["click"]} menu={{ items: menuItems(panelMore) }}>
+            <Tooltip title={t("files.act.more")}>
+              <Button aria-label={t("files.act.more")} icon={<MoreHorizontal {...ic} />} aria-haspopup="menu" style={{ flex: "none", ...touchSize }} />
+            </Tooltip>
+          </Dropdown>
+        </ConfigProvider>
+      )}
+    </div>
+  );
+  const stickyBar = { position: "sticky" as const, top: 56, zIndex: 5, background: token.colorBgLayout, display: "flex", flexWrap: "nowrap" as const, alignItems: "center", gap: 8, minHeight: 40, minWidth: 0, paddingBlock: 4 };
 
   return (
     <section
@@ -1051,8 +1487,10 @@ export default function FilesPage() {
       onDragLeave={onDragLeave}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      // The rows keep their own height: a short folder must not stretch the header and the toolbar apart.
-      style={{ position: "relative", display: "grid", gap: 16, minWidth: 0, minHeight: "60dvh", alignContent: "start" }}
+      onContextMenu={onSpaceContext}
+      // The rows keep their own height: a short folder must not stretch the header and the toolbar apart. The room under the
+      // rows is the upload tray's, so the last rows can be scrolled clear of it.
+      style={{ position: "relative", display: "grid", gap: 16, minWidth: 0, minHeight: "60dvh", alignContent: "start", paddingBlockEnd: room }}
     >
       <header style={{ minWidth: 0 }}>
         <Breadcrumbs crumbs={crumbs} />
@@ -1078,14 +1516,23 @@ export default function FilesPage() {
           {notice && <Alert type="info" showIcon role="status" message={notice} closable onClose={() => setNotice(null)} />}
           {readFailure && <Alert type="info" showIcon role="status" message={readFailure} />}
 
-          <div role="toolbar" aria-label={t("files.toolbar")} style={toolbarStyle}>
-            {canMakeFolder && <Button onClick={openNewFolder}>{t("files.act.newFolder")}</Button>}
+          {/* One row, always on top: the New menu, the selection's actions (at desktop width), the count, Clear, and the views at the end.
+              It stays on screen as the listing scrolls, so Delete is in reach of a row at the bottom of a long folder. */}
+          <div
+            role="toolbar"
+            aria-label={t("files.toolbar")}
+            data-testid="browser-toolbar"
+            style={stickyBar}
+            onFocus={() => {
+              toolbarFocus.current = true;
+            }}
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) toolbarFocus.current = false;
+            }}
+          >
+            {/* The pickers stay mounted while a selection shows the panel: Upload and New work from either. */}
             {canUploadHere && (
               <>
-                <Button type="primary" onClick={() => fileInputRef.current?.click()}>
-                  {t("files.act.upload")}
-                </Button>
-                {canUploadFolder && <Button onClick={() => folderInputRef.current?.click()}>{t("files.act.uploadFolder")}</Button>}
                 <input ref={fileInputRef} type="file" multiple hidden tabIndex={-1} aria-hidden="true" onChange={onFilesPicked} />
                 <input
                   ref={(el) => {
@@ -1102,33 +1549,40 @@ export default function FilesPage() {
                 />
               </>
             )}
-            <span style={{ flex: "1 1 auto" }} />
-            <div role="group" aria-label={t("files.view.label")} style={{ display: "inline-flex", gap: 4 }}>
-              <Button aria-pressed={view === "list"} type={view === "list" ? "primary" : "default"} onClick={() => changePrefs({ ...prefs, view: "list" })}>
-                {t("files.view.list")}
-              </Button>
-              <Button aria-pressed={view === "grid"} type={view === "grid" ? "primary" : "default"} onClick={() => changePrefs({ ...prefs, view: "grid" })}>
-                {t("files.view.grid")}
-              </Button>
-            </div>
-            {view === "grid" && (
+            {hasSelection ? selectionPanel : (
               <>
-                <Select
-                  aria-label={t("files.sort.label")}
-                  value={prefs.sort.key}
-                  onChange={(v: SortKey) => sortBy(v)}
-                  style={{ minWidth: 140 }}
-                  options={[
-                    { value: "name", label: t("files.sort.name") },
-                    { value: "modified", label: t("files.sort.modified") },
-                    { value: "size", label: t("files.sort.size") },
-                  ]}
-                />
-                <Button onClick={reverseSort}>{t("files.sort.toggle")}</Button>
+            {(canMakeFolder || canUploadHere) && (
+              <ConfigProvider theme={menuTheme}>
+                <Dropdown trigger={["click"]} menu={{ items: menuItems(newActs) }}>
+                  <Button icon={<Plus {...ic} />} aria-haspopup="menu" style={touchSize}>
+                    {t("files.act.new")}
+                  </Button>
+                </Dropdown>
+              </ConfigProvider>
+            )}
+            <span style={{ flex: "1 1 auto" }} />
+            {view === "grid" && (
+              <ConfigProvider theme={menuTheme}>
+                <Dropdown trigger={["click"]} menu={sortMenu}>
+                  <Tooltip title={t("files.sort.label")}>
+                    <Button icon={<ArrowUpDown {...ic} />} aria-label={t("files.sort.label")} style={touchSize} />
+                  </Tooltip>
+                </Dropdown>
+              </ConfigProvider>
+            )}
+            <Tooltip title={switchTo.label}>
+              <Button
+                data-testid="view-toggle"
+                data-view={switchTo.to}
+                aria-label={switchTo.label}
+                icon={switchTo.to === "grid" ? <LayoutGrid {...ic} /> : <List {...ic} />}
+                onClick={() => changePrefs({ ...prefs, view: switchTo.to })}
+                style={touchSize}
+              />
+            </Tooltip>
               </>
             )}
           </div>
-
 
           <div>
             {sorted.length === 0 ? (
@@ -1165,6 +1619,8 @@ export default function FilesPage() {
                     if (id) setSel((prev) => ({ ...prev, focusID: id }));
                   }}
                   onStar={(n) => void toggleStar(n)}
+                  onRowContext={onRowContext}
+                  cutIDs={cutSet}
                   containerRef={listRef}
                 />
                 {hasMore && (
@@ -1180,52 +1636,29 @@ export default function FilesPage() {
             )}
           </div>
 
-          {/* The bar sits under the listing and stays on screen at the bottom of the window, so selecting moves no row. */}
-          {sel.ids.length > 0 && (
-            <div
-              role="toolbar"
-              aria-label={t("files.selection.label")}
-              data-testid="selection-bar"
-              style={{
-                ...toolbarStyle,
-                flexWrap: phone ? "nowrap" : "wrap",
-                position: "sticky",
-                bottom: 0,
-                zIndex: 1,
-                padding: "8px 12px",
-                background: token.colorPrimaryBg,
-                borderRadius: token.borderRadius,
-                boxShadow: token.boxShadowSecondary,
-                pointerEvents: barSettled ? "auto" : "none",
-              }}
-            >
-              <p aria-live="polite" style={{ margin: "0 8px 0 0", fontWeight: 600 }}>
-                {translatePlural(lang, "files.selected", sel.ids.length)}
-              </p>
-              {phone ? (
-                <>
-                  {main && (
-                    <Button onClick={main.run}>{main.label}</Button>
-                  )}
-                  {rest.length > 0 && (
-                    <Dropdown trigger={["click"]} menu={{ items: rest.map((a) => ({ key: a.key, label: a.label, danger: a.danger, onClick: () => a.run() })) }}>
-                      <Button aria-haspopup="menu">{t("files.act.more")}</Button>
-                    </Dropdown>
-                  )}
-                </>
-              ) : (
-                barActs.map((a) => (
-                  <Button key={a.key} danger={a.danger} onClick={a.run}>
-                    {a.label}
-                  </Button>
-                ))
-              )}
-              {phone ? (
-                <Button aria-label={t("files.act.clear")} icon={<X size={16} aria-hidden="true" />} onClick={() => setSelection(EMPTY)} />
-              ) : (
-                <Button onClick={() => setSelection(EMPTY)}>{t("files.act.clear")}</Button>
-              )}
-            </div>
+          {/* The right-click menu: the actions of the selection, or the place's own. It opens where the pointer was, and an
+              antd Dropdown keeps it on the window. */}
+          {menu && (
+            <ConfigProvider theme={menuTheme}>
+              <Dropdown
+                open
+                trigger={["contextMenu"]}
+                onOpenChange={(open) => {
+                  if (open) return;
+                  const origin = menuOrigin.current;
+                  const chosen = menuChosen.current;
+                  menuOrigin.current = null;
+                  menuChosen.current = false;
+                  setMenu(null);
+                  // Closed without a choice (Escape, a click away), a menu opened from the keyboard gives the focus back to its row.
+                  if (!chosen && origin?.isConnected) origin.focus();
+                }}
+                menu={{ items: menuItems(menu.scope === "space" ? spaceActs : barActs) }}
+              >
+                {/* pointer-events none: a touch's click lands on the row under the finger, not on the anchor, whose click closes the menu. */}
+                <span aria-hidden="true" style={{ position: "fixed", insetInlineStart: menu.inline, insetBlockStart: menu.block, width: 1, height: 1, pointerEvents: "none" }} />
+              </Dropdown>
+            </ConfigProvider>
           )}
 
           {jobs.length > 0 && (
@@ -1294,6 +1727,7 @@ export default function FilesPage() {
         onCancel={() => setDialog(null)}
         onOk={() => void confirmDelete()}
         maskClosable={false}
+        destroyOnHidden
       >
         <FocusOnOpen selector=".ant-modal-footer .ant-btn-dangerous" />
         <p>{translatePlural(lang, "files.delete.body", pending.length)}</p>
@@ -1321,7 +1755,7 @@ export default function FilesPage() {
           dest={shortcutDest}
           onDone={(made) => {
             setDialog(null);
-            setNotice(t("files.shortcut.created", { name: made.name }));
+            void message.success(t("files.shortcut.created", { name: made.name }));
             void reload();
           }}
           onClose={() => setDialog(null)}

@@ -246,3 +246,10 @@ a {
 :root[dir="rtl"] .icon-dir {
   transform: scaleX(-1);
 }
+
+/* On a phone, notices sit below the sticky header (56 px) and the toolbar row, so they never cover the selection panel. */
+@media (max-width: 599px) {
+  .ant-message {
+    top: 116px !important;
+  }
+}

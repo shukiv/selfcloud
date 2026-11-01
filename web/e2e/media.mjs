@@ -84,17 +84,60 @@ async function closePreview(page) {
   }
 }
 
-// barButtons is the text of the buttons in the selection bar, which is there while something is selected. The bar
-// is found by its test id, so the check reads the same in every language.
-const barButtons = (page) =>
-  page.evaluate(`[...document.querySelectorAll('[data-testid="selection-bar"] button')].map((b) => b.textContent.trim()).filter(Boolean)`);
+// The selection actions are in the selection panel, which takes the toolbar's row while something is selected (testid
+// selection-panel), at every width.
+const ACTIONS = `[data-testid="selection-panel"] button`;
 
-// clearSelection drops the selection, through the bar's own last button (Clear selection), when the bar is there.
-async function clearSelection(page) {
-  if (!(await page.evaluate(`!!document.querySelector('[data-testid="selection-bar"]')`))) return;
-  await page.evaluate(`(() => { const b = [...document.querySelectorAll('[data-testid="selection-bar"] button')].pop(); b.click(); return true; })()`);
-  await page.waitFor(`!document.querySelector('[data-testid="selection-bar"]')`, 10000);
+// barButtons is the text of the enabled selection actions. The bars are found by their test ids, so the check reads the
+// same in every language.
+const barButtons = (page) =>
+  page.evaluate(`[...document.querySelectorAll(${q(ACTIONS)})].filter((b) => !b.disabled && !b.hasAttribute("aria-haspopup")).map((b) => b.textContent.trim() || b.getAttribute('aria-label') || '').filter(Boolean)`);
+
+// allActions is the labels of the selection panel's enabled icons, and the items of its More menu, opened and closed again.
+async function allActions(page) {
+  const icons = await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].filter((b) => !b.disabled && !['More', 'Clear selection'].includes(b.getAttribute('aria-label'))).map((b) => b.getAttribute('aria-label'))`);
+  await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].find((b) => b.getAttribute('aria-label') === 'More').click()`);
+  await page.waitFor(`document.querySelectorAll('.ant-dropdown-menu-item').length > 0`, 10000);
+  await sleep(200);
+  const items = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown-menu-item')].map((x) => x.textContent.trim())`);
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+  await sleep(300);
+  return [...icons, ...items];
 }
+
+// clearSelection drops the selection, through the last selection action (Clear selection) by a real mouse click.
+async function clearSelection(page) {
+  if ((await barButtons(page)).length === 0) return;
+  const at = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-clear"]'); b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  await click(page, at);
+  // Clear is disabled once nothing is selected: that is the sign the selection has gone.
+  await page.waitFor(`document.querySelector('[data-testid="selection-clear"]')?.disabled !== false`, 10000);
+}
+
+// The selection actions can be read by a check as one list of buttons, whatever the width.
+export { barButtons, browserTitle, click, closePreview, clearSelection, dblClick, docTop, itemSel, openedName, point, q, setLanguage, setPhone, setTheme, shot, sleep, tap };
+
+// wideElements lists the elements whose right edge is past a phone's 390 px width, widest first, with the page's
+// scrollWidth and innerWidth. A page wider than its window is shrunk by a phone browser, and taps then miss.
+async function wideElements(page) {
+  return page.evaluate(`JSON.stringify((() => {
+    const rows = [];
+    for (const e of document.querySelectorAll('*')) {
+      const r = e.getBoundingClientRect();
+      if (r.right > 390.5 && r.width > 0) {
+        const cs = getComputedStyle(e);
+        rows.push({ right: Math.round(r.right), width: Math.round(r.width), tag: e.tagName, testid: e.getAttribute('data-testid'), cls: String(e.className?.baseVal ?? e.className).slice(0, 60), position: cs.position, visibility: cs.visibility, text: (e.textContent || '').trim().slice(0, 24) });
+      }
+    }
+    rows.sort((a, b) => b.right - a.right);
+    return { innerWidth: window.innerWidth, scrollWidth: document.documentElement.scrollWidth, count: rows.length, top: rows.slice(0, 12) };
+  })())`).then((s) => JSON.parse(s));
+}
+
+// hitAt says what the element under a point is (its tag, role, label and text), for a failure message.
+const hitAt = (page, { x, y }) =>
+  page.evaluate(`(() => { const el = document.elementFromPoint(${x}, ${y}); if (!el) return 'nothing'; return ${q('')} + el.tagName + ' role=' + (el.getAttribute('role') ?? '-') + ' label=' + (el.getAttribute('aria-label') ?? el.closest('[aria-label]')?.getAttribute('aria-label') ?? '-') + ' text=' + (el.textContent ?? '').trim().slice(0, 40) + ' url=' + location.pathname; })()`);
 
 // docTop is the top of an item's row or tile in the document, so a scroll does not read as a move.
 const docTop = (page, name) =>
@@ -109,6 +152,12 @@ async function setPhone(page, on) {
     await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   }
+}
+
+// setWidth gives the page a touch phone's window of the given width, 800 pixels tall.
+async function setWidth(page, width) {
+  await page.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: true });
+  await sleep(300);
 }
 
 async function setLanguage(page, name) {
@@ -152,7 +201,7 @@ async function shots(page, { folderURL, dir }) {
         await page.goto(folderURL);
         await page.waitFor(`!!document.querySelector('[role="row"][aria-label="clip.webm"]')`, 15000);
         await page.evaluate(`document.querySelector('[role="row"][aria-label="clip.webm"]').click()`);
-        await page.waitFor(`!!document.querySelector('[data-testid="selection-bar"]')`, 10000);
+        await page.waitFor(`!!document.querySelector('[data-testid="selection-panel"]')`, 10000);
         await sleep(400);
         await shot(page, dir, `listing-${tag}.png`);
         await clearSelection(page);
@@ -187,7 +236,10 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
   // request goes on unchanged.
   let linkHook = null;
   page.mintTimes = [];
+  // pausedHook, when a check sets it, answers every paused request in its place (the retry check fails the English file).
+  page.pausedHook = null;
   page.on('Fetch.requestPaused', (p) => {
+    if (page.pausedHook) return page.pausedHook(p);
     if (linkHook) return linkHook(p);
     return page.send('Fetch.continueRequest', { requestId: p.requestId });
   });
@@ -213,10 +265,10 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
   // open loads the folder afresh, in the view asked for, with nothing selected.
   const open = async (view) => {
     await page.goto(folderURL);
-    // The view buttons are the first two of the view group, so they are found by place: their words change with the language.
-    const at = view === 'List' ? 0 : 1;
-    await page.waitFor(`!!document.querySelectorAll('div[role="group"] > button[aria-pressed]')[${at}]`, 15000);
-    await page.evaluate(`document.querySelectorAll('div[role="group"] > button[aria-pressed]')[${at}].click()`);
+    // The view toggle shows the view it switches to (data-view): it is clicked when that is the view asked for.
+    const want = view === 'List' ? 'list' : 'grid';
+    await page.waitFor(`!!document.querySelector('[data-testid="view-toggle"]')?.dataset.view`, 15000);
+    await page.evaluate(`(() => { const b = document.querySelector('[data-testid="view-toggle"]'); if (b.dataset.view === ${q(want)}) b.click(); })()`);
     await page.waitFor(`!!document.querySelector(${q(itemSel('pic.png'))})`, 15000);
     await clearSelection(page);
   };
@@ -234,14 +286,49 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     }
     await step(`double-click the folder in ${view}`, async () => {
       await open(view);
-      await dblClick(page, await point(page, 'Sub'));
+      const at = await point(page, 'Sub');
+      await dblClick(page, at);
       await sleep(600);
       const title = await browserTitle(page);
-      check(title === 'Sub', `double-click on the folder Sub, in ${view}, opens it (shows ${title || 'nothing'})`);
+      // On a miss, the element under the pointer says what took the clicks.
+      const hit = title === 'Sub' ? '' : await hitAt(page, at);
+      check(title === 'Sub', `double-click on the folder Sub, in ${view}, opens it (shows ${title || 'nothing'}; at ${JSON.stringify(at)} the page had ${hit})`);
     });
   }
 
   // ---- 2. on a phone one tap opens a file or a folder, and the checkbox selects ----
+  await step('a phone window of 390 and of 320 pixels fits its page, in both views, with and without a selection, in English and Hebrew', async () => {
+    await setPhone(page, true);
+    try {
+      for (const lang of ['English', 'עברית']) {
+        await open('List');
+        await setLanguage(page, lang);
+        for (const width of [390, 320]) {
+          await setWidth(page, width);
+          for (const view of ['List', 'Tiles']) {
+            await open(view);
+            const bare = await wideElements(page);
+            check(bare.scrollWidth <= width, `${lang}, ${width} px, ${view}, nothing selected: the page fits its window (scrollWidth ${bare.scrollWidth}; wider: ${JSON.stringify(bare.top.slice(0, 2))})`);
+            const box = await page.evaluate(`(() => { const r = document.querySelector(${q(itemSel('pic.png'))})?.querySelector('input[type="checkbox"]')?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
+            if (box === null) {
+              check(false, `${lang}, ${width} px, ${view}: a row has a checkbox to select it`);
+              continue;
+            }
+            await tap(page, box);
+            await sleep(500);
+            const picked = await wideElements(page);
+            check(picked.scrollWidth <= width, `${lang}, ${width} px, ${view}, with a selection: the page fits its window (scrollWidth ${picked.scrollWidth}; wider: ${JSON.stringify(picked.top.slice(0, 2))})`);
+            await clearSelection(page);
+          }
+        }
+      }
+    } finally {
+      await setWidth(page, 390);
+      await setLanguage(page, 'English').catch(() => undefined);
+      await setPhone(page, false);
+    }
+  });
+
   await step('one tap on a phone', async () => {
     await setPhone(page, true);
     await open('List');
@@ -255,16 +342,44 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     const title = await browserTitle(page);
     check(title === 'Sub', `one tap on the folder Sub on a phone opens it (shows ${title || 'nothing'})`);
     await open('Tiles');
-    await tap(page, await point(page, 'tone.ogg'));
+    // The tiles lay out again as their pictures load: the point is taken once the layout has settled.
+    await sleep(800);
+    const tilesWide = await wideElements(page);
+    check(tilesWide.scrollWidth <= 390, `the page fits a 390 px phone in Tiles with nothing selected (scrollWidth ${tilesWide.scrollWidth}; wider: ${JSON.stringify(tilesWide.top.slice(0, 3))})`);
+    // The whole tile is the target, its centre included: the star sits in the tile's corner, a tap on it stars the file.
+    const tilePoint = await page.evaluate(`(() => { const t = document.querySelector(${q(itemSel('tone.ogg'))}); t.scrollIntoView({ block: 'center' }); const r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const tileHit = await hitAt(page, tilePoint);
+    await page.evaluate(`(() => { window.__tap = []; for (const n of ['pointerdown', 'pointerup', 'click', 'mousedown']) document.addEventListener(n, (e) => window.__tap.push(n + ':' + e.target.tagName + ':' + (e.target.closest('[data-id]')?.getAttribute('data-id') ?? '-')), true); })()`);
+    const geom = await page.evaluate(`JSON.stringify({ iw: window.innerWidth, ih: window.innerHeight, vvScale: window.visualViewport?.scale, sw: document.documentElement.scrollWidth, sy: window.scrollY, tilePoint: ${JSON.stringify(tilePoint)}, atPoint: (() => { const e = document.elementFromPoint(${tilePoint.x}, ${tilePoint.y}); return e ? e.tagName + ':' + (e.getAttribute('data-id') ?? e.className) + ' html=' + e.outerHTML.slice(0, 160) : 'none'; })() })`);
+    await tap(page, tilePoint);
+    const tapLog = await page.evaluate(`JSON.stringify(window.__tap.slice(0, 12))`);
     const tile = await openedName(page);
-    check(tile === 'tone.ogg', `one tap on a tile on a phone opens the file (opened ${tile ?? 'nothing'})`);
+    await page.evaluate(`document.querySelector(${q(itemSel('tone.ogg'))}).querySelector('input[type="checkbox"]')?.click()`);
+    await sleep(800);
+    const tilesSel = await wideElements(page);
+    check(tilesSel.scrollWidth <= 390, `the page fits a 390 px phone in Tiles with a selection (scrollWidth ${tilesSel.scrollWidth}; wider: ${JSON.stringify(tilesSel.top.slice(0, 3))})`);
+    await page.evaluate(`document.querySelector(${q(itemSel('tone.ogg'))}).querySelector('input[type="checkbox"]')?.click()`);
+    await sleep(300);
+    check(tile === 'tone.ogg', `one tap on a tile on a phone opens the file (opened ${tile ?? 'nothing'}; the tap hit ${tileHit}; geometry ${geom}; events ${tapLog})`);
     await closePreview(page);
+    // The star is in the tile's corner: a tap on it stars the file and opens nothing.
+    const star = await page.evaluate(`(() => { const b = document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-pressed]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, before: b.getAttribute('aria-pressed') }; })()`);
+    check(star !== null && star.w >= 44 && star.h >= 44, `the star is a 44 pixel target on a phone (${JSON.stringify(star)})`);
+    await tap(page, star);
+    await sleep(800);
+    const starredNow = await page.evaluate(`document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed') ?? null`);
+    const starOpened = await openedName(page);
+    check(star !== null && starredNow !== star.before && starOpened === null, `a tap on the star stars tone.ogg and opens nothing (starred ${star?.before} to ${starredNow}; opened ${starOpened ?? 'nothing'})`);
+    await tap(page, star);
+    await sleep(500);
     await open('List');
+    const listWide = await wideElements(page);
+    check(listWide.scrollWidth <= 390, `the page fits a 390 px phone in List (scrollWidth ${listWide.scrollWidth}; wider: ${JSON.stringify(listWide.top.slice(0, 3))})`);
     const box = await page.evaluate(`(() => { const r = document.querySelector(${q(itemSel('pic.png'))}).querySelector('input[type="checkbox"]')?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
     check(box !== null, 'a phone list has a checkbox for each row');
     await tap(page, box);
     await sleep(300);
-    const picked = await page.evaluate(`[...document.querySelectorAll('p')].some((p) => p.textContent.trim() === '1 selected')`);
+    const picked = await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"]') && document.querySelector('[data-testid="selection-panel"]').textContent.includes('1 selected')`);
     check(picked, 'a tap on the checkbox selects the row on a phone');
     await clearSelection(page);
     // A tile has no checkbox on the desktop; on a finger's screen it has one, so a tile can be selected too.
@@ -273,7 +388,7 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     check(tileBox !== null, 'a phone tile has a checkbox');
     await tap(page, tileBox);
     await sleep(300);
-    check(await page.evaluate(`[...document.querySelectorAll('p')].some((p) => p.textContent.trim() === '1 selected')`), 'a tap on a tile checkbox selects the tile on a phone');
+    check(await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"]') && document.querySelector('[data-testid="selection-panel"]').textContent.includes('1 selected')`), 'a tap on a tile checkbox selects the tile on a phone');
     await clearSelection(page);
     await setPhone(page, false);
   });
@@ -294,32 +409,31 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await setPhone(page, false);
   });
 
-  // ---- 2c. at phone width the selection bar is one row: the main action, a More menu and Clear ----
-  await step('the selection bar is one row on a phone', async () => {
+  // ---- 2c. the selection panel on a phone: the count on one line, Clear by name, and Delete in More, marked as destructive ----
+  await step('the selection panel is one row on a phone', async () => {
     await setPhone(page, true);
     await open('List');
     await click(page, await point(page, 'clip.webm'));
-    await page.waitFor(`!!document.querySelector('[data-testid="selection-bar"]')`, 10000);
+    await page.waitFor(`!!document.querySelector('[data-testid="selection-panel"]')`, 10000);
     await sleep(300);
-    const bar = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-bar"]'); return b ? b.getBoundingClientRect().height : null; })()`);
-    check(bar !== null && bar <= 64, `the selection bar on a phone is one row (${bar} px tall)`);
-    const lines = await page.evaluate(`(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector('[data-testid="selection-bar"] p')); return new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size; })()`);
-    check(lines === 1, `the count on a phone's selection bar is one line, with no word split (${lines} lines)`);
-    check(await page.evaluate(`!!document.querySelector('[data-testid="selection-bar"] button[aria-label="Clear selection"]')`), "a phone's Clear button keeps its name for a screen reader");
-    await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-bar"] button')].find((b) => b.textContent.trim() === 'More').click()`);
+    const lines = await page.evaluate(`(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector('[data-testid="selection-panel"] span[aria-live]')); return new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size; })()`);
+    check(lines === 1, `the count on a phone's selection panel is one line, with no word split (${lines} lines)`);
+    check(await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"] button[aria-label="Clear selection"]')`), "a phone's Clear button keeps its name for a screen reader");
+    // Delete is an icon in the panel, marked as destructive; More holds the rest.
+    const danger = await page.evaluate(`(() => { const d = [...document.querySelectorAll('[data-testid="selection-panel"] button')].find((b) => b.getAttribute('aria-label') === 'Delete'); return d ? d.classList.contains('ant-btn-dangerous') : null; })()`);
+    check(danger === true, `Delete is an icon in the selection panel, marked as destructive (${danger})`);
+    await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].find((b) => b.getAttribute('aria-label') === 'More').click()`);
     await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((x) => x.textContent.trim() === 'Details')`, 10000);
-    const danger = await page.evaluate(`(() => { const d = [...document.querySelectorAll('.ant-dropdown-menu-item')].find((x) => x.textContent.trim() === 'Delete'); return d ? d.classList.contains('ant-dropdown-menu-item-danger') : null; })()`);
-    check(danger === true, `Delete is in the More menu, marked as destructive (${danger})`);
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await clearSelection(page);
     await setPhone(page, false);
   });
 
-  // ---- 2d. the bar appears under the pointer: in a short window the last rows sit where the bar lands, and the second
-  // click of a double click still reaches the row, not a button on the bar ----
-  await step('a double click on a row where the bar lands opens the row', async () => {
-    await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 460, deviceScaleFactor: 1, mobile: false });
+  // ---- 2d. a double click on a row opens it while the selection panel is up, on a short phone window: the panel is on top
+  // now, so it covers no row, and the second click reaches the row ----
+  await step('a double click on a row opens it on a short phone', async () => {
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 460, deviceScaleFactor: 1, mobile: true });
     await open('List');
     for (const [name, gap] of [['tone.ogg', 100], ['pic.png', 300]]) {
       const box = await page.evaluate(`(() => {
@@ -331,24 +445,11 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
       await dblClick(page, box, gap);
       await sleep(900);
       const got = await openedName(page);
-      const dialog = await page.evaluate(`[...document.querySelectorAll('.ant-modal-content')].map((d) => d.innerText.split('\\n')[0]).join('|')`);
-      check(got === name, `a double click on ${name} under the bar's place, ${gap} ms apart, opens it (opened ${got ?? 'nothing'}; dialog "${dialog}")`);
+      const dialog = await page.evaluate(`[...document.querySelectorAll('.ant-modal-content')].map((d) => d.innerText.split(String.fromCharCode(10))[0]).join('|')`);
+      check(got === name, `a double click on ${name}, ${gap} ms apart, opens it (opened ${got ?? 'nothing'}; dialog "${dialog}")`);
       if (got) await closePreview(page);
       await clearSelection(page);
     }
-    // Once settled the bar takes clicks: a real mouse click on Clear selection reaches the button.
-    await click(page, await point(page, 'clip.webm'));
-    await page.waitFor(`!!document.querySelector('[data-testid="selection-bar"]')`, 10000);
-    await sleep(800);
-    const clear = await page.evaluate(`(() => {
-      const b = [...document.querySelectorAll('[data-testid="selection-bar"] button')].pop();
-      b.scrollIntoView({ block: 'nearest' });
-      const r = b.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-    })()`);
-    await click(page, clear);
-    await sleep(300);
-    check(await page.evaluate(`!document.querySelector('[data-testid="selection-bar"]')`), 'a settled selection bar takes a real mouse click');
     await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   });
 
@@ -362,7 +463,7 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
         await sleep(300);
         const after = await docTop(page, 'pic.png');
         check(before !== null && after !== null && Math.abs(before - after) < 0.5, `a row does not move when selected (${label}, ${view}: ${before} to ${after})`);
-        check((await barButtons(page)).length > 0, `the selection bar is on the page (${label}, ${view})`);
+        check(await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"]')`), `the selection panel is on the page (${label}, ${view})`);
       });
     }
   };
@@ -389,15 +490,16 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     check((await mark('pic.png')) === null, 'a picture shows no play mark');
     await click(page, await point(page, 'clip.webm'));
     await sleep(200);
-    check((await barButtons(page)).includes('Play'), `a selected video offers Play (${(await barButtons(page)).join(' / ')})`);
+    const videoActs = await allActions(page);
+    check(videoActs.includes('Play'), `a selected video offers Play (${videoActs.join(' / ')})`);
     await clearSelection(page);
     await click(page, await point(page, 'pic.png'));
     await sleep(200);
-    check((await barButtons(page)).includes('View'), 'a selected picture offers View');
+    check((await allActions(page)).includes('View'), 'a selected picture offers View');
     await clearSelection(page);
     await click(page, await point(page, 'notes.txt'));
     await sleep(200);
-    check((await barButtons(page)).includes('Preview'), 'a selected text file offers Preview');
+    check((await allActions(page)).includes('Preview'), 'a selected text file offers Preview');
     await clearSelection(page);
   });
 

@@ -6,6 +6,8 @@
 
 export interface KeyFields {
   key: string;
+  // code is the key's position (KeyC and so on), which does not change with the layout.
+  code?: string;
   shiftKey: boolean;
   ctrlKey: boolean;
   metaKey: boolean;
@@ -31,13 +33,41 @@ export type KeyAction =
   | { kind: "delete" }
   | { kind: "up" }
   | { kind: "selectAll" }
-  | { kind: "escape" };
+  | { kind: "escape" }
+  | { kind: "copy" }
+  | { kind: "cut" }
+  | { kind: "paste" };
+
+// isTextField says whether an event's target is a field the person types in: a text box, an area, a select or an editable
+// element. A checkbox or a button is not one, so a key on it still acts on the page.
+export function isTextField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  return target instanceof HTMLInputElement && !["checkbox", "radio", "button", "submit"].includes(target.type);
+}
 
 // keyAction returns what a key press means in the listing, or null for a key the listing does not use.
-// Alt+ArrowUp is an ArrowUp press, so it moves up a row, as it does in the Svelte listing. The "up" action (go to
-// the parent folder) is therefore reached by Backspace only.
+// Alt+ArrowUp goes up a folder, as Backspace does; a plain ArrowUp moves up a row. Ctrl or Cmd with C, X or V copies,
+// cuts or pastes; Shift with them is left to the browser.
+// letterOf is the Latin letter a Ctrl or Cmd key types, lower case. The letter typed is used when it is Latin, so a layout that
+// moves the keys (Dvorak) keeps its own letters. When the layout types another alphabet (Hebrew, Cyrillic, Arabic), the key's
+// position says which letter it is.
+function letterOf(e: KeyFields): string {
+  if (/^[A-Za-z]$/.test(e.key)) return e.key.toLowerCase();
+  const position = /^Key([A-Z])$/.exec(e.code ?? "");
+  return position ? position[1].toLowerCase() : "";
+}
+
 export function keyAction(e: KeyFields, layout: KeyLayout): KeyAction | null {
   const { cols, grid, rtl, count } = layout;
+  const accel = e.ctrlKey || e.metaKey;
+  if (e.key === "ArrowUp" && e.altKey) return { kind: "up" };
+  if (accel && !e.shiftKey && !e.altKey) {
+    const letter = letterOf(e);
+    if (letter === "c") return { kind: "copy" };
+    if (letter === "x") return { kind: "cut" };
+    if (letter === "v") return { kind: "paste" };
+  }
   switch (e.key) {
     case "ArrowDown":
       return { kind: "move", delta: cols, extend: e.shiftKey };
@@ -61,12 +91,9 @@ export function keyAction(e: KeyFields, layout: KeyLayout): KeyAction | null {
       return { kind: "delete" };
     case "Backspace":
       return { kind: "up" };
-    case "a":
-    case "A":
-      return e.ctrlKey || e.metaKey ? { kind: "selectAll" } : null;
     case "Escape":
       return { kind: "escape" };
     default:
-      return null;
+      return accel && !e.shiftKey && !e.altKey && letterOf(e) === "a" ? { kind: "selectAll" } : null;
   }
 }

@@ -106,6 +106,14 @@ async function waitForZip(dir, timeoutMs = 20000) {
   throw new Error('the browser saved no zip');
 }
 
+// setView shows List or Tiles through the view toggle, which names the view it switches to (data-view): it is clicked when that
+// is the view asked for. The toggle's words change with the language, so it is found by its test id.
+async function setView(page, view) {
+  const want = view === 'List' ? 'list' : 'grid';
+  await page.waitFor(`!!document.querySelector('[data-testid="view-toggle"]')?.dataset.view`, 10000);
+  await page.evaluate(`(() => { const b = document.querySelector('[data-testid="view-toggle"]'); if (b.dataset.view === ${JSON.stringify(want)}) b.click(); })()`);
+}
+
 export async function s4aChecks(h, { page, base, accountKey, teamA, dir }) {
   const { check } = h;
   const red = pngOf(96, 64, (x, y) => [220, 40 + x, 40]);
@@ -121,12 +129,12 @@ export async function s4aChecks(h, { page, base, accountKey, teamA, dir }) {
   await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   // The list is the view the rows are found in; the page keeps the view the person chose, so it is set first.
   await page.goto(`${page.base}/files/${teamA}`);
-  await h.clickButton(page, 'List');
+  await setView(page, 'List');
   await h.rowAppears(page, 's4a-photos');
   await h.openRow(page, 's4a-photos');
   await h.rowAppears(page, 'red.png');
   // Tiles show the thumbnails: a picture the server made, decoded by the browser, in the grid.
-  await h.clickButton(page, 'Tiles');
+  await setView(page, 'Tiles');
   await page.waitFor(
     `(() => { const i = document.querySelector('[role="option"][aria-label="red.png"] img'); return !!i && i.complete && i.naturalWidth > 0; })()`,
     30000,
@@ -139,7 +147,7 @@ export async function s4aChecks(h, { page, base, accountKey, teamA, dir }) {
   // Download as zip: the folder's contents come back unchanged, and nothing is left out. The folder is selected at the
   // top of Team A, where its row is, and the browser saves the zip into a folder of its own.
   await page.goto(`${page.base}/files/${teamA}`);
-  await h.clickButton(page, 'List');
+  await setView(page, 'List');
   await h.rowAppears(page, 's4a-photos');
   const downloads = join(dir, 'zip-downloads');
   await mkdir(downloads, { recursive: true });
@@ -172,7 +180,7 @@ export async function s4aChecks(h, { page, base, accountKey, teamA, dir }) {
   const notesNode = photos.find((n) => n.name === 'notes.txt');
   await h.api(base, 'POST', `/api/v1/nodes/${photosNode.id}/shortcuts`, accountKey, { target: notesNode.id, name: 'notes-link.txt' });
   await page.goto(`${page.base}/files/${teamA}`);
-  await h.clickButton(page, 'List');
+  await setView(page, 'List');
   await h.rowAppears(page, 's4a-photos');
   const downloadsAgain = join(dir, 'zip-downloads-left');
   await mkdir(downloadsAgain, { recursive: true });
@@ -202,11 +210,11 @@ export async function s4aChecks(h, { page, base, accountKey, teamA, dir }) {
   });
   if (!put.ok) throw new Error(`PUT red.png content: ${put.status} ${await put.text()}`);
   await page.goto(`${page.base}/files/${teamA}`);
-  await h.clickButton(page, 'List');
+  await setView(page, 'List');
   await h.rowAppears(page, 's4a-photos');
   await h.openRow(page, 's4a-photos');
   await h.rowAppears(page, 'red.png');
-  await h.clickButton(page, 'Tiles');
+  await setView(page, 'Tiles');
   await page.waitFor(
     `(() => { const i = document.querySelector('[role="option"][aria-label="red.png"] img'); return !!i && i.complete && i.naturalWidth === 40; })()`,
     30000,
@@ -214,5 +222,5 @@ export async function s4aChecks(h, { page, base, accountKey, teamA, dir }) {
   const again = await page.evaluate(`(() => { const i = document.querySelector('[role="option"][aria-label="red.png"] img'); return { w: i.naturalWidth, h: i.naturalHeight }; })()`);
   check(again.w === 40 && again.h === 40, `a new version shows its new thumbnail (${again.w} by ${again.h}, was ${thumb.w} by ${thumb.h})`);
   // The checks after this one read the rows of the list, so the view goes back to the list.
-  await h.clickButton(page, 'List');
+  await setView(page, 'List');
 }
