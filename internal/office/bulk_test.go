@@ -60,8 +60,9 @@ func TestBulkUsesItsOwnSlot(t *testing.T) {
 			close(release)
 		}
 	})
-	// Wait until the bulk request holds its slot: the stalled handler is reached.
-	waitFor(t, func() bool { return len(c.bulk) == 1 })
+	// Wait until the stalled handler is reached, not only until the slot is held: a preview that reached the server first
+	// would be the first request, and the one that stalls.
+	waitFor(t, func() bool { return calls.Load() == 1 && len(c.bulk) == 1 })
 	// The preview has its own deadline: if it shares the bulk work's slot it waits behind the stalled request, and the
 	// assertion below fails at two seconds, instead of the run hanging until the test timeout (review, M43).
 	pctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
