@@ -31,8 +31,10 @@ describe('sentence', () => {
       params: { actor: { text: 'Dana' }, name: { text: 'Finance' } },
     });
     expect(sentence(entry({ action: 'folder.update' }), names).params.name).toEqual({ text: 'Finance' });
-    expect(sentence(entry({ action: 'folder.delete', target: 'fld_x' }), names).params.name).toEqual({
-      key: 'audit.aSpace',
+    // A row with no name reads with its own sentence, not "the team space" followed by a team space.
+    expect(sentence(entry({ action: 'folder.delete', target: 'fld_x' }), names)).toEqual({
+      key: 'audit.folder.delete.plain',
+      params: { actor: { text: 'Dana' } },
     });
   });
 
@@ -55,7 +57,10 @@ describe('sentence', () => {
   it('names a group, and never a team space, for a group action', () => {
     const s = sentence(entry({ action: 'group.create', target: 'grp_1', details: { name: 'Staff' } }), names);
     expect(s).toEqual({ key: 'audit.group.create', params: { actor: { text: 'Dana' }, name: { text: 'Staff' } } });
-    expect(sentence(entry({ action: 'group.delete', target: 'fld_fin' }), names).params.name).toEqual({ key: 'audit.aGroup' });
+    expect(sentence(entry({ action: 'group.delete', target: 'fld_fin' }), names)).toEqual({
+      key: 'audit.group.delete.plain',
+      params: { actor: { text: 'Dana' } },
+    });
   });
 
   it('gives a grant no person or space it cannot know', () => {
@@ -85,7 +90,8 @@ describe('renderSentence', () => {
       translate,
     );
     expect(out).toBe('audit.folder.create');
-    expect(seen[0]).toEqual(['audit.someone', undefined]);
+    // The first call looks for the word the catalogue puts first; the generic word is then translated on its own.
+    expect(seen).toContainEqual(['audit.someone', undefined]);
     const final = seen[seen.length - 1];
     expect(final[0]).toBe('audit.folder.create');
     expect(final[1]?.name).toBe(isolate('Finance'));

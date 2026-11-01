@@ -108,7 +108,8 @@ describe('rows of an installation admin', () => {
   it('a removed admin is named by its role, never by its ID or as "Someone"', () => {
     const e = row({ action: 'impersonation.end', details: { reason: 'admin_removed', actor_admin: true, actor_name: '' } });
     const text = read(e);
-    expect(text).toContain('an installation admin');
+    // At the start of the sentence the generic word is capitalised.
+    expect(text).toContain('An installation admin');
     expect(text).not.toContain('usr_ada');
     expect(text).not.toContain('Someone');
   });

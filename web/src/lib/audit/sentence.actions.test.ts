@@ -114,6 +114,18 @@ const ROWS: Row[] = [
   { action: 'webhook.secret', actor: user, target: 'wh_1', details: { url } },
   { action: 'webhook.test', actor: user, target: 'wh_1', details: { url } },
   { action: 'webhook.update', actor: user, target: 'wh_1', details: { url, events: ['file.created'], state: 'active' } },
+  // Rows that name a thing the row may lack: the empty-details run reads them with no name and no person.
+  { action: 'folder.create', actor: user, target: 'fld_fin', details: { name: 'Finance' } },
+  { action: 'folder.update', actor: user, target: 'fld_fin', details: { name: 'Finance' } },
+  { action: 'folder.delete', actor: user, target: 'fld_fin', details: { name: 'Finance' } },
+  { action: 'folder.settings', actor: user, target: 'fld_fin', details: { name: 'Finance' } },
+  { action: 'group.create', actor: user, target: 'grp_1', details: { name: 'Staff' } },
+  { action: 'group.update', actor: user, target: 'grp_1', details: { name: 'Staff' } },
+  { action: 'group.delete', actor: user, target: 'grp_1', details: { name: 'Staff' } },
+  { action: 'account.create', actor: user, target: 'acc_1', details: { name: 'Acme' } },
+  { action: 'admin.create', actor: user, target: 'usr_gone', details: {} },
+  { action: 'admin.delete', actor: user, target: 'usr_gone', details: {} },
+  { action: 'user.verify', actor: user, target: 'usr_gone', details: {} },
 ];
 
 // The actions that had no sentence before slice audit-s1 (the list the test of the server kept). Each must have a row.
@@ -133,11 +145,27 @@ const OLDER = [
 const RAW_ID = /\b(usr|nod|fld|shl|upl|wh|grp|acc|arq|key|sil|job|zip|cmt|ver|lbf|wop|shc)_[A-Za-z0-9]/;
 const LEFTOVER = /<<missing|\{[a-z_]+\}|undefined|null|NaN|\[object/;
 
+// A sentence starts with a capital, or with a name, which the renderer isolates and which keeps its own case.
+const STARTS = /^(⁨|\p{Lu})/u;
+// The English generic words. A word sits next to the noun it repeats in "the team space a team space" only when a row
+// lacks its name, so each generic word is checked against its own noun and against itself.
+const GENERIC = [
+  'a team space', 'a group', 'a tenant', 'a person', 'a file', 'a folder', 'an item', 'another user', 'a web address',
+  'an installation admin', 'an admin',
+];
+
 function expectSentence(text: string, action: string) {
   expect(text, action).not.toBe('');
   expect(text, action).not.toMatch(LEFTOVER);
   expect(text, action).not.toMatch(RAW_ID);
   expect(text, action).not.toContain('made a change');
+  expect(text, action).toMatch(STARTS);
+  const plain = text.replace(/[⁨⁩]/g, '').toLowerCase();
+  for (const g of GENERIC) {
+    const noun = g.replace(/^(a|an|another) /, '');
+    expect(plain, action).not.toContain(`${noun} ${g}`);
+    expect(plain, action).not.toContain(`${g} ${g}`);
+  }
 }
 
 describe('every audit action has a sentence of its own', () => {

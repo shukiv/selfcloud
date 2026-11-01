@@ -17,6 +17,7 @@ const translate = (key: string, params?: Record<string, string>): string => {
     'audit.someone': 'Someone',
     'audit.viaAdmin': 'Done by the installation admin {admin}, signed in as this user.',
     'audit.anAdmin': 'an installation admin',
+    'audit.viaAnAdmin': 'Done by an installation admin, signed in as this user.',
   };
   return fill(catalogue[key] ?? key);
 };
@@ -42,7 +43,7 @@ describe('impersonated audit rows', () => {
   it('uses the general word when the admin no longer exists', () => {
     const e = entry({ details: { impersonated_by: 'usr_gone', impersonated_by_name: '' } });
     expect(renderSentence(sentence(e, names), translate)).toBe(
-      `${iso('Dana')} moved a file to the trash. Done by the installation admin an installation admin, signed in as this user.`,
+      `${iso('Dana')} moved a file to the trash. Done by an installation admin, signed in as this user.`,
     );
   });
 

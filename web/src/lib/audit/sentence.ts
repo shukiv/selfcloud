@@ -105,10 +105,11 @@ export function sentence(entry: AuditEntry, names: Names): Sentence {
   const by = entry.details?.impersonated_by;
   if (typeof by === 'string' && by !== '') {
     const admin = detail(entry.details, 'impersonated_by_name');
-    s.via = {
-      key: 'audit.viaAdmin',
-      params: { admin: admin !== '' ? { text: admin } : { key: 'audit.anAdmin' } },
-    };
+    // Without the admin's name, the sentence says "an installation admin" once, not twice.
+    s.via =
+      admin !== ''
+        ? { key: 'audit.viaAdmin', params: { admin: { text: admin } } }
+        : { key: 'audit.viaAnAdmin', params: {} };
   }
   return s;
 }
@@ -148,23 +149,40 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
       return { key: 'audit.user.password_set', params: { actor, target } };
     case 'user.verify':
       return { key: 'audit.user.verify', params: { target } };
+    // A name the row lacks gets its own sentence, so the noun is not said twice ("the team space a team space").
     case 'folder.create':
+      if (spaceName === '') return { key: 'audit.folder.create.plain', params: { actor } };
+      return { key: 'audit.folder.create', params: { actor, name: space } };
     case 'folder.update':
+      if (spaceName === '') return { key: 'audit.folder.update.plain', params: { actor } };
+      return { key: 'audit.folder.update', params: { actor, name: space } };
     case 'folder.delete':
+      if (spaceName === '') return { key: 'audit.folder.delete.plain', params: { actor } };
+      return { key: 'audit.folder.delete', params: { actor, name: space } };
     case 'folder.settings':
-      return { key: `audit.${entry.action}`, params: { actor, name: space } };
+      return { key: 'audit.folder.settings', params: { actor, name: space } };
     case 'group.create':
+      if (groupName === '') return { key: 'audit.group.create.plain', params: { actor } };
+      return { key: 'audit.group.create', params: { actor, name: group } };
     case 'group.update':
+      if (groupName === '') return { key: 'audit.group.update.plain', params: { actor } };
+      return { key: 'audit.group.update', params: { actor, name: group } };
     case 'group.delete':
-      return { key: `audit.${entry.action}`, params: { actor, name: group } };
+      if (groupName === '') return { key: 'audit.group.delete.plain', params: { actor } };
+      return { key: 'audit.group.delete', params: { actor, name: group } };
     case 'account.create':
+      if (tenantName === '') return { key: 'audit.account.create.plain', params: { actor } };
       return { key: 'audit.account.create', params: { actor, name: tenant } };
+    case 'admin.create':
+      if (person === undefined) return { key: 'audit.admin.create.plain', params: { actor } };
+      return { key: 'audit.admin.create', params: { actor, target } };
+    case 'admin.delete':
+      if (person === undefined) return { key: 'audit.admin.delete.plain', params: { actor } };
+      return { key: 'audit.admin.delete', params: { actor, target } };
     case 'user.update':
     case 'user.delete':
     case 'user.password_reset':
     case 'user.password_change':
-    case 'admin.create':
-    case 'admin.delete':
       return { key: `audit.${entry.action}`, params: { actor, target } };
     case 'permission.set':
     case 'permission.remove':
@@ -434,15 +452,35 @@ export function isolate(text: string): string {
 // renderSentence turns a sentence into text. translate looks a catalogue key up with parameters, so the same
 // function serves any language; text parameters are isolated, and key parameters are translated first.
 export function renderSentence(s: Sentence, translate: (key: string, params?: Record<string, string>) => string): string {
-  const main = translate(s.key, refParams(s.params, translate));
+  const main = fill(s.key, s.params, translate);
   if (!s.via) return main;
-  return `${main} ${translate(s.via.key, refParams(s.via.params, translate))}`;
+  return `${main} ${fill(s.via.key, s.via.params, translate)}`;
 }
 
-function refParams(refs: Record<string, Ref>, translate: (key: string, params?: Record<string, string>) => string): Record<string, string> {
+// fill translates one sentence. A generic word the catalogue puts first is capitalised ("A person verified their
+// account"); the same word in the middle of a sentence is not. The word that leads is found by translating the key with
+// a marker for each parameter, so the catalogue decides and no word is listed here. A name is text, and is never changed.
+function fill(key: string, refs: Record<string, Ref>, translate: (key: string, params?: Record<string, string>) => string): string {
+  const markers: Record<string, string> = {};
+  for (const name of Object.keys(refs)) markers[name] = `\u0001${name}\u0002`;
+  const probe = Object.keys(refs).length > 0 ? translate(key, markers) : '';
+  const lead = Object.keys(refs).find((name) => probe.startsWith(markers[name]) && 'key' in refs[name]);
+  return translate(key, refParams(refs, translate, lead));
+}
+
+function refParams(
+  refs: Record<string, Ref>,
+  translate: (key: string, params?: Record<string, string>) => string,
+  lead?: string,
+): Record<string, string> {
   const params: Record<string, string> = {};
   for (const [name, ref] of Object.entries(refs)) {
-    params[name] = 'text' in ref ? isolate(ref.text) : translate(ref.key);
+    if ('text' in ref) {
+      params[name] = isolate(ref.text);
+    } else {
+      const word = translate(ref.key);
+      params[name] = name === lead ? word.charAt(0).toLocaleUpperCase() + word.slice(1) : word;
+    }
   }
   return params;
 }
