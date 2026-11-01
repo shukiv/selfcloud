@@ -67,6 +67,9 @@ var reviewedNodeKindSites = map[string]int{
 	// Slice r4 added one in activity.go: the activity route refuses a shortcut as not_found, as the comment routes do,
 	// after nodeAccessWith has run. A refusal that grants nothing. Decision 50.
 	"internal/api/activity.go": 1,
+	// Slice r5 added one in viewers.go: the who-viewed route refuses a shortcut as not_found, as the activity route does,
+	// after nodeAccessWith has run. A refusal that grants nothing. Decision 51.
+	"internal/api/viewers.go": 1,
 	// Chunked copy (decision 34). copy_jobs.go: a batch's copy of a file (counted in the copies' file total, which the
 	// publish reports), the file selectors of the staged totals and the per-file events, and the non-folder selectors of
 	// the staged item count and the per-file events (shortcuts included, as the one-write copy reports them). None of

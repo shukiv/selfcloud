@@ -394,6 +394,9 @@ func New(opts Options) (*Server, error) {
 			// account (decision 50).
 			"activity":         newLimiter(120),
 			"activity.account": newLimiter(1200),
+			// Who viewed a file: the same reach walks as the activity, so the same two limits (decision 51).
+			"viewers":         newLimiter(120),
+			"viewers.account": newLimiter(1200),
 			// Opening a share link is a secret lookup, so it is limited per client address.
 			"share.open.ip":   newLimiter(30),
 			"share.open.user": newLimiter(60),
@@ -619,6 +622,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/comments/{cmt}/resolve", handle: s.handleResolveComment, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/people", handle: s.handleListPeople, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/activity", handle: s.handleNodeActivity, auth: true, imp: impAllow},
+		// Who viewed a file (slice r5, decision 51): managers and the account key only, while the account's switch is on.
+		// A token never reads it, and a sign-in-as session does not either.
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/viewers", handle: s.handleNodeViewers, auth: true, imp: impRefuse},
 		// Notifications (slice r, decision 43): the signed-in user's own inbox and email switch. A token never reads them.
 		{method: http.MethodGet, path: "/api/v1/notifications", handle: s.handleListNotifications, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/notifications/unread", handle: s.handleUnreadNotifications, auth: true, imp: impRefuse},

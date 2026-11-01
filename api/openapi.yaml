@@ -3531,7 +3531,8 @@ paths:
         Turning `public_links` off pauses every link that anyone can open, at once; turning it on
         revives them. Turning `comments` off closes every comment route for the account and keeps the comments;
         turning it on shows them again. The account's owner or key may change either. Audited as
-        `account.sharing_policy` and `account.comments_policy`.
+        `account.sharing_policy` (the who-viewed switch is in its detail, `who_viewed`) and `account.comments_policy`.
+        The who-viewed switch is off by default; it changes nothing that is recorded, only whether the viewers route answers.
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -3987,6 +3988,49 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ActivityList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/viewers:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Activity]
+      operationId: listNodeViewers
+      summary: List who viewed a file, from the last 30 days, newest view first
+      description: |
+        Who read the file's content, one line per user, from the recent records of the view recorder (decision 51).
+        Only a manager of the file (a `manager` role on the node) and the account key read it. A delegated token
+        always gets `403`, whoever minted it; an installation admin gets `403`; a viewer, a commenter, an editor or a
+        contributor gets `403`; a caller who does not reach the file, and a shortcut, and a file in the trash, get `404`.
+        While the account's `who_viewed` switch is off the route answers `403` for a manager too, and the owner turns
+        the switch on (`PATCH /accounts/{acc}/sharing-policy`).
+
+        A person is named while the person reaches the file. A person who no longer does is `gone` and has no name.
+        A person past the page's walk bound (40 people) has neither a name nor the `gone` flag: nobody checked them.
+        A list is not a count of everyone who looked: a token's reads, a link visitor's reads, and the views the
+        recorder dropped under load are not in it. A signed-in person who mints a signed link is listed as having
+        viewed the file, since the web interface opens files through signed links; a person who mints and never opens
+        is listed too.
+
+        The list is a convenience, not evidence. It reads the caller's Recent rows, so a person who removes a file from
+        Recent, or clears Recent, leaves the list, and the 30-day sweep and the 500-row prune remove rows too. The audit
+        log does not record opens or downloads of a file, so it cannot show that a person read one.
+
+        The route is limited to 120 reads a minute per caller and 1,200 a minute per account (`429`, with
+        `Retry-After`). It is refused to a sign-in-as session (decision 41).
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: One page of viewers, newest view first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ViewerList" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -5898,7 +5942,7 @@ components:
 
     SharingPolicy:
       type: object
-      required: [public_links, anyone_links, comments]
+      required: [public_links, anyone_links, comments, who_viewed]
       additionalProperties: false
       properties:
         public_links: { type: boolean, description: Links that anyone can open are allowed in the account. }
@@ -5915,6 +5959,31 @@ components:
       properties:
         public_links: { type: boolean, description: Links that anyone can open are allowed in the account. }
         comments: { type: boolean, description: Comments are on in the account. }
+        who_viewed: { type: boolean, description: "Who viewed a file is listed to its managers and the account key (decision 51). Default off." }
+
+    ViewerList:
+      type: object
+      required: [items]
+      description: |
+        One line per user whose last view of the file is in the last 30 days and since the switch last went on, newest view first. A view is one
+        read of the content by a signed-in user acting for itself, or a signed link minted by one: a token's read and a
+        link visitor's read are not listed. A second view within ten minutes is not written, so the time shown
+        can be up to ten minutes old. A view is dropped, not kept, when the recorder's queue of 4,096 waiting views is
+        full, so under heavy load the list can miss views.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Viewer" }
+        next_cursor: { type: string }
+
+    Viewer:
+      type: object
+      required: [user_id, viewed_at]
+      properties:
+        user_id: { type: string, description: The user's ID. }
+        name: { type: string, description: The user's display name, while the user still reaches the file. }
+        gone: { type: boolean, description: "Set when the user no longer reaches the file. Then there is no name: show \"former member\", translated." }
+        viewed_at: { type: string, format: date-time }
 
     PermissionSet:
       type: object
