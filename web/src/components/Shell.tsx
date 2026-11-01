@@ -25,6 +25,7 @@ import { useCoarsePointer } from "../lib/pointer";
 import Alert from "./Alert";
 import LangSwitcher from "./LangSwitcher";
 import Sentence from "./Sentence";
+import ShellSearch from "./search/ShellSearch";
 import ThemeToggle from "./ThemeToggle";
 import UploadTray from "./UploadTray";
 import MediaHost from "./files/MediaHost";
@@ -474,6 +475,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               <bdi>{b.name}</bdi>
             </a>
             {admin && <span style={{ color: token.colorTextSecondary, whiteSpace: "nowrap" }}>{t("admin.badge")}</span>}
+            {!admin && <ShellSearch wide={!!screens.md} />}
             {/* A plain flex row, not antd's Space: Space wraps each child in an item that does not shrink, so a long account name
                 would push the page wider than the window. Here the account button can shrink and its name is cut with an ellipsis. */}
             <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 4 : 12, marginInlineStart: "auto", minWidth: 0 }}>

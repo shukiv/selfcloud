@@ -1339,5 +1339,7 @@
   "files.tree.expand": "הרחבת {name}",
   "files.tree.collapse": "כיווץ {name}",
   "files.tree.failed": "לא ניתן היה לטעון את התיקיות.",
-  "files.tree.capped": "יש עוד תיקיות מאלה שמוצגות כאן."
+  "files.tree.capped": "יש עוד תיקיות מאלה שמוצגות כאן.",
+  "shell.search.placeholder": "חיפוש בשמות ובטקסט של קבצים",
+  "shell.search.open": "חיפוש"
 }

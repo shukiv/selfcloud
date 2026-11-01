@@ -115,6 +115,12 @@ export async function loadLang(l: Lang): Promise<void> {
   loaded.add(l);
 }
 
+// addCatalogue adds a part of the strings of l, such as the search page's own catalogue (lib/search/text.ts). Its keys
+// are read with the same translators as the main catalogue.
+export function addCatalogue(l: Lang, strings: Record<string, string>): void {
+  i18next.addResourceBundle(l, 'common', strings, true, true);
+}
+
 // lang is the language the interface is shown in.
 export const lang = writable<Lang>('en');
 

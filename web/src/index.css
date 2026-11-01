@@ -829,3 +829,20 @@ tr[data-drop-state="refused"] > td {
 #main > .files-layout {
   flex: 1 0 auto;
 }
+
+/* The search page's filters (slice q4): on a finger the selects and the value box are 44 px, the selector too, as the media
+   speed list is above. The rule is by class, so antd's inner selector is the one that is sized. */
+@media (pointer: coarse) {
+  .search-filter.ant-select .ant-select-selector,
+  .search-filter.ant-input {
+    min-height: 44px;
+  }
+  /* A single select is 44 px high, as antd's own 32 px would leave it. A multiple select grows with its tags. */
+  .search-filter.ant-select:not(.ant-select-multiple) .ant-select-selector {
+    height: 44px;
+  }
+  .search-filter.ant-select:not(.ant-select-multiple) .ant-select-selection-item,
+  .search-filter.ant-select:not(.ant-select-multiple) .ant-select-selection-placeholder {
+    line-height: 42px;
+  }
+}

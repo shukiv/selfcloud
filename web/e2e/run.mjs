@@ -27,6 +27,7 @@ import { mailSink, waitForMail } from './mailsink.mjs';
 import { w1Checks } from './w1.mjs';
 import { w2Checks } from './w2.mjs';
 import { x2Checks } from './x2.mjs';
+import { q4Checks } from './q4.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -86,6 +87,11 @@ const EXPECTED = [
   {
     name: 'link ended',
     matches: (e) => e.source === 'network' && /\/api\/v1\/links\//.test(e.url ?? '') && /status of 410\b/.test(e.text ?? ''),
+  },
+  // The search page's limit: the run sends more searches than the server allows a minute, on purpose (q4Checks).
+  {
+    name: 'rate limited search',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/search/.test(e.url ?? '') && /status of 429\b/.test(e.text ?? ''),
   },
   // The member's upload over its limit is refused by the server.
   {
@@ -679,6 +685,7 @@ async function main() {
     if (!only || only === 'w1') await w1Checks(h, { page, base, accountKey, teamA, teamB, dir });
     if (!only || only === 'w2') await w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir });
     if (!only || only === 'x2') await x2Checks(h, { page, base, accountKey, accountID, memberID });
+    if (!only || only === 'q4') await q4Checks(h, { page, base, accountKey, teamA });
     if (only) {
       console.log(`only ${only}: passed`);
       passed = true;

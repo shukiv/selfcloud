@@ -116,10 +116,10 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Search by name | Built (q1, q2, decision 40): a query parameter in the API; the interface is q4 (planned) |
-| Filters: type, owner, location, modified and created date, starred, shared with me, trashed | Partly built (q2, decision 40): kind, extension, modified and size, scope, label values. Owner, location and the others are not in v1; the chips are q4 (planned) |
-| Search by label values | Built (q2, decision 40): typed predicates in the API (text prefix, number and date ranges, user and choice) |
-| Full-text search inside documents | Built (q3, decision 46): plain text read in process, and documents converted to text through Collabora (`txt`, with `office.enabled`); indexed with SQLite FTS5, words only, with a snippet per hit. Spreadsheets, presentations and PDFs are not searchable through `txt` (refused by the converter, decision 46). PostgreSQL full text later. Lifts a first-release non-goal |
+| Search by name | Built (q1, q2, decision 40): a query parameter in the API, and the search page of the web interface (q4, decision 54) |
+| Filters: type, owner, location, modified and created date, starred, shared with me, trashed | Partly built (q2, decision 40): kind, extension, modified and size, scope, label values. Owner, location and the others are not in v1. The page (q4, decision 54) has chips for type, extension, modified, size and label values; a scope is in the API but not yet in the page |
+| Search by label values | Built (q2, decision 40): typed predicates in the API (text prefix, number and date ranges, user and choice); the page (q4, decision 54) offers text, number, date and choice values, not user values |
+| Full-text search inside documents | Built (q3, decision 46): plain text read in process, and documents converted to text through Collabora (`txt`, with `office.enabled`); indexed with SQLite FTS5, words only, with a snippet per hit. Spreadsheets, presentations and PDFs are not searchable through `txt` (refused by the converter, decision 46). PostgreSQL full text later. Lifts a first-release non-goal. The page shows the matches with their snippets (q4, decision 54) |
 | Search text recognised in scans | Planned, optional (a later slice after q, decision 40): needs an OCR service that is not in the image |
 | "/" to focus search | Planned (k) |
 
@@ -209,7 +209,7 @@ come **before** k.
 | o | Organisation and public links, link expiry and password, drop folders, admin policy. Built in four parts: o1 to o4 | Medium |
 | p | Starred, recent, Home, shortcuts, colours, descriptions, labels, per-user quota, storage page (design decision 24). In five parts: p1 per-user quota and storage pages, p2 starred, recent and Home, p3 shortcuts, colours and descriptions, p4 labels (all built); p5 the OpenAPI file, the design record, these rows, the smoke test and the security review (decision 36) | Medium |
 | pg | PostgreSQL as an option for the metadata store (design decision 7), after q (decision 40) | Medium |
-| q | Search by name with filters and label values (built in parts q1 and q2, decision 40); content text (built as q3, decision 46); the web page (q4) and optional OCR (a later slice) | Large |
+| q | Search by name with filters and label values (built in parts q1 and q2, decision 40); content text (built as q3, decision 46); the web page (q4, decision 54, built) and optional OCR (a later slice) | Large |
 | r | Comments, mentions and notifications built (r1 to r3, decisions 39 and 43); activity pane, who-viewed, the comment webhook and the web interface planned (r4 to r7) | Medium |
 | s | Thumbnails (built in part, s1 and s4a: images from the API and the grid's tiles), document previews, conversions and export, zip download (built, s2 and s4a) | Medium |
 | l | WOPI host for Collabora (built in parts l1 to l3; the interface button, Rename (l4) and the README example are not built) | Medium |

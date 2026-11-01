@@ -8,7 +8,11 @@ import { join, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const src = fileURLToPath(new URL('../src/', import.meta.url));
-const en = JSON.parse(await readFile(join(src, 'i18n', 'en.json'), 'utf8'));
+// The search page's own catalogue (lib/search/text.ts) is read with the main one: its keys are translation keys too.
+const en = {
+  ...JSON.parse(await readFile(join(src, 'i18n', 'en.json'), 'utf8')),
+  ...JSON.parse(await readFile(join(src, 'i18n', 'search', 'en.json'), 'utf8')),
+};
 
 async function files(dir) {
   const out = [];

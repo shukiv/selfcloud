@@ -1339,5 +1339,7 @@
   "files.tree.expand": "توسيع {name}",
   "files.tree.collapse": "طيّ {name}",
   "files.tree.failed": "تعذّر تحميل المجلدات.",
-  "files.tree.capped": "توجد مجلدات أكثر مما هو معروض هنا."
+  "files.tree.capped": "توجد مجلدات أكثر مما هو معروض هنا.",
+  "shell.search.placeholder": "ابحث في أسماء الملفات ونصوصها",
+  "shell.search.open": "بحث"
 }

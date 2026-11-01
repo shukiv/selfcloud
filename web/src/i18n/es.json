@@ -1339,5 +1339,7 @@
   "files.tree.expand": "Expandir {name}",
   "files.tree.collapse": "Contraer {name}",
   "files.tree.failed": "No se pudieron cargar las carpetas.",
-  "files.tree.capped": "Hay más carpetas de las que se muestran aquí."
+  "files.tree.capped": "Hay más carpetas de las que se muestran aquí.",
+  "shell.search.placeholder": "Buscar nombres y texto en los archivos",
+  "shell.search.open": "Buscar"
 }

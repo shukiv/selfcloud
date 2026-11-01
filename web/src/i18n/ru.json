@@ -1339,5 +1339,7 @@
   "files.tree.expand": "Развернуть {name}",
   "files.tree.collapse": "Свернуть {name}",
   "files.tree.failed": "Не удалось загрузить папки.",
-  "files.tree.capped": "Папок больше, чем показано здесь."
+  "files.tree.capped": "Папок больше, чем показано здесь.",
+  "shell.search.placeholder": "Поиск по именам и тексту файлов",
+  "shell.search.open": "Поиск"
 }

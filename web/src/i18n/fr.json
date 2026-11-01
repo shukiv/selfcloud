@@ -1339,5 +1339,7 @@
   "files.tree.expand": "Développer {name}",
   "files.tree.collapse": "Réduire {name}",
   "files.tree.failed": "Impossible de charger les dossiers.",
-  "files.tree.capped": "Il y a plus de dossiers que ceux affichés ici."
+  "files.tree.capped": "Il y a plus de dossiers que ceux affichés ici.",
+  "shell.search.placeholder": "Rechercher dans les noms et le texte des fichiers",
+  "shell.search.open": "Rechercher"
 }

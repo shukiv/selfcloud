@@ -278,9 +278,12 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		b.WriteString("SELECT sn.id, sn.node_id FROM " + table + " JOIN search_names sn ON sn.id = " + table + ".rowid")
+		// The full-text table is the outer loop (CROSS JOIN keeps the planner from reordering), and the position is on its
+		// rowid, which is sn.id. On sn.id the planner ran the match once per name row of the account, for every batch
+		// (decision 46 measured the same shape for content; decision 54 review).
+		b.WriteString("SELECT sn.id, sn.node_id FROM " + table + " CROSS JOIN search_names sn ON sn.id = " + table + ".rowid")
 		b.WriteString(" JOIN nodes n ON n.id = sn.node_id JOIN folders f ON f.id = n.folder_id")
-		b.WriteString(" WHERE " + table + " MATCH ? AND sn.account_id = ? AND sn.id > ? AND f.staged = 0 AND n.trashed_at IS NULL")
+		b.WriteString(" WHERE " + table + " MATCH ? AND sn.account_id = ? AND " + table + ".rowid > ? AND f.staged = 0 AND n.trashed_at IS NULL")
 		args = append(args, match, r.AccountID, after)
 	} else {
 		b.WriteString("SELECT sn.id, sn.node_id FROM search_names sn JOIN nodes n ON n.id = sn.node_id")
@@ -322,9 +325,20 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 		args = append(args, t.FieldID)
 		args = append(args, t.args...)
 	}
-	b.WriteString(" ORDER BY sn.id LIMIT ?")
+	// A match yields its rows in rowid order, which is sn.id, so a term search needs no ORDER BY. With one, SQLite sorts
+	// every match after the position before it returns the first batch: a batch then costs all the matches that follow
+	// it. Without it the batch stops after its limit (the plan test checks there is no sort).
+	if len(r.Terms) == 0 {
+		b.WriteString(" ORDER BY sn.id")
+	}
+	b.WriteString(" LIMIT ?")
 	args = append(args, limit)
 	return b.String(), args, nil
+}
+
+// NameSQL returns the name candidate query and its arguments, for the plan test that checks it uses the indexes.
+func (r *Request) NameSQL(after int64, limit int) (string, []any, error) {
+	return r.candidateSQL(after, limit)
 }
 
 // Candidates reads up to limit candidates after the position after, in order, on q. The reach check is not made here.
