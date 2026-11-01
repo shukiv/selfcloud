@@ -366,5 +366,22 @@ describe("the Requests entry", () => {
     await waitFor(() => within(drawer).getByRole("menuitem", { name: /Shared with me/ }));
     expect(within(drawer).queryByRole("menuitem", { name: /Requests/ })).toBeNull();
   });
+
+  it("the account button is a 44 pixel target on a finger, and the usual size with a mouse", async () => {
+    signIn("member");
+    const original = window.matchMedia;
+    try {
+      window.matchMedia = ((query: string) => ({ ...original(query), matches: query === "(pointer: coarse)" })) as typeof window.matchMedia;
+      const finger = renderShell("/files");
+      const button = await screen.findByTestId("account-menu");
+      expect(button.style.minHeight).toBe("44px");
+      finger.unmount();
+      window.matchMedia = ((query: string) => ({ ...original(query), matches: false })) as typeof window.matchMedia;
+      renderShell("/files");
+      expect((await screen.findByTestId("account-menu")).style.minHeight).toBe("");
+    } finally {
+      window.matchMedia = original;
+    }
+  });
 });
 

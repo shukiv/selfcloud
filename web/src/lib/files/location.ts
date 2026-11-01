@@ -16,6 +16,9 @@ export interface Here {
   dirRole: Role;
   trail: Node[];
   rootReachable: boolean;
+  // reach is, when the root cannot be reached (the person was given a folder below it), the folders the person can reach down to
+  // the directory shown, topmost first, the directory last. It is empty when the root is reachable.
+  reach: Node[];
   // spaceNoDownload is the team space's no-download rule for viewers. It binds the browser's own downloads.
   spaceNoDownload: boolean;
   // path is the directory's path from the folder's root, "/" for the root, or null when unknown.
@@ -53,6 +56,7 @@ export async function locate(
       dirRole: listed?.role ?? 'viewer',
       trail: [],
       rootReachable: true,
+      reach: [],
       spaceNoDownload: listed?.no_download_for_viewers ?? false,
       path: '/',
     };
@@ -73,6 +77,7 @@ export async function locate(
     dirRole: dir.role ?? 'viewer',
     trail,
     rootReachable,
+    reach: rootReachable ? [] : [...chain, dir],
     spaceNoDownload: listed?.no_download_for_viewers ?? false,
     path: path === null ? null : `/${path}`,
   };

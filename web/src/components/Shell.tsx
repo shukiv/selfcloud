@@ -20,6 +20,7 @@ import { endImpersonation } from "../lib/impersonation";
 import { readPref, writePref } from "../lib/prefs";
 import { useSidebar } from "../theme/theme";
 import { RADIUS } from "../theme/tokens";
+import { useCoarsePointer } from "../lib/pointer";
 import Alert from "./Alert";
 import LangSwitcher from "./LangSwitcher";
 import Sentence from "./Sentence";
@@ -168,6 +169,8 @@ export default function Shell({ children }: { children: ReactNode }) {
   const sidebar = useSidebar();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.lg;
+  // On a finger the account button is a 44 pixel target; with a mouse it keeps the button's usual size.
+  const coarse = useCoarsePointer();
   const lang = useLang();
   const rtl = directionOf(lang) === "rtl";
   const me = useStore(session);
@@ -488,7 +491,7 @@ export default function Shell({ children }: { children: ReactNode }) {
                     data-testid="account-menu"
                     aria-label={t("user.menu")}
                     title={me.user.display_name || me.user.email}
-                    style={{ borderRadius: RADIUS, minWidth: 44, maxWidth: isMobile ? "45vw" : 260, overflow: "hidden" }}
+                    style={{ borderRadius: RADIUS, minWidth: 44, ...(coarse ? { minHeight: 44 } : {}), maxWidth: isMobile ? "45vw" : 260, overflow: "hidden" }}
                   >
                     <bdi style={{ display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom" }}>
                       {me.user.display_name || me.user.email}

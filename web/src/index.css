@@ -629,3 +629,53 @@ a {
     flex: 0 0 340px;
   }
 }
+
+/* While an item is dragged or a rubber band is drawn, nothing on the page takes a text selection and the pointer shows it. */
+.sc-gesture,
+.sc-gesture * {
+  user-select: none !important;
+  cursor: grabbing !important;
+}
+
+/* The place under a dragged item. data-drop-state is set by the page's drag gesture: ok takes the drop, refused does not. */
+[data-drop-state="ok"] {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
+  background: var(--ant-color-primary-bg);
+}
+
+[data-drop-state="refused"] {
+  outline: 2px dashed var(--ant-color-error);
+  outline-offset: -2px;
+  background: var(--ant-color-error-bg);
+}
+
+.sc-gesture [data-drop-state="refused"],
+.sc-gesture [data-drop-state="refused"] * {
+  cursor: not-allowed !important;
+}
+
+/* A list row is a table row: its cells carry the background, so the state is drawn on them. */
+tr[data-drop-state="ok"] > td {
+  background: var(--ant-color-primary-bg) !important;
+}
+
+tr[data-drop-state="refused"] > td {
+  background: var(--ant-color-error-bg) !important;
+}
+
+/* The folder tree: a row lights up under the pointer, and shows the keyboard's place. */
+.tree-row:hover {
+  background: var(--ant-color-fill-tertiary);
+}
+
+[role="treeitem"]:focus-visible > .tree-row {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
+}
+
+/* The file list pins its column header under the toolbar. A scrolling wrapper (the rule above, for narrow tables) would make the
+   header stick inside the wrapper and never to the window, so the list's wrapper does not scroll: its columns fit the window. */
+.files-list .ant-table-wrapper {
+  overflow: visible;
+}

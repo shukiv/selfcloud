@@ -3,9 +3,9 @@
 import {
   useEffect,
   useRef,
-  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type Ref,
@@ -20,9 +20,14 @@ import type { SortDir, SortKey } from "../../lib/files/sort";
 import type { Node } from "../../lib/files/types";
 import type { ViewMode } from "../../lib/files/viewPrefs";
 import { isTextField } from "../../lib/files/keys";
+import { useCoarsePointer } from "../../lib/pointer";
+import { THEAD_H } from "../../lib/files/layout";
 import Icon from "./Icon";
 import KindMarks from "./KindMarks";
 import Thumb from "./Thumb";
+
+// The hook lives in lib/pointer, so the shell can use it without loading this listing; it is still exported from here.
+export { useCoarsePointer };
 
 
 // Click is what the page needs from a mouse or touch event: which modifiers were held, and whether a finger made it.
@@ -61,6 +66,8 @@ export interface ListingProps {
   onRowContext?: (id: string, index: number, x: number, y: number) => void;
   // cutIDs are the items a cut has taken: they are shown dimmed until they are pasted or the cut is cancelled.
   cutIDs?: Set<string>;
+  // stickyTop is where the list's column header is pinned: under the shell's header and the toolbar's row.
+  stickyTop?: number;
   containerRef?: Ref<HTMLDivElement>;
 }
 
@@ -70,9 +77,8 @@ const LONG_PRESS_MS = 500;
 const PRESS_SLOP_PX = 10;
 // CUT_OPACITY is how faint a cut item is shown, until it is pasted or the cut is cancelled.
 const CUT_OPACITY = 0.5;
-// SCROLL_MARGIN_TOP keeps a row or tile that the keyboard scrolls to clear of the sticky header (56 px) and the toolbar row
-// (up to 52 px, with a 44 px touch target), so it is never hidden under them.
-const SCROLL_MARGIN_TOP = 112;
+// DEFAULT_STICKY_TOP is the shell's header (56 px) and the toolbar's row (48 px with a mouse), where the column header pins.
+const DEFAULT_STICKY_TOP = 104;
 
 type AriaSort = "ascending" | "descending" | "none";
 
@@ -91,6 +97,9 @@ export default function Listing(p: ListingProps) {
   const screens = Grid.useBreakpoint();
   const narrow = !screens.md;
   const coarse = useCoarsePointer();
+  const stickyTop = p.stickyTop ?? DEFAULT_STICKY_TOP;
+  // A row or tile that the keyboard scrolls to keeps clear of the sticky header, the toolbar and, in the list, the column header.
+  const scrollMarginTop = stickyTop + (p.view === "list" ? THEAD_H : 0) + 4;
   // The kind of pointer that last went down on a row. Its click is the one that follows, so a finger's tap is known
   // to be a tap and a mouse's click is known to be a click, each by its own event.
   const pointer = useRef<string>("mouse");
@@ -131,6 +140,10 @@ export default function Listing(p: ListingProps) {
     "aria-selected": p.selected.has(n.id),
     tabIndex: p.focusID === n.id ? 0 : -1,
     "data-id": n.id,
+    // A folder is a place an item can be dropped on: the page reads where from these (see useGestures). Nothing else is.
+    ...(n.kind === "dir" ? { "data-drop-folder": n.folder_id, "data-drop-dir": n.id, "data-drop-role": n.role ?? "", "data-drop-name": n.name } : {}),
+    // The browser's own drag of an image or a link inside the row is off: an item is dragged by the page's pointer gesture.
+    onDragStart: (e: ReactDragEvent<HTMLElement>) => e.preventDefault(),
     onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
       pointer.current = e.pointerType;
       pressed.current = false;
@@ -339,11 +352,13 @@ export default function Listing(p: ListingProps) {
           ]),
     ];
     return (
-      <div role="region" aria-label={p.label} ref={p.containerRef}>
+      <div role="region" aria-label={p.label} ref={p.containerRef} className="files-list">
         <Table<Node>
           rowKey="id"
           size="middle"
           pagination={false}
+          // The column header stays under the toolbar as a long folder scrolls.
+          sticky={{ offsetHeader: stickyTop }}
           columns={columns}
           dataSource={p.items}
           rowSelection={{
@@ -369,7 +384,7 @@ export default function Listing(p: ListingProps) {
               ...(p.cutIDs?.has(n.id) ? { opacity: CUT_OPACITY } : {}),
               // A row cannot take a text selection, as a tile cannot, so Shift+click does not leave text for Ctrl+C to copy.
               userSelect: "none" as const,
-              scrollMarginTop: SCROLL_MARGIN_TOP,
+              scrollMarginTop,
               // The selected row has an outline and a tint, as a selected tile does.
               ...(sel ? { background: token.colorPrimaryBg, outline: `2px solid ${token.colorPrimary}`, outlineOffset: -2 } : {}),
             };
@@ -425,7 +440,7 @@ export default function Listing(p: ListingProps) {
               outlineOffset: isSel ? -2 : undefined,
               cursor: "default",
               userSelect: "none",
-              scrollMarginTop: SCROLL_MARGIN_TOP,
+              scrollMarginTop,
               opacity: p.cutIDs?.has(n.id) ? CUT_OPACITY : undefined,
             }}
           >
@@ -458,21 +473,6 @@ export default function Listing(p: ListingProps) {
       })}
     </div>
   );
-}
-
-// useCoarsePointer says whether the main pointer is a finger, so a screen without a mouse gets the checkboxes a mouse
-// does without. It follows the media query, not the width of the window: a narrow desktop window keeps its mouse.
-export function useCoarsePointer(): boolean {
-  const supported = typeof window !== "undefined" && typeof window.matchMedia === "function";
-  const [coarse, setCoarse] = useState(() => (supported ? window.matchMedia("(pointer: coarse)").matches : false));
-  useEffect(() => {
-    if (!supported) return;
-    const mq = window.matchMedia("(pointer: coarse)");
-    const onChange = () => setCoarse(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [supported]);
-  return coarse;
 }
 
 // thumbable is an image the server can thumbnail: the server sends has_thumbnail on those, and on no other item.

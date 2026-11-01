@@ -3,7 +3,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { App, Alert, Button, ConfigProvider, Dropdown, Form, Input, Modal, Skeleton, Tooltip, theme as antdTheme } from "antd";
+import { App, Alert, Button, ConfigProvider, Dropdown, Form, Grid, Input, Modal, Skeleton, Tooltip, theme as antdTheme } from "antd";
 import {
   ClipboardPaste,
   Copy,
@@ -18,10 +18,12 @@ import {
   ArrowUpDown,
   Info,
   LayoutGrid,
+  Link as LinkIcon,
   Link2,
   List,
   MoreHorizontal,
   Pencil,
+  PanelLeft,
   Play,
   Plus,
   Scissors,
@@ -36,7 +38,7 @@ import { brand } from "../lib/brand";
 import { ApiError } from "../lib/apiError";
 import { go } from "../lib/router";
 import { session, sessionChanged, sessionKey, signingOut } from "../lib/session";
-import { queryKey, refreshTree } from "../lib/query";
+import { queryKey, refreshTree, type Branch } from "../lib/query";
 import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/files/folders";
 import { keepTargetOnSave } from "../lib/files/appearance";
 import { folderPageReader } from "../lib/files/folderPages";
@@ -60,11 +62,16 @@ import { kindOf, previewable } from "../lib/files/kind";
 import { tapOpens } from "../lib/files/tap";
 import { readPrefs, writePrefs, type ViewPrefs } from "../lib/files/viewPrefs";
 import { UndoStack } from "../lib/files/undo";
+import { copyText, nodeAddress } from "../lib/files/copyText";
+import { alreadyIn, dropDecision, type Dest } from "../lib/files/drag";
+import { HEADER_H, panelH, PANEL_INSET, rowPad, stickyTop, toolbarH } from "../lib/files/layout";
+import { readTree, writeTree } from "../lib/files/treeState";
 import type { ConflictChoice } from "../lib/files/conflict";
 import type { Job, Node, Page } from "../lib/files/types";
 import { manager, uploads } from "../lib/files/uploads";
 import Breadcrumbs, { type Place } from "../components/files/Breadcrumbs";
 import Listing, { type Click, useCoarsePointer } from "../components/files/Listing";
+import { useGestures, type GestureCtl } from "../components/files/useGestures";
 import Details from "../components/files/Details";
 import Preview, { type MediaSeed } from "../components/files/Preview";
 import { Pager } from "../lib/files/pager";
@@ -86,6 +93,8 @@ import NotFoundPage from "./NotFoundPage";
 const ShareDialog = lazy(() => import("../components/share/ShareDialog"));
 // The zip dialog is loaded on first use, as the share dialog is.
 const ZipDialog = lazy(() => import("../components/files/ZipDialog"));
+// The folder tree is loaded when it is first shown, and not at all at phone width.
+const FolderTree = lazy(() => import("../components/files/FolderTree"));
 
 // Sharing from this page: the Share button in the selection bar (when the caller may share the item), Share and
 // "Who has access" in Details, and the access request on a not-found directory.
@@ -114,11 +123,19 @@ interface SelState extends Selection {
 
 const NO_SEL: SelState = { ...EMPTY, anchorID: null, focusID: null };
 
+// A menu that is taller than the room above and below the pointer shifts along the window as well as flipping (antd shifts only
+// the placements top, bottom, left and right, and the menus here use bottomLeft), and when it is taller than the window it scrolls
+// inside it, so every item can be reached.
+const MENU_FIT = { adjustX: 1, adjustY: 1, shiftX: true, shiftY: true } as const;
+const MENU_SCROLL = { maxBlockSize: "calc(100dvh - 16px)", overflowY: "auto" } as const;
+// antd offsets a menu 4 px from its anchor after it has been fitted to the window; 4 px of padding in the popup keeps the offset menu inside.
+const MENU_POPUP = { paddingBlock: 4 } as const;
+
 
 // useRoomy says whether the window is at least 360 pixels wide. Below it the selection panel keeps two icons, and the rest go in
 // its More menu, so the panel never runs past the window's edge; a window that cannot say its width is taken as roomy.
-function useRoomy(): boolean {
-  const query = "(min-width: 360px)";
+function useRoomy(min = 360): boolean {
+  const query = `(min-width: ${min}px)`;
   const supported = typeof window !== "undefined" && typeof window.matchMedia === "function";
   const [roomy, setRoomy] = useState(() => (supported ? window.matchMedia(query).matches : true));
   useEffect(() => {
@@ -211,6 +228,7 @@ export default function FilesPage() {
   const { token } = antdTheme.useToken();
   const coarse = useCoarsePointer();
   const roomy = useRoomy();
+  const spacious = useRoomy(480);
   // Action notices are toasts: a toast covers no row, where an alert above the listing pushed every row down.
   const { message } = App.useApp();
   const qc = useQueryClient();
@@ -250,6 +268,21 @@ export default function FilesPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sectionRef = useRef<HTMLElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  // The pointer gestures: an item dragged onto a folder, and the rubber band. What they may do is answered by gestureCtl below,
+  // which is set at each render, so a gesture always asks the page as it is now.
+  const gestureCtl = useRef<GestureCtl | null>(null);
+  const gestures = useGestures(sectionRef, listRef, gestureCtl);
+  // The folder tree is for windows at least 768 px wide (antd's md); its open state and the folders opened are kept for the person.
+  const wide = Grid.useBreakpoint().md === true;
+  const userID = useStore(session)?.user.id ?? "";
+  // The state belongs to the person it was read for: after a sign-in as someone else it is read again in the same render, so
+  // one person's open folders are never written under the next person's key. The tree is mounted per person (key below).
+  const [treeBox, setTreeBox] = useState(() => ({ uid: userID, state: readTree(userID) }));
+  const treeState = treeBox.uid === userID ? treeBox.state : readTree(userID);
+  const changeTree = (next: typeof treeState) => {
+    setTreeBox({ uid: userID, state: next });
+    writeTree(userID, next);
+  };
 
   const [rename, setRenameState] = useState<RenameState | null>(null);
   const renameRef = useRef<RenameState | null>(null);
@@ -471,8 +504,10 @@ export default function FilesPage() {
   }, [items, search, path, here, childrenQ.isPending]);
 
   // reload reads the listing again, keeping the place. Selected items that are gone are dropped.
-  function reload(): Promise<unknown> {
-    return refreshTree(qc);
+  // The folder tree is read again only for the folder shown and the ones the change named (where items left or came to).
+  function reload(also: Branch[] = []): Promise<unknown> {
+    const shown: Branch[] = folderID ? [{ folder: folderID, dir: dirID }] : [];
+    return refreshTree(qc, [...shown, ...also]);
   }
 
   async function loadMore(): Promise<void> {
@@ -538,9 +573,10 @@ export default function FilesPage() {
     if (!here) return [];
     const rootLabel = here.folder === personalID ? t("nav.files") : (here.folderName ?? t("nav.files"));
     const out: Place[] = [];
-    if (here.rootReachable) out.push({ key: `root-${here.folder}`, label: rootLabel, href: filesURL(here.folder, null) });
-    for (const n of here.trail) out.push({ key: n.id, label: n.name, href: filesURL(here.folder, n.id) });
-    if (here.dir) out.push({ key: here.dir.id, label: here.dir.name, href: filesURL(here.folder, here.dir.id) });
+    // Each place on the way takes a drop, with the caller's role there: the same role a paste into it would need.
+    if (here.rootReachable) out.push({ key: `root-${here.folder}`, label: rootLabel, href: filesURL(here.folder, null), drop: { folder: here.folder, dir: null, role: here.folderRole } });
+    for (const n of here.trail) out.push({ key: n.id, label: n.name, href: filesURL(here.folder, n.id), drop: { folder: here.folder, dir: n.id, role: n.role } });
+    if (here.dir) out.push({ key: here.dir.id, label: here.dir.name, href: filesURL(here.folder, here.dir.id), drop: { folder: here.folder, dir: here.dir.id, role: here.dir.role } });
     return trimCrumbs(out, 4);
   }, [here, personalID, t]);
 
@@ -581,8 +617,15 @@ export default function FilesPage() {
     setSelection(clickSelect(current(), ids, index, { shift: e.shiftKey, toggle: e.ctrlKey || e.metaKey }));
   }
 
+  // selectEverything selects every row loaded. When more pages exist it says so: the rest are not selected until they are loaded.
+  function selectEverything() {
+    setSelection(selectAll(ids));
+    if (hasMore) void message.info(t("files.selectAll.partial", { count: ids.length }));
+  }
+
   function onSelectAll(checked: boolean) {
-    setSelection(checked ? selectAll(ids) : EMPTY);
+    if (checked) selectEverything();
+    else setSelection(EMPTY);
   }
 
   // toggleStar stars or unstars an item for the caller, then shows the new state in the listing. A refused change
@@ -720,7 +763,7 @@ export default function FilesPage() {
         return;
       case "selectAll":
         e.preventDefault();
-        setSelection(selectAll(ids));
+        selectEverything();
         return;
       case "escape":
         setSelection(EMPTY);
@@ -801,6 +844,14 @@ export default function FilesPage() {
     void message.info(t("files.clip.copied"));
   }
 
+  // copyLinkOf puts this app's own address of an item on the clipboard. It is the page a signed-in person opens (/n/{id}); no
+  // share link is made, and the notice does not show the address, which carries the item's ID.
+  async function copyLinkOf(n: Node) {
+    const ok = await copyText(nodeAddress(n.id));
+    if (ok) void message.success(t("files.copyLink.done"));
+    else void message.error(t("files.copyLink.failed"));
+  }
+
   function cutPicked() {
     if (!allEdit) {
       void message.warning(t("files.cut.refused"));
@@ -822,9 +873,13 @@ export default function FilesPage() {
     }
     const nodes = pasted.mode === "cut" ? pasted.nodes.filter((n) => !(n.folder_id === here.folder && (n.parent_id ?? null) === dirID)) : pasted.nodes;
     if (nodes.length === 0) {
+      // Every item is in this folder already: the cut ends, and the message says why nothing moved.
       clearClip();
+      void message.info(t("files.paste.same"));
       return;
     }
+    // Items that are here already leave the clipboard; the others stay on it until they are moved.
+    if (nodes.length !== pasted.nodes.length) setClip(pasted.mode, nodes);
     pasting.current = true;
     try {
       await runTransfer(pasted.mode === "cut" ? "move" : "copy", nodes, { folder: here.folder, dir: dirID }, true);
@@ -984,7 +1039,9 @@ export default function FilesPage() {
   // runTransfer moves or copies the picked nodes into dest. fromClip says they came off the clipboard: each is read again first,
   // so a move carries the etag the server has now, and one that no longer exists is not sent and is named. A cut that moved, or
   // that no longer exists, leaves the clipboard; the ones that failed stay cut for another try.
-  async function runTransfer(mode: "move" | "copy", picked: Node[], dest: Destination, fromClip = false) {
+  // reread (on for a paste, and for a drag) reads each item again first; fromClip says the items came off the clipboard, so the
+  // clipboard is trimmed to match. A drag reads again and leaves the clipboard alone.
+  async function runTransfer(mode: "move" | "copy", picked: Node[], dest: Destination, fromClip = false, reread = fromClip) {
     setDialog(null);
     const changed = sessionChanged();
     const moved: Array<{ node: Node; from: { folder: string; parent?: string; name: string } }> = [];
@@ -995,7 +1052,7 @@ export default function FilesPage() {
     const base: Transfer = dest.dir ? { folder: dest.folder, parent: dest.dir } : { folder: dest.folder, path: "/" };
     const nodes: Node[] = [];
     for (const n of picked) {
-      if (!fromClip) {
+      if (!reread) {
         nodes.push(n);
         continue;
       }
@@ -1011,6 +1068,11 @@ export default function FilesPage() {
       if (cur === null) {
         gone.add(n.id);
         issues.push({ name: n.name, reason: t("files.err.notFound") });
+        continue;
+      }
+      // Someone else may have moved it into place since the drag or the cut: it is not sent, and no conflict is asked.
+      if (mode === "move" && alreadyIn(cur, dest)) {
+        gone.add(cur.id);
         continue;
       }
       nodes.push(cur);
@@ -1030,7 +1092,7 @@ export default function FilesPage() {
             if (changed() || !mounted.current) return;
             if ("status" in res) {
               jobsStarted++;
-              watchJob(res.id);
+              watchJob(res.id, [{ folder: dest.folder, dir: dest.dir }]);
             }
           }
           break;
@@ -1059,7 +1121,7 @@ export default function FilesPage() {
             bad++;
           }
         }
-        await reload();
+        await reload(moved.flatMap((m) => [{ folder: m.from.folder, dir: m.from.parent ?? null }, { folder: m.node.folder_id, dir: m.node.parent_id }]));
         return bad;
       });
       showUndo(label);
@@ -1074,11 +1136,11 @@ export default function FilesPage() {
     }
     if (issues.length > 0) void message.error(issueNotice(issues));
     else if (mode === "copy" && jobsStarted === 0) void message.success(t("files.copy.done"));
-    await reload();
+    await reload([{ folder: dest.folder, dir: dest.dir }, ...nodes.map((n) => ({ folder: n.folder_id, dir: n.parent_id }))]);
   }
 
   // watchJob polls a copy that the server runs as a job, until it finishes.
-  function watchJob(id: string) {
+  function watchJob(id: string, also: Branch[] = []) {
     setJobs((prev) => [...prev, { id, status: "queued" }]);
     const poll = async () => {
       if (!mounted.current) return;
@@ -1087,7 +1149,7 @@ export default function FilesPage() {
         if (!mounted.current) return;
         setJobs((prev) => prev.map((x) => (x.id === id ? { id, status: j.status } : x)));
         if (j.status === "queued" || j.status === "running") setTimeout(() => void poll(), 1500);
-        else if (j.status === "succeeded") await reload();
+        else if (j.status === "succeeded") await reload(also);
       } catch {
         if (mounted.current) setJobs((prev) => prev.map((x) => (x.id === id ? { id, status: "failed" } : x)));
       }
@@ -1276,7 +1338,6 @@ export default function FilesPage() {
   // and at phone width the one-row bar takes its main action and a More menu from it. Each action is hidden when the caller
   // may never perform it in this listing (the listing is read for that), and disabled when the selection does not allow it
   // now. So the three places cannot disagree about permissions.
-  const single = selectedNodes.length === 1 ? selectedNodes[0] : null;
   const editable = items.some((n) => can.edit(n.role));
   const downloadable = items.some((n) => n.kind === "file" && downloadAllowed(gated(n)));
   const zippable = items.some((n) => n.kind !== "shortcut" && downloadAllowed(gated(n)));
@@ -1286,8 +1347,13 @@ export default function FilesPage() {
   const ic = { size: 16, "aria-hidden": true } as const;
   // Each action's fits says whether the selection is of a kind it applies to. The toolbar does not change with the selection
   // (an action that does not fit is disabled there); the menus leave such an action out.
-  const pickedFile = selectedNodes.length === 0 || selectedNodes.some((n) => n.kind === "file");
-  const acts: BarAct[] = [
+  // buildActs is the one list, for a set of items: the selection for the toolbar and the menus, and the dragged set for a drag,
+  // which asks the same Move and Copy whether they are enabled for those items (see gestureCtl).
+  const buildActs = (selectedNodes: Node[]): BarAct[] => {
+    const single = selectedNodes.length === 1 ? selectedNodes[0] : null;
+    const pickedFile = selectedNodes.length === 0 || selectedNodes.some((n) => n.kind === "file");
+    const allEdit = selectedNodes.length > 0 && selectedNodes.every((n) => can.edit(n.role));
+    return [
     {
       key: "download",
       label: t("files.act.download"),
@@ -1365,6 +1431,19 @@ export default function FilesPage() {
       },
     },
     {
+      key: "copyLink",
+      label: t("files.act.copyLink"),
+      icon: <LinkIcon {...ic} />,
+      group: 2,
+      // This app's own address of the item: it makes no share link and grants nothing, so it is there for anyone who sees the item.
+      hidden: false,
+      fits: true,
+      enabled: single !== null,
+      run: () => {
+        if (single) void copyLinkOf(single);
+      },
+    },
+    {
       key: "versions",
       label: t("files.act.versions"),
       icon: <History {...ic} />,
@@ -1411,11 +1490,14 @@ export default function FilesPage() {
     { key: "copy", label: t("files.act.copy"), icon: <CopyPlus {...ic} />, group: 4, hidden: false, fits: true, enabled: selectedNodes.length > 0, run: () => startPick("copy", selectedNodes) },
     // Delete is marked as destructive in the toolbar and in the menus alike.
     { key: "delete", label: t("files.act.delete"), icon: <Trash2 {...ic} />, group: 5, hidden: !editable, fits: true, enabled: allEdit, danger: true, run: () => askDelete(selectedNodes) },
-  ];
+    ];
+  };
+  const acts = buildActs(selectedNodes);
   // The rights decide what is hidden, so the toolbar keeps its shape as the selection changes.
   const barActs = acts.filter((a) => !a.hidden);
   // The panel keeps its icons in order; the rest of the selection actions are in its More menu.
-  const panelKeys = roomy ? ["share", "download", "move", "delete"] : ["share", "download"];
+  // Copy link has an icon where the room allows (all widths with a mouse; from 480 px on a finger); below that it is in More.
+  const panelKeys = roomy ? (coarse && !spacious ? ["share", "download", "move", "delete"] : ["share", "copyLink", "download", "move", "delete"]) : ["share", "download"];
   const panelIcons = panelKeys.map((k) => barActs.find((a) => a.key === k)).filter((a): a is BarAct => a !== undefined);
   const panelMore = barActs.filter((a) => !panelKeys.includes(a.key));
   // newActs is the New menu: a folder, and the files or a folder uploaded. spaceActs is the menu of the empty space: the same,
@@ -1491,7 +1573,7 @@ export default function FilesPage() {
       role="group"
       aria-label={t("files.selection.label")}
       data-testid="selection-panel"
-      style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, flex: "1 1 auto", height: coarse ? 44 : 32, padding: "0 4px", borderRadius: token.borderRadiusLG, background: token.colorFill }}
+      style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, flex: "1 1 auto", boxSizing: "border-box", height: panelH(coarse), paddingBlock: PANEL_INSET, paddingInline: PANEL_INSET, borderRadius: token.borderRadiusLG, background: token.colorFill }}
     >
       <Tooltip title={t("files.act.clear")}>
         <Button data-testid="selection-clear" aria-label={t("files.act.clear")} icon={<X {...ic} />} onClick={clearPicked} style={{ flex: "none", ...touchSize }} />
@@ -1507,7 +1589,7 @@ export default function FilesPage() {
       ))}
       {panelMore.length > 0 && (
         <ConfigProvider theme={menuTheme}>
-          <Dropdown trigger={["click"]} menu={{ items: menuItems(panelMore) }}>
+          <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(panelMore), style: MENU_SCROLL }}>
             <Tooltip title={t("files.act.more")}>
               <Button aria-label={t("files.act.more")} icon={<MoreHorizontal {...ic} />} aria-haspopup="menu" style={{ flex: "none", ...touchSize }} />
             </Tooltip>
@@ -1516,9 +1598,82 @@ export default function FilesPage() {
       )}
     </div>
   );
-  const stickyBar = { position: "sticky" as const, top: 56, zIndex: 5, background: token.colorBgLayout, display: "flex", flexWrap: "nowrap" as const, alignItems: "center", gap: 8, minHeight: 40, minWidth: 0, paddingBlock: 4 };
+  // The row is 48 px with a mouse (the panel's 40 and 4 above and below) and 52 on a finger, where the panel fills it.
+  const stickyBar = { position: "sticky" as const, top: HEADER_H, zIndex: 5, background: token.colorBgLayout, display: "flex", flexWrap: "nowrap" as const, alignItems: "center", gap: 8, boxSizing: "border-box" as const, minHeight: toolbarH(coarse), minWidth: 0, paddingBlock: rowPad(coarse) };
+
+  // gestureCtl answers the pointer gestures from the page as it is now. A drag asks the same action list as the toolbar: Move and
+  // Copy, built for the dragged items, must be enabled for the drop to be allowed; the place is judged by dropDecision, with the
+  // role a paste needs. A drop then runs the same transfer as a paste does, which reads each item again for its current etag,
+  // asks about a taken name, and pushes its undo.
+  const WHY_KEY = { role: "files.drag.no.role", self: "files.drag.no.self", here: "files.drag.no.here", move: "files.drag.no.move" } as const;
+  gestureCtl.current = {
+    enabled: () => here !== null && renameRef.current === null && dialogRef.current === null && conflict === null && !dialogOpen(),
+    startDrag: (id) => {
+      const n = byID.get(id);
+      if (!n) return null;
+      if (sel.ids.includes(id) && picked.length > 0) return picked;
+      const index = ids.indexOf(id);
+      setSelection({ ids: [id], anchor: index, focus: index });
+      return [n];
+    },
+    decide: (nodes, dest: Dest, copy) => {
+      const list = buildActs(nodes);
+      const allowed = (key: string) => list.some((a) => a.key === key && !a.hidden && a.enabled);
+      return dropDecision(nodes, dest, copy, { move: allowed("move"), copy: allowed("copy") });
+    },
+    drop: (decision, dest) => {
+      void runTransfer(decision.mode, decision.nodes, { folder: dest.folder, dir: dest.dir }, false, true);
+    },
+    refuse: (why) => void message.warning(t(WHY_KEY[why])),
+    selectedIDs: () => sel.ids,
+    setBand: (hit) => {
+      const first = hit.length > 0 ? ids.indexOf(hit[0]) : null;
+      const last = hit.length > 0 ? ids.indexOf(hit[hit.length - 1]) : null;
+      setSelection({ ids: hit, anchor: first, focus: last });
+    },
+    clear: () => setSelection(EMPTY),
+  };
+  const dragView = gestures.drag;
+  const dragWhy = dragView?.why ?? null;
+  const dragLine = dragView === null ? "" : dragView.name || t("files.drag.items", { count: dragView.count });
+  const dragHint =
+    dragView === null
+      ? null
+      : dragWhy
+        ? t(WHY_KEY[dragWhy])
+        : dragView.target !== null
+          ? null
+          : dragView.copy
+            ? t("files.drag.hintCopy")
+            : t("files.drag.hintMove");
+
+  const treeShown = wide && treeState.open;
+  const treeToggleLabel = treeState.open ? t("files.tree.hide") : t("files.tree.show");
 
   return (
+    <div className="files-layout" style={{ display: "flex", alignItems: "flex-start", gap: 16, minWidth: 0 }}>
+    {treeShown && (
+      // The folder tree sits beside the listing and stays on screen as the listing scrolls. It is a drop target, not part of the
+      // section, so a file dragged in from the desktop is not uploaded by a drop on it.
+      <aside
+        data-testid="folder-tree"
+        style={{ flex: "none", inlineSize: 240, position: "sticky", insetBlockStart: HEADER_H + 8, maxBlockSize: `calc(100dvh - ${HEADER_H + 24}px)`, overflow: "auto" }}
+      >
+        <Suspense fallback={<Skeleton active paragraph={{ rows: 4 }} title={false} />}>
+          <FolderTree
+            key={userID}
+            spaces={spaces}
+            folder={here.folder}
+            chain={here.rootReachable ? [...here.trail.map((n) => n.id), ...(here.dir ? [here.dir.id] : [])] : here.reach.map((n) => n.id)}
+            top={here.rootReachable || here.reach.length === 0 ? undefined : { id: here.reach[0].id, name: here.reach[0].name, role: here.reach[0].role }}
+            state={treeState}
+            onChange={changeTree}
+            onOpen={(folder, dir) => go(filesURL(folder, dir))}
+            coarse={coarse}
+          />
+        </Suspense>
+      </aside>
+    )}
     <section
       ref={sectionRef}
       className="browser"
@@ -1530,10 +1685,24 @@ export default function FilesPage() {
       onContextMenu={onSpaceContext}
       // The rows keep their own height: a short folder must not stretch the header and the toolbar apart. The room under the
       // rows is the upload tray's, so the last rows can be scrolled clear of it.
-      style={{ position: "relative", display: "grid", gap: 16, minWidth: 0, minHeight: "60dvh", alignContent: "start", paddingBlockEnd: room }}
+      style={{ position: "relative", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, flex: "1 1 0", minWidth: 0, minHeight: "calc(100dvh - 140px)", alignContent: "start", paddingBlockEnd: room }}
     >
-      <header style={{ minWidth: 0 }}>
-        <Breadcrumbs crumbs={crumbs} />
+      <header style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+        {wide && (
+          <Tooltip title={treeToggleLabel}>
+            <Button
+              data-testid="tree-toggle"
+              aria-label={treeToggleLabel}
+              aria-pressed={treeState.open}
+              icon={<PanelLeft {...ic} />}
+              onClick={() => changeTree({ ...treeState, open: !treeState.open })}
+              style={{ flex: "none", ...touchSize }}
+            />
+          </Tooltip>
+        )}
+        <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+          <Breadcrumbs crumbs={crumbs} />
+        </div>
         <h1 id="browser-title" className="sr-only">
           {titleName}
         </h1>
@@ -1593,7 +1762,7 @@ export default function FilesPage() {
               <>
             {(canMakeFolder || canUploadHere) && (
               <ConfigProvider theme={menuTheme}>
-                <Dropdown trigger={["click"]} menu={{ items: menuItems(newActs) }}>
+                <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(newActs), style: MENU_SCROLL }}>
                   <Button icon={<Plus {...ic} />} aria-haspopup="menu" style={touchSize}>
                     {t("files.act.new")}
                   </Button>
@@ -1661,6 +1830,7 @@ export default function FilesPage() {
                   onStar={(n) => void toggleStar(n)}
                   onRowContext={onRowContext}
                   cutIDs={cutSet}
+                  stickyTop={stickyTop(coarse)}
                   containerRef={listRef}
                 />
                 {hasMore && (
@@ -1683,6 +1853,7 @@ export default function FilesPage() {
               <Dropdown
                 open
                 trigger={["contextMenu"]}
+                autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP}
                 onOpenChange={(open) => {
                   if (open) return;
                   const origin = menuOrigin.current;
@@ -1693,7 +1864,7 @@ export default function FilesPage() {
                   // Closed without a choice (Escape, a click away), a menu opened from the keyboard gives the focus back to its row.
                   if (!chosen && origin?.isConnected) origin.focus();
                 }}
-                menu={{ items: menuItems(menu.scope === "space" ? spaceActs : barActs) }}
+                menu={{ items: menuItems(menu.scope === "space" ? spaceActs : barActs), style: MENU_SCROLL }}
               >
                 {/* pointer-events none: a touch's click lands on the row under the finger, not on the anchor, whose click closes the menu. */}
                 <span aria-hidden="true" style={{ position: "fixed", insetInlineStart: menu.inline, insetBlockStart: menu.block, width: 1, height: 1, pointerEvents: "none" }} />
@@ -1732,6 +1903,48 @@ export default function FilesPage() {
             </div>
           )}
         </>
+      )}
+
+      {dragView && (
+        <div
+          ref={gestures.ghostRef}
+          aria-hidden="true"
+          data-testid="drag-ghost"
+          data-state={dragWhy ? "refused" : dragView.target !== null ? "ok" : "free"}
+          data-mode={dragView.copy ? "copy" : "move"}
+          style={{
+            position: "fixed",
+            zIndex: 1100,
+            pointerEvents: "none",
+            maxInlineSize: 280,
+            padding: "6px 10px",
+            borderRadius: token.borderRadiusLG,
+            background: token.colorBgElevated,
+            color: token.colorText,
+            border: `1px solid ${dragWhy ? token.colorError : token.colorPrimary}`,
+            boxShadow: token.boxShadowSecondary,
+            fontSize: token.fontSizeSM,
+          }}
+        >
+          <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <bdi>{dragLine}</bdi>
+          </div>
+          {dragView.target !== null && !dragWhy && (
+            <div>
+              {dragView.copy ? t("files.drag.copyTo") : t("files.drag.moveTo")} <bdi>{dragView.target}</bdi>
+            </div>
+          )}
+          {dragHint && <div style={{ color: dragWhy ? token.colorError : token.colorTextSecondary }}>{dragHint}</div>}
+        </div>
+      )}
+
+      {gestures.band && (
+        <div
+          ref={gestures.bandRef}
+          aria-hidden="true"
+          data-testid="rubber-band"
+          style={{ position: "fixed", zIndex: 4, pointerEvents: "none", inlineSize: 0, blockSize: 0, boxSizing: "border-box", border: `1px solid ${token.colorPrimary}`, background: token.colorPrimaryBg, opacity: 0.6 }}
+        />
       )}
 
       <Modal
@@ -1862,5 +2075,6 @@ export default function FilesPage() {
 
       {undoView && <UndoToast label={undoView.label} expiresAt={undoView.expiresAt} status={undoView.status} onUndo={() => void doUndo()} onExpire={dismissUndo} />}
     </section>
+    </div>
   );
 }

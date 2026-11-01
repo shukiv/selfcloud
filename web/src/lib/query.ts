@@ -47,11 +47,33 @@ export function clearOnSessionChange(client: QueryClient): () => void {
 }
 
 // treeKeys are the reads that show the place a person is in: a listing, the place's own name and path, the trash
-// and the links a node opens from. A change anywhere refreshes all of them, so no page shows what another changed.
-const treeKeys = ['children', 'place', 'trash', 'node-link'];
+// and the links a node opens from, and the folder tree beside a listing. A change anywhere refreshes all of them, so no page shows what another changed.
+const treeKeys = ['children', 'place', 'trash', 'node-link', 'tree'];
+
+// Branch names one folder of the tree beside a listing: a space, and a directory in it (null for the space's root).
+export interface Branch {
+  folder: string;
+  dir: string | null;
+}
 
 // refreshTree marks every read of the tree stale for the session that is signed in. An active read refetches at once.
-export function refreshTree(client: QueryClient): Promise<unknown> {
+// touched names the branches of the folder tree that the change reached (the folders items left and entered); only those
+// are read again. A change that names none leaves the open branches stale, to be read when they are next shown, so a
+// busy upload never reads every open branch, up to ten pages each, again.
+export function refreshTree(client: QueryClient, touched?: Branch[]): Promise<unknown> {
   const key = sessionKey(get(session));
-  return Promise.all(treeKeys.map((k) => client.invalidateQueries({ queryKey: [key, k] })));
+  const rest = treeKeys.filter((k) => k !== 'tree').map((k) => client.invalidateQueries({ queryKey: [key, k] }));
+  if (touched === undefined) {
+    return Promise.all([...rest, client.invalidateQueries({ queryKey: [key, 'tree'], refetchType: 'none' })]);
+  }
+  const seen = new Set<string>();
+  const branches = touched
+    .filter((b) => {
+      const id = `${b.folder}/${b.dir ?? ''}`;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .map((b) => client.invalidateQueries({ queryKey: [key, 'tree', b.folder, b.dir], exact: true }));
+  return Promise.all([...rest, ...branches]);
 }

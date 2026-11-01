@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearOnSessionChange, createQueryClient, queryKey } from "./query";
+import { clearOnSessionChange, createQueryClient, queryKey, refreshTree } from "./query";
 import { session, type Session } from "./session";
 import { folders, hiddenFolders } from "./files/folders";
 import { myStorage } from "./storage/api";
@@ -87,5 +87,50 @@ describe("a read still retrying when the person changes is stopped", () => {
     await new Promise((r) => setTimeout(r, 400));
     expect(calls).toBe(1);
     cleanup();
+  });
+});
+
+describe("refreshTree reads again only the folder-tree branches a change touched", () => {
+  it("refetches the named branches, and no other open branch", async () => {
+    session.set(signedAs("u1"));
+    const client = new QueryClient();
+    const reads: Record<string, number> = {};
+    // Each branch has an active reader, as an open branch of the tree does.
+    const unsub = ["a", "b", "c"].map((d) =>
+      new QueryObserver(client, { queryKey: queryKey("tree", "f1", d), queryFn: async () => (reads[d] = (reads[d] ?? 0) + 1) }).subscribe(() => undefined),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reads).toEqual({ a: 1, b: 1, c: 1 });
+    await refreshTree(client, [
+      { folder: "f1", dir: "a" },
+      { folder: "f1", dir: "b" },
+      { folder: "f1", dir: "a" },
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reads).toEqual({ a: 2, b: 2, c: 1 });
+    unsub.forEach((u) => u());
+  });
+
+  it("a change that names no branch leaves the open branches stale and reads none of them", async () => {
+    session.set(signedAs("u1"));
+    const client = new QueryClient();
+    let reads = 0;
+    const obs = new QueryObserver(client, { queryKey: queryKey("tree", "f1", null), queryFn: async () => ++reads });
+    const unsub = obs.subscribe(() => undefined);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reads).toBe(1);
+    await refreshTree(client);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reads).toBe(1);
+    expect(client.getQueryState(queryKey("tree", "f1", null))?.isInvalidated).toBe(true);
+    unsub();
+  });
+
+  it("still refreshes the listings, whatever the branches", async () => {
+    session.set(signedAs("u1"));
+    const client = new QueryClient();
+    client.setQueryData(queryKey("children", "f1", null), { pages: [] });
+    await refreshTree(client, []);
+    expect(client.getQueryState(queryKey("children", "f1", null))?.isInvalidated).toBe(true);
   });
 });

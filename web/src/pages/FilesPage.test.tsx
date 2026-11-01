@@ -48,6 +48,7 @@ vi.mock("../lib/files/location", async (orig) => ({
     dirRole: place.role,
     trail: [],
     rootReachable: true,
+    reach: [],
     spaceNoDownload: place.noDownload,
     path: dirID ? "/Reports" : "/",
   })),
@@ -784,7 +785,8 @@ describe("the toolbar, the right-click menu and the clipboard keys", () => {
   it("a row scrolls into view below the sticky header and toolbar", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
-    expect((rows("alpha.txt") as HTMLElement).style.scrollMarginTop).toBe("112px");
+    // The shell header (56), the toolbar row (48), the pinned column header (48) and 4 of air.
+    expect((rows("alpha.txt") as HTMLElement).style.scrollMarginTop).toBe("156px");
   });
 
   // After a confirmed delete from the panel, the panel goes with the selection, and the focus must not be lost to the body.
@@ -1065,5 +1067,600 @@ describe("the review round: pastes, the clipboard's lifetime, the menus and the 
     await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
     fireEvent.keyDown(document.activeElement as Element, { key: "Escape", keyCode: 27 });
     await waitFor(() => expect(document.activeElement).toBe(row));
+  });
+});
+
+// Slice w2, the fixes found in the live reading of w1 (decision 49, "Notes for w2" of decision 44).
+describe("slice w2: the five fixes from w1's notes", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    folders.set([]);
+  });
+
+  // (a) Copy link: this app's own address of the item, the signed-in page /n/{id}. It makes no public link.
+  it("Copy link in the selection panel copies this app's own address for one item, and makes no link", async () => {
+    const written: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (s: string) => void written.push(s) } });
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    const panel = await screen.findByTestId("selection-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: "Copy link" }));
+    await waitFor(() => expect(written).toEqual([`${window.location.origin}/n/n1`]));
+    expect(await screen.findByText(/Link copied/)).toBeTruthy();
+    // The notice does not show the address, which has the item's raw ID in it.
+    expect(document.body.textContent).not.toContain("/n/n1");
+    // Two items: the button is there and off, as Share is.
+    fireEvent.click(rows("beta.txt") as Element, { ctrlKey: true });
+    await waitFor(() => expect((within(panel).getByRole("button", { name: "Copy link" }) as HTMLButtonElement).disabled).toBe(true));
+  });
+
+  it("Copy link says so when the browser will not copy", async () => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => Promise.reject(new Error("blocked")) } });
+    const exec = vi.fn(() => false);
+    Object.defineProperty(document, "execCommand", { configurable: true, value: exec });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(within(await screen.findByTestId("selection-panel")).getByRole("button", { name: "Copy link" }));
+    expect(await screen.findByText("The link could not be copied.")).toBeTruthy();
+  });
+
+  // (b) The column header stays under the toolbar in a long folder.
+  it("pins the list's column header under the toolbar", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const holder = document.querySelector<HTMLElement>(".ant-table-sticky-holder");
+    expect(holder).not.toBeNull();
+    // The shell's header (56) and the toolbar's row (48 with a mouse).
+    expect(holder?.style.top).toBe("104px");
+  });
+
+  // (c) Select all says that it took only the loaded rows when more pages exist.
+  it("Select all says it took only the loaded rows when more pages exist", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: "c2" });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    expect(await screen.findByText(/Selected the items loaded so far: 2/)).toBeTruthy();
+  });
+
+  it("Ctrl+A says the same, and with every page loaded it says nothing", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    (rows("alpha.txt") as HTMLElement).focus();
+    fireEvent.keyDown(rows("alpha.txt") as Element, { key: "a", ctrlKey: true });
+    await screen.findByText("2 selected");
+    expect(screen.queryByText(/loaded so far/)).toBeNull();
+  });
+
+  it("Ctrl+A with more pages to load says the same as the header box", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: "c2" });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    (rows("alpha.txt") as HTMLElement).focus();
+    fireEvent.keyDown(rows("alpha.txt") as Element, { key: "a", ctrlKey: true });
+    expect(await screen.findByText(/Selected the items loaded so far: 2/)).toBeTruthy();
+  });
+
+  // (d) A cut pasted where the items already are says so, instead of doing nothing.
+  it("a cut pasted into the folder the items are in says that nothing moved, and sends nothing", async () => {
+    setClip("cut", [node("n1", "alpha.txt", { parent_id: null, folder_id: "fld_aaaaaaaa" })]);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    expect(await screen.findByText("These items are already in this folder, so nothing was moved.")).toBeTruthy();
+    expect(api.moveNode).not.toHaveBeenCalled();
+    expect(get(clipboard)).toBeNull();
+  });
+
+  // (e) The panel's buttons are inset from the bar's top and bottom, and the row keeps its height.
+  it("the selection panel keeps its buttons clear of the bar's top and bottom, and the row does not change height", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const bar = screen.getByRole("toolbar", { name: "Folder actions" });
+    const rowHeight = bar.style.minHeight;
+    fireEvent.click(rows("alpha.txt") as Element);
+    const panel = await screen.findByTestId("selection-panel");
+    expect(panel.style.height).toBe("40px");
+    expect(panel.getAttribute("style")).toContain("padding-block: 4px");
+    expect(bar.style.minHeight).toBe(rowHeight);
+    expect(rowHeight).toBe("48px");
+  });
+
+  it("on a finger the panel is 52 pixels with 44 pixel buttons inside it, and the row is the same 52", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const bar = screen.getByRole("toolbar", { name: "Folder actions" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    const panel = await screen.findByTestId("selection-panel");
+    expect(panel.style.height).toBe("52px");
+    expect(bar.style.minHeight).toBe("52px");
+    expect((within(panel).getByRole("button", { name: "Download" }) as HTMLElement).style.minHeight).toBe("44px");
+  });
+});
+
+// Slice w2: drag to move or copy, and the rubber band. jsdom has no layout, so the places under the pointer and the boxes of
+// the rows are stated by each test; the pointer events are real events that the page's own listeners take.
+describe("slice w2: drag onto a folder, and the rubber band", () => {
+  const pointer = (type: string, x: number, y: number, extra: PointerEventInit = {}) =>
+    new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerType: "mouse", isPrimary: true, clientX: x, clientY: y, ...extra });
+  const send = (el: Element | Window | Document, type: string, x: number, y: number, extra: PointerEventInit = {}) => {
+    act(() => {
+      el.dispatchEvent(pointer(type, x, y, extra));
+    });
+  };
+  let under: Element | null = null;
+  const dir = (id: string, name: string, extra: Partial<Node> = {}) => node(id, name, { kind: "dir", mime_type: undefined, ...extra });
+  const A = { folder_id: "fld_aaaaaaaa" };
+
+  beforeEach(() => {
+    localStorage.clear();
+    under = null;
+    document.elementFromPoint = () => under;
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
+    api.childrenPage.mockResolvedValue({
+      items: [dir("d1", "Docs", A), dir("d2", "Pics", A), node("n1", "alpha.txt", A), node("n2", "beta.txt", A), node("n3", "gamma.txt", A)],
+      next_cursor: undefined,
+    });
+    api.statOrNull.mockImplementation(async (id: string) => node(id, `${id}.txt`, { ...A, etag: `fresh-${id}` }));
+    api.moveNode.mockResolvedValue(node("n1", "alpha.txt"));
+    api.copyNode.mockResolvedValue(node("n9", "alpha.txt"));
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    folders.set([]);
+  });
+
+  async function ready() {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+  }
+
+  // drag presses an item, moves it over a place (null: over nothing), and returns the place's state before the release.
+  function drag(from: string, over: Element | null, extra: PointerEventInit = {}) {
+    const row = rows(from) as Element;
+    send(row, "pointerdown", 10, 10, extra);
+    send(row, "pointermove", 40, 40, extra);
+    under = over;
+    send(row, "pointermove", 60, 60, extra);
+  }
+  const release = (extra: PointerEventInit = {}) => send(document.body, "pointerup", 60, 60, extra);
+
+  it("moves an item onto a folder row with its current etag, and shows the folder as taking it", async () => {
+    await ready();
+    drag("alpha.txt", rows("Docs"));
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBe("ok");
+    expect(screen.getByTestId("drag-ghost").textContent).toContain("Move to");
+    release();
+    await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
+    expect(api.moveNode.mock.calls[0][0]).toBe("n1");
+    expect(api.moveNode.mock.calls[0][1]).toMatchObject({ folder: "fld_aaaaaaaa", parent: "d1" });
+    expect(api.moveNode.mock.calls[0][2]).toBe("fresh-n1");
+    expect(api.copyNode).not.toHaveBeenCalled();
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBeUndefined();
+    expect(screen.queryByTestId("drag-ghost")).toBeNull();
+  });
+
+  it("copies when Ctrl is held, and the clipboard is left alone", async () => {
+    setClip("copy", [node("n2", "beta.txt", A)]);
+    await ready();
+    drag("alpha.txt", rows("Docs"), { ctrlKey: true });
+    expect(screen.getByTestId("drag-ghost").dataset.mode).toBe("copy");
+    release({ ctrlKey: true });
+    await waitFor(() => expect(api.copyNode).toHaveBeenCalledTimes(1));
+    expect(api.moveNode).not.toHaveBeenCalled();
+    expect(api.copyNode.mock.calls[0][1]).toMatchObject({ folder: "fld_aaaaaaaa", parent: "d1" });
+    expect(get(clipboard)?.nodes.map((n) => n.id)).toEqual(["n2"]);
+  });
+
+  it("pressing Ctrl in the middle of a drag turns the move into a copy, and releasing it turns it back", async () => {
+    await ready();
+    drag("alpha.txt", rows("Docs"));
+    expect(screen.getByTestId("drag-ghost").dataset.mode).toBe("move");
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Control", ctrlKey: true, bubbles: true }));
+    });
+    expect(screen.getByTestId("drag-ghost").dataset.mode).toBe("copy");
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", bubbles: true }));
+    });
+    expect(screen.getByTestId("drag-ghost").dataset.mode).toBe("move");
+    send(document.body, "pointercancel", 0, 0);
+  });
+
+  it("drags the whole selection when the pressed item is in it, and only the item when it is not", async () => {
+    await ready();
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.click(rows("beta.txt") as Element, { ctrlKey: true });
+    drag("beta.txt", rows("Docs"));
+    release();
+    await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(2));
+    expect(api.moveNode.mock.calls.map((c) => c[0]).sort()).toEqual(["n1", "n2"]);
+    api.moveNode.mockClear();
+    // gamma is not selected: it goes alone, and becomes the selection.
+    drag("gamma.txt", rows("Pics"));
+    release();
+    await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
+    expect(api.moveNode.mock.calls[0][0]).toBe("n3");
+  });
+
+  it("shows a place the caller may not add to as refused, says why, and sends nothing when released there", async () => {
+    api.childrenPage.mockResolvedValue({ items: [dir("d1", "Docs", { ...A, role: "viewer" }), node("n1", "alpha.txt", A)], next_cursor: undefined });
+    await ready();
+    drag("alpha.txt", rows("Docs"));
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBe("refused");
+    expect(screen.getByTestId("drag-ghost").dataset.state).toBe("refused");
+    expect(screen.getByTestId("drag-ghost").textContent).toContain("You cannot add items to this folder.");
+    release();
+    expect(await screen.findByText("You cannot add items to this folder.")).toBeTruthy();
+    expect(api.moveNode).not.toHaveBeenCalled();
+    expect(api.copyNode).not.toHaveBeenCalled();
+  });
+
+  it("refuses a folder dropped on itself, with a reason", async () => {
+    await ready();
+    drag("Docs", rows("Docs"));
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBe("refused");
+    release();
+    expect(await screen.findByText("A folder cannot go into itself.")).toBeTruthy();
+    expect(api.moveNode).not.toHaveBeenCalled();
+  });
+
+  it("takes the move permission from the toolbar's own action: items the caller cannot move are refused unless copied", async () => {
+    api.childrenPage.mockResolvedValue({ items: [dir("d1", "Docs", A), node("n1", "alpha.txt", { ...A, role: "viewer" })], next_cursor: undefined });
+    await ready();
+    drag("alpha.txt", rows("Docs"));
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBe("refused");
+    expect(screen.getByTestId("drag-ghost").textContent).toContain("Hold Ctrl to copy them");
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Control", ctrlKey: true, bubbles: true }));
+    });
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBe("ok");
+    send(document.body, "pointercancel", 0, 0);
+  });
+
+  it("does nothing when released over no folder, and Escape cancels a drag", async () => {
+    await ready();
+    drag("alpha.txt", null);
+    release();
+    expect(api.moveNode).not.toHaveBeenCalled();
+    drag("alpha.txt", rows("Docs"));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(screen.queryByTestId("drag-ghost")).toBeNull();
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBeUndefined();
+    release();
+    expect(api.moveNode).not.toHaveBeenCalled();
+  });
+
+  it("a press that hardly moves is a click: it starts no drag", async () => {
+    await ready();
+    const row = rows("alpha.txt") as Element;
+    send(row, "pointerdown", 10, 10);
+    send(row, "pointermove", 12, 11);
+    expect(screen.queryByTestId("drag-ghost")).toBeNull();
+    release();
+  });
+
+  it("a finger does not start a drag", async () => {
+    await ready();
+    const row = rows("alpha.txt") as Element;
+    send(row, "pointerdown", 10, 10, { pointerType: "touch" });
+    send(row, "pointermove", 80, 80, { pointerType: "touch" });
+    expect(screen.queryByTestId("drag-ghost")).toBeNull();
+  });
+
+  it("a pen does not start a drag either: gestures are for the mouse, and a pen uses Move to and the menu", async () => {
+    await ready();
+    const row = rows("alpha.txt") as Element;
+    send(row, "pointerdown", 10, 10, { pointerType: "pen" });
+    send(row, "pointermove", 80, 80, { pointerType: "pen" });
+    expect(screen.queryByTestId("drag-ghost")).toBeNull();
+    send(document.body, "pointerup", 80, 80, { pointerType: "pen" });
+    expect(api.moveNode).not.toHaveBeenCalled();
+  });
+
+  it("Escape is taken only while a drag is under way: a press that has not moved leaves it to the page", async () => {
+    await ready();
+    const heard = vi.fn();
+    document.body.addEventListener("keydown", heard);
+    try {
+      const row = rows("alpha.txt") as Element;
+      send(row, "pointerdown", 10, 10);
+      act(() => {
+        document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      });
+      expect(heard).toHaveBeenCalledTimes(1);
+      send(document.body, "pointerup", 10, 10);
+      // Under way, the same key ends the drag and goes no further.
+      drag("alpha.txt", rows("Docs"));
+      act(() => {
+        document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      });
+      expect(heard).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId("drag-ghost")).toBeNull();
+    } finally {
+      document.body.removeEventListener("keydown", heard);
+    }
+  });
+
+  it("an item that someone else moved into the place meanwhile is not sent, and no conflict is asked", async () => {
+    api.statOrNull.mockImplementation(async (id: string) => node(id, `${id}.txt`, { ...A, parent_id: "d1", etag: `fresh-${id}` }));
+    await ready();
+    drag("alpha.txt", rows("Docs"));
+    release();
+    await waitFor(() => expect(api.statOrNull).toHaveBeenCalled());
+    await waitFor(() => expect(api.childrenPage.mock.calls.length).toBeGreaterThan(1));
+    expect(api.moveNode).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(screen.queryByText(/already exists|Replace/)).toBeNull();
+  });
+
+  it("the click that ends a drag does not select or open anything", async () => {
+    await ready();
+    drag("alpha.txt", null);
+    release();
+    // The browser's click that follows the release lands on the row under the pointer; it must not select it.
+    const gamma = rows("gamma.txt") as Element;
+    fireEvent.click(gamma);
+    expect(gamma.getAttribute("aria-selected")).toBe("false");
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("files dragged in from the desktop still upload", async () => {
+    await ready();
+    const file = new File(["x"], "desk.txt", { type: "text/plain" });
+    const dt = { types: ["Files"], files: [file], items: [], dropEffect: "none" };
+    const section = document.querySelector("section.browser") as HTMLElement;
+    fireEvent.dragEnter(section, { dataTransfer: dt });
+    fireEvent.dragOver(section, { dataTransfer: dt });
+    fireEvent.drop(section, { dataTransfer: dt });
+    await waitFor(() => expect(uploadsMock.add).toHaveBeenCalled());
+  });
+
+  // ---- the rubber band ----
+  function boxes(headBottom = 0) {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      const id = (this as HTMLElement).dataset?.id;
+      if (this.tagName === "THEAD") return new DOMRect(0, 0, 600, headBottom);
+      const order = ["d1", "d2", "n1", "n2", "n3"];
+      if (id && order.includes(id)) {
+        const top = 100 + order.indexOf(id) * 40;
+        return new DOMRect(0, top, 600, 40);
+      }
+      if (this.classList?.contains("browser")) return new DOMRect(0, 0, 700, 800);
+      return new DOMRect(0, 0, 0, 0);
+    });
+  }
+  const section = () => document.querySelector("section.browser") as HTMLElement;
+
+  it("draws a band on empty space and selects the rows it touches", async () => {
+    boxes();
+    await ready();
+    send(section(), "pointerdown", 650, 90);
+    send(section(), "pointermove", 300, 135);
+    send(section(), "pointermove", 300, 215);
+    expect(screen.getByTestId("rubber-band")).toBeTruthy();
+    // 100-140 d1, 140-180 d2, 180-220 n1; the band spans 90 to 215.
+    await waitFor(() => expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("true"));
+    expect(rows("Docs")?.getAttribute("aria-selected")).toBe("true");
+    expect(rows("beta.txt")?.getAttribute("aria-selected")).toBe("false");
+    send(document.body, "pointerup", 650, 215);
+    expect(screen.queryByTestId("rubber-band")).toBeNull();
+    expect(screen.getByText("3 selected")).toBeTruthy();
+  });
+
+  it("stops the band at the pinned header: it is not drawn over it, and a row hidden under it is not taken", async () => {
+    boxes(150);
+    await ready();
+    // Pressed on empty space beside the row n1 (180 to 220), dragged up to 120, which is under the header that ends at 150.
+    send(section(), "pointerdown", 650, 190);
+    send(section(), "pointermove", 300, 160);
+    send(section(), "pointermove", 300, 120);
+    // d1 (100 to 140) lies wholly under the header; d2 (140 to 180) shows below it, and n1 is where the band began.
+    await waitFor(() => expect(rows("Pics")?.getAttribute("aria-selected")).toBe("true"));
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("true");
+    expect(rows("Docs")?.getAttribute("aria-selected")).toBe("false");
+    const band = screen.getByTestId("rubber-band");
+    expect(band.style.insetBlockStart).toBe("150px");
+    expect(band.style.blockSize).toBe("40px");
+    send(document.body, "pointerup", 300, 120);
+  });
+
+  it("works whichever way the band is drawn, and shrinks the selection when it shrinks", async () => {
+    boxes();
+    await ready();
+    send(section(), "pointerdown", 650, 300);
+    send(section(), "pointermove", 300, 250);
+    send(section(), "pointermove", 300, 190);
+    await waitFor(() => expect(screen.getByText("3 selected")).toBeTruthy());
+    send(section(), "pointermove", 300, 250);
+    await waitFor(() => expect(screen.getByText("2 selected")).toBeTruthy());
+    send(document.body, "pointerup", 650, 250);
+  });
+
+  it("adds to the selection with Ctrl, and replaces it without", async () => {
+    boxes();
+    await ready();
+    fireEvent.click(rows("gamma.txt") as Element);
+    send(section(), "pointerdown", 650, 90, { ctrlKey: true });
+    send(section(), "pointermove", 300, 130, { ctrlKey: true });
+    send(section(), "pointermove", 300, 150, { ctrlKey: true });
+    await waitFor(() => expect(screen.getByText("3 selected")).toBeTruthy());
+    expect(rows("gamma.txt")?.getAttribute("aria-selected")).toBe("true");
+    send(document.body, "pointerup", 650, 150, { ctrlKey: true });
+    // Without Ctrl the band replaces what was selected.
+    send(section(), "pointerdown", 650, 90);
+    send(section(), "pointermove", 300, 130);
+    send(section(), "pointermove", 300, 150);
+    await waitFor(() => expect(screen.getByText("2 selected")).toBeTruthy());
+    expect(rows("gamma.txt")?.getAttribute("aria-selected")).toBe("false");
+    send(document.body, "pointerup", 650, 150);
+  });
+
+  it("does not start on a button, a checkbox, a row, or a finger, and not on the scroll bar's side of the window", async () => {
+    boxes();
+    await ready();
+    const toolbarButton = screen.getByTestId("view-toggle");
+    send(toolbarButton, "pointerdown", 650, 90);
+    send(toolbarButton, "pointermove", 300, 215);
+    expect(screen.queryByTestId("rubber-band")).toBeNull();
+    send(document.body, "pointerup", 650, 215);
+    const box = screen.getAllByRole("checkbox")[1];
+    send(box, "pointerdown", 650, 90);
+    send(box, "pointermove", 300, 215);
+    expect(screen.queryByTestId("rubber-band")).toBeNull();
+    send(document.body, "pointerup", 650, 215);
+    send(section(), "pointerdown", 650, 90, { pointerType: "touch" });
+    send(section(), "pointermove", 300, 215, { pointerType: "touch" });
+    expect(screen.queryByTestId("rubber-band")).toBeNull();
+    // A press on a row is a drag of that row, not a band.
+    const row = rows("beta.txt") as Element;
+    send(row, "pointerdown", 20, 220);
+    send(row, "pointermove", 20, 300);
+    expect(screen.queryByTestId("rubber-band")).toBeNull();
+    send(document.body, "pointercancel", 0, 0);
+  });
+
+  it("a plain click on empty space clears the selection, and Ctrl+click does not", async () => {
+    await ready();
+    fireEvent.click(rows("alpha.txt") as Element);
+    send(section(), "pointerdown", 650, 700, { ctrlKey: true });
+    send(document.body, "pointerup", 650, 700, { ctrlKey: true });
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("true");
+    send(section(), "pointerdown", 650, 700);
+    send(document.body, "pointerup", 650, 700);
+    await waitFor(() => expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("false"));
+  });
+
+  it("a press that only dismisses an open menu starts no band", async () => {
+    boxes();
+    await ready();
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 20, clientY: 220 });
+    await screen.findByRole("menu");
+    send(section(), "pointerdown", 650, 90);
+    send(section(), "pointermove", 300, 215);
+    expect(screen.queryByTestId("rubber-band")).toBeNull();
+    send(document.body, "pointercancel", 0, 0);
+  });
+});
+
+// Slice w2: the folder tree beside the listing.
+describe("slice w2: the folder tree in the page", () => {
+  const wideWindow = (wide: boolean) =>
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: wide && /min-width/.test(query),
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+    }));
+  beforeEach(() => {
+    localStorage.clear();
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    folders.set([]);
+  });
+
+  it("is beside the listing in a wide window, and absent at phone width", async () => {
+    wideWindow(true);
+    const wide = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(await screen.findByTestId("folder-tree")).toBeTruthy();
+    expect(await screen.findByRole("tree", { name: "Folders" })).toBeTruthy();
+    wide.unmount();
+    wideWindow(false);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(screen.queryByTestId("folder-tree")).toBeNull();
+    expect(screen.queryByTestId("tree-toggle")).toBeNull();
+  });
+
+  it("can be hidden and shown, and the choice and the opened folders are kept for the person, not for the browser", async () => {
+    wideWindow(true);
+    const first = renderAt(FOLDER);
+    await screen.findByTestId("folder-tree");
+    fireEvent.click(screen.getByTestId("tree-toggle"));
+    expect(screen.queryByTestId("folder-tree")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("selfcloud.tree.u1") ?? "{}").open).toBe(false);
+    first.unmount();
+    // The same person coming back finds it hidden; another person finds their own (open) tree.
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(screen.queryByTestId("folder-tree")).toBeNull();
+    act(() => session.set(signedAs("u2")));
+    expect(await screen.findByTestId("folder-tree")).toBeTruthy();
+    // Nothing of the first person's choice leaks: the second person's own state, if any was written, is open.
+    expect(JSON.parse(localStorage.getItem("selfcloud.tree.u2") ?? '{"open":true}').open).toBe(true);
+  });
+
+  it("is mounted again for the next person, and one person's opened folders are never written under the next person's key", async () => {
+    wideWindow(true);
+    localStorage.setItem("selfcloud.tree.u1", JSON.stringify({ open: true, expanded: ["fld_aaaaaaaa", "nod_secret_one"] }));
+    renderAt(FOLDER);
+    const before = await screen.findByTestId("folder-tree");
+    const nav = before.querySelector("nav");
+    const writes: Array<[string, string]> = [];
+    const set = Storage.prototype.setItem;
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, k: string, v: string) {
+      writes.push([k, v]);
+      set.call(this, k, v);
+    });
+    try {
+      act(() => session.set(signedAs("u2")));
+      await waitFor(() => expect(screen.getByTestId("folder-tree").querySelector("nav")).not.toBe(nav));
+      fireEvent.click(screen.getByTestId("tree-toggle"));
+      fireEvent.click(screen.getByTestId("tree-toggle"));
+    } finally {
+      spy.mockRestore();
+    }
+    for (const [k, v] of writes) if (k === "selfcloud.tree.u2") expect(v).not.toContain("nod_secret_one");
+    expect(JSON.parse(localStorage.getItem("selfcloud.tree.u1") ?? "{}").expanded).toContain("nod_secret_one");
+  });
+
+  it("is not part of the section, so a desktop file dropped on it uploads nothing", async () => {
+    wideWindow(true);
+    renderAt(FOLDER);
+    const tree = await screen.findByTestId("folder-tree");
+    expect(tree.closest("section.browser")).toBeNull();
+    const dt = { types: ["Files"], files: [new File(["x"], "d.txt")], items: [], dropEffect: "none" };
+    fireEvent.drop(tree, { dataTransfer: dt });
+    expect(uploadsMock.add).not.toHaveBeenCalled();
+  });
+
+  it("lists the folder it shows and the folders in it, and lights a folder that takes a dragged item", async () => {
+    wideWindow(true);
+    api.childrenPage.mockImplementation(async (_f: string, d: string | null) =>
+      d === null ? { items: [node("d1", "Docs", { kind: "dir", mime_type: undefined, folder_id: "fld_aaaaaaaa" }), node("n1", "alpha.txt", { folder_id: "fld_aaaaaaaa" })], next_cursor: undefined } : { items: [], next_cursor: undefined },
+    );
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const inTree = await within(await screen.findByTestId("folder-tree")).findByText("Docs");
+    const target = inTree.closest(".tree-row") as HTMLElement;
+    // Press the item, move, and hover the tree's folder.
+    const row = rows("alpha.txt") as Element;
+    document.elementFromPoint = () => target;
+    act(() => {
+      row.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, buttons: 1, pointerType: "mouse", isPrimary: true, clientX: 5, clientY: 5 }));
+      row.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, button: 0, buttons: 1, pointerType: "mouse", isPrimary: true, clientX: 50, clientY: 50 }));
+    });
+    expect(target.dataset.dropState).toBe("ok");
+    act(() => {
+      document.body.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, buttons: 0, pointerType: "mouse", isPrimary: true, clientX: 50, clientY: 50 }));
+    });
+    await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
+    expect(api.moveNode.mock.calls[0][1]).toMatchObject({ folder: "fld_aaaaaaaa", parent: "d1" });
   });
 });

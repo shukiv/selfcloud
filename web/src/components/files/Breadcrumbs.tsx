@@ -12,6 +12,15 @@ export interface Place {
   key: string;
   label: string;
   href: string;
+  // drop says this place takes items dropped on it: the folder, the directory in it (null for the root), and the caller's role there.
+  drop?: { folder: string; dir: string | null; role: string | undefined };
+}
+
+// dropAttrs are the attributes the page's drag gesture reads from a place that takes a drop (see useGestures).
+function dropAttrs(place: Place) {
+  const d = place.drop;
+  if (!d) return {};
+  return { "data-drop-folder": d.folder, "data-drop-dir": d.dir ?? "", "data-drop-role": d.role ?? "", "data-drop-name": place.label };
 }
 
 // openPlace follows an in-app link without a page load; a modified click keeps the browser's own behaviour.
@@ -43,11 +52,11 @@ export default function Breadcrumbs({ crumbs }: { crumbs: Crumb<Place>[] }) {
     return {
       key: place.key,
       title: last ? (
-        <span aria-current="location">
+        <span aria-current="location" {...dropAttrs(place)}>
           <bdi>{place.label}</bdi>
         </span>
       ) : (
-        <a href={place.href} onClick={(e) => openPlace(e, place.href)}>
+        <a href={place.href} onClick={(e) => openPlace(e, place.href)} {...dropAttrs(place)}>
           <bdi>{place.label}</bdi>
         </a>
       ),

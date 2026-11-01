@@ -102,6 +102,17 @@ async function menuPlaced(page) {
   await sleepMs(400);
 }
 
+// menuShown waits until the open menu has a size, wherever it was put, and lets its motion end. A check of where it is follows.
+async function menuShown(page) {
+  try {
+    await page.waitFor(`(() => { const m = document.querySelector(${q(MENU)}); return !!m && m.getBoundingClientRect().width > 0; })()`, 5000);
+  } catch (err) {
+    const seen = await page.evaluate(`JSON.stringify({ drops: [...document.querySelectorAll('.ant-dropdown')].map((d) => d.className + ' ' + JSON.stringify(d.getBoundingClientRect())), menus: document.querySelectorAll('.ant-dropdown-menu').length, w: innerWidth, h: innerHeight, sel: document.querySelectorAll('[aria-selected="true"]').length, hit300: (() => { const e = document.elementFromPoint(800, 300); return e ? e.tagName + '.' + e.className + ' ' + (e.closest('[data-id]')?.getAttribute('aria-label') ?? '-') : 'none'; })(), sy: scrollY })`);
+    throw new Error(`${err.message.slice(0, 40)}; ${seen}`);
+  }
+  await sleepMs(700);
+}
+
 // chooseMenuItem clicks the item of the open menu with this text, with the mouse.
 async function chooseMenuItem(page, label) {
   const p = await page.evaluate(`(() => { const i = [...document.querySelectorAll(${q(`${MENU} .ant-dropdown-menu-item`)})].find((x) => x.textContent.trim() === ${q(label)}); if (!i) return null; const r = i.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
@@ -149,7 +160,9 @@ async function openByDoubleClick(page, nameText) {
 export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir }) {
   const { api, rawPut } = h;
   const failures = [];
+  const wanted = process.env.SELFCLOUD_W1_STEPS ? new RegExp(process.env.SELFCLOUD_W1_STEPS) : null;
   const step = async (label, fn) => {
+    if (wanted && !wanted.test(label)) return;
     try {
       await fn();
     } catch (err) {
@@ -363,6 +376,38 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
       await menuPlaced(page);
       const box = await menuBox(page);
       check(box && box.left >= 0 && box.top >= 0 && box.right <= box.width && box.bottom <= box.height, `the menu stays on the window (${JSON.stringify(box)})`);
+      await press(page, 'Escape');
+      await sleepMs(300);
+    } finally {
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    }
+  });
+
+  // ---- 10b. a menu taller than the room above and below the pointer stays on the window (a right-click at mid height) ----
+  // antd shifts a menu along the window only for some placements; the right-click menu shifts and scrolls (decision 49).
+  await step('a menu opened at mid height in a short window stays on the window, and in a very short one it scrolls', async () => {
+    try {
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 520, deviceScaleFactor: 1, mobile: false });
+      await open('List');
+      await page.evaluate(`window.scrollTo(0, 0)`);
+      await rightClick(page, { x: 800, y: 300 });
+      await menuShown(page);
+      const mid = await menuBox(page);
+      check(mid && mid.top >= 0 && mid.bottom <= mid.height, `a right-click at y 300 of a 520 px window leaves the whole menu on the window (${JSON.stringify(mid)})`);
+      await press(page, 'Escape');
+      await sleepMs(300);
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 300, deviceScaleFactor: 1, mobile: false });
+      await sleepMs(300);
+      await page.evaluate(`window.scrollTo(0, 400)`);
+      await sleepMs(300);
+      const onRow = await page.evaluate(`!!document.elementFromPoint(800, 250)?.closest('[data-id]')`);
+      if (!onRow) throw new Error('no row under the point of the 300 px window');
+      await rightClick(page, { x: 800, y: 250 });
+      await menuShown(page);
+      const small = await menuBox(page);
+      check(small && small.top >= 0 && small.bottom <= small.height, `in a 300 px window the menu stays on the window (${JSON.stringify(small)})`);
+      const reach = await page.evaluate(`(() => { const m = document.querySelector(${q(MENU)}); m.scrollTop = m.scrollHeight; const items = [...m.querySelectorAll('.ant-dropdown-menu-item')]; const last = items[items.length - 1].getBoundingClientRect(); const first = items[0]; m.scrollTop = 0; const f = first.getBoundingClientRect(); return { scrolls: m.scrollHeight > m.clientHeight, lastBottom: last.bottom, firstTop: f.top, height: innerHeight }; })()`);
+      check(reach.scrolls && reach.lastBottom <= reach.height && reach.firstTop >= 0, `the menu scrolls and its first and last items can be reached (${JSON.stringify(reach)})`);
       await press(page, 'Escape');
       await sleepMs(300);
     } finally {

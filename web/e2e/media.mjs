@@ -110,10 +110,17 @@ async function allActions(page) {
 // clearSelection drops the selection, through the last selection action (Clear selection) by a real mouse click.
 async function clearSelection(page) {
   if ((await barButtons(page)).length === 0) return;
+  // Notices float over the top of the page and stack, so one can sit over the Clear button for the seconds it stays; the click waits for them to go.
+  await page.waitFor(`!document.querySelector('.ant-message-notice')`, 10000).catch(() => undefined);
   const at = await page.evaluate(`(() => { const b = document.querySelector('[data-testid="selection-clear"]'); b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   await click(page, at);
   // Clear is disabled once nothing is selected: that is the sign the selection has gone.
-  await page.waitFor(`document.querySelector('[data-testid="selection-clear"]')?.disabled !== false`, 10000);
+  try {
+    await page.waitFor(`document.querySelector('[data-testid="selection-clear"]')?.disabled !== false`, 10000);
+  } catch (err) {
+    const seen = await page.evaluate(`(() => { const el = document.elementFromPoint(${at.x}, ${at.y}); return (el ? el.tagName + '.' + el.className : 'nothing') + ' at ' + ${at.x} + ',' + ${at.y} + ' notices=' + document.querySelectorAll('.ant-message-notice').length + ' scrollY=' + scrollY + ' gesture=' + document.documentElement.classList.contains('sc-gesture') + ' selected=' + document.querySelectorAll('[aria-selected="true"]').length; })()`);
+    throw new Error(`${err.message}; under the Clear click: ${seen}`);
+  }
 }
 
 // The selection actions can be read by a check as one list of buttons, whatever the width.

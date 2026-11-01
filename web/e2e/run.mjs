@@ -25,6 +25,7 @@ import { sortChecks } from './sort.mjs';
 import { mediaChecks } from './media.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
 import { w1Checks } from './w1.mjs';
+import { w2Checks } from './w2.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -665,12 +666,22 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    await fileBrowserChecks(page, { base, dir, teamA, teamB });
-    await fileBrowserExtraChecks(page, { dir, teamA });
-    await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
-    await sortChecks(h, { page, base, accountKey, teamA });
-    await mediaChecks(h, { page, base, accountKey, teamA });
-    await w1Checks(h, { page, base, accountKey, teamA, teamB, dir });
+    // SELFCLOUD_E2E_ONLY=w1 or w2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    const only = process.env.SELFCLOUD_E2E_ONLY;
+    if (!only) {
+      await fileBrowserChecks(page, { base, dir, teamA, teamB });
+      await fileBrowserExtraChecks(page, { dir, teamA });
+      await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
+      await sortChecks(h, { page, base, accountKey, teamA });
+      await mediaChecks(h, { page, base, accountKey, teamA });
+    }
+    if (!only || only === 'w1') await w1Checks(h, { page, base, accountKey, teamA, teamB, dir });
+    if (!only || only === 'w2') await w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir });
+    if (only) {
+      console.log(`only ${only}: passed`);
+      passed = true;
+      return;
+    }
     const home = await owner.homeChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
     await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
 
