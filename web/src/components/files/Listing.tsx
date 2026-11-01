@@ -230,8 +230,10 @@ export default function Listing(p: ListingProps) {
       </span>
     ) : null;
 
+  // The star button is shown where the person may star; the plain mark is for the rest. One star per item, never both.
+  const starButtonShown = (n: Node) => n.starred !== undefined && !!p.onStar;
   const starMark = (n: Node) =>
-    n.starred ? (
+    n.starred && !starButtonShown(n) ? (
       <span style={{ display: "inline-flex", marginInlineStart: 4, color: token.colorWarning, verticalAlign: "middle" }}>
         <Star size={14} fill="currentColor" aria-hidden="true" focusable="false" />
         <span className="sr-only">{t("star.mark")}</span>

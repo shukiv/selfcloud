@@ -689,6 +689,33 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
   });
 
   // Shots: with SELFCLOUD_W1_SHOTS set, the toolbar, the right-click menu and the cut state, for each width, theme and language.
+  // ---- 13. a long account name does not widen the page: the header button cuts it, so the page fits its window ----
+  // The account name is set on the button's text (a 64-character address), then the page's width is read at 320 and 390 px.
+  await step('a 64-character account name does not widen the page at 320 or 390 px, in English or Hebrew', async () => {
+    const long = 'a'.repeat(49) + '@selfcloud.test';
+    const widths = [];
+    for (const lang of ['English', 'עברית']) {
+      for (const width of [320, 390]) {
+        await setPhone(page, false);
+        await page.goto(longURL);
+        await setLanguage(page, 'English');
+        await setLanguage(page, lang);
+        await page.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: true });
+        await page.goto(longURL);
+        await page.waitFor(`!!document.querySelector(${q(itemSel('f01.txt'))})`, 15000);
+        await page.evaluate(`(() => { const b = document.querySelector('[data-testid="account-menu"] bdi'); if (b) b.textContent = ${q(long)}; })()`);
+        await sleepMs(200);
+        const m = await page.evaluate(`({ sw: document.documentElement.scrollWidth, iw: window.innerWidth })`);
+        widths.push({ lang, width, scrollWidth: m.sw, innerWidth: m.iw });
+      }
+    }
+    await setPhone(page, false);
+    // The loop ends in Hebrew: English is set back, as the rest of the run expects it.
+    await setLanguage(page, 'English');
+    const bad = widths.filter((w) => w.scrollWidth > w.innerWidth);
+    check(bad.length === 0, `the page fits its window with a long account name (${JSON.stringify(widths)})`);
+  });
+
   if (process.env.SELFCLOUD_W1_SHOTS) {
     await step('the slice w1 pictures', () => shots(page, { folderURL: longURL, dir: process.env.SELFCLOUD_W1_SHOTS }));
   }

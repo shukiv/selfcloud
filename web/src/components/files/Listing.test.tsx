@@ -51,6 +51,34 @@ function props(over: Partial<ListingProps> = {}): ListingProps {
 
 const rowOf = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement;
 
+// A starred item shows one star: the button where the person may star, and the mark only where no button is shown.
+const starControls = (el: HTMLElement) => ({
+  buttons: el.querySelectorAll('button[aria-pressed]').length,
+  marks: Array.from(el.querySelectorAll(".sr-only")).filter((x) => x.textContent === "Starred").length,
+});
+
+describe("Listing: one star for a starred item", () => {
+  it("a list row shows the star button alone when the person may star", () => {
+    render(<Listing {...props()} />);
+    expect(starControls(rowOf("n2"))).toEqual({ buttons: 1, marks: 0 });
+  });
+
+  it("a list row shows the mark alone where no star button is shown", () => {
+    render(<Listing {...props({ onStar: undefined })} />);
+    expect(starControls(rowOf("n2"))).toEqual({ buttons: 0, marks: 1 });
+  });
+
+  it("a tile shows the star button alone when the person may star", () => {
+    render(<Listing {...props({ view: "grid" })} />);
+    expect(starControls(rowOf("n2"))).toEqual({ buttons: 1, marks: 0 });
+  });
+
+  it("a tile shows the mark alone where no star button is shown", () => {
+    render(<Listing {...props({ view: "grid", onStar: undefined })} />);
+    expect(starControls(rowOf("n2"))).toEqual({ buttons: 0, marks: 1 });
+  });
+});
+
 describe("Listing: list view", () => {
   it("renders each item as a row with its name as the accessible name and its id", () => {
     render(<Listing {...props()} />);
@@ -101,7 +129,7 @@ describe("Listing: list view", () => {
     render(<Listing {...props()} />);
     const row = rowOf("n2");
     expect(within(row).getByText("Has a link")).toBeTruthy();
-    expect(within(row).getByText("Starred")).toBeTruthy();
+    expect(within(row).getByRole("button", { name: "Star notes.txt" }).getAttribute("aria-pressed")).toBe("true");
     expect(within(rowOf("n1")).queryByText("Has a link")).toBeNull();
   });
 });

@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { keepInView } from "./menuScroll";
-import { Alert as AntdAlert, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Space, theme as antdTheme } from "antd";
+import { Alert as AntdAlert, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
 import { Clock, FolderOpen, House, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -468,7 +468,9 @@ export default function Shell({ children }: { children: ReactNode }) {
               <bdi>{b.name}</bdi>
             </a>
             {admin && <span style={{ color: token.colorTextSecondary, whiteSpace: "nowrap" }}>{t("admin.badge")}</span>}
-            <Space size={isMobile ? 4 : "middle"} style={{ marginInlineStart: "auto" }}>
+            {/* A plain flex row, not antd's Space: Space wraps each child in an item that does not shrink, so a long account name
+                would push the page wider than the window. Here the account button can shrink and its name is cut with an ellipsis. */}
+            <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 4 : 12, marginInlineStart: "auto", minWidth: 0 }}>
               <LangSwitcher compact={isMobile} />
               {!isMobile && <ThemeToggle />}
               {me && (
@@ -482,12 +484,19 @@ export default function Shell({ children }: { children: ReactNode }) {
                   }}
                   trigger={["click"]}
                 >
-                  <Button data-testid="account-menu" aria-label={t("user.menu")} style={{ borderRadius: RADIUS }}>
-                    <bdi>{me.user.display_name || me.user.email}</bdi>
+                  <Button
+                    data-testid="account-menu"
+                    aria-label={t("user.menu")}
+                    title={me.user.display_name || me.user.email}
+                    style={{ borderRadius: RADIUS, minWidth: 44, maxWidth: isMobile ? "45vw" : 260, overflow: "hidden" }}
+                  >
+                    <bdi style={{ display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom" }}>
+                      {me.user.display_name || me.user.email}
+                    </bdi>
                   </Button>
                 </Dropdown>
               )}
-            </Space>
+            </div>
           </Layout.Header>
           <Layout.Content id="main" tabIndex={-1} style={{ padding: isMobile ? 14 : 28, outline: "none" }}>
             {note && (

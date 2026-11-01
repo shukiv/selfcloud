@@ -1451,7 +1451,7 @@ export default function FilesPage() {
       role="group"
       aria-label={t("files.selection.label")}
       data-testid="selection-panel"
-      style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, flex: "1 1 auto", height: coarse ? 44 : 32, padding: "0 4px", borderRadius: token.borderRadiusLG, background: token.colorPrimaryBg }}
+      style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, flex: "1 1 auto", height: coarse ? 44 : 32, padding: "0 4px", borderRadius: token.borderRadiusLG, background: token.colorFill }}
     >
       <Tooltip title={t("files.act.clear")}>
         <Button data-testid="selection-clear" aria-label={t("files.act.clear")} icon={<X {...ic} />} onClick={clearPicked} style={{ flex: "none", ...touchSize }} />

@@ -128,6 +128,24 @@ describe("Shell", () => {
     expect(screen.getByRole("button", { name: "Account menu" }).textContent).toContain("Olivia");
   });
 
+  // A long account name is cut with an ellipsis in the button, and its full name is in the title, so the header never grows.
+  it("cuts a long account name in the header button, with the full name in its title", async () => {
+    const long = `${"a".repeat(50)}@selfcloud.test`;
+    session.set({
+      user: { id: "u1", email: long, display_name: "", role: "member", locale: "en" } as Session["user"],
+      account: null,
+      csrf: "csrf",
+      publicLinks: false,
+    });
+    renderShell("/files");
+    const button = screen.getByRole("button", { name: "Account menu" });
+    expect(button.getAttribute("title")).toBe(long);
+    const name = button.querySelector("bdi") as HTMLElement;
+    expect(name.style.textOverflow).toBe("ellipsis");
+    expect(name.style.overflow).toBe("hidden");
+    expect(name.style.whiteSpace).toBe("nowrap");
+  });
+
   it("opens the drawer on the reading side: the right, in Hebrew", async () => {
     await setLang("he");
     signIn("member");
