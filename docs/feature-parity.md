@@ -214,6 +214,7 @@ come **before** k.
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Medium |
 | t2 | Approvals | Small |
 | sort | Folder listings sorted by the server, so a long folder sorted by size or date is right from the first page (decision 47) | Small |
+| audit | Audit log kept for a set period (`audit.retention_days`, 365 days by default, `0` keeps for ever), deleted by the sweep; an account's entries go with the account (decision 48). Retention is a deletion, so an operator with legal duties sets the period | Small |
 | w | A normal file manager, approved 2026-10-31 (`design.md` section 14). w1: a toolbar always on top, a right-click menu, Ctrl+C, Ctrl+X and Ctrl+V. w2: drag to move, a folder tree, rubber-band selection | Medium |
 | x | A built-in video and audio player, approved 2026-10-31 (`design.md` section 14). x1: own controls, playlist, queue, shuffle, repeat, auto-next. x2: audio while browsing, resume, subtitles. x3: cover art and tags. x4: saved playlists. Server conversion of video is deferred by the owner | Medium |
 

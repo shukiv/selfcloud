@@ -134,6 +134,11 @@ func TestAuditLog(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	err := s.Write(ctx, func(tx *Tx) error {
+		for _, id := range []string{"acc_1", "acc_2"} {
+			if err := tx.InsertAccount(ctx, &Account{ID: id, Name: id, Status: AccountActive, CreatedAt: Now(), UpdatedAt: Now()}); err != nil {
+				return err
+			}
+		}
 		for i := range 5 {
 			e := &AuditEntry{Time: Now(), AccountID: "acc_1", ActorKind: "system", ActorID: "test",
 				Action: fmt.Sprintf("a.%d", i), Details: map[string]any{"n": i}}

@@ -326,7 +326,8 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) err
 		if err := tx.InsertJob(ctx, job); err != nil {
 			return err
 		}
-		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "account.delete", acc.ID, map[string]any{"job": job.ID}))
+		// Installation-wide and named, so the entry outlives the account it is about (decision 48).
+		return tx.InsertAudit(ctx, s.auditEntry(r, "", "account.delete", acc.Name, map[string]any{"job": job.ID}))
 	})
 	if err != nil {
 		return err
@@ -337,17 +338,40 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
+// accountAuditBatch is how many audit entries of a deleting account one write removes (decision 48).
+const accountAuditBatch = 1000
+
 // runAccountDelete removes a deleting account from the database. Safe to repeat.
 //
-// The database rows go first, in one transaction; the account's files are then removed from disk.
-// A repeat finds nothing left to delete and only removes the files.
+// The account's audit entries go first, in batches of accountAuditBatch, each its own write, so other writers can
+// interleave (decision 48). The database rows then go in one transaction, which also removes any entry that arrived
+// during the batches; the account's files are removed from disk last. A repeat finds nothing left to delete and only
+// removes the files.
 func (s *Server) runAccountDelete(ctx context.Context, job *store.Job) error {
+	for {
+		n, err := s.store.PruneAccountAudit(ctx, job.Target, accountAuditBatch)
+		if err != nil {
+			return err
+		}
+		if n < accountAuditBatch {
+			break
+		}
+	}
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
+		acc, err := tx.Account(ctx, job.Target)
+		if errors.Is(err, store.ErrNotFound) {
+			// A repeat: an earlier run deleted the account and wrote its entry.
+			return nil
+		}
+		if err != nil {
+			return err
+		}
 		if err := tx.DeleteAccount(ctx, job.Target); err != nil {
 			return err
 		}
-		return tx.InsertAudit(ctx, &store.AuditEntry{Time: store.Now(), AccountID: job.Target,
-			ActorKind: "system", ActorID: job.ID, Action: "account.deleted", Target: job.Target})
+		// Installation-wide and named by the account's name: the account's own entries have just gone (decision 48).
+		return tx.InsertAudit(ctx, &store.AuditEntry{Time: store.Now(),
+			ActorKind: "system", ActorID: job.ID, Action: "account.deleted", Target: acc.Name})
 	})
 	if err != nil {
 		return err

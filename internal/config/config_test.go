@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -298,6 +299,35 @@ func TestTrashAndVersionSettings(t *testing.T) {
 		"negative count":   {"SELFCLOUD_VERSIONS_MAX_COUNT": "-1"},
 		"negative max age": {"SELFCLOUD_VERSIONS_MAX_AGE": "-1h"},
 		"zero max kept":    {"SELFCLOUD_VERSIONS_MAX_KEPT": "0"},
+	} {
+		if _, err := Load("", env(vars)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// TestAuditRetentionSetting: the audit log keeps 365 days by default, 0 keeps every entry, and the environment sets it.
+// A negative count, and one too large for a duration, are refused.
+func TestAuditRetentionSetting(t *testing.T) {
+	c, err := Load("", env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Audit.RetentionDays != 365 {
+		t.Errorf("default = %d days, want 365", c.Audit.RetentionDays)
+	}
+	for _, days := range []int{0, 1, 2000} {
+		c, err := Load("", env(map[string]string{"SELFCLOUD_AUDIT_RETENTION_DAYS": strconv.Itoa(days)}))
+		if err != nil {
+			t.Fatalf("%d days: %v", days, err)
+		}
+		if c.Audit.RetentionDays != days {
+			t.Errorf("%d days: got %d", days, c.Audit.RetentionDays)
+		}
+	}
+	for name, vars := range map[string]map[string]string{
+		"negative":  {"SELFCLOUD_AUDIT_RETENTION_DAYS": "-1"},
+		"too large": {"SELFCLOUD_AUDIT_RETENTION_DAYS": "100001"},
 	} {
 		if _, err := Load("", env(vars)); err == nil {
 			t.Errorf("%s: accepted", name)

@@ -843,7 +843,8 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
 		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
 		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(),
-		Derived: s.derivedPool.Cache(), Zips: s.zipFiles, Logger: s.log})
+		AuditRetention: time.Duration(s.cfg.Audit.RetentionDays) * 24 * time.Hour,
+		Derived:        s.derivedPool.Cache(), Zips: s.zipFiles, Logger: s.log})
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
 	derivedDone := make(chan struct{})
 	go func() { defer close(derivedDone); s.derivedPool.Run(jobsCtx) }()

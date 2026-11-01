@@ -69,6 +69,7 @@ type Config struct {
 	Copy      CopyConfig      `yaml:"copy"`
 	Sharing   SharingConfig   `yaml:"sharing"`
 	Trash     TrashConfig     `yaml:"trash"`
+	Audit     AuditConfig     `yaml:"audit"`
 	Versions  VersionsConfig  `yaml:"versions"`
 	Upload    UploadConfig    `yaml:"upload"`
 	Links     LinksConfig     `yaml:"links"`
@@ -236,6 +237,15 @@ type TrashConfig struct {
 	// Retention is how long a deleted item stays in the trash. The retention sweep purges it after that,
 	// and the listing shows that time as purge_at. It must be positive.
 	Retention Duration `yaml:"retention"`
+}
+
+// AuditConfig controls the audit log (decision 48). Deleting an account deletes its entries; this setting is the
+// retention of the rest.
+type AuditConfig struct {
+	// RetentionDays is how many days an audit entry is kept, installation-wide entries included. Older entries are
+	// deleted by the sweep, for good. Zero keeps every entry for ever. An operator with legal retention duties must set
+	// this period to what the law requires.
+	RetentionDays int `yaml:"retention_days"`
 }
 
 // DerivedConfig controls the files made from file contents, such as thumbnails (design section 14, slice s1).
@@ -582,6 +592,7 @@ func Defaults() *Config {
 		Copy:     CopyConfig{MaxNodes: 50000},
 		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
 		Trash:    TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
+		Audit:    AuditConfig{RetentionDays: 365},
 		Versions: VersionsConfig{MaxCount: 100, MaxAge: Duration(30 * 24 * time.Hour), MaxKept: 200},
 		Links:    LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
 		Tokens:   TokensConfig{MaxTTL: Duration(time.Hour)},
@@ -731,6 +742,13 @@ func (c *Config) Validate() error {
 	}
 	if c.Trash.Retention <= 0 {
 		bad("trash.retention must be positive")
+	}
+	if c.Audit.RetentionDays < 0 {
+		bad("audit.retention_days is negative; use 0 to keep audit entries for ever")
+	}
+	// Past this many days the retention would overflow a time.Duration (about 270 years).
+	if c.Audit.RetentionDays > 100_000 {
+		bad("audit.retention_days is more than 100,000 days")
 	}
 	if c.Versions.MaxCount < 0 {
 		bad("versions.max_count is negative; use 0 for no count limit")

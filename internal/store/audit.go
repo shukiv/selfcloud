@@ -153,3 +153,36 @@ func (s *Store) AuditLogFiltered(ctx context.Context, accountID, viewerUserID st
 	}
 	return out, next, nil
 }
+
+// PruneAccountAudit removes up to batch audit entries of one account and reports how many it removed. The deletion of
+// an account calls it in batches, each its own write, before the account's own delete, so that the cascade has little
+// left to do under the writer (decision 48).
+func (s *Store) PruneAccountAudit(ctx context.Context, accountID string, batch int) (int64, error) {
+	var n int64
+	err := s.write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM audit_log WHERE id IN (
+			SELECT id FROM audit_log WHERE account_id = ? LIMIT ?)`, accountID, batch)
+		if err != nil {
+			return err
+		}
+		n, err = res.RowsAffected()
+		return err
+	})
+	return n, err
+}
+
+// PruneAudit removes up to batch audit entries made before the given time, installation-wide ones included, and
+// reports how many it removed. Each call is one write, so a backlog is removed over several calls (decision 48).
+func (s *Store) PruneAudit(ctx context.Context, before time.Time, batch int) (int64, error) {
+	var n int64
+	err := s.write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM audit_log WHERE id IN (
+			SELECT id FROM audit_log WHERE time < ? LIMIT ?)`, millis(before), batch)
+		if err != nil {
+			return err
+		}
+		n, err = res.RowsAffected()
+		return err
+	})
+	return n, err
+}
