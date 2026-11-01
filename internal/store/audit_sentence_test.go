@@ -9,69 +9,11 @@ import (
 	"testing"
 )
 
-// noSentenceYet are the audit actions that have no sentence of their own in the viewers, and so read as "made a change"
-// (or as "Someone" for an actor the page cannot name). They were written before decision 41, and the review of the
-// live audit log did not change them. Each one is a gap the owner has seen and not yet asked to close; adding a sentence
-// removes it from this list, and the test fails until it is removed, so the list only shrinks.
-var noSentenceYet = map[string]bool{
-	"access.approve":          true,
-	"access.deny":             true,
-	"account.comments_policy": true,
-	"account.quota_warning":   true,
-	"account.sharing_policy":  true,
-	"account.storage_policy":  true,
-	"auth.sign_in_link":       true,
-	"comment.create":          true,
-	"comment.delete":          true,
-	"comment.edit":            true,
-	"comment.resolve":         true,
-	"label_field.create":      true,
-	"label_field.delete":      true,
-	"label_field.update":      true,
-	"link.create":             true,
-	"link.delete":             true,
-	"link.delete_public":      true,
-	"link.expired":            true,
-	"link.open":               true,
-	"link.reset":              true,
-	"link.throttled":          true,
-	"link.update":             true,
-	"node.appearance":         true,
-	"node.copy":               true,
-	"node.create":             true,
-	"node.label_clear":        true,
-	"node.label_set":          true,
-	"node.link":               true,
-	"node.lock":               true,
-	"node.move":               true,
-	"node.office":             true,
-	"node.rename":             true,
-	"node.shortcut":           true,
-	"node.unlock":             true,
-	"node.version.delete":     true,
-	"node.version.restore":    true,
-	"node.version.update":     true,
-	"node.versions_pruned":    true,
-	"node.write":              true,
-	"node.zip":                true,
-	"upload.create":           true,
-	"upload.delete":           true,
-	"upload.expire":           true,
-	"user.files_moved":        true,
-	"user.login":              true,
-	"user.login_failed":       true,
-	"user.logout":             true,
-	"user.sign_in_link":       true,
-	"user.tokens_revoke":      true,
-	"webhook.create":          true,
-	"webhook.delete":          true,
-	"webhook.disabled":        true,
-	"webhook.retry":           true,
-	"webhook.rewrap":          true,
-	"webhook.secret":          true,
-	"webhook.test":            true,
-	"webhook.update":          true,
-}
+// noSentenceYet are the audit actions that have no sentence of their own in the viewers. It is empty: every action the
+// server writes has its sentence in web/src/lib/audit/sentence.ts (slice audit-s1 gave the older ones theirs). The map
+// stays, so the two-way check below still runs: an action written without a sentence fails the test, and an action
+// listed here that has a sentence fails it too. A new gap is an action to give a sentence, not an entry to add here.
+var noSentenceYet = map[string]bool{}
 
 // TestEveryAuditActionHasASentence fails for an audit action the server can write that has no sentence of its own in the
 // audit viewers, unless the action is named in noSentenceYet. The viewers read web/src/lib/audit/sentence.ts, where each

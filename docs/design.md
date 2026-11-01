@@ -3783,6 +3783,11 @@ Decided on approval:
       `admin.tenant_access` off writes no end row, so no sentence says it. `TestEveryAuditActionHasASentence` fails for an
       audit action with no sentence unless the action is on the list of older actions that still have none (57 when this
       was written; each reads as "made a change"). The list only shrinks.
+      *Closed by slice audit-s1.* Each of the 57 older actions has its own sentence in `web/src/lib/audit/sentence.ts`,
+      named from the fields its writer already records (a name, a count, a flag, the outcome); a field the row lacks falls
+      back to a generic sentence, never to a raw ID. No server field was added. `noSentenceYet` is now empty, and the test
+      keeps its two-way check. The Hebrew and Arabic sentences of this slice are machine drafts, not reviewed by a native
+      speaker.
     - *Migration.* `0034_admin_access.sql` (sessions gain the impersonator columns; `users.must_change_password`). It follows
       `0033`, the notifications migration of slice r3, which is on main.
 42. **Media viewer, slice s4c** (2026-10-31, built on the owner's request to play video, audio and images in the web interface; the server is unchanged). The faults were reproduced in Chrome on 16b78e4 before the fix: the e2e test `web/e2e/media.mjs` failed there on the double clicks, the tap, the layout, the labels and the playback.
