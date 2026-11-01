@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -37,6 +38,14 @@ func newCommentFixture(t *testing.T) *commentFixture {
 	sf.s.limits[commentWriteRate] = newLimiter(1000)
 	carol, carolSess := verifiedUser(t, sf.s, sf.key, sf.acc.ID, "carol@example.com")
 	return &commentFixture{sharingFixture: sf, root: root, file: sf.deep.ID, carol: carol, carolSess: carolSess}
+}
+
+// nextCommentTime waits until the store's clock has moved on. Comment times are whole milliseconds and comments of the
+// same millisecond sort by their random ID, so a test that expects the order they were posted in needs distinct times.
+func nextCommentTime() {
+	for at := store.Now(); store.Now().Equal(at); {
+		time.Sleep(100 * time.Microsecond)
+	}
 }
 
 // say posts a top-level comment as sess on nodeID and wants it created.
@@ -422,6 +431,7 @@ func TestPagingTopLevelAndReplies(t *testing.T) {
 	var tops []commentJSON
 	for i := 0; i < 3; i++ {
 		tops = append(tops, fx.say(t, fx.annSess, fx.file, "top "+strconv.Itoa(i)))
+		nextCommentTime()
 	}
 	page1 := callSession(t, fx.s, fx.annSess, "GET", "/api/v1/nodes/"+fx.file+"/comments?limit=2", nil)
 	wantStatus(t, page1, 200)
@@ -438,6 +448,7 @@ func TestPagingTopLevelAndReplies(t *testing.T) {
 	thread := fx.say(t, fx.annSess, fx.file, "busy")
 	for i := 0; i < commentRepliesShown+5; i++ {
 		fx.reply(t, fx.annSess, fx.file, thread.ID, "r"+strconv.Itoa(i))
+		nextCommentTime()
 	}
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/nodes/"+fx.file+"/comments?limit=500", nil), 200)
 	for _, c := range fx.listed(t, fx.annSess, fx.file) {
