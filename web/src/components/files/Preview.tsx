@@ -1,26 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Alert, Button, Modal } from "antd";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ApiError } from "../../lib/apiError";
 import { contentPath, signedLink } from "../../lib/files/api";
 import { kindOf, previewable, TEXT_PREVIEW_BYTES, type Kind } from "../../lib/files/kind";
 import { startDownload } from "../../lib/files/ops";
-import type { Pager } from "../../lib/files/pager";
+import { startPlayback, type PlaybackSeed } from "../../lib/files/playback";
 import { downloadAllowed } from "../../lib/files/roles";
 import type { Node } from "../../lib/files/types";
 import { useT } from "../../lib/i18n";
 import type { Link } from "./MediaPlayer";
 
-// The player and its playlist load when a video or an audio file opens, not with the browser.
-const MediaPlaylist = lazy(() => import("./MediaPlaylist"));
-
 // Preview shows one file full screen. Images and PDFs load through a short signed link on the content origin. Text is
 // read on this origin, the first 1 MiB only, and shown as text, never as HTML. The Svelte page has no text editing, and
-// this one has none either. A video or audio file opens the playlist instead (MediaPlaylist): its Previous and Next, and
-// the N and P keys, step through the playlist, while the arrows belong to the player for seeking. Images, PDFs and text
-// keep the steps described here.
+// this one has none either. A video or audio file opens the playlist instead: the session (lib/files/playback.ts) is started
+// here, and MediaHost shows it in the shell, as the viewer and then as the mini player for audio. This component draws
+// nothing for a media file. Images, PDFs and text keep the steps described here.
 // Escape closes (antd's Modal calls onCancel); the arrows step through the items, mirrored in right-to-left.
 // Tab stays inside the dialog: antd's Modal traps focus, and the dialog takes focus when it opens.
 
@@ -44,8 +41,9 @@ export function shownState(loaded: Loaded, id: string | undefined): LoadState {
 }
 
 // inlineLink asks for a signed link that shows the file inline, or gives null when the address is not one the page may
-// load (safeURL). The server's end time is not read: a player decides from what it sees, not from a clock.
-async function inlineLink(id: string): Promise<Link | null> {
+// load (safeURL). The server's end time is not read: a player decides from what it sees, not from a clock. The media
+// session asks for its links through it too (MediaDock).
+export async function inlineLink(id: string): Promise<Link | null> {
   const got = await signedLink(id, "inline", 300);
   const url = safeURL(got.url);
   if (url === null) return null;
@@ -65,13 +63,9 @@ export function safeURL(raw: string): string | null {
 
 const FULL: React.CSSProperties = { display: "flex", flexDirection: "column", height: "calc(100dvh - 24px)", gap: 12 };
 
-// Media is the playlist a video or audio file opens: the file it starts with, the folder's files read a page at a time,
+// MediaSeed is the playlist a video or audio file opens: the file it starts with, the folder's files read a page at a time,
 // or the selection the person chose to play.
-export interface MediaSeed {
-  start: Node;
-  folder: Pager;
-  selection?: Node[];
-}
+export type MediaSeed = PlaybackSeed;
 
 export default function Preview({
   items,
@@ -90,16 +84,16 @@ export default function Preview({
 }) {
   const { t } = useT();
   const mediaMode = media !== undefined;
-  // In media mode the file on screen is the one the playlist reports.
-  const [mediaNode, setMediaNode] = useState<Node | null>(null);
-  // mediaPos is the playlist's place for the file on screen ("2 / 3"), shown in the header.
-  const [mediaPos, setMediaPos] = useState<{ position: number; total: string } | null>(null);
-  // mediaRefused is the file whose download the server refused, so the notice is shown for that file only.
-  const [mediaRefused, setMediaRefused] = useState<string | null>(null);
-  const node = mediaMode ? (mediaNode ?? undefined) : (items[index] as Node | undefined);
+  const node = items[index] as Node | undefined;
   const [loaded, setLoaded] = useState<Loaded>({ id: null, state: { status: "loading" } });
   // A newer request makes an older answer stale.
   const token = useRef(0);
+
+  // A media file starts its session once, when it is opened. The viewer is MediaHost's, not this component's.
+  useEffect(() => {
+    if (media) startPlayback(media, onClose);
+    // The session starts for each seed. onClose is read as it was when the viewer opened.
+  }, [media]);
 
   useEffect(() => {
     if (!node || mediaMode) return;
@@ -158,8 +152,6 @@ export default function Preview({
   }
 
   function keydown(e: ReactKeyboardEvent) {
-    // In media mode the arrows belong to the player (seek); the playlist's own Previous and Next step the files.
-    if (mediaMode) return;
     const forward = rtl() ? "ArrowLeft" : "ArrowRight";
     const back = rtl() ? "ArrowRight" : "ArrowLeft";
     if (e.key === forward) {
@@ -172,22 +164,16 @@ export default function Preview({
   }
 
   // download saves the file on screen. A refused download (the server's no-download rule, which the page cannot see when it
-  // is inherited) shows the same notice in both modes: the viewer's card, or the notice under the header in media mode.
+  // is inherited) shows the card's notice.
   async function download() {
     if (!node) return;
     const ok = await startDownload(node.id);
     if (ok) return;
-    if (mediaMode) setMediaRefused(node.id);
-    else setLoaded({ id: node.id, state: { status: "restricted" } });
+    setLoaded({ id: node.id, state: { status: "restricted" } });
   }
 
-  // fetchMediaLink asks for a link to a file of the playlist, and for a new one when a link has ended. A refused link (no
-  // download allowed) reaches the playlist as the error it is.
-  const fetchMediaLink = async (n: Node): Promise<Link> => {
-    const link = await inlineLink(n.id);
-    if (link === null) throw new Error("unsafe link");
-    return link;
-  };
+  // A media file is shown by MediaHost, not here.
+  if (mediaMode) return null;
 
   const canDownload = node ? downloadAllowed(node) : false;
   const kindNow: Kind = node ? kindOf(node) : "file";
@@ -219,38 +205,12 @@ export default function Preview({
           <p style={{ flex: "1 1 160px", margin: 0, overflowWrap: "anywhere", fontWeight: 600 }}>
             <bdi>{node?.name ?? ""}</bdi>
           </p>
-          {/* A count reads left to right in every language: "2 / 5" keeps its order in Hebrew. A playlist shows its own. */}
-          {!mediaMode && (
-            <span aria-live="polite" dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>
-              {index + 1} / {items.length}
-            </span>
-          )}
-          {mediaMode && mediaPos && (
-            <span aria-live="polite" dir="ltr" data-testid="media-count" style={{ fontVariantNumeric: "tabular-nums" }}>
-              {mediaPos.position} / {mediaPos.total}
-            </span>
-          )}
+          {/* A count reads left to right in every language: "2 / 5" keeps its order in Hebrew. */}
+          <span aria-live="polite" dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {index + 1} / {items.length}
+          </span>
           {canDownload && <Button onClick={() => void download()}>{t("files.act.download")}</Button>}
         </header>
-        {mediaMode && node && mediaRefused === node.id && (
-          <Alert type="info" role="status" showIcon message={t("files.err.downloadRestricted")} />
-        )}
-
-        {mediaMode && media ? (
-          // The viewer does not scroll: the playlist's own panel does, and the player stays on top.
-          <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <Suspense fallback={<p role="status">{t("files.preview.loading")}</p>}>
-              <MediaPlaylist
-                start={media.start}
-                folder={media.folder}
-                selection={media.selection}
-                fetchLink={fetchMediaLink}
-                onCurrent={setMediaNode}
-                onPosition={setMediaPos}
-              />
-            </Suspense>
-          </div>
-        ) : (
         <div style={{ flex: "1 1 auto", minHeight: 0, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
           {node && !hasPreview ? (
             <div>
@@ -282,18 +242,15 @@ export default function Preview({
             ) : null
           ) : null}
         </div>
-        )}
 
-        {!mediaMode && (
-          <nav aria-label={t("files.preview.steps")} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-            <Button onClick={() => step(-1)} disabled={index <= 0}>
-              <ChevronLeft className="icon-dir" size={14} aria-hidden="true" /> {t("files.preview.prev")}
-            </Button>
-            <Button onClick={() => step(1)} disabled={index >= items.length - 1}>
-              {t("files.preview.next")} <ChevronRight className="icon-dir" size={14} aria-hidden="true" />
-            </Button>
-          </nav>
-        )}
+        <nav aria-label={t("files.preview.steps")} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <Button onClick={() => step(-1)} disabled={index <= 0}>
+            <ChevronLeft className="icon-dir" size={14} aria-hidden="true" /> {t("files.preview.prev")}
+          </Button>
+          <Button onClick={() => step(1)} disabled={index >= items.length - 1}>
+            {t("files.preview.next")} <ChevronRight className="icon-dir" size={14} aria-hidden="true" />
+          </Button>
+        </nav>
       </div>
     </Modal>
   );

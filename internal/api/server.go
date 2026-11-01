@@ -388,6 +388,9 @@ func New(opts Options) (*Server, error) {
 			"office.open": newLimiter(60),
 			// Comment writes, per user (a token counts as its user): 30 a minute (decision 39).
 			"comment.write": newLimiter(30),
+			// A place in a media file, per user. A client writes one at most every 15 seconds while a file plays, and one on
+			// each pause that moved it: about 4 a minute of playing, so 60 a minute leaves room for seeks and file changes.
+			"resume.write": newLimiter(60),
 			// People suggestions for a mention, per user, as directory searches are (decision 39).
 			"people.search": newLimiter(60),
 			// The activity of a node: a read costs a scan and a reach walk per person, so it is limited per caller and per
@@ -615,6 +618,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/star", handle: s.handleStarNode, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/star", handle: s.handleUnstarNode, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/starred", handle: s.handleListStarred, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/resume", handle: s.handleGetMediaResume, auth: true, imp: impRefuse},
+		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/resume", handle: s.handlePutMediaResume, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/subtitles", handle: s.handleListSubtitles, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/comments", handle: s.handleListComments, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/comments", handle: s.handleCreateComment, auth: true, imp: impRefuse},
 		{method: http.MethodPatch, path: "/api/v1/comments/{cmt}", handle: s.handleEditComment, auth: true, imp: impRefuse},

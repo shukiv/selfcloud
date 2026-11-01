@@ -575,15 +575,21 @@ a {
   .media-volume-slider.ant-slider {
     margin-inline: 22px;
   }
-  .media-seek .ant-slider-handle,
-  .media-volume-slider .ant-slider-handle {
+  /* antd centres the handle along the rail itself (an inline translate), so only the cross direction is set here: the middle
+     of the slider's box is the middle of the rail. */
+  .media-seek .ant-slider-handle.ant-slider-handle,
+  .media-volume-slider .ant-slider-handle.ant-slider-handle {
     width: 44px;
     height: 44px;
-    margin-inline-start: -22px;
-    margin-block-start: -20px;
+    inset-block-start: 50%;
+    margin-block-start: -22px;
   }
+  /* antd moves the dot in its own rule while the handle has the hover, the focus or a finger on it; the states are named so
+     the dot stays in the middle of the 44 px box under a finger. */
   .media-seek .ant-slider-handle::after,
-  .media-volume-slider .ant-slider-handle::after {
+  .media-seek .ant-slider-handle.ant-slider-handle:is(:hover, :focus, :focus-visible, :active)::after,
+  .media-volume-slider .ant-slider-handle::after,
+  .media-volume-slider .ant-slider-handle.ant-slider-handle:is(:hover, :focus, :focus-visible, :active)::after {
     width: 14px;
     height: 14px;
     inset-inline-start: 15px;
@@ -606,6 +612,141 @@ a {
   /* On a phone the picture takes less of the height, so the playlist below it has room. */
   .media-picture {
     max-height: 40vh;
+  }
+}
+
+/* The subtitle menu takes the speed list's place in the bar. */
+.media-subs.ant-select {
+  flex: none;
+}
+/* The mini player: one bar docked at the bottom of the shell while audio plays after the viewer closed. Its colours come from
+   the sidebar (inline), and its controls read left to right in every language (dir on the bar). */
+.media-mini {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 6px 12px;
+}
+.media-mini-name {
+  flex: 1 1 120px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.media-mini .ant-btn.media-mini-btn {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: inherit;
+}
+.media-mini .ant-btn.media-mini-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.media-mini .ant-btn.media-mini-play {
+  flex: none;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  box-shadow: none;
+}
+.media-mini-seek {
+  flex: 2 1 220px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.media-mini-seek .ant-slider {
+  flex: 1 1 auto;
+  min-width: 80px;
+  margin: 0;
+}
+/* The position slider sits on the sidebar blue in both themes, so its colours are fixed here. The selectors carry one more
+   class than antd's generated rules: at equal weight the order of the style sheets decided, and antd's rail won once. the rail is the sidebar's
+   caption blue (5.5 to 1 on the bar) and the played part the sidebar's yellow (6.7 to 1). The handle is white with a yellow ring. */
+.media-mini .media-mini-seek .ant-slider .ant-slider-rail,
+.media-mini .media-mini-seek .ant-slider:hover .ant-slider-rail {
+  background-color: #a9c1e6;
+  /* antd animates its own colours; the fixed ones show at once, so no default colour flashes first. */
+  transition: none;
+}
+.media-mini .media-mini-seek .ant-slider .ant-slider-track,
+.media-mini .media-mini-seek .ant-slider:hover .ant-slider-track {
+  background-color: #fecc00;
+  transition: none;
+}
+/* The handle's box is transparent, so on a phone its 44 px touch target paints nothing: the visible dot is the handle's
+   ::after, 14 px white with a yellow ring, in both sizes. */
+.media-mini .media-mini-seek .ant-slider .ant-slider-handle {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.media-mini .media-mini-seek .ant-slider .ant-slider-handle::after {
+  background-color: #ffffff;
+  box-shadow: 0 0 0 2px #fecc00;
+}
+.media-mini .media-mini-seek .ant-slider .ant-slider-handle:hover::after,
+.media-mini .media-mini-seek .ant-slider .ant-slider-handle:focus-visible::after {
+  box-shadow: 0 0 0 2px #fecc00, 0 0 0 6px rgba(254, 204, 0, 0.35);
+}
+.media-mini-time {
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+@media (max-width: 599px) {
+  .media-mini {
+    flex-wrap: wrap;
+  }
+  .media-mini-name {
+    flex-basis: 100%;
+  }
+  .media-mini-seek {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+@media (pointer: coarse) {
+  .media-mini .ant-btn.media-mini-btn,
+  .media-mini .ant-btn.media-mini-play {
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
+  }
+  .media-mini .ant-btn.media-mini-play {
+    width: 44px;
+  }
+  .media-subs.ant-select .ant-select-selector {
+    min-height: 44px;
+    height: 44px;
+  }
+  /* The mini player's seek handle is a touch target: a 44 px box, its ring 14 px, kept inside the bar as in the viewer. */
+  .media-mini-seek .ant-slider {
+    margin-inline: 22px;
+  }
+  .media-mini .ant-slider-handle.ant-slider-handle {
+    width: 44px;
+    height: 44px;
+    inset-block-start: 50%;
+    margin-block-start: -22px;
+  }
+  .media-mini .ant-slider-handle::after,
+  .media-mini .ant-slider-handle.ant-slider-handle:is(:hover, :focus, :focus-visible, :active)::after {
+    width: 14px;
+    height: 14px;
+    inset-inline-start: 15px;
+    inset-block-start: 15px;
   }
 }
 

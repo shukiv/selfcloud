@@ -186,3 +186,35 @@ export function serverLimits(): Promise<{ max_chunk_size: number; max_file_size:
     noRedirect: true,
   }).then((info) => info.limits ?? { max_chunk_size: 8 * 1024 * 1024, max_file_size: 0 });
 }
+
+// A place in a video or audio file: the seconds the person stopped at and the file's length (0 when unknown).
+export interface ResumePlace {
+  position_seconds: number;
+  duration_seconds: number;
+  updated_at?: string;
+}
+
+// getResume reads the signed-in person's own place in a file. A file with none reads as 0 seconds.
+export function getResume(nod: string): Promise<ResumePlace> {
+  needSession();
+  return api<ResumePlace>('GET', `/api/v1/nodes/${nod}/resume`);
+}
+
+// putResume stores the place. The server keeps the last one only.
+export function putResume(nod: string, position: number, duration: number): Promise<void> {
+  needSession();
+  return api<void>('PUT', `/api/v1/nodes/${nod}/resume`, { body: { position_seconds: position, duration_seconds: duration } });
+}
+
+// SubtitleFile is a .vtt or .srt file beside a video, with the same name.
+export interface SubtitleFile {
+  id: string;
+  name: string;
+  format: 'vtt' | 'srt';
+}
+
+// listSubtitles names the subtitle files beside a file. Each is read by its own content route.
+export function listSubtitles(nod: string): Promise<SubtitleFile[]> {
+  needSession();
+  return api<{ items: SubtitleFile[] }>('GET', `/api/v1/nodes/${nod}/subtitles`).then((r) => r.items ?? []);
+}

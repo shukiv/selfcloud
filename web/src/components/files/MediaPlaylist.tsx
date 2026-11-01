@@ -24,6 +24,8 @@ import {
   type Queue,
 } from "../../lib/files/queue";
 import type { Node } from "../../lib/files/types";
+import type { SubtitleTrack } from "../../lib/files/subtitles";
+import type { Resume } from "../../lib/files/resume";
 import MediaPlayer, { type Link, type MediaFailure } from "./MediaPlayer";
 import MediaQueue from "./MediaQueue";
 
@@ -44,6 +46,9 @@ interface Current {
   id: string;
   status: Status;
   link?: Link;
+  // resume is what is known of the place stopped at (resume.ts); tracks are the file's subtitle tracks, when read.
+  resume?: Resume;
+  tracks?: SubtitleTrack[];
 }
 
 export interface MediaPlaylistProps {
@@ -64,12 +69,50 @@ export interface MediaPlaylistProps {
   // onLost is asked when the link to a file is refused (401 or 404). It answers whether the share itself is gone, after
   // a check of the share: true stops the playlist; false makes the refusal that one file's failure, and the playlist moves on.
   onLost?: (err: unknown) => Promise<boolean>;
+  // resumeOf reads where the person stopped in a file (Resume, resume.ts). It does not fail: a failed read is "unknown".
+  // Only a signed-in session has one: a share page keeps no saved place.
+  resumeOf?: (node: Node) => Promise<Resume>;
+  // onPress is told whether the press-Play note shows for the file on screen.
+  onPress?: (v: boolean) => void;
+  // saveOf keeps the place in a file: its position and length, in seconds. Only a signed-in session keeps one.
+  saveOf?: (node: Node, position: number, duration: number) => void;
+  // subtitlesOf reads the subtitle tracks of a video; a failure gives none. Audio files are never asked.
+  subtitlesOf?: (node: Node) => Promise<SubtitleTrack[]>;
+  // onElement is given the player's element as it comes and goes, and onNav the playlist's Previous and Next, so the owner
+  // of a session can play through them from outside the viewer.
+  onElement?: (el: HTMLMediaElement | null) => void;
+  onNav?: (nav: { next: () => void; previous: () => void }) => void;
+  // active says the viewer shows the playlist, so the player reads its keys. A session kept for audio alone does not.
+  active?: boolean;
 }
 
-export default function MediaPlaylist({ start, folder, selection, fetchLink, onPosition, onCurrent, onLost }: MediaPlaylistProps) {
+export default function MediaPlaylist({
+  start,
+  folder,
+  selection,
+  fetchLink,
+  onPosition,
+  onCurrent,
+  onLost,
+  resumeOf,
+  saveOf,
+  subtitlesOf,
+  onPress,
+  onElement,
+  onNav,
+  active = true,
+}: MediaPlaylistProps) {
   const { t } = useT();
   const lostRef = useRef(onLost);
   lostRef.current = onLost;
+  const resumeRef = useRef(resumeOf);
+  resumeRef.current = resumeOf;
+  const saveRef = useRef(saveOf);
+  saveRef.current = saveOf;
+  const subsRef = useRef(subtitlesOf);
+  subsRef.current = subtitlesOf;
+  // playing says whether the file on screen plays now; the queue's current row shows it.
+  const [playing, setPlaying] = useState(false);
   const paged = selection === undefined;
   const [q, setQ] = useState<Queue>(() => {
     const base = paged ? folder.loaded : selection;
@@ -188,10 +231,32 @@ export default function MediaPlaylist({ start, folder, selection, fetchLink, onP
       return;
     }
     let live = true;
-    setCurrent({ id, status: "loading" });
+    setCurrent({ id, status: "loading", resume: resumeRef.current ? { kind: "pending" } : { kind: "none" }, tracks: [] });
+    setPlaying(false);
+    // The link comes first and starts the file. The place and the subtitles come with it, not before it: a place that
+    // arrives later applies while the file is in its first seconds (MediaPlayer), and the tracks attach when they come.
+    // Neither read fails the file. Subtitles are asked for a video only.
+    if (resumeRef.current) {
+      resumeRef.current(currentNode).then(
+        (r) => {
+          if (live) setCurrent((c) => (c && c.id === id ? { ...c, resume: r } : c));
+        },
+        () => {
+          if (live) setCurrent((c) => (c && c.id === id ? { ...c, resume: { kind: "unknown" } } : c));
+        },
+      );
+    }
+    if (subsRef.current && kindOf(currentNode) === "video") {
+      subsRef.current(currentNode).then(
+        (tracks) => {
+          if (live) setCurrent((c) => (c && c.id === id ? { ...c, tracks } : c));
+        },
+        () => undefined,
+      );
+    }
     fetchRef.current(currentNode).then(
       (link) => {
-        if (live) setCurrent({ id, status: "ready", link });
+        if (live) setCurrent((c) => (c && c.id === id ? { ...c, status: "ready", link } : c));
       },
       (err: unknown) => {
         if (!live) return;
@@ -303,6 +368,14 @@ export default function MediaPlaylist({ start, folder, selection, fetchLink, onP
     const b = back(qRef.current);
     if (b) pick(b.queue);
   };
+
+  // The owner of a session reaches Previous and Next through onNav; the functions read the current ones when they run.
+  const stepFns = useRef({ next, previous });
+  stepFns.current = { next, previous };
+  useEffect(() => {
+    onNav?.({ next: () => stepFns.current.next(), previous: () => stepFns.current.previous() });
+    // Registered once: the functions above read the current step through the ref.
+  }, []);
 
   const kind = currentNode ? kindOf(currentNode) : "file";
   const playable = kind === "video" || kind === "audio";
@@ -427,8 +500,17 @@ export default function MediaPlaylist({ start, folder, selection, fetchLink, onP
               onFail={onFail}
               onEnded={next}
               onPlaying={onPlaying}
+              onPlayState={setPlaying}
               loop={q.repeat === "one"}
-              autoPlay={epoch > 0}
+              // Every file the playlist starts plays on load, the first one the person opened included. The browser may
+              // refuse that for want of a press; the player then shows the note.
+              autoPlay
+              resume={current.resume}
+              tracks={current.tracks}
+              onPress={onPress}
+              onSave={saveRef.current ? (pos, dur) => saveRef.current?.(currentNode, pos, dur) : undefined}
+              onElement={onElement}
+              active={active}
               nav={{ next, previous }}
             />
           ) : null}
@@ -461,6 +543,7 @@ export default function MediaPlaylist({ start, folder, selection, fetchLink, onP
         busy={busy}
         candidates={candidates}
         adding={adding}
+        playing={playing}
         onAddOpen={() => setAdding((v) => !v)}
         onAdd={(n, where) => commit(where === "next" ? addNext(qRef.current, n) : addEnd(qRef.current, n))}
         onLoadMore={() => void loadMore()}

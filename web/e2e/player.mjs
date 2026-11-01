@@ -129,6 +129,15 @@ async function closeViewer(page) {
   await page.waitFor(`!document.querySelector('[data-testid="preview"]')`, 10000);
 }
 
+// stopMini ends the playback the mini bar holds, with the bar's own close button (its last button, in every language). A
+// step that needs the page without a bar at its bottom calls it; with no bar shown it does nothing.
+export async function stopMini(page) {
+  const shown = await page.evaluate(`!!document.querySelector('[data-testid="media-mini"]')`);
+  if (!shown) return;
+  await page.evaluate(`[...document.querySelectorAll('.media-mini .media-mini-btn')].pop().click()`);
+  await page.waitFor(`!document.querySelector('[data-testid="media-mini"]')`, 10000);
+}
+
 // openFolderView opens a folder's listing in List view with nothing selected, and waits for its first rows.
 async function openFolderView(page, folderURL, firstName) {
   // The list's view and sort are kept per browser: an earlier check may have sorted it otherwise, so the playlist's order
@@ -269,9 +278,26 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
     }
   });
 
+  // ---- 1a. a real double click opens the file, and it plays at once, with no press ----
+  // The owner's decision: the first file opened starts on open. The double click is the browser's own input, so the browser
+  // allows the start, and no note shows.
+  await step('a double click opens the first file and it plays at once, with no press', async () => {
+    await openFolderView(page, urlOf(x1Four), '1-one.ogg');
+    await dblClick(page, await itemPoint(page, '1-one.ogg'));
+    await page.waitFor(`!!document.querySelector('[data-testid="preview"]')`, 15000);
+    await waitName(page, '1-one.ogg');
+    await waitMedia(page);
+    // Bounded: the file has to be moving within 10 s, or the wait fails the check below.
+    await page.waitFor(`(() => { const v = document.querySelector(${q(MEDIA)}); return !!v && !v.paused && v.currentTime > 0; })()`, 10000).catch(() => undefined);
+    check(await page.evaluate(`!document.querySelector(${q(MEDIA)}).paused`), 'a real double click plays the first file, with no press');
+    check(await page.evaluate(`!document.querySelector('[data-testid="media-press"]')`), 'no press note shows when the browser allows the start');
+    await closeViewer(page);
+  });
+
   // ---- 1b. a play the browser refuses for want of a press: a note by the bar, cleared by a real press ----
-  // A fresh document has no user gesture. The file opens from a script's double click, so the scripted Play is refused and
-  // the bar says the browser waits for a press. A trusted click on Play then plays the file, and the note goes.
+  // A fresh document has no user gesture. The file opens from a script's double click, so the browser refuses the start
+  // (the first file starts on open, and that start is refused too) and the bar says the browser waits for a press. A
+  // trusted click on Play then plays the file, and the note goes.
   await step('a play the browser refuses shows a note by the bar, and a real press plays and clears it', async () => {
     await openFolderView(page, urlOf(x1Four), '1-one.ogg');
     await page.evaluate(`(() => { document.querySelector('[role="row"][aria-label="1-one.ogg"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })); return true; })()`);

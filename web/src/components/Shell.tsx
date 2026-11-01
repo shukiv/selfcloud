@@ -27,6 +27,7 @@ import LangSwitcher from "./LangSwitcher";
 import Sentence from "./Sentence";
 import ThemeToggle from "./ThemeToggle";
 import UploadTray from "./UploadTray";
+import MediaHost from "./files/MediaHost";
 
 // The space settings dialog is loaded when a team space's settings are opened.
 const SpaceSettings = lazy(() => import("./share/SpaceSettings"));
@@ -512,6 +513,8 @@ export default function Shell({ children }: { children: ReactNode }) {
             {children}
           </Layout.Content>
           <UploadTray />
+          {/* The media session (a video or audio player, or the mini player bar) lives across pages; nothing draws without one. */}
+          <MediaHost />
           {settingsFor && (
             <Suspense fallback={null}>
               <SpaceSettings space={settingsFor} onclose={() => setSettingsFor(null)} onsaved={() => void loadFolders().catch(() => undefined)} />

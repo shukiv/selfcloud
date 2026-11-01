@@ -26,6 +26,7 @@ import { mediaChecks } from './media.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
 import { w1Checks } from './w1.mjs';
 import { w2Checks } from './w2.mjs';
+import { x2Checks } from './x2.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -666,17 +667,18 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=w1 or w2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2 or x2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     if (!only) {
       await fileBrowserChecks(page, { base, dir, teamA, teamB });
       await fileBrowserExtraChecks(page, { dir, teamA });
       await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
       await sortChecks(h, { page, base, accountKey, teamA });
-      await mediaChecks(h, { page, base, accountKey, teamA });
     }
+    if (!only || only === 'media') await mediaChecks(h, { page, base, accountKey, teamA });
     if (!only || only === 'w1') await w1Checks(h, { page, base, accountKey, teamA, teamB, dir });
     if (!only || only === 'w2') await w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir });
+    if (!only || only === 'x2') await x2Checks(h, { page, base, accountKey, accountID, memberID });
     if (only) {
       console.log(`only ${only}: passed`);
       passed = true;

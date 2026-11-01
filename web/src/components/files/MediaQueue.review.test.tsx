@@ -94,7 +94,7 @@ describe("the queue panel", () => {
   });
 
   it("marks the row on screen with its state, and gives it the current mark", () => {
-    render(<MediaQueue {...props(["a.ogg", "b.ogg"], "b.ogg")} />);
+    render(<MediaQueue {...props(["a.ogg", "b.ogg"], "b.ogg")} playing />);
     const rows = screen.getAllByTestId("media-row");
     expect(rows[1].getAttribute("aria-current")).toBe("true");
     expect(rows[0].getAttribute("aria-current")).toBeNull();

@@ -70,6 +70,12 @@ var reviewedNodeKindSites = map[string]int{
 	// Slice r5 added one in viewers.go: the who-viewed route refuses a shortcut as not_found, as the activity route does,
 	// after nodeAccessWith has run. A refusal that grants nothing. Decision 51.
 	"internal/api/viewers.go": 1,
+	// Slice x2 added three. media_resume.go: the place is written only for a file, and a folder or a shortcut gets not_found,
+	// after nodeAccessWith has run inside the write. subtitles.go: the list gives nothing for a folder or a shortcut, after
+	// nodeAccessWith; a sibling that is not a file is skipped, and each sibling listed also passes nodeAccessWith. All three
+	// fail closed and grant nothing. Decision 52.
+	"internal/api/media_resume.go": 1,
+	"internal/api/subtitles.go":    2,
 	// Chunked copy (decision 34). copy_jobs.go: a batch's copy of a file (counted in the copies' file total, which the
 	// publish reports), the file selectors of the staged totals and the per-file events, and the non-folder selectors of
 	// the staged item count and the per-file events (shortcuts included, as the one-write copy reports them). None of

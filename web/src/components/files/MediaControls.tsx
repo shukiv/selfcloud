@@ -82,9 +82,13 @@ interface Props {
   // needPress says the browser refused to play for want of a press: the bar says so. onNeedPress sets or clears it.
   needPress?: boolean;
   onNeedPress?: (v: boolean) => void;
+  // subtitles, when the video has subtitle files, is the menu of them: the labels, which one shows (-1 for none), and the pick.
+  subtitles?: { labels: string[]; active: number; onPick: (i: number) => void };
+  // active says whether the keys are read here. A player kept for audio alone, with its viewer closed, reads none.
+  active?: boolean;
 }
 
-export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress }: Props) {
+export default function MediaControls({ media, kind, stage, nav, needPress = false, onNeedPress, subtitles, active = true }: Props) {
   const { t } = useT();
   const p = usePaletteOrLight();
   const [snap, setSnap] = useState<Snap>(EMPTY);
@@ -93,6 +97,9 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
   const [shown, setShown] = useState(true);
   const root = useRef<HTMLDivElement | null>(null);
   const within = useRef(false);
+  // pointed says a press landed on the bar and its focus has not come yet. A press gives a button the focus on a phone,
+  // but that is not keyboard focus, so the bar still hides; only focus that came from the keyboard keeps it shown.
+  const pointed = useRef(false);
   const playingRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navRef = useRef(nav);
@@ -155,7 +162,10 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
     setShown(true);
     clearTimer();
     if (kind === "video" && playingRef.current && !within.current) {
-      timer.current = setTimeout(() => setShown(false), HIDE_MS);
+      timer.current = setTimeout(() => {
+        // Keyboard focus that came into the bar while the count ran keeps it shown.
+        if (playingRef.current && !within.current) setShown(false);
+      }, HIDE_MS);
     }
   };
 
@@ -257,7 +267,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
 
   // The window reads the keys. The handler is rebuilt when the element changes, so it always acts on the current one.
   useEffect(() => {
-    if (!media) return;
+    if (!media || !active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       const cmd = keyCommand(e);
@@ -284,9 +294,22 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
       window.removeEventListener("keyup", onKeyUp);
     };
     // run and wake read the element, the kind and the stage, which are the dependencies here.
-  }, [media, kind, stage]);
+  }, [media, kind, stage, active]);
 
+  const onPointerDown = () => {
+    pointed.current = true;
+    // The focus a press gives comes in the same task. A press whose focus never comes is not held for a later key press.
+    setTimeout(() => {
+      pointed.current = false;
+    }, 0);
+    wake();
+  };
   const onFocus = () => {
+    if (pointed.current) {
+      pointed.current = false;
+      wake();
+      return;
+    }
     within.current = true;
     wake();
   };
@@ -339,6 +362,7 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
       data-testid="media-controls"
       onFocus={onFocus}
       onBlur={onBlur}
+      onPointerDown={onPointerDown}
     >
       {needPress && (
         <p role="status" className="media-press" data-testid="media-press">
@@ -408,6 +432,20 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
         </div>
 
         <span className="media-spacer" />
+
+        {kind === "video" && subtitles && (
+          <Select
+            size="small"
+            className="media-subs"
+            aria-label={t("files.media.subtitles")}
+            value={subtitles.active}
+            disabled={!m}
+            popupMatchSelectWidth={false}
+            getPopupContainer={popupHost}
+            options={[{ value: -1, label: t("files.media.subtitlesOff") }, ...subtitles.labels.map((label, i) => ({ value: i, label }))]}
+            onChange={(v: number) => subtitles.onPick(v)}
+          />
+        )}
 
         <Select
           size="small"

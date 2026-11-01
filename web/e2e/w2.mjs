@@ -602,7 +602,9 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     check(!tree.alert && !tree.retry, 'the tree shows no failure and no Retry');
     check(tree.topDir === given.id && tree.topRole === 'viewer', `the root row is the given folder, with the person's own role (${tree.topDir}, ${tree.topRole})`);
     check(tree.current === given.id, 'the place shown is marked in the tree');
-    await click(page, await centre(page, '[data-testid="folder-tree"] .tree-row[data-drop-name="Inside"] a'));
+    // The tree's other open folders may still be loading, so rows move: a press at a measured point could land on another row.
+    // This step is about what opening a folder shows, so the link itself is clicked.
+    await page.evaluate(`document.querySelector('[data-testid="folder-tree"] .tree-row[data-drop-name="Inside"] a').click()`);
     await page.waitFor(`location.pathname.startsWith('/files/${room}/') && location.pathname !== '/files/${room}/${given.id}'`, 15000);
     check(await page.evaluate(`!document.querySelector('[data-testid="folder-tree"] [role="alert"]')`), 'opening a folder below it from the tree still shows no failure');
   });

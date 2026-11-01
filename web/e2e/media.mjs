@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pngOf } from './s4a.mjs';
-import { playerChecks } from './player.mjs';
+import { playerChecks, stopMini } from './player.mjs';
 
 const media = fileURLToPath(new URL('./media/', import.meta.url));
 const q = (v) => JSON.stringify(v);
@@ -456,6 +456,8 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
       const dialog = await page.evaluate(`[...document.querySelectorAll('.ant-modal-content')].map((d) => d.innerText.split(String.fromCharCode(10))[0]).join('|')`);
       check(got === name, `a double click on ${name}, ${gap} ms apart, opens it (opened ${got ?? 'nothing'}; dialog "${dialog}")`);
       if (got) await closePreview(page);
+      // The audio's bar stays after its viewer closes: it sits over the bottom row of this short window, so it ends here.
+      await stopMini(page);
       await clearSelection(page);
     }
     await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });

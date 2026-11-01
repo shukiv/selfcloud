@@ -3711,6 +3711,89 @@ paths:
       responses:
         "204": { description: Unstarred. }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/resume:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Media]
+      operationId: getMediaResume
+      summary: The place the caller stopped at in a video or audio file
+      description: |
+        The signed-in user's own place in a file the caller reaches. With no place stored, both
+        numbers are 0 and `updated_at` is absent. A delegated token, an account key and an
+        installation admin get `forbidden`, and an admin signed in as a user gets `forbidden` too.
+        Nobody else can read a place: it is never listed or shown to another user.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The place.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [position_seconds, duration_seconds]
+                properties:
+                  position_seconds: { type: number, minimum: 0 }
+                  duration_seconds: { type: number, minimum: 0 }
+                  updated_at: { type: string, format: date-time }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Media]
+      operationId: putMediaResume
+      summary: Store the place the caller stopped at in a file
+      description: |
+        Replaces the signed-in user's place in a file the caller reaches. Numbers are seconds of media
+        time: finite, from 0 to 10,000,000. A position past a known duration (a duration above 0) is
+        `invalid_request`. A duration of 0 means unknown. Only a file has a place: any other node is
+        `not_found`. The place is not audited. A client writes it at most every 15 seconds while the
+        file plays, and on pause.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [position_seconds, duration_seconds]
+              properties:
+                position_seconds: { type: number, minimum: 0, maximum: 10000000 }
+                duration_seconds: { type: number, minimum: 0, maximum: 10000000 }
+      responses:
+        "204": { description: Stored. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/subtitles:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Media]
+      operationId: listSubtitles
+      summary: The subtitle files beside a file
+      description: |
+        The `.vtt` and `.srt` files in the same folder with the same name as the file, without its
+        extension, that the caller reaches. Each one is read through its own content route, which
+        applies the download rule: a subtitle the caller may not download is refused there and the
+        client shows no track for it.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The subtitle files, `vtt` before `srt`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, format]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        format: { type: string, enum: [vtt, srt] }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/starred:
     get:
       tags: [Stars]

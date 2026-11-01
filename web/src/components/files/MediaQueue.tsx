@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { Alert, Button, Dropdown, type MenuProps } from "antd";
-import { ArrowDown, ArrowUp, GripVertical, ListMusic, MoreHorizontal, Play, Plus, Repeat, Repeat1, Shuffle, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, GripVertical, ListMusic, MoreHorizontal, Pause, Play, Plus, Repeat, Repeat1, Shuffle, Trash2 } from "lucide-react";
 import { useT } from "../../lib/i18n";
 import { MAX_QUEUE, type Entry, type Repeat as RepeatMode } from "../../lib/files/queue";
 import type { Node } from "../../lib/files/types";
@@ -25,6 +25,8 @@ interface Props {
   // candidates are the folder's playable files that are not in the queue, for the add panel.
   candidates: Node[];
   adding: boolean;
+  // playing says the file on screen plays now. A current row that is not playing says Paused, not Playing.
+  playing?: boolean;
   onAddOpen: () => void;
   onAdd: (node: Node, where: "next" | "end") => void;
   onLoadMore: () => void;
@@ -159,12 +161,18 @@ export default function MediaQueue(p: Props) {
                   <bdi>{name}</bdi>
                 </button>
                 <span className="media-state" style={{ color: on ? palette.text : palette.muted }}>
-                  {on && (
-                    <>
-                      <Play size={12} aria-hidden="true" />
-                      {t("files.media.playing")}
-                    </>
-                  )}
+                  {on &&
+                    (p.playing ? (
+                      <>
+                        <Play size={12} aria-hidden="true" />
+                        {t("files.media.playing")}
+                      </>
+                    ) : (
+                      <>
+                        <Pause size={12} aria-hidden="true" />
+                        {t("files.media.paused")}
+                      </>
+                    ))}
                   {entry.mark === "restricted" && t("files.media.restricted")}
                   {entry.mark === "failed" && t("files.media.skippedRow")}
                 </span>
