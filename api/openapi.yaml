@@ -2293,12 +2293,14 @@ paths:
       description: |
         `path` is relative to the folder's root: `/a/b`, or empty or `/` for the root. Names are
         checked as in `Node`; an empty segment, `.` or `..` is `invalid_path`. A missing
-        directory is `not_found`; a file on the way is `invalid_path`. Children come in name order.
+        directory is `not_found`; a file on the way is `invalid_path`. Children come in name order unless `sort` is given.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - name: path
           in: query
           schema: { type: string, maxLength: 4096 }
+        - $ref: "#/components/parameters/childSort"
+        - $ref: "#/components/parameters/childOrder"
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
       responses:
@@ -2679,14 +2681,16 @@ paths:
       tags: [Files]
       operationId: listChildren
       summary: List a directory by its ID
-      description: A visitor of a link that anyone can open may call this with its credential, below the link's node.
+      description: A visitor of a link that anyone can open may call this with its credential, below the link's node. `sort` and `order` work as on the folder route.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
+        - $ref: "#/components/parameters/childSort"
+        - $ref: "#/components/parameters/childOrder"
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
       responses:
         "200":
-          description: The children of the directory, in name order.
+          description: The children of the directory, in name order unless `sort` is given.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/NodeList" }
@@ -4849,8 +4853,22 @@ components:
     cursor:
       name: cursor
       in: query
-      description: The `next_cursor` of the previous page.
+      description: The `next_cursor` of the previous page. A cursor is for the sort and order it came from; another sort or order, or none, does not open it (`invalid_request`).
       schema: { type: string }
+    childSort:
+      name: sort
+      in: query
+      description: |
+        Sorts the children of a directory on the server, over the whole directory (decision 47). Folders come first, then
+        shortcuts, then files; each kind is sorted by this key, and a tie is broken by ID in the same direction. `name`
+        orders by name, numbers by value ("file 2" before "file 10"), case and accents ignored. Without `sort` or `order`
+        the default order is kept, as before. Given either, a missing `sort` is `name` and a missing `order` is `asc`.
+      schema: { type: string, enum: [name, size, modified], default: name }
+    childOrder:
+      name: order
+      in: query
+      description: Ascending or descending. Used with `sort`.
+      schema: { type: string, enum: [asc, desc], default: asc }
 
   headers:
     Tus-Resumable:

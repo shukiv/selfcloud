@@ -105,7 +105,7 @@
   "files.loadMore": "تحميل المزيد",
   "files.retry": "إعادة المحاولة",
   "files.loadingMore": "جارٍ تحميل المزيد…",
-  "files.sortNote": "الترتيب ضمن العناصر المحمّلة حتى الآن.",
+  "files.sortNote": "الترتيب يشمل المجلد كله.",
   "files.empty": "هذا المجلد فارغ.",
   "files.toolbar": "إجراءات المجلد",
   "files.selection.label": "إجراءات التحديد",

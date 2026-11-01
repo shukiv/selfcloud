@@ -164,6 +164,42 @@ describe("the listing survives a failed read", () => {
   });
 });
 
+describe("the listing is sorted by the server (decision 47)", () => {
+  // The sort a test picks is kept in local storage, and the next test starts from it; each test starts at the default.
+  beforeEach(() => localStorage.clear());
+
+  it("asks for the new sort from the first page when a column is clicked", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(api.childrenPage).toHaveBeenLastCalledWith("fld_aaaaaaaa", null, undefined, { key: "name", dir: "asc" });
+    api.childrenPage.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /size/i }));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalled());
+    expect(api.childrenPage).toHaveBeenLastCalledWith("fld_aaaaaaaa", null, undefined, { key: "size", dir: "asc" });
+  });
+
+  it("keeps the rows on screen, with the failure notice, when the first read after a sort change fails", async () => {
+    api.childrenPage.mockImplementation(async (_f: string, _d: string | null, _c: string | undefined, sort?: { key: string }) => {
+      if (sort?.key === "size") throw new ApiError(500, "internal", {}, 0);
+      return { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined };
+    });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(screen.getByRole("button", { name: /size/i }));
+    await waitFor(() => expect(document.querySelector(".ant-alert-info")).not.toBeNull(), { timeout: 8000 });
+    expect(rows("alpha.txt")).not.toBeNull();
+    expect(rows("beta.txt")).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+  }, 15000);
+
+  it("still shows the error, with a retry, when a folder's first read fails", async () => {
+    api.childrenPage.mockRejectedValue(new ApiError(500, "internal", {}, 0));
+    renderAt(FOLDER);
+    await waitFor(() => expect(document.querySelector('[role="alert"]')).not.toBeNull(), { timeout: 8000 });
+    expect(rows("alpha.txt")).toBeNull();
+  }, 15000);
+});
+
 describe("the listing is read fresh on every visit", () => {
   it("reads the folder again when the page is mounted a second time, inside the stale window", async () => {
     const qc = createQueryClient();

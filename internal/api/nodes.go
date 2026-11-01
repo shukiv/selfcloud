@@ -465,9 +465,25 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 	}
 	ctx := r.Context()
 	p := principalOf(r)
-	kids, next, err := s.store.Children(ctx, dir.AccountID, dir.ID, page)
+	order, sorted, err := childSortParams(r)
 	if err != nil {
-		return storeErr(err)
+		return err
+	}
+	var kids []*store.Node
+	var next string
+	if sorted {
+		kids, next, err = s.sortedChildren(r, dir, order, page)
+	} else {
+		if isSortedCursor(page.Cursor) {
+			return childCursorBad
+		}
+		kids, next, err = s.store.Children(ctx, dir.AccountID, dir.ID, page)
+		if err != nil {
+			return storeErr(err)
+		}
+	}
+	if err != nil {
+		return err
 	}
 	var ranks map[string]int
 	if p.Kind == auth.KindUser {

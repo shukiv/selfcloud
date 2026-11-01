@@ -5,6 +5,7 @@ import { api, ApiError } from '../api';
 import { get } from '../store';
 import { session } from '../session';
 import type { Page, FolderAccess, Job, Node, SignedLink, TrashItem, Version } from './types';
+import type { SortDir, SortKey } from './sort';
 
 // Every list is read in pages of this size.
 export const PAGE = 50;
@@ -41,12 +42,20 @@ export function getMe(): Promise<{ personal_folder_id: string | null }> {
   return api<{ personal_folder_id: string | null }>('GET', '/api/v1/me');
 }
 
-// childrenPage reads one page of a directory's children. A null dir reads the folder's root.
-export async function childrenPage(folder: string, dir: string | null, cursor?: string): Promise<Page<Node>> {
+// childrenPage reads one page of a directory's children. A null dir reads the folder's root. With sort, the server
+// orders the whole directory (folders, then shortcuts, then files, each by the sort), and the cursor is for that sort;
+// without it the server keeps its default order, as API clients always had.
+export async function childrenPage(
+  folder: string,
+  dir: string | null,
+  cursor?: string,
+  sort?: { key: SortKey; dir: SortDir },
+): Promise<Page<Node>> {
   needSession();
   const c = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
-  if (dir) return api<Page<Node>>('GET', `/api/v1/nodes/${dir}/children?limit=${PAGE}${c}`);
-  return api<Page<Node>>('GET', `/api/v1/folders/${folder}/children?path=%2F&limit=${PAGE}${c}`);
+  const s = sort ? `&sort=${sort.key}&order=${sort.dir}` : '';
+  if (dir) return api<Page<Node>>('GET', `/api/v1/nodes/${dir}/children?limit=${PAGE}${s}${c}`);
+  return api<Page<Node>>('GET', `/api/v1/folders/${folder}/children?path=%2F&limit=${PAGE}${s}${c}`);
 }
 
 export async function statNode(nod: string): Promise<Node> {

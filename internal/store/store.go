@@ -243,7 +243,37 @@ func (s *Store) migrate(ctx context.Context) error {
 		return fmt.Errorf("store: database schema version %d is newer than this binary knows (%d); "+
 			"run a newer selfcloud", current, len(migrations))
 	}
+	if err := s.checkAppliedNames(ctx, migrations); err != nil {
+		return err
+	}
 	return s.applyMigrations(ctx, migrations[current:])
+}
+
+// checkAppliedNames refuses to start when a version the database has applied has a different file name in this binary.
+// Migrations are matched by number, so two builds that each took the same number would otherwise have the second one
+// skipped on a database that ran the first, and nothing would say so. The check reads the record of each applied version
+// before anything is applied. migrations is numbered from 1 with no gaps (loadMigrations), so the version indexes it.
+func (s *Store) checkAppliedNames(ctx context.Context, migrations []migration) error {
+	rows, err := s.w.QueryContext(ctx, "SELECT version, name FROM schema_migrations ORDER BY version")
+	if err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var version int
+		var recorded string
+		if err := rows.Scan(&version, &recorded); err != nil {
+			return fmt.Errorf("store: %w", err)
+		}
+		if version < 1 || version > len(migrations) {
+			continue // a version this binary does not know is refused by migrate
+		}
+		if m := migrations[version-1]; m.name != recorded {
+			return fmt.Errorf("store: migration %d ran as %s, but this binary has %s for that number; "+
+				"two builds took the same number: refusing to start", version, recorded, m.name)
+		}
+	}
+	return rows.Err()
 }
 
 // hasDirective reports whether a migration asks the runner for foreign keys off. Only the first line counts: the

@@ -164,7 +164,8 @@ func TestUpgradeFrom0018RebuildsNodes(t *testing.T) {
 			t.Errorf("seeded node %s after the upgrade = %d, %v; want 1", id, c, err)
 		}
 	}
-	wantIndexes := []string{"nodes_blob", "nodes_child", "nodes_folder", "nodes_root", "nodes_size", "nodes_target", "nodes_trash"}
+	wantIndexes := []string{"nodes_blob", "nodes_child", "nodes_folder", "nodes_list_modified", "nodes_list_name", "nodes_list_size",
+		"nodes_root", "nodes_size", "nodes_target", "nodes_trash"}
 	got := indexNames(t, s.w, "nodes")
 	sort.Strings(got)
 	if strings.Join(got, ",") != strings.Join(wantIndexes, ",") {

@@ -63,7 +63,7 @@ space ("My files"), and a group can hold users.
 | Shortcuts (one item in several places) | Built (p3): a shortcut to a file or directory of the same account, made from the Add shortcut dialog or the API |
 | Folder colours, descriptions | Built (p3): twelve palette colours on folders; a description of up to 1,000 characters on any item |
 | Labels (admin-defined metadata fields) | Built (p4): typed fields per account (text, number, date, user, choice), with restricted fields. Search by label is New (q) |
-| Sorting, grid and list views, density | Built (k2): sorting by name, modified and size (within the items loaded so far), list and grid views. Density is not built |
+| Sorting, grid and list views, density | Built (k2): sorting by name, modified and size, list and grid views; the sort covers the whole folder, done by the server (slice sort, decision 47), for the web listing and for the API's `sort` and `order` on the children routes. Density is not built |
 | Workspaces (ad hoc groups of files) | Skip: stars and shortcuts cover the need |
 | "Suggested" files chosen by machine learning | Skip: replaced by the rules-based Home page |
 

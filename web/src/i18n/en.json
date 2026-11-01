@@ -105,7 +105,7 @@
   "files.loadMore": "Load more",
   "files.retry": "Try again",
   "files.loadingMore": "Loading more…",
-  "files.sortNote": "Sorted within the items loaded so far.",
+  "files.sortNote": "Sorted across the whole folder.",
   "files.empty": "This folder is empty.",
   "files.toolbar": "Folder actions",
   "files.selection.label": "Selection actions",

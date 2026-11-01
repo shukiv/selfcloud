@@ -22,7 +22,7 @@ import { makeZip, type ZipPhase } from "../lib/files/zips";
 import { nameProblem, nameMessageKey, uploadTargetFor, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
 import { parseFilesPath, filesURL, type FilesRoute } from "../lib/files/route";
 import { trimCrumbs, type Crumb } from "../lib/files/breadcrumbs";
-import { sortNodes, nextSort, type SortDir, type SortKey } from "../lib/files/sort";
+import { nextSort, type SortDir, type SortKey } from "../lib/files/sort";
 import { clickSelect, moveFocus, selectAll, EMPTY, type Selection } from "../lib/files/selection";
 import { keyAction } from "../lib/files/keys";
 import { can, downloadAllowed, atLeast } from "../lib/files/roles";
@@ -247,14 +247,25 @@ export default function FilesPage() {
   const dirID = here?.dir?.id ?? null;
 
   const childrenQ = useInfiniteQuery({
-    queryKey: queryKey("children", folderID, dirID),
+    // The sort is part of the key, so a sort change reads the directory again from its first page.
+    queryKey: queryKey("children", folderID, dirID, prefs.sort.key, prefs.sort.dir),
     refetchOnMount: "always",
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) => childrenPage(folderID as string, dirID, pageParam),
+    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
+      childrenPage(folderID as string, dirID, pageParam, prefs.sort),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last: Page<Node>) => last.next_cursor,
     enabled: signedIn && here !== null,
   });
-  const items = useMemo<Node[]>(() => (childrenQ.data?.pages ?? []).flatMap((p) => p.items), [childrenQ.data]);
+  const fetched = useMemo<Node[]>(() => (childrenQ.data?.pages ?? []).flatMap((p) => p.items), [childrenQ.data]);
+  // The rows of the last read that worked in this folder. A failed first read after a sort change keeps them on screen,
+  // with the failure notice. A folder's first read that fails has none, and shows the error.
+  const placeKey = `${folderID}/${dirID}`;
+  const lastRows = useRef<{ place: string; items: Node[] } | null>(null);
+  useEffect(() => {
+    if (childrenQ.data) lastRows.current = { place: placeKey, items: fetched };
+  }, [childrenQ.data, fetched, placeKey]);
+  const kept = childrenQ.isError && childrenQ.data === undefined && lastRows.current?.place === placeKey ? lastRows.current.items : null;
+  const items = kept ?? fetched;
   const hasMore = childrenQ.hasNextPage === true;
 
   // A place change starts with nothing selected and no notice, as a fresh load did. It also closes whatever dialog
@@ -362,7 +373,7 @@ export default function FilesPage() {
   }
 
   // A failed read after the listing is already shown does not replace it: the failure is shown as the notice.
-  const readFailure = childrenQ.isError && childrenQ.data !== undefined ? fileErrorText(childrenQ.error, lang) : null;
+  const readFailure = childrenQ.isError && (childrenQ.data !== undefined || kept !== null) ? fileErrorText(childrenQ.error, lang) : null;
 
   // Selection kept after a listing changes: IDs that are no longer listed are dropped.
   useEffect(() => {
@@ -377,7 +388,8 @@ export default function FilesPage() {
 
   // ---- sorting, selection and keys ----
 
-  const sorted = useMemo(() => sortNodes(items, prefs.sort.key, prefs.sort.dir, lang), [items, prefs.sort.key, prefs.sort.dir, lang]);
+  // The server sorts the whole directory (decision 47), so the loaded rows are already in order.
+  const sorted = items;
   const ids = useMemo(() => sorted.map((n) => n.id), [sorted]);
   const byID = useMemo(() => new Map(sorted.map((n) => [n.id, n])), [sorted]);
   const selected = useMemo(() => new Set(sel.ids), [sel.ids]);
@@ -1054,7 +1066,7 @@ export default function FilesPage() {
           <span className="sr-only">{t("files.loading")}</span>
           <Skeleton active paragraph={{ rows: 6 }} />
         </div>
-      ) : childrenQ.isError && childrenQ.data === undefined ? (
+      ) : childrenQ.isError && childrenQ.data === undefined && kept === null ? (
         <div role="alert">
           <Alert type="error" showIcon message={fileErrorText(childrenQ.error, lang)} />
           <Button onClick={() => void childrenQ.refetch()} style={{ marginTop: 12 }}>

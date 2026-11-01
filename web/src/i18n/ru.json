@@ -105,7 +105,7 @@
   "files.loadMore": "Загрузить ещё",
   "files.retry": "Повторить",
   "files.loadingMore": "Загрузка…",
-  "files.sortNote": "Сортировка только по загруженным элементам.",
+  "files.sortNote": "Сортировка по всей папке.",
   "files.empty": "Папка пуста.",
   "files.toolbar": "Действия с папкой",
   "files.selection.label": "Действия с выбором",

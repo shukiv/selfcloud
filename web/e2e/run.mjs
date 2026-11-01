@@ -21,6 +21,7 @@ import * as p3 from './p3.mjs';
 import * as p4 from './p4.mjs';
 import * as p5 from './p5.mjs';
 import * as s4a from './s4a.mjs';
+import { sortChecks } from './sort.mjs';
 import { mediaChecks } from './media.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
 
@@ -635,6 +636,7 @@ async function main() {
     await fileBrowserChecks(page, { base, dir, teamA, teamB });
     await fileBrowserExtraChecks(page, { dir, teamA });
     await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
+    await sortChecks(h, { page, base, accountKey, teamA });
     await mediaChecks(h, { page, base, accountKey, teamA });
     const home = await owner.homeChecks(page, h, { base, accountKey, memberID, ownerID, teamA });
     await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
