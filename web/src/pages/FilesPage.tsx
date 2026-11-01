@@ -85,6 +85,9 @@ const NO_SEL: SelState = { ...EMPTY, anchorID: null, focusID: null };
 
 const toolbarStyle = { display: "flex", flexWrap: "wrap" as const, alignItems: "center", gap: 8, width: "100%" };
 
+// BAR_SETTLE_MS is how long a new selection bar lets clicks pass through it: the usual longest gap in a double click.
+const BAR_SETTLE_MS = 500;
+
 // useNarrowWindow says whether the window is phone width (below the md breakpoint, 768 pixels). It is a media query, so a
 // window that cannot say its width (no matchMedia) is taken as a desktop, and the desktop bar is shown.
 function useNarrowWindow(): boolean {
@@ -378,6 +381,18 @@ export default function FilesPage() {
   const ids = useMemo(() => sorted.map((n) => n.id), [sorted]);
   const byID = useMemo(() => new Map(sorted.map((n) => [n.id, n])), [sorted]);
   const selected = useMemo(() => new Set(sel.ids), [sel.ids]);
+  // The bar can appear under the pointer, over the row just clicked. For its first moments clicks pass through it, so the
+  // second click of a double click reaches the row and not one of the bar's buttons.
+  const hasSelection = sel.ids.length > 0;
+  const [barSettled, setBarSettled] = useState(false);
+  useEffect(() => {
+    if (!hasSelection) {
+      setBarSettled(false);
+      return;
+    }
+    const timer = setTimeout(() => setBarSettled(true), BAR_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [hasSelection]);
   const picked = sel.ids.map((id) => byID.get(id)).filter((n): n is Node => n !== undefined);
   const rovingID = sel.focusID && byID.has(sel.focusID) ? sel.focusID : (ids[0] ?? null);
   const view = prefs.view;
@@ -1169,6 +1184,7 @@ export default function FilesPage() {
                 background: token.colorPrimaryBg,
                 borderRadius: token.borderRadius,
                 boxShadow: token.boxShadowSecondary,
+                pointerEvents: barSettled ? "auto" : "none",
               }}
             >
               <p aria-live="polite" style={{ margin: "0 8px 0 0", fontWeight: 600 }}>

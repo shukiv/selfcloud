@@ -36,13 +36,14 @@ async function point(page, name) {
 }
 
 // dblClick sends a mouse double click the way Chrome does: press and release, then press and release again with the
-// click count at two, a tenth of a second apart. The browser picks the target under the pointer, as it does for a person.
-async function dblClick(page, { x, y }) {
+// click count at two, a tenth of a second apart unless gap says otherwise. The browser picks the target under the pointer,
+// as it does for a person.
+async function dblClick(page, { x, y }, gap = 100) {
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
   for (const clickCount of [1, 2]) {
     await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount });
     await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount });
-    await sleep(100);
+    await sleep(gap);
   }
 }
 
@@ -313,6 +314,42 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await clearSelection(page);
     await setPhone(page, false);
+  });
+
+  // ---- 2d. the bar appears under the pointer: in a short window the last rows sit where the bar lands, and the second
+  // click of a double click still reaches the row, not a button on the bar ----
+  await step('a double click on a row where the bar lands opens the row', async () => {
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 460, deviceScaleFactor: 1, mobile: false });
+    await open('List');
+    for (const [name, gap] of [['tone.ogg', 100], ['pic.png', 300]]) {
+      const box = await page.evaluate(`(() => {
+        const row = document.querySelector(${q(itemSel(name))});
+        row.scrollIntoView({ block: 'end' });
+        const r = (row.querySelector('bdi') ?? row).getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`);
+      await dblClick(page, box, gap);
+      await sleep(900);
+      const got = await openedName(page);
+      const dialog = await page.evaluate(`[...document.querySelectorAll('.ant-modal-content')].map((d) => d.innerText.split('\\n')[0]).join('|')`);
+      check(got === name, `a double click on ${name} under the bar's place, ${gap} ms apart, opens it (opened ${got ?? 'nothing'}; dialog "${dialog}")`);
+      if (got) await closePreview(page);
+      await clearSelection(page);
+    }
+    // Once settled the bar takes clicks: a real mouse click on Clear selection reaches the button.
+    await click(page, await point(page, 'clip.webm'));
+    await page.waitFor(`!!document.querySelector('[data-testid="selection-bar"]')`, 10000);
+    await sleep(800);
+    const clear = await page.evaluate(`(() => {
+      const b = [...document.querySelectorAll('[data-testid="selection-bar"] button')].pop();
+      b.scrollIntoView({ block: 'nearest' });
+      const r = b.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    await click(page, clear);
+    await sleep(300);
+    check(await page.evaluate(`!document.querySelector('[data-testid="selection-bar"]')`), 'a settled selection bar takes a real mouse click');
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   });
 
   // ---- 3. a selection moves nothing: the rows keep their place, at desktop and phone width, in English and Hebrew ----
