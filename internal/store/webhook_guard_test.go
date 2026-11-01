@@ -51,6 +51,7 @@ var webhookAuditNoEvent = map[string]string{
 	"user.login_failed":       "sign-in activity is not on the event list",
 	"user.password_reset":     "password changes are not on the event list",
 	"user.password_set":       "password changes are not on the event list",
+	"admin.password_refused":  "a refused attempt changes nothing: no event (decision 41)",
 	"impersonation.start":     "sign-in activity is not on the event list; the writes made while signed in report as the user's own (decision 41)",
 	"impersonation.end":       "sign-in activity is not on the event list (decision 41)",
 	"verification.send":       "sending a verification is not a verification",

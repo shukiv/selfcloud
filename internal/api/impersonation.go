@@ -88,10 +88,18 @@ func requireAdminSession(p *auth.Principal) error {
 	return nil
 }
 
+// The ways an admin's password is asked for, as the audit log names a refused attempt (admin.password_refused).
+const (
+	waySignInAs      = "sign_in_as"
+	wayTypedPassword = "typed_password"
+	wayResetLink     = "reset_link"
+)
+
 // confirmAdminPassword checks the admin's own password for a sign-in-as or a typed password. A wrong one is
-// audited under action and counted like a wrong current password: the fifth in a row ends the admin's session.
+// audited as admin.password_refused with its way (sign_in_as, typed_password or reset_link), and counted like a wrong
+// current password: the fifth in a row ends the admin's session. A refused attempt is never a sign-in or a set password.
 func (s *Server) confirmAdminPassword(w http.ResponseWriter, r *http.Request, p *auth.Principal, sess *store.Session,
-	action, target, accountID, password string) error {
+	way, target, accountID, password string) error {
 	ctx := r.Context()
 	admin, err := s.store.User(ctx, "", p.ID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -118,7 +126,7 @@ func (s *Server) confirmAdminPassword(w http.ResponseWriter, r *http.Request, p 
 				return err
 			}
 		}
-		e := s.auditEntry(r, accountID, action, target, nil)
+		e := s.auditEntry(r, accountID, "admin.password_refused", target, map[string]any{"way": way})
 		e.Outcome = "failed"
 		return tx.InsertAudit(ctx, e)
 	})
@@ -157,7 +165,7 @@ func (s *Server) handleSetUserPassword(w http.ResponseWriter, r *http.Request) e
 	if err := checkPassword(in.Password); err != nil {
 		return err
 	}
-	if err := s.confirmAdminPassword(w, r, p, sess, "user.password_set", r.PathValue("usr"), acc.ID,
+	if err := s.confirmAdminPassword(w, r, p, sess, wayTypedPassword, r.PathValue("usr"), acc.ID,
 		in.AdminPassword); err != nil {
 		return err
 	}
@@ -227,7 +235,7 @@ func (s *Server) handleSignInAs(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	if err := s.confirmAdminPassword(w, r, p, sess, "impersonation.start", r.PathValue("usr"), acc.ID,
+	if err := s.confirmAdminPassword(w, r, p, sess, waySignInAs, r.PathValue("usr"), acc.ID,
 		in.AdminPassword); err != nil {
 		return err
 	}

@@ -3574,6 +3574,15 @@ Decided on approval:
       **Not changed, for the owner:** an account key still makes a reset link to a user of its own account, as it did
       before this slice (`TestCallersOfTheAdminWaysAreRefused` pins it). The review asked for refusal; a key can already
       make a sign-in link, which the design accepts (section 8), so refusing it here is the owner's call.
+    - *Live run (after 2024b97).* The tenant's audit log read the admin's rows as "Someone made a change", and a wrong
+      password as a sign-in. The viewers name only the tenant's people, and an installation admin belongs to no account.
+      Fixed: the server marks an admin's row (`actor_admin`, and `actor_name`, which is empty for a removed admin, so the
+      viewers say "an installation admin"); each sign-in-as, go-back, password set and reset-link action has its own
+      sentence in all seven catalogues; a refused password is `admin.password_refused` with its way (`sign_in_as`,
+      `typed_password`, `reset_link`), never a sign-in row. A go-back reads with its reason. Setting
+      `admin.tenant_access` off writes no end row, so no sentence says it. `TestEveryAuditActionHasASentence` fails for an
+      audit action with no sentence unless the action is on the list of older actions that still have none (57 when this
+      was written; each reads as "made a change"). The list only shrinks.
     - *Migration.* `0034_admin_access.sql` (sessions gain the impersonator columns; `users.must_change_password`). It follows
       `0033`, the notifications migration of slice r3, which is on main.
     - **Code.** `internal/office` is the one conversion client: the fixed format list, the bounds, the capabilities copy and `ConverterKey`. `internal/derived/convert.go` is the conversion pool, and `install.go` holds the install step and the row helpers, which the thumbnail pool now also uses (the same budget rule, one copy). `internal/api/exports.go` holds the routes. `internal/wopi/discovery.go` gains `ConvertibleFrom`. `internal/wopi/wopitest/convert.go` is the fake's conversion endpoint, added to slice l's fake. Config: `derived.convert_workers` (2), `derived.convert_queue` (32), `derived.convert_account_queue` (8) and `derived.max_convert_bytes` (500 MiB), validated while office is off too. Kinds `pdf`, `png_page1` and `export_<format>` are at most 11 bytes (`export_pptx`); converter keys `office-convert-1+` and 12 hex digits are 29 bytes, under the table's limits of 32 and 64 (migration 0028), so no migration.

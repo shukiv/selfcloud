@@ -59,30 +59,57 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) error {
 			Details: e.Details,
 		})
 	}
-	s.nameImpersonators(r.Context(), out.Items)
+	s.nameActors(r.Context(), out.Items)
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
-// nameImpersonators adds the installation admin's name to each row a sign-in-as made, so an owner sees who acted and
-// that it was done signed in as the user (decision 41). The name is empty when the admin no longer exists.
-func (s *Server) nameImpersonators(ctx context.Context, items []auditJSON) {
-	names := map[string]string{}
-	for i := range items {
-		id, _ := items[i].Details["impersonated_by"].(string)
-		if id == "" {
-			continue
+// adminOnlyActions are the actions only an installation admin performs, so their rows are the admin's even when the
+// admin no longer exists.
+var adminOnlyActions = map[string]bool{
+	"impersonation.start":    true,
+	"impersonation.end":      true,
+	"admin.password_refused": true,
+	"user.password_set":      true,
+}
+
+// nameActors gives each row the names the viewers need. The tenant's people are looked up by the viewer, but an
+// installation admin belongs to no account, so the viewer cannot find it: the row says it is an admin and gives its
+// name (decision 41). A row made while impersonating also names the admin in impersonated_by_name. A deleted admin has
+// no name, and the viewers say "an installation admin" for it.
+func (s *Server) nameActors(ctx context.Context, items []auditJSON) {
+	type named struct {
+		admin bool
+		name  string
+	}
+	seen := map[string]named{}
+	lookup := func(id string) named {
+		if v, ok := seen[id]; ok {
+			return v
 		}
-		name, seen := names[id]
-		if !seen {
-			if u, err := s.store.User(ctx, "", id); err == nil {
-				name = u.DisplayName
-				if name == "" {
-					name = u.Email
-				}
+		var v named
+		if u, err := s.store.User(ctx, "", id); err == nil {
+			v = named{admin: true, name: u.DisplayName}
+			if v.name == "" {
+				v.name = u.Email
 			}
-			names[id] = name
 		}
-		items[i].Details["impersonated_by_name"] = name
+		seen[id] = v
+		return v
+	}
+	for i := range items {
+		it := &items[i]
+		if it.Details == nil {
+			it.Details = map[string]any{}
+		}
+		if it.Actor.Kind == "user" && it.Actor.ID != "" {
+			if v := lookup(it.Actor.ID); v.admin || adminOnlyActions[it.Action] {
+				it.Details["actor_admin"] = true
+				it.Details["actor_name"] = v.name
+			}
+		}
+		if id, _ := it.Details["impersonated_by"].(string); id != "" {
+			it.Details["impersonated_by_name"] = lookup(id).name
+		}
 	}
 }

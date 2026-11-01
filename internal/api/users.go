@@ -765,7 +765,7 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) err
 	// A reset link from an admin's session hands over the account as surely as a typed password does, so the admin's
 	// own password is checked first (decision 41). The email reset reaches the user and needs no re-entry.
 	if p := principalOf(r); in.Method == methodLink && p.Kind == auth.KindUser && p.Role == auth.RoleAdmin {
-		if err := s.confirmAdminPassword(w, r, p, sessionOf(r), "user.password_reset", r.PathValue("usr"), acc.ID,
+		if err := s.confirmAdminPassword(w, r, p, sessionOf(r), wayResetLink, r.PathValue("usr"), acc.ID,
 			in.AdminPassword); err != nil {
 			return err
 		}

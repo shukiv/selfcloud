@@ -38,11 +38,18 @@ function detail(d: Record<string, unknown> | undefined, field: string): string {
   return typeof v === 'string' ? v : '';
 }
 
-// actorRef says who acted: a person's name when the lookup has it, else a word for the kind of actor.
-export function actorRef(actor: AuditActor, names: Names): Ref {
+// actorRef says who acted: a person's name when the lookup has it, else a word for the kind of actor. An installation
+// admin is not a person of any account, so the lookup never has it: the server marks such a row with actor_admin and
+// gives the admin's name in actor_name, and a removed admin has no name, which reads as "an installation admin".
+export function actorRef(actor: AuditActor, names: Names, details?: Record<string, unknown>): Ref {
   if (actor.kind === 'user') {
     const name = names.person(actor.id);
-    return name !== undefined ? { text: name } : { key: 'audit.someone' };
+    if (name !== undefined) return { text: name };
+    if (details?.actor_admin === true) {
+      const admin = detail(details, 'actor_name');
+      return admin !== '' ? { text: admin } : { key: 'audit.anAdmin' };
+    }
+    return { key: 'audit.someone' };
   }
   switch (actor.kind) {
     case 'account_key':
@@ -77,7 +84,7 @@ export function sentence(entry: AuditEntry, names: Names): Sentence {
 
 function baseSentence(entry: AuditEntry, names: Names): Sentence {
   const d = entry.details;
-  const actor = actorRef(entry.actor, names);
+  const actor = actorRef(entry.actor, names, d);
   const person = names.person(entry.target);
   const target: Ref = person !== undefined ? { text: person } : { key: 'audit.aPerson' };
   const spaceName = detail(d, 'name') || names.space(entry.target) || '';
@@ -93,10 +100,21 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
         params: { actor, target },
       };
     case 'verification.send':
-      return {
-        key: detail(d, 'purpose') === 'reset' ? 'audit.verification.reset' : 'audit.verification.send',
-        params: { actor, target },
-      };
+      if (detail(d, 'purpose') === 'reset') {
+        return {
+          key: detail(d, 'method') === 'link' ? 'audit.verification.resetLink' : 'audit.verification.reset',
+          params: { actor, target },
+        };
+      }
+      return { key: 'audit.verification.send', params: { actor, target } };
+    case 'impersonation.start':
+      return { key: 'audit.impersonation.start', params: { actor, target } };
+    case 'impersonation.end':
+      return { key: `audit.impersonation.end.${endReason(detail(d, 'reason'))}`, params: { actor, target } };
+    case 'admin.password_refused':
+      return { key: `audit.admin.password_refused.${wayName(detail(d, 'way'))}`, params: { actor, target } };
+    case 'user.password_set':
+      return { key: 'audit.user.password_set', params: { actor, target } };
     case 'user.verify':
       return { key: 'audit.user.verify', params: { target } };
     case 'folder.create':
@@ -140,6 +158,45 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
       return { key: `audit.${entry.action}`, params: { actor } };
     default:
       return { key: 'audit.unlisted', params: { actor } };
+  }
+}
+
+// endReason groups the reasons an impersonation ends for the viewers. The reasons come from the server (decision 41).
+function endReason(reason: string): string {
+  switch (reason) {
+    case 'returned':
+      return 'returned';
+    case 'expired':
+      return 'expired';
+    case 'admin_signed_out':
+      return 'adminSignedOut';
+    case 'admin_password_change':
+    case 'admin_session_ended':
+    case 'admin_sessions_ended':
+    case 'admin_removed':
+      return 'adminEnded';
+    case 'disabled':
+    case 'deleted':
+    case 'password_set':
+    case 'password_reset':
+    case 'password_change':
+      return 'accountChanged';
+    default:
+      return 'other';
+  }
+}
+
+// wayName names the way a refused attempt tried (decision 41).
+function wayName(way: string): string {
+  switch (way) {
+    case 'sign_in_as':
+      return 'signInAs';
+    case 'typed_password':
+      return 'typedPassword';
+    case 'reset_link':
+      return 'resetLink';
+    default:
+      return 'other';
   }
 }
 
