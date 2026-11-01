@@ -225,7 +225,8 @@ func TestConvertDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
-// TestConvertHonoursItsTimeout: a converter that stalls is cut off, and the caller gets ErrUnavailable, not a hang.
+// TestConvertHonoursItsTimeout: a converter that stalls is cut off, and the caller gets context.DeadlineExceeded, not a
+// hang. A time-out is its own class (review S4): the worker counts it, as it does not count an outage.
 func TestConvertHonoursItsTimeout(t *testing.T) {
 	f := newFakeConverter(t, func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -236,8 +237,8 @@ func TestConvertHonoursItsTimeout(t *testing.T) {
 	c := newTestClient(t, f, Options{Timeout: 100 * time.Millisecond, MaxOutput: 1 << 20})
 	start := time.Now()
 	err := c.Convert(context.Background(), strings.NewReader("x"), int64(len("x")), "docx", "pdf", io.Discard)
-	if !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("got %v, want ErrUnavailable", err)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("got %v, want context.DeadlineExceeded", err)
 	}
 	if d := time.Since(start); d > 3*time.Second {
 		t.Errorf("the conversion took %v, want the timeout to end it", d)

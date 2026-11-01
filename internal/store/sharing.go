@@ -100,6 +100,12 @@ func (s *Store) NoDownloadApplies(ctx context.Context, accountID, nodeID string)
 	return noDownloadApplies(ctx, s.r, accountID, nodeID)
 }
 
+// NoDownloadAppliesIn is NoDownloadApplies on the querier it is given: a read transaction from Store.Read, so the answer
+// is read with the other reads of the same request (slice q3, decision 46).
+func NoDownloadAppliesIn(ctx context.Context, q Querier, accountID, nodeID string) (bool, error) {
+	return noDownloadApplies(ctx, q, accountID, nodeID)
+}
+
 // NoDownloadApplies is noDownloadApplies read inside the transaction.
 func (tx *Tx) NoDownloadApplies(ctx context.Context, accountID, nodeID string) (bool, error) {
 	return noDownloadApplies(ctx, tx.q, accountID, nodeID)

@@ -55,7 +55,7 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/api/versions.go":         3,
 	"internal/api/views.go":            1,
 	"internal/store/folders.go":        1,
-	"internal/store/nodes.go":          4,
+	"internal/store/nodes.go":          6,
 	"internal/store/webhook_events.go": 3,
 	"internal/store/sharing.go":        2,
 	"internal/store/storage.go":        1,
@@ -74,8 +74,16 @@ var reviewedNodeKindSites = map[string]int{
 	// Search (decision 40). search.go: the scope check refuses a scope that is not a directory with invalid_request; the
 	// reach check of the scope ran first, so this is a refusal of a bad argument, not an access decision. search_index.go:
 	// the extension of a file's search row is read from a file's name only. Neither decides access.
-	"internal/api/search.go":         1,
+	"internal/api/search.go":         2,
 	"internal/store/search_index.go": 1,
+	// Slice q3 (decision 46). search.go: a content search (in=content) given a kind other than file is refused with
+	// invalid_request, before any candidate is read. An input refusal that grants nothing, so it fails closed.
+	// store/nodes.go: two comparisons, "n.Kind == KindFile && n.BlobID != """ before the content row is queued, on an insert
+	// and on a new version. A folder or a shortcut queues no content row, which is the fail-closed direction (no text is
+	// kept for a non-file). Access is nodeAccess and is not changed.
+	// store/search_text.go: two, both "n.kind = 'file'" in SQL: the backfill's read of file nodes that queues rows, and the
+	// check that counts the rows a file should have. Neither decides access; a folder or shortcut is simply not queued.
+	"internal/store/search_text.go": 2,
 }
 
 // TestNodeKindComparisonsAreReviewed fails when a node-kind comparison appears, moves or goes in internal/api or

@@ -44,8 +44,18 @@ func searchCursorAAD(p *auth.Principal, req *search.Request) []byte {
 	return []byte(strings.Join([]string{p.AccountID, string(p.Kind), p.ID, req.Fingerprint()}, "\x00"))
 }
 
-// sealSearchCursor returns the cursor that resumes req for p after the candidate with ID last.
-func (s *Server) sealSearchCursor(p *auth.Principal, req *search.Request, last int64) (string, error) {
+// searchCursorSize is the plaintext of a cursor: the position of a name search is one row ID (8 bytes); a content search
+// reads two, the content row and the node's rowid (16 bytes). The request's fingerprint is additional data, so a cursor of
+// one kind does not open for the other.
+func searchCursorSize(req *search.Request) int {
+	if req.In == search.InContent {
+		return 16
+	}
+	return 8
+}
+
+// sealSearchCursor returns the cursor that resumes req for p after the position pos.
+func (s *Server) sealSearchCursor(p *auth.Principal, req *search.Request, pos search.Pos) (string, error) {
 	aead, err := s.searchCursorAEAD()
 	if err != nil {
 		return "", err
@@ -54,31 +64,37 @@ func (s *Server) sealSearchCursor(p *auth.Principal, req *search.Request, last i
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	var plain [8]byte
-	binary.BigEndian.PutUint64(plain[:], uint64(last))
-	sealed := aead.Seal(nonce, nonce, plain[:], searchCursorAAD(p, req))
+	plain := make([]byte, searchCursorSize(req))
+	binary.BigEndian.PutUint64(plain[:8], uint64(pos.A))
+	if len(plain) == 16 {
+		binary.BigEndian.PutUint64(plain[8:], uint64(pos.B))
+	}
+	sealed := aead.Seal(nonce, nonce, plain, searchCursorAAD(p, req))
 	return base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
-// openSearchCursor returns the candidate ID a cursor resumes after. A cursor that does not open, for any reason, is
+// openSearchCursor returns the position a cursor resumes after. A cursor that does not open, for any reason, is
 // invalid_request, so the answer tells nothing about which part was wrong.
-func (s *Server) openSearchCursor(p *auth.Principal, req *search.Request, c string) (int64, error) {
+func (s *Server) openSearchCursor(p *auth.Principal, req *search.Request, c string) (search.Pos, error) {
 	aead, err := s.searchCursorAEAD()
 	if err != nil {
-		return 0, err
+		return search.Pos{}, err
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(c)
 	if err != nil || len(raw) < aead.NonceSize() {
-		return 0, searchCursorBad
+		return search.Pos{}, searchCursorBad
 	}
 	nonce, sealed := raw[:aead.NonceSize()], raw[aead.NonceSize():]
 	plain, err := aead.Open(nil, nonce, sealed, searchCursorAAD(p, req))
-	if err != nil || len(plain) != 8 {
-		return 0, searchCursorBad
+	if err != nil || len(plain) != searchCursorSize(req) {
+		return search.Pos{}, searchCursorBad
 	}
-	n := int64(binary.BigEndian.Uint64(plain))
-	if n < 0 {
-		return 0, searchCursorBad
+	pos := search.Pos{A: int64(binary.BigEndian.Uint64(plain[:8]))}
+	if len(plain) == 16 {
+		pos.B = int64(binary.BigEndian.Uint64(plain[8:]))
 	}
-	return n, nil
+	if pos.A < 0 || pos.B < 0 {
+		return search.Pos{}, searchCursorBad
+	}
+	return pos, nil
 }

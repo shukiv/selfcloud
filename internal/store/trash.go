@@ -190,7 +190,19 @@ func (tx *Tx) PurgeNode(ctx context.Context, accountID, id string) (files, bytes
 	if err := tx.dropSearchSubtree(ctx, accountID, id); err != nil {
 		return 0, 0, err
 	}
+	// The text of the subtree's blobs goes with the nodes, in this write, unless another node still holds the blob (the
+	// sweep would do it later, and the text would stay in the database until then).
+	blobs, err := tx.textBlobsOf(ctx, accountID, `n.id IN (WITH RECURSIVE sub(nid) AS (
+		SELECT id FROM nodes WHERE account_id = ? AND id = ?
+		UNION ALL SELECT c.id FROM nodes c JOIN sub s ON c.parent_id = s.nid WHERE c.account_id = ?)
+		SELECT nid FROM sub)`, accountID, id, accountID)
+	if err != nil {
+		return 0, 0, err
+	}
 	if err := rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM nodes WHERE account_id = ? AND id = ?", accountID, id)); err != nil {
+		return 0, 0, err
+	}
+	if err := tx.dropTextIfUnused(ctx, accountID, blobs...); err != nil {
 		return 0, 0, err
 	}
 	if err := tx.AdjustUsage(ctx, accountID, folder, UsageChange{Bytes: -c.Bytes, Files: -c.Files, Reserved: -c.Reserved}); err != nil {

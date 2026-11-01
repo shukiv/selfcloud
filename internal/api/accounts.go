@@ -374,6 +374,11 @@ type usageJSON struct {
 	UsedFiles      int64  `json:"used_files"`      // the same as files; kept for clients that read it
 	UsersActive    int64  `json:"users_active"`    // its users who may sign in
 	UsersPending   int64  `json:"users_pending"`   // its users who have not verified yet
+	// The text search keeps the text of its files (decision 46). It is not charged to quota. SearchTextCap is the cap of
+	// search.max_text_per_account (0 for none), and SearchTextSkipped counts the files whose text was not kept for a cap.
+	SearchTextBytes   int64 `json:"search_text_bytes"`
+	SearchTextCap     int64 `json:"search_text_cap"`
+	SearchTextSkipped int64 `json:"search_text_skipped"`
 }
 
 func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) error {
@@ -390,6 +395,12 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) error {
 	if out.UsersActive, out.UsersPending, err = s.store.PeopleCounts(r.Context(), acc.ID); err != nil {
 		return err
 	}
+	tu, err := s.store.TextUsageOf(r.Context(), acc.ID)
+	if err != nil {
+		return err
+	}
+	out.SearchTextBytes, out.SearchTextSkipped = tu.Bytes, tu.SkippedCaps
+	out.SearchTextCap = int64(s.cfg.Search.MaxTextPerAccount)
 	if acc.QuotaBytes > 0 {
 		quota := acc.QuotaBytes
 		out.QuotaBytes = &quota

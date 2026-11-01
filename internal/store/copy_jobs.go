@@ -426,8 +426,15 @@ func (tx *Tx) PublishStaged(ctx context.Context, j *CopyJob, folderID, parentID,
 		WHERE account_id = ? AND id = ?`, parentID, name, key, millis(at), j.AccountID, j.RootID)); err != nil {
 		return err
 	}
+	blobs, err := tx.textBlobsOf(ctx, j.AccountID, "n.folder_id = ?", j.StagingFolderID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.q.ExecContext(ctx, `DELETE FROM nodes WHERE account_id = ? AND folder_id = ?`,
 		j.AccountID, j.StagingFolderID); err != nil {
+		return err
+	}
+	if err := tx.dropTextIfUnused(ctx, j.AccountID, blobs...); err != nil {
 		return err
 	}
 	if _, err := tx.q.ExecContext(ctx, `DELETE FROM folders WHERE account_id = ? AND id = ? AND staged = 1`,
@@ -509,8 +516,16 @@ func (s *Store) CleanupCopyStep(ctx context.Context, jobID string, limit int, at
 			if err != nil {
 				return err
 			}
+			blobs, err := tx.textBlobsOf(ctx, j.AccountID, "n.folder_id = ? AND n.id IN (SELECT value FROM json_each(?))",
+				j.StagingFolderID, string(b))
+			if err != nil {
+				return err
+			}
 			if _, err := tx.q.ExecContext(ctx, `DELETE FROM nodes WHERE account_id = ? AND folder_id = ? AND id IN
 				(SELECT value FROM json_each(?))`, j.AccountID, j.StagingFolderID, string(b)); err != nil {
+				return err
+			}
+			if err := tx.dropTextIfUnused(ctx, j.AccountID, blobs...); err != nil {
 				return err
 			}
 			if _, err := tx.q.ExecContext(ctx, `DELETE FROM copy_job_nodes WHERE job_id = ? AND seq >= ?`,
@@ -525,8 +540,15 @@ func (s *Store) CleanupCopyStep(ctx context.Context, jobID string, limit int, at
 		if _, err := tx.ReleaseCopyReservation(ctx, j, at); err != nil {
 			return err
 		}
+		blobs, err := tx.textBlobsOf(ctx, j.AccountID, "n.folder_id = ?", j.StagingFolderID)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.q.ExecContext(ctx, `DELETE FROM nodes WHERE account_id = ? AND folder_id = ?`,
 			j.AccountID, j.StagingFolderID); err != nil {
+			return err
+		}
+		if err := tx.dropTextIfUnused(ctx, j.AccountID, blobs...); err != nil {
 			return err
 		}
 		if _, err := tx.q.ExecContext(ctx, `DELETE FROM folders WHERE account_id = ? AND id = ? AND staged = 1`,

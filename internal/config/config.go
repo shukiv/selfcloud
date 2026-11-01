@@ -284,25 +284,46 @@ type SearchConfig struct {
 	MaxQueryBytes int `yaml:"max_query_bytes"`
 	// MaxTerms is the most terms one q may have.
 	MaxTerms int `yaml:"max_terms"`
-	// ScanBudget is the most candidates one request reads and checks. A request that uses it up returns a short page
-	// with a cursor. It must be at least the largest page (50).
-	ScanBudget int `yaml:"scan_budget"`
 	// Timeout is the longest one request may take.
 	Timeout Duration `yaml:"timeout"`
 	// RatePerMinute is the searches one caller may start a minute.
 	RatePerMinute int `yaml:"rate_per_minute"`
+	// FullTextMaxBytes is the largest file whose text is read, plain or converted (decision 13: 50 MiB). A larger file is
+	// not read: its content row is skipped as too large, and its name stays searchable (decision 46).
+	FullTextMaxBytes ByteSize `yaml:"fulltext_max_bytes"`
+	// TextMaxBytes is the text kept for each file (decision 13: 1 MiB). A longer text is cut at a character boundary and
+	// marked truncated, so a word past the cut is not found.
+	TextMaxBytes ByteSize `yaml:"text_max_bytes"`
+	// OfficeText is whether documents (Word, spreadsheets, presentations, PDFs) are sent to the converter for their text
+	// (review S4). It is off by default: a converter run for previews has not been agreed for every tenant's documents.
+	// With it off, no document is sent, and document files have no content search.
+	OfficeText bool `yaml:"office_text"`
+	// MaxTextPerAccount is the stored text one account may hold, in bytes of extracted text, and MaxTextTotal the text of
+	// the whole installation (decision 46). A file that would pass a cap is skipped with the cap's reason, and nothing is
+	// read for it. 0 means no cap. The text is not charged to the tenant's quota.
+	MaxTextPerAccount ByteSize `yaml:"max_text_per_account"`
+	MaxTextTotal      ByteSize `yaml:"max_text_total"`
 }
 
 // validateSearch checks the search block.
 func validateSearch(s SearchConfig, bad func(string, ...any)) {
+	if s.TextMaxBytes < 1024 {
+		bad("search.text_max_bytes must be at least 1 KiB, got %d", s.TextMaxBytes)
+	}
+	if s.MaxTextPerAccount != 0 && s.MaxTextPerAccount < s.TextMaxBytes {
+		bad("search.max_text_per_account (%d) must be 0 or at least search.text_max_bytes (%d), or no file fits", s.MaxTextPerAccount, s.TextMaxBytes)
+	}
+	if s.MaxTextTotal != 0 && s.MaxTextPerAccount != 0 && s.MaxTextTotal < s.MaxTextPerAccount {
+		bad("search.max_text_total (%d) must be 0 or at least search.max_text_per_account (%d)", s.MaxTextTotal, s.MaxTextPerAccount)
+	}
+	if s.FullTextMaxBytes < s.TextMaxBytes {
+		bad("search.fulltext_max_bytes (%d) must not be below search.text_max_bytes (%d)", s.FullTextMaxBytes, s.TextMaxBytes)
+	}
 	if s.MaxQueryBytes < 1 || s.MaxQueryBytes > 1000 {
 		bad("search.max_query_bytes must be between 1 and 1000, got %d", s.MaxQueryBytes)
 	}
 	if s.MaxTerms < 1 || s.MaxTerms > 16 {
 		bad("search.max_terms must be between 1 and 16, got %d", s.MaxTerms)
-	}
-	if s.ScanBudget < 50 {
-		bad("search.scan_budget must be at least 50 (the largest page), got %d", s.ScanBudget)
 	}
 	if s.Timeout.D() <= 0 {
 		bad("search.timeout must be positive")
@@ -554,8 +575,10 @@ func Defaults() *Config {
 		Zip: ZipConfig{MaxEntries: 100_000, MaxBytes: 10 * GiB, MaxDisk: 30 * GiB, MaxDiskPerAccount: 10 * GiB,
 			TTL:             Duration(24 * time.Hour),
 			MaxPerPrincipal: 2, MaxPerAccount: 4, MaxUnfinished: 8},
-		Search: SearchConfig{Enabled: true, MaxQueryBytes: 200, MaxTerms: 8, ScanBudget: 500,
-			Timeout: Duration(2 * time.Second), RatePerMinute: 60},
+		Search: SearchConfig{Enabled: true, MaxQueryBytes: 200, MaxTerms: 8,
+			Timeout: Duration(2 * time.Second), RatePerMinute: 60,
+			FullTextMaxBytes: ByteSize(50 << 20), TextMaxBytes: ByteSize(1 << 20),
+			MaxTextPerAccount: ByteSize(64 << 20), MaxTextTotal: ByteSize(1 << 30)},
 		Copy:     CopyConfig{MaxNodes: 50000},
 		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
 		Trash:    TrashConfig{Retention: Duration(30 * 24 * time.Hour)},

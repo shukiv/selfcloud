@@ -86,7 +86,8 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	// synchronous=NORMAL in WAL mode never corrupts the database; after a power cut the last
 	// transactions may roll back. Callers that pair a database row with file data write and
 	// sync the data first, so a rolled-back row only ever points at data that is really there.
-	common := []string{"busy_timeout(10000)", "foreign_keys(1)", "synchronous(NORMAL)"}
+	// journal_size_limit (16 MiB) keeps the write-ahead log from staying large after a checkpoint; the sweep truncates it.
+	common := []string{"busy_timeout(10000)", "foreign_keys(1)", "synchronous(NORMAL)", "secure_delete(1)", "journal_size_limit(16777216)"}
 	w, err := sql.Open("sqlite", dsn(opts.Path, append(common, "journal_mode(WAL)"), "immediate"))
 	if err != nil {
 		return nil, fmt.Errorf("store: %w", err)
@@ -119,6 +120,12 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		s.Close()
 		return nil, fmt.Errorf("store: search index: %w", err)
 	}
+	// The full-text tables keep a deleted word in their old segments unless told otherwise: FTS5 then leaves the bytes in
+	// the file and in a VACUUM INTO copy (review S2). The option is stored in the table, so setting it again is a no-op.
+	if err := s.secureDeleteFTS(ctx); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("store: full-text secure delete: %w", err)
+	}
 	if err := s.Ping(ctx); err != nil {
 		s.Close()
 		return nil, err
@@ -135,6 +142,17 @@ func dsn(path string, pragmas []string, txlock string) string {
 		q.Set("_txlock", txlock)
 	}
 	return "file:" + path + "?" + q.Encode()
+}
+
+// Checkpoint moves the write-ahead log into the database file and truncates the log, so a page freed by a delete, and
+// the text it held, leave the -wal file too (review, decision 46). It reports busy when a reader held the log: that is
+// not an error, and the next pass tries again.
+func (s *Store) Checkpoint(ctx context.Context) (busy bool, err error) {
+	var b, logged, moved int64
+	if err := s.w.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&b, &logged, &moved); err != nil {
+		return false, err
+	}
+	return b != 0, nil
 }
 
 // Close closes the database.

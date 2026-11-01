@@ -143,9 +143,11 @@ var unscopedNodeReads = map[string]struct {
 	n      int
 	reason string
 }{
-	"nodes.go":        {2, "blob garbage collection: whether a blob is still named by a node (EXISTS over nodes.blob_id). A staged node names its blob, so the blob is kept, as a copy's nodes always have kept it; the read returns no node"},
-	"search_index.go": {1, "the largest rowid of the nodes table (NodeRowIDMax, decision 40): one number, read by a copy to bound the rowid range it queues. It reveals no node, and the range is read through a folder ID, so a staged folder is never a search item"},
-	"trash.go":        {2, "trash listing and expiry over trashed_at: a staged node is never trashed (a copy never copies a trashed node, and a trashed source fails the copy), so no staged node matches"},
+	"nodes.go":              {3, "blob garbage collection: whether a blob is still named by a node (EXISTS over nodes.blob_id). DeleteOrphan reads it twice, once to decide that the blob's content row goes (decision 46) and once in the delete itself. A staged node names its blob, so the blob is kept, as a copy's nodes always have kept it; the read returns no node"},
+	"search_text_policy.go": {4, "content search policy (decision 46): textBlobsOf reads the blob IDs held by a node set the caller names (a purge's subtree, a copy's staging folder), before those nodes are deleted. It returns blob IDs to the text drop only, never a node, and a staged node holds its blob, so its text stays while the copy runs. Also whether a node of the account still holds a blob (dropTextIfUnused, DropUnusedText) and the nodes that hold a blob for the trash test (TextLive). A staged node holds its blob, so the blob's text is kept while the copy is in progress; the content query excludes staged folders, and the read returns no node to a caller"},
+	"search_text.go":        {3, "content search (decision 46): the backfill reads the blob IDs of file nodes account-wide to queue a content row per blob, the check counts them the same way, and the result write asks whether a node or a version of the account still names the blob. A staged node names its blob, so its blob is queued, but the content query excludes staged folders, and the read here returns no node to a caller"},
+	"search_index.go":       {1, "the largest rowid of the nodes table (NodeRowIDMax, decision 40): one number, read by a copy to bound the rowid range it queues. It reveals no node, and the range is read through a folder ID, so a staged folder is never a search item"},
+	"trash.go":              {2, "trash listing and expiry over trashed_at: a staged node is never trashed (a copy never copies a trashed node, and a trashed source fails the copy), so no staged node matches"},
 }
 
 // TestAccountWideNodeReadsAreClassified fails when a read of nodes that is not scoped by an ID appears, moves or goes in

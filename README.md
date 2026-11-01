@@ -105,9 +105,15 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `search.enabled` | `true` | Turns the search route on. Off, `/api/v1/search` answers `not_found`; the index is still kept, so turning it on again needs no backfill. |
 | `search.max_query_bytes` | `200` | Longest `q`, in bytes (1 to 1000). |
 | `search.max_terms` | `8` | Most terms one `q` may have (1 to 16). A term is at least 2 characters and at most 64 bytes. |
-| `search.scan_budget` | `500` | Candidates one request reads and checks for access. A request that uses it up returns a short page with a cursor. At least 50. |
-| `search.timeout` | `2s` | Longest one search may take; past it the answer is `unavailable`. |
+| `search.timeout` | `2s` | Longest one search may take; past it the answer is `unavailable`. A file the caller cannot read never changes the answer, but it does take time: a very large number of them can make a search answer `unavailable` where none would be (decision 46, timing residue). |
 | `search.rate_per_minute` | `60` | Searches one caller may start a minute. |
+| `search.fulltext_max_bytes` | `50MiB` | Largest file whose text is read, plain or converted. Larger files get no content search. |
+| `search.text_max_bytes` | `1MiB` | Text kept for each file; a longer text is cut at a character boundary and marked truncated. At least 1 KiB. |
+| `search.office_text` | `false` | **Off by default.** Whether Word, spreadsheet, presentation and PDF files are sent to Collabora to get their text. Off, no document is sent to the converter and document files have no content search (names still search). Turning `office.enabled` on for previews does not turn this on. |
+| `search.max_text_per_account` | `64MiB` | Extracted text one account may hold, in bytes of text (about 3 times that on disk for high-entropy words, decision 46). A file over the cap is skipped with its reason; the owner sees the count on the usage page. `0` means no cap. Must be `0` or at least `search.text_max_bytes`. Not charged to quota. |
+| `search.max_text_total` | `1GiB` | Extracted text the whole installation may hold. `0` means no cap. Must be `0` or at least `search.max_text_per_account`. |
+
+Content search keeps the words of each file in the database. Deleting the text overwrites the freed pages of the database file (`PRAGMA secure_delete`, always on), and the full-text tables use FTS5's `secure-delete` option, also always on. The write-ahead log holds deleted words until a checkpoint: the sweep runs one every hour (`wal_checkpoint(TRUNCATE)`), so deleted words leave the database and its log within about an hour of the deletion. A checkpoint that a reader blocks is retried the next hour. The cost of FTS5's secure-delete is in decision 46. A `VACUUM INTO` copy carries only the text still held. Not closed, and outside Selfcloud: backups and file-system snapshots made before a deletion keep the words, as they keep the file; the file system may keep the bytes of an unlinked blob until its blocks are reused (a blob file is removed by the sweep, not overwritten); SSD wear levelling and the operating system's page cache.
 | `office.enabled` | `false` | Turns on the office editor route and the WOPI host for Collabora. Needs `office.discovery_url`. |
 | `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished uploads may hold. Set `100` for a single tenant. |
 | `tokens.max_ttl` | `1h` | Longest lifetime of a delegated token. A longer `ttl` is refused. |

@@ -27,6 +27,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/jobs"
 	"github.com/shukiv/selfcloud/internal/mail"
 	"github.com/shukiv/selfcloud/internal/office"
+	"github.com/shukiv/selfcloud/internal/search"
 	"github.com/shukiv/selfcloud/internal/store"
 	"github.com/shukiv/selfcloud/internal/sweep"
 	"github.com/shukiv/selfcloud/internal/web"
@@ -70,12 +71,15 @@ type Server struct {
 	// office.enabled is off. See exports.go (decision 37).
 	conv        *office.Client
 	convertPool *derived.ConvertPool
-	trusted     []netip.Prefix
-	metrics     *metrics
-	jobs        *jobs.Runner
-	mailer      mail.Sender // nil when mail is not configured
-	templates   *mail.Templates
-	limits      map[string]*limiter // rate limiters by "endpoint.dimension"
+	// textWorker extracts the text of files for content search (slice q3, decision 46). It always runs; its converter is
+	// the conversion client while office.enabled is on.
+	textWorker *search.Worker
+	trusted    []netip.Prefix
+	metrics    *metrics
+	jobs       *jobs.Runner
+	mailer     mail.Sender // nil when mail is not configured
+	templates  *mail.Templates
+	limits     map[string]*limiter // rate limiters by "endpoint.dimension"
 	// limitClock is the time the rate limiters read. Production keeps time.Now; tests freeze it.
 	limitClock func() time.Time
 	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (round 2, item 1).
@@ -355,6 +359,9 @@ func New(opts Options) (*Server, error) {
 			"access.list": newLimiter(60),
 			// Searches, per caller: each one reads up to the scan budget and checks access to every candidate.
 			"search": newLimiter(cfg.Search.RatePerMinute),
+			// Searches, per account: every user and token of an account has its own limit above, so a tenant with many users
+			// would multiply it. The account's total is ten times one caller's (review S5).
+			"search.account": newLimiter(cfg.Search.RatePerMinute * 10),
 			// Directory searches are typed, so one caller searching while it types stays well inside this.
 			"directory.search": newLimiter(60),
 			// Access-request mail has buckets of its own, so requests cannot spend the mail a user needs to
@@ -435,6 +442,16 @@ func New(opts Options) (*Server, error) {
 			Timeout: d.Timeout.D(), MaxSourceBytes: int64(d.MaxSourceBytes), MaxOutputBytes: int64(d.MaxConvertBytes),
 			MinFree: uint64(cfg.Storage.MinFree), Log: log})
 	}
+	// The content worker's converter is nil unless office is on and search.office_text is set (review S4): a document then
+	// gets a skipped row, and no request is made. Plain text still works.
+	var textConv search.Converter
+	if cfg.Office.Enabled && cfg.Search.OfficeText {
+		textConv = s.conv
+	}
+	s.textWorker = search.NewWorker(search.WorkerOptions{Store: opts.Store, Blobs: blobs, Conv: textConv,
+		OfficeText: cfg.Search.OfficeText,
+		TextMax:    int64(cfg.Search.TextMaxBytes), FullTextMax: int64(cfg.Search.FullTextMaxBytes),
+		CapAccount: int64(cfg.Search.MaxTextPerAccount), CapTotal: int64(cfg.Search.MaxTextTotal), Log: log})
 	if cfg.UI.Enabled {
 		var officeURL string
 		if cfg.Office.Enabled {
@@ -821,6 +838,8 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	go func() { defer close(jobsDone); s.jobs.Run(jobsCtx) }()
 	sweepDone := make(chan struct{})
 	sw := sweep.New(sweep.Options{Store: s.store, Blobs: s.blobs, DeleteGrace: s.cfg.Blobs.DeleteGrace.D(),
+		TextMax: int64(s.cfg.Search.TextMaxBytes), CapAccount: int64(s.cfg.Search.MaxTextPerAccount),
+		CapTotal: int64(s.cfg.Search.MaxTextTotal),
 		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
 		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
 		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(),
@@ -834,6 +853,17 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		if s.convertPool != nil {
 			s.convertPool.Run(jobsCtx)
 		}
+	}()
+	textDone := make(chan struct{})
+	go func() {
+		defer close(textDone)
+		if s.cfg.Office.Enabled && s.cfg.Search.OfficeText {
+			// Documents skipped while office or office_text was off are converted now (decision 46).
+			if _, err := s.store.ReleaseTextSkipped(jobsCtx); err != nil && jobsCtx.Err() == nil {
+				s.log.Error("content search: cannot release the skipped documents", "error", err)
+			}
+		}
+		s.textWorker.Run(jobsCtx)
 	}()
 	noticeDone := make(chan struct{})
 	go func() { defer close(noticeDone); s.runDropNotices(jobsCtx) }()
@@ -857,6 +887,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		<-notifyDone
 		<-derivedDone
 		<-convertDone
+		<-textDone
 	}()
 	s.log.Info("shutting down", "timeout", s.cfg.ShutdownTimeout.String())
 

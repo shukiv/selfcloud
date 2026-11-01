@@ -327,7 +327,14 @@ func (tx *Tx) InsertNodeNoIndex(ctx context.Context, n *Node) error {
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// A file with content gets its content row in this write, so content search has it (decision 46).
+	if n.Kind == KindFile && n.BlobID != "" {
+		return tx.queueText(ctx, n.AccountID, n.BlobID)
+	}
+	return nil
 }
 
 // UpdateNode writes the mutable fields of n: parent, folder, name, content, times, the sharing flags, the colour
@@ -350,6 +357,10 @@ func (tx *Tx) UpdateNodeHeld(ctx context.Context, n *Node, holder string) error 
 			return err
 		}
 	}
+	var oldBlob sql.NullString
+	if err := tx.q.QueryRowContext(ctx, "SELECT blob_id FROM nodes WHERE account_id = ? AND id = ?", n.AccountID, n.ID).Scan(&oldBlob); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	err = rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET folder_id = ?, parent_id = ?, name = ?,
 		name_key = ?, size = ?, mime_type = ?, blob_id = ?, etag = ?, content_tag = ?, modified_at = ?, modified_by = ?,
 		owner_id = CASE WHEN ? = '' THEN owner_id ELSE ? END, no_download = ?, editors_can_share = ?,
@@ -364,8 +375,22 @@ func (tx *Tx) UpdateNodeHeld(ctx context.Context, n *Node, holder string) error 
 	if err != nil {
 		return err
 	}
-	// The name may have changed, so the search row follows the node in this write (decision 40).
-	return tx.indexNode(ctx, n.ID)
+	// The old content stops being current here, so its text goes unless another node holds it (review S3). A version of it
+	// keeps the blob, not the text. A restore of it brings the text back through the queue below.
+	if oldBlob.Valid && oldBlob.String != n.BlobID {
+		if err := tx.dropTextIfUnused(ctx, n.AccountID, oldBlob.String); err != nil {
+			return err
+		}
+	}
+	// The name may have changed, so the search row follows the node in this write (decision 40). A new blob (a new
+	// version, or a restore of an old one) gets its content row here (decision 46).
+	if err := tx.indexNode(ctx, n.ID); err != nil {
+		return err
+	}
+	if n.Kind == KindFile && n.BlobID != "" {
+		return tx.queueText(ctx, n.AccountID, n.BlobID)
+	}
+	return nil
 }
 
 // changesLockedPlace reports whether the write n makes a change that a live lock refuses (decision 32). For a file those
@@ -532,6 +557,21 @@ func (s *Store) DueBlobs(ctx context.Context, now time.Time, limit int) ([]*Blob
 // DeleteOrphan removes an orphan's row if it is still an orphan with no node referring to it. It
 // reports whether a row was removed; false means the blob was referenced again and must stay.
 func (tx *Tx) DeleteOrphan(ctx context.Context, accountID, blobID string) (bool, error) {
+	// The blob's content rows go first, in this write, when the blob is going: the cascade from blobs does not reach their
+	// full-text rows (decision 46). The test is the one the delete makes, so the two cannot disagree.
+	var going int
+	err := tx.q.QueryRowContext(ctx, `SELECT 1 FROM blobs WHERE account_id = ? AND id = ? AND state = 'orphan'
+		AND NOT EXISTS (SELECT 1 FROM nodes WHERE nodes.blob_id = blobs.id)
+		AND NOT EXISTS (SELECT 1 FROM versions WHERE versions.blob_id = blobs.id)`, accountID, blobID).Scan(&going)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := tx.dropText(ctx, accountID, blobID); err != nil {
+		return false, err
+	}
 	res, err := tx.q.ExecContext(ctx, `DELETE FROM blobs WHERE account_id = ? AND id = ? AND state = 'orphan'
 		AND NOT EXISTS (SELECT 1 FROM nodes WHERE nodes.blob_id = blobs.id)
 		AND NOT EXISTS (SELECT 1 FROM versions WHERE versions.blob_id = blobs.id)`, accountID, blobID)

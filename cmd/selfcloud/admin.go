@@ -39,9 +39,11 @@ Commands:
                                  create a pending admin user; print its set-password link and token
   recount-usage [-account ID]    recompute usage and reserved bytes from the files and uploads
                                  (all accounts unless -account is given), and print the change
-  search-rebuild                 empty the search index and queue every folder, so the search job makes
-                                 it again from the nodes (the repair for full-text tables that disagree;
-                                 the job runs in the server, so searches stay partial until it has run)
+  search-rebuild                 empty the search index, including the text of files, and queue every folder
+                                 and every file's text, so the server's jobs make it again from the nodes
+                                 (the repair for full-text tables that disagree; the job runs in the server,
+                                 so searches stay partial until it has run, and a large file store takes
+                                 as long as its text takes to read)
   new-signing-key -i-lost-the-old-key
                                  make a new signing key when the old one is lost for good. It refuses
                                  when a key exists, and it invalidates the webhook secrets, the signed

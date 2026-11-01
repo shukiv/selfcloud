@@ -20,6 +20,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -37,6 +38,9 @@ var (
 	// that stopped early, or a capabilities document that cannot be had. It is an outage of the converter, not a judgement
 	// about the document.
 	ErrUnavailable = errors.New("office: the converter is unavailable")
+	// ErrUnreachable is a connection that could not be made: nothing listens, the name does not resolve, or the dial timed
+	// out. Nothing reached the converter, so no document was tried and no attempt is counted (review S4).
+	ErrUnreachable = errors.New("office: the converter cannot be reached")
 	// ErrTooLarge is an answer over the output limit.
 	ErrTooLarge = errors.New("office: the converted file is over the output limit")
 	// ErrBadOutput is an answer whose type or file signature is not the format asked for.
@@ -51,7 +55,12 @@ type format struct {
 }
 
 // Formats is the fixed list of outputs. A caller names one of them; no other value reaches the URL.
+//
+// "txt" is for content search only (slice q3, decision 46): its output has no file signature, so its magic is empty and
+// the caller checks the bytes (valid UTF-8, no NUL). It is not an export or a preview format. Adding it does not change
+// the converter key of any other format, so the rows of previews and exports stay valid.
 var Formats = map[string]format{
+	"txt":  {"text/plain", nil},
 	"pdf":  {"application/pdf", []byte("%PDF-")},
 	"png":  {"image/png", []byte("\x89PNG\r\n\x1a\n")},
 	"docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document", []byte("PK\x03\x04")},
@@ -109,7 +118,8 @@ type Caps struct {
 type Client struct {
 	base    string
 	hc      *http.Client
-	slots   chan struct{}
+	slots   chan struct{} // the slots of user previews
+	bulk    chan struct{} // the slots of the content search, one at a time (ConvertBulk)
 	timeout time.Duration
 	maxOut  int64
 	now     func() time.Time
@@ -144,8 +154,8 @@ func New(discoveryURL string, hc *http.Client, o Options) (*Client, error) {
 	c.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return errRedirect
 	}
-	return &Client{base: base, hc: &c, slots: make(chan struct{}, o.Concurrent), timeout: o.Timeout,
-		maxOut: o.MaxOutput, now: time.Now}, nil
+	return &Client{base: base, hc: &c, slots: make(chan struct{}, o.Concurrent), bulk: make(chan struct{}, 1),
+		timeout: o.Timeout, maxOut: o.MaxOutput, now: time.Now}, nil
 }
 
 // errRedirect is returned by the client's redirect policy. A request that is redirected is refused, and not followed.
@@ -157,16 +167,34 @@ var errRedirect = errors.New("office: redirect refused")
 // (the multipart file name is source.<ext>); the caller's file name never reaches Collabora. Nothing is sent for an
 // unsupported format or extension. Errors are the sentinels above, or the error of dst or of ctx.
 func (c *Client) Convert(ctx context.Context, src io.Reader, size int64, ext, format string, dst io.Writer) error {
+	return c.acquire(ctx, c.slots, src, size, ext, format, dst)
+}
+
+// ConvertBulk is Convert for the content search's own work (review S4). It takes a slot of its own, one at a time, so a
+// backlog of bulk conversions never takes the slots of a user's preview, and a preview never waits for a backlog. The
+// time spent waiting for the slot is not part of the conversion's time limit, and is not a failed attempt: the limit
+// starts when the request does.
+func (c *Client) ConvertBulk(ctx context.Context, src io.Reader, size int64, ext, format string, dst io.Writer) error {
+	return c.acquire(ctx, c.bulk, src, size, ext, format, dst)
+}
+
+// acquire takes a slot from pool, then converts. The request's own time limit starts after the slot is taken (convert).
+func (c *Client) acquire(ctx context.Context, pool chan struct{}, src io.Reader, size int64, ext, format string, dst io.Writer) error {
 	f, ok := Formats[format]
 	if !ok || !extPattern.MatchString(ext) || size < 0 {
 		return ErrUnsupported
 	}
 	select {
-	case c.slots <- struct{}{}:
+	case pool <- struct{}{}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	defer func() { <-c.slots }()
+	defer func() { <-pool }()
+	return c.convert(ctx, f, src, size, ext, format, dst)
+}
+
+// convert sends one conversion with its slot held.
+func (c *Client) convert(ctx context.Context, f format, src io.Reader, size int64, ext, format string, dst io.Writer) error {
 
 	// The multipart framing is written first, so its length is known: the part header, the file, and the closing boundary.
 	var head bytes.Buffer
@@ -197,6 +225,15 @@ func (c *Client) Convert(ctx context.Context, src io.Reader, size int64, ext, fo
 		}
 		if errors.Is(err, errRedirect) {
 			return ErrRefused
+		}
+		// The request's own limit: a time-out of the conversion, not an outage (the worker counts it as such).
+		if rctx.Err() != nil {
+			return context.DeadlineExceeded
+		}
+		// No connection was made: the converter cannot be reached, which is not a judgement about the document (review S4).
+		var op *net.OpError
+		if errors.As(err, &op) && op.Op == "dial" {
+			return ErrUnreachable
 		}
 		return ErrUnavailable
 	}

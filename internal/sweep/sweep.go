@@ -28,10 +28,13 @@ const staleUpload = 24 * time.Hour
 
 // Options configure a Sweeper.
 type Options struct {
-	Store       *store.Store
-	Blobs       blob.Store
-	DeleteGrace time.Duration // how long an orphan blob is kept before its file is removed
-	Interval    time.Duration // how often Run sweeps
+	Store *store.Store
+	Blobs blob.Store
+	// TextMax, CapAccount and CapTotal are search.text_max_bytes, search.max_text_per_account and search.max_text_total:
+	// the hourly check releases capped text rows once their cap has room, and drops text no node holds (decision 46).
+	TextMax, CapAccount, CapTotal int64
+	DeleteGrace                   time.Duration // how long an orphan blob is kept before its file is removed
+	Interval                      time.Duration // how often Run sweeps
 	// UploadExpiry is upload.expiry: an upload file with no row is removed once it is this old.
 	// Zero means defaultUploadExpiry.
 	UploadExpiry time.Duration
@@ -90,7 +93,9 @@ type Sweeper struct {
 	zips         *derived.ZipFiles
 	// searchChecked is when the search rows were last checked; see searchCheckEvery.
 	searchChecked time.Time
-	log           *slog.Logger
+	// The text caps (see Options).
+	textMax, capAccount, capTotal int64
+	log                           *slog.Logger
 	// webhookEventCursor is where the next pass over the webhook events starts (see pruneWebhooks).
 	webhookEventCursor int64
 }
@@ -112,7 +117,8 @@ func New(o Options) *Sweeper {
 	}
 	return &Sweeper{st: o.Store, blobs: o.Blobs, grace: o.DeleteGrace, interval: o.Interval,
 		uploadExpiry: o.UploadExpiry, maxLifetime: o.UploadMaxLifetime, trashKeep: o.TrashRetention,
-		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, derived: o.Derived, zips: o.Zips, log: log}
+		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, derived: o.Derived, zips: o.Zips, log: log,
+		textMax: o.TextMax, capAccount: o.CapAccount, capTotal: o.CapTotal}
 }
 
 // Result counts what one pass did.
@@ -198,18 +204,31 @@ const searchCheckEvery = time.Hour
 // searchCheck compares the search rows with the nodes (store.SearchCheck). It repairs missing and extra rows, and
 // reports a full-text table that disagrees with the rows, which only the admin rebuild can fix.
 func (w *Sweeper) searchCheck(ctx context.Context, res *Result) error {
+	// Text that no node holds goes, and capped text whose cap has room again is released, in bounded batches (decision 46).
+	if _, err := w.st.DropUnusedText(ctx); err != nil {
+		return err
+	}
+	if _, err := w.st.ReleaseTextCapped(ctx, w.textMax, w.capAccount, w.capTotal); err != nil {
+		return err
+	}
+	// Deleted text leaves the write-ahead log within this hour: a passive checkpoint would keep it there (review, decision 46).
+	// A busy log is not an error; the next hour tries again.
+	if _, err := w.st.Checkpoint(ctx); err != nil {
+		return err
+	}
 	d, err := w.st.SearchCheck(ctx)
 	if err != nil {
 		return err
 	}
-	if d.Missing > 0 || d.Extra > 0 {
-		w.log.Warn("search rows disagree with the nodes; repairing", "missing", d.Missing, "extra", d.Extra)
+	if d.Missing > 0 || d.Extra > 0 || d.TextMissing > 0 {
+		w.log.Warn("search rows disagree with the nodes; repairing", "missing", d.Missing, "extra", d.Extra,
+			"text_missing", d.TextMissing)
 		if err := w.st.SearchRepair(ctx); err != nil {
 			return err
 		}
 		res.SearchRepaired = true
 	}
-	if d.FTSMismatch {
+	if d.FTSMismatch || d.TextFTSMismatch {
 		w.log.Error("search full-text tables disagree with the search rows; run selfcloud admin search-rebuild")
 		res.SearchFTSMismatch = true
 	}

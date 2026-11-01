@@ -214,25 +214,25 @@ func TestSearchFollowsTheTokenScope(t *testing.T) {
 func TestSearchValidatesItsParameters(t *testing.T) {
 	fx := newSearchFixture(t)
 	bad := map[string]string{
-		"no query and no filter": "",
-		"query over 200 bytes":   "q=" + strings.Repeat("ab", 101),
-		"nine terms":             "q=" + strings.Repeat("ab+", 8) + "ab",
-		"term over 64 bytes":     "q=" + strings.Repeat("a", 65),
-		"control character":      "q=ab%01cd",
-		"content search":         "q=ab&in=content",
-		"unknown in":             "q=ab&in=owner",
-		"unknown kind":           "q=ab&kind=link",
-		"ext with a dot":         "q=ab&ext=.pdf,x.y",
-		"too many extensions":    "ext=a,b,c,d,e,f,g,h,i",
-		"negative size":          "size_min=-1",
-		"bad date":               "modified_after=soon",
-		"limit zero":             "q=ab&limit=0",
-		"limit over 50":          "q=ab&limit=51",
-		"bad cursor":             "q=ab&cursor=***",
-		"scope not an ID":        "q=ab&scope=bad!",
-		"unknown label field":    "label=lbf_none:x",
-		"label without a value":  "label=lbf_none",
-		"too many labels":        "label=lbfone_x:1&label=lbftwo_x:1&label=lbfthree_x:1&label=lbffour_x:1&label=lbffive_x:1",
+		"no query and no filter":     "",
+		"query over 200 bytes":       "q=" + strings.Repeat("ab", 101),
+		"nine terms":                 "q=" + strings.Repeat("ab+", 8) + "ab",
+		"term over 64 bytes":         "q=" + strings.Repeat("a", 65),
+		"control character":          "q=ab%01cd",
+		"content search of a folder": "q=ab&in=content&kind=dir",
+		"unknown in":                 "q=ab&in=owner",
+		"unknown kind":               "q=ab&kind=link",
+		"ext with a dot":             "q=ab&ext=.pdf,x.y",
+		"too many extensions":        "ext=a,b,c,d,e,f,g,h,i",
+		"negative size":              "size_min=-1",
+		"bad date":                   "modified_after=soon",
+		"limit zero":                 "q=ab&limit=0",
+		"limit over 50":              "q=ab&limit=51",
+		"bad cursor":                 "q=ab&cursor=***",
+		"scope not an ID":            "q=ab&scope=bad!",
+		"unknown label field":        "label=lbf_none:x",
+		"label without a value":      "label=lbf_none",
+		"too many labels":            "label=lbfone_x:1&label=lbftwo_x:1&label=lbfthree_x:1&label=lbffour_x:1&label=lbffive_x:1",
 	}
 	for name, query := range bad {
 		rec := fx.search(t, query)
@@ -246,11 +246,10 @@ func TestSearchValidatesItsParameters(t *testing.T) {
 	}
 }
 
-// TestSearchPagesWithinTheScanBudget: a page that the scan budget cuts short carries a cursor, even when it holds no hit,
-// and the walk over the pages finds the one readable match, once.
-func TestSearchPagesWithinTheScanBudget(t *testing.T) {
+// TestSearchPassesUnreadableMatches (review S1): matches the caller cannot read do not stop or shorten a page. The
+// readable match comes back on the first page, with no cursor, although 120 unreadable matches come first.
+func TestSearchPassesUnreadableMatches(t *testing.T) {
 	fx := newLabelFixture(t)
-	fx.s.cfg.Search.ScanBudget = 50
 	for i := range 120 {
 		writeFile(t, fx.s, fx.key, fx.fld.ID, fmt.Sprintf("/budget-%03d.txt", i), "x")
 	}
@@ -258,8 +257,8 @@ func TestSearchPagesWithinTheScanBudget(t *testing.T) {
 	first := callSession(t, fx.s, fx.annSess, "GET", "/api/v1/search?q=budget&limit=25", nil)
 	wantStatus(t, first, http.StatusOK)
 	page := decode[listResponse[nodeJSON]](t, first)
-	if len(page.Items) != 0 || page.NextCursor == "" {
-		t.Fatalf("first page: %d items, cursor %q; want a short empty page with a cursor", len(page.Items), page.NextCursor)
+	if len(page.Items) != 1 || page.NextCursor != "" {
+		t.Fatalf("first page: %d items, cursor %q; want the one readable match and no cursor", len(page.Items), page.NextCursor)
 	}
 	seen := map[string]int{}
 	cursor := ""

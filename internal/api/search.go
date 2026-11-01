@@ -38,9 +38,22 @@ var (
 	searchDatePat = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 )
 
+// searchHit is one result: a node the caller reaches, and for a content search the snippet of its text that matched.
+type searchHit struct {
+	nodeJSON
+	Snippet *snippetJSON `json:"snippet,omitempty"`
+}
+
+// snippetJSON is a content match's text (search form, plain text, never markup) and its [start, end) byte ranges.
+type snippetJSON struct {
+	Text   string   `json:"text"`
+	Ranges [][2]int `json:"ranges"`
+}
+
 // searchParams is the request's parameters, checked but not yet resolved against the account's label fields.
 type searchParams struct {
 	q       string
+	in      string // "" (names) or search.InContent
 	kind    string
 	exts    []string
 	mFrom   int64
@@ -84,19 +97,36 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := search.CheckTerms(terms, ps.in == search.InContent); err != nil {
+		return err
+	}
 	if len(terms) == 0 && !ps.hasFilter() {
 		return apierr.New(apierr.InvalidRequest, "q or a filter is required")
 	}
+	if ps.in == search.InContent {
+		// A content search reads the text of files: it needs terms, and it finds files only (a folder has no text).
+		if len(terms) == 0 {
+			return apierr.New(apierr.InvalidRequest, "in=content needs q")
+		}
+		if ps.kind != "" && ps.kind != store.KindFile {
+			return apierr.New(apierr.InvalidRequest, "in=content finds files only: kind must be file")
+		}
+	}
 	if err := s.rateLimit("search", string(p.Kind)+":"+p.ID); err != nil {
+		return err
+	}
+	// Per account as well as per caller: a tenant with many users or tokens would otherwise multiply the caller's limit
+	// (review S5). The account's share is ten callers' worth.
+	if err := s.rateLimit("search.account", p.AccountID); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.Search.Timeout.D())
 	defer cancel()
 
-	req := &search.Request{AccountID: p.AccountID, Terms: terms, Kind: ps.kind, Exts: ps.exts,
+	req := &search.Request{AccountID: p.AccountID, In: ps.in, Terms: terms, Kind: ps.kind, Exts: ps.exts,
 		ModifiedFrom: ps.mFrom, ModifiedTo: ps.mTo, SizeMin: ps.sMin, SizeMax: ps.sMax,
 		LabelFilters: ps.labels, ScopeID: ps.scope, Limit: ps.limit}
-	var out listResponse[nodeJSON]
+	var out listResponse[searchHit]
 	err = s.store.Read(ctx, func(q store.Querier) error {
 		// The label tests are read in the snapshot first. The cursor is opened after them, against the request as it was
 		// typed (its fingerprint includes the raw filters), so a changed filter makes the cursor invalid.
@@ -105,7 +135,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		req.Labels = tests
-		var start int64
+		var start search.Pos
 		if ps.cursor != "" {
 			if start, err = s.openSearchCursor(p, req, ps.cursor); err != nil {
 				return err
@@ -121,11 +151,11 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if out.Items == nil {
-		out.Items = []nodeJSON{}
+		out.Items = []searchHit{}
 	}
 	ptrs := make([]*nodeJSON, len(out.Items))
 	for i := range out.Items {
-		ptrs[i] = &out.Items[i]
+		ptrs[i] = &out.Items[i].nodeJSON
 	}
 	if len(ptrs) > 0 {
 		if err := s.addPeopleNames(ctx, p, p.AccountID, ptrs...); err != nil {
@@ -145,8 +175,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 // searchIn runs one search on the snapshot q. It reads candidates in batches, checks each batch's access in the same
 // snapshot, and stops when the page is full, the candidates end, or the scan budget is used up.
 func (s *Server) searchIn(ctx context.Context, q store.Querier, p *auth.Principal, req *search.Request,
-	ps searchParams, after int64) (listResponse[nodeJSON], error) {
-	var out listResponse[nodeJSON]
+	ps searchParams, after search.Pos) (listResponse[searchHit], error) {
+	var out listResponse[searchHit]
 	within := ""
 	if p.Token != nil {
 		within = p.Token.Node
@@ -171,17 +201,17 @@ func (s *Server) searchIn(ctx context.Context, q store.Querier, p *auth.Principa
 		// contains it, as the check above established.
 		within = req.ScopeID
 	}
-	budget := s.cfg.Search.ScanBudget
+	// The only things that stop the walk are the items the caller may read and the end of the candidates. A candidate
+	// the caller cannot read, or one the no-download or label rules drop, moves the walk on and decides nothing else: a
+	// cursor, a short page or a count is never a sign of such a row (review S1). The work is bounded by the request's
+	// deadline, which answers unavailable.
 	limit := req.Limit
-	scanned := 0
 	exhausted := false
-	for len(out.Items) < limit && scanned < budget {
-		want := min(searchBatch, budget-scanned)
-		cands, err := req.Candidates(ctx, q, after, want)
+	for len(out.Items) < limit {
+		cands, err := req.Candidates(ctx, q, after, searchBatch)
 		if err != nil {
 			return out, storeErr(err)
 		}
-		scanned += len(cands)
 		if len(cands) == 0 {
 			exhausted = true
 			break
@@ -204,7 +234,7 @@ func (s *Server) searchIn(ctx context.Context, q store.Querier, p *auth.Principa
 		}
 		full := false
 		for _, c := range cands {
-			after = c.RowID
+			after = c.At
 			row, ok := byID[c.NodeID]
 			if !ok {
 				continue
@@ -216,6 +246,17 @@ func (s *Server) searchIn(ctx context.Context, q store.Querier, p *auth.Principa
 			if req.ScopeID != "" && !row.Within {
 				continue
 			}
+			// A content match reads the node's text, so the no-download rule applies to it: a viewer or a commenter that
+			// the rule binds gets no content hit from the node, and so no snippet (decision 46).
+			if req.In == search.InContent && restrictedRole(role) {
+				covered, err := store.NoDownloadAppliesIn(ctx, q, p.AccountID, c.NodeID)
+				if err != nil {
+					return out, storeErr(err)
+				}
+				if covered {
+					continue
+				}
+			}
 			keep, err := restrictedMatch(ctx, q, role, c.NodeID, req.Labels)
 			if err != nil {
 				return out, err
@@ -223,20 +264,34 @@ func (s *Server) searchIn(ctx context.Context, q store.Querier, p *auth.Principa
 			if !keep {
 				continue
 			}
-			j := nodeJSONFor(p, nodes[c.NodeID])
-			j.Role = role
-			out.Items = append(out.Items, j)
+			hit := searchHit{nodeJSON: nodeJSONFor(p, nodes[c.NodeID])}
+			hit.Role = role
+			if req.In == search.InContent {
+				sn, err := req.SnippetOf(ctx, q, c.TextID)
+				if err != nil {
+					return out, storeErr(err)
+				}
+				ranges := sn.Ranges
+				if ranges == nil {
+					ranges = [][2]int{}
+				}
+				hit.Snippet = &snippetJSON{Text: sn.Text, Ranges: ranges}
+			}
+			out.Items = append(out.Items, hit)
 			if len(out.Items) == limit {
 				full = true
 				break
 			}
 		}
-		if full || len(cands) < want {
-			exhausted = len(cands) < want && !full
+		if full {
+			break
+		}
+		if len(cands) < searchBatch {
+			exhausted = true
 			break
 		}
 	}
-	if !exhausted && (len(out.Items) == limit || scanned >= budget) {
+	if !exhausted && len(out.Items) == limit {
 		next, err := s.sealSearchCursor(p, req, after)
 		if err != nil {
 			return out, err
@@ -244,6 +299,12 @@ func (s *Server) searchIn(ctx context.Context, q store.Querier, p *auth.Principa
 		out.NextCursor = next
 	}
 	return out, nil
+}
+
+// restrictedRole reports whether the no-download rule can bind a caller at role: a viewer or a commenter, as in
+// downloadRestricted (restrict.go). Anyone above a commenter may download, so the rule never applies to them.
+func restrictedRole(role string) bool {
+	return store.RoleRank(role) <= store.RoleRank(store.RoleCommenter)
 }
 
 // restrictedMatch applies the restricted label tests. A restricted value counts only for a manager of the node: anyone
@@ -361,9 +422,9 @@ func parseSearchParams(v url.Values) (searchParams, error) {
 	switch in := v.Get("in"); in {
 	case "", "name":
 	case "content":
-		return ps, apierr.New(apierr.InvalidRequest, "in=content is not available yet: search covers names")
+		ps.in = search.InContent
 	default:
-		return ps, apierr.New(apierr.InvalidRequest, "in must be name")
+		return ps, apierr.New(apierr.InvalidRequest, "in must be name or content")
 	}
 	switch k := v.Get("kind"); k {
 	case "", store.KindFile, store.KindDir, store.KindShortcut:

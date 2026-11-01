@@ -195,9 +195,11 @@ func (tx *Tx) dropSearchAccount(ctx context.Context, accountID string) error {
 		SELECT id FROM search_names WHERE account_id = ?)`, accountID); err != nil {
 		return err
 	}
-	_, err := tx.q.ExecContext(ctx, `DELETE FROM search_trigram WHERE rowid IN (
-		SELECT id FROM search_names WHERE account_id = ?)`, accountID)
-	return err
+	if _, err := tx.q.ExecContext(ctx, `DELETE FROM search_trigram WHERE rowid IN (
+		SELECT id FROM search_names WHERE account_id = ?)`, accountID); err != nil {
+		return err
+	}
+	return tx.dropTextAccount(ctx, accountID)
 }
 
 // NodeRowIDMax returns the largest rowid of the nodes table (0 when it is empty). A copy takes it before its inserts,
@@ -355,6 +357,10 @@ type SearchDrift struct {
 	Extra int64
 	// FTSMismatch is set when a full-text table has a different number of rows from search_names.
 	FTSMismatch bool
+	// TextMissing counts file blobs of nodes with no content row, counted once the backfill is done (decision 46).
+	TextMissing int64
+	// TextFTSMismatch is set when search_text_fts has a different number of rows from the ready content rows.
+	TextFTSMismatch bool
 }
 
 // SearchCheck compares the search rows with the nodes they index (design section 6). Folders on the backlog are not
@@ -384,6 +390,11 @@ func (s *Store) SearchCheck(ctx context.Context) (SearchDrift, error) {
 		return d, err
 	}
 	d.FTSMismatch = words != names || trigrams != names
+	t, err := s.checkText(ctx)
+	if err != nil {
+		return d, err
+	}
+	d.TextMissing, d.TextFTSMismatch = t.missing, t.ftsWrong
 	return d, nil
 }
 
@@ -397,6 +408,10 @@ func (s *Store) SearchRebuild(ctx context.Context) error {
 			}
 		}
 		if _, err := tx.q.ExecContext(ctx, "DELETE FROM search_backlog"); err != nil {
+			return err
+		}
+		// The content rows go too, and the backfill starts again: the worker reads each file once more (decision 46).
+		if err := tx.clearText(ctx); err != nil {
 			return err
 		}
 		if _, err := tx.q.ExecContext(ctx, `INSERT INTO search_backlog (folder_id, account_id, cursor, upto, created_at)
@@ -423,6 +438,14 @@ func (s *Store) SearchRepair(ctx context.Context) error {
 			return err
 		}
 		if _, err := tx.q.ExecContext(ctx, "DELETE FROM search_names WHERE id IN ("+orphans+")"); err != nil {
+			return err
+		}
+		// Missing content rows start the content backfill again; it adds only the rows that are missing (decision 46).
+		c, err := s.checkText(ctx)
+		if err != nil {
+			return err
+		}
+		if err := tx.repairText(ctx, c); err != nil {
 			return err
 		}
 		// A folder with a missing row gets one item over all its rows; the rows it has are skipped.

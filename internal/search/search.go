@@ -97,11 +97,42 @@ func Choose(terms []string) Index {
 	return Substring
 }
 
+// CheckTerms refuses the terms the word index cannot search as words (invalid_request). It applies to every content search,
+// and to a name search whose terms take the word index (Choose). A term with no letter or digit, or whose only token has
+// fewer than minTermRunes runes, is refused: as a prefix it would expand one letter across every tenant (review, decision
+// 46). A term with two tokens or more is a phrase, as Match builds it. A name search whose terms are all three runes or
+// longer takes the trigram index, which reads the name literally, and is not checked here (so "1.2" and "a-b" are found).
+func CheckTerms(terms []string, content bool) error {
+	if !content && Choose(terms) != Words {
+		return nil
+	}
+	for _, t := range terms {
+		toks := Tokens(t)
+		if len(toks) == 0 || (len(toks) == 1 && runeLen(toks[0]) < minTermRunes) {
+			return apierr.Newf(apierr.InvalidRequest, "a term needs at least %d letters or digits", minTermRunes)
+		}
+	}
+	return nil
+}
+
 var accountPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // Match builds the full-text expression for terms in index, limited to accountID. Each term is a quoted phrase, with
 // any quote inside it doubled, so no term can be read as syntax. A word-index term is a prefix.
 func Match(index Index, terms []string, accountID string) (string, error) {
+	return match(index, terms, accountID, 0)
+}
+
+// MatchContent is the match of a content search. A term expands to a prefix only from wordPrefixMinRunes runes: a shorter
+// prefix matches a large share of a tenant's words, so a short search would cost what the largest tenant's corpus costs
+// (review S5, decision 46). A shorter term matches whole words only. Name search keeps Match, where a short word is a
+// prefix (decision 40).
+func MatchContent(terms []string, accountID string) (string, error) {
+	return match(Words, terms, accountID, wordPrefixMinRunes)
+}
+
+// match builds the expression. A word term of at least minRunes runes is a prefix; the other word terms are exact.
+func match(index Index, terms []string, accountID string, minRunes int) (string, error) {
 	if len(terms) == 0 {
 		return "", errors.New("search: no terms")
 	}
@@ -111,14 +142,30 @@ func Match(index Index, terms []string, accountID string) (string, error) {
 	parts := make([]string, 0, len(terms)+1)
 	parts = append(parts, "account_id:"+quote(accountID))
 	for _, t := range terms {
-		if index == Words {
-			parts = append(parts, "text:"+quote(t)+"*")
-		} else {
+		if index != Words {
+			// The trigram table reads the name as it is: a substring, never a prefix.
 			parts = append(parts, "text:"+quote(t))
+			continue
 		}
+		// A word term is the tokens the tokenizer makes of it, as one phrase: "x.ab" is the words x and ab, next to each
+		// other. The phrase has no prefix, unless its last token has at least minRunes runes: then the last token is a
+		// prefix (review, decision 46). The check is on the tokens, so punctuation cannot shorten or lengthen a prefix.
+		toks := Tokens(t)
+		if len(toks) == 0 {
+			return "", errors.New("search: a term has no tokens")
+		}
+		phrase := strings.Join(toks, " ")
+		star := ""
+		if runeLen(toks[len(toks)-1]) >= minRunes {
+			star = "*"
+		}
+		parts = append(parts, "text:"+quote(phrase)+star)
 	}
 	return strings.Join(parts, " AND "), nil
 }
+
+// wordPrefixMinRunes is the shortest content term whose last token expands to a prefix (see MatchContent).
+const wordPrefixMinRunes = 3
 
 func quote(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
@@ -166,12 +213,19 @@ func (t LabelTest) clause() string {
 	}
 }
 
+// Pos is a point in a candidate read. A name search reads its rows in A alone (the search row's ID). A content search
+// reads in (A, B): the content row's ID, then the node's rowid, since one text can belong to several nodes.
+type Pos struct{ A, B int64 }
+
 // Request is a parsed search, ready to read. Terms are folded; a request with no terms is a filter-only search.
 type Request struct {
 	AccountID string
-	Terms     []string
-	Kind      string // "", file, dir or shortcut
-	Exts      []string
+	// In is "" (names) or InContent (the extracted text of files, decision 46). It is omitted from the fingerprint when
+	// empty, so a name cursor keeps its fingerprint.
+	In    string `json:",omitempty"`
+	Terms []string
+	Kind  string // "", file, dir or shortcut
+	Exts  []string
 	// ModifiedFrom and ModifiedTo bound the modified time in unix milliseconds: From inclusive, To exclusive. -1 is none.
 	ModifiedFrom, ModifiedTo int64
 	// SizeMin and SizeMax bound the size in bytes, both inclusive. -1 is none.
@@ -187,10 +241,16 @@ type Request struct {
 	Limit   int
 }
 
-// Candidate is one search row read from the index.
+// InContent is the value of Request.In for a search over the extracted text of files.
+const InContent = "content"
+
+// Candidate is one row read from the index. A name candidate has RowID (its search row) and NodeID. A content candidate
+// has TextID (its content row, which the snippet reads) and RowID, the node's rowid, and NodeID.
 type Candidate struct {
 	RowID  int64
+	TextID int64
 	NodeID string
+	At     Pos // the position after this candidate
 }
 
 // ordinaryLabels returns the tests that run in the candidate SQL: the ones on fields that are not restricted.
@@ -220,12 +280,12 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 		}
 		b.WriteString("SELECT sn.id, sn.node_id FROM " + table + " JOIN search_names sn ON sn.id = " + table + ".rowid")
 		b.WriteString(" JOIN nodes n ON n.id = sn.node_id JOIN folders f ON f.id = n.folder_id")
-		b.WriteString(" WHERE " + table + " MATCH ? AND sn.account_id = ? AND sn.id > ? AND f.staged = 0")
+		b.WriteString(" WHERE " + table + " MATCH ? AND sn.account_id = ? AND sn.id > ? AND f.staged = 0 AND n.trashed_at IS NULL")
 		args = append(args, match, r.AccountID, after)
 	} else {
 		b.WriteString("SELECT sn.id, sn.node_id FROM search_names sn JOIN nodes n ON n.id = sn.node_id")
 		b.WriteString(" JOIN folders f ON f.id = n.folder_id")
-		b.WriteString(" WHERE sn.account_id = ? AND sn.id > ? AND f.staged = 0")
+		b.WriteString(" WHERE sn.account_id = ? AND sn.id > ? AND f.staged = 0 AND n.trashed_at IS NULL")
 		args = append(args, r.AccountID, after)
 	}
 	if r.Kind != "" {
@@ -267,9 +327,13 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 	return b.String(), args, nil
 }
 
-// Candidates reads up to limit candidates after rowid after, in rowid order, on q. The reach check is not made here.
-func (r *Request) Candidates(ctx context.Context, q store.Querier, after int64, limit int) ([]Candidate, error) {
-	query, args, err := r.candidateSQL(after, limit)
+// Candidates reads up to limit candidates after the position after, in order, on q. The reach check is not made here.
+// A name search orders by search row; a content search orders by content row, then by node (contentSQL).
+func (r *Request) Candidates(ctx context.Context, q store.Querier, after Pos, limit int) ([]Candidate, error) {
+	if r.In == InContent {
+		return r.contentCandidates(ctx, q, after, limit)
+	}
+	query, args, err := r.candidateSQL(after.A, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -284,6 +348,7 @@ func (r *Request) Candidates(ctx context.Context, q store.Querier, after int64, 
 		if err := rows.Scan(&c.RowID, &c.NodeID); err != nil {
 			return nil, err
 		}
+		c.At = Pos{A: c.RowID}
 		out = append(out, c)
 	}
 	return out, rows.Err()

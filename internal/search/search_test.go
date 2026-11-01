@@ -134,6 +134,9 @@ func TestMatchQuotesHostileInput(t *testing.T) {
 			if idx == Substring && Choose(terms) != Substring {
 				continue
 			}
+			if idx == Words && CheckTerms(terms, true) != nil {
+				continue // refused before Match, as the API refuses it (the word index needs a token of two runes)
+			}
 			expr, err := Match(idx, terms, "acc_fuzz")
 			if err != nil {
 				t.Fatalf("Match(%q): %v", raw, err)
@@ -162,6 +165,9 @@ func FuzzMatch(f *testing.F) {
 		for _, idx := range []Index{Words, Substring} {
 			if idx == Substring && Choose(terms) != Substring {
 				continue
+			}
+			if idx == Words && CheckTerms(terms, true) != nil {
+				continue // refused before Match, as the API refuses it (the word index needs a token of two runes)
 			}
 			expr, err := Match(idx, terms, "acc_fuzz")
 			if err != nil {
