@@ -246,7 +246,8 @@ func (s *Store) ReadyDerivedBytes(ctx context.Context) (int64, error) {
 
 // LeastUsedDerived returns up to limit ready rows, least recently used first.
 func (s *Store) LeastUsedDerived(ctx context.Context, limit int) ([]*Derived, error) {
-	rows, err := s.r.QueryContext(ctx, `SELECT `+derivedCols+` FROM derived WHERE state = 'ready'
+	// An audio tags row holds no file and counts no bytes, so the budget never evicts it: its values stay with the blob.
+	rows, err := s.r.QueryContext(ctx, `SELECT `+derivedCols+` FROM derived WHERE state = 'ready' AND kind <> 'audio_tags'
 		ORDER BY last_used_at, id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err

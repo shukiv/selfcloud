@@ -261,6 +261,10 @@ type DerivedConfig struct {
 	ThumbSizes []int `yaml:"thumb_sizes"`
 	// MaxSourceBytes is the largest source a thumbnail is made from.
 	MaxSourceBytes ByteSize `yaml:"max_source_bytes"`
+	// AudioMaxSourceBytes is the largest audio file whose cover and tags are read (decision 56). The reader takes the head and
+	// the tail of the file, not all of it, so this limit is the size of a file that is read at all, and it is far larger than
+	// an image's.
+	AudioMaxSourceBytes ByteSize `yaml:"audio_max_source_bytes"`
 	// MaxPixels is the most pixels a source image may have. The header is read first, so a larger image is
 	// refused before any of its pixels are allocated.
 	MaxPixels int64 `yaml:"max_pixels"`
@@ -364,6 +368,10 @@ func validateDerived(d DerivedConfig, bad func(string, ...any)) {
 	}
 	if d.MaxSourceBytes <= 0 || d.MaxSourceBytes > 1*GiB {
 		bad("derived.max_source_bytes must be positive and at most 1GiB")
+	}
+	// An audio file is read at its head and tail, so its limit is the size a file may be, not a memory bound: up to 1 TiB.
+	if d.AudioMaxSourceBytes <= 0 || d.AudioMaxSourceBytes > 1024*GiB {
+		bad("derived.audio_max_source_bytes must be positive and at most 1TiB")
 	}
 	if d.MaxPixels <= 0 {
 		bad("derived.max_pixels must be positive")
@@ -578,7 +586,7 @@ func Defaults() *Config {
 		Store:           StoreConfig{Driver: "sqlite"},
 		Storage:         StorageConfig{MinFree: 1 * GiB},
 		Blobs:           BlobsConfig{DeleteGrace: Duration(7 * 24 * time.Hour)},
-		Derived: DerivedConfig{MaxBytes: 10 * GiB, ThumbSizes: []int{256, 1024}, MaxSourceBytes: 50 * MiB,
+		Derived: DerivedConfig{MaxBytes: 10 * GiB, ThumbSizes: []int{256, 1024}, MaxSourceBytes: 50 * MiB, AudioMaxSourceBytes: 100 * GiB,
 			MaxPixels: 50_000_000, Timeout: Duration(60 * time.Second), Workers: 2, Queue: 256,
 			MemoryBytes: 1 * GiB, CPUSeconds: 30, ConvertWorkers: 2, ConvertQueue: 32, ConvertAccountQueue: 8,
 			MaxConvertBytes: 500 * MiB},

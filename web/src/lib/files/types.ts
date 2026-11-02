@@ -39,6 +39,8 @@ export interface Node {
   // has_thumbnail is set on an image file the server can thumbnail (JPEG, PNG or GIF): true once its smallest
   // thumbnail is ready, false until then. Absent for every other item.
   has_thumbnail?: boolean;
+  // tags are an audio file's title, artist, album and duration, once the server has read them (decision 56). Absent otherwise.
+  tags?: { title?: string; artist?: string; album?: string; duration_ms?: number };
   // starred is set for a signed-in caller (the caller's own star); absent for keys, admins and link visitors.
   starred?: boolean;
 }

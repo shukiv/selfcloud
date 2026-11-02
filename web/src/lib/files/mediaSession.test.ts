@@ -39,6 +39,19 @@ afterEach(() => {
 });
 
 describe("bindMediaSession: the keys and the lock screen act on the file that plays", () => {
+  it("shows the artist, the album and the cover when they are known, and none when they are not", () => {
+    const h = { play: vi.fn(), pause: vi.fn(), previous: vi.fn(), next: vi.fn(), seekBy: vi.fn(), seekTo: vi.fn() };
+    bindMediaSession({ title: "Song", artist: "A", album: "B", artwork: "/cover" }, h);
+    expect((fake.ms.metadata as { init: unknown }).init).toEqual({
+      title: "Song",
+      artist: "A",
+      album: "B",
+      artwork: [{ src: "/cover", sizes: "256x256", type: "image/jpeg" }],
+    });
+    bindMediaSession({ title: "track.mp3" }, h);
+    expect((fake.ms.metadata as { init: unknown }).init).toEqual({ title: "track.mp3", artist: "", album: "", artwork: [] });
+  });
+
   it("shows the title and routes each action to its handler", () => {
     const h = { play: vi.fn(), pause: vi.fn(), previous: vi.fn(), next: vi.fn(), seekBy: vi.fn(), seekTo: vi.fn() };
     bindMediaSession("song.ogg", h);

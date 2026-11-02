@@ -34,6 +34,7 @@ import { q4Checks } from './q4.mjs';
 import { r7Checks } from './r7.mjs';
 import { r7bChecks } from './r7b.mjs';
 import { pwaChecks } from './pwa.mjs';
+import { x3Checks } from './x3.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -78,6 +79,11 @@ const EXPECTED = [
   {
     name: 'node the caller cannot reach',
     matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+$/.test(e.url ?? '') && /status of 404\b/.test(e.text ?? ''),
+  },
+  // An audio file without a cover answers 404 when the player or a tile asks for its cover (decision 56); the icon stays.
+  {
+    name: 'no cover',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+\/thumbnail\b/.test(e.url ?? '') && /status of 404\b/.test(e.text ?? ''),
   },
   {
     name: 'start-up probe',
@@ -710,7 +716,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, pwa or x3 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     if (!only) {
       await fileBrowserChecks(page, { base, dir, teamA, teamB });
@@ -726,6 +732,7 @@ async function main() {
     if (!only || only === 'q4') await q4Checks(h, { page, base, accountKey, teamA });
     if (!only || only === 'r7') await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (!only || only === 'r7b') await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
+    if (!only || only === 'x3') await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || only === 'pwa') await pwaChecks(h, { page, base, brand: { name: BRAND.name, accentUpper: BRAND.accent.toUpperCase(), member: MEMBER }, check, wsUrl: launched.wsUrl });
     if (only) {
       console.log(`only ${only}: passed`);

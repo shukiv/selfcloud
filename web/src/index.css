@@ -640,6 +640,57 @@ a {
   white-space: nowrap;
   font-weight: 600;
 }
+/* The cover box (decision 56): its size is set where it is used, and it holds a plain icon until there is a picture. */
+.tag-cover {
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.16);
+}
+/* The viewer's title and artist of an audio file: one line each, so the header keeps its height when the tags arrive. */
+.media-now bdi,
+.media-now-artist {
+  display: block;
+  /* Each line is as wide as its text, so both start beside the cover in the page's direction, whatever direction the text has. */
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* A set height, not only a line height, so an empty artist line and a filled one measure the same. */
+  height: 1.5em;
+  line-height: 1.5em;
+}
+.media-now-artist {
+  font-weight: 400;
+}
+/* The artist of the mini bar's file (decision 56): after the title, in the bar's text colour, a little dimmer. */
+.media-mini-artist {
+  display: inline-block;
+  /* Both sides: dir="auto" gives the artist its own direction, and a logical margin follows that, not the bar's. */
+  margin-inline: 8px;
+  font-weight: 400;
+  opacity: 0.8;
+}
+/* A playlist row's artist follows its title on the same line, and gives way first when the row is short of room. */
+.media-title {
+  column-gap: 8px;
+}
+/* The title keeps about six characters' width (84 px at 14 px) and the artist gives way before it, so a long artist never
+   leaves a title a few letters wide. The playing mark keeps 8 px from the title and from the More button. */
+.media-title bdi {
+  min-width: min(6em, 100%);
+}
+.media-state {
+  margin-inline: 4px;
+}
+.media-row-artist {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  opacity: 0.8;
+}
 .media-mini .ant-btn.media-mini-btn {
   background: transparent;
   border-color: transparent;
@@ -710,7 +761,8 @@ a {
     flex-wrap: wrap;
   }
   .media-mini-name {
-    flex-basis: 100%;
+    /* The cover keeps its place beside the name on a phone: 40 px and the bar's 8 px gap. */
+    flex-basis: calc(100% - 48px);
   }
   .media-mini-seek {
     order: 3;

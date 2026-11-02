@@ -63,8 +63,28 @@ func Sniff(b []byte) (Format, bool) {
 }
 
 // Eligible reports whether a file of the stored type is thumbnailed. A file of another stored type gets no
-// thumbnail, whatever its bytes are; the child checks the bytes again.
+// thumbnail, whatever its bytes are; the child checks the bytes again. An audio file's thumbnail is its cover
+// picture (decision 56).
 func Eligible(stored string) bool {
+	return imageType(stored) || AudioType(stored)
+}
+
+// AudioType reports whether the stored type is one of the audio types whose tags and covers are read (decision 56).
+// The bytes decide in the child; the type only decides whether a file is asked about.
+func AudioType(stored string) bool {
+	mt, _, err := mime.ParseMediaType(stored)
+	if err != nil {
+		return false
+	}
+	switch mt {
+	case "audio/mpeg", "audio/mp3", "audio/flac", "audio/x-flac", "audio/mp4", "audio/m4a", "audio/x-m4a",
+		"audio/ogg", "audio/opus":
+		return true
+	}
+	return false
+}
+
+func imageType(stored string) bool {
 	mt, _, err := mime.ParseMediaType(stored)
 	if err != nil {
 		return false

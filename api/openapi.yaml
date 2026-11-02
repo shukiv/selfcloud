@@ -3043,7 +3043,8 @@ paths:
       operationId: getThumbnail
       summary: A thumbnail of an image file
       description: |
-        A JPEG thumbnail of a JPEG, PNG or GIF file, at `size` pixels on its longer edge. The first
+        A JPEG thumbnail of a JPEG, PNG or GIF file, or of the cover picture of an audio file (MP3, FLAC, MP4 or
+        M4A, Ogg Vorbis or Ogg Opus; decision 56), at `size` pixels on its longer edge. The first
         request for a size queues the work and answers `202` with `Retry-After`; later requests answer
         `202` until the thumbnail is ready, then `200`. A thumbnail is made once per file version and
         size, and shared by every node that holds the same contents. A file whose thumbnail cannot be
@@ -3120,6 +3121,95 @@ paths:
         "200": { description: The thumbnail is ready. }
         "202": { description: The thumbnail is being made. }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/tags:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Files]
+      operationId: getTags
+      summary: The title, artist, album and duration of an audio file
+      description: |
+        The tags of an MP3, FLAC, MP4 or M4A, Ogg Vorbis or Ogg Opus file, read on the server (decision 56).
+        The first request queues the read and answers `202` with `Retry-After`; later requests answer `202`
+        until the read is done, then `200`. `state` is `ready` with the values, or `none` when the file has no
+        readable tags or the reader refused it. A value is plain text: a client shows it as text, never as
+        markup. A value is at most 256 characters, with control and format characters turned to spaces; a
+        duration is at most a week. A folder, a shortcut or a file of another type answers `404`.
+
+        Reading tags is viewing, not downloading, so the no-download rule does not refuse it. A link visitor
+        is refused by this route (`link_route`), as for a thumbnail. The read shares the thumbnail workers, queue and budget.
+        The cover of an audio file is its thumbnail (`/thumbnail`).
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The state, and the values when it is `ready`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AudioTags" }
+        "202":
+          description: The read is queued or running. Ask again after `Retry-After` seconds.
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state: { type: string, enum: [pending] }
+        "404": { $ref: "#/components/responses/Error" }
+        "429":
+          description: The queue, the account's share of it, or the caller's budget of new reads is full. `Retry-After` gives the wait.
+          headers:
+            Retry-After: { schema: { type: integer } }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    head:
+      tags: [Files]
+      operationId: headTags
+      summary: The status of an audio file's tags, without the body
+      description: |
+        The status `GET` would send, with the same access rules. A HEAD never queues a read: a read not yet made
+        answers `404`, and the `GET` that follows starts it.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200": { description: The read is done. }
+        "202": { description: The read is queued or running. }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/media/tags:
+    get:
+      tags: [Files]
+      operationId: getMediaTags
+      summary: The tags of up to 100 audio files in one request
+      description: |
+        Answers the tags of each named node that the caller can read and that is an audio file. A node the caller
+        cannot read, one that is not an audio file, and one that does not exist are all left out, which is the same
+        answer for each. A read not yet made is queued, and its state is `pending` until it is done; the client asks
+        again for those. The `ids` must be distinct node IDs.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: "Node IDs separated by commas: one to 100, each named once."
+          schema: { type: string }
+      responses:
+        "200":
+          description: The states, keyed by node ID.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: object
+                    additionalProperties: { $ref: "#/components/schemas/AudioTags" }
+        "400": { $ref: "#/components/responses/Error" }
+        "429":
+          description: The caller's budget of batch requests (120 a minute) is spent. A read that cannot be queued in a batch is `pending`, not 429.
+          headers:
+            Retry-After: { schema: { type: integer } }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{nod}/content:
     parameters:
@@ -5126,6 +5216,16 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    AudioTags:
+      type: object
+      description: "An audio file's tags (decision 56). `state` is `ready` with the values, or `none`; values are plain text."
+      required: [state]
+      properties:
+        state: { type: string, enum: [ready, none, pending] }
+        title: { type: string, maxLength: 256 }
+        artist: { type: string, maxLength: 256 }
+        album: { type: string, maxLength: 256 }
+        duration_ms: { type: integer, minimum: 0, maximum: 604800000 }
     LabelChoice:
       type: object
       required: [id, name, archived]
@@ -5397,7 +5497,8 @@ components:
         owner_name: { type: string, description: "The owner's display name, under the same rule as created_by_name. Absent when there is no owner." }
         owner_id: { type: string, description: "The ID of the user that owns the node." }
         has_link: { type: boolean, description: "Set in a listing of children, and omitted when false: the item carries a link the caller may know of. A visitor never gets it." }
-        has_thumbnail: { type: boolean, description: "On an image file (JPEG, PNG or GIF): true when its smallest thumbnail is ready, false when not. Absent for other kinds, and absent for a link visitor." }
+        has_thumbnail: { type: boolean, description: "On an image file (JPEG, PNG or GIF), or an audio file with a cover: true when its smallest thumbnail is ready, false when not. Absent for other kinds, and absent for a link visitor." }
+        tags: { $ref: "#/components/schemas/AudioTags", description: "On an audio file whose tags have been read: the values (decision 56). Absent for other kinds, for a link visitor, and until the read has run." }
         starred: { type: boolean, description: "The caller's own star on the node. Set for a signed-in user and for a token acting as its user, on stat, listings and the shared list, false when not starred. Absent for keys, admins and link visitors." }
         color: { type: string, description: "A directory's palette colour; absent when none, and absent for a link visitor." }
         description: { type: string, description: "The item's plain-text description; absent when none, and absent for a link visitor." }

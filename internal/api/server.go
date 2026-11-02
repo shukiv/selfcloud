@@ -411,6 +411,10 @@ func New(opts Options) (*Server, error) {
 			"links.create": newLimiter(120),
 			// Thumbnail requests that start new work, per caller. A read of a thumbnail already made is not charged.
 			"thumb.enqueue": newLimiter(300),
+			// Audio tags read that start new work, per caller (decision 56). The batch route names up to 100 files at once.
+			"tags.enqueue": newLimiter(300),
+			// tags.batch counts the batch requests of a caller, each of which walks up to 100 nodes for access (decision 56).
+			"tags.batch": newLimiter(120),
 			// Zips asked for, per caller: each one is a job that reads a whole subtree.
 			"zip.create": newLimiter(60),
 			// Conversions (previews and exports) that start new work, per caller. A read of one already made is not charged.
@@ -610,6 +614,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/zips/{zip}", handle: s.handleGetZip, auth: true, imp: impAllow},
 		{method: http.MethodDelete, path: "/api/v1/zips/{zip}", handle: s.handleDeleteZip, auth: true, imp: impAllow},
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/thumbnail", handle: s.handleGetThumbnail, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/tags", handle: s.handleGetTags, auth: true, imp: impAllow},
+		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/tags", handle: s.handleGetTags, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/media/tags", handle: s.handleTagsBatch, auth: true, imp: impAllow},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/permissions", handle: s.handleListNodePermissions, auth: true, imp: impAllow},

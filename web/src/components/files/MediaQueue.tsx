@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from "react";
 import { Alert, Button, Dropdown, type MenuProps } from "antd";
 import { ArrowDown, ArrowUp, GripVertical, ListMusic, MoreHorizontal, Pause, Play, Plus, Repeat, Repeat1, Shuffle, Trash2 } from "lucide-react";
 import { useT } from "../../lib/i18n";
+import { kindOf } from "../../lib/files/kind";
+import { displayArtist, displayTitle, getTags, hasCover, loadTags, seedTags, subscribeTags, tagsVersion } from "../../lib/files/tags";
+import TagCover from "./TagCover";
 import { MAX_QUEUE, type Entry, type Repeat as RepeatMode } from "../../lib/files/queue";
 import type { Node } from "../../lib/files/types";
 import { usePaletteOrLight } from "../../theme/theme";
@@ -41,6 +44,16 @@ export default function MediaQueue(p: Props) {
   const { t } = useT();
   const palette = usePaletteOrLight();
   const drag = useRef<string | null>(null);
+  // The audio files of the queue have their tags asked for in batches (decision 56). A failed read keeps the file name.
+  const audioIds = p.entries.filter((e) => kindOf(e.node) === "audio").map((e) => e.node.id);
+  const audioKey = audioIds.join(",");
+  // The rows follow every change of the tags cache.
+  useSyncExternalStore(subscribeTags, tagsVersion, tagsVersion);
+  useEffect(() => {
+    for (const e of p.entries) seedTags(e.node.id, e.node.tags);
+    if (audioIds.length > 0) void loadTags(audioIds);
+    // The batch follows the queue's audio files; a change of the list is the same key.
+  }, [audioKey]);
   const list = useRef<HTMLOListElement | null>(null);
   const repeatLabel = p.repeat === "all" ? t("files.media.repeatAll") : p.repeat === "one" ? t("files.media.repeatOne") : t("files.media.repeatOff");
   const RepeatIcon = p.repeat === "one" ? Repeat1 : Repeat;
@@ -150,6 +163,13 @@ export default function MediaQueue(p: Props) {
                 >
                   <GripVertical size={16} aria-hidden="true" />
                 </button>
+                {/* The box is there from the first render, with its icon, so a cover or a tag that arrives moves nothing. */}
+                <TagCover
+                  nod={id}
+                  kind={kindOf(entry.node) === "video" ? "video" : "audio"}
+                  size={28}
+                  enabled={kindOf(entry.node) === "audio" && (entry.node.has_thumbnail === true || hasCover(id))}
+                />
                 <button
                   type="button"
                   className="media-title"
@@ -158,19 +178,29 @@ export default function MediaQueue(p: Props) {
                   disabled={entry.mark === "restricted"}
                   onClick={() => p.onPlay(id)}
                 >
-                  <bdi>{name}</bdi>
+                  {/* The whole title and artist are in their title attributes: a cut name still reads in full on hover. */}
+                  <bdi dir="auto" title={displayTitle(name, getTags(id))}>
+                    {displayTitle(name, getTags(id))}
+                  </bdi>
+                  {displayArtist(getTags(id)) !== undefined && (
+                    <span className="media-row-artist" dir="auto" title={displayArtist(getTags(id))}>
+                      {displayArtist(getTags(id))}
+                    </span>
+                  )}
                 </button>
+                {/* The playing mark is an icon, with its word for a screen reader: the word would otherwise take the room a title
+                    needs on a phone. */}
                 <span className="media-state" style={{ color: on ? palette.text : palette.muted }}>
                   {on &&
                     (p.playing ? (
                       <>
                         <Play size={12} aria-hidden="true" />
-                        {t("files.media.playing")}
+                        <span className="sr-only">{t("files.media.playing")}</span>
                       </>
                     ) : (
                       <>
                         <Pause size={12} aria-hidden="true" />
-                        {t("files.media.paused")}
+                        <span className="sr-only">{t("files.media.paused")}</span>
                       </>
                     ))}
                   {entry.mark === "restricted" && t("files.media.restricted")}

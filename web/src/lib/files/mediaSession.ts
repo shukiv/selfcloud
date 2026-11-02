@@ -23,14 +23,29 @@ function session(): MediaSession | null {
   return navigator.mediaSession ?? null;
 }
 
+// SessionMeta is what the lock screen shows: the title, and when known the artist, the album and the cover's address. The
+// artwork is a same-origin thumbnail address the browser fetches itself; it is shown only when it is set.
+export interface SessionMeta {
+  title: string;
+  artist?: string;
+  album?: string;
+  artwork?: string;
+}
+
 // bindMediaSession shows the title and routes the controls to h. It returns the function that removes them again. Each
 // action is set on its own: an action the browser refuses (it throws) is left out, and the others still work.
-export function bindMediaSession(title: string, h: SessionHandlers): () => void {
+export function bindMediaSession(meta: string | SessionMeta, h: SessionHandlers): () => void {
   const ms = session();
   if (ms === null) return () => undefined;
+  const m: SessionMeta = typeof meta === "string" ? { title: meta } : meta;
   if (typeof MediaMetadata !== "undefined") {
     try {
-      ms.metadata = new MediaMetadata({ title });
+      ms.metadata = new MediaMetadata({
+        title: m.title,
+        artist: m.artist ?? "",
+        album: m.album ?? "",
+        artwork: m.artwork ? [{ src: m.artwork, sizes: "256x256", type: "image/jpeg" }] : [],
+      });
     } catch {
       // A title the browser will not take is left unset; the controls still work.
     }

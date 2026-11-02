@@ -67,7 +67,8 @@ func newDerivedPool(cfg *config.Config, st *store.Store, blobs blob.Store, log *
 	return derived.NewPool(derived.Options{Store: st, Blobs: blobs, Cache: cache, Exe: exe,
 		Workers: d.Workers, Queue: d.Queue, Timeout: d.Timeout.D(), CPUSeconds: int64(d.CPUSeconds),
 		MemoryBytes: int64(d.MemoryBytes), MaxPixels: d.MaxPixels, MaxSourceBytes: int64(d.MaxSourceBytes),
-		MaxOutputBytes: 16 << 20, MinFree: uint64(cfg.Storage.MinFree), Log: log}), nil
+		AudioMaxSourceBytes: int64(d.AudioMaxSourceBytes),
+		MaxOutputBytes:      16 << 20, MinFree: uint64(cfg.Storage.MinFree), Log: log}), nil
 }
 
 // smallestThumb is the smallest configured thumbnail size: the default a request takes, and the one has_thumbnail
@@ -119,7 +120,12 @@ func (s *Server) handleGetThumbnail(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	if limit := int64(s.cfg.Derived.MaxSourceBytes); n.Size > limit {
+	// An audio file's cover is read at its head and tail, so its limit is the audio one, not the image's (decision 56).
+	limit := int64(s.cfg.Derived.MaxSourceBytes)
+	if thumb.AudioType(n.MimeType) {
+		limit = int64(s.cfg.Derived.AudioMaxSourceBytes)
+	}
+	if n.Size > limit {
 		return apierr.Newf(apierr.TooLarge, "an image of more than %d bytes has no thumbnail", limit).
 			With("limit_bytes", limit)
 	}
@@ -240,6 +246,10 @@ func (s *Server) withThumbnails(ctx context.Context, p *auth.Principal, accountI
 			ids = append(ids, it.ID)
 			among = append(among, it)
 		}
+	}
+	// The tags of the audio files in the same items come from the same listing read (decision 56).
+	if err := s.withTags(ctx, p, accountID, items...); err != nil {
+		return err
 	}
 	kind := derived.Kind(s.smallestThumb())
 	for start := 0; start < len(ids); start += thumbBatch {

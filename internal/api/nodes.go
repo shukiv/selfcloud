@@ -156,6 +156,9 @@ type nodeJSON struct {
 	// HasThumbnail is set on an image file: true when its smallest thumbnail is ready. It is absent for other kinds
 	// and for a link visitor (withThumbnails).
 	HasThumbnail *bool `json:"has_thumbnail,omitempty"`
+	// Tags are an audio file's title, artist, album and duration, once they have been read (decision 56). They are absent for
+	// other kinds, for a link visitor (withThumbnails), and until the read has run.
+	Tags *tagsJSON `json:"tags,omitempty"`
 	// Target is what a shortcut points to, for a caller who reaches it. Unavailable is set on a shortcut whose
 	// target the caller cannot reach or that was purged: the answer is the same for all three, and never names
 	// the target. Both are set by withTargets, and a link visitor gets neither (see nodeJSONFor).

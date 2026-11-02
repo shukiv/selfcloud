@@ -29,6 +29,9 @@ import { currentLang, useT } from "../../lib/i18n";
 import { SIDEBAR } from "../../theme/tokens";
 import { inlineLink } from "./Preview";
 import MediaPlaylist from "./MediaPlaylist";
+import TagCover, { useTagState } from "./TagCover";
+import { displayArtist, displayTitle, hasCover, loadTags, seedTags, subscribeTags } from "../../lib/files/tags";
+import { thumbnailPath } from "../../lib/files/thumbnail";
 
 // MediaDock is the signed-in session drawn in the shell: the viewer (a full-window dialog with the playlist and its player)
 // while it is open, and the mini player bar at the bottom of the shell once it is closed. One playlist and one player run
@@ -89,6 +92,16 @@ export default function MediaDock() {
   const node = snap.current?.node ?? null;
   const viewing = snap.viewerOpen;
   const canDownload = node ? downloadAllowed(node) : false;
+  // The tags of the file on screen (decision 56): its title and artist show when they are read, and its name until then.
+  const tags = useTagState(node?.id ?? "");
+  const audio = node !== null && kindOf(node) === "audio";
+  const coverSeen = useSyncExternalStore(subscribeTags, () => hasCover(node?.id ?? ""));
+  useEffect(() => {
+    if (!node || !audio) return;
+    seedTags(node.id, node.tags);
+    // A failed read keeps the name; playback does not wait for it.
+    void loadTags([node.id]);
+  }, [node?.id, audio]);
 
   // The session's system controls (the keys of a keyboard or headset, the lock screen) act on the file that plays.
   useEffect(() => {
@@ -98,7 +111,15 @@ export default function MediaDock() {
       const end = Number.isFinite(media.duration) ? media.duration : Infinity;
       media.currentTime = clamp(media.currentTime + d, 0, end);
     };
-    const unbind = bindMediaSession(node.name, {
+    const unbind = bindMediaSession(
+      {
+        title: displayTitle(node.name, tags),
+        artist: displayArtist(tags),
+        album: tags?.state === "ready" ? tags.album : undefined,
+        // The lock screen shows the cover once the file is known to have one: the listing says so, or the player has seen it.
+        artwork: audio && (node.has_thumbnail === true || coverSeen) ? thumbnailPath(node.id, 256) : undefined,
+      },
+      {
       play: () => void media.play().catch((err: unknown) => refusedPlay(err) && setPress(true)),
       pause: () => media.pause(),
       previous: () => snap.nav?.previous(),
@@ -121,7 +142,7 @@ export default function MediaDock() {
       unbind();
     };
     // The bindings read the element and the file; the navigation is read at the time of each control.
-  }, [snap.media, node?.id]);
+  }, [snap.media, node?.id, tags, audio, coverSeen]);
 
   const download = async () => {
     if (!node) return;
@@ -214,8 +235,16 @@ export default function MediaDock() {
             <header style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
               {/* No autoFocus: the player's Space must reach the player when the viewer opens, not press Close. */}
               <Button onClick={() => closeViewer()}>{t("files.preview.close")}</Button>
-              <p style={{ flex: "1 1 160px", margin: 0, overflowWrap: "anywhere", fontWeight: 600 }}>
-                <bdi>{node?.name ?? ""}</bdi>
+              {node && audio && <TagCover nod={node.id} kind="audio" size={48} enabled />}
+              {/* An audio file's title and artist take one line each, and the artist's line is there before the tags arrive, so
+                  the header does not move when they do. */}
+              <p className={audio ? "media-now" : undefined} style={{ flex: "1 1 160px", margin: 0, overflowWrap: "anywhere", fontWeight: 600, minWidth: 0 }}>
+                <bdi dir="auto">{node ? displayTitle(node.name, tags) : ""}</bdi>
+                {audio && (
+                  <span dir="auto" className="media-now-artist" data-testid="media-artist" style={{ color: token.colorTextSecondary }}>
+                    {displayArtist(tags)}
+                  </span>
+                )}
               </p>
               {/* A playlist's count reads left to right in every language, as "2 / 5". */}
               <span aria-live="polite" dir="ltr" data-testid="media-count" style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -228,7 +257,17 @@ export default function MediaDock() {
         )}
         <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>{playlist}</div>
       </div>
-      {!viewing && <MiniPlayer name={node?.name ?? ""} media={snap.media} nav={snap.nav} press={press} onRefused={() => setPress(true)} />}
+      {!viewing && (
+        <MiniPlayer
+          name={node?.name ?? ""}
+          nod={node?.id ?? ""}
+          audio={audio}
+          media={snap.media}
+          nav={snap.nav}
+          press={press}
+          onRefused={() => setPress(true)}
+        />
+      )}
     </>
   );
 }
@@ -237,18 +276,24 @@ export default function MediaDock() {
 // Its controls read left to right in every language, as the viewer's bar does.
 function MiniPlayer({
   name,
+  nod,
+  audio,
   media,
   nav,
   press,
   onRefused,
 }: {
   name: string;
+  nod: string;
+  audio: boolean;
   media: HTMLMediaElement | null;
   nav: PlaybackNav | null;
   press: boolean;
   onRefused: () => void;
 }) {
   const { t } = useT();
+  const tags = useTagState(nod);
+  const artist = displayArtist(tags);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [dur, setDur] = useState(0);
@@ -277,8 +322,14 @@ function MiniPlayer({
   const shown = drag ?? time;
   return (
     <div className="media-mini" role="region" aria-label={t("files.mini.label")} dir="ltr" data-testid="media-mini" style={{ background: SIDEBAR.bg, color: SIDEBAR.text }}>
+      {audio && <TagCover nod={nod} kind="audio" size={40} enabled />}
       <p className="media-mini-name" title={name}>
-        <bdi>{name}</bdi>
+        <bdi dir="auto">{displayTitle(name, tags)}</bdi>
+        {artist !== undefined && (
+          <span className="media-mini-artist" dir="auto">
+            {artist}
+          </span>
+        )}
       </p>
       {press && (
         <p role="status" className="media-mini-press" data-testid="media-press">

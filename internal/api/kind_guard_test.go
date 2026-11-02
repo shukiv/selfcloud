@@ -96,6 +96,11 @@ var reviewedNodeKindSites = map[string]int{
 	// store/search_text.go: two, both "n.kind = 'file'" in SQL: the backfill's read of file nodes that queues rows, and the
 	// check that counts the rows a file should have. Neither decides access; a folder or shortcut is simply not queued.
 	"internal/store/search_text.go": 2,
+	// Slice x3 (decision 56). tags.go: tagsEligible compares a node's kind with a file, and the single route, the batch
+	// route and the listing (withTags) all call it. It refuses whatever is not a file (a folder, a shortcut), so it fails
+	// closed; access is nodeAccess for the single and batch routes, and the listing's own access for withTags. The thumbnail
+	// route's size check reads the audio limit for an audio file and adds no kind comparison.
+	"internal/api/tags.go": 1,
 }
 
 // TestNodeKindComparisonsAreReviewed fails when a node-kind comparison appears, moves or goes in internal/api or

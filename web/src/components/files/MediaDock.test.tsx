@@ -145,6 +145,55 @@ describe("the playlist's current row says what the player does", () => {
   });
 });
 
+describe("the tags of the file on screen", () => {
+  const answerTags = (answer: () => Promise<Response>) =>
+    vi.stubGlobal("fetch", (url: string) => (String(url).includes("/media/tags") ? answer() : Promise.resolve(new Response(null, { status: 404 }))));
+
+  beforeEach(() => {
+    act(() => session.set(who("tag-person")));
+  });
+
+  it("shows the title, the artist and a dir=auto in the viewer and the mini player, as text", async () => {
+    const a = file("t1.mp3", "audio/mpeg");
+    answerTags(async () =>
+      new Response(JSON.stringify({ items: { [a.id]: { state: "ready", title: "<img src=x onerror=alert(1)>", artist: "שלום" } } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    render(<MediaHost />);
+    act(() => startPlayback({ start: a, folder: folderOf([a]) }));
+    await element("audio");
+    await waitFor(() => expect(document.querySelector('[data-testid="preview"] header bdi')?.textContent).toBe("<img src=x onerror=alert(1)>"));
+    const title = document.querySelector('[data-testid="preview"] header bdi') as HTMLElement;
+    expect(title.getAttribute("dir")).toBe("auto");
+    expect(title.querySelector("img")).toBeNull();
+    const artist = screen.getByTestId("media-artist");
+    expect(artist.textContent).toBe("שלום");
+    expect(artist.getAttribute("dir")).toBe("auto");
+    act(() => closeViewer());
+    const mini = await screen.findByTestId("media-mini");
+    expect(mini.querySelector("bdi")?.textContent).toBe("<img src=x onerror=alert(1)>");
+    expect(mini.querySelector(".media-mini-artist")?.textContent).toBe("שלום");
+  });
+
+  it("keeps the file name and the artist's empty line, and plays, when the tag read fails", async () => {
+    const a = file("t2.mp3", "audio/mpeg");
+    answerTags(() => Promise.reject(new Error("offline")));
+    render(<MediaHost />);
+    act(() => startPlayback({ start: a, folder: folderOf([a]) }));
+    const audio = await element("audio");
+    fireEvent.loadedMetadata(audio);
+    expect(play).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(document.querySelector('[data-testid="preview"] header bdi')?.textContent).toBe("t2.mp3");
+    expect(screen.getByTestId("media-artist").textContent).toBe("");
+    expect(document.querySelector('[data-testid="preview"] header [data-testid="tag-cover"] svg')).not.toBeNull();
+  });
+});
+
 describe("audio goes on after the viewer closes", () => {
   it("keeps the same element playing, and the mini player shows it", async () => {
     const a = file("a.ogg", "audio/ogg");

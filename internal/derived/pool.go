@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shukiv/selfcloud/internal/audio"
 	"github.com/shukiv/selfcloud/internal/blob"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
@@ -41,7 +42,19 @@ const (
 	msgOutOfMemory = "the decoder ran out of memory"
 	msgDisk        = "the derived file could not be written"
 	msgFailed      = "the decoder failed"
+	msgNoPicture   = "the audio file has no cover picture the server can show"
 )
+
+// sourceLimit is the largest source the child is given. An audio file (decision 56) has its own limit, since its tags and
+// cover are read at the head and the tail and not whole. The sniff reads the first bytes, as the child does.
+func (p *Pool) sourceLimit(src *os.File) int64 {
+	var head [12]byte
+	n, _ := src.ReadAt(head[:], 0)
+	if audio.Sniff(head[:n]) {
+		return p.o.AudioMaxSourceBytes
+	}
+	return p.o.MaxSourceBytes
+}
 
 // perAccountQueue is how many jobs one account may have waiting. The total is Options.Queue.
 const perAccountQueue = 32
@@ -71,6 +84,9 @@ type Options struct {
 	// may write.
 	MaxSourceBytes int64
 	MaxOutputBytes int64
+	// AudioMaxSourceBytes is the largest audio file whose cover or tags are read (decision 56). An audio file is read at its
+	// head and its tail, not whole, so it may be far larger than an image; this is the one size a file may not pass.
+	AudioMaxSourceBytes int64
 	// MinFree is the free space the derived directory must keep after a write (storage.min_free).
 	MinFree uint64
 	Log     *slog.Logger
@@ -80,11 +96,12 @@ type Options struct {
 
 // Pool makes derived files on a fixed number of workers, one child process per file.
 type Pool struct {
-	o         Options
-	q         *queue
-	log       *slog.Logger
-	converter string
-	now       func() time.Time
+	o            Options
+	q            *queue
+	log          *slog.Logger
+	converter    string
+	tagConverter string
+	now          func() time.Time
 }
 
 // job is one file to make. The row is the lock: a request inserts it before the job is queued.
@@ -93,6 +110,8 @@ type job struct {
 	blobID    string
 	derivedID string
 	size      int
+	// tags is set for an audio tags read: it runs the child in tags mode and stores its values, not a file (tags.go).
+	tags bool
 	// format, ext and guard are set by a conversion (convert.go) and are empty for a thumbnail.
 	format string
 	ext    string
@@ -111,19 +130,26 @@ func NewPool(o Options) *Pool {
 	if o.Queue <= 0 {
 		o.Queue = 1
 	}
+	// A pool built without an audio limit uses the image one: an audio file is never read past the largest source there is.
+	if o.AudioMaxSourceBytes <= 0 {
+		o.AudioMaxSourceBytes = o.MaxSourceBytes
+	}
 	now := o.Now
 	if now == nil {
 		now = time.Now
 	}
-	return &Pool{o: o, q: newQueue(o.Queue, perAccountQueue), log: log, converter: converterFor(o), now: now}
+	return &Pool{o: o, q: newQueue(o.Queue, perAccountQueue), log: log, converter: converterFor(o),
+		tagConverter: tagsConverterFor(o), now: now}
 }
 
 // converterFor is the converter key of the rows this pool makes. It names the encoder version and the limits that
 // decide a refusal, so raising a limit makes new rows, and a refusal under the old limit is not kept for the new one.
 // Timeout is not in it: a time limit's refusal is a server-side failure that is retried, not sticky.
 func converterFor(o Options) string {
-	sum := sha256.Sum256(fmt.Appendf(nil, "px=%d src=%d mem=%d cpu=%d out=%d",
-		o.MaxPixels, o.MaxSourceBytes, o.MemoryBytes, o.CPUSeconds, o.MaxOutputBytes))
+	// The audio source limit is in the key: an audio file's cover is refused under it, as a sticky row, so a raised limit
+	// must make new rows (decision 56).
+	sum := sha256.Sum256(fmt.Appendf(nil, "px=%d src=%d audio=%d mem=%d cpu=%d out=%d",
+		o.MaxPixels, o.MaxSourceBytes, o.AudioMaxSourceBytes, o.MemoryBytes, o.CPUSeconds, o.MaxOutputBytes))
 	return EncoderVersion + "+" + hex.EncodeToString(sum[:6])
 }
 
@@ -166,9 +192,15 @@ func Transient(d *store.Derived) (time.Time, bool) {
 // was written. admit, when set, is asked before anything is queued, so a caller can limit how much work one principal
 // starts; reads that find a row never ask it.
 func (p *Pool) Request(ctx context.Context, accountID, blobID string, size int, admit func() error) (Answer, error) {
-	kind := Kind(size)
+	return p.request(ctx, accountID, blobID, Kind(size), p.converter, size, false, admit)
+}
+
+// request is Request for any kind of derived file. A tags read (tags) holds no file: its ready row is ready as it stands,
+// since its values were stored with it.
+func (p *Pool) request(ctx context.Context, accountID, blobID, kind, converter string, size int, tags bool,
+	admit func() error) (Answer, error) {
 	c := p.o.Cache
-	d, err := c.Lookup(ctx, accountID, blobID, kind, p.converter)
+	d, err := c.Lookup(ctx, accountID, blobID, kind, converter)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -176,7 +208,7 @@ func (p *Pool) Request(ctx context.Context, accountID, blobID string, size int, 
 	if d != nil {
 		switch d.State {
 		case store.DerivedReady:
-			if p.fileExists(accountID, d.ID) {
+			if tags || p.fileExists(accountID, d.ID) {
 				return Answer{State: store.DerivedReady, Row: d}, nil
 			}
 			// The file is gone, though the row says ready: a crash between the two removals, or a lost file.
@@ -203,7 +235,7 @@ func (p *Pool) Request(ctx context.Context, accountID, blobID string, size int, 
 		return Answer{}, ErrBusy
 	}
 	row := &store.Derived{ID: id.New("drv"), AccountID: accountID, BlobID: blobID, Kind: kind,
-		Converter: p.converter, CreatedAt: time.Now()}
+		Converter: converter, CreatedAt: time.Now()}
 	if retry {
 		row.ID = d.ID
 	}
@@ -230,7 +262,7 @@ func (p *Pool) Request(ctx context.Context, accountID, blobID string, size int, 
 	if !inserted {
 		p.q.release(accountID)
 		// Either another request queued it a moment ago, or the blob is not the account's. The lookup tells them apart.
-		again, err := c.Lookup(ctx, accountID, blobID, kind, p.converter)
+		again, err := c.Lookup(ctx, accountID, blobID, kind, converter)
 		if err != nil {
 			return Answer{}, err
 		}
@@ -239,7 +271,7 @@ func (p *Pool) Request(ctx context.Context, accountID, blobID string, size int, 
 		}
 		return answerFor(again), nil
 	}
-	p.q.push(accountID, job{accountID: accountID, blobID: blobID, derivedID: row.ID, size: size})
+	p.q.push(accountID, job{accountID: accountID, blobID: blobID, derivedID: row.ID, size: size, tags: tags})
 	return Answer{State: store.DerivedPending}, nil
 }
 
@@ -331,6 +363,10 @@ func (p *Pool) safeProcess(ctx context.Context, j job) {
 
 // process makes one derived file and records the result.
 func (p *Pool) process(ctx context.Context, j job) {
+	if j.tags {
+		p.processTags(ctx, j)
+		return
+	}
 	src, err := p.o.Blobs.Open(j.accountID, j.blobID)
 	if err != nil {
 		// The blob is gone, so nothing can be made: the row goes with it.
@@ -343,7 +379,7 @@ func (p *Pool) process(ctx context.Context, j job) {
 		p.drop(ctx, j)
 		return
 	}
-	if fi.Size() > p.o.MaxSourceBytes {
+	if fi.Size() > p.sourceLimit(src) {
 		p.fail(ctx, j, msgSourceSize)
 		return
 	}
@@ -428,6 +464,9 @@ func (p *Pool) exitFailure(ctx context.Context, j job, code int) {
 	case thumb.ExitUnsupported:
 		p.logRefusal(code, j)
 		p.fail(ctx, j, msgUnsupported)
+	case thumb.ExitNoPicture:
+		p.logRefusal(code, j)
+		p.fail(ctx, j, msgNoPicture)
 	case exitTimeout:
 		p.transient(ctx, j, msgTimeout)
 	case -1:
@@ -488,8 +527,6 @@ func (p *Pool) discardFinal(final string) {
 // runChild runs `exe thumb` with the source on its stdin and returns its exit code. An exit by signal is -1. A
 // non-nil error means the child did not run to an exit at all: it could not start, or its output failed.
 func (p *Pool) runChild(ctx context.Context, src *os.File, out, stderr io.Writer, size int) (int, error) {
-	tctx, cancel := context.WithTimeout(ctx, p.o.Timeout)
-	defer cancel()
 	args := []string{"thumb",
 		"-size=" + strconv.Itoa(size),
 		"-max-pixels=" + strconv.FormatInt(p.o.MaxPixels, 10),
@@ -497,6 +534,14 @@ func (p *Pool) runChild(ctx context.Context, src *os.File, out, stderr io.Writer
 		"-memory=" + strconv.FormatInt(p.o.MemoryBytes, 10),
 		"-cpu=" + strconv.FormatInt(p.o.CPUSeconds, 10),
 	}
+	return p.runArgs(ctx, src, out, stderr, args)
+}
+
+// runArgs runs the child with the given arguments, the source on its stdin, and returns its exit code. It is runChild's
+// body, shared with the tags read (tags.go), which passes its own mode.
+func (p *Pool) runArgs(ctx context.Context, src *os.File, out, stderr io.Writer, args []string) (int, error) {
+	tctx, cancel := context.WithTimeout(ctx, p.o.Timeout)
+	defer cancel()
 	cmd := exec.CommandContext(tctx, p.o.Exe, args...)
 	cmd.Env = []string{} // the child inherits nothing: no secret, no path, no locale
 	cmd.Dir = "/"        // and no working directory: a core or a stray file has nowhere to go
