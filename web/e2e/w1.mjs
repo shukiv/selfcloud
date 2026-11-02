@@ -539,6 +539,8 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
     // Paste into Target: the pasted name sorts after the first row there, so the first row keeps its place.
     await openByDoubleClick(page, 'Target');
     await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Target'`, 10000);
+    // The listing of Target is read after its title shows: the probe waits for its first row to be drawn.
+    await page.waitFor(`!!document.querySelector('[role="row"][aria-label]')`, 15000);
     const inTarget = await probe();
     await press(page, 'v', ['ctrl']);
     await waitListed(api, base, teamA, '/w1-long/Target', accountKey, ['f11.txt']);

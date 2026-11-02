@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
 import { keepInView } from "./menuScroll";
-import { Alert as AntdAlert, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
+import { Alert as AntdAlert, App, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
 import { Clock, FolderOpen, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -23,6 +23,10 @@ import { readPref, writePref } from "../lib/prefs";
 import { readTree, writeTree, type TreeState } from "../lib/files/treeState";
 import { filesURL } from "../lib/files/route";
 import { treePlace } from "../lib/files/treePlace";
+import { fromFileList, type DroppedFile, type UploadWhere } from "../lib/files/ops";
+import { newPlace, newPlaceFor, queueInto } from "../lib/files/newPlace";
+import { uploads } from "../lib/files/uploads";
+import { myStorage, refreshMyStorage } from "../lib/storage/api";
 import { useSidebar } from "../theme/theme";
 import { RADIUS } from "../theme/tokens";
 import { useCoarsePointer } from "../lib/pointer";
@@ -34,7 +38,11 @@ import ThemeToggle from "./ThemeToggle";
 import UploadTrayHost from "./UploadTrayHost";
 import MediaHost from "./files/MediaHost";
 import BellBoundary from "./notifications/BellBoundary";
+import SidebarNew from "./files/SidebarNew";
+import SidebarStorage, { storageTitle } from "./storage/SidebarStorage";
 
+// The new folder dialog is a lazy chunk: the sidebar's New opens it, and the first screen does not carry it (decision 66).
+const NewFolderDialog = lazy(() => import("./files/NewFolderDialog"));
 // The space settings dialog is loaded when a team space's settings are opened.
 const SpaceSettings = lazy(() => import("./share/SpaceSettings"));
 // The bell is a chunk of its own: the first screen does not carry it (decision 55 measures the first-load budget).
@@ -53,6 +61,8 @@ interface NavItem {
   key: string;
   label: ReactNode;
   icon: ReactNode;
+  // className marks an entry whose label is more than one line (the Storage entry's bar), so its row is not held to one line.
+  className?: string;
 }
 
 const icon = (C: typeof FolderOpen) => <C size={18} strokeWidth={1.75} aria-hidden="true" />;
@@ -65,7 +75,9 @@ interface NavSection {
 }
 
 // My files is the folder tree's first row, so it is an entry here only when the sidebar is folded to its icons (no tree).
-function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pending: number | null, waiting: (n: number) => string, filesEntry: boolean): NavSection[] {
+// storage is the Storage entry's label for a person (the bar and figures, or the title alone when the sidebar is folded); null for an
+// admin, who has no storage of its own.
+function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pending: number | null, waiting: (n: number) => string, filesEntry: boolean, storage: ReactNode | null): NavSection[] {
   if (admin) {
     return [
       {
@@ -83,7 +95,8 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
     { key: "/recent", label: t("nav.recent"), icon: icon(Clock) },
     { key: "/shared", label: t("nav.shared"), icon: icon(Share2) },
     { key: "/trash", label: t("nav.trash"), icon: icon(Trash2) },
-    { key: "/storage", label: t("nav.storage"), icon: icon(HardDrive) },
+    // Storage is the last entry of the person's list, and it is a block with its meter (decision 66), not a plain row.
+    ...(storage !== null ? [{ key: "/storage", label: storage, icon: icon(HardDrive), className: "shell-storage-item" }] : []),
   ];
   // The access requests entry shows to an owner, and to anyone who has a request waiting to be decided, with its count.
   if (owner || (pending ?? 0) > 0) {
@@ -119,7 +132,7 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
 
 // menuLeaves turns nav entries into antd menu items; the icon is passed through with the label.
 function menuLeaves(items: NavItem[]): NonNullable<MenuProps["items"]> {
-  return items.map((it) => ({ key: it.key, label: it.label, icon: it.icon }));
+  return items.map((it) => ({ key: it.key, label: it.label, icon: it.icon, className: it.className }));
 }
 
 // Shell is the signed-in frame: the top bar with the account menu, and the sidebar. The sidebar
@@ -170,6 +183,16 @@ export default function Shell({ children }: { children: ReactNode }) {
   // The place the browser shows (written by the files page). It is marked only on the files pages.
   const place = useStore(treePlace);
   const onFiles = location.pathname.startsWith("/files");
+  // The sidebar's New acts on the folder shown on a files page, and on My files everywhere else (decision 66). The pickers and the
+  // new-folder dialog belong here, not to the sidebar, so a click opens the picker in the same gesture.
+  const shownPlace = useStore(newPlace);
+  const storage = useStore(myStorage);
+  const { message } = App.useApp();
+  const filesInput = useRef<HTMLInputElement | null>(null);
+  const foldersInput = useRef<HTMLInputElement | null>(null);
+  const pickWhere = useRef<UploadWhere | null>(null);
+  const [folderWhere, setFolderWhere] = useState<UploadWhere | null>(null);
+  const newWhere = admin ? null : newPlaceFor(onFiles, shownPlace, personal?.id ?? null);
   const [settingsFor, setSettingsFor] = useState<FolderAccess | null>(null);
   // The iPhone instructions are open for the person who opened them: a change of person closes them (iosDialogOpen).
   const [iosFor, setIosFor] = useState<string | null>(null);
@@ -218,10 +241,42 @@ export default function Shell({ children }: { children: ReactNode }) {
     if (me && !admin) void refreshPendingRequests();
   }, [sessionID, atFiles]);
   const pending = useStore(pendingRequests);
+  // The storage meter of the sidebar is read at sign-in, and again when an upload batch ends (the queue empties). The other
+  // changes that move bytes read it where they read the tree: a delete, a move to the trash and an upload (FilesPage's reload),
+  // and a restore or an empty trash (TrashPage). There is no poll.
+  useEffect(() => {
+    if (me && !admin) void refreshMyStorage().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionID]);
+  useEffect(() => {
+    if (admin) return;
+    let busy = false;
+    return uploads.subscribe((list) => {
+      const now = list.some((u) => ["queued", "uploading", "paused", "waiting", "conflict", "awaiting_name"].includes(u.status));
+      if (busy && !now) void refreshMyStorage().catch(() => undefined);
+      busy = now;
+    });
+  }, [admin, sessionID]);
+  // pick opens the picker for a New action. It is called straight from the menu's click, so the browser allows the picker: nothing
+  // on this path waits for a render, a read or a navigation. The picked files go to the place the picker was opened for.
+  const pick = (kind: "files" | "folders", where: UploadWhere) => {
+    pickWhere.current = where;
+    (kind === "files" ? filesInput : foldersInput).current?.click();
+  };
+  const onPicked = (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const files: DroppedFile[] = input.files ? fromFileList(input.files) : [];
+    input.value = "";
+    const where = pickWhere.current;
+    pickWhere.current = null;
+    if (where && files.length > 0 && queueInto(where, files) > 0) void message.warning(t("files.upload.noPath"));
+  };
   // The menu's entries and its current one. My files is the tree's first row, so it is a menu entry only when the sidebar is
   // folded to icons; then it is current on the files pages where the place is the person's own space.
   const menuFor = (filesEntry: boolean) => {
-    const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n), filesEntry);
+    // The Storage entry is its bar and figures; folded to icons, it is its title alone, which the tooltip shows.
+    const storageLabel = admin ? null : filesEntry ? storageTitle(storage, t) : <SidebarStorage my={storage} sidebar={sidebar} />;
+    const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n), filesEntry, storageLabel);
     const items: MenuProps["items"] = sections.flatMap((s, i) =>
       s.section
         ? [{ type: "group" as const, key: `group-${i}`, label: s.section, children: menuLeaves(s.items) }]
@@ -329,7 +384,15 @@ export default function Shell({ children }: { children: ReactNode }) {
     return (
       <div
         className="shell-sider-body"
-        style={{ color: sidebar.text, "--sc-side-text": sidebar.text, "--sc-side-active": sidebar.active, "--sc-side-on-active": sidebar.onActive } as CSSProperties}
+        style={{
+          color: sidebar.text,
+          "--sc-side-text": sidebar.text,
+          "--sc-side-active": sidebar.active,
+          "--sc-side-on-active": sidebar.onActive,
+          // The icon column of every row (New, the tree, the menu) from the sidebar's content edge: a row's icon sits 28 px in, or
+          // 48 px on a finger, where the tree's arrow is 44 px (decision 66).
+          "--sc-icon-col": coarse ? "48px" : "28px",
+        } as CSSProperties}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 8px 18px", minWidth: 0, flex: "none" }}>
           {b.logo_url && <img src={b.logo_url} alt="" width={32} height={32} />}
@@ -339,6 +402,9 @@ export default function Shell({ children }: { children: ReactNode }) {
             </span>
           )}
         </div>
+        {(onFiles || newWhere !== null) && !admin && (
+          <SidebarNew place={newWhere} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} onPick={pick} onFolder={(where) => setFolderWhere(where)} />
+        )}
         <div className="shell-scroll">
           {shellError && !collapsedNow && <AntdAlert type="error" showIcon role="alert" message={shellError} style={{ margin: "8px 0" }} />}
           {tree && (
@@ -584,6 +650,32 @@ export default function Shell({ children }: { children: ReactNode }) {
             )}
             {children}
           </Layout.Content>
+          {/* The pickers of the sidebar's New. The shell owns them, so the drawer closing does not unmount one mid-pick, and
+              the browser opens them inside the click (decision 66). */}
+          {me && !admin && (
+            <>
+              <input ref={filesInput} data-testid="sidebar-file-input" type="file" multiple hidden tabIndex={-1} aria-hidden="true" onChange={onPicked} />
+              <input
+                data-testid="sidebar-folder-input"
+                ref={(el) => {
+                  foldersInput.current = el;
+                  // The folder picker takes directories; the attribute is not in the typed attribute list.
+                  el?.setAttribute("webkitdirectory", "");
+                }}
+                type="file"
+                multiple
+                hidden
+                tabIndex={-1}
+                aria-hidden="true"
+                onChange={onPicked}
+              />
+            </>
+          )}
+          {folderWhere && (
+            <Suspense fallback={null}>
+              <NewFolderDialog where={folderWhere} openable={!onFiles} onClose={() => setFolderWhere(null)} />
+            </Suspense>
+          )}
           <UploadTrayHost />
           {iosOpen && (
             <Suspense fallback={null}>

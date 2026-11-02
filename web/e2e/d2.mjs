@@ -1,0 +1,455 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Slice d2: the sidebar's New button and the storage block (decision 66). A member's browser is measured at 1440 wide: the New
+// icon and its word line up with the rows' icons and names (within a pixel), in English and mirrored in Hebrew, and every row has
+// one font size. New folder from Starred makes the folder in My files, and Upload files from inside a folder puts the file there;
+// a folder the member cannot add to shows its entries disabled, with the reason. The storage line matches the Storage page, and
+// the bar takes its three colours at the member's limit (set through the API, and put back before the section ends). The
+// collapsed rail has a round New with a tooltip, the phone drawer has New at its top, and the toolbar has its New only on a phone.
+// With SELFCLOUD_E2E_SHOTS set (a folder), the run also saves the pictures.
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { setLanguage, setPhone, setTheme } from './media.mjs';
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const q = (v) => JSON.stringify(v);
+const MADE = 'D2 Made';
+const RAIL_KEY = 'selfcloud.navRail';
+const SHARE_LEVELS = { ok: 0.5, warning: 0.85 };
+// The bar's fill, as the computed style reads it (the accent is the sidebar's yellow; the others are the warning and error).
+const FILL = { ok: 'rgb(254, 204, 0)', warning: 'rgb(255, 169, 64)', danger: 'rgb(255, 107, 107)' };
+
+// rowGeometry reads the four rows the columns are measured on, and the font of each row's name. Each reading is a box: its icon
+// and its name, as the screen draws them.
+const rowGeometry = (page) =>
+  page.evaluate(`(() => {
+    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, r: r.right }; };
+    const fs = (el) => (el ? getComputedStyle(el).fontSize : null);
+    const menu = (text) => [...document.querySelectorAll('.shell-menu .ant-menu-item')].find((i) => i.querySelector('.ant-menu-title-content')?.textContent.trim() === text);
+    const tree = (text) => [...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].find((row) => row.querySelector('a bdi')?.textContent.trim() === text);
+    const newB = document.querySelector('.shell-sider [data-testid="new-button"]');
+    const starred = menu('Starred');
+    // My files is the tree's first row; its label is translated in Hebrew, so the row is found by place, not by text.
+    const mine = tree('My files') ?? document.querySelector('[data-testid="folder-tree"] .tree-row');
+    const team = tree('Team A');
+    const storage = document.querySelector('.shell-menu .shell-storage-item');
+    return {
+      new: { icon: box(newB?.querySelector('svg')), name: box(newB?.querySelector('span')), fs: fs(newB?.querySelector('span')) },
+      starred: { icon: box(starred?.querySelector('svg')), name: box(starred?.querySelector('.ant-menu-title-content')), fs: fs(starred?.querySelector('.ant-menu-title-content')) },
+      mine: { icon: box(mine?.querySelector('a svg')), name: box(mine?.querySelector('a bdi')), fs: fs(mine?.querySelector('a bdi')) },
+      team: { icon: box(team?.querySelector('a svg')), name: box(team?.querySelector('a bdi')), fs: fs(team?.querySelector('a bdi')) },
+      storage: { icon: box(storage?.querySelector('svg')), name: box(storage?.querySelector('.shell-storage > span')), fs: fs(storage?.querySelector('.shell-storage > span')) },
+      newBox: box(newB),
+    };
+  })()`);
+
+// columns compares the New button and the other rows: an icon column and a name column, read from the left edge (or the right
+// edge when the page is mirrored). It returns the offsets, so the check can say how far apart they are.
+// The reference row is Starred, whose label is translated in Hebrew: there the Team A row (a space's own name) stands for it.
+function columns(g, rtl) {
+  const at = (box) => (box ? (rtl ? box.r : box.l) : null);
+  const base = rtl && !g.starred.icon ? g.team : g.starred;
+  const ref = { icon: at(base.icon), name: at(base.name) };
+  const rows = { new: g.new, mine: g.mine, team: g.team, storage: g.storage };
+  const out = {};
+  for (const [key, row] of Object.entries(rows)) {
+    out[key] = { icon: at(row.icon) === null ? null : Math.round((at(row.icon) - ref.icon) * 10) / 10, name: at(row.name) === null ? null : Math.round((at(row.name) - ref.name) * 10) / 10 };
+  }
+  return out;
+}
+
+// quotaSet puts one limit on the member, through the API, as the account's key (null follows the default, 0 is no limit).
+const quotaSet = (api, base, accountID, accountKey, memberID, bytes) =>
+  api(base, 'PATCH', `/api/v1/accounts/${accountID}/users/${memberID}`, accountKey, { quota_bytes: bytes });
+
+// heldOf reads what the member holds, from the page's own session (GET /api/v1/me): files plus reserved bytes.
+const heldOf = (page) =>
+  page.evaluate(`fetch('/api/v1/me', { credentials: 'same-origin' }).then((r) => r.json()).then((me) => me.storage.used_bytes + me.storage.reserved_bytes)`);
+
+// newMenu opens the sidebar's New and waits for its menu to show the item text, if one is given. It returns the menu's items.
+async function newMenu(page, waitFor = null) {
+  // The button is disabled while the place is read: the menu opens only once it is not. A menu still open from before is shut
+  // first, since a click on the button then would close it again.
+  await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])')`, 15000);
+  await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000).catch(async () => { await page.evaluate(`document.activeElement?.blur?.()`); });
+  const open = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].length > 0`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click(), true`);
+    if (await page.waitFor(open, 4000).then(() => true, () => false)) break;
+  }
+  await page.waitFor(open, 10000);
+  if (waitFor) await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(waitFor)})`, 10000);
+  return page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].map((i) => ({ text: i.textContent.trim(), disabled: i.classList.contains('ant-dropdown-menu-item-disabled') }))`);
+}
+
+// clickItem chooses the open menu's item with this text.
+async function clickItem(page, text) {
+  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(text)} && !i.classList.contains('ant-dropdown-menu-item-disabled'))`, 10000);
+  // A real press, not a script click: the browser counts it as the person's gesture, which the picker needs to open (decision 66).
+  // The menu animates in: its item is measured once it has stopped.
+  await sleep(400);
+  const at = await page.evaluate(`(() => { const i = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((x) => x.textContent.trim() === ${q(text)}); const r = i.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, button: 'none', buttons: 0 });
+  await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: 1 });
+}
+
+// storageLine reads the sidebar's bar and its figures: the level the bar is at, its fill, and the line under it.
+// settledLine waits until the figures are read, and returns them. The upload check starts from a read line, not from a title.
+async function settledLine(page) {
+  for (let k = 0; k < 30; k++) {
+    const cur = await storageLine(page);
+    if (cur.line !== null) return cur;
+    await sleep(500);
+  }
+  throw new Error('the sidebar never read the storage figures');
+}
+
+// The line is null until the figures are read: before that the block holds its title alone.
+const storageLine = (page) =>
+  page.evaluate(`(() => {
+    const meter = document.querySelector('.shell-sider [data-testid="sidebar-meter"]');
+    const item = document.querySelector('.shell-menu .shell-storage-item');
+    const spans = item ? item.querySelectorAll('.shell-storage > span') : [];
+    const line = meter ? meter.nextElementSibling : spans.length > 1 ? spans[spans.length - 1] : null;
+    return {
+      level: meter?.dataset.level ?? null,
+      fill: meter?.firstElementChild ? getComputedStyle(meter.firstElementChild).backgroundColor : null,
+      title: item?.querySelector('.shell-storage > span')?.textContent.trim() ?? null,
+      line: line?.textContent.trim() ?? null,
+    };
+  })()`);
+
+// shotClip saves one part of the page, given as a box in the window's pixels.
+async function shotClip(page, dir, name, box) {
+  if (!dir) return;
+  const { data } = await page.send('Page.captureScreenshot', { format: 'png', clip: { x: box.x, y: box.y, width: box.w, height: box.h, scale: 1 } });
+  await writeFile(join(dir, name), Buffer.from(data, 'base64'));
+}
+
+// boxOf is the window's box of the element the selector names, widened by pad pixels.
+const boxOf = (page, selector, pad = 8) =>
+  page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.max(0, r.left - ${pad}), y: Math.max(0, r.top - ${pad}), w: r.width + ${pad * 2}, h: r.height + ${pad * 2} }; })()`);
+
+export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID }) {
+  const { check, api, navigateTo, clickNav, press, rowAppears } = h;
+  // The folder the upload check puts files in: its own, so this section runs alone (d1 makes the same folder; the second create is refused and ignored).
+  await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: '/D1 Projects', parents: false }).catch(() => undefined);
+  const shotsDir = process.env.SELFCLOUD_E2E_SHOTS
+    ? await (async () => {
+        await mkdir(process.env.SELFCLOUD_E2E_SHOTS, { recursive: true });
+        return process.env.SELFCLOUD_E2E_SHOTS;
+      })()
+    : null;
+  const snap = async (name) => {
+    if (!shotsDir) return;
+    await sleep(800);
+    const { data } = await page.send('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(shotsDir, name), Buffer.from(data, 'base64'));
+  };
+  const size = (w, hgt) => page.send('Emulation.setDeviceMetricsOverride', { width: w, height: hgt, deviceScaleFactor: 1, mobile: w < 600 });
+  const reload = async () => {
+    await page.send('Page.reload', { ignoreCache: true });
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])')`, 20000);
+  };
+
+  // The member's limit is put back before the section ends, whatever happens in between: null follows the default.
+  const before = await api(base, 'GET', `/api/v1/accounts/${accountID}/storage?users_limit=200`, accountKey);
+  const original = before.users?.find((u) => u.id === memberID)?.quota_bytes ?? null;
+  // Each run names what it makes with its own suffix, so a re-run on the same account does not collide. The finally removes it
+  // all, and puts back what the checks change: the rail's saved choice, the language, the theme, the viewport and the picker.
+  const suffix = Date.now().toString(36);
+  const MADE_NAME = `${MADE} ${suffix}`;
+  const uploadName = `d2-upload-${suffix}.txt`;
+  const folderUploadName = `d2-folder-${suffix}.txt`;
+  const railWas = await page.evaluate(`window.localStorage.getItem('${RAIL_KEY}')`);
+  const langWas = await page.evaluate(`document.documentElement.lang`);
+  const themeWas = await page.evaluate(`document.documentElement.dataset.theme`);
+  const localFiles = [];
+  let myFolder = null;
+  let pickerPatched = false;
+  try {
+    // ---- Desktop, 1440 wide, English, light: New is in the sidebar, and the toolbar has none.
+    await size(1440, 900);
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])') && !!document.querySelector('[data-testid="folder-tree"] .tree-row')`, 20000);
+    const toolbarNew = await page.evaluate(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].some((b) => b.textContent.trim() === 'New')`);
+    check(!toolbarNew, 'at 1440 the toolbar has no New: the sidebar holds it');
+
+    // Upload files from inside a folder: D1 Projects is the folder shown, and the picker the menu opens gives the file to that
+    // folder. The picker is opened inside the menu's click, which the browser needs (decision 66); the patch records it.
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('[data-drop-name="D1 Projects"] a')`, 15000);
+    await page.evaluate(`document.querySelector('[data-drop-name="D1 Projects"] a').click(), true`);
+    await page.waitFor(`location.pathname.startsWith('/files/${teamA}/') && document.querySelector('#browser-title')?.textContent.trim() === 'D1 Projects'`, 15000);
+    await page.evaluate(`(() => { window.__d2Click = HTMLInputElement.prototype.click; HTMLInputElement.prototype.click = function () { window.__pickerActive = navigator.userActivation.isActive; return window.__d2Click.call(this); }; })()`);
+    pickerPatched = true;
+    await newMenu(page, 'Upload files');
+    await clickItem(page, 'Upload files');
+    const pickerInGesture = await page.evaluate(`window.__pickerActive === true`);
+    check(pickerInGesture, 'the file picker opens inside the click of the menu item (the browser holds the user activation)');
+    const folderFile = join(dir, folderUploadName);
+    localFiles.push(folderFile);
+    await writeFile(folderFile, 'd2, inside a folder\n');
+    await page.setFiles('[data-testid="sidebar-file-input"]', [folderFile]);
+    await rowAppears(page, folderUploadName);
+    const inFolder = await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=${encodeURIComponent('/D1 Projects')}`, accountKey);
+    check(inFolder.items.some((n) => n.name === folderUploadName), `upload files from inside a folder puts the file there: D1 Projects is shown and holds it (${folderUploadName})`);
+
+    // The storage line: the member's own files, in My files. The team folder above does not move the member's meter.
+    await page.evaluate(`[...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].find((r) => r.textContent.trim() === 'My files')?.querySelector('a')?.click()`);
+    await page.waitFor(`!!document.querySelector('[role="row"][aria-label]') && document.querySelector('#browser-title')?.textContent === 'My files'`, 15000);
+    myFolder = await page.evaluate(`location.pathname.split('/')[2] ?? null`);
+    check(typeof myFolder === 'string' && myFolder.startsWith('fld_'), 'My files is the folder the run uploads to and cleans up');
+    // The line is read before the upload: a line that is not read yet is null, so the change below is a real one.
+    const before1 = await settledLine(page);
+    // Two megabytes, so the figures the sidebar shows change whatever the member held before.
+    const upload = join(dir, uploadName);
+    localFiles.push(upload);
+    await writeFile(upload, Buffer.alloc(2 * 1024 * 1024, 'd'));
+    await newMenu(page, 'Upload files');
+    await clickItem(page, 'Upload files');
+    await page.setFiles('[data-testid="sidebar-file-input"]', [upload]);
+    await rowAppears(page, uploadName);
+    check(true, 'Upload files from the sidebar puts the file in the folder shown (My files)');
+    // The sidebar reads the figures again when the upload batch ends (Shell), and the files page reloads its listing at the same
+    // time, which reads them too (FilesPage). The line must change from the one read before the upload.
+    for (let k = 0; k < 30; k++) { await sleep(500); const cur = await storageLine(page); if (cur.line !== before1.line) break; }
+    const after1 = await storageLine(page);
+    check(after1.line !== null && after1.line !== before1.line, `the storage line is read again after the upload batch (${before1.line} -> ${after1.line})`);
+
+    // The member's limit is set to 61%, from what the member holds now, and the page is read again so the meter shows it.
+    const held = await heldOf(page);
+    check(held > 0, `the member holds something to measure (${held} bytes)`);
+    await quotaSet(api, base, accountID, accountKey, memberID, Math.floor(held / 0.61));
+    await reload();
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
+    const at61 = await storageLine(page);
+    check(at61.title === 'Storage (61% full)', `the row says the share held (${at61.title})`);
+    check(at61.level === 'ok' && at61.fill === FILL.ok, `under 80% the bar is the accent (${at61.level}, ${at61.fill})`);
+    await snap('d2-desktop-en-light.png');
+    const menuItems = await newMenu(page, 'New folder');
+    check(['New folder', 'Upload files', 'Upload folder'].every((t) => menuItems.some((i) => i.text === t && !i.disabled)), `the New menu holds the three entries, all on (${JSON.stringify(menuItems)})`);
+    await snap('d2-desktop-en-light-menu.png');
+    await press(page, 'body', 'Escape');
+    await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
+
+    // The sidebar's figures are the Storage page's figures.
+    await navigateTo(page, '/storage');
+    await page.waitFor(`location.pathname === '/storage'`, 15000);
+    await page.waitFor(`[...document.querySelectorAll('p > span')].some((s) => s.textContent.trim().endsWith(' used'))`, 15000);
+    const pageLine = await page.evaluate(`[...document.querySelectorAll('p > span')].map((s) => s.textContent.trim()).find((t) => t.endsWith(' used') && t.includes(' of ')) ?? null`);
+    check(pageLine === at61.line, `the sidebar line matches the Storage page's figures (${at61.line} / ${pageLine})`);
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
+
+    // ---- The three colours of the bar, at 85% and at 100%, and no limit at all (set through the API).
+    const held2 = await heldOf(page);
+    await quotaSet(api, base, accountID, accountKey, memberID, Math.floor(held2 / SHARE_LEVELS.warning));
+    await reload();
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
+    const at85 = await storageLine(page);
+    check(at85.level === 'warning' && at85.fill === FILL.warning, `from 80% the bar is the warning colour (${at85.level}, ${at85.fill})`);
+    await shotClip(page, shotsDir, 'd2-meter-85.png', await boxOf(page, '.shell-menu .shell-storage-item'));
+
+    await quotaSet(api, base, accountID, accountKey, memberID, held2);
+    await reload();
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
+    const at100 = await storageLine(page);
+    check(at100.level === 'danger' && at100.fill === FILL.danger, `at 100% the bar is the error colour (${at100.level}, ${at100.fill})`);
+    check(at100.title === 'Storage (100% full)', `at 100% the row says so (${at100.title})`);
+    await shotClip(page, shotsDir, 'd2-meter-100.png', await boxOf(page, '.shell-menu .shell-storage-item'));
+
+    await quotaSet(api, base, accountID, accountKey, memberID, 0);
+    await reload();
+    await navigateTo(page, `/files/${teamA}`);
+    const none = await settledLine(page);
+    check(none.title === 'Storage' && none.level === null && none.fill === null, `with no limit the row says Storage, and there is no bar (${none.title}, ${none.level})`);
+    check(none.line !== null && !none.line.includes(' of ') && none.line.endsWith(' used'), `with no limit the line says what is used (${none.line})`);
+    await shotClip(page, shotsDir, 'd2-meter-no-limit.png', await boxOf(page, '.shell-menu .shell-storage-item'));
+    // The limit is back as it was for the rest of the run.
+    await quotaSet(api, base, accountID, accountKey, memberID, original);
+    await reload();
+    await navigateTo(page, `/files/${teamA}`);
+
+    // ---- The alignment: the New button and every row share one icon column and one name column, and one font size.
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="folder-tree"] .tree-row') && !!document.querySelector('.shell-menu .ant-menu-item')`, 15000);
+    const geo = await rowGeometry(page);
+    const off = columns(geo, false);
+    const near = (v) => v !== null && Math.abs(v) <= 1;
+    check(near(off.new.icon) && near(off.new.name), `New's plus and word line up with Starred's icon and name, within a pixel (${JSON.stringify(off.new)})`);
+    check(near(off.mine.icon) && near(off.mine.name), `My files' icon and name line up with Starred's, within a pixel (${JSON.stringify(off.mine)})`);
+    check(near(off.team.icon) && near(off.team.name), `Team A's icon and name line up with Starred's, within a pixel (${JSON.stringify(off.team)})`);
+    check(near(off.storage.icon) && near(off.storage.name), `the Storage block's icon and name line up with Starred's, within a pixel (${JSON.stringify(off.storage)})`);
+    const fonts = [geo.new.fs, geo.starred.fs, geo.mine.fs, geo.team.fs, geo.storage.fs];
+    check(fonts.every((f) => f === '14px'), `every row has one font size, 14 px (${fonts.join(', ')})`);
+    await shotClip(page, shotsDir, 'd2-columns.png', { x: 0, y: 40, w: 264, h: 220 });
+    console.log(`alignment (px, English, from Starred): ${JSON.stringify({ new: geo.new, starred: geo.starred, mine: geo.mine, team: geo.team, storage: geo.storage })}`);
+    check(geo.newBox !== null && near(geo.newBox.l - 12) && near(geo.newBox.r - 252), `the New button spans the sidebar's content width, 12 px in from each edge (${JSON.stringify(geo.newBox)})`);
+
+    // Hebrew: the page mirrors, and the columns mirror with it.
+    await setLanguage(page, 'עברית');
+    await page.waitFor(`document.documentElement.dir === 'rtl' && !!document.querySelector('.shell-sider [data-testid="folder-tree"] .tree-row')`, 15000);
+    const geoHe = await rowGeometry(page);
+    const offHe = columns(geoHe, true);
+    check(near(offHe.new.icon) && near(offHe.new.name), `in Hebrew New's plus and word line up with the rows, mirrored, within a pixel (${JSON.stringify(offHe.new)})`);
+    check(near(offHe.mine.icon) && near(offHe.mine.name), `in Hebrew My files' icon and name line up with Starred's (${JSON.stringify(offHe.mine)})`);
+    check(near(offHe.storage.icon) && near(offHe.storage.name), `in Hebrew the Storage block lines up with Starred (${JSON.stringify(offHe.storage)})`);
+    await snap('d2-desktop-he-light.png');
+    await setLanguage(page, 'English');
+    await page.waitFor(`document.documentElement.dir === 'ltr'`, 15000);
+
+    // Dark: the same sidebar in the dark theme.
+    await setTheme(page, 'Dark');
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
+    await snap('d2-desktop-en-dark.png');
+    await setTheme(page, 'Light');
+
+    // ---- New folder from Starred makes the folder in My files; the message opens it.
+    await clickNav(page, 'Starred');
+    await page.waitFor(`location.pathname === '/starred'`, 15000);
+    await newMenu(page, 'New folder');
+    await clickItem(page, 'New folder');
+    await page.waitFor(`!!document.getElementById('newfolder-name')`, 15000);
+    await h.setInput(page, 'newfolder-name', MADE_NAME);
+    await page.evaluate(`[...document.querySelectorAll('.ant-modal-footer button')].find((b) => b.textContent.trim() === ${q('Create folder')}).click(), true`);
+    await page.waitFor(`[...document.querySelectorAll('.ant-message-notice')].some((m) => m.textContent.includes(${q(`Created ${MADE_NAME}.`)}))`, 15000);
+    check(true, 'New folder from Starred says the folder is made, with a way to open it');
+    await page.waitFor(`[...document.querySelectorAll('.ant-message-notice button')].some((b) => b.textContent.trim() !== '')`, 10000);
+    await page.evaluate(`[...document.querySelectorAll('.ant-message-notice button')].find((b) => b.textContent.trim() !== '').click(), true`);
+    await page.waitFor(`document.querySelector('#browser-title')?.textContent.trim() === ${q(MADE_NAME)}`, 15000);
+    check(true, 'the message opens the folder made from Starred');
+    await clickNav(page, 'My files');
+    await page.waitFor(`/^\\/files\\/fld_/.test(location.pathname)`, 15000);
+    await rowAppears(page, MADE_NAME);
+    check(true, 'the folder made from Starred is in My files');
+
+    // ---- A folder the member cannot add to: New is disabled there, with the reason, and nothing goes to My files.
+    await navigateTo(page, `/files/${teamB}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
+    const roItems = await newMenu(page, 'You cannot add to this folder.');
+    check(roItems.some((i) => i.text === 'You cannot add to this folder.') && roItems.filter((i) => i.text !== 'You cannot add to this folder.').every((i) => i.disabled), `in a folder the member cannot add to, the entries are disabled with the reason (${JSON.stringify(roItems)})`);
+    await press(page, 'body', 'Escape');
+    await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
+
+    // ---- Collapsed: a round New with its name in a tooltip, and the same menu. The place is Team A, which the member can add to.
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])')`, 15000);
+    await clickOn(page, '[data-testid="rail-toggle"]');
+    await page.waitFor(`!!document.querySelector('.ant-layout-sider-collapsed [data-testid="new-button"]')`, 15000);
+    const round = await page.evaluate(`(() => { const b = document.querySelector('.ant-layout-sider-collapsed [data-testid="new-button"]'); const r = b.getBoundingClientRect(); return { label: b.getAttribute('aria-label'), w: Math.round(r.width), h: Math.round(r.height) }; })()`);
+    check(round.label === 'New' && round.w === 44 && round.h === 44, `folded, the New button is a round 44 pixel button named New (${JSON.stringify(round)})`);
+    // The pointer comes from away from the button, so the enter is a real one: the Tooltip opens on it.
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 500, button: 'none', buttons: 0 });
+    await sleep(200);
+    await hover(page, '.ant-layout-sider-collapsed [data-testid="new-button"]');
+    const tipShown = await page.waitFor(`[...document.querySelectorAll('.ant-tooltip')].some((t) => t.textContent.trim() === 'New')`, 10000).then(() => true, () => false);
+    check(tipShown, 'folded, New has its name in a tooltip');
+    await shotClip(page, shotsDir, 'd2-collapsed.png', await boxOf(page, '.ant-layout-sider', 0));
+    const folded = await newMenu(page, 'New folder');
+    check(folded.some((i) => i.text === 'New folder' && !i.disabled), 'folded, the New menu opens with its entries');
+    await press(page, 'body', 'Escape');
+    await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
+    await clickOn(page, '[data-testid="rail-toggle"]');
+    await page.waitFor(`!document.querySelector('.ant-layout-sider-collapsed')`, 15000);
+
+    // ---- Phone: the drawer holds New at its top, and the toolbar keeps its New. The phone emulation is a coarse pointer, so
+    // the Storage row is a finger's target: at least 44 px tall.
+    await setPhone(page, true);
+    await size(390, 800);
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('[data-testid="nav-open"]')`, 15000);
+    const phoneToolbar = await page.evaluate(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].some((b) => b.textContent.trim() === 'New')`);
+    check(phoneToolbar, 'at 390 the toolbar keeps its New');
+    await snap('d2-phone-toolbar.png');
+    await page.evaluate(`document.querySelector('[data-testid="nav-open"]').click(), true`);
+    await page.waitFor(`!!document.querySelector('.ant-drawer-open [data-testid="new-button"]')`, 15000);
+    const drawerTop = await page.evaluate(`(() => { const n = document.querySelector('.ant-drawer-open [data-testid="new-button"]').getBoundingClientRect().top; const t = document.querySelector('.ant-drawer-open [data-testid="folder-tree"]')?.getBoundingClientRect().top ?? Infinity; return { n, t }; })()`);
+    check(drawerTop.n < drawerTop.t, `the drawer shows New at its top, above the tree (${JSON.stringify(drawerTop)})`);
+    await page.waitFor(`!!document.querySelector('.ant-drawer-open .shell-storage-item')`, 15000);
+    // The drawn height is 56 px with the figures, so the height alone would pass without the rule (which matters before the figures
+    // are read, when the row is its title alone). The row's declared minimum is what the rule sets, so both are checked.
+    const storageRow = await page.evaluate(`(() => { const el = document.querySelector('.ant-drawer-open .shell-storage-item'); return { coarse: window.matchMedia('(pointer: coarse)').matches, h: el.getBoundingClientRect().height, min: parseFloat(getComputedStyle(el).minBlockSize) }; })()`);
+    check(storageRow.coarse && storageRow.h >= 44 && storageRow.min >= 44, `on a coarse pointer the Storage row is at least 44 px tall, and its minimum says so (${JSON.stringify(storageRow)})`);
+    await snap('d2-phone-drawer.png');
+    await page.evaluate(`document.querySelector('.ant-drawer-close').click(), true`);
+    await page.waitFor(`!document.querySelector('.ant-drawer-open')`, 10000);
+    await setPhone(page, false);
+    await size(1440, 900);
+    await navigateTo(page, `/files/${teamA}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
+  } finally {
+    // Whatever the checks did, the run leaves what it found: the member's limit, the uploads and the folder made here, the
+    // rail, the language, the theme, the viewport and the picker. Each step is tried on its own, so one failure does not stop the rest.
+    const failures = [];
+    const step = async (what, fn) => {
+      try {
+        await fn();
+      } catch (err) {
+        failures.push(`${what}: ${err.message}`);
+      }
+    };
+    await step('the member limit', () => quotaSet(api, base, accountID, accountKey, memberID, original));
+    await step('the files and folder made here', async () => {
+      const removeWhere = async (path, names) => {
+        const kids = (await api(base, 'GET', path, accountKey)).items ?? [];
+        for (const n of kids) if (names.includes(n.name)) await api(base, 'DELETE', `/api/v1/nodes/${n.id}?permanent=true`, accountKey);
+        const left = ((await api(base, 'GET', path, accountKey)).items ?? []).filter((n) => names.includes(n.name));
+        if (left.length > 0) throw new Error(`${left.length} left under ${path}`);
+      };
+      if (myFolder) await removeWhere(`/api/v1/folders/${myFolder}/children?path=%2F`, [uploadName, MADE_NAME]);
+      await removeWhere(`/api/v1/folders/${teamA}/children?path=${encodeURIComponent('/D1 Projects')}`, [folderUploadName]);
+    });
+    // Read again after the removal: what the server still holds under the run's names is a failure, whatever the steps above did.
+    await step('nothing of the run is still on the server', async () => {
+      const left = [];
+      if (myFolder) {
+        const kids = (await api(base, 'GET', `/api/v1/folders/${myFolder}/children?path=%2F`, accountKey)).items ?? [];
+        left.push(...kids.filter((n) => n.name === uploadName || n.name === MADE_NAME).map((n) => n.name));
+      }
+      const d1 = (await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=${encodeURIComponent('/D1 Projects')}`, accountKey)).items ?? [];
+      left.push(...d1.filter((n) => n.name === folderUploadName).map((n) => n.name));
+      if (left.length > 0) throw new Error(`still there: ${left.join(', ')}`);
+    });
+    await step('the local upload files', async () => {
+      for (const f of localFiles) await rm(f, { force: true });
+    });
+    await step('the picker', async () => {
+      if (!pickerPatched) return;
+      await page.evaluate(`(() => { if (window.__d2Click) { HTMLInputElement.prototype.click = window.__d2Click; delete window.__d2Click; } delete window.__pickerActive; })()`);
+      if (!(await page.evaluate(`HTMLInputElement.prototype.click.toString().includes('[native code]')`))) throw new Error('the click is still patched');
+    });
+    await step('the viewport', () => setPhone(page, false));
+    await step('the language', async () => {
+      const now = await page.evaluate(`document.documentElement.lang`);
+      if (now !== langWas) await setLanguage(page, langWas === 'he' ? 'עברית' : 'English');
+    });
+    await step('the theme', async () => {
+      const now = await page.evaluate(`document.documentElement.dataset.theme`);
+      if (now !== themeWas) await setTheme(page, themeWas === 'dark' ? 'Dark' : 'Light');
+    });
+    await step('the rail', async () => {
+      if (await page.evaluate(`!!document.querySelector('.ant-layout-sider-collapsed')`)) await clickOn(page, '[data-testid="rail-toggle"]');
+      await page.evaluate(railWas === null ? `window.localStorage.removeItem('${RAIL_KEY}')` : `window.localStorage.setItem('${RAIL_KEY}', ${q(railWas)})`);
+    });
+    check(failures.length === 0, `the run leaves nothing behind (${failures.join('; ') || 'nothing failed'})`);
+  }
+}
+
+// hover moves the pointer over the element the selector names, so a tooltip opens.
+async function hover(page, selector) {
+  const at = await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  if (!at) throw new Error(`nothing matches ${selector}`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, button: 'none', buttons: 0 });
+  await sleep(300);
+}
+
+// clickOn clicks the first element the selector names, once it is on the page.
+async function clickOn(page, selector) {
+  await page.waitFor(`!!document.querySelector(${q(selector)})`, 10000);
+  await page.evaluate(`document.querySelector(${q(selector)}).click(), true`);
+}

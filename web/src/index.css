@@ -228,6 +228,38 @@ a {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* The sidebar's rows share one icon column and one name column, and one font size (decision 66): an icon sits --sc-icon-col in
+   from the sidebar's content edge (28 px, or 48 px on a finger), and the name follows an 18 px icon and a 10 px gap. The New
+   button, the folder tree and the menu use the same numbers. The folded rail keeps the menu's own centred icons. */
+.shell-sider-body {
+  --sc-icon-col: 28px;
+  font-size: 14px;
+}
+.shell-menu.ant-menu:not(.ant-menu-inline-collapsed) .ant-menu-item {
+  padding-inline-start: var(--sc-icon-col, 28px);
+}
+.shell-menu.ant-menu .ant-menu-item .ant-menu-item-icon + span {
+  margin-inline-start: 10px;
+}
+/* The Storage entry is a block (its row, the bar and the figures): it is not held to the menu's one line. */
+.shell-menu.ant-menu .shell-storage-item.ant-menu-item {
+  block-size: auto;
+  min-block-size: 40px;
+  line-height: 1.4;
+  padding-block: 8px;
+  white-space: normal;
+}
+.shell-menu.ant-menu .shell-storage-item.ant-menu-item .ant-menu-item-icon {
+  align-self: flex-start;
+  margin-block-start: 1px;
+}
+/* A finger gets the 44 px target the other sidebar targets have (the tree rows and the New button take 44 on a coarse pointer). */
+@media (pointer: coarse) {
+  .shell-menu.ant-menu .shell-storage-item.ant-menu-item {
+    min-block-size: 44px;
+  }
+}
+
 /* The desktop sidebar is a column: the brand and menu take the height that is left, and the rail
    toggle at the bottom keeps its place. */
 .shell-sider {

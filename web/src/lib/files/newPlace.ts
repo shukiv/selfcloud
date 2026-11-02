@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// The sidebar's New button (decision 66): where a new folder or an upload goes, and which entries the place takes. The files
+// page writes the place it shows (newPlace); the sidebar reads it there. Off the files pages the New actions go to the
+// person's own My files root, and never to a folder the page did not show.
+import { userWritable } from '../store';
+import type { Here } from './location';
+import { uploadTargetWhere, type DroppedFile, type UploadWhere } from './ops';
+import { manager } from './uploads';
+
+// NewPlace is the place the New actions act on, and what the place takes. readOnly is a place the person cannot add to at
+// all: its entries are shown disabled, with the reason, and nothing is sent elsewhere.
+export interface NewPlace {
+  where: UploadWhere;
+  canFolder: boolean;
+  canUpload: boolean;
+  canUploadFolder: boolean;
+  readOnly: boolean;
+}
+
+// newPlace is the place the files page shows, written by FilesPage and cleared when it is left. null until the place is read.
+export const newPlace = userWritable<NewPlace | null>(null);
+
+// myFilesPlace is the person's own My files root: everything can be added there.
+export function myFilesPlace(personalID: string): NewPlace {
+  return { where: { folder: personalID, dirID: null, path: '/' }, canFolder: true, canUpload: true, canUploadFolder: true, readOnly: false };
+}
+
+// placeOfHere is the place the files page shows, with what the caller may do in it (the page's own rules).
+export function placeOfHere(here: Here, canUpload: boolean, canUploadFolder: boolean): NewPlace {
+  return {
+    where: { folder: here.folder, dirID: here.dir?.id ?? null, path: here.path },
+    canFolder: canUploadFolder,
+    canUpload,
+    canUploadFolder,
+    readOnly: !canUpload,
+  };
+}
+
+// newPlaceFor says where the New actions act now: on a files page, the folder shown (null while it is not read); on any other
+// page, the person's own My files root (null for a person with no My files, such as an installation admin).
+export function newPlaceFor(onFiles: boolean, shown: NewPlace | null, personalID: string | null): NewPlace | null {
+  if (onFiles) return shown;
+  return personalID ? myFilesPlace(personalID) : null;
+}
+
+export type NewKey = 'newFolder' | 'upload' | 'uploadFolder';
+
+export interface NewEntry {
+  key: NewKey;
+  visible: boolean;
+  enabled: boolean;
+}
+
+// newEntries is the New menu for a place, by the toolbar's rules: an entry the place cannot take is hidden. A read-only place
+// shows all three disabled, so the reason shows where they are.
+export function newEntries(p: NewPlace): NewEntry[] {
+  return [
+    { key: 'newFolder', visible: p.canFolder || p.readOnly, enabled: p.canFolder && !p.readOnly },
+    { key: 'upload', visible: p.canUpload || p.readOnly, enabled: p.canUpload && !p.readOnly },
+    { key: 'uploadFolder', visible: p.canUploadFolder || p.readOnly, enabled: p.canUploadFolder && !p.readOnly },
+  ];
+}
+
+// queueInto starts the uploads of picked or dropped files into a place. It returns how many could not be placed (a folder's
+// subdirectory with no path to it).
+export function queueInto(where: UploadWhere, files: DroppedFile[]): number {
+  const batch: Array<{ file: File; target: NonNullable<ReturnType<typeof uploadTargetWhere>> }> = [];
+  let skipped = 0;
+  for (const d of files) {
+    const target = uploadTargetWhere(where, d.relDir);
+    if (target) batch.push({ file: d.file, target });
+    else skipped++;
+  }
+  if (batch.length > 0) manager.add(batch);
+  return skipped;
+}

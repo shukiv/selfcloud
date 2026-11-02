@@ -12,6 +12,8 @@ import {
   parseUserLimit,
   sortByUse,
   storageNoticePercent,
+  storagePercent,
+  sidebarMeterLevel,
   type MeStorage,
 } from './logic';
 
@@ -139,5 +141,34 @@ describe('storageNoticePercent', () => {
 
   it('never shows more than 100%', () => {
     expect(storageNoticePercent(storage(1500, 0, 1000))).toBe(100);
+  });
+});
+
+describe('storagePercent and sidebarMeterLevel', () => {
+  it('has no percent and no bar without a limit', () => {
+    expect(storagePercent(null)).toBeNull();
+    expect(storagePercent(storage(900, 0, null))).toBeNull();
+    expect(storagePercent(storage(900, 0, 0))).toBeNull();
+    expect(sidebarMeterLevel(900, null)).toBe('none');
+    expect(sidebarMeterLevel(900, 0)).toBe('none');
+  });
+
+  it('shows the share held, rounded down, and counts reserved bytes too', () => {
+    expect(storagePercent(storage(610, 0, 1000))).toBe(61);
+    expect(storagePercent(storage(500, 110, 1000))).toBe(61);
+    expect(storagePercent(storage(999, 0, 1000))).toBe(99);
+    expect(storagePercent(storage(1000, 0, 1000))).toBe(100);
+    expect(storagePercent(storage(1500, 0, 1000))).toBe(100);
+  });
+
+  it('keeps the bar accent under 80%, warns from 80%, and is an error at 100% and over', () => {
+    expect(sidebarMeterLevel(799, 1000)).toBe('ok');
+    expect(sidebarMeterLevel(800, 1000)).toBe('warning');
+    expect(sidebarMeterLevel(850, 1000)).toBe('warning');
+    expect(sidebarMeterLevel(949, 1000)).toBe('warning');
+    expect(sidebarMeterLevel(950, 1000)).toBe('warning');
+    expect(sidebarMeterLevel(999, 1000)).toBe('warning');
+    expect(sidebarMeterLevel(1000, 1000)).toBe('danger');
+    expect(sidebarMeterLevel(1500, 1000)).toBe('danger');
   });
 });

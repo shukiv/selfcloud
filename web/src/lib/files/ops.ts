@@ -32,18 +32,31 @@ export function nameMessageKey(p: NameProblem): string {
   return `files.name.${p}`;
 }
 
-// uploadTargetFor is where a file goes when it is dropped or picked in the browser's current place. A
-// file in a folder's subdirectory needs the place's path; without one, the upload cannot be made.
-export function uploadTargetFor(here: Here, relDir: string): UploadTarget | null {
+// UploadWhere is a place a file can go into: its folder, the directory in it by ID (null for the folder's root), and the
+// directory's path from the folder's root ("/" for the root), or null when the path is unknown.
+export interface UploadWhere {
+  folder: string;
+  dirID: string | null;
+  path: string | null;
+}
+
+// uploadTargetWhere is where a file goes when it is dropped or picked in a place. A file in a folder's subdirectory needs
+// the place's path; without one, the upload cannot be made.
+export function uploadTargetWhere(where: UploadWhere, relDir: string): UploadTarget | null {
   if (relDir === '') {
-    if (here.dir) return { folder: here.folder, parent: here.dir.id };
-    return { folder: here.folder, path: '/' };
+    if (where.dirID !== null) return { folder: where.folder, parent: where.dirID };
+    return { folder: where.folder, path: '/' };
   }
-  const base = here.path;
+  const base = where.path;
   if (base === null) return null;
   const path = relDir.split('/').reduce<string | null>((p, seg) => (p === null ? null : joinPath(p, seg)), base);
   if (path === null) return null;
-  return { folder: here.folder, path, parents: true };
+  return { folder: where.folder, path, parents: true };
+}
+
+// uploadTargetFor is where a file goes when it is dropped or picked in the browser's current place.
+export function uploadTargetFor(here: Here, relDir: string): UploadTarget | null {
+  return uploadTargetWhere({ folder: here.folder, dirID: here.dir?.id ?? null, path: here.path }, relDir);
 }
 
 // DroppedFile is a file with the folders it sits in, relative to the place it was dropped on.

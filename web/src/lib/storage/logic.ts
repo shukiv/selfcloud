@@ -121,3 +121,21 @@ export function storageNoticePercent(s: MeStorage | null): number | null {
   if (share < STORAGE_NOTICE_SHARE) return null;
   return Math.min(100, Math.floor(share * 100));
 }
+
+// storagePercent is how full the person's own limit is, in whole percent, rounded down and never above 100 (the sidebar's
+// meter says it). A null or zero limit is no limit, and gives null.
+export function storagePercent(s: MeStorage | null): number | null {
+  if (!s || s.quota_bytes === null || s.quota_bytes <= 0) return null;
+  return Math.min(100, Math.floor((heldBytes(s) / s.quota_bytes) * 100));
+}
+
+// sidebarMeterLevel is the sidebar's bar: accent below 80%, the warning colour from 80%, and the error colour at 100% or more.
+// It is not meterLevel: the page's meter turns to danger at 95% and the sidebar keeps its own thresholds (decision 66). A null
+// or zero limit has no bar.
+export function sidebarMeterLevel(held: number, quota: number | null): 'ok' | 'warning' | 'danger' | 'none' {
+  if (quota === null || quota <= 0) return 'none';
+  const share = held / quota;
+  if (share >= 1) return 'danger';
+  if (share >= STORAGE_NOTICE_SHARE) return 'warning';
+  return 'ok';
+}

@@ -48,7 +48,10 @@ import { starNode, unstarNode } from "../lib/stars";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { makeZip, type ZipPhase } from "../lib/files/zips";
 import { officeConvert } from "../lib/files/convert";
-import { nameProblem, nameMessageKey, uploadTargetFor, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
+import { nameProblem, nameMessageKey, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
+import { newPlace, placeOfHere, queueInto } from "../lib/files/newPlace";
+import { useSidebarDocked } from "../lib/sidebarDocked";
+import { refreshMyStorage } from "../lib/storage/api";
 import { parseFilesPath, filesURL, type FilesRoute } from "../lib/files/route";
 import { trimCrumbs, type Crumb } from "../lib/files/breadcrumbs";
 import { nextSort, type SortDir, type SortKey } from "../lib/files/sort";
@@ -230,6 +233,9 @@ export default function FilesPage() {
   const coarse = useCoarsePointer();
   const roomy = useRoomy();
   const spacious = useRoomy(480);
+  // Where the sidebar is shown, its New button holds the New actions, so the toolbar has none. A drawer has no New of its own,
+  // so the toolbar keeps its New there (decision 66).
+  const docked = useSidebarDocked();
   // Action notices are toasts: a toast covers no row, where an alert above the listing pushed every row down.
   const { message } = App.useApp();
   const qc = useQueryClient();
@@ -317,6 +323,7 @@ export default function FilesPage() {
   const [previewMedia, setPreviewMedia] = useState<MediaSeed | null>(null);
   const [newName, setNewName] = useState("");
   const [newNameError, setNewNameError] = useState<string | null>(null);
+  const [newBusy, setNewBusy] = useState(false);
   const [jobs, setJobs] = useState<Array<{ id: string; status: Job["status"] }>>([]);
   const [conflict, setConflict] = useState<{ name: string; batch: boolean } | null>(null);
   const conflictResolve = useRef<((a: { choice: ConflictChoice; remember: boolean }) => void) | null>(null);
@@ -529,6 +536,8 @@ export default function FilesPage() {
   // The folder tree is read again only for the folder shown and the ones the change named (where items left or came to).
   function reload(also: Branch[] = []): Promise<unknown> {
     const shown: Branch[] = folderID ? [{ folder: folderID, dir: dirID }] : [];
+    // A change that moves bytes (a delete, a move to the trash, an upload that ends) also reads the sidebar's storage meter.
+    void refreshMyStorage().catch(() => undefined);
     return refreshTree(qc, [...shown, ...also]);
   }
 
@@ -574,6 +583,15 @@ export default function FilesPage() {
   const canUploadHere = here !== null && (here.dir !== null || here.path !== null) && atLeast(folderRole, "contributor");
   const canUploadFolder = canUploadHere && here !== null && here.path !== null;
   const canMakeFolder = canUploadFolder;
+  // The sidebar's New acts on the folder shown (decision 66). It is written when the place or what it takes changes, and cleared
+  // when this page is left, so no other page sees a folder it did not show.
+  const newKey = here ? [here.folder, here.dir?.id ?? "", here.path ?? "", canUploadHere, canUploadFolder].join("|") : "";
+  useEffect(() => {
+    newPlace.set(here ? placeOfHere(here, canUploadHere, canUploadFolder) : null);
+    // The effect runs for a new place, or a change of what it takes: its key is the text of both.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newKey]);
+  useEffect(() => () => newPlace.set(null), []);
   const allEdit = picked.length > 0 && picked.every((n) => can.edit(n.role));
   // The space the listing is in: a visible one, or a hidden one, which is still reached.
   const space = here ? ([...folderList, ...hiddenList].find((f) => f.id === here.folder) ?? null) : null;
@@ -1288,7 +1306,7 @@ export default function FilesPage() {
   }
 
   async function createFolder() {
-    if (!here || here.path === null) return;
+    if (!here || here.path === null || newBusy) return;
     const name = newName.trim();
     const problem = nameProblem(name);
     if (problem) {
@@ -1298,6 +1316,7 @@ export default function FilesPage() {
     const folderPath = joinPath(here.path, name);
     if (!folderPath) return;
     const changed = sessionChanged();
+    setNewBusy(true);
     try {
       await mkdir(here.folder, folderPath);
       if (changed()) return;
@@ -1306,6 +1325,8 @@ export default function FilesPage() {
       await reload();
     } catch (err) {
       if (!changed()) setNewNameError(fileErrorText(err, lang));
+    } finally {
+      setNewBusy(false);
     }
   }
 
@@ -1313,14 +1334,7 @@ export default function FilesPage() {
 
   function queueFiles(files: DroppedFile[]) {
     if (!here) return;
-    const batch: Array<{ file: File; target: NonNullable<ReturnType<typeof uploadTargetFor>> }> = [];
-    let skipped = 0;
-    for (const d of files) {
-      const tgt = uploadTargetFor(here, d.relDir);
-      if (tgt) batch.push({ file: d.file, target: tgt });
-      else skipped++;
-    }
-    if (batch.length > 0) manager.add(batch);
+    const skipped = queueInto(placeOfHere(here, canUploadHere, canUploadFolder).where, files);
     if (skipped > 0) void message.warning(t("files.upload.noPath"));
   }
 
@@ -1837,7 +1851,7 @@ export default function FilesPage() {
             )}
             {hasSelection ? selectionPanel : (
               <>
-            {(canMakeFolder || canUploadHere) && (
+            {(canMakeFolder || canUploadHere) && !docked && (
               <ConfigProvider theme={menuTheme}>
                 <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(newActs), style: MENU_SCROLL }}>
                   <Button icon={<Plus {...ic} />} aria-haspopup="menu" style={touchSize}>
@@ -2042,6 +2056,7 @@ export default function FilesPage() {
         cancelText={t("common.cancel")}
         onCancel={() => setDialog(null)}
         onOk={() => void createFolder()}
+        confirmLoading={newBusy}
         maskClosable={false}
         destroyOnClose
         afterOpenChange={(open) => {
@@ -2050,6 +2065,7 @@ export default function FilesPage() {
       >
         <Form layout="vertical" onFinish={() => void createFolder()}>
           <Form.Item
+            htmlFor="newfolder-name"
             label={t("files.newFolder.label")}
             validateStatus={newNameError ? "error" : undefined}
             help={newNameError ?? undefined}

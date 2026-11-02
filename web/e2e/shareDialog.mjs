@@ -52,11 +52,11 @@ async function clickButton(page, text) {
   }
   const holder = NEW_MENU.includes(text) ? 'New' : 'More';
   // The panel's More is an icon with its name as the label; the toolbar's New and More are words.
-  const toolbarButton = `[...document.querySelectorAll('[data-testid="browser-toolbar"] button, [data-testid="selection-panel"] button')].find((x) => x.textContent.trim() === ${q(holder)} || x.getAttribute('aria-label') === ${q(holder)})`;
+  const toolbarButton = `[...document.querySelectorAll('[data-testid="browser-toolbar"] button, [data-testid="selection-panel"] button, [data-testid="new-button"]')].find((x) => x.textContent.trim() === ${q(holder)} || x.getAttribute('aria-label') === ${q(holder)})`;
   await page.waitFor(`!!${toolbarButton}`, 10000);
   await page.evaluate(`${toolbarButton}.click()`);
-  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(text)} && !i.classList.contains('ant-dropdown-menu-item-disabled'))`, 10000);
-  await page.evaluate(`[...document.querySelectorAll('.ant-dropdown-menu-item')].find((i) => i.textContent.trim() === ${q(text)}).click()`);
+  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(text)} && !i.classList.contains('ant-dropdown-menu-item-disabled'))`, 10000);
+  await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((i) => i.textContent.trim() === ${q(text)}).click()`);
 }
 
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
@@ -221,6 +221,13 @@ export async function sharingChecks(page, ctx) {
   await rowAppears(page, 'notes.txt');
   const viewerButtons = await buttonTexts(page);
   check(!viewerButtons.includes('Upload files') && !viewerButtons.includes('New folder'), 'a viewer of the shared folder cannot upload or make folders');
+  // The sidebar's New is on the folder shown: a viewer's entries are disabled, with the reason (decision 66).
+  await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click()`);
+  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((i) => i.textContent.trim() === 'New folder')`, 10000);
+  const viewerMenu = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].map((i) => ({ text: i.textContent.trim(), disabled: i.classList.contains('ant-dropdown-menu-item-disabled') }))`);
+  check(['New folder', 'Upload files', 'Upload folder'].every((t) => viewerMenu.some((i) => i.text === t && i.disabled)), `a viewer's New entries are disabled in the sidebar (${JSON.stringify(viewerMenu)})`);
+  await press(page, 'body', 'Escape');
+  await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
   await selectRow(page, 'notes.txt');
   // The selection panel's icons have no text: their names (aria-label) are read too.
   const viewerSel = [...(await buttonTexts(page)), ...(await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].map((b) => b.getAttribute('aria-label'))`))];

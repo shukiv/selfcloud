@@ -10,11 +10,16 @@ import { pageQuery, type MeStorage } from './logic';
 // myStorage is the caller's own storage, as the navigation meter shows it. null until read, and for an admin.
 export const myStorage = userWritable<MeStorage | null>(null);
 
+// latestStorageRequest numbers the GET /me calls. An answer to an older call that lands after a newer one is dropped, so the
+// figures always come from the last call started.
+let latestStorageRequest = 0;
+
 // refreshMyStorage reads GET /me and keeps only its storage block.
 export async function refreshMyStorage(): Promise<void> {
   const changed = sessionChanged();
+  const request = ++latestStorageRequest;
   const me = await api<{ storage?: MeStorage }>('GET', '/api/v1/me');
-  if (!changed()) myStorage.set(me.storage ?? null);
+  if (request === latestStorageRequest && !changed()) myStorage.set(me.storage ?? null);
 }
 
 // A file in a listing. in_trash is true when the file is in the trash, or below a trashed directory.

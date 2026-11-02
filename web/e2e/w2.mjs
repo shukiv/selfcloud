@@ -294,8 +294,10 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     check(mid === 'ok', `the tree's folder is marked as taking the drop (${mid})`);
     await waitIn(api, base, teamA, '/w2/drag/Beta/Inner', accountKey, 'g07.txt');
     // A folder cannot be dropped into a folder below it: Beta onto Inner, in the tree.
+    // Inner is centred first, not at the window's edge (the pointer under the bottom edge scrolls the page), and Beta is measured after
+    // it, since centring can scroll the page.
+    const inner = await centre(page, `[data-testid="folder-tree"] .tree-row[data-drop-name="Inner"]`, 'center');
     const beta = await nameAt(page, 'Beta');
-    const inner = await centre(page, `[data-testid="folder-tree"] .tree-row[data-drop-name="Inner"]`);
     const refused = await dragTo(page, beta, inner, { during: async () => ({ state: await dropState(page, `[data-testid="folder-tree"] .tree-row[data-drop-name="Inner"]`), ghost: await ghost(page) }) });
     check(refused.state === 'refused', `Beta onto Inner, below it, is refused (${refused.state})`);
     check((await listed(api, base, teamA, '/w2/drag', accountKey)).includes('Beta'), 'Beta did not move into itself');

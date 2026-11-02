@@ -38,6 +38,7 @@ import { x3Checks } from './x3.mjs';
 import { x4Checks } from './x4.mjs';
 import { x6Checks } from './x6.mjs';
 import { d1Checks } from './d1.mjs';
+import { d2Checks } from './d2.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -281,11 +282,11 @@ async function clickButton(page, text) {
   }
   const holder = NEW_MENU.includes(text) ? 'New' : 'More';
   // The panel's More is an icon with its name as the label; the toolbar's New and More are words.
-  const toolbarButton = `[...document.querySelectorAll('[data-testid="browser-toolbar"] button, [data-testid="selection-panel"] button')].find((x) => x.textContent.trim() === ${q(holder)} || x.getAttribute('aria-label') === ${q(holder)})`;
+  const toolbarButton = `[...document.querySelectorAll('[data-testid="browser-toolbar"] button, [data-testid="selection-panel"] button, [data-testid="new-button"]')].find((x) => x.textContent.trim() === ${q(holder)} || x.getAttribute('aria-label') === ${q(holder)})`;
   await page.waitFor(`!!${toolbarButton}`, 10000);
   await page.evaluate(`${toolbarButton}.click()`);
-  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(text)} && !i.classList.contains('ant-dropdown-menu-item-disabled'))`, 10000);
-  await page.evaluate(`[...document.querySelectorAll('.ant-dropdown-menu-item')].find((i) => i.textContent.trim() === ${q(text)}).click()`);
+  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(text)} && !i.classList.contains('ant-dropdown-menu-item-disabled'))`, 10000);
+  await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((i) => i.textContent.trim() === ${q(text)}).click()`);
 }
 
 // rowAppears and rowGone wait for a row of the listing.
@@ -355,11 +356,12 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   check(true, 'My files opens the personal folder');
   await clickMenu(page, 'Team A');
   await page.waitFor(`location.pathname === '/files/${teamA}'`);
-  await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Team A' && [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'New')`);
+  // Wide windows: the sidebar holds New (decision 66), and the toolbar has none.
+  await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Team A' && !!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])')`);
   const buttons = await buttonTexts(page);
-  check(buttons.includes('New'), `an editor sees the New menu on the toolbar (${JSON.stringify(buttons)})`);
+  check(buttons.includes('New'), `an editor sees the New menu in the sidebar (${JSON.stringify(buttons)})`);
   // The label alone says nothing about what the menu holds: it is opened, its items are read, and it is closed again.
-  await page.evaluate(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].find((x) => x.textContent.trim() === 'New').click()`);
+  await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click()`);
   await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((i) => i.textContent.trim() === 'New folder')`, 10000);
   const newItems = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown-menu-item')].map((i) => i.textContent.trim())`);
   check(newItems.includes('New folder') && newItems.includes('Upload files'), `the New menu holds New folder and Upload files (${JSON.stringify(newItems)})`);
@@ -472,10 +474,19 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   await selectRow(page, 'readme.txt');
   // The panel's icons have no text: their names (aria-label) are read too.
   const viewer = [...(await buttonTexts(page)), ...(await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].map((b) => b.getAttribute('aria-label'))`))];
-  for (const hidden of ['New folder', 'Upload files', 'Upload folder', 'Rename', 'Delete']) {
+  for (const hidden of ['Rename', 'Delete']) {
     check(!viewer.includes(hidden), `a viewer of Team B has no ${hidden}`);
   }
   check(viewer.includes('Download'), 'a viewer of Team B can download');
+  // The sidebar's New is on the folder shown: a viewer's three entries are disabled, with the reason, and not hidden (decision 66).
+  await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click()`);
+  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((i) => i.textContent.trim() === 'New folder')`, 10000);
+  const viewerNew = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].map((i) => ({ text: i.textContent.trim(), disabled: i.classList.contains('ant-dropdown-menu-item-disabled') }))`);
+  const viewerEntries = viewerNew.filter((i) => ['New folder', 'Upload files', 'Upload folder'].includes(i.text));
+  check(viewerEntries.length === 3 && viewerEntries.every((i) => i.disabled), `a viewer of Team B sees New folder, Upload files and Upload folder disabled (${JSON.stringify(viewerNew)})`);
+  check(viewerNew.some((i) => i.text === 'You cannot add to this folder.'), 'the viewer is told why: the folder takes no additions');
+  await press(page, 'body', 'Escape');
+  await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
 }
 
 // fileBrowserExtraChecks covers what the Svelte suite does not: a connection that drops in the middle of an upload,
@@ -744,6 +755,7 @@ async function main() {
     if (!only || only === 'r7') await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (!only || only === 'r7b') await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (!only || only === 'd1') await d1Checks(h, { page, base, accountKey, teamA });
+    if (!only || only === 'd2') await d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID });
     if (!only || only === 'x3') await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || only === 'x4') await x4Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || only === 'x6') await x6Checks(h, { page, base, accountKey, accountID, memberID });

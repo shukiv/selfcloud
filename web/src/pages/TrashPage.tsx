@@ -7,6 +7,7 @@ import { useLang, useT, translatePlural } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { session } from "../lib/session";
 import { queryKey, refreshTree } from "../lib/query";
+import { refreshMyStorage } from "../lib/storage/api";
 import { folders, loadFolders } from "../lib/files/folders";
 import { personLabel } from "../lib/files/people";
 import { emptyTrashStep, getMe, listTrash, purgeTrashed, restoreNode, statOrNull } from "../lib/files/api";
@@ -92,8 +93,9 @@ export default function TrashPage() {
     return translatePlural(lang, "trash.purge", daysUntil(it.purge_at));
   }
 
-  // A restore or a purge changes the trash and the listings and places it touches.
+  // A restore or a purge changes the trash and the listings and places it touches, and the bytes the sidebar's meter shows.
   function refresh() {
+    void refreshMyStorage().catch(() => undefined);
     return refreshTree(qc);
   }
 

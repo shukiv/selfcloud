@@ -421,6 +421,22 @@ describe("the page's title and the delete dialog", () => {
   });
 });
 
+describe("the new folder dialog on the files page", () => {
+  it("finds its name input by the label, and the create button shows loading while the folder is made", async () => {
+    api.mkdir.mockReturnValue(new Promise(() => undefined));
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await chooseNew("New folder");
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByLabelText("Folder name");
+    expect(input.id).toBe("newfolder-name");
+    fireEvent.change(input, { target: { value: "Plans" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create folder" }));
+    await waitFor(() => expect(api.mkdir).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(dialog.querySelector(".ant-modal-footer .ant-btn-primary")?.className).toContain("ant-btn-loading"));
+  });
+});
+
 describe("the dialogs close on Escape only", () => {
   it("keeps the new-folder dialog open when the mask behind it is clicked", async () => {
     renderAt(FOLDER);
@@ -1809,5 +1825,27 @@ describe("Play media", () => {
     fireEvent.contextMenu(rows("one.mp4") as Element, { clientX: 40, clientY: 50 });
     await screen.findByRole("menuitem", { name: "Details" });
     expect(screen.queryByRole("menuitem", { name: "Play media" })).toBeNull();
+  });
+});
+
+// The toolbar's New is the sidebar's where the sidebar is shown (decision 66), and the toolbar keeps its own where it is a drawer.
+describe("the toolbar's New (decision 66)", () => {
+  const original = window.matchMedia;
+  afterEach(() => {
+    window.matchMedia = original;
+  });
+
+  it("is not on the toolbar where the sidebar holds it", async () => {
+    window.matchMedia = (query: string) => ({ ...original(query), matches: query.includes("min-width") }) as MediaQueryList;
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(within(screen.getByRole("toolbar")).queryByRole("button", { name: "New" })).toBeNull();
+  });
+
+  it("is on the toolbar in the drawer layout, a phone's", async () => {
+    window.matchMedia = (query: string) => ({ ...original(query), matches: false }) as MediaQueryList;
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(within(screen.getByRole("toolbar")).getByRole("button", { name: "New" })).toBeTruthy();
   });
 });

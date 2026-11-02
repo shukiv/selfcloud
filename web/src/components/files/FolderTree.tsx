@@ -147,9 +147,10 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
             e.preventDefault();
             ctx.onOpen(space, id);
           }}
-          style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 auto", minInlineSize: 0, minBlockSize: link, color: "inherit", textDecoration: "none" }}
+          style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minInlineSize: 0, minBlockSize: link, color: "inherit", textDecoration: "none" }}
         >
-          <Folder size={16} aria-hidden="true" style={{ flex: "none" }} />
+          {/* The icon is the sidebar's (18 px, as the menu's), and the name follows it 10 px on: the same columns as the menu rows (decision 66). */}
+          <Folder size={18} strokeWidth={1.75} aria-hidden="true" style={{ flex: "none" }} />
           <bdi style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minInlineSize: 0 }}>{name}</bdi>
           {root && ctx.spaceLabel?.(root)}
         </a>

@@ -15,6 +15,10 @@ import { get } from "../lib/store";
 
 import { createQueryClient } from "../lib/query";
 import { treePlace } from "../lib/files/treePlace";
+import { newPlace, type NewPlace } from "../lib/files/newPlace";
+import { myStorage } from "../lib/storage/api";
+import { manager } from "../lib/files/uploads";
+import { formatBytes } from "../lib/files/format";
 
 // The folder lists and the hide call are replaced: each test states what the server answers.
 const mocks = vi.hoisted(() => ({
@@ -22,7 +26,9 @@ const mocks = vi.hoisted(() => ({
   loadHiddenFolders: vi.fn(async () => []),
   setHidden: vi.fn(async () => undefined),
   listAccessRequests: vi.fn(async () => ({ items: [] as unknown[] })),
+  mkdir: vi.fn(async (_folder: string, path: string) => ({ id: "nod_new", name: path.split("/").pop() ?? "", kind: "folder" })),
 }));
+vi.mock("../lib/files/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../lib/files/api")>()), mkdir: mocks.mkdir }));
 vi.mock("../lib/files/folders", async () => {
   const { userWritable } = await import("../lib/store");
   return {
@@ -449,3 +455,157 @@ describe("the Requests entry", () => {
   });
 });
 
+// wideScreen draws the sidebar beside the page (the lg breakpoint), as a desktop does, for the test's own run.
+function wideScreen<T>(run: () => Promise<T>): Promise<T> {
+  const original = window.matchMedia;
+  window.matchMedia = (query: string) => ({ ...original(query), matches: query.includes("min-width") }) as MediaQueryList;
+  return run().finally(() => {
+    window.matchMedia = original;
+  });
+}
+
+describe("the sidebar's New (decision 66)", () => {
+  beforeEach(async () => {
+    window.localStorage.clear();
+    await setLang("en");
+    folders.set([]);
+    hiddenFolders.set([]);
+    newPlace.set(null);
+    myStorage.set(null);
+    mocks.mkdir.mockClear();
+  });
+
+  const readOnlyFolder: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true };
+
+  it("off the files pages, New folder makes the folder in My files, from the dialog the sidebar holds", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+      renderShell("/starred");
+      fireEvent.click(await screen.findByRole("button", { name: "New" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "New folder" }));
+      const field = await waitFor(() => {
+        const el = document.getElementById("newfolder-name");
+        if (!el) throw new Error("the folder name is not shown yet");
+        return el;
+      });
+      fireEvent.change(field, { target: { value: "Plans" } });
+      fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
+      await waitFor(() => expect(mocks.mkdir).toHaveBeenCalledWith("fld_mine", "/Plans"));
+    });
+  });
+
+  it("on a files page, New acts on the folder shown, and a folder the person cannot add to is disabled with the reason", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+      newPlace.set(readOnlyFolder);
+      renderShell("/files/fld_t");
+      fireEvent.click(await screen.findByRole("button", { name: "New" }));
+      expect(await screen.findByText("You cannot add to this folder.")).toBeTruthy();
+      expect((await screen.findByRole("menuitem", { name: "Upload files" })).getAttribute("aria-disabled")).toBe("true");
+      expect(mocks.mkdir).not.toHaveBeenCalled();
+    });
+  });
+
+  it("on a files page whose folder is not read yet, New waits disabled and does not fall back to My files", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+      renderShell("/files/fld_t");
+      expect((screen.getByRole("button", { name: "New" }) as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  it("an installation admin has no New button", async () => {
+    await wideScreen(async () => {
+      signIn("admin");
+      renderShell("/admin/tenants");
+      await waitFor(() => expect(document.querySelector(".shell-sider")).not.toBeNull());
+      expect(screen.queryByRole("button", { name: "New" })).toBeNull();
+    });
+  });
+
+  it("a person with no My files has no New button", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      renderShell("/starred");
+      await waitFor(() => expect(document.querySelector(".shell-sider")).not.toBeNull());
+      expect(screen.queryByRole("button", { name: "New" })).toBeNull();
+    });
+  });
+
+  it("the drawer on a phone shows the same New button at its top, and New folder there makes the folder in My files", async () => {
+    signIn("member");
+    folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+    renderShell("/starred");
+    const nav = await openNav();
+    fireEvent.click(within(nav).getByRole("button", { name: "New" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "New folder" }));
+    const field = await waitFor(() => {
+      const el = document.getElementById("newfolder-name");
+      if (!el) throw new Error("the folder name is not shown yet");
+      return el;
+    });
+    fireEvent.change(field, { target: { value: "Plans" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
+    await waitFor(() => expect(mocks.mkdir).toHaveBeenCalledWith("fld_mine", "/Plans"));
+  });
+
+  it("the Storage entry is a row with its title, and a line with the figures, in the menu", async () => {
+    signIn("member");
+    folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+    myStorage.set({ used_bytes: 610, reserved_bytes: 0, quota_bytes: 1000, available_bytes: 390 });
+    renderShell("/starred");
+    const nav = await openNav();
+    const entry = await waitFor(() => {
+      const el = within(nav).getAllByRole("menuitem").find((m) => m.textContent?.startsWith("Storage"));
+      if (!el) throw new Error("no storage entry");
+      return el;
+    });
+    expect(entry.textContent).toContain("Storage (61% full)");
+    expect(entry.textContent).toContain(`${formatBytes(610, "en")} of ${formatBytes(1000, "en")} used`);
+    expect(entry.querySelector('[data-testid="sidebar-meter"]')).not.toBeNull();
+  });
+});
+
+describe("the sidebar's picker (decision 66)", () => {
+  beforeEach(async () => {
+    window.localStorage.clear();
+    await setLang("en");
+    folders.set([]);
+    hiddenFolders.set([]);
+  });
+
+  it("the picked files go to the place the New menu picked, and the input is cleared so the same file can be picked again", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+      const add = vi.spyOn(manager, "add").mockImplementation((() => undefined) as never);
+      try {
+        renderShell("/starred");
+        const input = document.querySelector<HTMLInputElement>('[data-testid="sidebar-file-input"]');
+        if (!input) throw new Error("the file picker is not in the shell");
+        // The input's value is recorded, so the clearing is seen whatever the browser does with a picked file list.
+        const cleared: string[] = [];
+        Object.defineProperty(input, "value", { configurable: true, get: () => "", set: (v: string) => cleared.push(v) });
+        const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+
+        fireEvent.click(await screen.findByRole("button", { name: "New" }));
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Upload files" }));
+        fireEvent.change(input, { target: { files: [file] } });
+        expect(add).toHaveBeenCalledTimes(1);
+        expect(add.mock.calls[0][0][0].target.folder).toBe("fld_mine");
+        expect(cleared).toEqual([""]);
+
+        fireEvent.click(screen.getByRole("button", { name: "New" }));
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Upload files" }));
+        fireEvent.change(input, { target: { files: [file] } });
+        expect(add).toHaveBeenCalledTimes(2);
+        expect(cleared).toEqual(["", ""]);
+      } finally {
+        add.mockRestore();
+      }
+    });
+  });
+});
