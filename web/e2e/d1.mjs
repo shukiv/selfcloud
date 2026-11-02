@@ -142,7 +142,12 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   const menuBelow = await page.evaluate(`(() => { const t = document.querySelector('[data-testid="folder-tree"]'); const m = document.querySelector('.shell-scroll .shell-menu'); return !!t && !!m && !!(t.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING); })()`);
   check(menuBelow, 'the menu is below the tree in the sidebar');
 
-  // ---- A folder click navigates, and the marked row is the place.
+  // ---- A folder click navigates, and the marked row is the place. The tree starts folded (decision 69), so Team A's arrow opens it
+  // first, to reach the folder in it.
+  const teamAOpen = `[...document.querySelectorAll('[data-testid="folder-tree"] [role="treeitem"][aria-level="1"]')].find((x) => x.querySelector('.tree-row bdi')?.textContent === 'Team A')`;
+  await page.waitFor(`!!${teamAOpen}`, 15000);
+  await page.evaluate(`(() => { const t = ${teamAOpen}; if (t && t.getAttribute('aria-expanded') !== 'true') t.querySelector('button[aria-label^="Expand"]')?.click(); return true; })()`);
+  await page.waitFor(`${teamAOpen}?.getAttribute('aria-expanded') === 'true'`, 15000);
   await page.waitFor(`!!document.querySelector('[data-testid="folder-tree"] [data-drop-name="D1 Projects"]')`, 15000);
   await page.evaluate(`document.querySelector('[data-testid="folder-tree"] [data-drop-name="D1 Projects"] a').click()`);
   await page.waitFor(`location.pathname.startsWith('/files/${teamA}/') && !!document.querySelector('[data-testid="folder-tree"] [aria-current="location"][data-drop-name="D1 Projects"], [data-testid="folder-tree"] [aria-current="location"]')`, 15000);
@@ -151,7 +156,8 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   // ---- Team rows open: the team's arrow reads its folders and shows them under the row.
   const teamRow = await page.evaluate(`(() => { const t = [...document.querySelectorAll('[data-testid="folder-tree"] [role="treeitem"][aria-level="1"]')].find((x) => x.querySelector('.tree-row bdi')?.textContent === ${q('Team A')}); return t ? t.getAttribute('aria-expanded') : 'missing'; })()`);
   check(teamRow !== 'missing', `the team row is in the tree (${teamRow})`);
-  await page.evaluate(`[...document.querySelectorAll('[data-testid="folder-tree"] [role="treeitem"][aria-level="1"]')].find((x) => x.querySelector('.tree-row bdi')?.textContent === 'Team A').querySelector('button[aria-label^="Expand"]')?.click()`);
+  // Team A is open from the step above (its arrow reads its folders once); the arrow is clicked only when it is closed.
+  await page.evaluate(`(() => { const t = ${teamAOpen}; if (t && t.getAttribute('aria-expanded') !== 'true') t.querySelector('button[aria-label^="Expand"]')?.click(); return true; })()`);
   await page.waitFor(`[...document.querySelectorAll('[data-testid="folder-tree"] [role="treeitem"][aria-level="1"]')].find((x) => x.querySelector('.tree-row bdi')?.textContent === 'Team A')?.getAttribute('aria-expanded') === 'true'`, 10000);
   check(true, 'a Team row opens to its folders on its arrow');
 

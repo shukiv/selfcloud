@@ -131,15 +131,40 @@ describe("the folder tree", () => {
     expect(onOpen).not.toHaveBeenCalled();
   });
 
-  it("opens the folders on the way to the place shown, and marks the place", async () => {
+  // Decision 69: the tree starts folded. A place deep in the tree does not open the folders on the way; the nearest row on screen
+  // (here, the space's own row) is the one marked.
+  it("starts folded: the folders on the way to the place are not opened, and the nearest row on screen is marked", () => {
     render(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} />);
-    const deep = await screen.findByText("Deep");
-    expect(deep.closest('[role="treeitem"]')?.getAttribute("aria-current")).toBe("location");
-    expect(latest.expanded).toEqual(["fld_a", "nod_one", "nod_deep"]);
+    expect(screen.getByRole("treeitem", { name: "Team A" }).getAttribute("aria-current")).toBe("location");
+    expect(screen.queryByText("Docs")).toBeNull();
+    expect(latest.expanded).toEqual([]);
+  });
+
+  // Decision 69, review fix 8: the place changes after the tree is mounted: no folder on its way opens, and a row is marked only
+  // when it is on screen.
+  it("a place changed after mount opens none of the folders on its way, and marks nothing when none of the way is on screen", async () => {
+    const { rerender } = render(<Harness folder="fld_a" />);
+    expect(screen.getByRole("treeitem", { name: "Team A" }).getAttribute("aria-current")).toBe("location");
+    rerender(<Harness folder="fld_deep" chain={["nod_one", "nod_deep"]} />);
+    // The space row is not on the way (only the folders below its root are), and nothing on the way is shown: nothing is marked.
+    expect(screen.getByRole("treeitem", { name: "Team A" }).getAttribute("aria-current")).toBeNull();
+    expect(document.querySelector('[aria-current="location"]')).toBeNull();
+    expect(screen.queryByRole("treeitem", { name: "Deep" })).toBeNull();
+    expect(screen.queryByText("Docs")).toBeNull();
+    expect(latest.expanded).toEqual([]);
+    expect(api.childrenPage).not.toHaveBeenCalled();
+  });
+
+  it("marks the deepest folder on the way that is on screen, once the branches above it are open", async () => {
+    render(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} start={{ expanded: ["fld_a", "nod_one"] }} />);
+    const deep = await screen.findByRole("treeitem", { name: "Deep" });
+    expect(deep.getAttribute("aria-current")).toBe("location");
+    expect(screen.getByRole("treeitem", { name: "Docs" }).getAttribute("aria-current")).toBeNull();
+    expect(screen.getByRole("treeitem", { name: "Team A" }).getAttribute("aria-current")).toBeNull();
   });
 
   it("does not open a folder again that the person closed, while the place stays the same", async () => {
-    render(<Harness folder="fld_a" chain={["nod_one"]} />);
+    render(<Harness folder="fld_a" chain={["nod_one"]} start={{ expanded: ["fld_a"] }} />);
     await screen.findByText("Docs");
     fireEvent.click(screen.getByRole("button", { name: "Collapse Team A" }));
     await waitFor(() => expect(screen.queryByText("Docs")).toBeNull());
@@ -195,11 +220,13 @@ describe("the folder tree", () => {
 
   it("starts at the folder the person was given when the space's root is not theirs, and reads from there", async () => {
     render(<Harness folder="fld_a" chain={["nod_top", "nod_below"]} top={{ id: "nod_top", name: "Open", role: "viewer" }} />);
-    // The space's own root is not in the tree, and the given folder is, opened, with the place marked.
-    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_a", "nod_top", undefined, { key: "name", dir: "asc" }));
+    // The space's own root is not in the tree, and the given folder is a row, folded (decision 69), and it is the mark: the
+    // nearest row on screen. Nothing under it is read until the person opens it.
     expect(api.childrenPage).not.toHaveBeenCalledWith("fld_a", null, expect.anything(), expect.anything());
+    expect(api.childrenPage).not.toHaveBeenCalled();
     expect(screen.queryByText("Team A")).toBeNull();
     const top = screen.getByText("Open").closest<HTMLElement>(".tree-row") as HTMLElement;
+    expect(top.parentElement?.getAttribute("aria-current")).toBe("location");
     expect(top.dataset.dropDir).toBe("nod_top");
     expect(top.dataset.dropPath).toBe("fld_a,nod_top");
     expect(top.dataset.dropRole).toBe("viewer");
@@ -247,24 +274,40 @@ describe("the folder tree", () => {
   });
 });
 
-// In the sidebar the current folder is on the yellow pill, so its text takes the on-active colour (the menu's own). Other rows
-// keep the sidebar's text. The arrow of the current row follows its text.
-describe("the folder tree in the sidebar: the current row's text", () => {
+// Decision 69 (option B): the current folder has no background. It has a 3 px bar at its start edge and its text and icon in the
+// sidebar's mark colour (the yellow on the default blue). Other rows keep the sidebar's text. Its weight is the menu's.
+describe("the folder tree in the sidebar: the current row's mark", () => {
   const rowOf = (name: string) => screen.getByText(name).closest<HTMLElement>(".tree-row");
 
-  it("is the on-active colour on the current row, and the sidebar's text on the others", () => {
+  it("has no background, a bar class and the mark colour on the current row; the sidebar's text on the others", () => {
     render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
     const current = rowOf("Team A");
-    expect(current?.style.background).toBe("rgb(254, 204, 0)");
-    expect(current?.style.color).toBe("rgb(13, 33, 66)");
+    expect(current?.style.background).toBe("");
+    expect(current?.style.color).toBe("rgb(254, 204, 0)");
+    expect(current?.classList.contains("side-current")).toBe(true);
     const other = rowOf("My files");
     expect(other?.style.color).toBe("rgb(255, 255, 255)");
     expect(other?.style.background).toBe("");
+    expect(other?.classList.contains("side-current")).toBe(false);
   });
 
-  it("gives the arrow of the current row the on-active colour too", async () => {
+  it("gives the arrow of the current row the mark colour too", async () => {
     render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
     const arrow = await screen.findByRole("button", { name: "Collapse Team A" });
-    expect(arrow.style.color).toBe("rgb(13, 33, 66)");
+    expect(arrow.style.color).toBe("rgb(254, 204, 0)");
+  });
+
+  // Decision 69: the current row is not bold, as the menu's selected item is not (the sidebar's rows look alike in every state).
+  it("is not bold on the current row, as the menu's selected item is not", () => {
+    render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
+    expect(rowOf("Team A")?.style.fontWeight).toBe("");
+  });
+
+  // Decision 69: the place is not in the tree (its branch is folded), so the mark sits on the nearest row on screen.
+  it("puts the mark on the nearest row on screen when the place is folded away", () => {
+    render(<Harness colours={SIDEBAR} folder="fld_a" chain={["nod_one", "nod_deep"]} />);
+    const current = rowOf("Team A");
+    expect(current?.classList.contains("side-current")).toBe(true);
+    expect(current?.style.color).toBe("rgb(254, 204, 0)");
   });
 });

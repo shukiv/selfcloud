@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_TREE, MAX_EXPANDED, parseTree, readTree, revealed, withExpanded, writeTree } from "./treeState";
+import { DEFAULT_TREE, MAX_EXPANDED, parseTree, readTree, withExpanded, writeTree } from "./treeState";
 
 afterEach(() => {
   localStorage.clear();
@@ -44,9 +44,12 @@ describe("the tree's saved state", () => {
     expect(big.expanded).toContain(`f${MAX_EXPANDED + 4}`);
   });
 
-  it("reveals the way to a place, and returns the same state when it is already open", () => {
-    const s = revealed(DEFAULT_TREE, ["f", "d1"]);
-    expect(s.expanded).toEqual(["f", "d1"]);
-    expect(revealed(s, ["f", "d1"])).toBe(s);
+  // Decision 69: the state moved to a new key, so the open folders saved before (which the tree used to reveal on its own) are
+  // not read, and everyone starts with the tree folded once.
+  it("does not read a state saved under the key of before this slice", () => {
+    localStorage.setItem("selfcloud.tree.u1", JSON.stringify({ expanded: ["a"] }));
+    expect(readTree("u1")).toEqual(DEFAULT_TREE);
+    writeTree("u1", { expanded: ["b"] });
+    expect(readTree("u1")).toEqual({ expanded: ["b"] });
   });
 });

@@ -223,9 +223,40 @@ a {
   border-color: var(--sc-side-on-active, #0d2142);
 }
 
-/* A folder row in the sidebar's tree takes the sidebar's hover tint; the current folder keeps its yellow pill (inline). */
+/* A folder row in the sidebar's tree takes the sidebar's hover tint, the menu's own (decision 69): the current folder too. The
+   sidebar's rows have no background of their own when they are current; their mark is the bar below. */
+.tree-row-side {
+  position: relative;
+}
 .tree-row-side:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--sc-side-hover, rgba(255, 255, 255, 0.1));
+}
+
+/* The current place in the sidebar (decision 69, option B): a 3 px bar at the row's start edge, in the sidebar's mark colour. One
+   rule for the folder tree's current row and the menu's selected item, so the two look alike; the colour and the text are set by
+   currentMark (theme/currentMark.ts). The menu's inline indicator (antd's ::after) is not drawn: the bar replaces it. */
+.shell-sider-body :is(.side-current, .ant-menu-item-selected)::before {
+  content: "";
+  position: absolute;
+  inset-block: 7px;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  border-radius: 2px;
+  background: var(--sc-side-mark, #fecc00);
+}
+.shell-menu.ant-menu .ant-menu-item::after {
+  display: none;
+}
+/* The selected menu item's text is the mark colour (the same variable the folder tree's current row uses), with no background. */
+.shell-sider-body .shell-menu.ant-menu .ant-menu-item.ant-menu-item-selected {
+  color: var(--sc-side-ink, #fecc00);
+  background: transparent;
+  font-weight: 400;
+}
+/* On hover the current item has the same hover tint as every other row, and keeps its mark colour (decision 69, option B). */
+.shell-sider-body .shell-menu.ant-menu .ant-menu-item.ant-menu-item-selected:hover {
+  background: var(--sc-side-hover, rgba(255, 255, 255, 0.1));
+  color: var(--sc-side-ink, #fecc00);
 }
 
 /* The sidebar's rows share one icon column and one name column, and one font size (decision 66): an icon sits --sc-icon-col in
@@ -1098,8 +1129,8 @@ tr[data-drop-state="refused"] > td {
   background: var(--ant-color-error-bg) !important;
 }
 
-/* The folder tree: a row lights up under the pointer, and shows the keyboard's place. */
-.tree-row:hover {
+/* The folder tree: a row lights up under the pointer, and shows the keyboard's place. The sidebar's rows have their own hover above. */
+.tree-row:not(.tree-row-side):hover {
   background: var(--ant-color-fill-tertiary);
 }
 

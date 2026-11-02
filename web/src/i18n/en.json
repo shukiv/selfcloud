@@ -4,6 +4,7 @@
   "app.notFound.title": "Page not found",
   "app.notFound.body": "There is no page at this address.",
   "nav.main": "Main",
+  "nav.sidebar": "Sidebar",
   "nav.files": "My files",
   "nav.shared": "Shared with me",
   "nav.trash": "Trash",

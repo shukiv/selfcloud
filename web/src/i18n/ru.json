@@ -4,6 +4,7 @@
   "app.notFound.title": "Страница не найдена",
   "app.notFound.body": "По этому адресу нет страницы.",
   "nav.main": "Основное",
+  "nav.sidebar": "Боковая панель",
   "nav.files": "Мои файлы",
   "nav.shared": "Доступные мне",
   "nav.trash": "Корзина",

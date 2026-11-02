@@ -133,14 +133,15 @@ describe("Shell", () => {
     expect(names).not.toContain("People");
   });
 
-  it("the logo opens My files for a member, and the admin home for an admin", async () => {
+  // Decision 69: the top bar has no brand, so it has no link to the home page; the search box starts it.
+  it("the top bar holds no brand link, for a member or an admin", async () => {
     signIn("member");
     const { unmount } = renderShell("/files");
-    expect(document.querySelector("header a")?.getAttribute("href")).toBe("/files");
+    expect(document.querySelector("header a")).toBeNull();
     unmount();
     signIn("admin");
     renderShell("/admin/tenants");
-    expect(document.querySelector("header a")?.getAttribute("href")).toBe("/admin/tenants");
+    expect(document.querySelector("header a")).toBeNull();
   });
 
   it("gives an owner the Requests entry and the owner's pages", async () => {
@@ -277,13 +278,13 @@ describe("Shell", () => {
       expect(nav.querySelector('[data-tree-key="fld_p"]')?.getAttribute("aria-current")).toBeNull();
     });
 
-    it("draws the current team's options button in the row's dark ink on the yellow, and the others in the sidebar's text", async () => {
+    it("draws the current team's options button in the row's mark colour, and the others in the sidebar's text", async () => {
       signIn("member");
       folders.set([team("fld_a", "Team A"), team("fld_b", "Team B")]);
       treePlace.set({ folder: "fld_a", chain: [] });
       renderShell("/files/fld_a");
       const nav = await openNav();
-      // The button takes the colour of its row: the current row is dark on yellow, another row is white on the blue.
+      // The button takes the colour of its row: the current row is the mark colour (decision 69, option B), another row is white on the blue.
       const ink = async (name: string) => {
         const button = await within(nav).findByRole("button", { name: `Options for ${name}` });
         const row = button.closest<HTMLElement>(".tree-row");
@@ -294,7 +295,7 @@ describe("Shell", () => {
         d.style.color = c;
         return d.style.color;
       };
-      expect(await ink("Team A")).toEqual({ button: "inherit", row: css(SIDEBAR.onActive) });
+      expect(await ink("Team A")).toEqual({ button: "inherit", row: css(SIDEBAR.active) });
       expect(await ink("Team B")).toEqual({ button: "inherit", row: css(SIDEBAR.text) });
     });
 

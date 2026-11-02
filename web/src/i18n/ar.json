@@ -4,6 +4,7 @@
   "app.notFound.title": "الصفحة غير موجودة",
   "app.notFound.body": "لا توجد صفحة على هذا العنوان.",
   "nav.main": "الرئيسية",
+  "nav.sidebar": "الشريط الجانبي",
   "nav.files": "ملفاتي",
   "nav.shared": "المشاركة معي",
   "nav.trash": "المهملات",

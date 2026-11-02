@@ -10,7 +10,6 @@ import { accountLabel, initialOf } from "../lib/avatar";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useT, useLang, directionOf, translatePlural } from "../lib/i18n";
 import { useStore } from "../lib/store";
-import { brand } from "../lib/brand";
 import { flash, isAdmin, isOwner, session, sessionChanged, sessionKey } from "../lib/session";
 import { failureText } from "../lib/manage/failure";
 import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/files/folders";
@@ -20,7 +19,7 @@ import type { FolderAccess } from "../lib/files/types";
 import { signOut } from "../lib/auth";
 import { canInstall, iosDialogOpen, isIOS, isStandalone, promptInstall } from "../lib/pwa/install";
 import { endImpersonation } from "../lib/impersonation";
-import { homeFor } from "../lib/routes";
+
 import { readPref, writePref } from "../lib/prefs";
 import { readTree, writeTree, type TreeState } from "../lib/files/treeState";
 import { filesURL } from "../lib/files/route";
@@ -30,6 +29,7 @@ import { newPlace, newPlaceFor, queueInto } from "../lib/files/newPlace";
 import { uploads } from "../lib/files/uploads";
 import { myStorage, refreshMyStorage } from "../lib/storage/api";
 import { useSidebar } from "../theme/theme";
+import { currentMark } from "../theme/currentMark";
 import { useCoarsePointer } from "../lib/pointer";
 import Alert from "./Alert";
 import LangSwitcher from "./LangSwitcher";
@@ -149,7 +149,6 @@ export default function Shell({ children }: { children: ReactNode }) {
   const lang = useLang();
   const rtl = directionOf(lang) === "rtl";
   const me = useStore(session);
-  const b = useStore(brand);
   const note = useStore(flash);
   const location = useLocation();
   const navigate = useNavigate();
@@ -276,7 +275,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   // folded to icons; then it is current on the files pages where the place is the person's own space.
   const menuFor = (filesEntry: boolean) => {
     // The Storage entry is its bar and figures; folded to icons, it is its title alone, which the tooltip shows.
-    // On the Storage page its row is the current one, the yellow pill: the block takes the pill's text colours (decision 67).
+    // On the Storage page its row is the current place: the block's title takes the mark colour (decision 69, option B).
     const onStorage = location.pathname === "/storage" || location.pathname.startsWith("/storage/");
     const storageLabel = admin ? null : filesEntry ? storageTitle(storage, t) : <SidebarStorage my={storage} sidebar={sidebar} selected={onStorage} />;
     const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n), filesEntry, storageLabel);
@@ -371,7 +370,7 @@ export default function Shell({ children }: { children: ReactNode }) {
           tabIndex={-1}
           label={t("nav.spaceOptions", { name: team.name })}
           icon={<Ellipsis size={16} aria-hidden="true" focusable="false" />}
-          // The button takes its row's ink: the sidebar's text, or the dark ink of the current row on the yellow.
+          // The button takes its row's ink: the sidebar's text, or the mark colour of the current row (decision 69).
           style={{ flex: "none", color: "inherit" }}
         />
       </Dropdown>
@@ -382,6 +381,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   // no drive), then the menu. Each part that scrolls is in one region, so the rail toggle at the bottom stays in reach.
   const renderSidebar = (collapsedNow: boolean) => {
     const { items, selected } = menuFor(collapsedNow);
+    const newShown = (onFiles || newWhere !== null) && !admin;
     const tree = !admin && !collapsedNow;
     return (
       <div
@@ -391,22 +391,19 @@ export default function Shell({ children }: { children: ReactNode }) {
           "--sc-side-text": sidebar.text,
           "--sc-side-active": sidebar.active,
           "--sc-side-on-active": sidebar.onActive,
+          // The current place's bar and the hover tint of the rows (decision 69): the menu's own hover, and the mark from currentMark.
+          "--sc-side-mark": currentMark(sidebar).bar,
+          "--sc-side-ink": currentMark(sidebar).ink,
+          "--sc-side-hover": sidebar.hover,
           // The icon column of every row (New, the tree, the menu) from the sidebar's content edge: a row's icon sits 28 px in, or
           // 48 px on a finger, where the tree's arrow is 44 px (decision 66).
           "--sc-icon-col": coarse ? "48px" : "28px",
         } as CSSProperties}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 8px 18px", minWidth: 0, flex: "none" }}>
-          {b.logo_url && <img src={b.logo_url} alt="" width={32} height={32} />}
-          {!collapsedNow && (
-            <span style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              <bdi>{b.name}</bdi>
-            </span>
-          )}
-        </div>
-        {(onFiles || newWhere !== null) && !admin && (
-          <SidebarNew place={newWhere} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} onPick={pick} onFolder={(where) => setFolderWhere(where)} />
-        )}
+        {newShown && <SidebarNew place={newWhere} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} onPick={pick} onFolder={(where) => setFolderWhere(where)} />}
+        {/* With no New drawn, the gap New leaves stays (10 px, or 6 px on a finger, as New's own top edge), so the first item does not
+            touch the top bar (decision 69). */}
+        {!newShown && <div aria-hidden="true" data-testid="sidebar-top-gap" style={{ flex: "none", blockSize: coarse ? 6 : 10 }} />}
         <div className="shell-scroll">
           {shellError && !collapsedNow && <AntdAlert type="error" showIcon role="alert" message={shellError} style={{ margin: "8px 0" }} />}
           {tree && (
@@ -526,6 +523,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         {!isMobile && (
           <Layout.Sider
             className="shell-sider"
+            aria-label={t("nav.sidebar")}
             width={SIDE_WIDTH}
             collapsedWidth={RAIL_WIDTH}
             collapsed={collapsed}
@@ -537,7 +535,8 @@ export default function Shell({ children }: { children: ReactNode }) {
               top: 0,
               height: impersonating ? "calc(100vh - 48px)" : "100vh",
               overflow: "hidden",
-              padding: collapsed ? "16px 8px" : "16px 12px",
+              // No top padding: New's top edge lines up with the search box's top edge (decision 69).
+              padding: collapsed ? "0 8px 16px" : "0 12px 16px",
             }}
           >
             {renderSidebar(collapsed)}
@@ -558,10 +557,11 @@ export default function Shell({ children }: { children: ReactNode }) {
             open={navOpen}
             onClose={() => setNavOpen(false)}
             width={280}
-            title={null}
+            // The drawer's name is the sidebar's (antd names the dialog by its title, so a null title leaves it unnamed).
+            title={<span className="sr-only">{t("nav.sidebar")}</span>}
             closable
             styles={{
-              body: { padding: "8px 12px 16px", background: sidebar.bg, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" },
+              body: { padding: "0 12px 16px", background: sidebar.bg, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" },
               header: { background: sidebar.bg, borderBottom: "none" },
             }}
           >
@@ -589,13 +589,6 @@ export default function Shell({ children }: { children: ReactNode }) {
             {isMobile && (
               <IconButton data-testid="nav-open" label={t("nav.openMenu")} onClick={() => setNavOpen(true)} icon={<MenuIcon size={18} aria-hidden="true" focusable="false" />} />
             )}
-            {/* One line in the 56px bar: a long brand name is cut short, never wrapped over the bar's edge. */}
-            <a
-              href={homeFor(me?.user)}
-              style={{ fontWeight: 700, color: token.colorText, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-            >
-              <bdi>{b.name}</bdi>
-            </a>
             {admin && <span style={{ color: token.colorTextSecondary, whiteSpace: "nowrap" }}>{t("admin.badge")}</span>}
             {!admin && <ShellSearch wide={!!screens.md} />}
             {/* A plain flex row, not antd's Space: Space wraps each child in an item that does not shrink, so a long account name

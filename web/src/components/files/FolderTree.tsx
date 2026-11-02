@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ApiError } from "../../lib/apiError";
 import { Button, Skeleton, theme as antdTheme } from "antd";
@@ -10,7 +10,8 @@ import { queryKey } from "../../lib/query";
 import { childrenPage } from "../../lib/files/api";
 import { fileErrorText } from "../../lib/files/fileErrors";
 import { loadDirs } from "../../lib/files/treeLoad";
-import { revealed, withExpanded, type TreeState } from "../../lib/files/treeState";
+import { withExpanded, type TreeState } from "../../lib/files/treeState";
+import { currentMark } from "../../theme/currentMark";
 import type { FolderAccess } from "../../lib/files/types";
 import type { Sidebar } from "../../theme/tokens";
 
@@ -34,7 +35,7 @@ export interface FolderTreeProps {
   // top is the folder the person reaches the place by when the space's own root is not theirs (they were given a folder below
   // it): the tree starts there, in place of the space's root, and only shows what the person can reach.
   top?: { id: string; name: string; role: string | undefined };
-  // colours are the sidebar's, when the tree sits in the sidebar: the text, and the yellow pill of the current folder.
+  // colours are the sidebar's, when the tree sits in the sidebar: the text, and the mark colour of the current folder (a bar, no background).
   colours?: Sidebar;
   // spaceLabel and spaceEnd add to a space's own row: a tag after its name, and a control at its end (the team's options).
   spaceLabel?: (s: FolderAccess) => ReactNode;
@@ -85,8 +86,10 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
   const arrow = ctx.coarse ? 44 : 24;
   const link = ctx.coarse ? 44 : 28;
   const toggle = () => ctx.onChange(withExpanded(ctx.state, key, !open));
-  // On the sidebar's yellow pill the current row's text is the on-active colour (the menu's own), the others keep the sidebar's.
-  const textColour = side ? (current ? side.onActive : side.text) : undefined;
+  // The current place (decision 69, option B) has no background: a bar at the row's start edge, and its text and icon in the
+  // mark colour, the same as the menu's selected item (theme/currentMark.ts). The others keep the sidebar's text.
+  const mark = side ? currentMark(side) : null;
+  const textColour = side ? (current && mark ? mark.ink : side.text) : undefined;
   return (
     <li
       role="treeitem"
@@ -108,7 +111,7 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
       style={{ listStyle: "none", outline: "none" }}
     >
       <div
-        className={side ? "tree-row tree-row-side" : "tree-row"}
+        className={side ? (current ? "tree-row tree-row-side side-current" : "tree-row tree-row-side") : "tree-row"}
         data-drop-folder={space}
         data-drop-dir={id ?? ""}
         data-drop-role={role ?? ""}
@@ -122,8 +125,7 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
           paddingInlineStart: (level - 1) * 14 + 2,
           borderRadius: token.borderRadiusSM,
           color: textColour,
-          background: current ? (side ? side.active : token.colorPrimaryBg) : undefined,
-          fontWeight: current ? 600 : undefined,
+          background: current && !side ? token.colorPrimaryBg : undefined,
         }}
       >
         {hasKids ? (
@@ -244,37 +246,33 @@ function treeKey(e: KeyboardEvent<HTMLElement>, a: { open: boolean; hasKids: boo
 
 export default function FolderTree(props: FolderTreeProps) {
   const { t } = useT();
-  const { spaces, folder, chain, marking, state, onChange, top } = props;
-  // The folders on the way to the place shown are opened, so the tree shows where the person is. It happens when the place
-  // changes, and not again when the person closes one of them.
-  const ancestors = useMemo(() => (marking && folder ? [folder, ...chain] : []), [marking, folder, chain]);
-  const ancestorsKey = ancestors.join(",");
-  const stateRef = useRef(state);
-  stateRef.current = state;
-  useEffect(() => {
-    if (ancestorsKey === "") return;
-    const next = revealed(stateRef.current, ancestorsKey.split(","));
-    if (next !== stateRef.current) onChange(next);
-    // onChange writes the state; the effect reads it through the ref, so it runs for a new place only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ancestorsKey]);
-  const currentKey = marking && folder ? (chain.length > 0 ? chain[chain.length - 1] : folder) : null;
-  const [tabKey, setTabKey] = useState<string>(currentKey ?? spaces[0]?.id ?? "");
+  const { spaces, folder, chain, marking, top } = props;
+  // The place's mark (decision 69): the folder shown, or the nearest folder on the way to it that is on screen. Folders are not
+  // opened for the place, so a deep place is marked on the row above its folded branch, and the mark moves down as the branches
+  // open. The places on the way, deepest first, are read here; settleTab picks the first one that is rendered.
+  const wanted = marking && folder ? [...[...chain].reverse(), folder] : [];
+  const wantedRef = useRef<string[]>(wanted);
+  wantedRef.current = wanted;
+  const [currentKey, setCurrentKey] = useState<string | null>(null);
+  const currentRef = useRef<string | null>(null);
+  // The tree is one tab stop, and it is always on a row that is rendered: the place's row when it is shown, else the first row.
+  // It is checked after each change of the tree, including a branch that opens, closes or loses its rows (the observer).
+  const [tabKey, setTabKey] = useState<string>(spaces[0]?.id ?? "");
   useEffect(() => {
     if (currentKey !== null) setTabKey(currentKey);
   }, [currentKey]);
-  // The tree is one tab stop, and it is always on a row that is rendered: the place's row when it is shown, else the first row.
-  // It is checked after each change of the tree, including a branch that opens, closes or loses its rows (the observer).
   const navRef = useRef<HTMLElement | null>(null);
   const tabRef = useRef(tabKey);
   tabRef.current = tabKey;
-  const currentRef = useRef(currentKey);
-  currentRef.current = currentKey;
   const settleTab = () => {
     const keys = Array.from(navRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? []).map((r) => r.dataset.treeKey ?? "");
+    const mark = wantedRef.current.find((k) => keys.includes(k)) ?? null;
+    if (mark !== currentRef.current) {
+      currentRef.current = mark;
+      setCurrentKey(mark);
+    }
     if (keys.length === 0) return;
-    const current = currentRef.current;
-    const next = keys.includes(tabRef.current) ? tabRef.current : current !== null && keys.includes(current) ? current : keys[0];
+    const next = keys.includes(tabRef.current) ? tabRef.current : (mark ?? keys[0]);
     if (next !== tabRef.current) setTabKey(next);
   };
   useLayoutEffect(settleTab);
@@ -287,7 +285,8 @@ export default function FolderTree(props: FolderTreeProps) {
     // The observer reads the refs, which are current at each change; it is made once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const ctx: Ctx = { ...props, currentKey, tabKey, setTabKey };
+  // The mark is shown only while the tree marks (the files pages): leaving them takes it off at once, whatever the last read of it said.
+  const ctx: Ctx = { ...props, currentKey: marking ? currentKey : null, tabKey, setTabKey };
   // A file dragged from the desktop onto the tree is not taken and does not open in the browser: an upload is made from the
   // listing, where the drop is read (FilesPage), so the tree only stops the browser's own navigation.
   const fileDrag = (e: DragEvent<HTMLElement>) => {

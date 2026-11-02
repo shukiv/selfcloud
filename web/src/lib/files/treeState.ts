@@ -12,7 +12,9 @@ export const DEFAULT_TREE: TreeState = { expanded: [] };
 // MAX_EXPANDED keeps a long-lived list from growing for ever: the folders opened longest ago are forgotten first.
 export const MAX_EXPANDED = 60;
 
-const key = (user: string): string => `selfcloud.tree.${user}`;
+// The key is "v2" since decision 69: the tree no longer opens folders on its own, and the open folders saved under the old key (which
+// the tree used to reveal) are not read, so every person starts with the tree folded once.
+const key = (user: string): string => `selfcloud.tree.v2.${user}`;
 
 // parseTree reads stored state, ignoring anything it does not recognise. A state saved when the tree had its own column
 // may carry an "open" flag; it is ignored.
@@ -47,12 +49,4 @@ export function writeTree(user: string, state: TreeState): void {
 export function withExpanded(state: TreeState, id: string, on: boolean): TreeState {
   const rest = state.expanded.filter((x) => x !== id);
   return { ...state, expanded: on ? [...rest, id].slice(-MAX_EXPANDED) : rest };
-}
-
-// revealed opens the folders on the way to the place the person is in, so the tree shows where they are. It returns the
-// same object when they are all open already.
-export function revealed(state: TreeState, ids: string[]): TreeState {
-  const missing = ids.filter((id) => !state.expanded.includes(id));
-  if (missing.length === 0) return state;
-  return { ...state, expanded: [...state.expanded, ...missing].slice(-MAX_EXPANDED) };
 }

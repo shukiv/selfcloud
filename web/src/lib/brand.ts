@@ -216,6 +216,9 @@ export function resolveBrand(b: Brand): ResolvedBrand {
     const v = wire[w];
     if (typeof v === 'string' && validAccent(v)) sidebar[key] = v.toUpperCase();
   }
+  // The caption is the sidebar's secondary text (the Storage figures and the bar's caption edge). Where it does not reach 4.5:1 on the
+  // sidebar (a brand's own blue or teal), it is the sidebar's text colour, which textOn chose to read there (decision 69, review fix 2).
+  if (contrast(sidebar.caption, sidebar.bg) < 4.5) sidebar.caption = sidebar.text;
 
   return {
     name: b.name,

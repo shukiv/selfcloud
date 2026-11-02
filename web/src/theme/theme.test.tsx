@@ -33,7 +33,9 @@ describe("antdTokens", () => {
   it("paints the sidebar menu from the sidebar colours", () => {
     const menu = antdTokens("light", LIGHT, { ...SIDEBAR, bg: "#123456" }).components!.Menu!;
     expect(menu.darkItemBg).toBe("#123456");
-    expect(menu.darkItemSelectedBg).toBe(SIDEBAR.active);
+    // The current place has no background (decision 69, option B); its text is the mark colour.
+    expect(menu.darkItemSelectedBg).toBe("transparent");
+    expect(menu.darkItemSelectedColor).toBe(SIDEBAR.active);
   });
 });
 

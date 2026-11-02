@@ -70,26 +70,27 @@ describe("the sidebar's storage block", () => {
   });
 });
 
-// On the Storage page its row is the yellow pill: the title and the figures take the on-active colours there, and the bar keeps
-// its track visible. Not selected, the block is as it was.
+// Decision 69 (option B): on the Storage page its row is the current place. The row has no background: its title takes the mark
+// colour (the yellow on the default blue), and the figures, the track and the fill are the same as when it is not selected.
 describe("the sidebar's storage block on the selected row", () => {
   beforeEach(async () => {
     await setLang("en");
   });
 
-  it("is the on-active colour for the title, and the figures at 75% of it, when the row is selected", () => {
+  it("takes the mark colour for the title, and keeps the figures in the caption colour, when the row is selected", () => {
     render(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} selected />);
     const title = screen.getByText("Storage (61% full)");
     const line = screen.getByText(`${formatBytes(GB * 1.22, "en")} of ${formatBytes(2 * GB, "en")} used`);
-    expect(title.style.color).toBe("rgb(13, 33, 66)");
-    expect(line.style.color).toBe("rgba(13, 33, 66, 0.75)");
+    expect(title.style.color).toBe("");
+    expect(title.parentElement?.style.color).toBe("rgb(254, 204, 0)");
+    expect(line.style.color).toBe("rgb(169, 193, 230)");
   });
 
-  it("puts the bar's track on the yellow with a ring of the on-active colour outside it, and keeps the accent fill", () => {
+  it("keeps the bar as it is when the row is selected: the normal track, with its caption edge, and the accent fill", () => {
     render(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} selected />);
     const bar = document.querySelector<HTMLElement>('[data-testid="sidebar-meter"]');
-    expect(bar?.style.background).toBe("rgba(13, 33, 66, 0.8)");
-    expect(bar?.style.boxShadow).toContain(SIDEBAR.onActive);
+    expect(bar?.style.background).toBe("rgba(0, 0, 0, 0.35)");
+    expect(bar?.style.boxShadow).toBe(`inset 0 0 0 1px ${SIDEBAR.caption}`);
     expect(bar?.firstElementChild instanceof HTMLElement && bar.firstElementChild.style.background).toBe("rgb(254, 204, 0)");
   });
 

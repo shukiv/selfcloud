@@ -4,6 +4,7 @@
   "app.notFound.title": "Página não encontrada",
   "app.notFound.body": "Não existe nenhuma página neste endereço.",
   "nav.main": "Principal",
+  "nav.sidebar": "Barra lateral",
   "nav.files": "Os meus ficheiros",
   "nav.shared": "Partilhados comigo",
   "nav.trash": "Reciclagem",

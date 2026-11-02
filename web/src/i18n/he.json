@@ -4,6 +4,7 @@
   "app.notFound.title": "העמוד לא נמצא",
   "app.notFound.body": "אין עמוד בכתובת הזאת.",
   "nav.main": "ראשי",
+  "nav.sidebar": "סרגל צד",
   "nav.files": "הקבצים שלי",
   "nav.shared": "שיתופים אליי",
   "nav.trash": "סל מחזור",

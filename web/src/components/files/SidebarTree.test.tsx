@@ -16,6 +16,8 @@ import Shell from "../Shell";
 import { createQueryClient, refreshTree } from "../../lib/query";
 import { ApiError } from "../../lib/apiError";
 import { treePlace } from "../../lib/files/treePlace";
+import { brand } from "../../lib/brand";
+import { DEFAULT_ACCENT } from "../../theme/tokens";
 
 const mocks = vi.hoisted(() => ({
   loadFolders: vi.fn(async () => []),
@@ -168,8 +170,8 @@ describe("the folder tree in the sidebar", () => {
       return el;
     });
     fireEvent.click(within(tree.querySelector('[data-tree-key="fld_p"]') as HTMLElement).getByRole("button", { name: "Expand My files" }));
-    await waitFor(() => expect(JSON.parse(window.localStorage.getItem("selfcloud.tree.u1") ?? "{}").expanded).toContain("fld_p"));
-    expect(window.localStorage.getItem("selfcloud.tree.u2")).toBeNull();
+    await waitFor(() => expect(JSON.parse(window.localStorage.getItem("selfcloud.tree.v2.u1") ?? "{}").expanded).toContain("fld_p"));
+    expect(window.localStorage.getItem("selfcloud.tree.v2.u2")).toBeNull();
     // Another person on the same browser finds My files closed, and the first person's choice is not written under their key.
     cleanup();
     signIn("member", "u2");
@@ -187,7 +189,7 @@ describe("the folder tree in the sidebar", () => {
     signIn("member");
     folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
     mocks.childrenPage.mockResolvedValue({ items: [dir("nod_docs", "Docs", "fld_p")], next_cursor: undefined });
-    window.localStorage.setItem("selfcloud.tree.u1", JSON.stringify({ expanded: ["fld_p"] }));
+    window.localStorage.setItem("selfcloud.tree.v2.u1", JSON.stringify({ expanded: ["fld_p"] }));
     const { client } = renderShell("/starred");
     await waitFor(() => expect(mocks.childrenPage).toHaveBeenCalledTimes(1));
     await refreshTree(client, [{ folder: "fld_p", dir: null }]);
@@ -241,7 +243,7 @@ describe("the folder tree in the sidebar", () => {
     signIn("member");
     folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
     mocks.childrenPage.mockResolvedValue({ items: [dir("nod_docs", "Docs", "fld_p")], next_cursor: undefined });
-    window.localStorage.setItem("selfcloud.tree.u1", JSON.stringify({ expanded: ["fld_p"] }));
+    window.localStorage.setItem("selfcloud.tree.v2.u1", JSON.stringify({ expanded: ["fld_p"] }));
     const { router } = renderShell("/starred");
     fireEvent.click(screen.getByTestId("nav-open"));
     const drawer = await waitFor(() => {
@@ -264,7 +266,7 @@ describe("the folder tree in the sidebar", () => {
   it("reads the folders again when a team's read answers not found", async () => {
     signIn("member");
     folders.set([space("fld_t", "Team T")]);
-    window.localStorage.setItem("selfcloud.tree.u1", JSON.stringify({ expanded: ["fld_t"] }));
+    window.localStorage.setItem("selfcloud.tree.v2.u1", JSON.stringify({ expanded: ["fld_t"] }));
     mocks.childrenPage.mockRejectedValue(new ApiError(404, "not_found", {}, 0));
     renderShell("/starred");
     await waitFor(() => expect(mocks.childrenPage).toHaveBeenCalled());
@@ -297,5 +299,192 @@ describe("the folder tree in the sidebar", () => {
     renderShell("/starred");
     await waitFor(() => expect(document.querySelector(".shell-scroll .side-check")).not.toBeNull());
     restore();
+  });
+
+  // Decision 69: the tree starts folded. A place deep in the tree opens nothing on the way, and the folder shown is marked on
+  // the nearest row that is on screen.
+  it("starts folded: a deep place opens none of the folders on the way, and the nearest row on screen is the mark", async () => {
+    signIn("member");
+    folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    mocks.childrenPage.mockResolvedValue({ items: [dir("nod_docs", "Docs", "fld_p")], next_cursor: undefined });
+    treePlace.set({ folder: "fld_p", chain: ["nod_docs"] });
+    renderShell("/files/fld_p/nod_docs");
+    const tree = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="folder-tree"]');
+      if (!el) throw new Error("no tree yet");
+      return el;
+    });
+    const mine = await waitFor(() => {
+      const el = tree.querySelector<HTMLElement>('[data-tree-key="fld_p"][aria-current="location"]');
+      if (!el) throw new Error("not marked");
+      return el;
+    });
+    expect(mine.getAttribute("aria-expanded")).toBe("false");
+    expect(within(tree).queryByText("Docs")).toBeNull();
+    expect(mocks.childrenPage).not.toHaveBeenCalled();
+    expect(JSON.parse(window.localStorage.getItem("selfcloud.tree.v2.u1") ?? '{"expanded":[]}').expanded).toEqual([]);
+    restore();
+  });
+
+  // Decision 69, review fix 1: with no New drawn (an admin page), the gap New leaves stays, 10 px (6 px on a finger), so the first item
+  // is not on the top bar's edge. On a files page New is drawn and there is no gap.
+  it("keeps the gap New leaves on an admin page, 10 px, and 6 px on a finger; a files page has no gap", async () => {
+    signIn("admin");
+    renderShell("/admin/tenants");
+    const gap = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="sidebar-top-gap"]');
+      if (!el) throw new Error("no gap yet");
+      return el;
+    });
+    expect(gap.style.blockSize).toBe("10px");
+    expect(document.querySelector('.shell-sider [data-testid="new-button"]')).toBeNull();
+    cleanup();
+    const plain = window.matchMedia;
+    window.matchMedia = (query: string) => ({ ...plain(query), matches: /pointer: coarse/.test(query) || (/min-width/.test(query) && plain(query).matches) }) as MediaQueryList;
+    try {
+      signIn("admin");
+      renderShell("/admin/tenants");
+      const finger = await waitFor(() => {
+        const el = document.querySelector<HTMLElement>('[data-testid="sidebar-top-gap"]');
+        if (!el) throw new Error("no gap yet");
+        return el;
+      });
+      expect(finger.style.blockSize).toBe("6px");
+    } finally {
+      window.matchMedia = plain;
+    }
+    cleanup();
+    signIn("member");
+    folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    treePlace.set({ folder: "fld_p", chain: [] });
+    renderShell("/files/fld_p");
+    await waitFor(() => expect(document.querySelector('[data-testid="new-button"]')).not.toBeNull());
+    expect(document.querySelector('[data-testid="sidebar-top-gap"]')).toBeNull();
+    restore();
+  });
+
+  // Decision 69, review fix 8: the place changes after the tree is mounted: no folder on the way opens, and the mark is on the nearest
+  // row that is on screen (the space's own row).
+  it("a place changed after mount opens none of the folders on its way, and marks the nearest row on screen", async () => {
+    signIn("member");
+    folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    mocks.childrenPage.mockResolvedValue({ items: [dir("nod_docs", "Docs", "fld_p")], next_cursor: undefined });
+    const { router } = renderShell("/starred");
+    const tree = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="folder-tree"]');
+      if (!el) throw new Error("no tree yet");
+      return el;
+    });
+    expect(tree.querySelector('[aria-current="location"]')).toBeNull();
+    treePlace.set({ folder: "fld_p", chain: ["nod_docs", "nod_deep"] });
+    await router.navigate("/files/fld_p/nod_deep");
+    const mine = await waitFor(() => {
+      const el = tree.querySelector<HTMLElement>('[data-tree-key="fld_p"][aria-current="location"]');
+      if (!el) throw new Error("not marked");
+      return el;
+    });
+    expect(mine.getAttribute("aria-expanded")).toBe("false");
+    expect(within(tree).queryByText("Docs")).toBeNull();
+    expect(mocks.childrenPage).not.toHaveBeenCalled();
+    expect(JSON.parse(window.localStorage.getItem("selfcloud.tree.v2.u1") ?? '{"expanded":[]}').expanded).toEqual([]);
+    restore();
+  });
+
+  // Decision 69, review fix 6: the phone drawer's dialog has a name (the sidebar's region name), read from its title.
+  it("names the phone drawer's dialog with the sidebar's name", async () => {
+    const plain = window.matchMedia;
+    window.matchMedia = (query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }) as MediaQueryList;
+    try {
+      signIn("member");
+      folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+      renderShell("/starred");
+      fireEvent.click(await screen.findByTestId("nav-open"));
+      const dialog = await screen.findByRole("dialog", { name: "Sidebar" });
+      expect(dialog.getAttribute("aria-labelledby")).toBeTruthy();
+    } finally {
+      window.matchMedia = plain;
+    }
+  });
+
+  // Leaving the files pages takes the mark off the tree: the tree marks the place only on a files page (decision 69).
+  it("takes the mark off the tree when the person leaves the files pages", async () => {
+    signIn("member");
+    folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    treePlace.set({ folder: "fld_p", chain: [] });
+    const { router } = renderShell("/files/fld_p");
+    await waitFor(() => expect(document.querySelector('.shell-sider [data-tree-key="fld_p"][aria-current="location"]')).not.toBeNull());
+    await router.navigate("/starred");
+    // The Starred view shows a folder's listing, so the page writes the place again after the change (as FilesPage does).
+    treePlace.set({ folder: "fld_p", chain: [] });
+    await waitFor(() => expect(document.querySelector('.shell-sider [aria-current="location"]')).toBeNull());
+    restore();
+  });
+
+  // The open folders saved before this slice are not read: the key is new, so everyone starts folded once.
+  it("does not read the open folders saved under the key of before this slice", async () => {
+    signIn("member");
+    folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    window.localStorage.setItem("selfcloud.tree.u1", JSON.stringify({ expanded: ["fld_p"] }));
+    renderShell("/starred");
+    const tree = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="folder-tree"]');
+      if (!el) throw new Error("no tree yet");
+      return el;
+    });
+    expect(tree.querySelector('[data-tree-key="fld_p"]')?.getAttribute("aria-expanded")).toBe("false");
+    expect(mocks.childrenPage).not.toHaveBeenCalled();
+    restore();
+  });
+
+  // Decision 69: the shell draws no name and no logo, on the desktop, in the rail and in the phone's drawer. The name stays in the
+  // browser tab and the sign-in pages (not tested here). The sidebar is a named region, and the top bar a banner.
+  it("draws no brand name or logo in the sidebar, the top bar, the rail or the phone drawer", async () => {
+    brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo.png" });
+    try {
+      signIn("member");
+      folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+      renderShell("/starred");
+      const sider = await waitFor(() => {
+        const el = document.querySelector<HTMLElement>(".shell-sider");
+        if (!el) throw new Error("no sidebar yet");
+        return el;
+      });
+      expect(sider.textContent).not.toContain("Acme Drive");
+      expect(sider.querySelector("img")).toBeNull();
+      expect(document.querySelector("header")?.textContent).not.toContain("Acme Drive");
+      expect(document.querySelector("header img")).toBeNull();
+      expect(screen.getByRole("complementary", { name: "Sidebar" })).toBeTruthy();
+      expect(screen.getByRole("banner")).toBeTruthy();
+      cleanup();
+      restore();
+
+      // Folded to the rail: the logo was drawn there, and the name is gone; neither is drawn now.
+      window.localStorage.setItem("selfcloud.navRail", "1");
+      const rail = wide(true);
+      renderShell("/starred");
+      await waitFor(() => expect(document.querySelector(".ant-layout-sider-collapsed")).not.toBeNull());
+      expect(document.querySelector(".ant-layout-sider-collapsed")?.textContent).not.toContain("Acme Drive");
+      expect(document.querySelector(".ant-layout-sider-collapsed img")).toBeNull();
+      cleanup();
+      rail();
+      window.localStorage.removeItem("selfcloud.navRail");
+
+      // The phone: the drawer holds the sidebar, and it draws no name either.
+      const plain = window.matchMedia;
+      window.matchMedia = (query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }) as MediaQueryList;
+      renderShell("/starred");
+      fireEvent.click(await screen.findByTestId("nav-open"));
+      const drawer = await waitFor(() => {
+        const el = document.querySelector<HTMLElement>(".ant-drawer-open");
+        if (!el) throw new Error("no drawer");
+        return el;
+      });
+      expect(drawer.textContent).not.toContain("Acme Drive");
+      expect(drawer.querySelector("img")).toBeNull();
+      expect(document.querySelector("header")?.textContent).not.toContain("Acme Drive");
+      window.matchMedia = plain;
+    } finally {
+      brand.set({ name: "Selfcloud", accent: DEFAULT_ACCENT, logo_url: null });
+    }
   });
 });

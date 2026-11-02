@@ -2,7 +2,7 @@
 
 // The colour and shape tokens of the default look. Every colour the interface paints comes from
 // here, or from a brand override merged over it (lib/brand.ts). The accent is the brand blue; the
-// sidebar is that blue in both modes, with the active page on a yellow pill.
+// sidebar is that blue in both modes, with the active page marked by a yellow bar.
 
 // Two values per accent in dark mode: accentFill is what white text sits on, accentText is
 // accent-coloured text on the dark card.
@@ -92,7 +92,7 @@ export const DARK: Palette = {
 
 export const PALETTE: Record<"light" | "dark", Palette> = { light: LIGHT, dark: DARK };
 
-// The sidebar: brand blue in both modes. The active page sits on the yellow pill.
+// The sidebar: brand blue in both modes. The active page is marked by a yellow bar.
 export const SIDEBAR = {
   bg: "#053D8E",
   text: "#FFFFFF",

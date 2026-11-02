@@ -56,7 +56,8 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
   const disabled = place === null;
   if (collapsed) {
     // The folded rail keeps a round button with the same menu; its name is in the tooltip and is its accessible name.
-    const round: CSSProperties = { inlineSize: 44, blockSize: 44, minInlineSize: 44, marginInline: "auto", boxShadow: RAISED, background: sidebar.text, color: sidebar.bg, border: "none" };
+    // Its centre is the top bar's (28 px): a 44 px circle starts 6 px down.
+    const round: CSSProperties = { inlineSize: 44, blockSize: 44, minInlineSize: 44, marginBlockStart: 6, marginInline: "auto", boxShadow: RAISED, background: sidebar.text, color: sidebar.bg, border: "none" };
     return (
       <Tooltip title={t("files.act.new")} placement="right">
         <Dropdown trigger={["click"]} disabled={disabled} menu={menu}>
@@ -70,12 +71,15 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     alignItems: "center",
     justifyContent: "flex-start",
     gap: 10,
-    inlineSize: "100%",
+    // As wide as its text (decision 69): the content, the start column and an end padding of 24 px, capped at the sidebar's width.
+    inlineSize: "auto",
+    maxInlineSize: "100%",
+    minInlineSize: 0,
     minBlockSize: 56,
     // The plus starts in the icon column (the shell sets --sc-icon-col from the sidebar's content edge), and its word in the name
     // column (18 px icon, 10 px gap), as the rows below it.
     paddingInlineStart: "var(--sc-icon-col, 28px)",
-    paddingInlineEnd: 16,
+    paddingInlineEnd: 24,
     borderRadius: 16,
     border: "none",
     background: sidebar.text,
@@ -86,7 +90,8 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     lineHeight: "20px",
   };
   return (
-    <div style={{ marginBlockEnd: 16 }}>
+    // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger.
+    <div style={{ display: "flex", justifyContent: "flex-start", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
       <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? 44 : 36 } } }}>
         <Dropdown trigger={["click"]} disabled={disabled} menu={menu}>
           <Button data-testid="new-button" aria-haspopup="menu" disabled={disabled} style={face}>

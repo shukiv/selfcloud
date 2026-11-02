@@ -9,10 +9,10 @@ import SidebarNew from "./SidebarNew";
 
 const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true };
 
-function renderNew(place: NewPlace | null, collapsed = false) {
+function renderNew(place: NewPlace | null, collapsed = false, coarse = false) {
   const onPick = vi.fn();
   const onFolder = vi.fn();
-  const utils = render(<SidebarNew place={place} collapsed={collapsed} coarse={false} sidebar={SIDEBAR} onPick={onPick} onFolder={onFolder} />);
+  const utils = render(<SidebarNew place={place} collapsed={collapsed} coarse={coarse} sidebar={SIDEBAR} onPick={onPick} onFolder={onFolder} />);
   return { ...utils, onPick, onFolder };
 }
 
@@ -46,6 +46,35 @@ describe("the sidebar's New button", () => {
     fireEvent.click(folder);
     expect(onFolder).not.toHaveBeenCalled();
     expect(onPick).not.toHaveBeenCalled();
+  });
+
+  // Decision 69: the button is as wide as its text, not the sidebar's width, and it is capped at the sidebar's width so a long
+  // translation is cut with an ellipsis rather than pushing the sidebar.
+  it("is as wide as its text, and no wider than the sidebar", () => {
+    renderNew(myFilesPlace("fld_mine"));
+    const button = screen.getByTestId("new-button");
+    expect(button.style.inlineSize).toBe("auto");
+    expect(button.style.maxInlineSize).toBe("100%");
+    expect(button.style.minInlineSize).toBe("0px");
+  });
+
+  // Decision 69, review fix 8: a long translation is cut with an ellipsis inside the cap, not pushed past the sidebar.
+  it("cuts a long word with an ellipsis, inside the sidebar's width", () => {
+    renderNew(myFilesPlace("fld_mine"));
+    const word = screen.getByTestId("new-button").querySelector<HTMLElement>("span");
+    expect(word?.style.textOverflow).toBe("ellipsis");
+    expect(word?.style.overflow).toBe("hidden");
+    expect(word?.style.whiteSpace).toBe("nowrap");
+    expect(screen.getByTestId("new-button").style.maxInlineSize).toBe("100%");
+  });
+
+  // Decision 69, review fix 8: New's top edge is 10 px down with a mouse and 6 px on a finger (the search box's top edge).
+  it("sits 10 px from the top with a mouse, and 6 px on a finger", () => {
+    const mouse = renderNew(myFilesPlace("fld_mine"));
+    expect(screen.getByTestId("new-button").parentElement?.style.marginBlockStart).toBe("10px");
+    mouse.unmount();
+    renderNew(myFilesPlace("fld_mine"), false, true);
+    expect(screen.getByTestId("new-button").parentElement?.style.marginBlockStart).toBe("6px");
   });
 
   it("waits, disabled, while the folder shown is not read", () => {

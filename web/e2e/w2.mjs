@@ -172,6 +172,13 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
   };
 
   // betaKey is the tree key (the node id) of the folder called Beta in the tree.
+  // openRow opens a tree row by its folder's name with its arrow, once the row is shown (the tree starts folded, decision 69).
+  const openRow = async (name) => {
+    const row = `[...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].find((r) => r.dataset.dropName === ${q(name)})`;
+    await page.waitFor(`!!${row}`, 15000);
+    await page.evaluate(`(() => { const li = ${row}.parentElement; if (li.getAttribute('aria-expanded') !== 'true') li.querySelector('button[aria-label^="Expand"]')?.click(); return true; })()`);
+    await page.waitFor(`${row}.parentElement.getAttribute('aria-expanded') === 'true'`, 15000);
+  };
   const betaKey = () => page.evaluate(`document.querySelector('[data-testid="folder-tree"] .tree-row[data-drop-name="Beta"]')?.parentElement?.dataset.treeKey ?? ''`);
 
   // ---- 1. a real mouse drag of a file onto a folder row moves it, and the folder is shown as taking it ----
@@ -278,7 +285,10 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     await page.waitFor(`!!document.querySelector('[data-testid="folder-tree"] [role="treeitem"]')`, 15000);
     const roots = await page.evaluate(`[...document.querySelectorAll('[data-testid="folder-tree"] [role="tree"] > [role="treeitem"] > .tree-row')].map((r) => r.textContent.trim())`);
     check(roots.length >= 2, `the tree lists the spaces (${roots.join(' / ')})`);
-    // The way to the place shown is open: Team A's w2, then drag, whose folders are in the tree.
+    // The way to the place shown is opened by the arrows: Team A, then w2, then drag, whose folders are in the tree.
+    await openRow('Team A');
+    await openRow('w2');
+    await openRow('drag');
     await page.waitFor(`[...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].some((r) => r.dataset.dropName === 'Alpha')`, 15000);
     const lazy = await page.evaluate(`[...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].some((r) => r.dataset.dropName === 'Inner')`);
     check(lazy === false, 'a folder that was not opened has not been read: Inner is not in the tree');
@@ -591,6 +601,7 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     check(answers.rootStatus === 404 && answers.rootCode === 'not_found' && answers.dirStatus === 200, `the server refuses the space's root with not_found and lists the given folder (${JSON.stringify(answers)})`);
     await page.goto(`${page.base}/files/${room}/${given.id}`);
     await page.waitFor(`!!document.querySelector('[data-testid="folder-tree"] .tree-row[data-drop-name="Open"]')`, 20000);
+    await openRow('Open');
     await page.waitFor(`!!document.querySelector('[data-testid="folder-tree"] .tree-row[data-drop-name="Inside"]')`, 20000);
     // The page and the tree never ask for the root the server refuses: no such request was made since the page loaded.
     const asked = await page.evaluate(`performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.includes('/api/v1/folders/${room}/children'))`);

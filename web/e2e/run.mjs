@@ -40,6 +40,7 @@ import { x6Checks } from './x6.mjs';
 import { d1Checks } from './d1.mjs';
 import { d2Checks } from './d2.mjs';
 import { i1Checks } from './i1.mjs';
+import { d3Checks } from './d3.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -680,8 +681,11 @@ async function main() {
     await signIn(page, OWNER);
     const who = await accountName(page);
     check(who.includes(OWNER.name), `the shell shows the signed-in name (${who.trim()})`);
-    const brandName = await page.evaluate(`document.querySelector('header a bdi')?.textContent ?? ''`);
-    check(brandName.includes(BRAND.name), 'the header shows the configured brand name');
+    // The shell draws no name (decision 69): the configured name is in the browser tab, and the sidebar and the top bar show none.
+    const tabTitle = await page.evaluate(`document.title`);
+    check(tabTitle.includes(BRAND.name), 'the browser tab carries the configured brand name');
+    const shellNames = await page.evaluate(`[document.querySelector('.shell-sider')?.textContent ?? '', document.querySelector('header')?.textContent ?? ''].join(' ')`);
+    check(!shellNames.includes(BRAND.name), 'the sidebar and the top bar draw no brand name');
     const sider = await page.evaluate(`getComputedStyle(document.querySelector('.ant-layout-sider')).backgroundColor`);
     check(sider === 'rgb(15, 118, 110)', `the accent is the configured colour (${sider})`);
     // The shell's menu is antd items, not links: the owner's Manage section is its Overview entry and its people entry.
@@ -740,29 +744,32 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, x3, x4, x6, pwa or i1 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, d3, x3, x4, x6 or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
+    // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
+    const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
     if (!only) {
       await fileBrowserChecks(page, { base, dir, teamA, teamB });
       await fileBrowserExtraChecks(page, { dir, teamA });
       await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
       await sortChecks(h, { page, base, accountKey, teamA });
     }
-    if (!only || only === 's4b') await s4b.s4bChecks(h, { page, base, accountKey, teamA, dir, fake, refused: s4bRefused });
-    if (!only || only === 'media') await mediaChecks(h, { page, base, accountKey, teamA });
-    if (!only || only === 'w1') await w1Checks(h, { page, base, accountKey, teamA, teamB, dir });
-    if (!only || only === 'w2') await w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir });
-    if (!only || only === 'x2') await x2Checks(h, { page, base, accountKey, accountID, memberID });
-    if (!only || only === 'q4') await q4Checks(h, { page, base, accountKey, teamA });
-    if (!only || only === 'r7') await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
-    if (!only || only === 'r7b') await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
-    if (!only || only === 'd1') await d1Checks(h, { page, base, accountKey, teamA });
-    if (!only || only === 'd2') await d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID });
-    if (!only || only === 'i1') await i1Checks(h, { page, base, accountKey, teamA, dir });
-    if (!only || only === 'x3') await x3Checks(h, { page, base, accountKey, accountID, memberID });
-    if (!only || only === 'x4') await x4Checks(h, { page, base, accountKey, accountID, memberID });
-    if (!only || only === 'x6') await x6Checks(h, { page, base, accountKey, accountID, memberID });
-    if (!only || only === 'pwa') await pwaChecks(h, { page, base, brand: { name: BRAND.name, accentUpper: BRAND.accent.toUpperCase(), member: MEMBER }, check, wsUrl: launched.wsUrl });
+    if (!only || onlySet.has('s4b')) await s4b.s4bChecks(h, { page, base, accountKey, teamA, dir, fake, refused: s4bRefused });
+    if (!only || onlySet.has('media')) await mediaChecks(h, { page, base, accountKey, teamA });
+    if (!only || onlySet.has('w1')) await w1Checks(h, { page, base, accountKey, teamA, teamB, dir });
+    if (!only || onlySet.has('w2')) await w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir });
+    if (!only || onlySet.has('x2')) await x2Checks(h, { page, base, accountKey, accountID, memberID });
+    if (!only || onlySet.has('q4')) await q4Checks(h, { page, base, accountKey, teamA });
+    if (!only || onlySet.has('r7')) await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
+    if (!only || onlySet.has('r7b')) await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
+    if (!only || onlySet.has('d1')) await d1Checks(h, { page, base, accountKey, teamA });
+    if (!only || onlySet.has('d2')) await d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID });
+    if (!only || onlySet.has('i1')) await i1Checks(h, { page, base, accountKey, teamA, dir });
+    if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
+    if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
+    if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
+    if (!only || onlySet.has('x6')) await x6Checks(h, { page, base, accountKey, accountID, memberID });
+    if (!only || onlySet.has('pwa')) await pwaChecks(h, { page, base, brand: { name: BRAND.name, accentUpper: BRAND.accent.toUpperCase(), member: MEMBER }, check, wsUrl: launched.wsUrl });
     if (only) {
       console.log(`only ${only}: passed`);
       passed = true;
