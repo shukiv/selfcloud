@@ -557,6 +557,96 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await closePreview(page);
   });
 
+  // ---- 6a. Play media (decision 61): the toolbar's button plays the folder on screen, and a folder's right-click menu plays
+  // that folder, each from its first audio or video file; a folder with none says so.
+  await step('play media', async () => {
+    const mkdirIn = (path) => api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path, parents: false });
+    await mkdirIn('/media-play');
+    await mkdirIn('/media-play/Album');
+    await mkdirIn('/media-play/Papers');
+    const putIn = async (path, body, type) => rawPut(base, `/api/v1/folders/${teamA}/files?path=${encodeURIComponent(path)}`, accountKey, body, type);
+    const tone = await readFile(join(media, 'tone.ogg'));
+    const clip = await readFile(join(media, 'clip.webm'));
+    await putIn('/media-play/aaa-notes.txt', Buffer.from('not media\n'), 'text/plain');
+    await putIn('/media-play/here-1.ogg', tone, 'audio/ogg');
+    await putIn('/media-play/here-2.webm', clip, 'video/webm');
+    await putIn('/media-play/Album/aaa-cover.txt', Buffer.from('not media\n'), 'text/plain');
+    await putIn('/media-play/Album/song-1.ogg', tone, 'audio/ogg');
+    await putIn('/media-play/Album/song-2.ogg', tone, 'audio/ogg');
+    await putIn('/media-play/Papers/paper.txt', Buffer.from('not media\n'), 'text/plain');
+    const playDir = (await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=%2F`, accountKey)).items.find((n) => n.name === 'media-play').id;
+    const playURL = `${page.base}/files/${teamA}/${playDir}`;
+    const BUTTON = `[data-testid="browser-toolbar"] button[aria-label="Play media"]`;
+    const openPlay = async () => {
+      await page.goto(playURL);
+      await page.waitFor(`!!document.querySelector(${q(itemSel('here-1.ogg'))})`, 15000);
+      await clearSelection(page);
+    };
+    const playing = () => page.evaluate(`(() => {
+      const d = document.querySelector('[data-testid="preview"]');
+      return d ? { name: d.querySelector('header bdi')?.textContent ?? '', text: d.querySelector('[data-testid="media-playlist"]')?.textContent ?? '' } : null;
+    })()`);
+    const menuPlay = async (name) => {
+      const at = await point(page, name);
+      await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'right', buttons: 2, clickCount: 1 });
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'right', buttons: 0, clickCount: 1 });
+      await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((i) => i.textContent.trim() === 'Play media')`, 10000);
+      await page.evaluate(`[...document.querySelectorAll('.ant-dropdown-menu-item')].find((i) => i.textContent.trim() === 'Play media').click()`);
+    };
+
+    await openPlay();
+    check(await page.evaluate(`!!document.querySelector(${q(BUTTON)})?.textContent.includes('Play media')`), 'the toolbar shows Play media with its name on a wide window');
+    if (process.env.SELFCLOUD_E2E_SHOTS) await shot(page, process.env.SELFCLOUD_E2E_SHOTS, 'play-media-desktop-en.png');
+    await page.evaluate(`document.querySelector(${q(BUTTON)}).click()`);
+    await page.waitFor(`!!document.querySelector('[data-testid="preview"] audio, [data-testid="preview"] video')`, 20000);
+    const here = await playing();
+    // The first on screen, not the first by name: a full run comes here with the sort the sort checks chose, largest first.
+    const firstOnScreen = await page.evaluate(`[...document.querySelectorAll('[role="row"][aria-label], [role="option"][aria-label]')].map((e) => e.getAttribute('aria-label')).find((n) => n === 'here-1.ogg' || n === 'here-2.webm')`);
+    check(here.name === firstOnScreen, `Play media starts at the first audio or video file on screen (${here.name}, on screen ${firstOnScreen})`);
+    check(here.text.includes('here-1.ogg') && here.text.includes('here-2.webm'), `the playlist holds the folder's audio and video (${here.text.slice(0, 120)})`);
+    check(!here.text.includes('aaa-notes.txt') && !here.text.includes('Album'), `the playlist holds nothing else (${here.text.slice(0, 120)})`);
+    await closePreview(page);
+
+    await openPlay();
+    await menuPlay('Album');
+    await page.waitFor(`!!document.querySelector('[data-testid="preview"] audio, [data-testid="preview"] video')`, 20000);
+    const album = await playing();
+    // The two songs are the same size, and a full run comes here sorted by size, so their order is the server's tie order.
+    const firstListed = ['song-1.ogg', 'song-2.ogg'].sort((x, y) => album.text.indexOf(x) - album.text.indexOf(y))[0];
+    check(album.name === firstListed, `a folder's menu plays that folder from its first audio or video file (${album.name}, first listed ${firstListed})`);
+    check(album.text.includes('song-2.ogg') && !album.text.includes('here-1.ogg') && !album.text.includes('aaa-cover.txt'), `the playlist holds that folder's audio and video only (${album.text.slice(0, 120)})`);
+    await closePreview(page);
+
+    await openPlay();
+    await menuPlay('Papers');
+    await page.waitFor(`[...document.querySelectorAll('.ant-message-notice')].some((x) => x.textContent.includes('No audio or video in this folder.'))`, 10000);
+    check(!(await page.evaluate(`!!document.querySelector('[data-testid="preview"]')`)), 'a folder with no audio or video opens no player');
+
+    // No button where there is nothing to play.
+    await page.goto(`${page.base}/files/${teamA}/${(await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=%2Fmedia-play`, accountKey)).items.find((n) => n.name === 'Papers').id}`);
+    await page.waitFor(`!!document.querySelector(${q(itemSel('paper.txt'))})`, 15000);
+    check(!(await page.evaluate(`!!document.querySelector(${q(BUTTON)})`)), 'a folder with no audio or video has no Play media button');
+
+    // On a phone the button is a 44 pixel icon, and the row still fits at 390 and 320, in English and Hebrew.
+    for (const [lang, label] of [['English', 'Play media'], ['עברית', 'הפעלת מדיה']]) {
+      await openPlay();
+      await setLanguage(page, lang);
+      await setPhone(page, true);
+      for (const width of [390, 320]) {
+        await setWidth(page, width);
+        await sleep(400);
+        const sel = `[data-testid="browser-toolbar"] button[aria-label=${q(label)}]`;
+        const b = await page.evaluate(`(() => { const e = document.querySelector(${q(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, l: r.left, r: r.right, text: e.textContent.trim(), scroll: document.documentElement.scrollWidth, inner: innerWidth }; })()`);
+        check(b !== null && b.w >= 44 && b.h >= 44, `${lang} at ${width}: Play media is a 44 pixel target (${JSON.stringify(b)})`);
+        check(b !== null && b.text === '', `${lang} at ${width}: Play media is an icon on a phone (${b?.text})`);
+        check(b !== null && b.l >= 0 && b.r <= b.inner && b.scroll <= b.inner, `${lang} at ${width}: the row fits (${JSON.stringify(b)})`);
+        if (process.env.SELFCLOUD_E2E_SHOTS) await shot(page, process.env.SELFCLOUD_E2E_SHOTS, `play-media-phone-${width}-${lang === 'English' ? 'en' : 'he'}.png`);
+      }
+      await setPhone(page, false);
+      await setLanguage(page, 'English');
+    }
+  });
+
   // ---- 6b. the picture viewer (decision 60): the page dimmed behind, the picture in the middle and inside the window, its
   // corners rounded, the steps in the bottom's middle, the way out at the top's end. Measured at both widths, in English and
   // Hebrew, in both themes; a click outside closes nothing. Two pictures, one far larger than the window.

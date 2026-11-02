@@ -363,6 +363,15 @@ export default function FilesPage() {
   const personalID = place?.kind === "ready" ? place.personalID : null;
   const folderID = here?.folder ?? null;
   const dirID = here?.dir?.id ?? null;
+  // A press on Play media is answered only while the person is still at the address it was pressed at, with the sort it was
+  // pressed under, and until the person opens something else. The address moves at once, ahead of the place being read.
+  const playAsk = useRef(0);
+  useEffect(
+    () => () => {
+      playAsk.current++;
+    },
+    [location.pathname, prefs.sort.key, prefs.sort.dir],
+  );
 
   const childrenQ = useInfiniteQuery({
     // The sort is part of the key, so a sort change reads the directory again from its first page.
@@ -687,12 +696,23 @@ export default function FilesPage() {
   }
 
   function openPreview(n: Node) {
+    playAsk.current++;
     const list = sorted.filter((x) => viewable(x));
     setPreviewItems(list.map(gated));
     setPreviewIndex(Math.max(0, list.findIndex((x) => x.id === n.id)));
     // A video or audio file opens the folder's playlist, from that file; other files keep the steps through the list.
     setPreviewMedia(isPlayable(n) ? { start: gated(n), folder: folderPager() } : null);
     setDialog("preview");
+  }
+
+  // gatedReader reads a folder's pages for a playlist. A later page shows the space's no-download rule as the first does, so
+  // the player offers no Download the server would refuse.
+  function gatedReader(folder: string, dir: string | null) {
+    const read = folderPageReader(folder, dir, prefs.sort);
+    return async (cursor: string) => {
+      const page = await read(cursor);
+      return { ...page, items: page.items.map(gated) };
+    };
   }
 
   // folderPager reads the folder's playable files, a page at a time, from the listing as it has them: the loaded files in
@@ -703,17 +723,65 @@ export default function FilesPage() {
     const folder = folderID as string;
     const dir = dirID;
     // The cursor belongs to the listing's sort, so the pages are read with the same sort (lib/files/folderPages.ts).
-    return new Pager(sorted.map(gated), cursor, folderPageReader(folder, dir, prefs.sort));
+    return new Pager(sorted.map(gated), cursor, gatedReader(folder, dir));
   }
 
   // playSelected plays the selected files that can play, in the listing's order, from the first of them.
   function playSelected() {
+    playAsk.current++;
     const list = sorted.filter((x) => selected.has(x.id) && isPlayable(x)).map(gated);
     if (list.length === 0) return;
     setPreviewItems(list);
     setPreviewIndex(0);
     setPreviewMedia({ start: list[0], folder: folderPager(), selection: list });
     setDialog("preview");
+  }
+
+  // startMedia opens the player on a playlist that pages through a folder, from its first file.
+  function startMedia(pager: Pager) {
+    const list = pager.loaded;
+    setPreviewItems(list);
+    setPreviewIndex(0);
+    setPreviewMedia({ start: list[0], folder: pager });
+    setDialog("preview");
+  }
+
+  // playHere plays the audio and video files of the folder on screen, in the listing's order (decision 61).
+  function playHere() {
+    playAsk.current++;
+    const pager = folderPager();
+    if (pager.loaded.length > 0) startMedia(pager);
+  }
+
+  // playFolder plays the audio and video files directly inside a folder, in the listing's sort. Its pages are read until one
+  // has such a file. A newer press, or a move to another place, drops the answer (playAsk).
+  async function playFolder(dir: Node) {
+    const my = ++playAsk.current;
+    const folder = folderID as string;
+    const fail = (text: string) => {
+      if (my === playAsk.current && !signingOut()) void message.error(text);
+    };
+    try {
+      const first = await childrenPage(folder, dir.id, undefined, prefs.sort);
+      if (my !== playAsk.current) return;
+      // A subfolder is in the same space as this place, so the same no-download rule shows on its files.
+      const pager = new Pager(first.items.map(gated), first.next_cursor ?? null, gatedReader(folder, dir.id));
+      while (pager.loaded.length === 0 && pager.hasMore) {
+        const got = await pager.more();
+        if (my !== playAsk.current) return;
+        if (got.kind === "failed") {
+          fail(t("error.generic"));
+          return;
+        }
+      }
+      if (pager.loaded.length === 0) {
+        void message.info(t("files.playMedia.none"));
+        return;
+      }
+      startMedia(pager);
+    } catch (err) {
+      fail(fileErrorText(err, lang));
+    }
   }
 
   function focusRow(id: string | null) {
@@ -1417,6 +1485,19 @@ export default function FilesPage() {
       run: () => playSelected(),
     },
     {
+      key: "playMedia",
+      label: t("files.act.playMedia"),
+      icon: <Play {...ic} />,
+      group: 1,
+      hidden: !items.some((n) => n.kind === "dir"),
+      // A folder's own audio and video files. A file has Play, and a selection of files has Play selected.
+      fits: single?.kind === "dir",
+      enabled: true,
+      run: () => {
+        if (single) void playFolder(single);
+      },
+    },
+    {
       key: "details",
       label: t("files.act.details"),
       icon: <Info {...ic} />,
@@ -1523,7 +1604,9 @@ export default function FilesPage() {
     { key: "upload", label: t("files.act.upload"), icon: <Upload {...ic} />, group: 1, hidden: !canUploadHere, fits: true, enabled: true, run: () => fileInputRef.current?.click() },
     { key: "uploadFolder", label: t("files.act.uploadFolder"), icon: <FolderUp {...ic} />, group: 1, hidden: !canUploadFolder, fits: true, enabled: true, run: () => folderInputRef.current?.click() },
   ];
+  const hasMedia = items.some(isPlayable);
   const spaceActs: BarAct[] = [
+    { key: "playMedia", label: t("files.act.playMedia"), icon: <Play {...ic} />, group: 0, hidden: !hasMedia, fits: true, enabled: true, run: () => playHere() },
     ...newActs,
     { key: "paste", label: t("files.act.paste"), icon: <ClipboardPaste {...ic} />, group: 2, hidden: !canUploadHere, fits: true, enabled: clip !== null, run: () => void pasteHere() },
   ];
@@ -1786,6 +1869,14 @@ export default function FilesPage() {
                   </Button>
                 </Dropdown>
               </ConfigProvider>
+            )}
+            {hasMedia && (
+              // Narrow windows show the icon alone, so the row keeps its other buttons in reach. The name stays for a screen reader.
+              <Tooltip title={spacious ? undefined : t("files.act.playMedia")}>
+                <Button icon={<Play {...ic} />} aria-label={t("files.act.playMedia")} onClick={playHere} style={touchSize}>
+                  {spacious ? t("files.act.playMedia") : null}
+                </Button>
+              </Tooltip>
             )}
             <span style={{ flex: "1 1 auto" }} />
             {view === "grid" && (

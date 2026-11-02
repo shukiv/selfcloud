@@ -254,6 +254,8 @@
   "files.convert.retry": "Tentar novamente",
   "files.preview.count": "{n} de {total}",
   "files.act.playSelected": "Reproduzir selecionados",
+  "files.act.playMedia": "Reproduzir mídia",
+  "files.playMedia.none": "Não há áudio nem vídeo nesta pasta.",
   "files.media.controls": "Controlos de multimédia",
   "files.media.play": "Reproduzir",
   "files.media.pause": "Pausar",

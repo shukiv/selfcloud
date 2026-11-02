@@ -254,6 +254,8 @@
   "files.convert.retry": "Réessayer",
   "files.preview.count": "{n} sur {total}",
   "files.act.playSelected": "Lire la sélection",
+  "files.act.playMedia": "Lire les médias",
+  "files.playMedia.none": "Aucun audio ni vidéo dans ce dossier.",
   "files.media.controls": "Commandes du média",
   "files.media.play": "Lecture",
   "files.media.pause": "Pause",

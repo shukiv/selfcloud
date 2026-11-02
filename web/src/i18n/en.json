@@ -254,6 +254,8 @@
   "files.convert.retry": "Try again",
   "files.preview.count": "{n} of {total}",
   "files.act.playSelected": "Play selected",
+  "files.act.playMedia": "Play media",
+  "files.playMedia.none": "No audio or video in this folder.",
   "files.media.controls": "Media controls",
   "files.media.play": "Play",
   "files.media.pause": "Pause",

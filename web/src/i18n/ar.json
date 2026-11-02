@@ -254,6 +254,8 @@
   "files.convert.retry": "حاول مرة أخرى",
   "files.preview.count": "{n} من {total}",
   "files.act.playSelected": "تشغيل المحدد",
+  "files.act.playMedia": "تشغيل الوسائط",
+  "files.playMedia.none": "لا يوجد صوت أو فيديو في هذا المجلد.",
   "files.media.controls": "عناصر التحكم في الوسائط",
   "files.media.play": "تشغيل",
   "files.media.pause": "إيقاف مؤقت",

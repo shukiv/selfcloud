@@ -254,6 +254,8 @@
   "files.convert.retry": "נסו שוב",
   "files.preview.count": "{n} מתוך {total}",
   "files.act.playSelected": "הפעלת הנבחרים",
+  "files.act.playMedia": "הפעלת מדיה",
+  "files.playMedia.none": "אין שמע או וידאו בתיקייה הזו.",
   "files.media.controls": "פקדי מדיה",
   "files.media.play": "הפעלה",
   "files.media.pause": "השהיה",

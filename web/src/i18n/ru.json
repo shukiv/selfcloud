@@ -254,6 +254,8 @@
   "files.convert.retry": "Попробовать снова",
   "files.preview.count": "{n} из {total}",
   "files.act.playSelected": "Воспроизвести выбранное",
+  "files.act.playMedia": "Воспроизвести медиа",
+  "files.playMedia.none": "В этой папке нет аудио и видео.",
   "files.media.controls": "Управление медиа",
   "files.media.play": "Воспроизвести",
   "files.media.pause": "Пауза",

@@ -40,6 +40,11 @@ const uploadList = vi.hoisted(() => {
 });
 
 vi.mock("../lib/files/api", async (orig) => ({ ...(await orig<typeof import("../lib/files/api")>()), ...api }));
+const started = vi.hoisted(() => vi.fn());
+vi.mock("../lib/files/playback", async (orig) => ({
+  ...(await orig<typeof import("../lib/files/playback")>()),
+  startPlayback: (...args: unknown[]) => started(...args),
+}));
 vi.mock("../lib/files/location", async (orig) => ({
   ...(await orig<typeof import("../lib/files/location")>()),
   locate: vi.fn(async (folder: string, dirID: string | null) => ({
@@ -1752,5 +1757,168 @@ describe("My files: the storage notice and a person with no folder", () => {
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
       expect(window.location.pathname).toBe("/shared");
     });
+  });
+});
+
+describe("Play media", () => {
+  const video = (id: string, name: string) => node(id, name, { mime_type: "video/mp4" });
+  const audio = (id: string, name: string) => node(id, name, { mime_type: "audio/ogg" });
+  const folderRow = (id: string, name: string) => node(id, name, { kind: "dir", mime_type: "" });
+  // The listing of the place itself, and of the folder pressed, are told apart by the directory asked for.
+  const listing = (here: unknown[], inside: (cursor?: string) => unknown) =>
+    api.childrenPage.mockImplementation(async (_folder: string, dir: string | null, cursor?: string) =>
+      dir === "d1" ? inside(cursor) : { items: here, next_cursor: undefined },
+    );
+  const pressFolder = async () => {
+    await screen.findByRole("row", { name: "Music" });
+    fireEvent.contextMenu(rows("Music") as Element, { clientX: 40, clientY: 50 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Play media" }));
+  };
+  type Seed = { start: Node; folder: { loaded: Node[] }; selection?: Node[] };
+  const seed = () => started.mock.calls[0][0] as Seed;
+
+  it("plays the folder on screen from its first audio or video file", async () => {
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), video("v1", "one.mp4"), audio("a1", "two.ogg")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "one.mp4" });
+    fireEvent.click(within(screen.getByRole("toolbar", { name: "Folder actions" })).getByRole("button", { name: "Play media" }));
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
+    expect(seed().start.id).toBe("v1");
+    expect(seed().folder.loaded.map((n) => n.id)).toEqual(["v1", "a1"]);
+    expect(seed().selection).toBeUndefined();
+  });
+
+  it("offers no button in a folder with no audio or video, and none over a selection", async () => {
+    const first = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(screen.queryByRole("button", { name: "Play media" })).toBeNull();
+    first.unmount();
+    api.childrenPage.mockResolvedValue({ items: [video("v1", "one.mp4")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("button", { name: "Play media" });
+    fireEvent.click(rows("one.mp4") as Element);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Play media" })).toBeNull());
+  });
+
+  it("is in the menu of the empty space when the folder has audio or video", async () => {
+    api.childrenPage.mockResolvedValue({ items: [video("v1", "one.mp4")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "one.mp4" });
+    fireEvent.contextMenu(document.querySelector(".browser") as Element, { clientX: 40, clientY: 50 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Play media" }));
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
+    expect(seed().start.id).toBe("v1");
+  });
+
+  it("plays a folder from its right-click menu, reading that folder", async () => {
+    listing([folderRow("d1", "Music")], () => ({ items: [node("t1", "cover.txt"), audio("a1", "one.ogg"), video("v1", "two.mp4")], next_cursor: undefined }));
+    renderAt(FOLDER);
+    await pressFolder();
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
+    expect(seed().start.id).toBe("a1");
+    expect(seed().folder.loaded.map((n) => n.id)).toEqual(["a1", "v1"]);
+    expect(api.childrenPage.mock.calls.some((c) => c[1] === "d1")).toBe(true);
+  });
+
+  it("reads on past pages with no audio or video, and asks each page with the listing's sort", async () => {
+    listing([folderRow("d1", "Music")], (cursor) =>
+      cursor === undefined ? { items: [node("t1", "a.txt")], next_cursor: "c2" } : { items: [audio("a1", "late.ogg")], next_cursor: undefined },
+    );
+    renderAt(FOLDER);
+    await pressFolder();
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
+    expect(seed().start.id).toBe("a1");
+    const reads = api.childrenPage.mock.calls.filter((c) => c[1] === "d1");
+    expect(reads.length).toBe(2);
+    expect(reads[1][3]).toEqual(reads[0][3]);
+  });
+
+  it("says so when the folder has no audio or video, and plays nothing", async () => {
+    listing([folderRow("d1", "Music")], () => ({ items: [node("t1", "a.txt")], next_cursor: undefined }));
+    renderAt(FOLDER);
+    await pressFolder();
+    expect(await screen.findByText("No audio or video in this folder.")).toBeTruthy();
+    expect(started).not.toHaveBeenCalled();
+  });
+
+  it("says so when the folder cannot be read, on the first page and on a later one", async () => {
+    listing([folderRow("d1", "Music")], () => {
+      throw new ApiError(500, "internal", {}, 0);
+    });
+    const first = renderAt(FOLDER);
+    await pressFolder();
+    await waitFor(() => expect(document.querySelector(".ant-message-error")).not.toBeNull());
+    expect(started).not.toHaveBeenCalled();
+    first.unmount();
+    document.querySelector(".ant-message-error")?.remove();
+    listing([folderRow("d1", "Music")], (cursor) => {
+      if (cursor === undefined) return { items: [node("t1", "a.txt")], next_cursor: "c2" };
+      throw new ApiError(500, "internal", {}, 0);
+    });
+    renderAt(FOLDER);
+    await pressFolder();
+    await waitFor(() => expect(document.querySelector(".ant-message-error")).not.toBeNull());
+    expect(started).not.toHaveBeenCalled();
+    expect(screen.queryByText("No audio or video in this folder.")).toBeNull();
+  });
+
+  it("drops the answer when the person has moved on", async () => {
+    let answer: (v: unknown) => void = () => {};
+    listing([folderRow("d1", "Music")], () => new Promise((res) => (answer = res)));
+    const { router } = renderAt(FOLDER);
+    await pressFolder();
+    await waitFor(() => expect(api.childrenPage.mock.calls.some((c) => c[1] === "d1")).toBe(true));
+    // Inside act, so the move has reached the page before the answer comes.
+    await act(async () => {
+      await router.navigate("/files/fld_bbbbbbbb");
+    });
+    await act(async () => {
+      answer({ items: [audio("a1", "one.ogg")], next_cursor: undefined });
+      await new Promise((res) => setTimeout(res, 50));
+    });
+    expect(started).not.toHaveBeenCalled();
+  });
+
+  it("shows the space's no-download rule on the files of later pages too", async () => {
+    place.noDownload = true;
+    api.childrenPage.mockImplementation(async (_folder: string, _dir: string | null, cursor?: string) =>
+      cursor === undefined ? { items: [video("v1", "one.mp4")], next_cursor: "c2" } : { items: [audio("a2", "two.ogg")], next_cursor: undefined },
+    );
+    renderAt(FOLDER);
+    fireEvent.click(await screen.findByRole("button", { name: "Play media" }));
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
+    const pager = seed().folder as unknown as { more: () => Promise<unknown>; loaded: Node[] };
+    await pager.more();
+    expect(pager.loaded.map((n) => [n.id, n.no_download])).toEqual([
+      ["v1", true],
+      ["a2", true],
+    ]);
+  });
+
+  it("a press on the toolbar's button wins over a folder still being read", async () => {
+    let answer: (v: unknown) => void = () => {};
+    listing([folderRow("d1", "Music"), video("v1", "one.mp4")], () => new Promise((res) => (answer = res)));
+    renderAt(FOLDER);
+    await pressFolder();
+    await waitFor(() => expect(api.childrenPage.mock.calls.some((c) => c[1] === "d1")).toBe(true));
+    // The menu has selected the folder; clearing it brings the toolbar's button back.
+    fireEvent.click(await screen.findByTestId("selection-clear"));
+    fireEvent.click(await screen.findByRole("button", { name: "Play media" }));
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      answer({ items: [audio("a1", "late.ogg")], next_cursor: undefined });
+      await new Promise((res) => setTimeout(res, 50));
+    });
+    expect(started).toHaveBeenCalledTimes(1);
+    expect(seed().start.id).toBe("v1");
+  });
+
+  it("is not offered for a selected file", async () => {
+    api.childrenPage.mockResolvedValue({ items: [video("v1", "one.mp4"), folderRow("d1", "Music")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "one.mp4" });
+    fireEvent.contextMenu(rows("one.mp4") as Element, { clientX: 40, clientY: 50 });
+    await screen.findByRole("menuitem", { name: "Details" });
+    expect(screen.queryByRole("menuitem", { name: "Play media" })).toBeNull();
   });
 });
