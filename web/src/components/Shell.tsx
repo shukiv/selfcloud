@@ -27,7 +27,7 @@ import LangSwitcher from "./LangSwitcher";
 import Sentence from "./Sentence";
 import ShellSearch from "./search/ShellSearch";
 import ThemeToggle from "./ThemeToggle";
-import UploadTray from "./UploadTray";
+import UploadTrayHost from "./UploadTrayHost";
 import MediaHost from "./files/MediaHost";
 import BellBoundary from "./notifications/BellBoundary";
 
@@ -526,7 +526,7 @@ export default function Shell({ children }: { children: ReactNode }) {
             )}
             {children}
           </Layout.Content>
-          <UploadTray />
+          <UploadTrayHost />
           {/* The media session (a video or audio player, or the mini player bar) lives across pages; nothing draws without one. */}
           <MediaHost />
           {settingsFor && (
