@@ -391,6 +391,10 @@ func New(opts Options) (*Server, error) {
 			// A place in a media file, per user. A client writes one at most every 15 seconds while a file plays, and one on
 			// each pause that moved it: about 4 a minute of playing, so 60 a minute leaves room for seeks and file changes.
 			"resume.write": newLimiter(60),
+			// Saved playlists, per user (decision 58). A read walks the reach of every entry, up to 500, so reads are
+			// charged like tags.batch; writes like the resume's.
+			"playlist.read":  newLimiter(120),
+			"playlist.write": newLimiter(60),
 			// People suggestions for a mention, per user, as directory searches are (decision 39).
 			"people.search": newLimiter(60),
 			// The activity of a node: a read costs a scan and a reach walk per person, so it is limited per caller and per
@@ -628,6 +632,16 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/starred", handle: s.handleListStarred, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/resume", handle: s.handleGetMediaResume, auth: true, imp: impRefuse},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/resume", handle: s.handlePutMediaResume, auth: true, imp: impRefuse},
+		// Saved playlists (decision 58): the signed-in user's own, with no token and no impersonation.
+		{method: http.MethodGet, path: "/api/v1/playlists", handle: s.handleListPlaylists, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/playlists", handle: s.handleCreatePlaylist, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/playlists/{pls}", handle: s.handleGetPlaylist, auth: true, imp: impRefuse},
+		{method: http.MethodPatch, path: "/api/v1/playlists/{pls}", handle: s.handleRenamePlaylist, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/playlists/{pls}", handle: s.handleDeletePlaylist, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/playlists/{pls}/entries", handle: s.handleAddPlaylistEntry, auth: true, imp: impRefuse},
+		{method: http.MethodPut, path: "/api/v1/playlists/{pls}/entries", handle: s.handleReplacePlaylistEntries, auth: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/playlists/{pls}/entries/{ple}", handle: s.handleRemovePlaylistEntry, auth: true, imp: impRefuse},
+		{method: http.MethodPut, path: "/api/v1/playlists/{pls}/order", handle: s.handleReorderPlaylistEntries, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/subtitles", handle: s.handleListSubtitles, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/comments", handle: s.handleListComments, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/comments", handle: s.handleCreateComment, auth: true, imp: impRefuse},

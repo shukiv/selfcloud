@@ -35,6 +35,7 @@ import { r7Checks } from './r7.mjs';
 import { r7bChecks } from './r7b.mjs';
 import { pwaChecks } from './pwa.mjs';
 import { x3Checks } from './x3.mjs';
+import { x4Checks } from './x4.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -733,6 +734,7 @@ async function main() {
     if (!only || only === 'r7') await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (!only || only === 'r7b') await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (!only || only === 'x3') await x3Checks(h, { page, base, accountKey, accountID, memberID });
+    if (!only || only === 'x4') await x4Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || only === 'pwa') await pwaChecks(h, { page, base, brand: { name: BRAND.name, accentUpper: BRAND.accent.toUpperCase(), member: MEMBER }, check, wsUrl: launched.wsUrl });
     if (only) {
       console.log(`only ${only}: passed`);

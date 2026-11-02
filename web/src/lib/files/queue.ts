@@ -25,7 +25,9 @@ export const MAX_FAILURE_RUN = 10;
 export type Repeat = "off" | "all" | "one";
 // Mark says what the queue knows about an entry: ok (it may play), restricted (the server refused its link, so it is
 // skipped without another request) or failed (the browser could not play it).
-export type Mark = "ok" | "restricted" | "failed";
+// Unavailable is a saved playlist's entry whose file the person cannot reach now, or that was deleted or lost (decision
+// 58). It has no name and is never played, and it is never counted as a failure, so a run of them stops nothing.
+export type Mark = "ok" | "restricted" | "failed" | "unavailable";
 
 export interface Entry {
   node: Node;
@@ -182,7 +184,8 @@ export function advance(q: Queue, more: boolean, rng: Rng = Math.random): Advanc
 // past, so Previous goes back to it and the round keeps its rule: a file is not played again before the round is over.
 export function choose(q: Queue, id: string): Queue {
   const entry = q.entries.find((e) => e.node.id === id);
-  if (!entry || entry.mark === "restricted") return q;
+  // A restricted file and an unavailable saved entry cannot be picked: an unavailable one has no file to play.
+  if (!entry || entry.mark === "restricted" || entry.mark === "unavailable") return q;
   const at = q.entries.findIndex((e) => e.node.id === id);
   const entries = q.entries.map((e) => (e.node.id === id ? { ...e, mark: "ok" as Mark } : e));
   if (!q.shuffle) return { ...q, entries, current: id, pos: at, run: 0 };
@@ -232,6 +235,21 @@ export function toggleShuffle(q: Queue, rng: Rng = Math.random): Queue {
   if (q.shuffle) return { ...q, shuffle: false, plan: [], past: [] };
   const others = okIDs(q).filter((id) => id !== q.current);
   return { ...q, shuffle: true, plan: shuffled(others, rng), past: [] };
+}
+
+// unavailableEntry is the row of a saved entry the person cannot reach. It carries the node's ID and nothing else: no
+// name, size or type, since the server sent none.
+export function unavailableEntry(nodeID: string): Entry {
+  const node = { id: nodeID, folder_id: "", parent_id: null, name: "", kind: "file", size: 0, created_at: "", modified_at: "", no_download: false, editors_can_share: false } as unknown as Node;
+  return { node, mark: "unavailable" };
+}
+
+// replaceEntries puts a list of entries in place of the queue's, keeping the file on screen and the settings. The list is
+// cut to MAX_QUEUE like newQueue's. With shuffle on, the round is dealt again over the new list.
+export function replaceEntries(q: Queue, entries: Entry[], rng: Rng = Math.random): Queue {
+  const kept = entries.slice(0, MAX_QUEUE);
+  const next: Queue = { ...q, entries: kept, pos: 0, shuffle: false, plan: [], past: [], run: 0, capped: entries.length > MAX_QUEUE };
+  return q.shuffle ? toggleShuffle(next, rng) : next;
 }
 
 // cycleRepeat goes off, all, one, off.

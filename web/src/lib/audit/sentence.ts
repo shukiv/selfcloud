@@ -326,6 +326,14 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
       return { key: 'audit.node.label_clear', params: { actor } };
     case 'node.label_set':
       return { key: 'audit.node.label_set', params: { actor } };
+    case 'playlist.create':
+      return { key: 'audit.playlist.create', params: { actor } };
+    case 'playlist.rename':
+      return { key: 'audit.playlist.rename', params: { actor } };
+    case 'playlist.delete':
+      return { key: 'audit.playlist.delete', params: { actor } };
+    case 'playlist.entries':
+      return { key: 'audit.playlist.entries', params: { actor } };
     case 'node.link':
       return { key: 'audit.node.link', params: { actor } };
     case 'node.copy':

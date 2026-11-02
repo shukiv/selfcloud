@@ -541,6 +541,63 @@ a {
 }
 
 /* Touch: a coarse pointer gets 44 px targets at any width. */
+/* Saved playlists (decision 58). Logical properties, so the section reads the same right to left. */
+.media-playlists {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid currentColor;
+}
+.media-playlists .media-row {
+  flex-wrap: wrap;
+}
+/* The count sits under the name, so a long name and a count both read in full on a narrow panel. */
+.media-playlists .media-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.media-playlists .media-row-artist {
+  display: block;
+}
+/* The row's buttons have the gap the queue's own button row has (6 px), so they do not touch. */
+.media-playlists .media-row-buttons {
+  gap: 6px;
+}
+.pl-field {
+  display: grid;
+  gap: 4px;
+  margin-block: 8px;
+}
+.pl-hint {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.pl-editor {
+  flex-basis: 100%;
+  margin: 4px 0 8px;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid currentColor;
+}
+.pl-editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.media-title--off {
+  opacity: 0.6;
+  font-style: italic;
+}
+@media (pointer: coarse) {
+  .pl-touch.ant-btn,
+  .pl-touch.ant-btn:hover,
+  .pl-touch.ant-btn:focus-visible {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 @media (pointer: coarse) {
   .media-btn.ant-btn,
   .media-queue .ant-btn,

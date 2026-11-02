@@ -24,6 +24,8 @@ servers:
 tags:
   - name: System
     description: Health, readiness, metrics and server facts.
+  - name: Playlists
+    description: The signed-in user's saved playlists of files (decision 58). Never a token, never an impersonation.
   - name: Folders
     description: |
       Team spaces and personal folders, and who can reach them. A team space is shared by
@@ -3855,6 +3857,214 @@ paths:
       responses:
         "204": { description: Stored. }
         default: { $ref: "#/components/responses/Error" }
+  /api/v1/playlists:
+    get:
+      tags: [Playlists]
+      operationId: listPlaylists
+      summary: The caller's saved playlists
+      description: |
+        The signed-in user's own playlists, oldest first, without their entries. A user holds at most
+        100. A delegated token, an account key, and an installation admin (or an admin signed in as a
+        user) get `forbidden`. Nobody else can read a playlist: none is listed or shown to another user.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The playlists.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Playlist" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Playlists]
+      operationId: createPlaylist
+      summary: Create an empty playlist
+      description: |
+        The name is trimmed and must hold from 1 to 120 characters, with no control characters, else
+        `invalid_request`. A user past 100 playlists gets `conflict` with reason `limit`. The creation
+        is audited, privately to the user.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string }
+                nodes:
+                  type: array
+                  maxItems: 500
+                  description: The files the playlist starts with, in order, each once. Checked and written with the playlist; one file the caller does not reach refuses the whole create.
+                  items: { type: string }
+      responses:
+        "201":
+          description: The playlist.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Playlist" }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/playlists/{pls}:
+    parameters:
+      - name: pls
+        in: path
+        required: true
+        schema: { type: string, pattern: "^pls_" }
+    get:
+      tags: [Playlists]
+      operationId: getPlaylist
+      summary: One playlist with its entries, in order
+      description: |
+        Each entry's reach is checked now, on every read. An entry the caller reaches carries its
+        `node`, with the caller's role. Any other entry (access removed, trashed, purged, another
+        account's, or not a file) carries `unavailable: true` and its `node_id` and nothing else about
+        the file, and those causes answer alike, so the answer does not say which one it is. A
+        playlist of another user, and one that does not exist, are `not_found` with the same body.
+        The read is charged per caller (`playlist.read`, 120 a minute).
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The playlist.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlaylistDetail" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Playlists]
+      operationId: renamePlaylist
+      summary: Rename a playlist
+      description: The same name rules as create. Audited, privately to the user.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "200":
+          description: The playlist.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Playlist" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Playlists]
+      operationId: deletePlaylist
+      summary: Delete a playlist and its entries
+      description: No file is touched. Audited, privately to the user.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Deleted. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/playlists/{pls}/entries:
+    parameters:
+      - name: pls
+        in: path
+        required: true
+        schema: { type: string, pattern: "^pls_" }
+    post:
+      tags: [Playlists]
+      operationId: addPlaylistEntry
+      summary: Append a file to a playlist
+      description: |
+        The caller must reach the file now and it must be a file, else `not_found`, the same answer for
+        a file that is missing, of another account, or not reached. A file the playlist already holds
+        changes nothing. A playlist past 500 entries gets `conflict` with reason `limit`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [node_id]
+              properties:
+                node_id: { type: string }
+      responses:
+        "204": { description: Added, or already there. }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Playlists]
+      operationId: replacePlaylistEntries
+      summary: Replace a playlist's entries with the nodes given, in order
+      description: |
+        At most 500 nodes, each once (else `invalid_request`). A node the playlist already holds is kept
+        without a reach check, so an unavailable entry can be kept, reordered or removed. Each node new to
+        the playlist must be reached and be a file, or the whole write is `not_found`. Entries kept keep
+        their IDs; the others get new ones.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [nodes]
+              properties:
+                nodes: { type: array, items: { type: string } }
+      responses:
+        "204": { description: Replaced. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/playlists/{pls}/entries/{ple}:
+    parameters:
+      - name: pls
+        in: path
+        required: true
+        schema: { type: string, pattern: "^pls_" }
+      - name: ple
+        in: path
+        required: true
+        schema: { type: string, pattern: "^ple_" }
+    delete:
+      tags: [Playlists]
+      operationId: removePlaylistEntry
+      summary: Remove one entry, reachable or not
+      description: The entry's own ID is all it needs, so an unavailable entry can be removed.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "204": { description: Removed. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/playlists/{pls}/order:
+    parameters:
+      - name: pls
+        in: path
+        required: true
+        schema: { type: string, pattern: "^pls_" }
+    put:
+      tags: [Playlists]
+      operationId: reorderPlaylistEntries
+      summary: Set the order of a playlist's entries
+      description: |
+        `entries` must name each entry of the playlist exactly once, in the new order. Anything else is
+        `invalid_request`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [entries]
+              properties:
+                entries: { type: array, items: { type: string } }
+      responses:
+        "204": { description: Reordered. }
+        default: { $ref: "#/components/responses/Error" }
   /api/v1/nodes/{nod}/subtitles:
     parameters:
       - $ref: "#/components/parameters/nod"
@@ -5466,6 +5676,37 @@ components:
         name: { type: string, minLength: 1, maxLength: 255 }
         on_conflict: { type: string, enum: [fail, rename, replace] }
 
+    Playlist:
+      type: object
+      description: A user's saved playlist (decision 58). Private to its user.
+      required: [id, name, entry_count, created_at, updated_at]
+      properties:
+        id: { type: string, pattern: "^pls_" }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        entry_count: { type: integer, minimum: 0, maximum: 500 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PlaylistEntry:
+      type: object
+      description: |
+        One place in a playlist. `node` is present only when the caller reaches the file now; otherwise
+        `unavailable` is true and there is no `node`.
+      required: [entry_id, position, node_id, unavailable]
+      properties:
+        entry_id: { type: string, pattern: "^ple_" }
+        position: { type: integer, minimum: 0 }
+        node_id: { type: string, pattern: "^nod_" }
+        unavailable: { type: boolean }
+        node: { $ref: "#/components/schemas/Node" }
+    PlaylistDetail:
+      allOf:
+        - $ref: "#/components/schemas/Playlist"
+        - type: object
+          required: [entries]
+          properties:
+            entries:
+              type: array
+              items: { $ref: "#/components/schemas/PlaylistEntry" }
     Node:
       type: object
       description: |

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { Alert, Button, Dropdown, type MenuProps } from "antd";
 import { ArrowDown, ArrowUp, GripVertical, ListMusic, MoreHorizontal, Pause, Play, Plus, Repeat, Repeat1, Shuffle, Trash2 } from "lucide-react";
 import { useT } from "../../lib/i18n";
@@ -38,6 +38,8 @@ interface Props {
   onMove: (id: string, delta: number) => void;
   onShuffle: () => void;
   onRepeat: () => void;
+  // saved is the saved-playlists section under the list (MediaPlaylists), which needs the list's state and so is given here.
+  saved?: ReactNode;
 }
 
 export default function MediaQueue(p: Props) {
@@ -170,6 +172,11 @@ export default function MediaQueue(p: Props) {
                   size={28}
                   enabled={kindOf(entry.node) === "audio" && (entry.node.has_thumbnail === true || hasCover(id))}
                 />
+                {entry.mark === "unavailable" ? (
+                  <span className="media-title media-title--off" data-testid="media-unavailable">
+                    <bdi>{t("files.playlists.unavailable")}</bdi>
+                  </span>
+                ) : (
                 <button
                   type="button"
                   className="media-title"
@@ -188,6 +195,7 @@ export default function MediaQueue(p: Props) {
                     </span>
                   )}
                 </button>
+                )}
                 {/* The playing mark is an icon, with its word for a screen reader: the word would otherwise take the room a title
                     needs on a phone. */}
                 <span className="media-state" style={{ color: on ? palette.text : palette.muted }}>
@@ -222,6 +230,8 @@ export default function MediaQueue(p: Props) {
           {t("files.media.loadingMore")}
         </p>
       )}
+
+      {p.saved}
 
       {p.adding && (
         <div className="media-add" data-testid="media-add">

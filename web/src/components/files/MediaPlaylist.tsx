@@ -28,6 +28,8 @@ import type { SubtitleTrack } from "../../lib/files/subtitles";
 import type { Resume } from "../../lib/files/resume";
 import MediaPlayer, { type Link, type MediaFailure } from "./MediaPlayer";
 import MediaQueue from "./MediaQueue";
+import MediaPlaylists from "./MediaPlaylists";
+import { replaceEntries as replaceQueueEntries } from "../../lib/files/queue";
 
 // MediaPlaylist plays a list of video and audio files one after another, with the panel that shows the list. The list is
 // the folder's playable files, read a page at a time as the player reaches their end (Pager), or the selection the person
@@ -59,6 +61,9 @@ export interface MediaPlaylistProps {
   // selection, when given, is the list to play instead of the folder's files. The folder is then used only by the add
   // panel.
   selection?: Node[];
+  // saved shows the saved playlists under the queue (decision 58). The signed-in player sets it; a share page does not,
+  // since a share has no saved state.
+  saved?: boolean;
   // fetchLink asks for a link to a file the person may play; it throws when the link is refused (ApiError
   // download_restricted, when the person may not download the file).
   fetchLink: (node: Node) => Promise<Link>;
@@ -90,6 +95,7 @@ export default function MediaPlaylist({
   start,
   folder,
   selection,
+  saved = false,
   fetchLink,
   onPosition,
   onCurrent,
@@ -113,9 +119,13 @@ export default function MediaPlaylist({
   subsRef.current = subtitlesOf;
   // playing says whether the file on screen plays now; the queue's current row shows it.
   const [playing, setPlaying] = useState(false);
-  const paged = selection === undefined;
+  // fromSaved is set when a saved playlist replaces the queue. Such a queue ends at its own end: the folder it came from
+  // is not read on, so the playlist never plays the folder's files after its own (review of slice x4).
+  const [fromSaved, setFromSaved] = useState(false);
+  const paged = selection === undefined && !fromSaved;
   const [q, setQ] = useState<Queue>(() => {
-    const base = paged ? folder.loaded : selection;
+    // At mount no saved playlist has replaced the queue, so the list is the folder's when no selection was given.
+    const base = selection === undefined ? folder.loaded : selection;
     const list = base.some((n) => n.id === start.id) ? base : [start, ...base];
     return newQueue(list, start.id, { shuffle: false, repeat: "off" });
   });
@@ -549,12 +559,28 @@ export default function MediaPlaylist({
         onLoadMore={() => void loadMore()}
         onPlay={(id) => {
           const entry = qRef.current.entries.find((e) => e.node.id === id);
-          if (entry && entry.mark !== "restricted") pick(choose(qRef.current, id));
+          if (entry && entry.mark !== "restricted" && entry.mark !== "unavailable") pick(choose(qRef.current, id));
         }}
         onRemove={removeEntry}
         onMove={(id, delta) => commit(move(qRef.current, id, delta))}
         onShuffle={() => void shuffleToggle()}
         onRepeat={() => commit(cycleRepeat(qRef.current))}
+        saved={
+          saved ? (
+            <MediaPlaylists
+              queue={q.entries}
+              onOpen={(entries) => {
+                // Opening a saved playlist plays it: its first playable file starts. The file that was on screen is not in
+                // the list, so it would otherwise leave the player with no file to show.
+                setFromSaved(true);
+                const next = replaceQueueEntries(qRef.current, entries);
+                const first = next.entries.find((e) => e.mark === "ok");
+                if (first) pick(choose(next, first.node.id));
+                else commit(next);
+              }}
+            />
+          ) : undefined
+        }
       />
     </div>
   );
