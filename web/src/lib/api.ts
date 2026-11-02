@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ApiError } from './apiError';
-import { clearSession, currentCsrf, forcePasswordChange, session, sessionKey, signingOut } from './session';
+import { clearSession, currentCsrf, forcePasswordChange, session, sessionKey, signingOut, trackRequest } from './session';
 import { get } from './store';
 import { go, signInURL } from './router';
 
@@ -54,11 +54,18 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
     throw new ApiError(0, 'signing_out', {}, 0);
   }
 
+  // Every call but the sign-out's own is recorded while it is on its way, so a sign-out can abort it (session.ts).
+  const ctl = new AbortController();
+  opts.signal?.addEventListener('abort', () => ctl.abort(), { once: true });
+  if (opts.signal?.aborted) ctl.abort();
+  const forget = opts.allowWhileSigningOut ? () => undefined : trackRequest(ctl);
   let res: Response;
   try {
-    res = await fetch(path, { method, headers, body, credentials: 'same-origin', cache: 'no-store', signal: opts.signal });
+    res = await fetch(path, { method, headers, body, credentials: 'same-origin', cache: 'no-store', signal: ctl.signal });
   } catch {
-    throw new ApiError(0, 'network', {}, 0);
+    throw new ApiError(0, ctl.signal.aborted && signingOut() ? 'signing_out' : 'network', {}, 0);
+  } finally {
+    forget();
   }
 
   if (res.status === 204) return undefined as T;

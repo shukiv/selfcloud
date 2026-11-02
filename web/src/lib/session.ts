@@ -75,8 +75,22 @@ export function sessionChanged(): () => boolean {
 // the first to finish must not clear the second's guard.
 let ending = 0;
 
+// requests are the calls api has on their way. A request sent just before a sign-out could be answered after the server
+// ended the session, with a 401 the browser reports as an error; the sign-out aborts them before its own call goes out.
+const requests = new Set<AbortController>();
+
+// trackRequest records a call on its way, and returns the function that forgets it once it is answered.
+export function trackRequest(c: AbortController): () => void {
+  requests.add(c);
+  return () => {
+    requests.delete(c);
+  };
+}
+
 export function beginSignOut(): void {
   ending++;
+  for (const c of requests) c.abort();
+  requests.clear();
 }
 
 export function endSignOut(): void {
