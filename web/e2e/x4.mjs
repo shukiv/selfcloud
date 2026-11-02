@@ -244,7 +244,8 @@ export async function x4Checks(h, { page, base, accountKey, accountID, memberID 
         check(shownLang === `${lang} ${lang === 'he' ? 'rtl' : 'ltr'}`, `the page is shown in ${lang} for the saved list (${theme} ${width}): ${shownLang}`);
         await rowGaps(page, check, `${lang} ${theme} ${width}`);
         // One file reads with the singular (review of slice x4: "1 files" and a plural in Hebrew that was wrong).
-        const countText = await page.evaluate(`document.querySelector('[data-testid="playlist-row"] .media-row-artist')?.textContent ?? ''`);
+        // The count is wrapped in isolate marks in Hebrew (decision 67); the check reads the text through them.
+        const countText = (await page.evaluate(`document.querySelector('[data-testid="playlist-row"] .media-row-artist')?.textContent ?? ''`)).replace(/[\u2066-\u2069]/g, '');
         const wantCount = lang === 'he' ? '1 קובץ' : '1 file';
         check(countText === wantCount, `${lang} ${theme} ${width}: one file reads "${wantCount}" (${q(countText)})`);
         if (width === 'phone') await touchSizes(page, check, `${lang} ${theme} phone`);

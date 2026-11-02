@@ -112,11 +112,13 @@ async function signIn(page, who) {
   await page.evaluate(`document.querySelector('form button[type="submit"]').click()`);
 }
 
-// clickButton clicks the enabled button in scope (a CSS selector) whose text is the label, or starts with it.
+// clickButton clicks the enabled button in scope (a CSS selector) whose text is the label, or starts with it. The isolate marks
+// of a value in Hebrew (decision 67) are read through, so the label compares as the words the catalogue holds.
 async function clickButton(page, label, scope = 'body', exact = true, timeout = 10000) {
   await page.waitFor(
     `(() => { const s = document.querySelector(${q(scope)}); if (!s) return false;
-      const b = [...s.querySelectorAll('button')].find((x) => !x.disabled && (${exact} ? x.textContent.trim() === ${q(label)} : x.textContent.trim().startsWith(${q(label)})));
+      const text = (x) => x.textContent.replace(/[\u2066-\u2069]/g, '').trim();
+      const b = [...s.querySelectorAll('button')].find((x) => !x.disabled && (${exact} ? text(x) === ${q(label)} : text(x).startsWith(${q(label)})));
       if (!b) return false; b.click(); return true; })()`,
     timeout,
   );
@@ -135,13 +137,14 @@ async function clickRowButton(page, name, label) {
 // clickRadio chooses the option of a radio group whose label is the text.
 async function clickRadio(page, label) {
   await page.waitFor(
-    `(() => { const w = [...document.querySelectorAll('.ant-modal .ant-radio-wrapper')].find((x) => x.textContent.trim() === ${q(label)});
+    `(() => { const w = [...document.querySelectorAll('.ant-modal .ant-radio-wrapper')].find((x) => x.textContent.replace(/[\\u2066-\\u2069]/g, '').trim() === ${q(label)});
       if (!w) return false; w.click(); return true; })()`,
   );
 }
 
 async function waitText(page, text, timeout = 10000) {
-  await page.waitFor(`document.body.innerText.includes(${q(text)})`, timeout);
+  // The page's text reads through the isolate marks of a value in Hebrew (decision 67).
+  await page.waitFor(`document.body.innerText.replace(/[\\u2066-\\u2069]/g, '').includes(${q(text)})`, timeout);
 }
 
 async function textOf(page, selector) {

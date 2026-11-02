@@ -16,7 +16,9 @@ describe("formatBytes", () => {
     for (const lang of LANGS) {
       for (const n of [1, 9]) {
         const full = new Intl.NumberFormat(lang, { style: "unit", unit: "byte", unitDisplay: "long" }).format(n);
-        expect(formatBytes(n, lang), `${lang} ${n}`).toBe(full);
+        // Hebrew and Arabic wrap the size in isolate marks (decision 67); the words inside stay the same.
+        const marked = lang === "he" || lang === "ar" ? `\u2068${full}\u2069` : full;
+        expect(formatBytes(n, lang), `${lang} ${n}`).toBe(marked);
       }
     }
   });
@@ -24,5 +26,19 @@ describe("formatBytes", () => {
   it("keeps the short unit for the larger sizes", () => {
     const short = new Intl.NumberFormat("en", { style: "unit", unit: "kilobyte", unitDisplay: "short", maximumFractionDigits: 1 }).format(1.5);
     expect(formatBytes(1500, "en")).toBe(short);
+  });
+
+  // In Hebrew and Arabic a size sits inside a right-to-left sentence. Its own direction must hold (decision 67): the
+  // isolate marks U+2068 and U+2069 wrap the whole size, and the other languages get no marks at all.
+  it("isolates the size in a right-to-left language, so the unit stays after the digits", () => {
+    expect(formatBytes(3_100_000, "he")).toBe("\u2068" + "3.1 MB" + "\u2069");
+    expect(formatBytes(3_100_000, "ar")).toBe("\u2068" + "3.1 م.ب" + "\u2069");
+  });
+
+  it("adds no direction marks in English, Spanish or Russian", () => {
+    for (const lang of ["en", "es", "fr", "pt", "ru"]) {
+      expect(formatBytes(3_100_000, lang), lang).not.toMatch(/[\u2066-\u2069]/);
+    }
+    expect(formatBytes(3_100_000, "en")).toBe("3.1 MB");
   });
 });

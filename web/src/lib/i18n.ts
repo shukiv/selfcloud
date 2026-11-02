@@ -52,11 +52,24 @@ const loaders: Record<Lang, () => Promise<Catalogue>> = {
 
 const loaded = new Set<Lang>();
 
-// formatValue writes a number with the digits of its language. Other values are already strings.
+// FSI and PDI are the Unicode isolate marks. The text between them keeps its own direction inside a sentence of the other
+// direction (decision 67).
+const FSI = '\u2068';
+const PDI = '\u2069';
+
+// isolate wraps text shown inside a sentence of lang when lang is right to left, so that a size, a number or a Latin name keeps
+// its own order. A left-to-right language gets the text unchanged.
+export function isolate(lang: string | null | undefined, text: string): string {
+  const l = matchLang(lang);
+  return l !== null && directionOf(l) === 'rtl' ? `${FSI}${text}${PDI}` : text;
+}
+
+// formatValue writes a number with the digits of its language, and isolates every value shown in a right-to-left sentence.
+// The formatter runs on every placeholder (alwaysFormat), so this is the one place the values are isolated.
 function formatValue(value: unknown, _format: string | undefined, lng: string | undefined): string {
   if (value === undefined) return value as unknown as string; // no value: i18next handles it
-  if (typeof value === 'number') return new Intl.NumberFormat(lng).format(value);
-  return String(value);
+  if (typeof value === 'number') return isolate(lng, new Intl.NumberFormat(lng).format(value));
+  return isolate(lng, String(value));
 }
 
 // The formatter is a module, so the placeholder formatting goes through i18next's own pipeline.

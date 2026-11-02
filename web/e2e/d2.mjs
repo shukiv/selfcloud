@@ -131,6 +131,38 @@ async function shotClip(page, dir, name, box) {
 const boxOf = (page, selector, pad = 8) =>
   page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.max(0, r.left - ${pad}), y: Math.max(0, r.top - ${pad}), w: r.width + ${pad * 2}, h: r.height + ${pad * 2} }; })()`);
 
+// measureSize reads a size as the screen draws it (decision 67): the x of its first digit and the x of its unit. With exact,
+// the size is the whole text of one leaf element (a cell, a figure); otherwise it is the first size in the root's text. The
+// isolate marks are read through, so a size wrapped for a right-to-left sentence reads as the same size.
+function measureSize(selector, exact) {
+  const SIZE = /\d[\d.,]*(\s)([^\s\d\u2066-\u2069]+)/;
+  const plain = (s) => s.replace(/[\u2066-\u2069]/g, '').trim();
+  const root = document.querySelector(selector);
+  if (!root) return null;
+  const leaves = [root, ...root.querySelectorAll('*')].filter((e) => e.children.length === 0);
+  const holder = exact ? leaves.find((e) => /^\d[\d.,]*\s[^\s\d]+$/.test(plain(e.textContent))) : root;
+  if (!holder) return null;
+  const walker = document.createTreeWalker(holder, NodeFilter.SHOW_TEXT);
+  const parts = [];
+  let at = 0;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    parts.push({ n, at });
+    at += n.data.length;
+  }
+  const m = SIZE.exec(parts.map((p) => p.n.data).join(''));
+  if (!m) return null;
+  const x = (i) => {
+    const p = parts.findLast((q2) => q2.at <= i);
+    const r = document.createRange();
+    r.setStart(p.n, i - p.at);
+    r.setEnd(p.n, i - p.at + 1);
+    return r.getBoundingClientRect().left;
+  };
+  return { size: plain(m[0]), digit: x(m.index), unit: x(m.index + m[0].length - m[2].length) };
+}
+const sizeAt = (page, selector, exact) => page.evaluate(`(${measureSize.toString()})(${q(selector)}, ${exact})`);
+const LINE = '.shell-menu .shell-storage-item .shell-storage > span:last-child';
+
 export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID }) {
   const { check, api, navigateTo, clickNav, press, rowAppears } = h;
   // The folder the upload check puts files in: its own, so this section runs alone (d1 makes the same folder; the second create is refused and ignored).
@@ -289,6 +321,9 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await shotClip(page, shotsDir, 'd2-columns.png', { x: 0, y: 40, w: 264, h: 220 });
     console.log(`alignment (px, English, from Starred): ${JSON.stringify({ new: geo.new, starred: geo.starred, mine: geo.mine, team: geo.team, storage: geo.storage })}`);
     check(geo.newBox !== null && near(geo.newBox.l - 12) && near(geo.newBox.r - 252), `the New button spans the sidebar's content width, 12 px in from each edge (${JSON.stringify(geo.newBox)})`);
+    // A size reads digits then unit, left to right, in English (decision 67): the sidebar line's first size.
+    const lineEn = await sizeAt(page, LINE, false);
+    check(lineEn !== null && lineEn.digit < lineEn.unit, `in English the storage line draws its digits, then the unit (${JSON.stringify(lineEn)})`);
 
     // Hebrew: the page mirrors, and the columns mirror with it.
     await setLanguage(page, 'עברית');
@@ -298,7 +333,28 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(near(offHe.new.icon) && near(offHe.new.name), `in Hebrew New's plus and word line up with the rows, mirrored, within a pixel (${JSON.stringify(offHe.new)})`);
     check(near(offHe.mine.icon) && near(offHe.mine.name), `in Hebrew My files' icon and name line up with Starred's (${JSON.stringify(offHe.mine)})`);
     check(near(offHe.storage.icon) && near(offHe.storage.name), `in Hebrew the Storage block lines up with Starred (${JSON.stringify(offHe.storage)})`);
+    // A size keeps its order inside the Hebrew sentence (decision 67): digits, then the unit, left to right. Read on the sidebar's
+    // line, on a file's size cell in the listing, and on the Storage page's figure.
+    const lineHe = await sizeAt(page, LINE, false);
+    check(lineHe !== null && lineHe.digit < lineHe.unit, `in Hebrew the storage line draws its digits, then the unit, left to right (${JSON.stringify(lineHe)})`);
     await snap('d2-desktop-he-light.png');
+    await shotClip(page, shotsDir, 'b1-he-storage-line.png', await boxOf(page, '.shell-menu .shell-storage-item'));
+    await navigateTo(page, `/files/${myFolder}`);
+    await page.waitFor(`!!document.querySelector('[role="row"][aria-label="${uploadName}"]')`, 15000);
+    const cellHe = await sizeAt(page, `[role="row"][aria-label="${uploadName}"]`, true);
+    check(cellHe !== null && cellHe.digit < cellHe.unit, `in Hebrew a file's size cell draws its digits, then the unit, left to right (${JSON.stringify(cellHe)})`);
+    await shotClip(page, shotsDir, 'b1-he-listing-sizes.png', await boxOf(page, `[role="row"][aria-label="${uploadName}"]`));
+    await navigateTo(page, '/storage');
+    await page.waitFor(`location.pathname === '/storage' && !!document.querySelector('dd')`, 15000);
+    const pageHe = await sizeAt(page, 'dd', true);
+    check(pageHe !== null && pageHe.digit < pageHe.unit, `in Hebrew the Storage page's figure draws its digits, then the unit, left to right (${JSON.stringify(pageHe)})`);
+    await shotClip(page, shotsDir, 'b1-he-storage-page.png', await boxOf(page, 'dd'));
+    // Arabic reads right to left, so its digits come first at the right: the digits sit right of the unit.
+    await setLanguage(page, 'العربية');
+    await page.waitFor(`document.documentElement.dir === 'rtl' && document.documentElement.lang === 'ar'`, 15000);
+    const lineAr = await sizeAt(page, LINE, false);
+    check(lineAr !== null && lineAr.digit > lineAr.unit, `in Arabic the storage line keeps its right-to-left order, digits first (${JSON.stringify(lineAr)})`);
+    await shotClip(page, shotsDir, 'b1-ar-storage-line.png', await boxOf(page, '.shell-menu .shell-storage-item'));
     await setLanguage(page, 'English');
     await page.waitFor(`document.documentElement.dir === 'ltr'`, 15000);
 

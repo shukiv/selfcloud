@@ -15,6 +15,7 @@ describe('the file count of a saved playlist', () => {
     ['he', 3, '3 קבצים'],
   ])('%s, %i: %s', async (lang, count, want) => {
     await loadLang(lang);
-    expect(translatePlural(lang, 'files.playlists.count', count)).toBe(want);
+    // The count is wrapped in isolate marks in Hebrew (decision 67); the words are compared without them.
+    expect(translatePlural(lang, 'files.playlists.count', count).replace(/[\u2066-\u2069]/g, '')).toBe(want);
   });
 });

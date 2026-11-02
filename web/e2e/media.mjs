@@ -668,7 +668,7 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
       return {
         w: innerWidth, h: innerHeight, scroll: document.documentElement.scrollWidth,
         img: box(img), loaded: !!img && img.complete && img.naturalWidth > 0, radius: img ? parseFloat(getComputedStyle(img).borderRadius) : 0,
-        close: box(close), steps: box(root?.querySelector('.lightbox-steps')), count: root?.querySelector('.lightbox-count')?.textContent ?? '',
+        close: box(close), steps: box(root?.querySelector('.lightbox-steps')), count: (root?.querySelector('.lightbox-count')?.textContent ?? '').replace(/[\\u2066-\\u2069]/g, ''),
         countBox: box(root?.querySelector('.lightbox-count')), name: box(root?.querySelector('.lightbox-name')), nameText: root?.querySelector('.lightbox-name bdi')?.textContent ?? '',
         mask: root?.querySelector('.ant-modal-mask') ? getComputedStyle(root.querySelector('.ant-modal-mask')).backgroundColor : '',
         buttons: [...(root?.querySelectorAll('.lightbox-btn') ?? [])].map((b) => { const r = b.getBoundingClientRect(); return { w: r.width, h: r.height }; }),

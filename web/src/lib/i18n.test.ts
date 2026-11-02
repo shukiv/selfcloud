@@ -63,6 +63,29 @@ describe('translate', () => {
   });
 });
 
+// A value shown inside a right-to-left sentence is wrapped in isolate marks (decision 67); these are U+2068 and U+2069.
+const FSI = '\u2068';
+const PDI = '\u2069';
+
+describe('values in a right-to-left sentence', () => {
+  it('isolates a Latin name in a Hebrew sentence, and leaves the rest of it alone', () => {
+    expect(translate('he', 'files.newFolder.created', { name: 'Report.pdf' })).toBe(`נוצרה התיקייה ${FSI}Report.pdf${PDI}.`);
+    expect(translate('ar', 'files.newFolder.created', { name: 'Report.pdf' })).toBe(`تم إنشاء ${FSI}Report.pdf${PDI}.`);
+  });
+
+  it('adds no isolate marks to English, Spanish or Russian', () => {
+    expect(translate('en', 'files.newFolder.created', { name: 'Report.pdf' })).toBe('Created Report.pdf.');
+    expect(translate('es', 'files.newFolder.created', { name: 'Report.pdf' })).not.toMatch(/[\u2066-\u2069]/);
+    expect(translate('ru', 'files.newFolder.created', { name: 'Report.pdf' })).not.toMatch(/[\u2066-\u2069]/);
+  });
+
+  it('isolates the count in a Hebrew plural, and still picks the form for the count', () => {
+    expect(translatePlural('he', 'error.rateLimited', 3)).toBe(`יותר מדי ניסיונות. נסו שוב בעוד ${FSI}3${PDI} דקות.`);
+    expect(translatePlural('he', 'error.rateLimited', 1)).toBe('יותר מדי ניסיונות. נסו שוב בעוד דקה.');
+    expect(translatePlural('he', 'error.rateLimited', 2)).toBe('יותר מדי ניסיונות. נסו שוב בעוד שתי דקות.');
+  });
+});
+
 describe('translatePlural', () => {
   it('has the count of anyone links in every language, for each plural form', () => {
     for (const l of ['en', 'es', 'fr', 'pt', 'ru', 'ar', 'he'] as const) {

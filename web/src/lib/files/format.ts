@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { isolate } from '../i18n';
+
 // Sizes and dates, in the language of the interface. Sizes use decimal units, the way Intl names them.
 const UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
 
@@ -12,13 +14,17 @@ export function formatBytes(bytes: number, lang: string): string {
     i++;
   }
   const digits = i === 0 ? 0 : v < 10 ? 1 : 0;
-  return new Intl.NumberFormat(lang, {
-    style: 'unit',
-    unit: UNITS[i],
-    // Bytes are written in full ("9 bytes"); the larger units keep their short form ("2 kB").
-    unitDisplay: i === 0 ? 'long' : 'short',
-    maximumFractionDigits: digits,
-  }).format(v);
+  // In a right-to-left language the size keeps its own order, digits then unit, inside the sentence (decision 67).
+  return isolate(
+    lang,
+    new Intl.NumberFormat(lang, {
+      style: 'unit',
+      unit: UNITS[i],
+      // Bytes are written in full ("9 bytes"); the larger units keep their short form ("2 kB").
+      unitDisplay: i === 0 ? 'long' : 'short',
+      maximumFractionDigits: digits,
+    }).format(v),
+  );
 }
 
 // formatNumber formats a count or a byte total with the locale's digits.
