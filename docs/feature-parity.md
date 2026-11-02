@@ -44,7 +44,7 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route. Video and audio play to the end of a long file: a new link is asked for when the first one ends, and a format the browser cannot play is said so (s4c, decision 42). Double click, a tap on a phone, and a play mark on media rows |
+| Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route. Video and audio play to the end of a long file: a new link is asked for when the first one ends, and a format the browser cannot play is said so (s4c, decision 42). Double click, a tap on a phone, and a play mark on media rows. Pictures open in a lightbox over the dimmed page (decision 60). |
 | Video and audio player: own controls (play, seek with the buffered part, time, volume kept between files, mute, speed, full screen, picture in picture) and the keys | Built (x1, decision 45): antd controls over the element, with no player library; the browser's own controls are not used. Mini player and Media Session (x2), subtitles (x2) are planned |
 | Playlist from a folder or a selection: play selected, next at the end, shuffle, repeat one, repeat all, add next, add to end, remove, reorder by drag and by keys | Built (x1, decision 45): the folder is read a page at a time, the queue holds at most 500 files, a file that cannot play is skipped, and playback stops when every file in a row fails. Saved playlists are planned (x4) |
 | Resume playback where it stopped | Planned (x2): a small table on the server, per user and per file |

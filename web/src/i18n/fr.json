@@ -252,6 +252,7 @@
   "files.convert.tooLarge": "Ce document est trop volumineux pour être converti.",
   "files.convert.slow": "La conversion prend plus de temps que prévu. Réessayez plus tard.",
   "files.convert.retry": "Réessayer",
+  "files.preview.count": "{n} sur {total}",
   "files.act.playSelected": "Lire la sélection",
   "files.media.controls": "Commandes du média",
   "files.media.play": "Lecture",

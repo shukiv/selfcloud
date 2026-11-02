@@ -557,6 +557,119 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await closePreview(page);
   });
 
+  // ---- 6b. the picture viewer (decision 60): the page dimmed behind, the picture in the middle and inside the window, its
+  // corners rounded, the steps in the bottom's middle, the way out at the top's end. Measured at both widths, in English and
+  // Hebrew, in both themes; a click outside closes nothing. Two pictures, one far larger than the window.
+  await step('the picture viewer', async () => {
+    await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: '/media-pictures', parents: false });
+    const putPicture = (name, body) =>
+      rawPut(base, `/api/v1/folders/${teamA}/files?path=${encodeURIComponent(`/media-pictures/${name}`)}`, accountKey, body, 'image/png');
+    await putPicture('first-wide.png', pngOf(1800, 1100, (x, y) => [(x >> 3) & 255, (y >> 3) & 255, 120]));
+    await putPicture('second-tall.png', pngOf(300, 1400, (x, y) => [200, (y >> 3) & 255, (x >> 1) & 255]));
+    const pictureDir = (await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=%2F`, accountKey)).items.find((n) => n.name === 'media-pictures').id;
+    const measure = () => page.evaluate(`(() => {
+      const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height }; };
+      const root = document.querySelector('.lightbox');
+      const img = root?.querySelector('.lightbox-picture img');
+      const close = root?.querySelector('header button');
+      return {
+        w: innerWidth, h: innerHeight, scroll: document.documentElement.scrollWidth,
+        img: box(img), loaded: !!img && img.complete && img.naturalWidth > 0, radius: img ? parseFloat(getComputedStyle(img).borderRadius) : 0,
+        close: box(close), steps: box(root?.querySelector('.lightbox-steps')), count: root?.querySelector('.lightbox-count')?.textContent ?? '',
+        countBox: box(root?.querySelector('.lightbox-count')), name: box(root?.querySelector('.lightbox-name')), nameText: root?.querySelector('.lightbox-name bdi')?.textContent ?? '',
+        mask: root?.querySelector('.ant-modal-mask') ? getComputedStyle(root.querySelector('.ant-modal-mask')).backgroundColor : '',
+        buttons: [...(root?.querySelectorAll('.lightbox-btn') ?? [])].map((b) => { const r = b.getBoundingClientRect(); return { w: r.width, h: r.height }; }),
+      };
+    })()`);
+    const pictureReady = (name) =>
+      page.waitFor(`(() => { const r = document.querySelector('.lightbox'); const i = r?.querySelector('.lightbox-picture img'); return !!i && i.complete && i.naturalWidth > 0 && r.querySelector('.lightbox-name bdi')?.textContent === ${q(name)}; })()`, 20000);
+    // Antd's own transitions move and size things for 0.2 seconds, so nothing is measured or pictured during them.
+    const settle = () => sleep(400);
+    const shotDir = process.env.SELFCLOUD_E2E_SHOTS;
+    if (shotDir) await mkdir(shotDir, { recursive: true });
+    for (const [lang, oneOfTwo, twoOfTwo, rtl] of [['English', '1 of 2', '2 of 2', false], ['עברית', '1 מתוך 2', '2 מתוך 2', true]]) {
+      for (const theme of ['Light', 'Dark']) {
+        for (const phone of [false, true]) {
+          const tag = `${lang === 'English' ? 'en' : 'he'}-${theme.toLowerCase()}-${phone ? 'phone' : 'desktop'}`;
+          // The theme switch is read in English and is on the desktop's top bar, so both are set before the window narrows.
+          await page.goto(`${page.base}/files/${teamA}/${pictureDir}`);
+          await page.waitFor(`!!document.querySelector(${q(itemSel('first-wide.png'))})`, 15000);
+          await setLanguage(page, 'English');
+          await setTheme(page, theme);
+          await setLanguage(page, lang);
+          if (phone) await setPhone(page, true);
+          await sleep(400);
+          await clearSelection(page);
+          const at = await point(page, 'first-wide.png');
+          if (phone) await tap(page, at);
+          else await dblClick(page, at);
+          await pictureReady('first-wide.png');
+          await settle();
+          const a = await measure();
+          check(a.loaded, `${tag}: the picture has loaded`);
+          check(a.mask.startsWith('rgba(0, 0, 0, 0.9'), `${tag}: the page behind is dimmed (${a.mask})`);
+          check(a.radius > 0, `${tag}: the picture's corners are rounded (${a.radius})`);
+          check(a.scroll <= a.w, `${tag}: the page is no wider than its window (${a.scroll} of ${a.w})`);
+          check(a.img.l >= 0 && a.img.r <= a.w && a.img.t >= 0 && a.img.b <= a.h, `${tag}: a picture larger than the window stays inside it (${JSON.stringify(a.img)})`);
+          check(Math.abs((a.img.l + a.img.r) / 2 - a.w / 2) <= 1, `${tag}: the picture is centred (${JSON.stringify(a.img)} in ${a.w})`);
+          check(a.count === oneOfTwo, `${tag}: the count reads ${oneOfTwo} (${a.count})`);
+          check(Math.abs((a.countBox.l + a.countBox.r) / 2 - a.w / 2) <= 2, `${tag}: the count is in the bottom's middle (${JSON.stringify(a.countBox)} in ${a.w})`);
+          check(a.close.b <= a.img.t + 1, `${tag}: the way out is clear of the picture (${JSON.stringify(a.close)} above ${JSON.stringify(a.img)})`);
+          check(a.steps.t >= a.img.b - 1, `${tag}: the steps are clear of the picture (${JSON.stringify(a.steps)} under ${JSON.stringify(a.img)})`);
+          check(a.name.b <= a.h && a.name.l >= 0 && a.name.r <= a.w, `${tag}: the name is in the window (${JSON.stringify(a.name)})`);
+          check(rtl ? a.close.l <= 80 : a.close.r >= a.w - 80, `${tag}: the way out is at the top's end (${JSON.stringify(a.close)} in ${a.w})`);
+          if (phone) {
+            // Measured idle and again with the focus on each: antd moves things in those states.
+            for (const b of a.buttons) check(b.w >= 44 && b.h >= 44, `${tag}: each button is a 44 pixel target (${JSON.stringify(a.buttons)})`);
+            await page.evaluate(`document.querySelector('.lightbox header button').focus()`);
+            await settle();
+            const focused = await measure();
+            for (const b of focused.buttons) check(b.w >= 44 && b.h >= 44, `${tag}: a button stays a 44 pixel target with the focus on it (${JSON.stringify(focused.buttons)})`);
+            await page.evaluate(`document.activeElement?.blur()`);
+          }
+          if (shotDir) await shot(page, shotDir, `lightbox-${tag}.png`);
+          // The arrow keys work as soon as the viewer opens, with nothing clicked or focused first.
+          if (!phone) {
+            const key = async (name, code) => {
+              await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code: name, windowsVirtualKeyCode: code });
+              await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: name, code: name, windowsVirtualKeyCode: code });
+            };
+            await key(rtl ? 'ArrowLeft' : 'ArrowRight', rtl ? 37 : 39);
+            await pictureReady('second-tall.png');
+            await key(rtl ? 'ArrowRight' : 'ArrowLeft', rtl ? 39 : 37);
+            await pictureReady('first-wide.png');
+          }
+          // A click on the dimmed page outside the picture closes nothing.
+          await click(page, { x: Math.round(a.w / 2), y: 30 });
+          await settle();
+          check((await measure()).nameText === 'first-wide.png', `${tag}: a click outside the picture closes nothing`);
+          // The next picture, by its button.
+          await page.evaluate(`[...document.querySelectorAll('.lightbox-steps button')].at(-1).click()`);
+          await pictureReady('second-tall.png');
+          await settle();
+          const b = await measure();
+          check(b.count === twoOfTwo, `${tag}: the count reads ${twoOfTwo} after a step (${b.count})`);
+          check(b.img.t >= 0 && b.img.b <= b.h && b.img.l >= 0 && b.img.r <= b.w, `${tag}: a tall picture stays inside the window (${JSON.stringify(b.img)})`);
+          const disabled = await page.evaluate(`[...document.querySelectorAll('.lightbox-steps button')].map((x) => x.disabled)`);
+          check(disabled[0] === false && disabled[1] === true, `${tag}: the last picture has no next step (${JSON.stringify(disabled)})`);
+          if (shotDir) await shot(page, shotDir, `lightbox-${tag}-2.png`);
+          // Back by the arrow that points back in this language, sent to the viewer the way a key press is.
+          await page.evaluate(`document.querySelector('.lightbox-steps button').focus()`);
+          await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: rtl ? 'ArrowRight' : 'ArrowLeft', code: rtl ? 'ArrowRight' : 'ArrowLeft', windowsVirtualKeyCode: rtl ? 39 : 37 });
+          await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: rtl ? 'ArrowRight' : 'ArrowLeft', code: rtl ? 'ArrowRight' : 'ArrowLeft', windowsVirtualKeyCode: rtl ? 39 : 37 });
+          await pictureReady('first-wide.png');
+          // Escape closes.
+          await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+          await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+          await page.waitFor(`!document.querySelector('[data-testid="preview"]')`, 10000);
+          if (phone) await setPhone(page, false);
+        }
+      }
+    }
+    await setTheme(page, 'Light').catch(() => undefined);
+    await setLanguage(page, 'English').catch(() => undefined);
+  });
+
   // ---- 7. a long video keeps playing when its link ends. The browser's first range is answered from this run, with the
   // start of the file, so the browser needs the rest after the link has ended. Its next range for that link is held
   // until the link is over, and the server refuses it; the player then asks for a new link and goes on from where it was.

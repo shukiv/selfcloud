@@ -252,6 +252,7 @@
   "files.convert.tooLarge": "This document is too large to convert.",
   "files.convert.slow": "The conversion is taking longer than expected. Try again later.",
   "files.convert.retry": "Try again",
+  "files.preview.count": "{n} of {total}",
   "files.act.playSelected": "Play selected",
   "files.media.controls": "Media controls",
   "files.media.play": "Play",

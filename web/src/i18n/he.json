@@ -252,6 +252,7 @@
   "files.convert.tooLarge": "המסמך גדול מדי להמרה.",
   "files.convert.slow": "ההמרה אורכת יותר מהצפוי. נסו שוב מאוחר יותר.",
   "files.convert.retry": "נסו שוב",
+  "files.preview.count": "{n} מתוך {total}",
   "files.act.playSelected": "הפעלת הנבחרים",
   "files.media.controls": "פקדי מדיה",
   "files.media.play": "הפעלה",

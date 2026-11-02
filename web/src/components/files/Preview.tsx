@@ -20,6 +20,7 @@ import { downloadAllowed } from "../../lib/files/roles";
 import type { Node } from "../../lib/files/types";
 import { useT } from "../../lib/i18n";
 import { useStore } from "../../lib/store";
+import ImageLightbox, { useKeysAfterStep } from "./ImageLightbox";
 import type { Link } from "./MediaPlayer";
 
 // The export dialog is loaded on first use, as the zip dialog is.
@@ -38,7 +39,7 @@ type OfficeState =
 // read on this origin, the first 1 MiB only, and shown as text, never as HTML. The Svelte page has no text editing, and
 // this one has none either. A video or audio file opens the playlist instead: the session (lib/files/playback.ts) is started
 // here, and MediaHost shows it in the shell, as the viewer and then as the mini player for audio. This component draws
-// nothing for a media file. Images, PDFs and text keep the steps described here.
+// nothing for a media file. A picture is shown over the dimmed page (ImageLightbox). PDFs and text keep the steps described here.
 // Escape closes (antd's Modal calls onCancel); the arrows step through the items, mirrored in right-to-left.
 // Tab stays inside the dialog: antd's Modal traps focus, and the dialog takes focus when it opens.
 
@@ -199,6 +200,9 @@ export default function Preview({
     })();
   }, [node?.id]);
 
+  const stageRef = useRef<HTMLDivElement>(null);
+  useKeysAfterStep(stageRef, node?.id);
+
   const rtl = () => document.documentElement.dir === "rtl";
 
   function step(delta: number) {
@@ -240,6 +244,20 @@ export default function Preview({
   const shownOffice: OfficeState = node && office.id === node.id ? office.state : { status: "idle" };
   const exportFormats = node && officeFile ? exportFormatsFor(node.name) : [];
 
+  if (node && kindNow === "image" && hasPreview) {
+    return (
+      <ImageLightbox
+        items={items}
+        index={index}
+        view={view}
+        canDownload={canDownload}
+        onClose={() => onClose(node)}
+        onIndex={onIndex}
+        onDownload={() => void download()}
+      />
+    );
+  }
+
   return (
     <Modal
       open
@@ -247,6 +265,10 @@ export default function Preview({
       closable={false}
       maskClosable={false}
       onCancel={() => onClose(node ?? null)}
+      // Antd puts the focus on its own frame as the dialog opens, outside the stage that reads the keys.
+      afterOpenChange={(open) => {
+        if (open) stageRef.current?.focus({ preventScroll: true });
+      }}
       width="100%"
       style={{ top: 0, margin: 0, maxWidth: "100%", paddingBlockEnd: 0 }}
       // The preview fills the window: no scroll bars of its own, so the page does not show native ones.
@@ -258,7 +280,7 @@ export default function Preview({
       focusTriggerAfterClose={false}
       data-testid="preview"
     >
-      <div style={FULL} onKeyDown={keydown}>
+      <div ref={stageRef} tabIndex={-1} data-preview-stage style={FULL} onKeyDown={keydown}>
         <header style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
           {/* No autoFocus: the player's Space must reach the player when the viewer opens, not press Close. */}
           <Button onClick={() => onClose(node ?? null)}>{t("files.preview.close")}</Button>
@@ -307,9 +329,7 @@ export default function Preview({
           ) : view.status === "unsupported" ? (
             <Alert type="warning" role="alert" message={t("files.preview.unsupported")} />
           ) : view.status === "ready" && node ? (
-            kindNow === "image" && view.link ? (
-              <img src={view.link.url} alt={node.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-            ) : kindNow === "pdf" && view.link ? (
+            kindNow === "pdf" && view.link ? (
               <iframe title={node.name} src={view.link.url} style={{ width: "100%", height: "100%", border: 0, background: "#fff" }} />
             ) : kindNow === "text" ? (
               <div style={{ alignSelf: "stretch", width: "100%" }}>

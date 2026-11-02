@@ -126,6 +126,15 @@ for (const path of await files(root)) {
   });
 }
 
+// A stylesheet with an unclosed rule still builds, and the browser takes everything after it as nested. A hand-merged
+// conflict left that once, and the picture viewer lost all its styles.
+for (const sheet of ['index.css']) {
+  const css = (await readFile(join(root, sheet), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '');
+  const opened = (css.match(/\{/g) ?? []).length;
+  const closed = (css.match(/\}/g) ?? []).length;
+  if (opened !== closed) problems.push(`${sheet}: ${opened} opening and ${closed} closing braces`);
+}
+
 if (problems.length > 0) {
   console.error(problems.join('\n'));
   process.exit(1);

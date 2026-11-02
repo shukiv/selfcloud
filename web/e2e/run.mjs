@@ -256,7 +256,8 @@ async function clickButton(page, text) {
   const MENU_ONLY = [...NEW_MENU, 'Details', 'Versions', 'Add shortcut', 'Cut', 'Copy', 'Paste', 'Move to…', 'Copy to…', 'Download as zip'];
   if (!MENU_ONLY.includes(text)) {
     await page.waitFor(
-      `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`,
+      // An icon button has its name as the label (the picture viewer's Close).
+      `(() => { const all = [...document.querySelectorAll('button')].filter((x) => !x.disabled); const b = all.find((x) => x.textContent.trim() === ${q(text)}) ?? all.find((x) => x.getAttribute('aria-label') === ${q(text)}); if (!b) return false; b.click(); return true; })()`,
       10000,
     );
     return;

@@ -252,6 +252,7 @@
   "files.convert.tooLarge": "المستند كبير جدًا للتحويل.",
   "files.convert.slow": "التحويل يستغرق وقتًا أطول من المتوقع. حاول لاحقًا.",
   "files.convert.retry": "حاول مرة أخرى",
+  "files.preview.count": "{n} من {total}",
   "files.act.playSelected": "تشغيل المحدد",
   "files.media.controls": "عناصر التحكم في الوسائط",
   "files.media.play": "تشغيل",

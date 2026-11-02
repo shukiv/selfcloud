@@ -252,6 +252,7 @@
   "files.convert.tooLarge": "Документ слишком большой для преобразования.",
   "files.convert.slow": "Преобразование занимает больше времени, чем обычно. Попробуйте позже.",
   "files.convert.retry": "Попробовать снова",
+  "files.preview.count": "{n} из {total}",
   "files.act.playSelected": "Воспроизвести выбранное",
   "files.media.controls": "Управление медиа",
   "files.media.play": "Воспроизвести",
