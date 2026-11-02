@@ -1359,5 +1359,17 @@
   "files.tree.failed": "Impossible de charger les dossiers.",
   "files.tree.capped": "Il y a plus de dossiers que ceux affichés ici.",
   "shell.search.placeholder": "Rechercher dans les noms et le texte des fichiers",
-  "shell.search.open": "Rechercher"
+  "shell.search.open": "Rechercher",
+  "pwa.install": "Installer l’application",
+  "pwa.addToHome": "Ajouter à l’écran d’accueil",
+  "pwa.updateReady": "Une nouvelle version est prête",
+  "pwa.reload": "Recharger",
+  "pwa.iosTitle": "Ajouter à l’écran d’accueil",
+  "pwa.iosIntro": "Installez cette application sur votre iPhone ou iPad. Ouvrez cette page dans votre navigateur, puis :",
+  "pwa.iosStep1": "Touchez le bouton Partager du navigateur.",
+  "pwa.iosStep2": "Choisissez « Ajouter à l’écran d’accueil ».",
+  "pwa.iosStep3": "Touchez « Ajouter ».",
+  "pwa.close": "Fermer",
+  "pwa.waitingTabs": "En attente de la fin des autres onglets. Appuyez de nouveau sur Recharger quand ils ont fini.",
+  "pwa.updateFailed": "La mise à jour n’a pas pu être appliquée. Rechargez la page pour réessayer."
 }

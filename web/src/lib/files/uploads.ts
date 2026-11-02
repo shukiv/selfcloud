@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { writable } from '../store';
+import { writable, get } from '../store';
+import { registerBusy } from '../pwa/busy';
 import { ApiError } from '../apiError';
 import { session } from '../session';
 import { commitUpload } from './api';
@@ -125,6 +126,12 @@ export interface PendingRecord {
 
 // Items are what the tray shows. Each change publishes a new array, so the tray re-renders.
 export const uploads = writable<UploadItem[]>([]);
+
+// UPLOADS_UNDER_WAY are the statuses of an upload that has not finished: a reload would stop it or ask the person a question.
+const UPLOADS_UNDER_WAY: ReadonlySet<UploadStatus> = new Set<UploadStatus>(["queued", "uploading", "paused", "waiting", "conflict", "awaiting_name"]);
+
+// The app's update waits for these to end (decision 65).
+registerBusy(() => get(uploads).some((it) => UPLOADS_UNDER_WAY.has(it.status)));
 
 // conflictAsk is the name the tray must ask about (the name is taken), or null.
 export const conflictAsk = writable<string | null>(null);

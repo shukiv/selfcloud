@@ -16,6 +16,7 @@ import { setHidden } from "../lib/sharing/api";
 import { pendingRequests, refreshPendingRequests } from "../lib/sharing/requestCount";
 import type { FolderAccess } from "../lib/files/types";
 import { signOut } from "../lib/auth";
+import { canInstall, iosDialogOpen, isIOS, isStandalone, promptInstall } from "../lib/pwa/install";
 import { endImpersonation } from "../lib/impersonation";
 import { homeFor } from "../lib/routes";
 import { readPref, writePref } from "../lib/prefs";
@@ -35,6 +36,7 @@ import BellBoundary from "./notifications/BellBoundary";
 const SpaceSettings = lazy(() => import("./share/SpaceSettings"));
 // The bell is a chunk of its own: the first screen does not carry it (decision 55 measures the first-load budget).
 const NotificationsBell = lazy(() => import("./notifications/Bell"));
+const IosInstallDialog = lazy(() => import("./pwa/IosInstallDialog"));
 
 // Below this width (the antd `lg` breakpoint, 992px) the sidebar is a drawer.
 const SIDE_WIDTH = 264;
@@ -199,6 +201,13 @@ export default function Shell({ children }: { children: ReactNode }) {
   const hiddenTeams = admin ? [] : hiddenList.filter((f) => f.kind === "team");
   const [showHidden, setShowHidden] = useState(false);
   const [settingsFor, setSettingsFor] = useState<FolderAccess | null>(null);
+  // The iPhone instructions are open for the person who opened them: a change of person closes them (iosDialogOpen).
+  const [iosFor, setIosFor] = useState<string | null>(null);
+  const who = me?.user.id ?? null;
+  const iosOpen = iosDialogOpen(iosFor, who);
+  // The install entries (decision 65): the browser's offer where it made one, and the iPhone instructions where Safari has no offer.
+  const offerInstall = useStore(canInstall) && !impersonating && !isStandalone();
+  const offerIosInstall = !impersonating && isIOS() && !isStandalone();
   // shellError is the text, by code, of a failed read of the spaces or a refused hide. The server's text is never shown.
   const [shellError, setShellError] = useState<string | null>(null);
   // A change of person closes the settings, clears the hidden toggle and the error: none of them belongs to the next person.
@@ -356,6 +365,8 @@ export default function Shell({ children }: { children: ReactNode }) {
     },
     { type: "divider" },
     { key: "password", label: t("user.changePassword") },
+    ...(offerInstall ? [{ key: "install", label: t("pwa.install") }] : []),
+    ...(offerIosInstall ? [{ key: "addHome", label: t("pwa.addToHome") }] : []),
     ...(impersonating ? [] : [{ key: "signout", label: t("user.signOut") }]),
   ];
 
@@ -499,6 +510,8 @@ export default function Shell({ children }: { children: ReactNode }) {
                     items: userItems,
                     onClick: ({ key }) => {
                       if (key === "password") navigate("/change-password");
+                      if (key === "install") void promptInstall();
+                      if (key === "addHome") setIosFor(who);
                       if (key === "signout") void logout();
                     },
                   }}
@@ -527,6 +540,11 @@ export default function Shell({ children }: { children: ReactNode }) {
             {children}
           </Layout.Content>
           <UploadTrayHost />
+          {iosOpen && (
+            <Suspense fallback={null}>
+              <IosInstallDialog onClose={() => setIosFor(null)} />
+            </Suspense>
+          )}
           {/* The media session (a video or audio player, or the mini player bar) lives across pages; nothing draws without one. */}
           <MediaHost />
           {settingsFor && (

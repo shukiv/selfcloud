@@ -174,6 +174,22 @@ again. Collabora converts unknown content as text rather than refusing it, so a 
 Not built yet: search (by name, label or text), the web interface for
 comments and notifications, the interface's thumbnails and office button. The [feature parity list](docs/feature-parity.md) says which slice each belongs to.
 
+## Installing the web app
+
+The web interface can be installed as an app on a phone or a computer. Installing and the service worker need a secure
+address: HTTPS, or `localhost`. On a plain `http://` address the app works, but it cannot be installed, and the fast
+start and the offline page are off.
+
+With the web interface on, the server serves these paths, each named for the installation's own name and colour:
+
+- `/manifest.webmanifest`, the app manifest;
+- `/brand/icon-192.png`, `/brand/icon-512.png`, `/brand/icon-512-maskable.png` and `/brand/apple-touch-icon.png`, the icons;
+- `/sw.js`, the service worker, which keeps the app's own files for a fast start and shows `/offline.html` when the
+  network is gone. It never keeps API answers, file content, links or share pages.
+
+Headless mode serves none of these. On an iPhone or an iPad, Safari has no install prompt: open the app in Safari, tap
+Share, then Add to Home Screen.
+
 ## Development
 
 ```sh

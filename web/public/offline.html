@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="referrer" content="same-origin" />
+    <!-- The server replaces the brand placeholder with the installation's name (internal/web/pwa.go). -->
+    <title>__SELFCLOUD_BRAND__</title>
+    <link rel="stylesheet" href="/offline.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <main class="offline">
+      <p class="brand">__SELFCLOUD_BRAND__</p>
+      <h1 id="title">You are offline</h1>
+      <p id="body">Check the connection, then try again.</p>
+      <a id="retry" class="retry" href="/">Retry</a>
+    </main>
+    <script src="/offline.js"></script>
+  </body>
+</html>

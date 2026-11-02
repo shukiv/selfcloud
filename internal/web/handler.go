@@ -7,7 +7,9 @@ package web
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -51,6 +53,10 @@ type Options struct {
 	// OfficeURL is office.discovery_url, or empty when office editing is off. Its origin is allowed for the editor's
 	// frame, and as the target of the editor's form post (form-action), because the editor is Collabora's page.
 	OfficeURL string
+	// BrandName and BrandAccent are ui.brand.name and ui.brand.accent. They name the installed app and colour its icons
+	// and manifest (decision 65).
+	BrandName   string
+	BrandAccent string
 }
 
 // Handler serves the built files of the web interface.
@@ -63,6 +69,9 @@ type Handler struct {
 	// index is index.html split at the nonce placeholder, or nil when the build has none. Joining
 	// the parts with a nonce gives the page for that response.
 	index []string
+	// brand names the manifest and colours the icons; icons are the drawn icons by path (pwa.go).
+	brand brandInfo
+	icons map[string]icon
 }
 
 // New returns a handler for files. The build's index.html is served at "/" and for client routes.
@@ -85,7 +94,12 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		}
 		officeOrigin = " " + u.Scheme + "://" + u.Host
 	}
-	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin}
+	brand := newBrandInfo(opts.BrandName, opts.BrandAccent)
+	icons, err := buildIcons(brand)
+	if err != nil {
+		return nil, fmt.Errorf("web: cannot draw the app icons: %w", err)
+	}
+	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin, brand: brand, icons: icons}
 	data, err := fs.ReadFile(files, "index.html")
 	if err == nil {
 		parts := strings.Split(string(data), cspNoncePlaceholder)
@@ -106,7 +120,7 @@ func (h *Handler) policy(nonce string) string {
 	}
 	return "default-src 'self'; script-src 'self'; style-src " + style + "; img-src 'self' data: blob:" + h.origins +
 		"; media-src 'self'" + h.origins +
-		"; font-src 'self'; connect-src 'self'; frame-src 'self'" + h.origins + h.officeOrigin +
+		"; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'self'" + h.origins + h.officeOrigin +
 		"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" + h.officeOrigin
 }
 
@@ -130,6 +144,10 @@ func (h *Handler) Serves(r *http.Request) bool {
 		return false
 	}
 	p := r.URL.Path
+	if isPWAPath(p) {
+		// The manifest and the icons sit under /brand, which is reserved below, so they are checked first.
+		return true
+	}
 	for _, prefix := range reserved {
 		if p == prefix || strings.HasPrefix(p, prefix+"/") {
 			return false
@@ -151,12 +169,22 @@ func hidden(p string) bool {
 // ServeHTTP serves the file at the request path. A path with no file gets index.html, so the
 // client-side router can answer it.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if UnsafeAssetRequest(r) {
+		hd := w.Header()
+		hd.Set("Content-Security-Policy", h.policy(""))
+		hd.Set("Cache-Control", "no-store")
+		http.NotFound(w, r)
+		return
+	}
 	if r.URL.Path == "/robots.txt" {
 		hd := w.Header()
 		hd.Set("Content-Type", "text/plain; charset=utf-8")
 		hd.Set("Cache-Control", "no-cache")
 		hd.Set("X-Content-Type-Options", "nosniff")
 		http.ServeContent(w, r, "robots.txt", time.Time{}, strings.NewReader(robotsTxt))
+		return
+	}
+	if h.servePWA(w, r) {
 		return
 	}
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
@@ -214,6 +242,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hd.Set("Content-Security-Policy", h.policy(""))
 	}
 	hd.Set("Content-Type", contentType(name))
+	if name == "offline.html" && err == nil {
+		// The offline page names the installation, so the worker's cached copy shows the installation's name.
+		data = bytes.ReplaceAll(data, []byte(brandPlaceholder), []byte(brandHTML(h.brand.name)))
+		// Its validator covers the name it carries, so a renamed installation gives the worker a new copy to fetch (decision 65).
+		sum := sha256.Sum256(data)
+		hd.Set("ETag", `"`+hex.EncodeToString(sum[:16])+`"`)
+	}
 	if name == "index.html" {
 		// The page is always sent whole: a partial answer would carry a nonce that the policy never saw.
 		r.Header.Del("Range")
@@ -251,4 +286,19 @@ func contentType(name string) string {
 		return t
 	}
 	return "application/octet-stream"
+}
+
+// UnsafeAssetRequest reports whether r names a file under /assets/ by a path that is not its own clean form: a path with a
+// dot segment, a double slash, a backslash or an escape left in it, decoded or as sent. Such a request never gets an answer
+// from the build, not a redirect to the cleaned path and not the app page (the service worker relies on this).
+func UnsafeAssetRequest(r *http.Request) bool {
+	p := r.URL.Path
+	if !strings.HasPrefix(p, "/assets/") {
+		return false
+	}
+	if path.Clean(p) != p || strings.ContainsAny(p, `\%`) || strings.Contains(p, "//") {
+		return true
+	}
+	raw := r.URL.EscapedPath()
+	return path.Clean(raw) != raw
 }

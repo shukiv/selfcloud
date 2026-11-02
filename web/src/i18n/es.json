@@ -1359,5 +1359,17 @@
   "files.tree.failed": "No se pudieron cargar las carpetas.",
   "files.tree.capped": "Hay más carpetas de las que se muestran aquí.",
   "shell.search.placeholder": "Buscar nombres y texto en los archivos",
-  "shell.search.open": "Buscar"
+  "shell.search.open": "Buscar",
+  "pwa.install": "Instalar la aplicación",
+  "pwa.addToHome": "Añadir a la pantalla de inicio",
+  "pwa.updateReady": "Hay una versión nueva",
+  "pwa.reload": "Recargar",
+  "pwa.iosTitle": "Añadir a la pantalla de inicio",
+  "pwa.iosIntro": "Instala esta aplicación en tu iPhone o iPad. Abre esta página en el navegador y luego:",
+  "pwa.iosStep1": "Toca el botón Compartir del navegador.",
+  "pwa.iosStep2": "Elige Añadir a la pantalla de inicio.",
+  "pwa.iosStep3": "Toca Añadir.",
+  "pwa.close": "Cerrar",
+  "pwa.waitingTabs": "Esperando a que terminen las otras pestañas. Pulsa Recargar de nuevo cuando terminen.",
+  "pwa.updateFailed": "No se pudo aplicar la actualización. Recarga la página para intentarlo de nuevo."
 }

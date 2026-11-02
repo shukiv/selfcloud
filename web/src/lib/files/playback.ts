@@ -12,6 +12,7 @@ import type { Node } from "./types";
 import type { Pager } from "./pager";
 import { get } from "../store";
 import { session, sessionKey } from "../session";
+import { registerBusy } from "../pwa/busy";
 
 // PlaybackSeed is what the viewer plays: the file it starts with, the folder's files (read a page at a time) or the
 // selection the person chose.
@@ -47,6 +48,12 @@ export interface PlaybackSnapshot {
   media: HTMLMediaElement | null;
   nav: PlaybackNav | null;
 }
+
+// A file that plays keeps the app's update waiting (decision 65).
+registerBusy(() => {
+  const m = snapshot.media;
+  return !!m && !m.paused && !m.ended;
+});
 
 const IDLE: PlaybackSnapshot = { id: 0, key: "", seed: null, viewerOpen: false, current: null, media: null, nav: null };
 

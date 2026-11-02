@@ -234,4 +234,6 @@ export function applyBrand(b: Brand): void {
   const accent = validAccent(b.accent) ? b.accent.toUpperCase() : DEFAULT_ACCENT;
   brand.set({ ...b, accent });
   document.title = b.name;
+  // The light theme's browser colour is the accent, as the installed app's is (decision 65).
+  document.querySelector<HTMLMetaElement>('meta[name="theme-color"][media="(prefers-color-scheme: light)"]')?.setAttribute("content", accent);
 }

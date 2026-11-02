@@ -1359,5 +1359,17 @@
   "files.tree.failed": "The folders could not be loaded.",
   "files.tree.capped": "There are more folders than are shown here.",
   "shell.search.placeholder": "Search names and text in files",
-  "shell.search.open": "Search"
+  "shell.search.open": "Search",
+  "pwa.install": "Install app",
+  "pwa.addToHome": "Add to Home Screen",
+  "pwa.updateReady": "A new version is ready",
+  "pwa.reload": "Reload",
+  "pwa.iosTitle": "Add to Home Screen",
+  "pwa.iosIntro": "Install this app on your iPhone or iPad. Open this page in your browser, then:",
+  "pwa.iosStep1": "Tap the browser's Share button.",
+  "pwa.iosStep2": "Choose Add to Home Screen.",
+  "pwa.iosStep3": "Tap Add.",
+  "pwa.close": "Close",
+  "pwa.waitingTabs": "Waiting for other tabs to finish. Press Reload again when they are done.",
+  "pwa.updateFailed": "The update could not be applied. Reload the page to try again."
 }

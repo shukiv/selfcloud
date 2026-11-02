@@ -67,7 +67,7 @@ func TestUIHeaders(t *testing.T) {
 	nonce := nonceIn(t, rec.Body.String())
 	want := map[string]string{
 		"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'nonce-" + nonce + "'; img-src 'self' data: blob:; " +
-			"media-src 'self'; font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+			"media-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 		"X-Content-Type-Options": "nosniff",
 		"Referrer-Policy":        "same-origin",
 		"X-Frame-Options":        "DENY",

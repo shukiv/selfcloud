@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from './store';
+import { markSignedIn } from './pwa/cacheState';
 import type { Account, Me, SignedIn, User } from './types';
 
 export interface Session {
@@ -29,6 +30,8 @@ export function currentCsrf(): string | null {
 }
 
 export function setSignedIn(s: SignedIn): void {
+  // A person who signs in may use the app's caches again (decision 65).
+  void markSignedIn();
   session.set({ user: s.user, account: null, csrf: s.csrf_token, publicLinks: false });
 }
 

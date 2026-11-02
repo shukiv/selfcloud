@@ -1359,5 +1359,17 @@
   "files.tree.failed": "לא ניתן היה לטעון את התיקיות.",
   "files.tree.capped": "יש עוד תיקיות מאלה שמוצגות כאן.",
   "shell.search.placeholder": "חיפוש בשמות ובטקסט של קבצים",
-  "shell.search.open": "חיפוש"
+  "shell.search.open": "חיפוש",
+  "pwa.install": "התקנת האפליקציה",
+  "pwa.addToHome": "הוספה למסך הבית",
+  "pwa.updateReady": "גרסה חדשה מוכנה",
+  "pwa.reload": "טעינה מחדש",
+  "pwa.iosTitle": "הוספה למסך הבית",
+  "pwa.iosIntro": "התקינו את האפליקציה ב-iPhone או ב-iPad. פתחו את הדף הזה בדפדפן, ואז:",
+  "pwa.iosStep1": "הקישו על כפתור השיתוף של הדפדפן.",
+  "pwa.iosStep2": "בחרו בהוספה למסך הבית.",
+  "pwa.iosStep3": "הקישו על הוספה.",
+  "pwa.close": "סגירה",
+  "pwa.waitingTabs": "ממתין לסיום העבודה בלשוניות אחרות. לחצו על טעינה מחדש שוב כשהן יסתיימו.",
+  "pwa.updateFailed": "לא ניתן היה להחיל את העדכון. טענו את הדף מחדש ונסו שוב."
 }

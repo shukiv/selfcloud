@@ -2,6 +2,9 @@
 
 /// <reference types="vitest/config" />
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -26,8 +29,33 @@ const shimDynamicCSS: Plugin = {
   },
 };
 
+// The service worker (public/sw.js) names its cache with an identifier of the build, so a new build starts a new cache and the
+// worker removes the old one (decision 65). The identifier is a hash of the built file names, the offline files and the
+// worker's own source, so the same build gives the same name. The worker file is copied as it is; only this placeholder is filled in.
+const WORKER_PLACEHOLDER = "__SELFCLOUD_BUILD__";
+const workerBuild: Plugin = {
+  name: "selfcloud-service-worker-build",
+  apply: "build",
+  closeBundle() {
+    const dist = fileURLToPath(new URL("./dist/", import.meta.url));
+    const worker = join(dist, "sw.js");
+    if (!existsSync(worker)) throw new Error("dist/sw.js is missing: the service worker is not in the build");
+    // The identifier covers what the worker serves from its cache: the build's file names, and the contents of the offline page,
+    // its files and the favicon, so a change to any of them gives the worker a new cache and a new copy to fetch.
+    const names = readdirSync(join(dist, "assets")).sort();
+    const hash = createHash("sha256").update(names.join("\n")).update(readFileSync(join(dist, "sw.js"), "utf8"));
+    for (const file of ["offline.html", "offline.css", "offline.js", "favicon.svg"]) {
+      hash.update(file).update("\0").update(readFileSync(join(dist, file)));
+    }
+    const id = hash.digest("hex").slice(0, 16);
+    const text = readFileSync(worker, "utf8");
+    if (!text.includes(WORKER_PLACEHOLDER)) throw new Error("public/sw.js has no build placeholder");
+    writeFileSync(worker, text.split(WORKER_PLACEHOLDER).join(id));
+  },
+};
+
 export default defineConfig({
-  plugins: [react(), shimDynamicCSS],
+  plugins: [react(), shimDynamicCSS, workerBuild],
   publicDir: "public",
   html: { cspNonce: CSP_NONCE_PLACEHOLDER },
   build: {

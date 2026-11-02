@@ -681,6 +681,9 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
     await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/assets/en-*.js' }] });
     // The English chunk is in Chrome's memory cache from the steps before: a cached file is not a request, so it is not paused.
     await page.send('Network.setCacheDisabled', { cacheDisabled: true });
+    // The service worker (decision 65) answers the app's files from its own cache, which no request reaches either: the page
+    // bypasses it while the chunk is made to fail.
+    await page.send('Network.setBypassServiceWorker', { bypass: true });
     try {
       await page.goto(longURL);
       try {
@@ -696,6 +699,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
       page.pausedHook = null;
       await page.send('Fetch.disable');
       await page.send('Network.setCacheDisabled', { cacheDisabled: false });
+      await page.send('Network.setBypassServiceWorker', { bypass: false });
     }
     await page.evaluate(`[...document.querySelectorAll('#root button')].find((b) => b.textContent.trim() === 'Try again')?.click()`);
     await page.waitFor(`!!document.querySelector('[data-testid="browser-toolbar"]')`, 30000);

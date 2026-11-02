@@ -1359,5 +1359,17 @@
   "files.tree.failed": "Não foi possível carregar as pastas.",
   "files.tree.capped": "Há mais pastas do que as mostradas aqui.",
   "shell.search.placeholder": "Pesquisar nomes e texto nos ficheiros",
-  "shell.search.open": "Pesquisar"
+  "shell.search.open": "Pesquisar",
+  "pwa.install": "Instalar a aplicação",
+  "pwa.addToHome": "Adicionar ao ecrã principal",
+  "pwa.updateReady": "Há uma versão nova",
+  "pwa.reload": "Recarregar",
+  "pwa.iosTitle": "Adicionar ao ecrã principal",
+  "pwa.iosIntro": "Instale esta aplicação no seu iPhone ou iPad. Abra esta página no navegador e depois:",
+  "pwa.iosStep1": "Toque no botão Partilhar do navegador.",
+  "pwa.iosStep2": "Escolha Adicionar ao ecrã principal.",
+  "pwa.iosStep3": "Toque em Adicionar.",
+  "pwa.close": "Fechar",
+  "pwa.waitingTabs": "A aguardar que os outros separadores terminem. Carregue em Recarregar de novo quando terminarem.",
+  "pwa.updateFailed": "Não foi possível aplicar a atualização. Recarregue a página para tentar de novo."
 }

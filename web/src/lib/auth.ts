@@ -5,6 +5,7 @@ import { beginSignOut, clearSession, endSignOut, setMe, setSignedIn } from './se
 import type { Brand } from './brand';
 import type { Me, SignedIn, SignedInLink } from './types';
 import { sharingMaxExpiryDays } from './sharing/api';
+import { markSignedOut } from "./pwa/cacheState";
 
 export interface Info {
   brand: Brand | null;
@@ -104,6 +105,8 @@ export async function signOut(): Promise<void> {
   } finally {
     clearTimeout(timer);
     clearSession();
+    // The app's caches go too, so a shared computer keeps no app files after sign-out (decision 65).
+    await markSignedOut();
     endSignOut();
   }
 }

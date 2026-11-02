@@ -471,7 +471,8 @@ func New(opts Options) (*Server, error) {
 		if cfg.Office.Enabled {
 			officeURL = cfg.Office.DiscoveryURL
 		}
-		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL}); err != nil {
+		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL,
+			BrandName: cfg.UI.Brand.Name, BrandAccent: cfg.UI.Brand.Accent}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}
 	}
@@ -484,7 +485,7 @@ func New(opts Options) (*Server, error) {
 	// Its answer is the web interface's files or the JSON 404. It reads no credential and changes nothing, so an
 	// impersonated browser loads the app (decision 41).
 	mux.Handle("/", s.wrap(route{path: "unmatched", handle: s.handleUnmatched, imp: impAllow}))
-	s.handler = s.observe(s.drain(s.cors(s.contentGate(mux))))
+	s.handler = unsafeAssetGuard(s.observe(s.drain(s.cors(s.contentGate(mux)))))
 	for _, w := range cfg.UI.Brand.ContrastWarnings() {
 		log.Warn("brand colours fall short of the contrast the text needs; the config is kept", "detail", w)
 	}
@@ -932,4 +933,16 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		return serveErr
 	}
 	return nil
+}
+
+// unsafeAssetGuard answers a request for a file under /assets/ by a path that is not clean with 404, before the mux can
+// redirect it to the cleaned path (web.UnsafeAssetRequest).
+func unsafeAssetGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if web.UnsafeAssetRequest(r) {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

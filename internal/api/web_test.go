@@ -71,7 +71,7 @@ func TestUnknownAPIPathIsJSONNotIndex(t *testing.T) {
 func TestUIDisabledServesNoUI(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, func(c *config.Config) { c.UI.Enabled = false })
-	for _, target := range []string{"/", "/files/x", "/login", "/index.html"} {
+	for _, target := range []string{"/", "/files/x", "/login", "/index.html", "/manifest.webmanifest", "/brand/icon-192.png", "/brand/apple-touch-icon.png"} {
 		rec := serveRaw(t, s, http.MethodGet, target)
 		wantError(t, rec, http.StatusNotFound, "not_found")
 	}
@@ -79,6 +79,22 @@ func TestUIDisabledServesNoUI(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	if !strings.Contains(rec.Body.String(), `"web_interface":false`) {
 		t.Errorf("info = %s", rec.Body.String())
+	}
+}
+
+// TestPWAManifestAndIconsServedWithUI: with the web interface on, the manifest names the brand and the icons are PNG.
+func TestPWAManifestAndIconsServedWithUI(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, func(c *config.Config) { c.UI.Brand.Name = "Acme" })
+	rec := serveRaw(t, s, http.MethodGet, "/manifest.webmanifest")
+	wantStatus(t, rec, http.StatusOK)
+	if !strings.Contains(rec.Body.String(), `"name":"Acme"`) || !strings.Contains(rec.Body.String(), `"start_url":"/files"`) {
+		t.Errorf("manifest = %s", rec.Body.String())
+	}
+	icon := serveRaw(t, s, http.MethodGet, "/brand/icon-512-maskable.png")
+	wantStatus(t, icon, http.StatusOK)
+	if icon.Header().Get("Content-Type") != "image/png" {
+		t.Errorf("icon type %q", icon.Header().Get("Content-Type"))
 	}
 }
 
@@ -235,5 +251,21 @@ func TestInfoBrandTokens(t *testing.T) {
 	}
 	if strings.Contains(body, `"light"`) || strings.Contains(body, `"bg"`) {
 		t.Errorf("info names unset tokens: %s", body)
+	}
+}
+
+// TestAssetPathsAreCleanOrNotFound: a request for a file under /assets/ by a path that is not clean gets 404, never a
+// redirect to the cleaned path and never the app page (the worker refuses redirected answers, so this is the server's half).
+func TestAssetPathsAreCleanOrNotFound(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	for _, target := range []string{"/assets//index.html", "/assets/../index.html", "/assets/..%2findex.html", "/assets/..%2fapi%2fv1%2fme", "/assets/a%5cb.js", "/assets/%2e%2e%5cindex.html"} {
+		rec := serveRaw(t, s, http.MethodGet, target)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", target, rec.Code)
+		}
+		if loc := rec.Header().Get("Location"); loc != "" {
+			t.Errorf("%s: redirects to %q", target, loc)
+		}
 	}
 }

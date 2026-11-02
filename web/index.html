@@ -8,6 +8,14 @@
     <meta name="referrer" content="same-origin" />
     <title>Selfcloud</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- The installable app (decision 65). The manifest and icons are the installation's own, from the server. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- The browser's bar follows the theme. Brand.ts sets the light colour to the installation's accent once the brand is known. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#053D8E" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#071531" />
   </head>
   <body>
     <div id="root"></div>

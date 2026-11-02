@@ -12,6 +12,13 @@ import { loadLang } from "./lib/i18n";
 import { ThemeProvider } from "./theme/theme";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { Boot, Direction, Gate } from "./App";
+import { listenForInstall } from "./lib/pwa/install";
+import { registerWorker } from "./lib/pwa/worker";
+import UpdatePrompt from "./components/pwa/UpdatePrompt";
+
+// The install offer is caught as the page starts, before the first render, so the browser's early offer is not missed (decision 65).
+listenForInstall();
+registerWorker();
 
 const queryClient = createQueryClient();
 clearOnSessionChange(queryClient);
@@ -47,6 +54,7 @@ void loadLang("en")
                   <ErrorBoundary>
                     <RouterProvider router={router} />
                   </ErrorBoundary>
+                  <UpdatePrompt />
                 </Direction>
               </AntdApp>
             </ThemeProvider>

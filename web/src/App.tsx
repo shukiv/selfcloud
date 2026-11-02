@@ -25,6 +25,7 @@ import ResetPage from "./pages/ResetPage";
 import VerifyPage from "./pages/VerifyPage";
 import SignInPage from "./pages/SignInPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import { markSignedIn } from "./lib/pwa/cacheState";
 
 // Pages beyond the shell and the auth pages load on first use, so the first load of sign-in stays small.
 const FilesPage = lazy(() => import("./pages/FilesPage"));
@@ -159,6 +160,7 @@ export function Boot({ children }: { children: ReactNode }) {
       maxExpiryDays.set(info?.sharingMaxExpiryDays ?? 0);
       officeConvert.set(info !== null && featureOn(info.features, CONVERT_FEATURE));
       const me = await loadMe().catch(() => null);
+      if (me) void markSignedIn();
       chooseLang(me);
       setReady(true);
     })();
