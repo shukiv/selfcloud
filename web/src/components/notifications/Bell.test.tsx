@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeAll, afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -60,6 +60,16 @@ const unread = (count: number): Answer => ({ status: 200, body: { count } });
 const isUnread = (c: Call) => c.method === "GET" && c.url === "/api/v1/notifications/unread";
 
 describe("the bell", () => {
+  it("does not read the count once the person has signed out", async () => {
+    const { calls } = stubFetch((c) => (isUnread(c) ? unread(2) : fail(404, "not_found")));
+    mount();
+    await waitFor(() => expect(calls.filter(isUnread).length).toBe(1));
+    // A sign-out clears the session before the page leaves; the bell must not ask again, which would be refused (401).
+    act(() => session.set(null));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.filter(isUnread).length).toBe(1);
+  });
+
   it("shows the unread count, and the screen reader hears it", async () => {
     stubFetch((c) => (isUnread(c) ? unread(2) : fail(404, "not_found")));
     mount();

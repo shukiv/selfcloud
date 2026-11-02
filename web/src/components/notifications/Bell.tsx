@@ -9,6 +9,8 @@ import { unreadCount } from "../../lib/notifications/api";
 import { badgeText, pollInterval, unreadState } from "../../lib/notifications/logic";
 import { useNT } from "../../lib/notifications/i18n";
 import { queryKey } from "../../lib/query";
+import { session } from "../../lib/session";
+import { useStore } from "../../lib/store";
 import { useCoarsePointer } from "../../lib/pointer";
 import { RADIUS } from "../../theme/tokens";
 
@@ -27,10 +29,12 @@ export default function Bell() {
     document.addEventListener("visibilitychange", onChange);
     return () => document.removeEventListener("visibilitychange", onChange);
   }, []);
+  // A sign-out clears the session before the page leaves. The key then changes, and a read under it would be refused (401).
+  const signedIn = useStore(session) !== null;
   const q = useQuery({
     queryKey: queryKey("notifications", "unread"),
     queryFn: unreadCount,
-    enabled: visible,
+    enabled: visible && signedIn,
     staleTime: 0,
     retry: false,
     refetchInterval: () => pollInterval(document.visibilityState === "hidden"),
