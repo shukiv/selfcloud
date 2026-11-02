@@ -206,7 +206,10 @@ export class Page {
     for (;;) {
       const value = await this.evaluate(expression).catch(() => undefined);
       if (value) return value;
-      if (Date.now() > deadline) throw new Error(`timed out waiting for: ${expression}`);
+      if (Date.now() > deadline) {
+        const at = await this.evaluate('location.pathname').catch(() => 'unknown');
+        throw new Error(`timed out waiting for: ${expression} (the page is at ${at})`);
+      }
       await sleep(100);
     }
   }

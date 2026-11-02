@@ -1732,6 +1732,17 @@ describe("My files: the storage notice and a person with no folder", () => {
       await waitFor(() => expect(window.location.pathname).toBe(OWN));
     });
 
+    it("goes on to the folder when My files is pressed again during the move", async () => {
+      window.history.replaceState(null, "", "/files");
+      api.getMe.mockResolvedValue({ personal_folder_id: MINE });
+      const { router } = renderAt("/files");
+      await waitFor(() => expect(window.location.pathname).toBe(OWN));
+      // The press lands before the page has changed: the address is /files again, and the place is still the redirect.
+      window.history.replaceState(null, "", "/files");
+      await act(async () => { await router.navigate("/files", { replace: true }); });
+      await waitFor(() => expect(window.location.pathname).toBe(OWN));
+    });
+
     it("leaves alone a person who already went elsewhere", async () => {
       const { qc, answer } = renderWaitingForMe();
       // The person clicks Shared with me before the read ends: the address has moved, the page has not yet.

@@ -427,9 +427,11 @@ export default function FilesPage() {
 
   // Redirect /files to the caller's own folder, unless the person has already gone elsewhere: right after signing in the
   // read of the person is still going on, and a click made meanwhile moves the address before this page is replaced.
+  // It runs again on every navigation: My files pressed during the move comes back to /files with the place still the
+  // redirect, and nothing else would move it on, so the page would stay empty.
   useEffect(() => {
     if (place?.kind === "redirect" && window.location.pathname === "/files") go(place.to, { replace: true });
-  }, [place]);
+  }, [place, location.key]);
 
   // The title a person had before the browser is given back when the browser is left.
   const titleBefore = useRef(document.title);
