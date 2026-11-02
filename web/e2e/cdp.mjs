@@ -121,13 +121,22 @@ export class Page {
       }
       // The last requests before the error show what the page was doing when it happened.
       const before = this.sent.slice(-4).map((r) => `${r.method} ${r.url.replace(/^https?:\/\/[^/]+/, '')}`).join(' ; ');
-      this.errors.push(`log(${p.entry.source}): ${p.entry.text} ${p.entry.url ?? ''} [after: ${before}]`);
+      // Which code sent the failed request: the script frames that started it, so a stray request can be traced.
+      const from = [...this.sent].reverse().find((r) => r.url === p.entry.url)?.initiator ?? '';
+      this.errors.push(`log(${p.entry.source}): ${p.entry.text} ${p.entry.url ?? ''} [after: ${before}]${from ? ` [sent by: ${from}]` : ''}`);
     });
     this.on('Network.requestWillBeSent', (p) => {
       this.requests.push(p.request.url);
-      this.sent.push({ method: p.request.method, url: p.request.url });
+      // The initiator's stack, with the async parents a fetch inside an async function has, file:line:column each.
+      const frames = [];
+      for (let s = p.initiator?.stack; s && frames.length < 12; s = s.parent) {
+        for (const f of s.callFrames ?? []) frames.push(`${f.functionName || '?'}@${(f.url ?? '').split('/').pop()}:${f.lineNumber}:${f.columnNumber}`);
+      }
+      this.sent.push({ method: p.request.method, url: p.request.url, initiator: frames.slice(0, 12).join(' < ') });
     });
     await this.send('Runtime.enable');
+    // Async stacks, so a request's initiator shows the code that awaited its way to the fetch.
+    await this.send('Runtime.setAsyncCallStackDepth', { maxDepth: 8 });
     await this.send('Log.enable');
     await this.send('Network.enable');
     await this.send('Page.enable');
