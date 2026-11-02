@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { isolate } from '../i18n';
+import { directionOf, isolate, matchLang } from '../i18n';
 
 // Sizes and dates, in the language of the interface. Sizes use decimal units, the way Intl names them.
 const UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
@@ -14,17 +14,29 @@ export function formatBytes(bytes: number, lang: string): string {
     i++;
   }
   const digits = i === 0 ? 0 : v < 10 ? 1 : 0;
+  const nf = new Intl.NumberFormat(lang, {
+    style: 'unit',
+    unit: UNITS[i],
+    // Bytes are written in full ("9 bytes"); the larger units keep their short form ("2 kB").
+    unitDisplay: i === 0 ? 'long' : 'short',
+    maximumFractionDigits: digits,
+  });
   // In a right-to-left language the size keeps its own order, digits then unit, inside the sentence (decision 67).
-  return isolate(
-    lang,
-    new Intl.NumberFormat(lang, {
-      style: 'unit',
-      unit: UNITS[i],
-      // Bytes are written in full ("9 bytes"); the larger units keep their short form ("2 kB").
-      unitDisplay: i === 0 ? 'long' : 'short',
-      maximumFractionDigits: digits,
-    }).format(v),
-  );
+  const l = matchLang(lang);
+  if (l === null || directionOf(l) !== 'rtl') return nf.format(v);
+  // Hebrew's data puts a Latin unit first for exactly one ("MB", a right-to-left mark, "1"), which the isolate draws as
+  // "MB1". Such a size is put back together digits first.
+  const parts = nf.formatToParts(v);
+  const unitAt = parts.findIndex((p) => p.type === 'unit');
+  const numberAt = parts.findIndex((p) => p.type === 'integer');
+  if (unitAt >= 0 && numberAt > unitAt && /^[A-Za-z]+$/.test(parts[unitAt].value)) {
+    const number = parts
+      .filter((p) => p.type !== 'unit' && p.type !== 'literal')
+      .map((p) => p.value)
+      .join('');
+    return isolate(lang, `${number} ${parts[unitAt].value}`);
+  }
+  return isolate(lang, nf.format(v));
 }
 
 // formatNumber formats a count or a byte total with the locale's digits.

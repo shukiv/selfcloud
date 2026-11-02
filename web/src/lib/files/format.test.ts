@@ -35,6 +35,15 @@ describe("formatBytes", () => {
     expect(formatBytes(3_100_000, "ar")).toBe("\u2068" + "3.1 م.ب" + "\u2069");
   });
 
+  // Hebrew's data writes exactly one of a short Latin unit unit-first ("MB", a right-to-left mark, "1"); inside the isolate that
+  // drew as "MB1". A size is always its digits, then the unit.
+  it("writes one kB, MB or GB digits first in Hebrew", () => {
+    expect(formatBytes(1_000, "he")).toBe("⁨" + "1 kB" + "⁩");
+    expect(formatBytes(1_000_000, "he")).toBe("⁨" + "1 MB" + "⁩");
+    expect(formatBytes(1_000_000_000, "he")).toBe("⁨" + "1 GB" + "⁩");
+    expect(formatBytes(1_000_000, "ar")).toBe("⁨" + "1 م.ب" + "⁩");
+  });
+
   it("adds no direction marks in English, Spanish or Russian", () => {
     for (const lang of ["en", "es", "fr", "pt", "ru"]) {
       expect(formatBytes(3_100_000, lang), lang).not.toMatch(/[\u2066-\u2069]/);
