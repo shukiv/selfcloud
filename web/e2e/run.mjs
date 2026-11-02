@@ -86,6 +86,13 @@ const EXPECTED = [
     name: 'no cover',
     matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+\/thumbnail\b/.test(e.url ?? '') && /status of 404\b/.test(e.text ?? ''),
   },
+  // A cover the server cannot start now answers 429 with Retry-After: its queue is full, or the caller asked for more new
+  // thumbnails than a minute allows. The page waits that long and asks again (lib/files/thumbnail.ts). The run's playlists ask
+  // for the covers of fifty tracks at once while earlier checks still fill the queue, so some runs meet it.
+  {
+    name: 'thumbnail busy',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+\/thumbnail\b/.test(e.url ?? '') && /status of 429\b/.test(e.text ?? ''),
+  },
   {
     name: 'start-up probe',
     matches: (e) => e.source === 'network' && /\/api\/v1\/me$/.test(e.url ?? '') && /status of 401\b/.test(e.text ?? ''),
