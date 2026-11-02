@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, type CSSProperties } from "react";
-import { Button } from "antd";
+import { Button, theme as antdTheme } from "antd";
 import { X } from "lucide-react";
 import { useT } from "../lib/i18n";
 
@@ -37,6 +37,8 @@ export default function UndoToast({
   onExpire: () => void;
 }) {
   const { t } = useT();
+  // It floats over the sidebar and the page, so it brings its own colours in either theme.
+  const { token } = antdTheme.useToken();
   useEffect(() => {
     const timer = setInterval(() => {
       if (Date.now() >= expiresAt) onExpire();
@@ -44,7 +46,7 @@ export default function UndoToast({
     return () => clearInterval(timer);
   }, [expiresAt, onExpire]);
   return (
-    <div role="group" aria-label={t("files.undo.group")} data-testid="undo-toast" style={TOAST}>
+    <div role="group" aria-label={t("files.undo.group")} data-testid="undo-toast" style={{ ...TOAST, background: token.colorBgElevated, color: token.colorText, boxShadow: token.boxShadowSecondary }}>
       <p style={TEXT} aria-live="polite">
         {status || label}
       </p>

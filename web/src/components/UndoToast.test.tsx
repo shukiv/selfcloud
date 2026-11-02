@@ -20,6 +20,13 @@ describe("UndoToast", () => {
     expect(onUndo).toHaveBeenCalledTimes(1);
   });
 
+  it("has its own background and text colour, as it floats over the sidebar and the page", () => {
+    render(<UndoToast label="Moved." expiresAt={Date.now() + 8000} onUndo={() => {}} onExpire={() => {}} />);
+    const toast = screen.getByTestId("undo-toast");
+    expect(toast.style.background).not.toBe("");
+    expect(toast.style.color).not.toBe("");
+  });
+
   it("shows the status in place of the label and hides undo", () => {
     render(<UndoToast label="Moved." status="Undone." expiresAt={Date.now() + 4000} onUndo={() => {}} onExpire={() => {}} />);
     expect(screen.getByText("Undone.")).toBeTruthy();
