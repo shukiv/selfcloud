@@ -65,7 +65,10 @@ func TestViewersOffByDefaultAndOnForManagers(t *testing.T) {
 		t.Fatalf("after the switch is on the owner reads %v, want the viewer since then", viewersOf(l))
 	}
 	viewersSwitch(t, fx, false)
-	wantError(t, fx.ownerDo("GET", "/api/v1/nodes/"+f+"/viewers", nil), 403, apierr.Forbidden)
+	// The refusal names its reason, so a manager's page can hide the list without reading the switch (the switch is the owner's to read).
+	if e := wantError(t, fx.ownerDo("GET", "/api/v1/nodes/"+f+"/viewers", nil), 403, apierr.Forbidden); e.Details["reason"] != "who_viewed_off" {
+		t.Fatalf("the refusal reason is %v, want who_viewed_off", e.Details["reason"])
+	}
 }
 
 // TestViewersListsTheLastViewPerUser: a second view within the ten-minute gap is not written, and each user is listed

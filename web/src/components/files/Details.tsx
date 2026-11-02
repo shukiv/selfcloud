@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useState, type CSSProperties } from "react";
+import { lazy, Suspense, useState, type CSSProperties } from "react";
 import { Button, Drawer } from "antd";
 import { useT, useLang } from "../../lib/i18n";
 import { session } from "../../lib/session";
@@ -12,6 +12,10 @@ import type { Node } from "../../lib/files/types";
 import Icon from "./Icon";
 import Appearance from "./Appearance";
 import Labels from "./Labels";
+import SectionBoundary from "../SectionBoundary";
+
+// The comments, activity and who-viewed tabs are a chunk of their own: they are not needed for the first screen.
+const CommentsTabs = lazy(() => import("../comments/CommentsTabs"));
 
 // Details is the side drawer for one node. The Share button shows only when the caller may share the node;
 // "Who has access" always shows, and both open the share dialog. onChanged is told of a colour or description saved.
@@ -130,6 +134,14 @@ export default function Details({
           {t("share.whoHas")}
         </Button>
       </div>
+      {node.kind !== "shortcut" && (
+        // A chunk that does not load leaves the rest of the drawer usable: the boundary is around the tabs only.
+        <SectionBoundary>
+          <Suspense fallback={null}>
+            <CommentsTabs nodeID={node.id} role={node.role} />
+          </Suspense>
+        </SectionBoundary>
+      )}
     </Drawer>
   );
 }

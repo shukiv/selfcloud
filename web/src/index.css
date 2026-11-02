@@ -846,3 +846,19 @@ tr[data-drop-state="refused"] > td {
     line-height: 42px;
   }
 }
+
+/* Comments and the owner's switches: their buttons, tabs and check boxes are 44 px targets on a coarse pointer. The name
+   picker's box is an input too, so it is 44 px high as well. */
+@media (pointer: coarse) {
+  .comments-panel .ant-btn,
+  .comments-panel .ant-tabs-tab-btn,
+  .comments-switches .ant-checkbox-wrapper {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .comments-panel .ant-input {
+    min-height: 44px;
+  }
+}

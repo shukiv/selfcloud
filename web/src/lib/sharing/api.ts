@@ -206,6 +206,22 @@ function visitorOpts(token: string): { headers: Record<string, string>; noRedire
 export interface SharingPolicy {
   public_links: boolean;
   anyone_links: number;
+  // comments and who_viewed are the account's comment switch and who-viewed switch (decisions 39 and 51). Absent
+  // in an answer from an older server.
+  comments?: boolean;
+  who_viewed?: boolean;
+}
+
+// SharingSwitches is the part of the sharing policy a change may name. The server wants at least one of them.
+export interface SharingSwitches {
+  public_links?: boolean;
+  comments?: boolean;
+  who_viewed?: boolean;
+}
+
+// setSharingSwitches changes one or more of the account's switches. Each one is applied on its own by the server.
+export function setSharingSwitches(acc: string, change: SharingSwitches): Promise<SharingPolicy> {
+  return api<SharingPolicy>('PATCH', `/api/v1/accounts/${acc}/sharing-policy`, { body: change });
 }
 
 // getSharingPolicy reads the account's switch for links that anyone can open.

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { lazy, Suspense } from "react";
 import { Alert } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
@@ -14,6 +15,8 @@ import type { Usage } from "../../lib/manage/types";
 import UsageMeter from "../../components/UsageMeter";
 import AuditItem from "../../components/manage/AuditItem";
 import PublicLinksSwitch from "../../components/share/PublicLinksSwitch";
+// The comments and who-viewed switches (decisions 39 and 51) are a chunk of their own, with the comments catalogue.
+const SharingSwitches = lazy(() => import("../../components/comments/SharingSwitches"));
 import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage/OwnerPage";
 
 // Overview: the account's usage and people, its recent activity, and the next steps while it is new.
@@ -94,6 +97,9 @@ function OverviewView() {
               <div style={{ marginBlockStart: 16 }}>
                 <PublicLinksSwitch account={account} />
               </div>
+              <Suspense fallback={null}>
+                <SharingSwitches account={account} />
+              </Suspense>
               <p style={{ margin: "8px 0", fontSize: 14 }}>
                 <a href="/manage/links">{t("links.openList")}</a>
               </p>

@@ -74,7 +74,7 @@ func (s *Server) handleNodeViewers(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if !on {
-		return apierr.New(apierr.Forbidden, "who-viewed is off for this account; the account owner turns it on")
+		return apierr.New(apierr.Forbidden, "who-viewed is off for this account; the account owner turns it on").With("reason", "who_viewed_off")
 	}
 	// One row more than the page holds tells whether a next page exists, without a second query.
 	ahead := page
