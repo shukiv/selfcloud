@@ -36,6 +36,7 @@ const StarredPage = lazy(() => import("./pages/StarredPage"));
 const RecentPage = lazy(() => import("./pages/RecentPage"));
 const StoragePage = lazy(() => import("./pages/StoragePage"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const ManageOverviewPage = lazy(() => import("./pages/manage/OverviewPage"));
 const ManagePeoplePage = lazy(() => import("./pages/manage/PeoplePage"));
 const ManageGroupsPage = lazy(() => import("./pages/manage/GroupsPage"));
@@ -54,13 +55,13 @@ const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 // agree on what an address means.
 type View =
   | "login" | "verify" | "reset" | "forgot" | "sign-in" | "share-link"
-  | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage" | "search"
+  | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
   | "manage" | "admin" | "change-password" | "notfound";
 
 const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "forgot", "sign-in", "share-link"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
-const DRIVE_VIEWS: View[] = ["files", "node", "starred", "recent", "shared", "requests", "trash", "storage", "search"];
+const DRIVE_VIEWS: View[] = ["files", "node", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications"];
 
 export function viewFor(path: string): View {
   // The root is My files: the gate sends a person there (or to the admin's home) with a replace, so it is never drawn.
@@ -82,6 +83,7 @@ export function viewFor(path: string): View {
     case "/trash": return "trash";
     case "/storage": return "storage";
     case "/search": return "search";
+    case "/notifications": return "notifications";
     case "/change-password": return "change-password";
     default: return "notfound";
   }
@@ -305,6 +307,7 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "recent": return <RecentPage />;
     case "storage": return <StoragePage />;
     case "search": return <SearchPage />;
+    case "notifications": return <NotificationsPage />;
     case "manage":
       if (target === null || target.area !== "manage" || !mayOpen(target, user)) return <NotFoundPage />;
       return manageSection(target.section);

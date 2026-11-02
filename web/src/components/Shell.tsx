@@ -29,9 +29,12 @@ import ShellSearch from "./search/ShellSearch";
 import ThemeToggle from "./ThemeToggle";
 import UploadTray from "./UploadTray";
 import MediaHost from "./files/MediaHost";
+import BellBoundary from "./notifications/BellBoundary";
 
 // The space settings dialog is loaded when a team space's settings are opened.
 const SpaceSettings = lazy(() => import("./share/SpaceSettings"));
+// The bell is a chunk of its own: the first screen does not carry it (decision 55 measures the first-load budget).
+const NotificationsBell = lazy(() => import("./notifications/Bell"));
 
 // Below this width (the antd `lg` breakpoint, 992px) the sidebar is a drawer.
 const SIDE_WIDTH = 264;
@@ -479,6 +482,15 @@ export default function Shell({ children }: { children: ReactNode }) {
             {/* A plain flex row, not antd's Space: Space wraps each child in an item that does not shrink, so a long account name
                 would push the page wider than the window. Here the account button can shrink and its name is cut with an ellipsis. */}
             <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 4 : 12, marginInlineStart: "auto", minWidth: 0 }}>
+              {/* The bell is for the person of the drive: an installation admin, or a person signed in as another, has no inbox here. */}
+              {/* The bell is for the person of the drive: an installation admin, or a person signed in as another, has no inbox here. */}
+              {me && !admin && !impersonating && (
+                <BellBoundary>
+                  <Suspense fallback={null}>
+                    <NotificationsBell />
+                  </Suspense>
+                </BellBoundary>
+              )}
               <LangSwitcher compact={isMobile} />
               {!isMobile && <ThemeToggle />}
               {me && (

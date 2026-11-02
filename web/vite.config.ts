@@ -45,6 +45,9 @@ export default defineConfig({
       output: {
         manualChunks(id: string) {
           if (!id.includes("node_modules")) return undefined;
+          // The antd modal and skeleton and rc-util's useId, which the first load reached through the main i18n chunk, go
+          // into one shared chunk of their own, so the first load preloads one file for them and not five (r7b review).
+          if (/[\\/]node_modules[\\/](antd[\\/]es[\\/](modal|skeleton)[\\/]|rc-util[\\/]es[\\/]hooks[\\/]useId\.js)/.test(id)) return "antd-shared";
           if (/[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@remix-run|@tanstack|i18next|react-i18next)[\\/]/.test(id)) return "vendor";
           return undefined;
         },

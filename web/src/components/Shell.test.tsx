@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../lib/session";
 import { setLang } from "../lib/i18n";
@@ -61,12 +62,16 @@ function renderShell(path: string) {
   const router = createMemoryRouter([{ path: "*", element: <Shell><p>page body</p></Shell> }], {
     initialEntries: [path],
   });
+  // The bell of the top bar reads a query, so the shell needs the client the app provides.
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <ThemeProvider>
-      <Direction>
-        <RouterProvider router={router} />
-      </Direction>
-    </ThemeProvider>,
+    <QueryClientProvider client={qc}>
+      <ThemeProvider>
+        <Direction>
+          <RouterProvider router={router} />
+        </Direction>
+      </ThemeProvider>
+    </QueryClientProvider>,
   );
 }
 

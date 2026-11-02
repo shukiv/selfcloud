@@ -29,3 +29,10 @@ export function planNodeLink(node: Node, parent: Node | null): NodeLinkPlan {
   if (node.kind === 'file') return { kind: 'in-folder', folder: node.folder_id, dir, preview: node.id };
   return { kind: 'in-folder', folder: node.folder_id, dir, select: node.id };
 }
+
+// linkQuery is the query an in-folder plan carries. A preview or a selection, as before; with details set (a notification
+// asks for the file's comments) the item is selected and its details open, since the details drawer is not a preview.
+export function linkQuery(plan: Extract<NodeLinkPlan, { kind: 'in-folder' }>, details: boolean): Record<string, string> {
+  if (details) return { select: plan.select ?? plan.preview ?? '', details: 'comments' };
+  return plan.preview ? { preview: plan.preview } : { select: plan.select ?? '' };
+}

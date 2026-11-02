@@ -11,7 +11,7 @@ import { useStore } from "../lib/store";
 import { session } from "../lib/session";
 import { statNode, statOrNull } from "../lib/files/api";
 import { fileErrorText } from "../lib/files/fileErrors";
-import { planNodeLink, type NodeLinkPlan } from "../lib/files/nodeLink";
+import { linkQuery, planNodeLink, type NodeLinkPlan } from "../lib/files/nodeLink";
 import { filesURL, validID } from "../lib/files/route";
 import Preview from "../components/files/Preview";
 import NotFoundPage from "./NotFoundPage";
@@ -33,7 +33,10 @@ async function resolve(id: string): Promise<Resolved> {
 export default function NodeLinkPage() {
   const { t } = useT();
   const lang = useLang();
-  const path = useLocation().pathname;
+  const loc = useLocation();
+  const path = loc.pathname;
+  // A notification's address asks for the file's comments; the request is kept through the redirect below.
+  const details = new URLSearchParams(loc.search).get("details") === "comments";
   const linkID = path.split("/")[2] ?? "";
   const signedIn = useStore(session) !== null;
   const q = useQuery({ queryKey: queryKey("node-link", linkID), queryFn: () => resolve(linkID), enabled: signedIn });
@@ -49,10 +52,9 @@ export default function NodeLinkPage() {
     if (plan.kind === "folder") {
       go(filesURL(plan.folder, null), { replace: true });
     } else if (plan.kind !== "alone") {
-      const query: Record<string, string> = plan.preview ? { preview: plan.preview } : { select: plan.select ?? "" };
-      go(filesURL(plan.folder, plan.dir, query), { replace: true });
+      go(filesURL(plan.folder, plan.dir, linkQuery(plan, details)), { replace: true });
     }
-  }, [plan, path]);
+  }, [plan, path, details]);
 
   if (q.data?.kind === "missing" || !validID("nod", linkID)) {
     return <NotFoundPage nodeID={validID("nod", linkID) ? linkID : undefined} />;

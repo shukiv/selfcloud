@@ -29,6 +29,7 @@ import { w2Checks } from './w2.mjs';
 import { x2Checks } from './x2.mjs';
 import { q4Checks } from './q4.mjs';
 import { r7Checks } from './r7.mjs';
+import { r7bChecks } from './r7b.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -688,6 +689,7 @@ async function main() {
     if (!only || only === 'x2') await x2Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || only === 'q4') await q4Checks(h, { page, base, accountKey, teamA });
     if (!only || only === 'r7') await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
+    if (!only || only === 'r7b') await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (only) {
       console.log(`only ${only}: passed`);
       passed = true;

@@ -504,6 +504,11 @@ export default function FilesPage() {
     appliedFor.current = key;
     setSel({ ids: [found.id], anchor: null, focus: null, anchorID: found.id, focusID: found.id });
     if (q.get("preview") && previewable(found)) openPreview(found);
+    // A notification's address asks for the file's details, which hold its comments (decision 55).
+    else if (q.get("details") === "comments") {
+      setTarget(found);
+      setDialog("details");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, search, path, here, childrenQ.isPending]);
 
