@@ -2,7 +2,8 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import ShellSearch from "./ShellSearch";
 
@@ -73,6 +74,31 @@ describe("the search box in the top bar", () => {
     expect(where()).toBe("/files");
     await new Promise((r) => setTimeout(r, 400));
     expect(where()).toBe("/files");
+  });
+
+  it("a word typed while /files moves on to the first folder still opens the search page", async () => {
+    // The files page replaces /files with the first folder's address once the folders are read. That move is the page's,
+    // not the person's, so what they typed is not dropped.
+    function Redirect() {
+      const go = useNavigate();
+      const l = useLocation();
+      useEffect(() => {
+        if (l.pathname !== "/files") return;
+        const id = setTimeout(() => go("/files/fld_first", { replace: true }), 60);
+        return () => clearTimeout(id);
+      }, [l.pathname, go]);
+      return null;
+    }
+    render(
+      <MemoryRouter initialEntries={["/files"]}>
+        <ShellSearch wide />
+        <Redirect />
+        <Where />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(BOX), "budget");
+    await waitFor(() => expect(where()).toBe("/search?q=budget"));
   });
 
   it("on a phone it is one button that opens the search page", () => {

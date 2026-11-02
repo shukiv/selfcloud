@@ -5,8 +5,8 @@
 // phone it is one button that opens the search page, which has its own box there.
 import { Button, theme as antdTheme } from "antd";
 import { Search } from "lucide-react";
-import { useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate, useNavigationType, useSearchParams } from "react-router-dom";
 import { useT } from "../../lib/i18n";
 import { useCoarsePointer } from "../../lib/pointer";
 import { RADIUS } from "../../theme/tokens";
@@ -43,7 +43,14 @@ export default function ShellSearch({ wide }: { wide: boolean }) {
     if (q === "") return;
     navigate(`${SEARCH_PATH}?${new URLSearchParams({ q: value }).toString()}`);
   };
-  const { draft, change, submit } = useDraft(urlWords, send, 300, location.pathname);
+  // A move the person makes (a link, back or forward) drops a pause in progress. A page's own replace, such as /files
+  // moving on to the first folder once the folders are read, is not the person's move, so it keeps what they typed.
+  const navType = useNavigationType();
+  const [scope, setScope] = useState(location.pathname);
+  useEffect(() => {
+    if (navType !== "REPLACE") setScope(location.pathname);
+  }, [location.pathname, navType]);
+  const { draft, change, submit } = useDraft(urlWords, send, 300, scope);
 
   if (!wide) {
     // On the search page the phone has the page's own box, so the button is not needed there.
