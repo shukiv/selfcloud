@@ -95,6 +95,16 @@ const EXPECTED = [
     name: 'rate limited search',
     matches: (e) => e.source === 'network' && /\/api\/v1\/search/.test(e.url ?? '') && /status of 429\b/.test(e.text ?? ''),
   },
+  // A 403 from the comments or the who-viewed route is the answer a switch gives on purpose: the panel
+  // reads it to hide the tab, and the run turns the switch off to check that.
+  {
+    name: 'comments switch off',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+\/comments(\?[^/]*)?$/.test(e.url ?? '') && /status of 403\b/.test(e.text ?? ''),
+  },
+  {
+    name: 'who-viewed switch off',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+\/viewers(\?[^/]*)?$/.test(e.url ?? '') && /status of 403\b/.test(e.text ?? ''),
+  },
   // The member's upload over its limit is refused by the server.
   {
     name: 'over the limit',
