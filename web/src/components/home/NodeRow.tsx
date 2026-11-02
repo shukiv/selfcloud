@@ -30,7 +30,7 @@ export default function NodeRow({ node, meta, action }: { node: Node; meta: stri
         borderRadius: token.borderRadius,
       }}
     >
-      <Icon kind={kindOf(node)} size={24} />
+      <Icon kind={kindOf(node)} size={24} node={node} />
       {opened?.kind === "unavailable" ? (
         <span style={{ flex: "1 1 160px", minInlineSize: 0, overflowWrap: "anywhere", fontWeight: 600 }}>{name}</span>
       ) : (

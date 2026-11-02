@@ -6,6 +6,7 @@
 // When SHOTS_DIR is set, the checks also write screenshots there (light, dark, phone and Hebrew); the gate leaves it unset.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTheme } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
 
@@ -85,10 +86,10 @@ export async function p4OwnerChecks(page, h, { api, base, accountKey, teamA, rep
   // Dark, then phone without a horizontal scroll, then Hebrew right to left, on the labels page.
   await h.navigateTo(page, '/manage/labels');
   await page.waitFor(`document.querySelector('ul[aria-label="Labels"]')?.textContent.includes('Note')`, 15000);
-  await clickText(page, '[data-testid="theme"] .ant-segmented-item-label', 'Dark');
+  await setTheme(page, 'Dark');
   await page.waitFor(`document.documentElement.dataset.theme === 'dark'`);
   await shot(page, 'labels-manage-dark.png');
-  await clickText(page, '[data-testid="theme"] .ant-segmented-item-label', 'Light');
+  await setTheme(page, 'Light');
   await page.waitFor(`document.documentElement.dataset.theme === 'light'`);
   h.check(true, 'the labels page shows in the dark theme as well');
   await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });

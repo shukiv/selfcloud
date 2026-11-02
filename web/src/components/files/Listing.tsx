@@ -12,7 +12,8 @@ import {
 } from "react";
 import { Button, Checkbox, Grid, Input, Table, theme as antdTheme } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { ArrowDown, ArrowUp, Link2, MoreHorizontal, Star } from "lucide-react";
+import { ArrowDown, ArrowUp, EllipsisVertical, Link2, Star } from "lucide-react";
+import IconButton from "../IconButton";
 import { useLang, useT } from "../../lib/i18n";
 import { formatBytes, formatDate } from "../../lib/files/format";
 import { kindOf } from "../../lib/files/kind";
@@ -261,10 +262,11 @@ export default function Listing(p: ListingProps) {
   // In a tile the star sits in the top right corner, a 44 pixel target: a tap on the tile's middle opens the file, not the star.
   const starButton = (n: Node, corner = false) =>
     n.starred !== undefined && p.onStar ? (
-      <button
-        type="button"
+      <IconButton
         aria-pressed={n.starred}
-        aria-label={t("star.button", { name: n.name })}
+        label={t("star.button", { name: n.name })}
+        tip={t(n.starred ? "star.removeTip" : "star.addTip")}
+        icon={<Star size={16} fill={n.starred ? "currentColor" : "none"} aria-hidden="true" focusable="false" />}
         onClick={(e) => {
           e.stopPropagation();
           p.onStar?.(n);
@@ -272,24 +274,10 @@ export default function Listing(p: ListingProps) {
         onKeyDown={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
         style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          minWidth: 36,
-          minHeight: 36,
-          marginInlineStart: 4,
-          padding: 0,
           color: n.starred ? token.colorWarning : token.colorTextSecondary,
-          background: "transparent",
-          border: 0,
-          borderRadius: token.borderRadiusSM,
-          cursor: "pointer",
-          verticalAlign: "middle",
-          ...(corner ? { position: "absolute", insetBlockStart: 0, insetInlineEnd: 0, minWidth: 44, minHeight: 44, marginInlineStart: 0 } : {}),
+          ...(corner ? { position: "absolute", insetBlockStart: 0, insetInlineEnd: 0, background: token.colorBgElevated } : { marginInlineStart: 4, verticalAlign: "middle" }),
         }}
-      >
-        <Star size={16} fill={n.starred ? "currentColor" : "none"} aria-hidden="true" focusable="false" />
-      </button>
+      />
     ) : null;
 
   const renameErr = (n: Node) =>
@@ -320,7 +308,7 @@ export default function Listing(p: ListingProps) {
         ...sortHead("name", t("files.col.name")),
         render: (_v, n) => (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0, maxWidth: "100%" }}>
-            <Icon kind={kindOf(n)} size={22} colour={n.color} />
+            <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
             {nameField(n)}
             {linkBadge(n)}
             <KindMarks node={n} />
@@ -406,8 +394,7 @@ export default function Listing(p: ListingProps) {
   const folders = p.items.filter((n) => n.kind === "dir");
   const files = p.items.filter((n) => n.kind !== "dir");
   const band = { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${TILE_MIN_PX}px), 1fr))`, gap: 12 } as const;
-  const target = coarse ? 44 : 32;
-  // A tile's star and menu are 44 pixels on a finger and 32 with a mouse; the size is the same at rest, hover and focus.
+  // A tile's star and menu are IconButtons: 40 pixels with a mouse and 44 on a finger (index.css), the same at rest, hover and focus.
   // The menu button is out of the tab order: Shift+F10 (or the menu key) opens the item's menu from the focused tile. The star
   // stays a tab stop, as a list row's star is: the item menu has no Star action, so the star has no other key. The arrow keys
   // reach the tile's own handler, so they move on from either button; Enter and Space stop at the button, so its click is the
@@ -417,10 +404,11 @@ export default function Listing(p: ListingProps) {
   };
   const tileStar = (n: Node, where: "corner" | "chip") =>
     n.starred !== undefined && p.onStar ? (
-      <button
-        type="button"
+      <IconButton
         aria-pressed={n.starred}
-        aria-label={t("star.button", { name: n.name })}
+        label={t("star.button", { name: n.name })}
+        tip={t(n.starred ? "star.removeTip" : "star.addTip")}
+        icon={<Star size={16} fill={n.starred ? "currentColor" : "none"} aria-hidden="true" focusable="false" />}
         onClick={(e) => {
           e.stopPropagation();
           p.onStar?.(n);
@@ -428,33 +416,18 @@ export default function Listing(p: ListingProps) {
         onKeyDown={keysStop}
         onDoubleClick={(e) => e.stopPropagation()}
         style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flex: "none",
-          boxSizing: "border-box",
-          width: target,
-          height: target,
-          minWidth: target,
-          minHeight: target,
-          padding: 0,
-          border: 0,
-          borderRadius: token.borderRadiusSM,
           color: n.starred ? token.colorWarning : token.colorTextSecondary,
           background: where === "corner" ? token.colorBgElevated : "transparent",
-          cursor: "pointer",
           ...(where === "corner" ? { position: "absolute", insetBlockStart: 0, insetInlineEnd: 0 } : {}),
         }}
-      >
-        <Star size={16} fill={n.starred ? "currentColor" : "none"} aria-hidden="true" focusable="false" />
-      </button>
+      />
     ) : null;
   // The menu button opens the item's menu, where the right-click menu opens: at the button.
   const tileMenu = (n: Node, i: number) => (
-    <button
-      type="button"
+    <IconButton
       tabIndex={-1}
-      aria-label={t("files.tile.menu", { name: n.name })}
+      label={t("files.tile.menu", { name: n.name })}
+      tip={t("files.selection.more")}
       aria-haspopup="menu"
       onClick={(e) => {
         e.stopPropagation();
@@ -463,26 +436,8 @@ export default function Listing(p: ListingProps) {
       }}
       onKeyDown={keysStop}
       onDoubleClick={(e) => e.stopPropagation()}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flex: "none",
-        boxSizing: "border-box",
-        width: target,
-        height: target,
-        minWidth: target,
-        minHeight: target,
-        padding: 0,
-        border: 0,
-        borderRadius: token.borderRadiusSM,
-        color: token.colorTextSecondary,
-        background: "transparent",
-        cursor: "pointer",
-      }}
-    >
-      <MoreHorizontal size={18} aria-hidden="true" focusable="false" />
-    </button>
+      icon={<EllipsisVertical size={18} aria-hidden="true" focusable="false" />}
+    />
   );
   // The checkbox of a finger's screen: a tile has no click that selects it, so its checkbox does (a list row has one already).
   // The wrapper stops the click: the checkbox toggles the item, and the item does not also open.
@@ -500,7 +455,7 @@ export default function Listing(p: ListingProps) {
   // The type's icon keeps its size when the name is long: a flex item would shrink to nothing beside it.
   const typeIcon = (n: Node) => (
     <span style={{ display: "inline-flex", flex: "none" }}>
-      <Icon kind={kindOf(n)} size={20} colour={n.color} />
+      <Icon kind={kindOf(n)} size={20} colour={n.color} node={n} />
     </span>
   );
   // The name is one line: it is cut with an ellipsis, and its full text is in the title. The box takes the row's direction
@@ -600,9 +555,9 @@ export default function Listing(p: ListingProps) {
             there is one; the rest show the type's icon on a tinted area. The play mark and the star sit in its corners. */}
         <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: PREVIEW_H_PX, minWidth: 0, background: token.colorFillQuaternary }}>
           {thumbable(n) ? (
-            <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} height={PREVIEW_H_PX} fallback={<Icon kind={kindOf(n)} size={48} colour={n.color} />} />
+            <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} height={PREVIEW_H_PX} fallback={<Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />} />
           ) : (
-            <Icon kind={kindOf(n)} size={48} colour={n.color} />
+            <Icon kind={kindOf(n)} size={48} colour={n.color} node={n} />
           )}
           <span style={{ position: "absolute", insetBlockEnd: 6, insetInlineStart: 6, display: "inline-flex", alignItems: "center", maxWidth: "calc(100% - 60px)" }}>
             <KindMarks node={n} />

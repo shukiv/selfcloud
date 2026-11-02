@@ -6,6 +6,7 @@
 // SELFCLOUD_S4B_SHOTS names a folder for screenshots: desktop and phone, light and dark, English and Hebrew.
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setThemeByPlace } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
 
@@ -58,7 +59,7 @@ async function listView(page) {
 // clickIn clicks the button of the scope whose text is exactly text, once it is there.
 async function clickIn(page, scope, text, timeout = 15000) {
   await page.waitFor(
-    `(() => { const b = [...document.querySelectorAll(${q(scope + ' button')})].find((x) => x.textContent.trim() === ${q(text)} && !x.disabled); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = [...document.querySelectorAll(${q(scope + ' button')})].find((x) => (x.textContent.trim() === ${q(text)} || x.getAttribute('aria-label') === ${q(text)}) && !x.disabled); if (!b) return false; b.click(); return true; })()`,
     timeout,
   );
 }
@@ -76,12 +77,8 @@ async function pickMenuItem(page, text) {
 
 // pickSegment chooses a theme in the theme switch by its label, once the switch is on the page.
 // The options are system, light and dark, in that order, whatever the language: the choice is made by its place.
-const THEME_PLACE = { system: 0, light: 1, dark: 2 };
 async function pickSegment(page, value) {
-  await page.waitFor(
-    `(() => { const items = [...document.querySelectorAll('[data-testid="theme"] .ant-segmented-item')]; const i = items[${THEME_PLACE[value]}]; if (!i || items.length !== 3) return false; i.click(); return true; })()`,
-    10000,
-  );
+  await setThemeByPlace(page, { system: 0, light: 1, dark: 2 }[value], value);
 }
 
 // closeTopModal closes the dialog on top (the export dialog, over the viewer) by its Close button, and waits until only the

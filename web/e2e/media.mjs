@@ -124,7 +124,7 @@ async function clearSelection(page) {
 }
 
 // The selection actions can be read by a check as one list of buttons, whatever the width.
-export { barButtons, browserTitle, click, closePreview, clearSelection, dblClick, docTop, itemSel, openedName, point, q, setLanguage, setPhone, setTheme, shot, sleep, tap };
+export { accountName, barButtons, browserTitle, click, closePreview, clearSelection, dblClick, docTop, itemSel, openedName, point, q, setLanguage, setPhone, setTheme, shot, sleep, tap };
 
 // wideElements lists the elements whose right edge is past a phone's 390 px width, widest first, with the page's
 // scrollWidth and innerWidth. A page wider than its window is shrunk by a phone browser, and taps then miss.
@@ -181,11 +181,44 @@ async function setLanguage(page, name) {
 // it signed, and the run counts the links asked for.
 const SHORT_TTL = 6;
 
-// setTheme picks Light or Dark from the top bar's theme switch, which is read in English.
+// setTheme picks System, Light or Dark from the top bar's theme menu (decision 68): the icon opens it, and its items carry the
+// words. The menu's words are read in the page's language, so the choice is made by the English words the page is in.
 async function setTheme(page, name) {
-  await page.waitFor(`[...document.querySelectorAll('[data-testid="theme"] .ant-segmented-item-label')].some((x) => x.textContent.trim() === ${q(name)})`, 15000);
-  await page.evaluate(`[...document.querySelectorAll('[data-testid="theme"] .ant-segmented-item-label')].find((x) => x.textContent.trim() === ${q(name)}).click()`);
-  await page.waitFor(`document.documentElement.dataset.theme === ${q(name.toLowerCase())}`, 10000);
+  await page.waitFor(`!!document.querySelector('[data-testid="theme"]')`, 15000);
+  await page.evaluate(`document.querySelector('[data-testid="theme"]').click(), true`);
+  const items = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')]`;
+  await page.waitFor(`${items}.some((x) => x.textContent.trim() === ${q(name)})`, 10000);
+  await page.evaluate(`${items}.find((x) => x.textContent.trim() === ${q(name)}).click(), true`);
+  if (name !== 'System') await page.waitFor(`document.documentElement.dataset.theme === ${q(name.toLowerCase())}`, 10000);
+}
+
+// setThemeByPlace is setTheme for a language whose words are not the English ones: the menu's items are System, Light and Dark
+// in that order whatever the language, so the choice is made by its place (0, 1 or 2).
+export async function setThemeByPlace(page, place, name) {
+  await page.waitFor(`!!document.querySelector('[data-testid="theme"]')`, 15000);
+  await page.evaluate(`document.querySelector('[data-testid="theme"]').click(), true`);
+  const items = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')]`;
+  await page.waitFor(`${items}.length === 3`, 10000);
+  await page.evaluate(`${items}[${place}].click(), true`);
+  if (name !== 'system') await page.waitFor(`document.documentElement.dataset.theme === ${q(name)}`, 10000);
+}
+
+// hoverOver moves the pointer over the element the selector names, as a person does, so its tooltip opens (decision 68).
+export async function hoverOver(page, selector) {
+  const at = await page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  if (!at) throw new Error(`nothing matches ${selector}`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, button: 'none', buttons: 0 });
+  await sleep(300);
+}
+
+// accountName reads the name the top bar's account button stands for. The button shows one letter (decision 68), and its name
+// is its tooltip, so the name is read by hovering it: the tooltip is the name, or the email when there is no name.
+async function accountName(page) {
+  await hoverOver(page, '[data-testid="account-menu"]');
+  await page.waitFor(`[...document.querySelectorAll('.ant-tooltip:not(.ant-tooltip-hidden)')].some((t) => t.textContent.trim() !== '')`, 5000).catch(() => undefined);
+  const name = await page.evaluate(`[...document.querySelectorAll('.ant-tooltip:not(.ant-tooltip-hidden)')].map((t) => t.textContent.trim()).filter(Boolean).join('|')`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0, button: 'none', buttons: 0 });
+  return name;
 }
 
 // shot saves the page as a PNG, in dir.
@@ -429,9 +462,9 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     const lines = await page.evaluate(`(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector('[data-testid="selection-panel"] span[aria-live]')); return new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size; })()`);
     check(lines === 1, `the count on a phone's selection panel is one line, with no word split (${lines} lines)`);
     check(await page.evaluate(`!!document.querySelector('[data-testid="selection-panel"] button[aria-label="Clear selection"]')`), "a phone's Clear button keeps its name for a screen reader");
-    // Delete is an icon in the panel, marked as destructive; More holds the rest.
+    // Delete is an icon in the panel, in the neutral colour of the others (decision 68); More holds the rest.
     const danger = await page.evaluate(`(() => { const d = [...document.querySelectorAll('[data-testid="selection-panel"] button')].find((b) => b.getAttribute('aria-label') === 'Delete'); return d ? d.classList.contains('ant-btn-dangerous') : null; })()`);
-    check(danger === true, `Delete is an icon in the selection panel, marked as destructive (${danger})`);
+    check(danger === false, `Delete is an icon in the selection panel, not marked as destructive (${danger})`);
     await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].find((b) => b.getAttribute('aria-label') === 'More').click()`);
     await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((x) => x.textContent.trim() === 'Details')`, 10000);
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
@@ -598,7 +631,8 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     };
 
     await openPlay();
-    check(await page.evaluate(`!!document.querySelector(${q(BUTTON)})?.textContent.includes('Play media')`), 'the toolbar shows Play media with its name on a wide window');
+    // Decision 68: Play media is the icon at every width; its name is the label (aria-label) and the tooltip.
+    check(await page.evaluate(`(() => { const b = document.querySelector(${q(BUTTON)}); return !!b && b.textContent.trim() === '' && b.getAttribute('aria-label') === 'Play media'; })()`), 'the toolbar shows Play media as an icon, its name as the label, on a wide window');
     if (process.env.SELFCLOUD_E2E_SHOTS) await shot(page, process.env.SELFCLOUD_E2E_SHOTS, 'play-media-desktop-en.png');
     await page.evaluate(`document.querySelector(${q(BUTTON)}).click()`);
     await page.waitFor(`!!document.querySelector('[data-testid="preview"] audio, [data-testid="preview"] video')`, 20000);
@@ -846,7 +880,7 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await sleep(1500);
     const msg = await page.evaluate(`document.querySelector('[data-testid="preview"] [role="alert"]')?.textContent ?? ''`);
     check(/can.?t play this format/i.test(msg), `a broken video says this browser cannot play it (${msg})`);
-    check((await page.evaluate(`[...document.querySelectorAll('[data-testid="preview"] button')].map((b) => b.textContent.trim())`)).includes('Download'), 'the card offers Download');
+    check((await page.evaluate(`[...document.querySelectorAll('[data-testid="preview"] button')].map((b) => b.textContent.trim() || b.getAttribute('aria-label'))`)).includes('Download'), 'the card offers Download');
     // Two links in all: the first for the preview, and one renewal, which fails the same way, so the format is the cause.
     check(linkMints() - before === 2, `the broken file asked for ${linkMints() - before} links, not the two it should (the first, and one renewal)`);
     await closePreview(page);

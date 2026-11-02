@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useState } from "react";
-import { Button } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { Bell as BellIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -11,8 +10,7 @@ import { useNT } from "../../lib/notifications/i18n";
 import { queryKey } from "../../lib/query";
 import { session } from "../../lib/session";
 import { useStore } from "../../lib/store";
-import { useCoarsePointer } from "../../lib/pointer";
-import { RADIUS } from "../../theme/tokens";
+import IconButton from "../IconButton";
 
 // Bell is the top bar's entry to the notifications page, with the count of unread notifications. The count is read when
 // the bar appears in a tab that is shown, once a minute while it stays shown, and again when the tab comes back. A tab
@@ -21,7 +19,6 @@ import { RADIUS } from "../../theme/tokens";
 // the badge, the button's name and the live region all show the same number.
 export default function Bell() {
   const { t, ready } = useNT();
-  const coarse = useCoarsePointer();
   const navigate = useNavigate();
   const [visible, setVisible] = useState(() => document.visibilityState !== "hidden");
   useEffect(() => {
@@ -55,13 +52,12 @@ export default function Bell() {
         {shown}
       </span>
       <span style={{ position: "relative", display: "inline-flex" }}>
-        <Button
-          type="text"
+        <IconButton
           data-testid="notifications-bell"
-          aria-label={badge ? `${t("notifications.bell")}, ${shown}` : t("notifications.bell")}
+          label={badge ? `${t("notifications.bell")}, ${shown}` : t("notifications.bell")}
+          tip={t("notifications.bell")}
           onClick={() => navigate("/notifications")}
-          icon={<BellIcon size={18} />}
-          style={{ borderRadius: RADIUS, minWidth: 44, minHeight: coarse ? 44 : undefined }}
+          icon={<BellIcon size={18} aria-hidden="true" focusable="false" />}
         />
         {badge && (
           <span

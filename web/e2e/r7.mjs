@@ -7,7 +7,7 @@
 // SELFCLOUD_R7_SHOTS set to a folder, the run also saves the pictures for the slice.
 import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import { click, setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
+import { accountName, click, setLanguage, setPhone, setThemeByPlace, shot, sleep } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
 const details = '[data-testid="details"]';
@@ -49,11 +49,10 @@ async function typeInto(page, field, text) {
   await sleep(150);
 }
 
-// setThemeAt presses the theme segment at a place: 0 system, 1 light, 2 dark (the order the toggle gives them).
+// setThemeAt picks the theme at a place in the top bar's menu: 0 system, 1 light, 2 dark (the order the menu gives them). The
+// place is used, not the English words, so the pick works in every language (decision 68, review fix).
 async function setThemeAt(page, place, want) {
-  await page.waitFor(`document.querySelectorAll('[data-testid="theme"] .ant-segmented-item-label').length === 3`, 15000);
-  await page.evaluate(`document.querySelectorAll('[data-testid="theme"] .ant-segmented-item-label')[${place}].click()`);
-  await page.waitFor(`document.documentElement.dataset.theme === ${q(want)}`, 10000);
+  await setThemeByPlace(page, place, want);
 }
 
 const valueOf = (page, field) => page.evaluate(`(${field})?.value ?? null`);
@@ -190,7 +189,7 @@ async function r7Body(h, { page, base, accountKey, accountID, memberID }) {
   await step('the member sees the thread, replies, and edits the reply; the owner comment has no Edit for the member', async () => {
     await signOut(page);
     await signIn(page, MEMBER);
-    const who = await page.evaluate(`document.querySelector('[data-testid="account-menu"]')?.textContent ?? ''`);
+    const who = await accountName(page);
     check(who.includes(MEMBER.name), `the page now signs the member in (${who.trim()})`);
     await openDetails(h, page, folderURL, 'plan.txt');
     const tabs = await tabNames(page);

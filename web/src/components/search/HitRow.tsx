@@ -38,7 +38,7 @@ export default function HitRow({ hit }: { hit: SearchHit }) {
       }}
     >
       <span style={{ paddingBlockStart: 2 }}>
-        <Icon kind={kindOf(hit)} size={24} />
+        <Icon kind={kindOf(hit)} size={24} node={hit} />
       </span>
       <div style={{ flex: "1 1 200px", minWidth: 0 }}>
         {/* An unavailable shortcut links to itself, as the listing offers its access request from the shortcut: the target's

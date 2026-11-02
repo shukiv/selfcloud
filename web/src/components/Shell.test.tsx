@@ -97,6 +97,14 @@ async function openNav(): Promise<HTMLElement> {
   return drawer;
 }
 
+// tooltipText waits for a tooltip popup to open and returns its text.
+const tooltipText = () =>
+  waitFor(() => {
+    const text = document.querySelector('[role="tooltip"]')?.textContent;
+    if (!text) throw new Error("no tooltip yet");
+    return text;
+  });
+
 describe("Shell", () => {
   beforeEach(async () => {
     window.localStorage.clear();
@@ -153,14 +161,43 @@ describe("Shell", () => {
     expect(names).not.toContain("My files");
   });
 
-  it("offers the account menu with the account's name", async () => {
+  // Decision 68: the account is a round avatar with the first letter of the name; the name is its tooltip and its name.
+  it("shows the first letter of the name in the account button, and the name in its tooltip and name", async () => {
     signIn("member");
     renderShell("/files");
-    expect(screen.getByRole("button", { name: "Account menu" }).textContent).toContain("Olivia");
+    const button = screen.getByRole("button", { name: "Olivia" });
+    expect(button.textContent).toBe("O");
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    expect(await tooltipText()).toBe("Olivia");
   });
 
-  // A long account name is cut with an ellipsis in the button, and its full name is in the title, so the header never grows.
-  it("cuts a long account name in the header button, with the full name in its title", async () => {
+  // Review fix (decision 68): the phone's menu button says what it does (its name and tooltip).
+  it("names the phone's menu button Open the menu, and shows that tooltip", async () => {
+    renderShell("/files");
+    const button = screen.getByTestId("nav-open");
+    expect(button.getAttribute("aria-label")).toBe("Open the menu");
+    fireEvent.pointerEnter(button.parentElement as HTMLElement, { pointerType: "mouse" });
+    expect(await tooltipText()).toBe("Open the menu");
+  });
+
+  // Review fix (decision 68): with no name and no email the button shows a person icon, and is named "Account menu".
+  it("shows a person icon, named Account menu, when there is no name and no email", async () => {
+    session.set({
+      user: { id: "u1", email: "", display_name: "", role: "member", locale: "en" } as Session["user"],
+      account: null,
+      csrf: "csrf",
+      publicLinks: false,
+    });
+    renderShell("/files");
+    const button = screen.getByRole("button", { name: "Account menu" });
+    expect(button.textContent).toBe("");
+    expect(button.querySelector("svg")).not.toBeNull();
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    expect(await tooltipText()).toBe("Account menu");
+  });
+
+  // The account button is one letter, so a long name never widens the header; the full email is its tooltip.
+  it("shows one letter for a long email, and the full email in its tooltip", async () => {
     const long = `${"a".repeat(50)}@selfcloud.test`;
     session.set({
       user: { id: "u1", email: long, display_name: "", role: "member", locale: "en" } as Session["user"],
@@ -169,12 +206,10 @@ describe("Shell", () => {
       publicLinks: false,
     });
     renderShell("/files");
-    const button = screen.getByRole("button", { name: "Account menu" });
-    expect(button.getAttribute("title")).toBe(long);
-    const name = button.querySelector("bdi") as HTMLElement;
-    expect(name.style.textOverflow).toBe("ellipsis");
-    expect(name.style.overflow).toBe("hidden");
-    expect(name.style.whiteSpace).toBe("nowrap");
+    const button = screen.getByRole("button", { name: long });
+    expect(button.textContent).toBe("A");
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    expect(await tooltipText()).toBe(long);
   });
 
   it("opens the drawer on the reading side: the right, in Hebrew", async () => {
@@ -194,7 +229,10 @@ describe("Shell", () => {
       signIn("member");
       renderShell("/files");
       // The upload tray has a "Hide" button of its own, so the rail toggle is found by its test id.
+      // Review fix (decision 68): its name says what it does, before and after the press.
+      expect(screen.getByTestId("rail-toggle").getAttribute("aria-label")).toBe("Hide the sidebar");
       fireEvent.click(screen.getByTestId("rail-toggle"));
+      expect(screen.getByTestId("rail-toggle").getAttribute("aria-label")).toBe("Show the sidebar");
       expect(window.localStorage.getItem("selfcloud.navRail")).toBe("1");
       const sider = await waitFor(() => {
         const el = document.querySelector<HTMLElement>(".ant-layout-sider-collapsed");
@@ -459,21 +497,12 @@ describe("the Requests entry", () => {
     expect(within(drawer).queryByRole("menuitem", { name: /Requests/ })).toBeNull();
   });
 
-  it("the account button is a 44 pixel target on a finger, and the usual size with a mouse", async () => {
+  // The size is the stylesheet's (index.css, icon-btn): 44 px on a finger, 40 with a mouse. jsdom has no stylesheet, so the
+  // check is that the account button is an icon button, which the stylesheet sizes by the pointer.
+  it("the account button is an icon button, which the stylesheet sizes for a finger", async () => {
     signIn("member");
-    const original = window.matchMedia;
-    try {
-      window.matchMedia = ((query: string) => ({ ...original(query), matches: query === "(pointer: coarse)" })) as typeof window.matchMedia;
-      const finger = renderShell("/files");
-      const button = await screen.findByTestId("account-menu");
-      expect(button.style.minHeight).toBe("44px");
-      finger.unmount();
-      window.matchMedia = ((query: string) => ({ ...original(query), matches: false })) as typeof window.matchMedia;
-      renderShell("/files");
-      expect((await screen.findByTestId("account-menu")).style.minHeight).toBe("");
-    } finally {
-      window.matchMedia = original;
-    }
+    renderShell("/files");
+    expect((await screen.findByTestId("account-menu")).className).toMatch(/\bicon-btn\b/);
   });
 });
 

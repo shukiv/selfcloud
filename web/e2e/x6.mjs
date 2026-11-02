@@ -320,10 +320,10 @@ export async function x6Checks(h, { page, base, accountKey, accountID, memberID 
           const t = document.querySelector('.media-playlist-toggle');
           const h = document.querySelector('[data-testid="preview"] header');
           const scr = document.querySelector('[data-testid="media-screen"]').getBoundingClientRect();
-          const label = t.querySelector('.media-queue-label');
-          return { inHeader: h.contains(t), h: t.getBoundingClientRect().height, labelShown: !!label && getComputedStyle(label).display !== 'none', aria: t.getAttribute('aria-label'), gap: scr.top - h.getBoundingClientRect().bottom, screenTop: scr.top, videoTop: document.querySelector('[data-testid="media-screen"] video').getBoundingClientRect().top, rows: document.querySelectorAll('[data-testid="preview"] header').length };
+          return { inHeader: h.contains(t), h: t.getBoundingClientRect().height, labelShown: t.textContent.trim() !== '', aria: t.getAttribute('aria-label'), gap: scr.top - h.getBoundingClientRect().bottom, screenTop: scr.top, videoTop: document.querySelector('[data-testid="media-screen"] video').getBoundingClientRect().top, rows: document.querySelectorAll('[data-testid="preview"] header').length };
         })()`);
-        check(head.inHeader && head.labelShown === (width > 599) && head.aria === 'Playlist', `${width} px: the Playlist button is on the viewer's top row, ${head.labelShown ? 'with its label' : 'as an icon with its name in aria-label'} ${JSON.stringify(head)}`);
+        // Decision 68: the Playlist button is the icon at every width, with its name as its label, so it shows no text at any width.
+        check(head.inHeader && !head.labelShown && head.aria === 'Playlist', `${width} px: the Playlist button is on the viewer's top row, as an icon with its name in aria-label ${JSON.stringify(head)}`);
         check(head.gap >= 0 && head.gap <= 13 && Math.abs(head.videoTop - head.screenTop) <= 1, `${width} px: the video starts right under the header, ${head.gap.toFixed(0)} px below it`);
         if (width <= 600) check(head.h >= 44, `390 px: the Playlist button is 44 px tall on a touch screen (${head.h.toFixed(0)} px)`);
         check(Math.abs(m.w - (m.viewerW - 24)) <= 1, `${width} px: the video is the viewer's full width (${m.w.toFixed(1)} of ${(m.viewerW - 24).toFixed(1)})`);

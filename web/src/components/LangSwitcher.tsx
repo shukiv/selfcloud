@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Button, Dropdown } from "antd";
+import IconButton from "./IconButton";
 import type { MenuProps } from "antd";
 import { Languages } from "lucide-react";
 import { LANGUAGES, NATIVE_NAMES, setLang, useLang, useT, type Lang } from "../lib/i18n";
@@ -23,7 +24,7 @@ export async function change(next: Lang) {
   }
 }
 
-// compact is the phone top bar: the icon alone, the name kept in aria-label.
+// compact is the top bar: the icon alone, with the name as its label and tooltip. The sign-in pages keep the words.
 export default function LangSwitcher({ compact = false }: { compact?: boolean }) {
   const { t } = useT();
   const current = useLang();
@@ -37,9 +38,14 @@ export default function LangSwitcher({ compact = false }: { compact?: boolean })
       placement="bottomRight"
       trigger={["click"]}
     >
-      <Button type="text" data-testid="language" icon={<Languages size={18} strokeWidth={1.75} />} aria-label={t("lang.label")}>
-        {compact ? null : NATIVE_NAMES[current]}
-      </Button>
+      {compact ? (
+        // The top bar's switch is the icon alone, with its name and tooltip (decision 68).
+        <IconButton data-testid="language" label={t("lang.label")} icon={<Languages size={18} strokeWidth={1.75} aria-hidden="true" focusable="false" />} />
+      ) : (
+        <Button type="text" data-testid="language" icon={<Languages size={18} strokeWidth={1.75} />} aria-label={t("lang.label")}>
+          {NATIVE_NAMES[current]}
+        </Button>
+      )}
     </Dropdown>
   );
 }

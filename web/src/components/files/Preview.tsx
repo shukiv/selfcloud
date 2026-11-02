@@ -2,7 +2,8 @@
 
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Alert, Button, Dropdown, Modal } from "antd";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileOutput, X, Download } from "lucide-react";
+import IconButton from "../IconButton";
 import { ApiError } from "../../lib/apiError";
 import { contentPath, signedLink } from "../../lib/files/api";
 import {
@@ -283,7 +284,7 @@ export default function Preview({
       <div ref={stageRef} tabIndex={-1} data-preview-stage style={FULL} onKeyDown={keydown}>
         <header style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
           {/* No autoFocus: the player's Space must reach the player when the viewer opens, not press Close. */}
-          <Button onClick={() => onClose(node ?? null)}>{t("files.preview.close")}</Button>
+          <IconButton label={t("files.preview.close")} onClick={() => onClose(node ?? null)} icon={<X size={18} aria-hidden="true" focusable="false" />} />
           <p style={{ flex: "1 1 160px", margin: 0, overflowWrap: "anywhere", fontWeight: 600 }}>
             <bdi>{node?.name ?? ""}</bdi>
           </p>
@@ -296,12 +297,10 @@ export default function Preview({
               trigger={["click"]}
               menu={{ items: exportFormats.map((f) => ({ key: f, label: f.toUpperCase() })), onClick: ({ key }) => setExporting(key) }}
             >
-              <Button className="convert-btn">
-                {t("files.convert.export")} <ChevronDown className="icon-dir" size={14} aria-hidden="true" />
-              </Button>
+              <IconButton className="convert-btn" label={t("files.convert.export")} icon={<FileOutput size={18} aria-hidden="true" focusable="false" />} />
             </Dropdown>
           )}
-          {canDownload && <Button onClick={() => void download()}>{t("files.act.download")}</Button>}
+          {canDownload && <IconButton label={t("files.act.download")} onClick={() => void download()} icon={<Download size={18} aria-hidden="true" focusable="false" />} />}
         </header>
         <div style={{ flex: "1 1 auto", minHeight: 0, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
           {node && !hasPreview ? (
@@ -341,12 +340,8 @@ export default function Preview({
         </div>
 
         <nav aria-label={t("files.preview.steps")} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-          <Button onClick={() => step(-1)} disabled={index <= 0}>
-            <ChevronLeft className="icon-dir" size={14} aria-hidden="true" /> {t("files.preview.prev")}
-          </Button>
-          <Button onClick={() => step(1)} disabled={index >= items.length - 1}>
-            {t("files.preview.next")} <ChevronRight className="icon-dir" size={14} aria-hidden="true" />
-          </Button>
+          <IconButton label={t("files.preview.prev")} onClick={() => step(-1)} disabled={index <= 0} icon={<ChevronLeft className="icon-dir" size={20} aria-hidden="true" focusable="false" />} />
+          <IconButton label={t("files.preview.next")} onClick={() => step(1)} disabled={index >= items.length - 1} icon={<ChevronRight className="icon-dir" size={20} aria-hidden="true" focusable="false" />} />
         </nav>
         {exporting && node && (
           <Suspense fallback={null}>

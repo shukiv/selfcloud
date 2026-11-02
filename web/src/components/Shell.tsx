@@ -5,6 +5,8 @@ import { keepInView } from "./menuScroll";
 import { Alert as AntdAlert, App, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
 import { Clock, FolderOpen, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
+import IconButton from "./IconButton";
+import { accountLabel, initialOf } from "../lib/avatar";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useT, useLang, directionOf, translatePlural } from "../lib/i18n";
 import { useStore } from "../lib/store";
@@ -28,13 +30,12 @@ import { newPlace, newPlaceFor, queueInto } from "../lib/files/newPlace";
 import { uploads } from "../lib/files/uploads";
 import { myStorage, refreshMyStorage } from "../lib/storage/api";
 import { useSidebar } from "../theme/theme";
-import { RADIUS } from "../theme/tokens";
 import { useCoarsePointer } from "../lib/pointer";
 import Alert from "./Alert";
 import LangSwitcher from "./LangSwitcher";
 import Sentence from "./Sentence";
 import ShellSearch from "./search/ShellSearch";
-import ThemeToggle from "./ThemeToggle";
+import ThemeMenu from "./ThemeMenu";
 import UploadTrayHost from "./UploadTrayHost";
 import MediaHost from "./files/MediaHost";
 import BellBoundary from "./notifications/BellBoundary";
@@ -366,14 +367,12 @@ export default function Shell({ children }: { children: ReactNode }) {
           },
         }}
       >
-        <Button
-          type="text"
-          size="small"
+        <IconButton
           tabIndex={-1}
-          aria-label={t("nav.spaceOptions", { name: team.name })}
-          icon={<Ellipsis size={16} />}
+          label={t("nav.spaceOptions", { name: team.name })}
+          icon={<Ellipsis size={16} aria-hidden="true" focusable="false" />}
           // The button takes its row's ink: the sidebar's text, or the dark ink of the current row on the yellow.
-          style={{ flex: "none", color: "inherit", ...(coarse ? { minWidth: 44, minHeight: 44 } : {}) }}
+          style={{ flex: "none", color: "inherit" }}
         />
       </Dropdown>
     );
@@ -542,12 +541,12 @@ export default function Shell({ children }: { children: ReactNode }) {
             }}
           >
             {renderSidebar(collapsed)}
-            <Button
-              type="text"
+            <IconButton
               onClick={toggleRail}
-              aria-label={collapsed ? t("nav.show") : t("nav.hide")} data-testid="rail-toggle"
-              icon={collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
-              style={{ color: sidebar.text, marginTop: 8, width: "100%" }}
+              label={collapsed ? t("nav.showSidebar") : t("nav.hideSidebar")}
+              data-testid="rail-toggle"
+              icon={collapsed ? <ChevronsRight size={18} aria-hidden="true" focusable="false" /> : <ChevronsLeft size={18} aria-hidden="true" focusable="false" />}
+              style={{ color: sidebar.text, marginTop: 8 }}
             />
           </Layout.Sider>
         )}
@@ -574,7 +573,8 @@ export default function Shell({ children }: { children: ReactNode }) {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 12,
+              // A phone's bar has a menu button and four icons: the gap is 4 px there, so 320 px fits.
+              gap: isMobile ? 4 : 12,
               padding: isMobile ? "0 12px" : "0 24px",
               background: token.colorBgContainer,
               borderBottom: `1px solid ${token.colorBorderSecondary}`,
@@ -587,13 +587,7 @@ export default function Shell({ children }: { children: ReactNode }) {
             }}
           >
             {isMobile && (
-              <Button
-                type="text"
-                data-testid="nav-open"
-                aria-label={t("nav.show")}
-                onClick={() => setNavOpen(true)}
-                icon={<MenuIcon size={18} />}
-              />
+              <IconButton data-testid="nav-open" label={t("nav.openMenu")} onClick={() => setNavOpen(true)} icon={<MenuIcon size={18} aria-hidden="true" focusable="false" />} />
             )}
             {/* One line in the 56px bar: a long brand name is cut short, never wrapped over the bar's edge. */}
             <a
@@ -616,8 +610,12 @@ export default function Shell({ children }: { children: ReactNode }) {
                   </Suspense>
                 </BellBoundary>
               )}
-              <LangSwitcher compact={isMobile} />
-              {!isMobile && <ThemeToggle />}
+              {/* The top bar's language and theme are icons with tooltips at every width (decision 68). */}
+              <LangSwitcher compact />
+              {/* Below 360 px the row has no room for the theme icon, so it is not on the bar there (index.css, shell-theme-slot). */}
+              <span className="shell-theme-slot">
+                <ThemeMenu />
+              </span>
               {me && (
                 <Dropdown
                   menu={{
@@ -631,16 +629,24 @@ export default function Shell({ children }: { children: ReactNode }) {
                   }}
                   trigger={["click"]}
                 >
-                  <Button
+                  {/* The account is a round avatar with the first letter of the name (of the email, with no name). Its name and tooltip
+                      are the name, or the email, or "Account menu" when neither is set; with neither it shows a person (decision 68). */}
+                  <IconButton
                     data-testid="account-menu"
-                    aria-label={t("user.menu")}
-                    title={me.user.display_name || me.user.email}
-                    style={{ borderRadius: RADIUS, minWidth: 44, ...(coarse ? { minHeight: 44 } : {}), maxWidth: isMobile ? "45vw" : 260, overflow: "hidden" }}
-                  >
-                    <bdi style={{ display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom" }}>
-                      {me.user.display_name || me.user.email}
-                    </bdi>
-                  </Button>
+                    label={accountLabel(me.user.display_name, me.user.email, t("user.menu"))}
+                    icon={
+                      initialOf(me.user.display_name, me.user.email) === "" ? (
+                        <UserRound size={18} strokeWidth={1.75} aria-hidden="true" focusable="false" />
+                      ) : (
+                        <span
+                          aria-hidden="true"
+                          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "50%", background: token.colorFillSecondary, color: token.colorText, fontSize: 14, fontWeight: 600 }}
+                        >
+                          {initialOf(me.user.display_name, me.user.email)}
+                        </span>
+                      )
+                    }
+                  />
                 </Dropdown>
               )}
             </div>

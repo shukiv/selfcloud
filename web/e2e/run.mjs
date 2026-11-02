@@ -25,7 +25,7 @@ import * as s4b from './s4b.mjs';
 import { startConvertFake } from './convertFake.mjs';
 import { refusedOnPurpose } from './refusals.mjs';
 import { sortChecks } from './sort.mjs';
-import { mediaChecks } from './media.mjs';
+import { accountName, mediaChecks, setTheme } from './media.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
 import { w1Checks } from './w1.mjs';
 import { w2Checks } from './w2.mjs';
@@ -39,6 +39,7 @@ import { x4Checks } from './x4.mjs';
 import { x6Checks } from './x6.mjs';
 import { d1Checks } from './d1.mjs';
 import { d2Checks } from './d2.mjs';
+import { i1Checks } from './i1.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -319,7 +320,8 @@ async function press(page, selector, key) {
 
 // buttonTexts lists the text of every button on the page.
 async function buttonTexts(page) {
-  return page.evaluate(`[...document.querySelectorAll('button')].map((b) => b.textContent.trim())`);
+  // An icon button has no text: its name (aria-label) is read too (decision 68), so a check for a missing button still reads it.
+  return page.evaluate(`[...document.querySelectorAll('button')].flatMap((b) => [b.textContent.trim(), b.getAttribute('aria-label')]).filter(Boolean)`);
 }
 
 // sizeCell reads the size column of a row: the check box is the first cell, the name the second.
@@ -465,7 +467,7 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   const rtlRows = await page.evaluate(`!!document.querySelector('.ant-table') && getComputedStyle(document.querySelector('.ant-table')).direction === 'rtl' || document.documentElement.dir === 'rtl'`);
   check(rtlRows, 'in Hebrew the list is right to left and the actions are translated');
   await chooseLanguage(page, 'English');
-  await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'New')`);
+  await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'New' || b.getAttribute('aria-label') === 'New')`);
 
   // A viewer of Team B: no rename, no delete, no upload.
   await clickMenu(page, 'Team B');
@@ -676,7 +678,7 @@ async function main() {
 
     // Sign in as the owner, at desktop width.
     await signIn(page, OWNER);
-    const who = await page.evaluate(`document.querySelector('[data-testid="account-menu"]').textContent`);
+    const who = await accountName(page);
     check(who.includes(OWNER.name), `the shell shows the signed-in name (${who.trim()})`);
     const brandName = await page.evaluate(`document.querySelector('header a bdi')?.textContent ?? ''`);
     check(brandName.includes(BRAND.name), 'the header shows the configured brand name');
@@ -708,11 +710,11 @@ async function main() {
     await page.waitFor(`document.documentElement.dir === 'ltr'`);
 
     // Theme: dark paints the dark page and sets the attribute.
-    await clickText(page, '[data-testid="theme"] .ant-segmented-item-label', 'Dark');
+    await setTheme(page, 'Dark');
     await page.waitFor(`document.documentElement.dataset.theme === 'dark'`);
     const bg = await page.evaluate(`getComputedStyle(document.querySelector('.ant-layout')).backgroundColor`);
     check(bg === 'rgb(7, 21, 49)', `dark theme applies its background (${bg})`);
-    await clickText(page, '[data-testid="theme"] .ant-segmented-item-label', 'Light');
+    await setTheme(page, 'Light');
     await page.waitFor(`document.documentElement.dataset.theme === 'light'`);
     check(true, 'the theme switch changes the page and the attribute');
 
@@ -738,7 +740,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, x3, x4, x6 or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, x3, x4, x6, pwa or i1 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     if (!only) {
       await fileBrowserChecks(page, { base, dir, teamA, teamB });
@@ -756,6 +758,7 @@ async function main() {
     if (!only || only === 'r7b') await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (!only || only === 'd1') await d1Checks(h, { page, base, accountKey, teamA });
     if (!only || only === 'd2') await d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID });
+    if (!only || only === 'i1') await i1Checks(h, { page, base, accountKey, teamA, dir });
     if (!only || only === 'x3') await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || only === 'x4') await x4Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || only === 'x6') await x6Checks(h, { page, base, accountKey, accountID, memberID });

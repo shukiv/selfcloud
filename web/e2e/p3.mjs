@@ -6,6 +6,7 @@
 // set, the checks also write screenshots there (light, dark, phone and Hebrew); the gate leaves it unset.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTheme } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
 
@@ -134,10 +135,10 @@ export async function p3MemberChecks(page, h, { teamA, teamB, notesID, projectsI
   // Dark, then phone, then Hebrew: the same listing each time.
   await h.navigateTo(page, `/files/${teamB}/${notesID}`);
   await h.rowAppears(page, 'Vault link');
-  await clickText(h, page, '[data-testid="theme"] .ant-segmented-item-label', 'Dark');
+  await setTheme(page, 'Dark');
   await page.waitFor(`document.documentElement.dataset.theme === 'dark'`);
   await shot(page, 'dark-listing.png');
-  await clickText(h, page, '[data-testid="theme"] .ant-segmented-item-label', 'Light');
+  await setTheme(page, 'Light');
   await page.waitFor(`document.documentElement.dataset.theme === 'light'`);
   await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
   await h.rowAppears(page, 'Vault link');

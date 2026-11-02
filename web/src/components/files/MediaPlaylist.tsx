@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Alert, Button } from "antd";
+import IconButton from "../IconButton";
 import { ListMusic, X } from "lucide-react";
 import { ApiError } from "../../lib/apiError";
 import { useT } from "../../lib/i18n";
@@ -487,20 +488,17 @@ export default function MediaPlaylist({
   // The add panel offers the folder's files that are not in the queue, in a selection too: the folder is what it adds from.
   const candidates = folder.loaded.filter((n) => !q.entries.some((e) => e.node.id === n.id));
 
-  // The Playlist button. Its name is the label on a wide window; at phone width the label is hidden and the name stays in
-  // aria-label, so the button is the icon alone there.
+  // The Playlist button is the playlist icon at every width; its name is its label and its tooltip (decision 68).
   const toggle = (
-    <Button
+    <IconButton
       ref={toggleRef}
       className="media-btn media-playlist-toggle"
-      aria-label={t("files.media.queue")}
+      label={t("files.media.queue")}
       aria-expanded={drawer}
       aria-controls={DRAWER_ID}
       onClick={() => (drawer ? closeDrawer() : setDrawer(true))}
-      icon={<ListMusic size={16} aria-hidden="true" />}
-    >
-      <span className="media-queue-label">{t("files.media.queue")}</span>
-    </Button>
+      icon={<ListMusic size={18} aria-hidden="true" focusable="false" />}
+    />
   );
 
   return (

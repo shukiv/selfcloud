@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject, type TouchEvent as ReactTouchEvent } from "react";
-import { Alert, Button, Modal } from "antd";
+import { Alert, Modal } from "antd";
+import IconButton from "../IconButton";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { kindOf } from "../../lib/files/kind";
 import type { Node } from "../../lib/files/types";
@@ -127,9 +128,9 @@ export default function ImageLightbox({
       <div ref={stageRef} tabIndex={-1} className="lightbox-stage" onKeyDown={keydown} onTouchStart={touchstart} onTouchEnd={touchend}>
         <header>
           <div className="lightbox-actions">
-            <Button type="text" className="lightbox-btn" aria-label={t("files.preview.close")} icon={<X size={20} aria-hidden="true" />} onClick={onClose} />
+            <IconButton className="lightbox-btn" label={t("files.preview.close")} icon={<X size={20} aria-hidden="true" focusable="false" />} onClick={onClose} />
             {canDownload && (
-              <Button type="text" className="lightbox-btn" aria-label={t("files.act.download")} icon={<Download size={20} aria-hidden="true" />} onClick={onDownload} />
+              <IconButton className="lightbox-btn" label={t("files.act.download")} icon={<Download size={20} aria-hidden="true" focusable="false" />} onClick={onDownload} />
             )}
           </div>
           <p className="lightbox-name" title={node.name}>
@@ -149,22 +150,20 @@ export default function ImageLightbox({
         </div>
         {images.length > 1 && (
           <nav className="lightbox-steps" aria-label={t("files.preview.steps")}>
-            <Button
-              type="text"
+            <IconButton
               className="lightbox-btn"
-              aria-label={t("files.preview.prev")}
-              icon={<ChevronLeft className="icon-dir" size={20} aria-hidden="true" />}
+              label={t("files.preview.prev")}
+              icon={<ChevronLeft className="icon-dir" size={20} aria-hidden="true" focusable="false" />}
               disabled={previous === undefined}
               onClick={() => step(previous)}
             />
             <span className="lightbox-count" aria-live="polite">
               {t("files.preview.count", { n: position + 1, total: images.length })}
             </span>
-            <Button
-              type="text"
+            <IconButton
               className="lightbox-btn"
-              aria-label={t("files.preview.next")}
-              icon={<ChevronRight className="icon-dir" size={20} aria-hidden="true" />}
+              label={t("files.preview.next")}
+              icon={<ChevronRight className="icon-dir" size={20} aria-hidden="true" focusable="false" />}
               disabled={next === undefined}
               onClick={() => step(next)}
             />

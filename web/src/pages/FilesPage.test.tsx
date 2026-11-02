@@ -802,7 +802,7 @@ describe("the toolbar, the right-click menu and the clipboard keys", () => {
       await screen.findByRole("row", { name: "alpha.txt" });
       fireEvent.click(rows("alpha.txt") as Element);
       const panel = await screen.findByTestId("selection-panel");
-      fireEvent.mouseEnter(within(panel).getByRole("button", { name: "More" }));
+      fireEvent.pointerEnter(within(panel).getByRole("button", { name: "More" }), { pointerType: "mouse" });
       expect(await screen.findByRole("tooltip", { name: "More" })).toBeTruthy();
     } finally {
       window.matchMedia = original;
@@ -813,8 +813,8 @@ describe("the toolbar, the right-click menu and the clipboard keys", () => {
   it("a row scrolls into view below the sticky header and toolbar", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
-    // The shell header (56), the toolbar row (48), the pinned column header (48) and 4 of air.
-    expect((rows("alpha.txt") as HTMLElement).style.scrollMarginTop).toBe("156px");
+    // The shell header (56), the toolbar row (56 with a mouse: the 40 px icon buttons), the pinned column header (48) and 4 of air.
+    expect((rows("alpha.txt") as HTMLElement).style.scrollMarginTop).toBe("164px");
   });
 
   // After a confirmed delete from the panel, the panel goes with the selection, and the focus must not be lost to the body.
@@ -1145,8 +1145,8 @@ describe("slice w2: the five fixes from w1's notes", () => {
     await screen.findByRole("row", { name: "alpha.txt" });
     const holder = document.querySelector<HTMLElement>(".ant-table-sticky-holder");
     expect(holder).not.toBeNull();
-    // The shell's header (56) and the toolbar's row (48 with a mouse).
-    expect(holder?.style.top).toBe("104px");
+    // The shell's header (56) and the toolbar's row (56 with a mouse).
+    expect(holder?.style.top).toBe("112px");
   });
 
   // (c) Select all says that it took only the loaded rows when more pages exist.
@@ -1196,10 +1196,10 @@ describe("slice w2: the five fixes from w1's notes", () => {
     const rowHeight = bar.style.minHeight;
     fireEvent.click(rows("alpha.txt") as Element);
     const panel = await screen.findByTestId("selection-panel");
-    expect(panel.style.height).toBe("40px");
+    expect(panel.style.height).toBe("48px");
     expect(panel.getAttribute("style")).toContain("padding-block: 4px");
     expect(bar.style.minHeight).toBe(rowHeight);
-    expect(rowHeight).toBe("48px");
+    expect(rowHeight).toBe("56px");
   });
 
   it("on a finger the panel is 52 pixels with 44 pixel buttons inside it, and the row is the same 52", async () => {
@@ -1211,7 +1211,8 @@ describe("slice w2: the five fixes from w1's notes", () => {
     const panel = await screen.findByTestId("selection-panel");
     expect(panel.style.height).toBe("52px");
     expect(bar.style.minHeight).toBe("52px");
-    expect((within(panel).getByRole("button", { name: "Download" }) as HTMLElement).style.minHeight).toBe("44px");
+    // The icon buttons are 44 px on a finger by the stylesheet (index.css, icon-btn); here the class is checked.
+    expect((within(panel).getByRole("button", { name: "Download" }) as HTMLElement).className).toMatch(/\bicon-btn\b/);
   });
 });
 

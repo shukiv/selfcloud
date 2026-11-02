@@ -77,7 +77,8 @@ async function press(page, selector, key) {
 }
 
 async function buttonTexts(page) {
-  return page.evaluate(`[...document.querySelectorAll('button')].map((b) => b.textContent.trim())`);
+  // An icon button has no text: its name (aria-label) is read too (decision 68), so a check for a missing button still reads it.
+  return page.evaluate(`[...document.querySelectorAll('button')].flatMap((b) => [b.textContent.trim(), b.getAttribute('aria-label')]).filter(Boolean)`);
 }
 
 async function navigateTo(page, path) {

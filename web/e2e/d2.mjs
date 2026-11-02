@@ -259,7 +259,8 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await size(1440, 900);
     await navigateTo(page, `/files/${teamA}`);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])') && !!document.querySelector('[data-testid="folder-tree"] .tree-row')`, 20000);
-    const toolbarNew = await page.evaluate(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].some((b) => b.textContent.trim() === 'New')`);
+    // The toolbar's New is the plus icon under 480 px (decision 68), so its name (aria-label) is read too.
+    const toolbarNew = await page.evaluate(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].some((b) => b.textContent.trim() === 'New' || b.getAttribute('aria-label') === 'New')`);
     check(!toolbarNew, 'at 1440 the toolbar has no New: the sidebar holds it');
 
     // Upload files from inside a folder: D1 Projects is the folder shown, and the picker the menu opens gives the file to that
@@ -500,7 +501,7 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await size(390, 800);
     await navigateTo(page, `/files/${teamA}`);
     await page.waitFor(`!!document.querySelector('[data-testid="nav-open"]')`, 15000);
-    const phoneToolbar = await page.evaluate(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].some((b) => b.textContent.trim() === 'New')`);
+    const phoneToolbar = await page.evaluate(`[...document.querySelectorAll('[data-testid="browser-toolbar"] button')].some((b) => b.textContent.trim() === 'New' || b.getAttribute('aria-label') === 'New')`);
     check(phoneToolbar, 'at 390 the toolbar keeps its New');
     await snap('d2-phone-toolbar.png');
     await page.evaluate(`document.querySelector('[data-testid="nav-open"]').click(), true`);

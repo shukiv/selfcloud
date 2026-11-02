@@ -5,8 +5,8 @@
 // clear of all three, and the column header is pinned at the toolbar's bottom edge.
 export const HEADER_H = 56;
 
-// BUTTON_H is a toolbar button's height: 32 with a mouse, a 44 pixel target on a finger.
-export const buttonH = (coarse: boolean): number => (coarse ? 44 : 32);
+// BUTTON_H is a toolbar button's height: 40 with a mouse (an icon button, see .icon-btn in index.css), a 44 pixel target on a finger.
+export const buttonH = (coarse: boolean): number => (coarse ? 44 : 40);
 
 // The selection panel is its buttons with 4 px of the bar's colour above and below, so no button is flush with the bar's edge.
 export const PANEL_INSET = 4;

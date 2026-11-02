@@ -6,7 +6,7 @@
 // after a reload. Phone width, Hebrew and both themes are checked. With SELFCLOUD_R7B_SHOTS set to a folder, the run also
 // saves the pictures for the slice.
 import { mkdir } from 'node:fs/promises';
-import { click, setLanguage, setPhone, shot, sleep } from './media.mjs';
+import { click, setLanguage, setPhone, setThemeByPlace, shot, sleep } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
 const details = '[data-testid="details"]';
@@ -85,11 +85,10 @@ async function ownerMentions(h, page, folderURL, fileName, MEMBER, OWNER, text) 
   }
 }
 
-// setThemeAt presses the theme segment at a place: 0 system, 1 light, 2 dark (the order the toggle gives them).
+// setThemeAt picks the theme at a place in the top bar's menu: 0 system, 1 light, 2 dark (the order the menu gives them). The
+// place is used, not the English words, so the pick works in every language (decision 68, review fix).
 async function setThemeAt(page, place, want) {
-  await page.waitFor(`document.querySelectorAll('[data-testid="theme"] .ant-segmented-item-label').length === 3`, 15000);
-  await page.evaluate(`document.querySelectorAll('[data-testid="theme"] .ant-segmented-item-label')[${place}].click()`);
-  await page.waitFor(`document.documentElement.dataset.theme === ${q(want)}`, 10000);
+  await setThemeByPlace(page, place, want);
 }
 
 // r7bChecks runs the slice as the member, after the owner's comments. run.mjs leaves the browser signed in as the member

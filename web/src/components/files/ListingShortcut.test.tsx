@@ -3,6 +3,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
+import { TYPE_COLOURS } from "../../lib/files/iconType";
 import Listing, { type ListingProps } from "./Listing";
 
 function node(id: string, name: string, over: Partial<Node> = {}): Node {
@@ -76,10 +77,11 @@ describe("Listing: shortcuts and folder colours", () => {
     expect(icon?.style.color).toBe("var(--colour-teal)");
   });
 
-  it("leaves an uncoloured folder's icon in the theme's colour, with no colour name", () => {
+  // Decision 68: a folder with no palette colour is the grey of the folder icon (the owner's model), and a coloured one keeps its colour.
+  it("draws an uncoloured folder's icon in grey, with no colour name", () => {
     const dir = node("nod_d", "Projects", { kind: "dir", size: 0 });
     const { container } = render(<Listing {...props([dir])} />);
-    expect(container.querySelector(".icon.kind-folder")?.getAttribute("style")).toBeNull();
+    expect((container.querySelector(".icon.kind-folder") as HTMLElement).style.color).toBe(`rgb(${[1, 3, 5].map((i) => parseInt(TYPE_COLOURS.grey.slice(i, i + 2), 16)).join(", ")})`);
     expect(within(container).queryByText(/^Colour:/)).toBeNull();
   });
 });

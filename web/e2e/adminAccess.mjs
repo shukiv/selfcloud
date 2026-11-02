@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { freePort, launchBrowser, Page } from './cdp.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
+import { accountName } from './media.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -152,7 +153,7 @@ async function textOf(page, selector) {
 }
 
 async function accountMenu(page) {
-  return page.evaluate(`document.querySelector('[data-testid="account-menu"]')?.textContent ?? ''`);
+  return accountName(page);
 }
 
 async function signOutFromMenu(page) {

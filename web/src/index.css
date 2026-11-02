@@ -481,14 +481,10 @@ a {
   justify-content: flex-end;
   flex: 0 0 auto;
 }
-/* At phone width the Playlist button is its icon alone; its name stays in aria-label (MediaPlaylist). */
 @media (max-width: 599px) {
-  .media-queue-label,
-  .media-head-label {
-    display: none;
-  }
-  /* A phone's head is one row: Close, the name, the count, Playlist and Download. Every button is 44 px tall, so their tops are
-     the same, and the name takes what is left (ellipsis). */
+  /* A phone's head is one row: Close, the name, the count, Playlist and Download. The text buttons here are 44 px tall. The icon
+     buttons keep the .icon-btn size (40 px with a mouse, 44 px on a finger, decision 68), so the row's tops are the same, and the
+     name takes what is left (ellipsis). */
   .media-viewer-head .ant-btn,
   .media-head-download.ant-btn,
   .media-btn.ant-btn.media-playlist-toggle {
@@ -1277,5 +1273,45 @@ tr[data-drop-state="refused"] > td {
   .lightbox .lightbox-stage .ant-btn.lightbox-btn {
     width: 44px;
     height: 44px;
+  }
+}
+
+/* The icon buttons (decision 68, the owner's model: icons first, with a tooltip): round, borderless, 40 px; 44 px on a finger.
+   The selector is doubled so it wins over the older media-button rules that set the same sizes. */
+.icon-btn.ant-btn.ant-btn {
+  flex: none;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+.icon-btn.ant-btn.ant-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.icon-btn-wrap {
+  display: inline-flex;
+  flex: none;
+}
+/* A disabled icon button passes its pointer events to its wrapper, which opens the tooltip (IconButton.tsx): a browser may not
+   deliver them to a disabled control. */
+.icon-btn-wrap > .icon-btn:disabled {
+  pointer-events: none;
+}
+@media (pointer: coarse) {
+  .icon-btn.ant-btn.ant-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
+/* The top bar's theme icon is on the bar where its row has room: from 360 px. Below that the row would be wider than the window. */
+@media (max-width: 359px) {
+  .shell-theme-slot {
+    display: none;
   }
 }

@@ -100,7 +100,7 @@ describe("the tile view", () => {
     const onKeyDown = vi.fn();
     render(<Listing {...props({ onKeyDown })} />);
     const star = screen.getByRole("button", { name: "Star notes.txt" });
-    const menu = screen.getByRole("button", { name: "Actions for plan.txt" });
+    const menu = screen.getByRole("button", { name: "More actions for plan.txt" });
     expect(star.tabIndex).toBe(0);
     expect(menu.tabIndex).toBe(-1);
     fireEvent.keyDown(star, { key: "ArrowDown" });
@@ -112,7 +112,7 @@ describe("the tile view", () => {
     const onRowContext = vi.fn();
     const onRowClick = vi.fn();
     render(<Listing {...props({ onRowContext, onRowClick })} />);
-    const menu = screen.getByRole("button", { name: "Actions for plan.txt" });
+    const menu = screen.getByRole("button", { name: "More actions for plan.txt" });
     fireEvent.click(menu);
     expect(onRowContext).toHaveBeenCalledTimes(1);
     expect(onRowContext.mock.calls[0][0]).toBe("n1");

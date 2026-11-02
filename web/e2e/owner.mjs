@@ -4,6 +4,8 @@
 // with the mail sink and waitForMail. Selectors follow the React DOM: antd alerts (.ant-alert), the Modal of Recent's
 // Clear confirmation (.ant-modal), and the ids the pages keep from Svelte.
 
+import { accountName } from './media.mjs';
+
 const q = (v) => JSON.stringify(v);
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
 
@@ -254,7 +256,7 @@ export async function signInLinkChecks(page, h, { base, accountID, accountKey, m
   h.check(made.url.startsWith(base + '/sign-in#token='), 'the account key makes a sign-in link for the member');
   await page.goto(made.url);
   await page.waitFor(`location.pathname === '/files/${teamA}' && !location.hash && !!document.querySelector('[data-testid="account-menu"]')`, 15000);
-  const who = await page.evaluate(`document.querySelector('[data-testid="account-menu"]').textContent`);
+  const who = await accountName(page);
   h.check(who.includes(MEMBER.name), `the browser opens the link, lands on the requested path, signed in (${who.trim()})`);
 
   await h.signOut(page);
@@ -279,7 +281,7 @@ export async function switchChecks(page, h, { base, accountID, accountKey, OWNER
   h.check(asked.includes(MEMBER.name) && asked.includes(OWNER.name), `a browser signed in as the member is asked before a link signs it in as the owner (${asked.trim().slice(0, 90)}...)`);
   await h.clickButton(page, `Stay signed in as ${MEMBER.name}`);
   await page.waitFor(`location.pathname.startsWith('/files') && !!document.querySelector('[data-testid="account-menu"]')`, 15000);
-  const stayed = await page.evaluate(`document.querySelector('[data-testid="account-menu"]').textContent`);
+  const stayed = await accountName(page);
   h.check(stayed.includes(MEMBER.name), `Stay keeps the member signed in (${stayed.trim()})`);
 
   const second = await h.api(base, 'POST', `/api/v1/accounts/${accountID}/users/${ownerID}/sign-in-links`, accountKey, { next: '/files' });
@@ -288,6 +290,6 @@ export async function switchChecks(page, h, { base, accountID, accountKey, OWNER
   asks += 1;
   await h.clickButton(page, `Switch to ${OWNER.name}`);
   await page.waitFor(`location.pathname.startsWith('/files') && !!document.querySelector('[data-testid="account-menu"]')`, 15000);
-  const switched = await page.evaluate(`document.querySelector('[data-testid="account-menu"]').textContent`);
+  const switched = await accountName(page);
   h.check(switched.includes(OWNER.name), `Switch signs the browser in as the owner (${switched.trim()})`);
 }

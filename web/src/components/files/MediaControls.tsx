@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from "react";
-import { Button, ConfigProvider, Select, Slider, Tooltip, theme as antdTheme } from "antd";
+import { ConfigProvider, Select, Slider, theme as antdTheme } from "antd";
 import { Maximize, Minimize, Pause, PictureInPicture2, Play, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import IconButton from "../IconButton";
 import { useT } from "../../lib/i18n";
 import { readNonce } from "../../csp/nonce";
 import { usePaletteOrLight } from "../../theme/theme";
@@ -344,10 +345,9 @@ export default function MediaControls({ media, kind, stage, nav, needPress = fal
   const pct = (v: number) => (duration > 0 ? `${Math.min(100, (v / duration) * 100)}%` : "0%");
   const hidden = kind === "video" && !shown;
 
+  // Each control is an icon with its name as its tooltip (decision 68); the tooltip is drawn in the full-screen element.
   const button = (label: string, icon: ReactNode, onClick: () => void, extra: { pressed?: boolean; disabled?: boolean } = {}) => (
-    <Tooltip title={label} getPopupContainer={popupHost}>
-      <Button className="media-btn" aria-label={label} aria-pressed={extra.pressed} disabled={extra.disabled} onClick={onClick} icon={icon} />
-    </Tooltip>
+    <IconButton className="media-btn" label={label} pressed={extra.pressed} disabled={extra.disabled} onClick={onClick} icon={icon} popupHost={popupHost} />
   );
 
   return (

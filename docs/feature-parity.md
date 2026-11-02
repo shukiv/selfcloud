@@ -168,6 +168,7 @@ space ("My files"), and a group can hold users.
 | Download progress, download a selection as zip | Built (s2, decision 35; the interface in s4a, decision 38): a stored zip made as a job, served with `Range`, kept for `zip.ttl` and only for its maker. The interface offers Download as zip for a folder and a selection, shows the job's progress as a spinner (the job has no percentage), and names the items left out. The streamed zip with no temporary copy (row 160's alternative) is not built |
 | Copy link, open in new tab | Planned (k), not in k2 |
 | Cut, paste, paste as shortcut | Built in part (w1, decision 44): cut, copy and paste with Ctrl+X, Ctrl+C and Ctrl+V within the tab, over the existing move and copy routes and their undo; a cut item is dimmed until it is pasted or Escape cancels it. The system clipboard is not used. Paste as shortcut is not built |
+| Icon buttons with tooltips; file icons by type | Built in part (i1, decision 68): the files area is icons first, with a tooltip and a name on each: the player and viewer heads, the player's bar and mini player, the toolbar (New is a plus icon under 480 px), the selection bar as a borderless pill, the listing's star and tile menu, and file and folder icons coloured by type. The top bar's language, theme and account are icons too. The other pages (Details, the trash, the shared page, sign-in) come in slice i2 |
 
 ## 12. Admin and security
 

@@ -3,7 +3,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { App, Alert, Button, ConfigProvider, Dropdown, Form, Input, Modal, Skeleton, Tooltip, theme as antdTheme } from "antd";
+import { App, Alert, Button, ConfigProvider, Dropdown, Form, Input, Modal, Skeleton, theme as antdTheme } from "antd";
+import IconButton from "../components/IconButton";
+import SelectionBar from "../components/files/SelectionBar";
 import {
   ClipboardPaste,
   Copy,
@@ -21,7 +23,7 @@ import {
   Link as LinkIcon,
   Link2,
   List,
-  MoreHorizontal,
+  EllipsisVertical,
   Pencil,
   Play,
   Plus,
@@ -29,7 +31,6 @@ import {
   Share2,
   Trash2,
   Upload,
-  X,
 } from "lucide-react";
 import { useLang, useT, translatePlural } from "../lib/i18n";
 import { useStore, get } from "../lib/store";
@@ -67,7 +68,7 @@ import { readPrefs, writePrefs, type ViewPrefs } from "../lib/files/viewPrefs";
 import { UndoStack } from "../lib/files/undo";
 import { copyText, nodeAddress } from "../lib/files/copyText";
 import { alreadyIn, dropDecision, type Dest } from "../lib/files/drag";
-import { HEADER_H, panelH, PANEL_INSET, rowPad, stickyTop, toolbarH } from "../lib/files/layout";
+import { HEADER_H, rowPad, stickyTop, toolbarH } from "../lib/files/layout";
 import { treePlace } from "../lib/files/treePlace";
 import { rowStep, type TilePlace } from "../lib/files/grid";
 import type { ConflictChoice } from "../lib/files/conflict";
@@ -1692,37 +1693,27 @@ export default function FilesPage() {
   const switchTo = view === "list" ? { to: "grid" as const, label: t("files.view.grid") } : { to: "list" as const, label: t("files.view.list") };
   // The toolbar is one row that stays on screen above the listing: the shell's header is 56 pixels, and the rows scroll under it.
   // The selection panel takes the toolbar's row while something is selected: one full-width bar at the same height, above the
-  // listing (on every width, as in Google Drive). X clears, then the count, then icons with tooltips; the rest are in More.
+  // listing (on every width, as the owner asked). X clears, then the count, then icons with tooltips; the rest are in More.
   const countText = translatePlural(lang, "files.selected", sel.ids.length);
+  // The bar is a pill with its icons (decision 68): clear, the count, the actions, a spacer and More.
   const selectionPanel = (
-    <div
-      role="group"
-      aria-label={t("files.selection.label")}
-      data-testid="selection-panel"
-      style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, flex: "1 1 auto", boxSizing: "border-box", height: panelH(coarse), paddingBlock: PANEL_INSET, paddingInline: PANEL_INSET, borderRadius: token.borderRadiusLG, background: token.colorFill }}
-    >
-      <Tooltip title={t("files.act.clear")}>
-        <Button data-testid="selection-clear" aria-label={t("files.act.clear")} icon={<X {...ic} />} onClick={clearPicked} style={{ flex: "none", ...touchSize }} />
-      </Tooltip>
-      {/* A long count (in a long language, or with many items) is cut with an ellipsis; the full text is in the title and is read out. */}
-      <span aria-live="polite" title={countText} style={{ fontWeight: 600, flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {countText}
-      </span>
-      {panelIcons.map((a) => (
-        <Tooltip key={a.key} title={a.label}>
-          <Button aria-label={a.label} danger={a.danger} disabled={!a.enabled} icon={a.icon} onClick={a.run} style={{ flex: "none", ...touchSize }} />
-        </Tooltip>
-      ))}
-      {panelMore.length > 0 && (
-        <ConfigProvider theme={menuTheme}>
-          <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(panelMore), style: MENU_SCROLL }}>
-            <Tooltip title={t("files.act.more")}>
-              <Button aria-label={t("files.act.more")} icon={<MoreHorizontal {...ic} />} aria-haspopup="menu" style={{ flex: "none", ...touchSize }} />
-            </Tooltip>
-          </Dropdown>
-        </ConfigProvider>
-      )}
-    </div>
+    <SelectionBar
+      label={t("files.selection.label")}
+      countText={countText}
+      clearLabel={t("files.act.clear")}
+      onClear={clearPicked}
+      coarse={coarse}
+      actions={panelIcons.map((a) => ({ key: a.key, label: a.label, icon: a.icon, enabled: a.enabled, run: a.run }))}
+      moreMenu={
+        panelMore.length > 0 ? (
+          <ConfigProvider theme={menuTheme}>
+            <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(panelMore), style: MENU_SCROLL }}>
+              <IconButton label={t("files.act.more")} icon={<EllipsisVertical {...ic} />} aria-haspopup="menu" />
+            </Dropdown>
+          </ConfigProvider>
+        ) : null
+      }
+    />
   );
   // The row is 48 px with a mouse (the panel's 40 and 4 above and below) and 52 on a finger, where the panel fills it.
   const stickyBar = { position: "sticky" as const, top: HEADER_H, zIndex: 5, background: token.colorBgLayout, display: "flex", flexWrap: "nowrap" as const, alignItems: "center", gap: 8, boxSizing: "border-box" as const, minHeight: toolbarH(coarse), minWidth: 0, paddingBlock: rowPad(coarse) };
@@ -1853,41 +1844,37 @@ export default function FilesPage() {
               <>
             {(canMakeFolder || canUploadHere) && !docked && (
               <ConfigProvider theme={menuTheme}>
-                <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(newActs), style: MENU_SCROLL }}>
-                  <Button icon={<Plus {...ic} />} aria-haspopup="menu" style={touchSize}>
-                    {t("files.act.new")}
-                  </Button>
-                </Dropdown>
+                {/* Under 480 px New is the plus icon, with its name as label and tooltip; a wider row keeps the word (decision 68). */}
+                {spacious ? (
+                  <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(newActs), style: MENU_SCROLL }}>
+                    <Button icon={<Plus {...ic} />} aria-haspopup="menu" style={touchSize}>
+                      {t("files.act.new")}
+                    </Button>
+                  </Dropdown>
+                ) : (
+                  <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(newActs), style: MENU_SCROLL }}>
+                    <IconButton label={t("files.act.new")} icon={<Plus {...ic} />} aria-haspopup="menu" />
+                  </Dropdown>
+                )}
               </ConfigProvider>
             )}
-            {hasMedia && (
-              // Narrow windows show the icon alone, so the row keeps its other buttons in reach. The name stays for a screen reader.
-              <Tooltip title={spacious ? undefined : t("files.act.playMedia")}>
-                <Button icon={<Play {...ic} />} aria-label={t("files.act.playMedia")} onClick={playHere} style={touchSize}>
-                  {spacious ? t("files.act.playMedia") : null}
-                </Button>
-              </Tooltip>
-            )}
+            {/* Play media is the play icon at every width; its name is its label and tooltip (decision 68). */}
+            {hasMedia && <IconButton label={t("files.act.playMedia")} icon={<Play {...ic} />} onClick={playHere} />}
             <span style={{ flex: "1 1 auto" }} />
             {view === "grid" && (
               <ConfigProvider theme={menuTheme}>
                 <Dropdown trigger={["click"]} menu={sortMenu}>
-                  <Tooltip title={t("files.sort.label")}>
-                    <Button icon={<ArrowUpDown {...ic} />} aria-label={t("files.sort.label")} style={touchSize} />
-                  </Tooltip>
+                  <IconButton label={t("files.sort.label")} icon={<ArrowUpDown {...ic} />} />
                 </Dropdown>
               </ConfigProvider>
             )}
-            <Tooltip title={switchTo.label}>
-              <Button
-                data-testid="view-toggle"
-                data-view={switchTo.to}
-                aria-label={switchTo.label}
-                icon={switchTo.to === "grid" ? <LayoutGrid {...ic} /> : <List {...ic} />}
-                onClick={() => changePrefs({ ...prefs, view: switchTo.to })}
-                style={touchSize}
-              />
-            </Tooltip>
+            <IconButton
+              data-testid="view-toggle"
+              data-view={switchTo.to}
+              label={switchTo.label}
+              icon={switchTo.to === "grid" ? <LayoutGrid {...ic} /> : <List {...ic} />}
+              onClick={() => changePrefs({ ...prefs, view: switchTo.to })}
+            />
               </>
             )}
           </div>

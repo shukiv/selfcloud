@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Alert, Button, ConfigProvider, Slider, theme } from "antd";
+import { Alert, ConfigProvider, Slider, theme } from "antd";
 import { Maximize2, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
 import HeadDownload from "./HeadDownload";
+import IconButton from "../IconButton";
 import { contentPath, getResume, listSubtitles, putResume } from "../../lib/files/api";
 import { kindOf } from "../../lib/files/kind";
 import { startDownload } from "../../lib/files/ops";
@@ -242,7 +243,7 @@ export default function MediaDock() {
           <>
             <header className="media-viewer-head" style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 12 }}>
               {/* No autoFocus: the player's Space must reach the player when the viewer opens, not press Close. */}
-              <Button onClick={() => closeViewer()}>{t("files.preview.close")}</Button>
+              <IconButton label={t("files.preview.close")} onClick={() => closeViewer()} icon={<X size={18} aria-hidden="true" focusable="false" />} />
               {/* An audio file's cover, title and artist are on its stage (MediaArt), so the header keeps the buttons and the count. */}
               {audio ? (
                 <span className="media-spacer" />
@@ -349,17 +350,18 @@ function MiniPlayer({
         </p>
       )}
       {nav && (
-        <Button className="media-mini-btn" aria-label={t("files.media.previous")} onClick={() => nav.previous()} icon={<SkipBack size={18} aria-hidden="true" />} />
+        <IconButton className="media-mini-btn" label={t("files.media.previous")} onClick={() => nav.previous()} icon={<SkipBack size={18} aria-hidden="true" focusable="false" />} />
       )}
-      <Button
+      {/* The play button stays filled and round: it is the bar's primary action. */}
+      <IconButton
         className="media-mini-play"
-        aria-label={playing ? t("files.media.pause") : t("files.media.play")}
+        label={playing ? t("files.media.pause") : t("files.media.play")}
         onClick={toggle}
         disabled={!media}
         style={{ background: SIDEBAR.active, color: SIDEBAR.onActive }}
-        icon={playing ? <Pause size={18} aria-hidden="true" /> : <Play size={18} aria-hidden="true" />}
+        icon={playing ? <Pause size={18} aria-hidden="true" focusable="false" /> : <Play size={18} aria-hidden="true" focusable="false" />}
       />
-      {nav && <Button className="media-mini-btn" aria-label={t("files.media.next")} onClick={() => nav.next()} icon={<SkipForward size={18} aria-hidden="true" />} />}
+      {nav && <IconButton className="media-mini-btn" label={t("files.media.next")} onClick={() => nav.next()} icon={<SkipForward size={18} aria-hidden="true" focusable="false" />} />}
       <div className="media-mini-seek">
         <span className="media-mini-time" dir="ltr">
           {formatTime(shown)}
@@ -387,8 +389,8 @@ function MiniPlayer({
           {formatTime(dur)}
         </span>
       </div>
-      <Button className="media-mini-btn" aria-label={t("files.mini.open")} onClick={() => showViewer()} icon={<Maximize2 size={18} aria-hidden="true" />} />
-      <Button className="media-mini-btn" aria-label={t("files.mini.close")} onClick={() => stopPlayback()} icon={<X size={18} aria-hidden="true" />} />
+      <IconButton className="media-mini-btn" label={t("files.mini.open")} onClick={() => showViewer()} icon={<Maximize2 size={18} aria-hidden="true" focusable="false" />} />
+      <IconButton className="media-mini-btn" label={t("files.mini.close")} onClick={() => stopPlayback()} icon={<X size={18} aria-hidden="true" focusable="false" />} />
     </div>
   );
 }

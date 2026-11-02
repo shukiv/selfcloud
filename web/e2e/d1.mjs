@@ -66,13 +66,14 @@ const measure = (page) =>
     const section = document.querySelector('section.browser')?.getBoundingClientRect();
     const tree = document.querySelector('.shell-sider [data-testid="folder-tree"]');
     const overflow = document.documentElement.scrollWidth - document.documentElement.clientWidth;
-    return { side: side ? Math.round(side.width) : null, listing: section ? Math.round(section.width) : null, treeInSidebar: !!tree, overflow };
+    const wide = overflow > 0 ? [...document.querySelectorAll('body *')].filter((el) => el.getBoundingClientRect().right > document.documentElement.clientWidth + 0.5).slice(0, 3).map((el) => el.tagName.toLowerCase() + (el.getAttribute('data-testid') ? '[' + el.getAttribute('data-testid') + ']' : '') + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '') + ' right=' + Math.round(el.getBoundingClientRect().right)) : [];
+    return { side: side ? Math.round(side.width) : null, listing: section ? Math.round(section.width) : null, treeInSidebar: !!tree, overflow, wide };
   })()`);
 
 // targets returns the touch size of each control that a finger reaches on the tree and the tiles (the rest and the focus).
 const targets = (page) =>
   page.evaluate(`(() => {
-    const sel = '[data-testid="folder-tree"] .tree-row button, [role="option"] button[aria-label^="Actions for"], [role="option"] button[aria-label^="Star"], [role="option"] button[aria-label^="Select"]';
+    const sel = '[data-testid="folder-tree"] .tree-row button, [role="option"] button[aria-label^="More actions for"], [role="option"] button[aria-label^="Star"], [role="option"] button[aria-label^="Select"]';
     return [...document.querySelectorAll(sel)].map((b) => { const r = b.getBoundingClientRect(); return { label: b.getAttribute('aria-label'), w: Math.round(r.width), h: Math.round(r.height) }; });
   })()`);
 
@@ -218,8 +219,13 @@ export async function d1Checks(h, { page, base, accountKey, teamA }) {
   await size(390, 800);
   await navigateTo(page, `/files/${teamA}`);
   await sleep(600);
+  // The pointer leaves the tiles first: a tooltip left open by a hover over a tile's menu is not part of the page's width.
+  // The keyboard focus from the step above is taken off too: a focused tile's tooltip opens on focus.
+  await mouse(page, 'mouseMoved', 1, 1);
+  await page.evaluate(`(document.activeElement && document.activeElement.blur()), true`);
+  await sleep(400);
   const phone = await measure(page);
-  check(phone.overflow <= 0, `at 390 the page does not scroll sideways (${phone.overflow})`);
+  check(phone.overflow <= 0, `at 390 the page does not scroll sideways (${phone.overflow}; wider: ${JSON.stringify(phone.wide)})`);
   await page.evaluate(`document.querySelector('[data-testid="nav-open"]').click()`);
   await page.waitFor(`!!document.querySelector('.ant-drawer-open [data-testid="folder-tree"] [role="treeitem"]')`, 15000);
   check(true, 'at phone width the drawer holds the folder tree');
