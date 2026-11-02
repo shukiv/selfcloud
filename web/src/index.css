@@ -199,14 +199,33 @@ a {
   }
 }
 
-/* The sidebar's menu scrolls inside the sider with a thin scrollbar in the sidebar's colours. The brand
-   stays at the top and the rail toggle stays at the bottom. */
-.shell-menu {
+/* The sidebar's middle (the folder tree, then the menu) scrolls inside the sider with a thin scrollbar in the sidebar's
+   colours. The brand stays at the top and the rail toggle stays at the bottom. */
+.shell-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+}
+
+/* The "Show hidden spaces" box is drawn in the sidebar's own colours: an unticked box has a visible white border (antd's grey
+   border is lost on the blue), and a ticked one is the sidebar's yellow with a dark tick. */
+.shell-scroll .side-check .ant-checkbox-inner {
+  border-color: var(--sc-side-text, #ffffff);
+  background-color: transparent;
+}
+.shell-scroll .side-check .ant-checkbox-checked .ant-checkbox-inner {
+  background-color: var(--sc-side-active, #fecc00);
+  border-color: var(--sc-side-active, #fecc00);
+}
+.shell-scroll .side-check .ant-checkbox-checked .ant-checkbox-inner::after {
+  border-color: var(--sc-side-on-active, #0d2142);
+}
+
+/* A folder row in the sidebar's tree takes the sidebar's hover tint; the current folder keeps its yellow pill (inline). */
+.tree-row-side:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* The desktop sidebar is a column: the brand and menu take the height that is left, and the rail

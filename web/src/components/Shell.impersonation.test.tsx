@@ -2,6 +2,8 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../lib/query";
 import { beforeEach, describe, expect, it } from "vitest";
 import { session, type Session } from "../lib/session";
 import { setLang } from "../lib/i18n";
@@ -26,11 +28,13 @@ function impersonating(): Session {
 function renderShell(path: string) {
   const router = createMemoryRouter([{ path: "*", element: <Shell><p>page body</p></Shell> }], { initialEntries: [path] });
   render(
-    <ThemeProvider>
-      <Direction>
-        <RouterProvider router={router} />
-      </Direction>
-    </ThemeProvider>,
+    <QueryClientProvider client={createQueryClient()}>
+      <ThemeProvider>
+        <Direction>
+          <RouterProvider router={router} />
+        </Direction>
+      </ThemeProvider>
+    </QueryClientProvider>,
   );
   return router;
 }

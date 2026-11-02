@@ -12,7 +12,7 @@ import {
 } from "react";
 import { Button, Checkbox, Grid, Input, Table, theme as antdTheme } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { ArrowDown, ArrowUp, Link2, Star } from "lucide-react";
+import { ArrowDown, ArrowUp, Link2, MoreHorizontal, Star } from "lucide-react";
 import { useLang, useT } from "../../lib/i18n";
 import { formatBytes, formatDate } from "../../lib/files/format";
 import { kindOf } from "../../lib/files/kind";
@@ -77,6 +77,11 @@ const LONG_PRESS_MS = 500;
 const PRESS_SLOP_PX = 10;
 // CUT_OPACITY is how faint a cut item is shown, until it is pasted or the cut is cancelled.
 const CUT_OPACITY = 0.5;
+// TILE_MIN_PX is the narrowest a tile is in the tile view. At 1920 wide the listing is 1600 pixels beside the sidebar, which
+// gives five columns of 260 pixels and a gap of 12; a 320 pixel window still fits one column.
+const TILE_MIN_PX = 260;
+// PREVIEW_H_PX is the height of a file card's preview: the same for every card, so the cards of a row are one height.
+const PREVIEW_H_PX = 120;
 // DEFAULT_STICKY_TOP is the shell's header (56 px) and the toolbar's row (48 px with a mouse), where the column header pins.
 const DEFAULT_STICKY_TOP = 104;
 
@@ -395,82 +400,226 @@ export default function Listing(p: ListingProps) {
     );
   }
 
-  return (
-    <div
-      role="listbox"
-      aria-label={p.label}
-      aria-multiselectable="true"
+  // The tile view has two bands, the folders first and then the files, each a grid of its own with the same column widths, so
+  // a folder row and a file row line up. The flat order (the page's ids) is the items' order; the folders come first in it.
+  const indexOf = new Map(p.items.map((n, i) => [n.id, i]));
+  const folders = p.items.filter((n) => n.kind === "dir");
+  const files = p.items.filter((n) => n.kind !== "dir");
+  const band = { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${TILE_MIN_PX}px), 1fr))`, gap: 12 } as const;
+  const target = coarse ? 44 : 32;
+  // A tile's star and menu are 44 pixels on a finger and 32 with a mouse; the size is the same at rest, hover and focus.
+  // The menu button is out of the tab order: Shift+F10 (or the menu key) opens the item's menu from the focused tile. The star
+  // stays a tab stop, as a list row's star is: the item menu has no Star action, so the star has no other key. The arrow keys
+  // reach the tile's own handler, so they move on from either button; Enter and Space stop at the button, so its click is the
+  // one activation.
+  const keysStop = (e: { key: string; stopPropagation: () => void }) => {
+    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+  };
+  const tileStar = (n: Node, where: "corner" | "chip") =>
+    n.starred !== undefined && p.onStar ? (
+      <button
+        type="button"
+        aria-pressed={n.starred}
+        aria-label={t("star.button", { name: n.name })}
+        onClick={(e) => {
+          e.stopPropagation();
+          p.onStar?.(n);
+        }}
+        onKeyDown={keysStop}
+        onDoubleClick={(e) => e.stopPropagation()}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flex: "none",
+          boxSizing: "border-box",
+          width: target,
+          height: target,
+          minWidth: target,
+          minHeight: target,
+          padding: 0,
+          border: 0,
+          borderRadius: token.borderRadiusSM,
+          color: n.starred ? token.colorWarning : token.colorTextSecondary,
+          background: where === "corner" ? token.colorBgElevated : "transparent",
+          cursor: "pointer",
+          ...(where === "corner" ? { position: "absolute", insetBlockStart: 0, insetInlineEnd: 0 } : {}),
+        }}
+      >
+        <Star size={16} fill={n.starred ? "currentColor" : "none"} aria-hidden="true" focusable="false" />
+      </button>
+    ) : null;
+  // The menu button opens the item's menu, where the right-click menu opens: at the button.
+  const tileMenu = (n: Node, i: number) => (
+    <button
+      type="button"
       tabIndex={-1}
-      ref={p.containerRef}
-
-
-
+      aria-label={t("files.tile.menu", { name: n.name })}
+      aria-haspopup="menu"
+      onClick={(e) => {
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        p.onRowContext?.(n.id, i, r.left, r.bottom);
+      }}
+      onKeyDown={keysStop}
+      onDoubleClick={(e) => e.stopPropagation()}
       style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(144px, 1fr))",
-        gap: 12,
-        padding: 12,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: token.borderRadiusLG,
-        background: token.colorBgContainer,
-        outline: "none",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flex: "none",
+        boxSizing: "border-box",
+        width: target,
+        height: target,
+        minWidth: target,
+        minHeight: target,
+        padding: 0,
+        border: 0,
+        borderRadius: token.borderRadiusSM,
+        color: token.colorTextSecondary,
+        background: "transparent",
+        cursor: "pointer",
       }}
     >
-      {p.items.map((n, i) => {
-        const isSel = p.selected.has(n.id);
-        return (
-          <div
-            key={n.id}
-            {...rowAttrs(n, i)}
-            role="option"
-            style={{
-              position: "relative",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 8,
-              minHeight: 44,
-              padding: 12,
-              textAlign: "center",
-              border: `1px solid ${isSel ? token.colorPrimary : token.colorBorderSecondary}`,
-              borderRadius: token.borderRadiusLG,
-              background: isSel ? token.colorPrimaryBg : undefined,
-              // A selected tile has an outline as well as its tint, so the selection shows at a glance.
-              outline: isSel ? `2px solid ${token.colorPrimary}` : undefined,
-              outlineOffset: isSel ? -2 : undefined,
-              cursor: "default",
-              userSelect: "none",
-              scrollMarginTop,
-              opacity: p.cutIDs?.has(n.id) ? CUT_OPACITY : undefined,
-            }}
-          >
-            {/* On a finger's screen a tile has no click that selects it, so its checkbox does. A list row has one already. */}
-            {coarse && (
-              // The wrapper stops the click: the checkbox toggles the tile, and the tile does not also open.
-              <span onClick={(e) => e.stopPropagation()} style={{ position: "absolute", insetBlockStart: 6, insetInlineStart: 6 }}>
-                <Checkbox
-                  checked={isSel}
-                  tabIndex={-1}
-                  aria-label={t("files.select.item", { name: n.name })}
-                  onChange={() => p.onRowClick(i, { shiftKey: false, ctrlKey: true, metaKey: false })}
-                />
-              </span>
-            )}
-            {thumbable(n) ? (
-              <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} fallback={<Icon kind={kindOf(n)} size={40} colour={n.color} />} />
-            ) : (
-              <Icon kind={kindOf(n)} size={40} colour={n.color} />
-            )}
-            {p.renameID === n.id ? nameField(n) : <bdi style={{ overflowWrap: "anywhere" }}>{n.name}</bdi>}
-            {linkBadge(n)}
+      <MoreHorizontal size={18} aria-hidden="true" focusable="false" />
+    </button>
+  );
+  // The checkbox of a finger's screen: a tile has no click that selects it, so its checkbox does (a list row has one already).
+  // The wrapper stops the click: the checkbox toggles the item, and the item does not also open.
+  const tileCheck = (n: Node, i: number) =>
+    coarse ? (
+      <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", flex: "none" }}>
+        <Checkbox
+          checked={p.selected.has(n.id)}
+          tabIndex={-1}
+          aria-label={t("files.select.item", { name: n.name })}
+          onChange={() => p.onRowClick(i, { shiftKey: false, ctrlKey: true, metaKey: false })}
+        />
+      </span>
+    ) : null;
+  // The type's icon keeps its size when the name is long: a flex item would shrink to nothing beside it.
+  const typeIcon = (n: Node) => (
+    <span style={{ display: "inline-flex", flex: "none" }}>
+      <Icon kind={kindOf(n)} size={20} colour={n.color} />
+    </span>
+  );
+  // The name is one line: it is cut with an ellipsis, and its full text is in the title. The box takes the row's direction
+  // and sits at its start, so a name in another script does not drift to the far end; the bdi keeps the name's own direction.
+  const oneLine = (n: Node) =>
+    p.renameID === n.id ? (
+      nameField(n)
+    ) : (
+      <span
+        style={{
+          display: "block",
+          flex: "1 1 auto",
+          minWidth: 0,
+          overflow: "hidden",
+          direction: "inherit",
+          textAlign: "start",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <bdi title={n.name}>{n.name}</bdi>
+      </span>
+    );
+  const chip = (n: Node) => {
+    const i = indexOf.get(n.id) ?? 0;
+    const isSel = p.selected.has(n.id);
+    return (
+      <div
+        key={n.id}
+        {...rowAttrs(n, i)}
+        role="option"
+        style={{
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          minWidth: 0,
+          minHeight: coarse ? 44 : 40,
+          paddingInlineStart: 10,
+          paddingInlineEnd: 4,
+          boxSizing: "border-box",
+          border: `1px solid ${isSel ? token.colorPrimary : token.colorBorderSecondary}`,
+          borderRadius: token.borderRadiusLG,
+          background: isSel ? token.colorPrimaryBg : undefined,
+          outline: isSel ? `2px solid ${token.colorPrimary}` : undefined,
+          outlineOffset: isSel ? -2 : undefined,
+          cursor: "default",
+          userSelect: "none",
+          scrollMarginTop,
+          opacity: p.cutIDs?.has(n.id) ? CUT_OPACITY : undefined,
+        }}
+      >
+        {tileCheck(n, i)}
+        {typeIcon(n)}
+        {oneLine(n)}
+        <KindMarks node={n} />
+        {starMark(n)}
+        {tileStar(n, "chip")}
+        {tileMenu(n, i)}
+        {renameErr(n)}
+      </div>
+    );
+  };
+  const card = (n: Node) => {
+    const i = indexOf.get(n.id) ?? 0;
+    const isSel = p.selected.has(n.id);
+    return (
+      <div
+        key={n.id}
+        {...rowAttrs(n, i)}
+        role="option"
+        style={{
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+          overflow: "hidden",
+          border: `1px solid ${isSel ? token.colorPrimary : token.colorBorderSecondary}`,
+          borderRadius: token.borderRadiusLG,
+          background: isSel ? token.colorPrimaryBg : token.colorBgContainer,
+          // A selected tile has an outline as well as its tint, so the selection shows at a glance.
+          outline: isSel ? `2px solid ${token.colorPrimary}` : undefined,
+          outlineOffset: isSel ? -2 : undefined,
+          cursor: "default",
+          userSelect: "none",
+          scrollMarginTop,
+          opacity: p.cutIDs?.has(n.id) ? CUT_OPACITY : undefined,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, minHeight: coarse ? 44 : 40, paddingInlineStart: 10, paddingInlineEnd: 4 }}>
+          {tileCheck(n, i)}
+          {typeIcon(n)}
+          {oneLine(n)}
+          {tileMenu(n, i)}
+        </div>
+        {/* The preview is a fixed height, so every card is as tall as the others whatever its name. The thumbnail is shown where
+            there is one; the rest show the type's icon on a tinted area. The play mark and the star sit in its corners. */}
+        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: PREVIEW_H_PX, minWidth: 0, background: token.colorFillQuaternary }}>
+          {thumbable(n) ? (
+            <Thumb nod={n.id} version={n.sha256 ?? n.etag ?? ""} height={PREVIEW_H_PX} fallback={<Icon kind={kindOf(n)} size={48} colour={n.color} />} />
+          ) : (
+            <Icon kind={kindOf(n)} size={48} colour={n.color} />
+          )}
+          <span style={{ position: "absolute", insetBlockEnd: 6, insetInlineStart: 6, display: "inline-flex", alignItems: "center", maxWidth: "calc(100% - 60px)" }}>
             <KindMarks node={n} />
-            {starMark(n)}
-            {starButton(n, true)}
-            <span style={{ color: token.colorTextSecondary, fontSize: token.fontSizeSM }}>{sizeOf(n, lang)}</span>
-            {renameErr(n)}
-          </div>
-        );
-      })}
+            {linkBadge(n)}
+          </span>
+          {starMark(n)}
+          {tileStar(n, "corner")}
+        </div>
+        {renameErr(n)}
+      </div>
+    );
+  };
+  return (
+    // The padding is the gutter a rubber band starts in, as the grid had before the bands.
+    <div role="listbox" aria-label={p.label} aria-multiselectable="true" tabIndex={-1} ref={p.containerRef} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
+      {folders.length > 0 && <div role="presentation" style={band}>{folders.map(chip)}</div>}
+      {files.length > 0 && <div role="presentation" style={band}>{files.map(card)}</div>}
     </div>
   );
 }

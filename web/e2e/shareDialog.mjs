@@ -9,6 +9,8 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const q = (v) => JSON.stringify(v);
+// The sidebar's folder tree (decision 62): each space is a row with a link to the space.
+const TREE = '[data-testid="folder-tree"]';
 const liveText = `(document.querySelector('[role="dialog"] .live')?.textContent ?? '')`;
 
 async function api(base, method, path, key, body) {
@@ -176,7 +178,7 @@ export async function sharingChecks(page, ctx) {
   // The owner shares Board with the member as a viewer, without mail. Then hides Team B and shows it again.
   await signOut(page);
   await signIn(page, OWNER);
-  await clickOn(page, `.teams a[href="/files/${teamC}"]`);
+  await clickOn(page, `${TREE} a[href="/files/${teamC}"]`);
   await page.waitFor(`location.pathname === '/files/${teamC}'`);
   await rowAppears(page, 'Board');
   await selectRow(page, 'Board');
@@ -196,14 +198,16 @@ export async function sharingChecks(page, ctx) {
 
   await clickOn(page, `button[aria-label="Options for Team B"]`);
   await clickMenuItem(page, 'Hide');
-  await page.waitFor(`!document.querySelector('.teams a[href="/files/${teamB}"]')`);
+  await page.waitFor(`!document.querySelector('${TREE} a[href="/files/${teamB}"]')`);
   check(true, 'the owner hides a team space, and it leaves the list');
-  await clickOn(page, `.teams + label input[type="checkbox"]`);
-  await page.waitFor(`!!document.querySelector('.teams a[href="/files/${teamB}"]')`);
+  await clickOn(page, `.side-check input[type="checkbox"]`);
+  await page.waitFor(`!!document.querySelector('${TREE} a[href="/files/${teamB}"]')`);
   await clickOn(page, `button[aria-label="Options for Team B"]`);
   await clickMenuItem(page, 'Show');
-  // Wait until both lists have been read again: the space is listed once, and no list still marks it hidden.
-  await page.waitFor(`document.querySelectorAll('.teams a[href="/files/${teamB}"]').length === 1 && !document.querySelector('.teams .count')`);
+  // Wait until both lists have been read again: the space is in the tree once, and its row no longer carries the Hidden tag.
+  await page.waitFor(
+    `document.querySelectorAll('${TREE} a[href="/files/${teamB}"]').length === 1 && ![...document.querySelectorAll('${TREE} .tree-row')].some((r) => !!r.querySelector('a[href="/files/${teamB}"]') && r.textContent.includes('Hidden'))`,
+  );
   check(true, 'the hidden space comes back when shown again');
 
   // The member sees the folder in Shared with me, opens it, and has no upload, rename or delete.
@@ -300,7 +304,7 @@ export async function sharingChecks(page, ctx) {
   await navigateTo(page, `/n/${secret}`);
   await page.waitFor(`document.body.textContent.includes('secret.txt')`, 15000);
   check(true, 'the approved member opens the file it asked for');
-  await clickOn(page, `.teams a[href="/files/${teamB}"]`);
+  await clickOn(page, `${TREE} a[href="/files/${teamB}"]`);
   await page.waitFor(`location.pathname === '/files/${teamB}'`);
   await rowAppears(page, 'readme.txt');
   await selectRow(page, 'readme.txt');

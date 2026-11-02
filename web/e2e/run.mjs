@@ -37,6 +37,7 @@ import { pwaChecks } from './pwa.mjs';
 import { x3Checks } from './x3.mjs';
 import { x4Checks } from './x4.mjs';
 import { x6Checks } from './x6.mjs';
+import { d1Checks } from './d1.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -253,7 +254,7 @@ const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$
 // clickMenu clicks the sidebar entry with exactly this text, once it is on the page.
 async function clickMenu(page, text) {
   await page.waitFor(
-    `(() => { const i = [...document.querySelectorAll('[role="menuitem"], ul[aria-label] > li > a')].find((x) => x.textContent.trim() === ${q(text)}); if (!i) return false; i.click(); return true; })()`,
+    `(() => { const i = [...document.querySelectorAll('[role="menuitem"], ul[aria-label] > li > a, [data-testid="folder-tree"] .tree-row a')].find((x) => x.textContent.trim() === ${q(text)}); if (!i) return false; i.click(); return true; })()`,
     10000,
   );
 }
@@ -520,7 +521,7 @@ const menuTexts = (page) => page.evaluate(`[...document.querySelectorAll('[role=
 // clickMenuItemText clicks the sidebar entry whose text starts with this text (the Requests entry carries a count).
 async function clickMenuItemText(page, text) {
   await page.waitFor(
-    `(() => { const b = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((x) => x.textContent.trim().startsWith(${q(text)})); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = [...document.querySelectorAll('[role="menu"] [role="menuitem"], [data-testid="folder-tree"] .tree-row a')].find((x) => x.textContent.trim().startsWith(${q(text)})); if (!b) return false; b.click(); return true; })()`,
     10000,
   );
 }
@@ -683,7 +684,8 @@ async function main() {
     await clickText(page, '.ant-dropdown-menu-item', 'עברית');
     await page.waitFor(`document.documentElement.dir === 'rtl' && document.documentElement.lang === 'he'`);
     check(true, 'Hebrew sets lang="he" and dir="rtl"');
-    await page.waitFor(`[...document.querySelectorAll('[role="menuitem"]')].some((i) => i.textContent.includes('הקבצים שלי'))`);
+    // My files is the first row of the folder tree in the sidebar (slice d1), and the menu holds the other pages.
+    await page.waitFor(`[...document.querySelectorAll('[data-testid="folder-tree"] .tree-row bdi')].some((i) => i.textContent.includes('הקבצים שלי'))`);
     check(true, 'the navigation is translated into Hebrew');
     // The browser's saved choice is cleared first, so the reload can only learn Hebrew from the account.
     await page.evaluate(`localStorage.clear(), true`);
@@ -725,7 +727,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, x3, x4, x6 or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, x3, x4, x6 or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     if (!only) {
       await fileBrowserChecks(page, { base, dir, teamA, teamB });
@@ -741,6 +743,7 @@ async function main() {
     if (!only || only === 'q4') await q4Checks(h, { page, base, accountKey, teamA });
     if (!only || only === 'r7') await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (!only || only === 'r7b') await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
+    if (!only || only === 'd1') await d1Checks(h, { page, base, accountKey, teamA });
     if (!only || only === 'x3') await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || only === 'x4') await x4Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || only === 'x6') await x6Checks(h, { page, base, accountKey, accountID, memberID });

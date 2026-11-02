@@ -58,13 +58,13 @@ export interface Branch {
 
 // refreshTree marks every read of the tree stale for the session that is signed in. An active read refetches at once.
 // touched names the branches of the folder tree that the change reached (the folders items left and entered); only those
-// are read again. A change that names none leaves the open branches stale, to be read when they are next shown, so a
-// busy upload never reads every open branch, up to ten pages each, again.
+// are read again. A change that names none (a restore from the trash, a purge) re-reads every branch the sidebar shows
+// open, once each; the closed ones are stale and are read when they are next shown.
 export function refreshTree(client: QueryClient, touched?: Branch[]): Promise<unknown> {
   const key = sessionKey(get(session));
   const rest = treeKeys.filter((k) => k !== 'tree').map((k) => client.invalidateQueries({ queryKey: [key, k] }));
   if (touched === undefined) {
-    return Promise.all([...rest, client.invalidateQueries({ queryKey: [key, 'tree'], refetchType: 'none' })]);
+    return Promise.all([...rest, client.invalidateQueries({ queryKey: [key, 'tree'] })]);
   }
   const seen = new Set<string>();
   const branches = touched

@@ -299,13 +299,9 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     const refused = await dragTo(page, beta, inner, { during: async () => ({ state: await dropState(page, `[data-testid="folder-tree"] .tree-row[data-drop-name="Inner"]`), ghost: await ghost(page) }) });
     check(refused.state === 'refused', `Beta onto Inner, below it, is refused (${refused.state})`);
     check((await listed(api, base, teamA, '/w2/drag', accountKey)).includes('Beta'), 'Beta did not move into itself');
-    // The state is kept: hide the tree, reload, it stays hidden; show it, reload, Beta is still open.
-    await click(page, await centre(page, '[data-testid="tree-toggle"]'));
-    check(await page.evaluate(`!document.querySelector('[data-testid="folder-tree"]')`), 'the toggle hides the tree');
+    // The state is kept: a reload keeps the folders that were opened in the sidebar's tree (slice d1 moved the tree there).
     await page.goto(dragURL);
     await page.waitFor(`!!document.querySelector(${q(itemSel('Alpha'))})`, 15000);
-    check(await page.evaluate(`!document.querySelector('[data-testid="folder-tree"]')`), 'a reload keeps the tree hidden');
-    await click(page, await centre(page, '[data-testid="tree-toggle"]'));
     await page.waitFor(`[...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].some((r) => r.dataset.dropName === 'Inner')`, 15000);
     const kept = await page.evaluate(`(() => { const item = document.querySelector('[data-testid="folder-tree"] [role="treeitem"][data-tree-key="' + ${q(await betaKey())} + '"]'); return { open: item?.getAttribute('aria-expanded'), holdsInner: !!item?.querySelector('.tree-row[data-drop-name="Inner"]') }; })()`);
     check(kept.open === 'true' && kept.holdsInner, `a reload keeps the folders that were opened: Beta is open and holds Inner (${JSON.stringify(kept)})`);
@@ -614,7 +610,8 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     await setPhone(page, true);
     try {
       await open(shortURL, 'List', 's01.txt');
-      check(await page.evaluate(`!document.querySelector('[data-testid="folder-tree"]') && !document.querySelector('[data-testid="tree-toggle"]')`), 'a phone has no folder tree and no toggle for it');
+      // The tree is in the drawer on a phone (slice d1), not beside the listing: the page itself holds none.
+      check(await page.evaluate(`!document.querySelector('section.browser [data-testid="folder-tree"]') && !document.querySelector('.ant-drawer-open [data-testid="folder-tree"]')`), 'a phone has no folder tree beside the listing, and the drawer is closed');
       const hgt = await page.evaluate(`document.querySelector('[data-testid="account-menu"]').getBoundingClientRect().height`);
       check(hgt >= 44, `the header account button is at least 44 px high on a finger (${hgt})`);
       const wide = await page.evaluate(`document.documentElement.scrollWidth - innerWidth`);

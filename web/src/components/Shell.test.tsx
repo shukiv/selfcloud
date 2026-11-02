@@ -13,6 +13,9 @@ import Shell from "./Shell";
 import { ApiError } from "../lib/apiError";
 import { get } from "../lib/store";
 
+import { createQueryClient } from "../lib/query";
+import { treePlace } from "../lib/files/treePlace";
+
 // The folder lists and the hide call are replaced: each test states what the server answers.
 const mocks = vi.hoisted(() => ({
   loadFolders: vi.fn(async () => []),
@@ -62,7 +65,7 @@ function renderShell(path: string) {
   const router = createMemoryRouter([{ path: "*", element: <Shell><p>page body</p></Shell> }], {
     initialEntries: [path],
   });
-  // The bell of the top bar reads a query, so the shell needs the client the app provides.
+  // The bell of the top bar and the folder tree read through a query client, as the app does (main.tsx).
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -100,14 +103,17 @@ describe("Shell", () => {
 
   it("draws the page inside and lists the member's destinations", async () => {
     signIn("member");
+    folders.set([team("fld_p", "Mine", { kind: "personal", role: "manager" })]);
     renderShell("/files");
     expect(screen.getByText("page body")).toBeTruthy();
     const nav = await openNav();
+    // My files is the first row of the folder tree, above the menu; the menu holds the other pages.
     const names = within(nav).getAllByRole("menuitem").map((m) => m.textContent);
-    expect(names).toContain("My files");
-    // The root is My files now: there is no Home entry, and the sidebar starts with My files.
+    expect(names).not.toContain("My files");
+    expect(names).toContain("Starred");
+    // The tree is lazy: it is there once its chunk has loaded.
+    await waitFor(() => expect(nav.querySelector('[role="tree"] > [role="treeitem"] .tree-row bdi')?.textContent).toBe("My files"));
     expect(names).not.toContain("Home");
-    expect(names[0]).toBe("My files");
     expect(names).not.toContain("Requests");
     expect(names).not.toContain("People");
   });
@@ -195,10 +201,11 @@ describe("Shell", () => {
   });
 
   describe("team spaces and hidden spaces", () => {
+    // The teams are the tree's top rows after My files (each space is a row of the one tree, named in its own bdi).
     function teamsIn(drawer: HTMLElement): string[] {
-      return within(drawer.querySelector('ul[aria-label="Team spaces"]') as HTMLElement)
-        .queryAllByRole("link")
-        .map((a) => a.querySelector("bdi")?.textContent ?? "");
+      return Array.from(drawer.querySelectorAll<HTMLElement>('[role="tree"] > [role="treeitem"] > .tree-row'))
+        .map((row) => row.querySelector("bdi")?.textContent ?? "")
+        .filter((name) => name !== "My files");
     }
 
     it("lists the visible team spaces, and no hidden one until the caller asks for them", async () => {
@@ -217,19 +224,32 @@ describe("Shell", () => {
 
     it("marks a team space as the current place, and not My files as well", async () => {
       signIn("member");
-      folders.set([team("fld_a", "Team A")]);
-      renderShell("/files/fld_a/plans");
+      folders.set([team("fld_a", "Team A"), team("fld_p", "Mine", { kind: "personal" })]);
+      treePlace.set({ folder: "fld_a", chain: [] });
+      renderShell("/files/fld_a");
       const nav = await openNav();
-      expect(nav.querySelector(".ant-menu-item-selected")).toBeNull();
-      expect(within(nav).getByRole("link", { name: "Team A" }).getAttribute("aria-current")).toBe("page");
+      expect(nav.querySelector('[data-tree-key="fld_a"]')?.getAttribute("aria-current")).toBe("location");
+      expect(nav.querySelector('[data-tree-key="fld_p"]')?.getAttribute("aria-current")).toBeNull();
     });
 
     it("keeps My files as the current place inside the caller's own folder", async () => {
       signIn("member");
       folders.set([team("fld_a", "Team A"), team("fld_p", "Mine", { kind: "personal" })]);
-      renderShell("/files/fld_p/notes");
+      treePlace.set({ folder: "fld_p", chain: [] });
+      renderShell("/files/fld_p");
       const nav = await openNav();
-      expect(nav.querySelector(".ant-menu-item-selected")?.textContent).toBe("My files");
+      expect(nav.querySelector('[data-tree-key="fld_p"]')?.getAttribute("aria-current")).toBe("location");
+    });
+
+    // The place is marked on the files pages only: on another page the tree is there, and marks nothing.
+    it("marks no folder on a page that is not a files page", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A"), team("fld_p", "Mine", { kind: "personal" })]);
+      treePlace.set({ folder: "fld_p", chain: [] });
+      renderShell("/starred");
+      const nav = await openNav();
+      expect(nav.querySelector('[role="tree"]')).not.toBeNull();
+      expect(nav.querySelector('[aria-current="location"]')).toBeNull();
     });
 
     it("lists only team spaces, never a personal folder", async () => {
@@ -383,11 +403,13 @@ describe("the Requests entry", () => {
     mocks.listAccessRequests.mockResolvedValue({ items: [] });
     const router = createMemoryRouter([{ path: "*", element: <Shell><p>page body</p></Shell> }], { initialEntries: ["/trash"] });
     render(
-      <ThemeProvider>
-        <Direction>
-          <RouterProvider router={router} />
-        </Direction>
-      </ThemeProvider>,
+      <QueryClientProvider client={createQueryClient()}>
+        <ThemeProvider>
+          <Direction>
+            <RouterProvider router={router} />
+          </Direction>
+        </ThemeProvider>
+      </QueryClientProvider>,
     );
     await waitFor(() => expect(mocks.listAccessRequests).toHaveBeenCalledTimes(1));
     mocks.listAccessRequests.mockResolvedValue({ items: [{ id: "arq_a" }] });

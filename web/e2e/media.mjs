@@ -371,7 +371,8 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     check(tile === 'tone.ogg', `one tap on a tile on a phone opens the file (opened ${tile ?? 'nothing'}; the tap hit ${tileHit}; geometry ${geom}; events ${tapLog})`);
     await closePreview(page);
     // The star is in the tile's corner: a tap on it stars the file and opens nothing.
-    const star = await page.evaluate(`(() => { const b = document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-pressed]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, before: b.getAttribute('aria-pressed') }; })()`);
+    // A tile is taller in the tile view (slice d1): the tile is brought into the window before its star is measured.
+    const star = await page.evaluate(`(() => { const b = document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-pressed]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, before: b.getAttribute('aria-pressed') }; })()`);
     check(star !== null && star.w >= 44 && star.h >= 44, `the star is a 44 pixel target on a phone (${JSON.stringify(star)})`);
     await tap(page, star);
     await sleep(800);
@@ -392,7 +393,8 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await clearSelection(page);
     // A tile has no checkbox on the desktop; on a finger's screen it has one, so a tile can be selected too.
     await open('Tiles');
-    const tileBox = await page.evaluate(`(() => { const r = document.querySelector('[role="option"][aria-label="pic.png"] input[type="checkbox"]')?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
+    // The tile is brought into the window first: a tile is taller in the tile view (slice d1).
+    const tileBox = await page.evaluate(`(() => { const box = document.querySelector('[role="option"][aria-label="pic.png"] input[type="checkbox"]'); if (!box) return null; box.scrollIntoView({ block: 'center' }); const r = box.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     check(tileBox !== null, 'a phone tile has a checkbox');
     await tap(page, tileBox);
     await sleep(300);

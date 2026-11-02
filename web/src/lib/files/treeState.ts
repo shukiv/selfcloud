@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// What the folder tree remembers for a person: whether it is shown, and which folders are opened in it. It is kept in the
-// browser under the person's own id, so another person on the same browser has theirs. Storage can be blocked, so every
-// access is guarded; the defaults apply when nothing can be read.
+// What the folder tree in the sidebar remembers for a person: which folders are opened in it. It is kept in the browser
+// under the person's own id, so another person on the same browser has theirs. Storage can be blocked, so every access is
+// guarded; the defaults apply when nothing can be read.
 export interface TreeState {
-  open: boolean;
   expanded: string[];
 }
 
-export const DEFAULT_TREE: TreeState = { open: true, expanded: [] };
+export const DEFAULT_TREE: TreeState = { expanded: [] };
 
 // MAX_EXPANDED keeps a long-lived list from growing for ever: the folders opened longest ago are forgotten first.
 export const MAX_EXPANDED = 60;
 
 const key = (user: string): string => `selfcloud.tree.${user}`;
 
-// parseTree reads stored state, ignoring anything it does not recognise.
+// parseTree reads stored state, ignoring anything it does not recognise. A state saved when the tree had its own column
+// may carry an "open" flag; it is ignored.
 export function parseTree(raw: string | null): TreeState {
   if (!raw) return DEFAULT_TREE;
   try {
     const v = JSON.parse(raw) as Partial<TreeState>;
     const expanded = Array.isArray(v.expanded) ? v.expanded.filter((x): x is string => typeof x === "string").slice(-MAX_EXPANDED) : [];
-    return { open: v.open !== false, expanded };
+    return { expanded };
   } catch {
     return DEFAULT_TREE;
   }

@@ -11,7 +11,8 @@ import { thumbnailPath, watchThumbnail, type ThumbSink } from "../../lib/files/t
 // The tile asks while it is in view. When it scrolls out before it has an image, its asks stop, and they resume when it
 // comes back into view. Once an image is shown it stays, and nothing more is asked. The image is decorative: the name
 // beside it says what it is.
-export default function Thumb({ nod, version, fallback }: { nod: string; version: string; fallback: ReactNode }) {
+// height is the box's height: the grid's 96 pixels unless the tile gives its preview another (the cards of the tile view).
+export default function Thumb({ nod, version, fallback, height = 96 }: { nod: string; version: string; fallback: ReactNode; height?: number }) {
   const { token } = antdTheme.useToken();
   const box = useRef<HTMLDivElement>(null);
   const [src, setSrc] = useState<string | null>(null);
@@ -77,7 +78,7 @@ export default function Thumb({ nod, version, fallback }: { nod: string; version
         alignItems: "center",
         justifyContent: "center",
         width: "100%",
-        height: 96,
+        height,
         overflow: "hidden",
         borderRadius: token.borderRadiusSM,
         background: src ? token.colorFillQuaternary : undefined,

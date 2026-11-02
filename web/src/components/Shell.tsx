@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { keepInView } from "./menuScroll";
-import { Alert as AntdAlert, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, theme as antdTheme } from "antd";
+import { Alert as AntdAlert, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
 import { Clock, FolderOpen, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -20,6 +20,9 @@ import { canInstall, iosDialogOpen, isIOS, isStandalone, promptInstall } from ".
 import { endImpersonation } from "../lib/impersonation";
 import { homeFor } from "../lib/routes";
 import { readPref, writePref } from "../lib/prefs";
+import { readTree, writeTree, type TreeState } from "../lib/files/treeState";
+import { filesURL } from "../lib/files/route";
+import { treePlace } from "../lib/files/treePlace";
 import { useSidebar } from "../theme/theme";
 import { RADIUS } from "../theme/tokens";
 import { useCoarsePointer } from "../lib/pointer";
@@ -37,6 +40,8 @@ const SpaceSettings = lazy(() => import("./share/SpaceSettings"));
 // The bell is a chunk of its own: the first screen does not carry it (decision 55 measures the first-load budget).
 const NotificationsBell = lazy(() => import("./notifications/Bell"));
 const IosInstallDialog = lazy(() => import("./pwa/IosInstallDialog"));
+// The folder tree is a lazy chunk: the sidebar loads it when a person who has a drive is signed in.
+const FolderTree = lazy(() => import("./files/FolderTree"));
 
 // Below this width (the antd `lg` breakpoint, 992px) the sidebar is a drawer.
 const SIDE_WIDTH = 264;
@@ -59,7 +64,8 @@ interface NavSection {
   items: NavItem[];
 }
 
-function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pending: number | null, waiting: (n: number) => string): NavSection[] {
+// My files is the folder tree's first row, so it is an entry here only when the sidebar is folded to its icons (no tree).
+function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pending: number | null, waiting: (n: number) => string, filesEntry: boolean): NavSection[] {
   if (admin) {
     return [
       {
@@ -72,7 +78,7 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
     ];
   }
   const main: NavItem[] = [
-    { key: "/files", label: t("nav.files"), icon: icon(FolderOpen) },
+    ...(filesEntry ? [{ key: "/files", label: t("nav.files"), icon: icon(FolderOpen) }] : []),
     { key: "/starred", label: t("nav.starred"), icon: icon(Star) },
     { key: "/recent", label: t("nav.recent"), icon: icon(Clock) },
     { key: "/shared", label: t("nav.shared"), icon: icon(Share2) },
@@ -116,58 +122,6 @@ function menuLeaves(items: NavItem[]): NonNullable<MenuProps["items"]> {
   return items.map((it) => ({ key: it.key, label: it.label, icon: it.icon }));
 }
 
-// TeamRow is one team space in the sidebar: a link to its files, its hidden tag, and an options menu. The menu
-// offers Hide or Show to anyone, and Space settings to a manager of the space.
-function TeamRow({
-  team,
-  color,
-  current,
-  onNavigate,
-  onHide,
-  onSettings,
-  hiddenLabel,
-  labels,
-}: {
-  team: FolderAccess;
-  color: string;
-  current: boolean;
-  onNavigate: () => void;
-  onHide: () => void;
-  onSettings: () => void;
-  hiddenLabel: string;
-  labels: { hide: string; show: string; settings: string; options: (name: string) => string };
-}) {
-  const items: MenuProps["items"] = [
-    { key: "hide", label: team.hidden ? labels.show : labels.hide },
-    ...(team.role === "manager" ? [{ key: "settings", label: labels.settings }] : []),
-  ];
-  return (
-    <li style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-      <a
-        href={`/files/${team.id}`}
-        aria-current={current ? "page" : undefined}
-        onClick={onNavigate}
-        style={{ flex: 1, minWidth: 0, padding: "6px 8px", color, fontWeight: current ? 700 : undefined, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-      >
-        <bdi>{team.name}</bdi>
-        {team.hidden && <span style={{ marginInlineStart: 8, fontSize: 12, opacity: 0.8 }}>{hiddenLabel}</span>}
-      </a>
-      <Dropdown
-        trigger={["click"]}
-        menu={{
-          items,
-          onClick: ({ key }) => {
-            if (key === "hide") onHide();
-            if (key === "settings") onSettings();
-          },
-        }}
-      >
-        <Button type="text" size="small" aria-label={labels.options(team.name)} icon={<Ellipsis size={16} />} style={{ color }} />
-      </Dropdown>
-    </li>
-  );
-}
-
 // Shell is the signed-in frame: the top bar with the account menu, and the sidebar. The sidebar
 // is one tree shared by the desktop sider and the drawer below the lg breakpoint.
 export default function Shell({ children }: { children: ReactNode }) {
@@ -199,7 +153,23 @@ export default function Shell({ children }: { children: ReactNode }) {
   // only when the caller asks to see them. An admin has no drive, so it reads neither list.
   const teams = admin ? [] : folderList.filter((f) => f.kind === "team");
   const hiddenTeams = admin ? [] : hiddenList.filter((f) => f.kind === "team");
+  const personal = admin ? null : (folderList.find((f) => f.kind === "personal") ?? null);
   const [showHidden, setShowHidden] = useState(false);
+  // openTeam is the team whose options are open (by a click, or the tree's menu key).
+  const [openTeam, setOpenTeam] = useState<string | null>(null);
+  // The folder tree's spaces are My files, then the teams, and the hidden teams while the person shows them.
+  const treeSpaces = [...(personal ? [personal] : []), ...teams, ...(showHidden ? hiddenTeams : [])];
+  // The tree's open folders are the person's own, kept under their id: another person on the browser has theirs.
+  const userID = me?.user.id ?? "";
+  const [treeBox, setTreeBox] = useState(() => ({ uid: userID, state: readTree(userID) }));
+  const treeState: TreeState = treeBox.uid === userID ? treeBox.state : readTree(userID);
+  const changeTree = (next: TreeState) => {
+    setTreeBox({ uid: userID, state: next });
+    writeTree(userID, next);
+  };
+  // The place the browser shows (written by the files page). It is marked only on the files pages.
+  const place = useStore(treePlace);
+  const onFiles = location.pathname.startsWith("/files");
   const [settingsFor, setSettingsFor] = useState<FolderAccess | null>(null);
   // The iPhone instructions are open for the person who opened them: a change of person closes them (iosDialogOpen).
   const [iosFor, setIosFor] = useState<string | null>(null);
@@ -217,20 +187,20 @@ export default function Shell({ children }: { children: ReactNode }) {
     setSettingsFor(null);
     setShellError(null);
   }, [sessionID]);
-  // The sidebar's menu scrolls inside the sider. When the address moves to a page below the fold, its item is brought into
-  // view inside the menu alone, so the page does not move.
+  // The sidebar's middle (the folder tree and the menu) scrolls inside the sider. When the address moves to a place below the
+  // fold, its row is brought into view inside that scroll area alone, so the page does not move.
   useEffect(() => {
     const follow = () => {
-      const menu = document.querySelector<HTMLElement>(".shell-sider .shell-menu");
-      const item = menu?.querySelector<HTMLElement>(".ant-menu-item-selected");
-      if (menu && item) keepInView(menu, item);
+      const region = document.querySelector<HTMLElement>(".shell-scroll");
+      const item = region?.querySelector<HTMLElement>('.ant-menu-item-selected, [aria-current="location"]');
+      if (region && item) keepInView(region, item);
     };
     follow();
-    // The menu's height is settled by the sider's flex column after the first paint, so the scroll follows each resize of the box.
-    const menu = document.querySelector<HTMLElement>(".shell-sider .shell-menu");
-    if (!menu || typeof ResizeObserver === "undefined") return;
+    // The region's height is settled by the sider's flex column after the first paint, so the scroll follows each resize of the box.
+    const region = document.querySelector<HTMLElement>(".shell-scroll");
+    if (!region || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(follow);
-    observer.observe(menu);
+    observer.observe(region);
     return () => observer.disconnect();
   }, [location.pathname, collapsed, isMobile]);
   useEffect(() => {
@@ -248,22 +218,24 @@ export default function Shell({ children }: { children: ReactNode }) {
     if (me && !admin) void refreshPendingRequests();
   }, [sessionID, atFiles]);
   const pending = useStore(pendingRequests);
-  const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n));
-  const items: MenuProps["items"] = sections.flatMap((s, i) =>
-    s.section
-      ? [{ type: "group" as const, key: `group-${i}`, label: s.section, children: menuLeaves(s.items) }]
-      : menuLeaves(s.items),
-  );
-  // A team space lives under /files too, and its row below is the current place: My files is not.
-  const inTeam = (id: string) => location.pathname === `/files/${id}` || location.pathname.startsWith(`/files/${id}/`);
-  const selected = [...teams, ...hiddenTeams].some((team) => inTeam(team.id))
-    ? []
-    : sections
-        .flatMap((s) => s.items)
-        .filter((it) => location.pathname === it.key || location.pathname.startsWith(it.key + "/"))
-        .sort((a, c) => c.key.length - a.key.length)
-        .slice(0, 1)
-        .map((it) => it.key);
+  // The menu's entries and its current one. My files is the tree's first row, so it is a menu entry only when the sidebar is
+  // folded to icons; then it is current on the files pages where the place is the person's own space.
+  const menuFor = (filesEntry: boolean) => {
+    const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n), filesEntry);
+    const items: MenuProps["items"] = sections.flatMap((s, i) =>
+      s.section
+        ? [{ type: "group" as const, key: `group-${i}`, label: s.section, children: menuLeaves(s.items) }]
+        : menuLeaves(s.items),
+    );
+    const current = sections
+      .flatMap((s) => s.items)
+      .filter((it) => it.key !== "/files" && (location.pathname === it.key || location.pathname.startsWith(it.key + "/")))
+      .sort((a, c) => c.key.length - a.key.length)
+      .slice(0, 1)
+      .map((it) => it.key);
+    const ownSpace = !!personal && onFiles && place?.folder === personal.id;
+    return { items, selected: filesEntry && ownSpace ? ["/files", ...current] : current };
+  };
 
   const toggleRail = () => {
     setCollapsed((c) => {
@@ -310,52 +282,118 @@ export default function Shell({ children }: { children: ReactNode }) {
     }
   }
 
-  const renderSidebar = (collapsedNow: boolean) => (
-    <div className="shell-sider-body" style={{ color: sidebar.text }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 8px 18px", minWidth: 0 }}>
-        {b.logo_url && <img src={b.logo_url} alt="" width={32} height={32} />}
-        {!collapsedNow && (
-          <span style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            <bdi>{b.name}</bdi>
-          </span>
-        )}
-      </div>
-      <Menu
-        theme="dark"
-        mode="inline"
-        inlineCollapsed={collapsedNow}
-        selectedKeys={selected}
-        items={items}
-        onClick={({ key }) => go(key)}
-        className="shell-menu"
-        style={{ border: "none", background: "transparent" }}
-      />
-      {shellError && !collapsedNow && <AntdAlert type="error" showIcon role="alert" message={shellError} style={{ margin: "8px 0" }} />}
-      {(teams.length > 0 || showHidden) && (
-        <div style={{ margin: "16px 8px 0" }}>
-          <div style={{ fontSize: 12, opacity: 0.8, margin: "0 0 6px" }}>{t("nav.teams")}</div>
-          <ul className="teams" aria-label={t("nav.teams")} style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            {[...teams, ...(showHidden ? hiddenTeams : [])].map((team) => (
-              <TeamRow
-                key={team.id}
-                team={team}
-                color={sidebar.text}
-                current={inTeam(team.id)}
-                onNavigate={() => setNavOpen(false)}
-                onHide={() => void hideSpace(team, !team.hidden)}
-                onSettings={() => setSettingsFor(team)}
-                hiddenLabel={t("nav.hiddenTag")}
-                labels={{ hide: t("nav.hide"), show: t("nav.show"), settings: t("nav.spaceSettings"), options: (name: string) => t("nav.spaceOptions", { name }) }}
-              />
-            ))}
-          </ul>
-          <Checkbox checked={showHidden} onChange={(e) => void toggleHidden(e.target.checked)} style={{ color: sidebar.text, marginTop: 8 }}>
-            {t("nav.showHidden")}
-          </Checkbox>
+  // A team's row in the tree: a tag when it is hidden, and its options menu. The menu offers Hide or Show to anyone, and Space
+  // settings to a manager of the space.
+  const teamLabel = (team: FolderAccess) =>
+    team.hidden ? <span style={{ marginInlineStart: 8, fontSize: 12, opacity: 0.8, flex: "none" }}>{t("nav.hiddenTag")}</span> : null;
+  const teamEnd = (team: FolderAccess) => {
+    // My files has no options: Hide and the settings are a team's.
+    if (team.kind !== "team") return null;
+    const items: MenuProps["items"] = [
+      { key: "hide", label: team.hidden ? t("nav.show") : t("nav.hide") },
+      ...(team.role === "manager" ? [{ key: "settings", label: t("nav.spaceSettings") }] : []),
+    ];
+    // The options open by a click on the button, and from the tree by its menu key (Shift+F10). The button is not a tab stop:
+    // the tree is one, and its menu key reaches the options.
+    return (
+      <Dropdown
+        trigger={["click"]}
+        open={openTeam === team.id}
+        onOpenChange={(open) => setOpenTeam(open ? team.id : null)}
+        menu={{
+          items,
+          onClick: ({ key }) => {
+            setOpenTeam(null);
+            if (key === "hide") void hideSpace(team, !team.hidden);
+            if (key === "settings") setSettingsFor(team);
+          },
+        }}
+      >
+        <Button
+          type="text"
+          size="small"
+          tabIndex={-1}
+          aria-label={t("nav.spaceOptions", { name: team.name })}
+          icon={<Ellipsis size={16} />}
+          style={{ flex: "none", color: sidebar.text, ...(coarse ? { minWidth: 44, minHeight: 44 } : {}) }}
+        />
+      </Dropdown>
+    );
+  };
+
+  // The sidebar in its two forms: the tree of My files and the teams (not when folded to icons, and not for an admin, who has
+  // no drive), then the menu. Each part that scrolls is in one region, so the rail toggle at the bottom stays in reach.
+  const renderSidebar = (collapsedNow: boolean) => {
+    const { items, selected } = menuFor(collapsedNow);
+    const tree = !admin && !collapsedNow;
+    return (
+      <div
+        className="shell-sider-body"
+        style={{ color: sidebar.text, "--sc-side-text": sidebar.text, "--sc-side-active": sidebar.active, "--sc-side-on-active": sidebar.onActive } as CSSProperties}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 8px 18px", minWidth: 0, flex: "none" }}>
+          {b.logo_url && <img src={b.logo_url} alt="" width={32} height={32} />}
+          {!collapsedNow && (
+            <span style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <bdi>{b.name}</bdi>
+            </span>
+          )}
         </div>
-      )}
-    </div>
-  );
+        <div className="shell-scroll">
+          {shellError && !collapsedNow && <AntdAlert type="error" showIcon role="alert" message={shellError} style={{ margin: "8px 0" }} />}
+          {tree && (
+            <div style={{ marginBlockEnd: 8 }}>
+              <Suspense fallback={<Skeleton active title={false} paragraph={{ rows: 2 }} />}>
+                <FolderTree
+                  key={userID}
+                  spaces={treeSpaces}
+                  folder={place?.folder ?? ""}
+                  chain={place?.chain ?? []}
+                  top={place?.top}
+                  marking={onFiles && place !== null}
+                  state={treeState}
+                  onChange={changeTree}
+                  onOpen={(folder, dir) => {
+                    setNavOpen(false);
+                    navigate(filesURL(folder, dir));
+                  }}
+                  coarse={coarse}
+                  colours={sidebar}
+                  spaceLabel={teamLabel}
+                  spaceEnd={teamEnd}
+                  onMenu={(s) => {
+                    if (s.kind === "team") setOpenTeam(s.id);
+                  }}
+                  onGone={() => {
+                    // A space whose read says it is not there any more: the spaces are read again, and it leaves the tree.
+                    const stale = sessionChanged();
+                    loadFolders().catch((err: unknown) => {
+                      if (!stale()) setShellError(failureText(err, lang));
+                    });
+                  }}
+                />
+              </Suspense>
+              {(teams.length > 0 || showHidden) && (
+                <Checkbox className="side-check" checked={showHidden} onChange={(e) => void toggleHidden(e.target.checked)} style={{ color: sidebar.text, margin: "4px 0 0 8px" }}>
+                  {t("nav.showHidden")}
+                </Checkbox>
+              )}
+            </div>
+          )}
+          <Menu
+            theme="dark"
+            mode="inline"
+            inlineCollapsed={collapsedNow}
+            selectedKeys={selected}
+            items={items}
+            onClick={({ key }) => go(key)}
+            className="shell-menu"
+            style={{ border: "none", background: "transparent" }}
+          />
+        </div>
+      </div>
+    );
+  };
 
   const userItems: MenuProps["items"] = [
     {
@@ -444,17 +482,24 @@ export default function Shell({ children }: { children: ReactNode }) {
             />
           </Layout.Sider>
         )}
-        <Drawer
-          placement={rtl ? "right" : "left"}
-          open={isMobile && navOpen}
-          onClose={() => setNavOpen(false)}
-          width={280}
-          title={null}
-          closable
-          styles={{ body: { padding: "8px 12px 16px", background: sidebar.bg }, header: { background: sidebar.bg, borderBottom: "none" } }}
-        >
-          {renderSidebar(false)}
-        </Drawer>
+        {/* On a phone the sidebar is this drawer, and it holds the folder tree too. It is mounted only there, so the tree is
+            one tree on the page at a time. */}
+        {isMobile && (
+          <Drawer
+            placement={rtl ? "right" : "left"}
+            open={navOpen}
+            onClose={() => setNavOpen(false)}
+            width={280}
+            title={null}
+            closable
+            styles={{
+              body: { padding: "8px 12px 16px", background: sidebar.bg, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" },
+              header: { background: sidebar.bg, borderBottom: "none" },
+            }}
+          >
+            {renderSidebar(false)}
+          </Drawer>
+        )}
         <Layout style={{ background: token.colorBgLayout, ...(impersonating ? { height: "100%", overflow: "auto" } : {}) }}>
           <Layout.Header
             style={{

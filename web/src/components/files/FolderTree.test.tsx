@@ -65,6 +65,7 @@ function Harness({
       <FolderTree
         spaces={[space("fld_a", "Team A"), space("fld_me", "Mine", { kind: "personal" })]}
         folder={folder}
+        marking
         chain={chain}
         state={state}
         onChange={(n) => {
@@ -118,7 +119,7 @@ describe("the folder tree", () => {
   });
 
   it("opens a folder in the listing when its name is clicked, and does not open it for the arrow", async () => {
-    render(<Harness start={{ open: true, expanded: ["fld_a"] }} />);
+    render(<Harness start={{ expanded: ["fld_a"] }} />);
     fireEvent.click(await screen.findByText("Docs"));
     expect(onOpen).toHaveBeenCalledWith("fld_a", "nod_one");
     onOpen.mockClear();
@@ -142,7 +143,7 @@ describe("the folder tree", () => {
   });
 
   it("makes every folder a place to drop, with the role there and the ids on the way down", async () => {
-    render(<Harness start={{ open: true, expanded: ["fld_a", "nod_one"] }} />);
+    render(<Harness start={{ expanded: ["fld_a", "nod_one"] }} />);
     const deep = (await screen.findByText("Deep")).closest<HTMLElement>(".tree-row") as HTMLElement;
     expect(deep.dataset.dropFolder).toBe("fld_a");
     expect(deep.dataset.dropDir).toBe("nod_deep");
@@ -156,7 +157,7 @@ describe("the folder tree", () => {
 
   it("shows an error with a Retry when a folder cannot be read, and reads again on Retry", async () => {
     api.childrenPage.mockRejectedValueOnce(new ApiError(500, "internal", {}, 0)).mockRejectedValueOnce(new ApiError(500, "internal", {}, 0));
-    render(<Harness start={{ open: true, expanded: ["fld_a"] }} />);
+    render(<Harness start={{ expanded: ["fld_a"] }} />);
     const alert = await screen.findByRole("alert", undefined, { timeout: 8000 });
     expect(within(alert).getByText(/could not be loaded/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -164,7 +165,7 @@ describe("the folder tree", () => {
   });
 
   it("makes the arrow and the link 44 px on a finger, and smaller with a mouse", async () => {
-    const { unmount } = render(<Harness coarse start={{ open: true, expanded: ["fld_a"] }} />);
+    const { unmount } = render(<Harness coarse start={{ expanded: ["fld_a"] }} />);
     await screen.findByText("Docs");
     const arrow = screen.getByRole("button", { name: "Collapse Team A" });
     expect(arrow.getAttribute("style")).toContain("min-block-size: 44px");
@@ -172,14 +173,14 @@ describe("the folder tree", () => {
     const link = screen.getByText("Docs").closest("a") as HTMLElement;
     expect(link.getAttribute("style")).toContain("min-block-size: 44px");
     unmount();
-    render(<Harness start={{ open: true, expanded: ["fld_a"] }} />);
+    render(<Harness start={{ expanded: ["fld_a"] }} />);
     await screen.findByText("Docs");
     expect((screen.getByRole("button", { name: "Collapse Team A" }).getAttribute("style") ?? "")).toContain("min-block-size: 24px");
   });
 
   it("shows no failure and no Retry for a space whose root the server says is not there for this person", async () => {
     api.childrenPage.mockRejectedValue(new ApiError(404, "not_found", {}, 0));
-    render(<Harness folder="fld_zz" start={{ open: true, expanded: ["fld_a"] }} />);
+    render(<Harness folder="fld_zz" start={{ expanded: ["fld_a"] }} />);
     await waitFor(() => expect(api.childrenPage).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
     expect(screen.queryByRole("alert")).toBeNull();
@@ -202,7 +203,7 @@ describe("the folder tree", () => {
   });
 
   it("moves with the arrow keys, opens with Enter, and opens and closes with Right and Left", async () => {
-    render(<Harness start={{ open: true, expanded: ["fld_a"] }} />);
+    render(<Harness start={{ expanded: ["fld_a"] }} />);
     await screen.findByText("Docs");
     const items = () => screen.getAllByRole("treeitem");
     items()[0].focus();
@@ -216,5 +217,28 @@ describe("the folder tree", () => {
     await waitFor(() => expect(screen.queryByText("Deep")).toBeNull());
     fireEvent.keyDown(document.activeElement as Element, { key: "ArrowLeft" });
     expect((document.activeElement as HTMLElement).dataset.treeKey).toBe("fld_a");
+  });
+
+  // The one tab stop is always on a row that is rendered: the place's row when it is shown, else the first row.
+  it("keeps one tab stop on a rendered row when the place is not in the tree", () => {
+    render(<Harness folder="fld_zz" chain={["nod_gone"]} />);
+    const stops = Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]')).filter((x) => x.tabIndex === 0);
+    expect(stops).toHaveLength(1);
+    expect(stops[0].dataset.treeKey).toBe("fld_a");
+  });
+
+  // A row is named by its own folder, not by the folders and arrows under it.
+  it("names each treeitem by its own folder, not by the folders and arrows under it", async () => {
+    render(<Harness start={{ expanded: ["fld_a", "nod_one"] }} />);
+    expect(screen.getByRole("treeitem", { name: "Team A" }).dataset.treeKey).toBe("fld_a");
+    expect((await screen.findByRole("treeitem", { name: "Docs" })).dataset.treeKey).toBe("nod_one");
+  });
+
+  // A file dragged from the desktop onto the tree does not navigate the browser away from the app.
+  it("does not let a file dropped on the tree leave the page", () => {
+    render(<Harness />);
+    const dt = { types: ["Files"], files: [new File(["x"], "d.txt")], items: [], dropEffect: "none" };
+    const kept = fireEvent.drop(screen.getByTestId("folder-tree"), { dataTransfer: dt });
+    expect(kept).toBe(false);
   });
 });

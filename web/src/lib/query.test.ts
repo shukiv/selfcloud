@@ -111,19 +111,27 @@ describe("refreshTree reads again only the folder-tree branches a change touched
     unsub.forEach((u) => u());
   });
 
-  it("a change that names no branch leaves the open branches stale and reads none of them", async () => {
+  // A change that names no branch (a restore or a purge from Trash) reads every mounted open branch once, so the sidebar never
+  // shows a folder that is gone; a branch that is closed is marked stale and is read when it is shown again.
+  it("a change that names no branch reads each mounted open branch once, and marks the closed ones stale", async () => {
     session.set(signedAs("u1"));
     const client = new QueryClient();
-    let reads = 0;
-    const obs = new QueryObserver(client, { queryKey: queryKey("tree", "f1", null), queryFn: async () => ++reads });
-    const unsub = obs.subscribe(() => undefined);
+    const reads: Record<string, number> = {};
+    const open = ["x", "y"].map((d) =>
+      new QueryObserver(client, { queryKey: queryKey("tree", "f1", d), queryFn: async () => (reads[d] = (reads[d] ?? 0) + 1) }).subscribe(() => undefined),
+    );
     await new Promise((r) => setTimeout(r, 20));
-    expect(reads).toBe(1);
+    expect(reads).toEqual({ x: 1, y: 1 });
     await refreshTree(client);
     await new Promise((r) => setTimeout(r, 20));
-    expect(reads).toBe(1);
-    expect(client.getQueryState(queryKey("tree", "f1", null))?.isInvalidated).toBe(true);
-    unsub();
+    expect(reads).toEqual({ x: 2, y: 2 });
+    open.forEach((u) => u());
+    // A closed branch: its cached read is stale, and no read is made until it is shown.
+    client.setQueryData(queryKey("tree", "f1", "z"), 1);
+    await refreshTree(client);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reads).toEqual({ x: 2, y: 2 });
+    expect(client.getQueryState(queryKey("tree", "f1", "z"))?.isInvalidated).toBe(true);
   });
 
   it("still refreshes the listings, whatever the branches", async () => {

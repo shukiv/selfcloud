@@ -3,7 +3,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { App, Alert, Button, ConfigProvider, Dropdown, Form, Grid, Input, Modal, Skeleton, Tooltip, theme as antdTheme } from "antd";
+import { App, Alert, Button, ConfigProvider, Dropdown, Form, Input, Modal, Skeleton, Tooltip, theme as antdTheme } from "antd";
 import {
   ClipboardPaste,
   Copy,
@@ -23,7 +23,6 @@ import {
   List,
   MoreHorizontal,
   Pencil,
-  PanelLeft,
   Play,
   Plus,
   Scissors,
@@ -66,7 +65,8 @@ import { UndoStack } from "../lib/files/undo";
 import { copyText, nodeAddress } from "../lib/files/copyText";
 import { alreadyIn, dropDecision, type Dest } from "../lib/files/drag";
 import { HEADER_H, panelH, PANEL_INSET, rowPad, stickyTop, toolbarH } from "../lib/files/layout";
-import { readTree, writeTree } from "../lib/files/treeState";
+import { treePlace } from "../lib/files/treePlace";
+import { rowStep, type TilePlace } from "../lib/files/grid";
 import type { ConflictChoice } from "../lib/files/conflict";
 import type { Job, Node, Page } from "../lib/files/types";
 import { manager, uploads } from "../lib/files/uploads";
@@ -96,7 +96,6 @@ const ShareDialog = lazy(() => import("../components/share/ShareDialog"));
 // The zip dialog is loaded on first use, as the share dialog is.
 const ZipDialog = lazy(() => import("../components/files/ZipDialog"));
 // The folder tree is loaded when it is first shown, and not at all at phone width.
-const FolderTree = lazy(() => import("../components/files/FolderTree"));
 
 // Sharing from this page: the Share button in the selection bar (when the caller may share the item), Share and
 // "Who has access" in Details, and the access request on a not-found directory.
@@ -278,17 +277,6 @@ export default function FilesPage() {
   // which is set at each render, so a gesture always asks the page as it is now.
   const gestureCtl = useRef<GestureCtl | null>(null);
   const gestures = useGestures(sectionRef, listRef, gestureCtl);
-  // The folder tree is for windows at least 768 px wide (antd's md); its open state and the folders opened are kept for the person.
-  const wide = Grid.useBreakpoint().md === true;
-  const userID = useStore(session)?.user.id ?? "";
-  // The state belongs to the person it was read for: after a sign-in as someone else it is read again in the same render, so
-  // one person's open folders are never written under the next person's key. The tree is mounted per person (key below).
-  const [treeBox, setTreeBox] = useState(() => ({ uid: userID, state: readTree(userID) }));
-  const treeState = treeBox.uid === userID ? treeBox.state : readTree(userID);
-  const changeTree = (next: typeof treeState) => {
-    setTreeBox({ uid: userID, state: next });
-    writeTree(userID, next);
-  };
 
   const [rename, setRenameState] = useState<RenameState | null>(null);
   const renameRef = useRef<RenameState | null>(null);
@@ -361,6 +349,17 @@ export default function FilesPage() {
   const place = placeQ.data;
   const here = place?.kind === "ready" ? place.here : null;
   const personalID = place?.kind === "ready" ? place.personalID : null;
+  // The sidebar's folder tree reads the place shown (treePlace). It is written each time the place changes, and it is kept
+  // when the page is left, so the tree still knows a space's top folder on the other pages.
+  const treeChain = here ? (here.rootReachable ? [...here.trail.map((n) => n.id), ...(here.dir ? [here.dir.id] : [])] : here.reach.map((n) => n.id)) : [];
+  const treeTop = here && !here.rootReachable && here.reach.length > 0 ? { id: here.reach[0].id, name: here.reach[0].name, role: here.reach[0].role } : undefined;
+  const treeKeyText = here ? [here.folder, ...treeChain, treeTop?.id ?? ""].join("|") : "";
+  useEffect(() => {
+    if (!here) return;
+    treePlace.set({ folder: here.folder, chain: treeChain, top: treeTop });
+    // The effect runs for a new place only: its key is the text of the place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeKeyText]);
   const folderID = here?.folder ?? null;
   const dirID = here?.dir?.id ?? null;
   // A press on Play media is answered only while the person is still at the address it was pressed at, with the sort it was
@@ -792,25 +791,39 @@ export default function FilesPage() {
     });
   }
 
-  // columns is how many tiles sit on one row, read from the layout. A list has one column.
-  function columns(): number {
-    if (view === "list" || !listRef.current) return 1;
-    const tiles = Array.from(listRef.current.querySelectorAll<HTMLElement>("[data-id]"));
-    if (tiles.length === 0) return 1;
-    const top = tiles[0].offsetTop;
-    const wrap = tiles.findIndex((x) => x.offsetTop !== top);
-    return wrap === -1 ? tiles.length : wrap;
+  // tileRowDelta is how far the focus moves one row up (dir -1) or down (dir 1) in the tile view: the tile one row away on the
+  // screen, from the tiles' places (rowStep), in the one flat order of the items. A tile of the order that is not on the
+  // screen gives no step, so the focus stays put. There is no column count: the bands do not share one.
+  function tileRowDelta(dir: 1 | -1): number {
+    const root = listRef.current;
+    const from = current().focus ?? -1;
+    if (!root || from < 0) return 0;
+    const els = new Map<string, HTMLElement>();
+    root.querySelectorAll<HTMLElement>("[data-id]").forEach((el) => {
+      if (el.dataset.id) els.set(el.dataset.id, el);
+    });
+    const places: (TilePlace | null)[] = ids.map((id) => {
+      const el = els.get(id);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, x: r.x, width: r.width };
+    });
+    return rowStep(places, from, dir);
   }
 
   function onKey(e: ReactKeyboardEvent<HTMLElement>) {
     if (renameRef.current) return;
     const rtl = document.documentElement.dir === "rtl";
-    const action = keyAction(e, { cols: columns(), grid: view === "grid", rtl, count: ids.length });
+    // cols is 1: Up and Down in the tile view take their step from the tiles' places (tileRowDelta), not from a column count.
+    const action = keyAction(e, { cols: 1, grid: view === "grid", rtl, count: ids.length });
     if (!action) return;
     switch (action.kind) {
       case "move": {
         e.preventDefault();
-        const next = moveFocus(current(), ids, action.delta, action.extend);
+        // Up and Down in the tile view move to the tile one row away on the screen, across the folder band and the file band.
+        const vertical = (e.key === "ArrowUp" || e.key === "ArrowDown") && view === "grid";
+        const delta = vertical ? tileRowDelta(e.key === "ArrowDown" ? 1 : -1) : action.delta;
+        const next = moveFocus(current(), ids, delta, action.extend);
         setSelection(next);
         focusRow(ids[next.focus ?? 0] ?? null);
         return;
@@ -872,7 +885,7 @@ export default function FilesPage() {
       return;
     }
     const rtl = document.documentElement.dir === "rtl";
-    const action = keyAction(e, { cols: columns(), grid: view === "grid", rtl, count: ids.length });
+    const action = keyAction(e, { cols: 1, grid: view === "grid", rtl, count: ids.length });
     switch (action?.kind) {
       case "up":
         e.preventDefault();
@@ -1746,33 +1759,8 @@ export default function FilesPage() {
             ? t("files.drag.hintCopy")
             : t("files.drag.hintMove");
 
-  const treeShown = wide && treeState.open;
-  const treeToggleLabel = treeState.open ? t("files.tree.hide") : t("files.tree.show");
-
   return (
     <div className="files-layout" style={{ display: "flex", alignItems: "flex-start", gap: 16, minWidth: 0 }}>
-    {treeShown && (
-      // The folder tree sits beside the listing and stays on screen as the listing scrolls. It is a drop target, not part of the
-      // section, so a file dragged in from the desktop is not uploaded by a drop on it.
-      <aside
-        data-testid="folder-tree"
-        style={{ flex: "none", inlineSize: 240, position: "sticky", insetBlockStart: HEADER_H + 8, maxBlockSize: `calc(100dvh - ${HEADER_H}px - 2 * var(--sc-page-pad, 28px))`, overflow: "auto" }}
-      >
-        <Suspense fallback={<Skeleton active paragraph={{ rows: 4 }} title={false} />}>
-          <FolderTree
-            key={userID}
-            spaces={spaces}
-            folder={here.folder}
-            chain={here.rootReachable ? [...here.trail.map((n) => n.id), ...(here.dir ? [here.dir.id] : [])] : here.reach.map((n) => n.id)}
-            top={here.rootReachable || here.reach.length === 0 ? undefined : { id: here.reach[0].id, name: here.reach[0].name, role: here.reach[0].role }}
-            state={treeState}
-            onChange={changeTree}
-            onOpen={(folder, dir) => go(filesURL(folder, dir))}
-            coarse={coarse}
-          />
-        </Suspense>
-      </aside>
-    )}
     <section
       ref={sectionRef}
       className="browser"
@@ -1789,18 +1777,6 @@ export default function FilesPage() {
       style={{ position: "relative", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, flex: "1 1 0", alignSelf: "stretch", minWidth: 0, marginBlockEnd: "calc(-1 * var(--sc-page-pad, 28px))", alignContent: "start", paddingBlockEnd: room }}
     >
       <header style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-        {wide && (
-          <Tooltip title={treeToggleLabel}>
-            <Button
-              data-testid="tree-toggle"
-              aria-label={treeToggleLabel}
-              aria-pressed={treeState.open}
-              icon={<PanelLeft {...ic} />}
-              onClick={() => changeTree({ ...treeState, open: !treeState.open })}
-              style={{ flex: "none", ...touchSize }}
-            />
-          </Tooltip>
-        )}
         <div style={{ flex: "1 1 auto", minWidth: 0 }}>
           <Breadcrumbs crumbs={crumbs} />
         </div>

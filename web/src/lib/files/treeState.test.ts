@@ -10,16 +10,16 @@ afterEach(() => {
 
 describe("the tree's saved state", () => {
   it("keeps one state for each person", () => {
-    writeTree("u1", { open: false, expanded: ["a"] });
-    writeTree("u2", { open: true, expanded: ["b"] });
-    expect(readTree("u1")).toEqual({ open: false, expanded: ["a"] });
-    expect(readTree("u2")).toEqual({ open: true, expanded: ["b"] });
+    writeTree("u1", { expanded: ["a"] });
+    writeTree("u2", { expanded: ["b"] });
+    expect(readTree("u1")).toEqual({ expanded: ["a"] });
+    expect(readTree("u2")).toEqual({ expanded: ["b"] });
     expect(readTree("u3")).toEqual(DEFAULT_TREE);
   });
 
   it("ignores what it does not recognise", () => {
     expect(parseTree("not json")).toEqual(DEFAULT_TREE);
-    expect(parseTree(JSON.stringify({ open: "no", expanded: [1, "x", null] }))).toEqual({ open: true, expanded: ["x"] });
+    expect(parseTree(JSON.stringify({ open: "no", expanded: [1, "x", null] }))).toEqual({ expanded: ["x"] });
     expect(parseTree(null)).toEqual(DEFAULT_TREE);
   });
 
