@@ -75,7 +75,8 @@ describe("the bell in the top bar", () => {
     signIn("member");
     renderShell();
     await waitFor(() => expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy());
-    expect(calls.filter(isUnread).length).toBeGreaterThan(0);
+    // The read follows the drawing, so on a loaded machine it can come a moment after the button.
+    await waitFor(() => expect(calls.filter(isUnread).length).toBeGreaterThan(0));
   });
 
   it("is not drawn for an installation admin, and the admin's inbox is not read", async () => {
