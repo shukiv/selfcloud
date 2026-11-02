@@ -271,6 +271,7 @@
   "files.media.previous": "הקובץ הקודם",
   "files.media.next": "הקובץ הבא",
   "files.media.queue": "רשימת השמעה",
+  "files.media.closePlaylist": "סגירת רשימת ההשמעה",
   "files.media.queueEmpty": "אין קבצים ברשימת ההשמעה.",
   "files.media.shuffle": "ערבוב",
   "files.media.repeat": "חזרה",

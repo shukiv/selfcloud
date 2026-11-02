@@ -269,20 +269,26 @@ a {
   border-radius: 8px;
   overflow: hidden;
 }
+/* An audio file's stage is the whole screen: its cover above, and the bar at the bottom (MediaArt, decision 63). */
 .media-stage[data-kind="audio"] {
   background: transparent;
   border-radius: 0;
   overflow: visible;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
 }
 .media-stage:fullscreen {
   border-radius: 0;
   height: 100%;
 }
+/* The picture fills the viewer's screen under the header and the toolbar, and keeps its shape: letterboxed on black, never
+   cropped, never taller than the screen (decision 63). */
 .media-picture {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  max-height: 70vh;
+  height: 100%;
   object-fit: contain;
   background: #000;
 }
@@ -399,30 +405,73 @@ a {
 .media-speed {
   width: 84px;
 }
-/* The viewer's playlist: on a phone the player is on top and the panel below it scrolls; on a wide screen the panel is a
-   column beside the player, and scrolls too. Only the panel scrolls. */
+/* The viewer's playlist (decision 63): the screen takes the viewer's width and height. The playlist is a drawer over the
+   screen, closed by default, with the toggle on the toolbar above the screen. Only the drawer's list scrolls. */
 .media-playlist {
   display: flex;
   flex-direction: column;
   gap: 12px;
   flex: 1 1 auto;
   min-height: 0;
+  position: relative;
+  overflow: hidden;
+  overflow: clip;
 }
 .media-main {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.media-toolbar {
+  display: flex;
+  justify-content: flex-end;
   flex: 0 0 auto;
+}
+/* At phone width the Playlist button is its icon alone; its name stays in aria-label (MediaPlaylist). */
+@media (max-width: 599px) {
+  .media-queue-label,
+  .media-head-label {
+    display: none;
+  }
+  /* A phone's head is one row: Close, the name, the count, Playlist and Download. Every button is 44 px tall, so their tops are
+     the same, and the name takes what is left (ellipsis). */
+  .media-viewer-head .ant-btn,
+  .media-head-download.ant-btn,
+  .media-btn.ant-btn.media-playlist-toggle {
+    height: 44px;
+    min-width: 44px;
+  }
+}
+/* With the drawer open on a wide window, the screen gives the drawer its width, so the video and the bar shrink and no control
+   is under the drawer. On a phone the drawer stays over the player, and closing it is the way back (decision 63). */
+@media (min-width: 600px) {
+  .media-screen--drawer {
+    padding-inline-end: 380px;
+  }
 }
 .media-screen {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  position: relative;
+  /* clip, not hidden: a focus inside the closed drawer must not scroll the screen sideways (decision 63). */
+  overflow: hidden;
+  overflow: clip;
 }
 .media-screen .media-stage {
   width: 100%;
+}
+.media-stage[data-kind="video"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
 }
 .media-queue {
   border: 1px solid;
@@ -599,6 +648,9 @@ a {
 }
 
 @media (pointer: coarse) {
+  .media-viewer-head .ant-btn,
+  .media-head-download.ant-btn,
+  .media-drawer-close.ant-btn,
   .media-btn.ant-btn,
   .media-queue .ant-btn,
   .media-row-buttons .ant-btn,
@@ -666,10 +718,6 @@ a {
   .media-volume {
     min-height: 44px;
   }
-  /* On a phone the picture takes less of the height, so the playlist below it has room. */
-  .media-picture {
-    max-height: 40vh;
-  }
 }
 
 /* The subtitle menu takes the speed list's place in the bar. */
@@ -701,23 +749,6 @@ a {
 .tag-cover {
   border-radius: 6px;
   background: rgba(128, 128, 128, 0.16);
-}
-/* The viewer's title and artist of an audio file: one line each, so the header keeps its height when the tags arrive. */
-.media-now bdi,
-.media-now-artist {
-  display: block;
-  /* Each line is as wide as its text, so both start beside the cover in the page's direction, whatever direction the text has. */
-  width: fit-content;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  /* A set height, not only a line height, so an empty artist line and a filled one measure the same. */
-  height: 1.5em;
-  line-height: 1.5em;
-}
-.media-now-artist {
-  font-weight: 400;
 }
 /* The artist of the mini bar's file (decision 56): after the title, in the bar's text colour, a little dimmer. */
 .media-mini-artist {
@@ -865,21 +896,127 @@ a {
   }
 }
 
-@media (min-width: 900px) {
-  .media-playlist {
-    flex-direction: row;
-    align-items: stretch;
-  }
-  .media-main {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
-  }
-  .media-queue {
-    flex: 0 0 340px;
+/* The playlist drawer (decision 63): it comes from the inline end over the screen, 380 px wide, the full width on a phone. Closed,
+   it is moved out of the viewer and hidden, so it is not reachable by Tab or read by a screen reader; the hide waits for the
+   slide to end. The drawer is logical: it comes from the left in Hebrew and Arabic (the page's dir sets the direction). */
+.media-drawer {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 2;
+  width: min(380px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 12px 12px;
+  border-inline-start: 1px solid;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+  transform: translateX(0);
+  transition: transform 200ms ease;
+}
+.media-drawer--closed {
+  transform: translateX(100%);
+  /* The drawer's shadow would show on the screen's edge while the drawer is off it. */
+  box-shadow: none;
+}
+:root[dir="rtl"] .media-drawer--closed {
+  transform: translateX(-100%);
+}
+.media-drawer-head {
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+/* The drawer's list is the queue panel: it fills the drawer and scrolls, and it has no frame of its own. */
+.media-drawer .media-queue {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .media-drawer,
+  .media-drawer--closed {
+    transition: none;
   }
 }
 
+/* An audio file's stage (MediaArt): the cover is the main thing on screen. The box takes the room above the bar and never grows
+   past the screen; the picture is drawn at its own size or smaller, never enlarged, so a small cover is not blurred. The
+   fallback is a tinted square of the same room, with a music icon. */
+.media-art {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 0;
+  box-sizing: border-box;
+}
+.media-cover-box {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+/* The picture fills the box at any natural size: a small picture is scaled up, a large one down, and it keeps its shape
+   (contain), so the box keeps the stage's size and the picture is not drawn at its own size (decision 63). */
+.media-cover-box img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.media-cover-empty {
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  /* The tint and the icon are translucent colours, not opacity: an opacity layer on this box drew a 254 px square one level
+     darker than the rest in Chrome (decision 63). 0.112 is the tint the layer gave (0.16 at 0.7 opacity). */
+  background: rgba(128, 128, 128, 0.112);
+  color: color-mix(in srgb, currentColor 70%, transparent);
+}
+.media-art-text {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+/* Both text lines have one set height, so an empty artist line and a filled one measure the same, and the cover above keeps its
+   place when the tags arrive (x3 checks the exact top and size of both). */
+.media-art-name,
+.media-art-artist {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  height: 1.5em;
+  line-height: 1.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-art-name {
+  margin: 0 auto;
+  font-size: 18px;
+  font-weight: 600;
+}
+.media-art-artist {
+  margin: 2px auto 0;
+  opacity: 0.8;
+}
 /* While an item is dragged or a rubber band is drawn, nothing on the page takes a text selection and the pointer shows it. */
 .sc-gesture,
 .sc-gesture * {

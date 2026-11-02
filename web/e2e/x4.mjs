@@ -57,6 +57,11 @@ async function openPlayer(page, name = 'one.ogg') {
   await page.evaluate(`(() => { document.querySelector('[role="row"][aria-label=${q(name)}]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return true; })()`);
   await until(page, `!!document.querySelector('[data-testid="media-queue"]')`, 15000, 'the queue');
   await until(page, `!!document.querySelector('[data-testid="media-playlists"]')`, 15000, 'the saved playlists');
+  // The playlist is a drawer, closed by default (decision 63): its rows are measured here, so it is opened.
+  await page.evaluate(`(() => { const t = document.querySelector('.media-playlist-toggle'); if (t && t.getAttribute('aria-expanded') !== 'true') t.click(); })()`);
+  await until(page, `document.querySelector('[data-media-drawer]')?.dataset.open === 'true'`, 5000, 'the playlist drawer');
+  // The drawer slides in over 200 ms: positions read before it has settled are stale.
+  await until(page, `document.querySelector('[data-media-drawer]').getAnimations().length === 0`, 3000, 'the drawer has settled');
 }
 
 // apiIn calls the signed-in member's own API, as the page does, and returns its JSON.
@@ -248,6 +253,10 @@ export async function x4Checks(h, { page, base, accountKey, accountID, memberID 
       }
     });
   } finally {
+    // The last shot leaves the page in Hebrew; the sign-out looks for its English name, and the checks after these
+    // expect English, so the page is put back first.
+    await page.goto(`${page.base}/files?lang=en`).catch(() => undefined);
+    await page.waitFor(`document.documentElement.lang === 'en'`, 10000).catch(() => undefined);
     await h.signOut(page).catch(() => undefined);
     if (kept) {
       await page.evaluate(`(() => { ${kept.lang === null ? "localStorage.removeItem('selfcloud.lang');" : `localStorage.setItem('selfcloud.lang', ${q(kept.lang)});`} ${kept.theme === null ? "localStorage.removeItem('selfcloud.theme');" : `localStorage.setItem('selfcloud.theme', ${q(kept.theme)});`} return true; })()`).catch(() => undefined);

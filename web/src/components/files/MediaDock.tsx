@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Alert, Button, ConfigProvider, Slider, theme } from "antd";
 import { Maximize2, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
+import HeadDownload from "./HeadDownload";
 import { contentPath, getResume, listSubtitles, putResume } from "../../lib/files/api";
 import { kindOf } from "../../lib/files/kind";
 import { startDownload } from "../../lib/files/ops";
@@ -19,7 +20,7 @@ import {
   subscribePlayback,
   type PlaybackNav,
 } from "../../lib/files/playback";
-import { refusedPlay } from "../../lib/files/mediaKeys";
+import { isPopupTarget, refusedPlay } from "../../lib/files/mediaKeys";
 import { formatTime, clamp } from "../../lib/files/mediaKeys";
 import { bindMediaSession, setPlaybackState } from "../../lib/files/mediaSession";
 import { readTracks, type SubtitleTrack } from "../../lib/files/subtitles";
@@ -87,6 +88,8 @@ export default function MediaDock() {
   const { t } = useT();
   const [pos, setPos] = useState<{ position: number; total: string }>({ position: 0, total: "0" });
   const [refused, setRefused] = useState<string | null>(null);
+  // toggleSlot is the header's place for the playlist button (set while the viewer is open, see the header).
+  const [toggleSlot, setToggleSlot] = useState<HTMLElement | null>(null);
   // press says the browser refused to start a file for want of a press: the note shows in the mini player too.
   const [press, setPress] = useState(false);
   const node = snap.current?.node ?? null;
@@ -166,6 +169,7 @@ export default function MediaDock() {
       onElement={setMedia}
       onNav={(nav: PlaybackNav) => setNav(nav)}
       active={viewing}
+      toggleSlot={toggleSlot}
     />
   ) : null;
 
@@ -190,6 +194,8 @@ export default function MediaDock() {
   const viewerKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") {
       if ((e.target as HTMLElement).getAttribute("aria-expanded") === "true") return;
+      // A popup the page drew (a row's menu) takes its own Escape, through the portal this key bubbles through.
+      if (isPopupTarget(e.target)) return;
       e.preventDefault();
       closeViewer();
       return;
@@ -197,7 +203,8 @@ export default function MediaDock() {
     if (e.key !== "Tab") return;
     const root = viewerRef.current;
     if (!root) return;
-    const items = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => !el.hasAttribute("disabled"));
+    // A closed drawer of the playlist is hidden, so its controls are not in the Tab order.
+    const items = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => !el.hasAttribute("disabled") && el.closest(".media-drawer--closed") === null);
     if (items.length === 0) {
       e.preventDefault();
       return;
@@ -233,25 +240,29 @@ export default function MediaDock() {
       >
         {viewing && (
           <>
-            <header style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
+            <header className="media-viewer-head" style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 12 }}>
               {/* No autoFocus: the player's Space must reach the player when the viewer opens, not press Close. */}
               <Button onClick={() => closeViewer()}>{t("files.preview.close")}</Button>
-              {node && audio && <TagCover nod={node.id} kind="audio" size={48} enabled />}
-              {/* An audio file's title and artist take one line each, and the artist's line is there before the tags arrive, so
-                  the header does not move when they do. */}
-              <p className={audio ? "media-now" : undefined} style={{ flex: "1 1 160px", margin: 0, overflowWrap: "anywhere", fontWeight: 600, minWidth: 0 }}>
-                <bdi dir="auto">{node ? displayTitle(node.name, tags) : ""}</bdi>
-                {audio && (
-                  <span dir="auto" className="media-now-artist" data-testid="media-artist" style={{ color: token.colorTextSecondary }}>
-                    {displayArtist(tags)}
-                  </span>
-                )}
-              </p>
+              {/* An audio file's cover, title and artist are on its stage (MediaArt), so the header keeps the buttons and the count. */}
+              {audio ? (
+                <span className="media-spacer" />
+              ) : (
+                // The name is one line that ends in an ellipsis; its full text is in the title.
+                <p
+                  className="media-head-name"
+                  title={node ? displayTitle(node.name, tags) : ""}
+                  style={{ flex: "1 1 0", margin: 0, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >
+                  <bdi dir="auto">{node ? displayTitle(node.name, tags) : ""}</bdi>
+                </p>
+              )}
               {/* A playlist's count reads left to right in every language, as "2 / 5". */}
               <span aria-live="polite" dir="ltr" data-testid="media-count" style={{ fontVariantNumeric: "tabular-nums" }}>
                 {pos.position} / {pos.total}
               </span>
-              {canDownload && <Button onClick={() => void download()}>{t("files.act.download")}</Button>}
+              {/* The Playlist button is drawn into this slot by MediaPlaylist (toggleSlot), beside Download. */}
+              <span ref={setToggleSlot} className="media-toggle-slot" style={{ display: "contents" }} />
+              {canDownload && <HeadDownload label={t("files.act.download")} onClick={() => void download()} />}
             </header>
             {node && refused === node.id && <Alert type="info" role="status" showIcon message={t("files.err.downloadRestricted")} />}
           </>

@@ -85,7 +85,7 @@ async function playItemUnscrolled(page, name) {
   await waitMedia(page);
   // A script's dispatched double click is not a user gesture, and the browser then refuses play() (the playlist's next file
   // would never start). A real click on the viewer's own name gives the page that gesture, and changes nothing else.
-  const name_ = await page.evaluate(`(() => { const r = document.querySelector('[data-testid="preview"] header p').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  const name_ = await page.evaluate(`(() => { const r = document.querySelector('[data-testid="preview"] header p, [data-testid="preview"] .media-art-name').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   await click(page, name_);
   await sleep(200);
 }
@@ -96,7 +96,7 @@ const state = (page) =>
     const v = document.querySelector(${q(MEDIA)});
     const titles = [...document.querySelectorAll('[data-testid="media-queue"] .media-title bdi')].map((b) => b.textContent);
     return {
-      name: document.querySelector('[data-testid="preview"] header bdi')?.textContent ?? null,
+      name: document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent ?? null,
       paused: v ? v.paused : null,
       t: v ? v.currentTime : null,
       dur: v ? v.duration : null,
@@ -114,7 +114,7 @@ const state = (page) =>
 
 // waitName waits until the viewer shows this file.
 const waitName = (page, name, ms = 15000) =>
-  page.waitFor(`document.querySelector('[data-testid="preview"] header bdi')?.textContent === ${q(name)}`, ms);
+  page.waitFor(`document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent === ${q(name)}`, ms);
 
 // waitMedia waits until the file on screen can play (its element has its data).
 const waitMedia = (page, ms = 20000) => page.waitFor(`(() => { const v = document.querySelector(${q(MEDIA)}); return !!v && v.readyState >= 2; })()`, ms);
@@ -152,6 +152,15 @@ async function openFolderView(page, folderURL, firstName) {
 }
 
 // playItem plays the file with this name from the folder listing, by a double click on its row.
+// openDrawer opens the viewer's playlist drawer with its toggle, as a person does: the drawer is closed by default (decision 63),
+// and a check that drags or focuses its rows needs it open.
+async function openDrawer(page) {
+  await page.evaluate(`(() => { const t = document.querySelector('.media-playlist-toggle'); if (t && t.getAttribute('aria-expanded') !== 'true') t.click(); })()`);
+  await page.waitFor(`document.querySelector('[data-media-drawer]')?.dataset.open === 'true'`, 5000);
+  // The drawer slides in over 200 ms: positions read before it has settled (a drag's grip) are stale.
+  await page.waitFor(`document.querySelector('[data-media-drawer]').getAnimations().length === 0`, 3000);
+}
+
 async function playItem(page, name, { wait = true } = {}) {
   await dblClick(page, await itemPoint(page, name));
   await page.waitFor(`!!document.querySelector('[data-testid="preview"]')`, 15000);
@@ -362,7 +371,7 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
     const seen = [(await state(page)).name];
     for (let i = 0; i < 3; i++) {
       await finish(page);
-      await page.waitFor(`document.querySelector('[data-testid="preview"] header bdi')?.textContent !== ${q(seen[seen.length - 1])}`, 15000);
+      await page.waitFor(`document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent !== ${q(seen[seen.length - 1])}`, 15000);
       await waitMedia(page);
       seen.push((await state(page)).name);
     }
@@ -443,6 +452,7 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
   await step('a dragged file plays in its new place, and so does one moved by the keyboard', async () => {
     await openFolderView(page, urlOf(x1Four), '1-one.ogg');
     await playItem(page, '1-one.ogg');
+    await openDrawer(page);
     const rows = () => state(page).then((s) => s.titles);
     check(JSON.stringify(await rows()) === JSON.stringify(['1-one.ogg', '2-two.ogg', '3-three.ogg', '4-four.ogg']), 'the panel lists the folder in its order');
     // Drag four's grip up to the row of one, in steps, as a hand does.
@@ -757,7 +767,8 @@ export async function playerChecks(h, { page, base, accountKey, teamA, linkMints
       const root = document.querySelector('[data-testid="preview"]');
       const modal = root.matches('.ant-modal-content') ? root : (root.querySelector('.ant-modal-content') ?? root);
       const box = modal.getBoundingClientRect();
-      const buttons = [...root.querySelectorAll('button'), ...document.querySelectorAll('[data-testid="media-controls"] button')].filter((b) => b.getBoundingClientRect().width > 0);
+      // A closed playlist drawer is off the screen by design (decision 63): its buttons are not on the screen.
+      const buttons = [...root.querySelectorAll('button'), ...document.querySelectorAll('[data-testid="media-controls"] button')].filter((b) => b.getBoundingClientRect().width > 0 && !b.closest('.media-drawer--closed'));
       const clipped = buttons
         .filter((b) => { const r = b.getBoundingClientRect(); return r.left < box.left - 0.5 || r.right > box.right + 0.5; })
         .map((b) => b.getAttribute('aria-label') ?? b.textContent.trim());

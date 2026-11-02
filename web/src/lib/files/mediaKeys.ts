@@ -90,6 +90,17 @@ function keyboardFocus(el: Element): boolean {
   }
 }
 
+// isPopupTarget says whether a key was aimed at a popup the page drew: a menu, a list, a tooltip, a dialog other than the
+// viewer, or an antd dropdown or popover. Such a popup takes its own Escape. A portal's key reaches the React ancestors too,
+// so the viewer and the playlist drawer ask this before they close on Escape.
+export function isPopupTarget(target: EventTarget | null): boolean {
+  if (!target || typeof (target as Element).closest !== "function") return false;
+  const el = target as HTMLElement;
+  if (el.closest('[role="menu"], [role="listbox"], [role="tooltip"], .ant-dropdown, .ant-select-dropdown, .ant-popover')) return true;
+  const dialog = el.closest('[role="dialog"]');
+  return dialog !== null && dialog.getAttribute("data-testid") !== "preview";
+}
+
 // ignoredTarget says whether the player must leave a key press to the element it was aimed at: anything typed into a
 // field, or a control that uses the key itself. The element is read through its tag and its role, so the rule holds
 // in every language.
@@ -102,6 +113,11 @@ export function ignoredTarget(target: EventTarget | null, key: string): boolean 
   const el = target as HTMLElement;
   // jsdom and older browsers do not compute isContentEditable, so the attribute is read as well.
   if (el.isContentEditable || el.closest('[contenteditable]:not([contenteditable="false"])')) return true;
+  // The playlist drawer's arrows move its own rows and fields, and a dialog keeps every key it is given (slice x6, decision 63).
+  // The viewer is a dialog too, and it is the player's own page: its keys are the player's.
+  if (el.closest("[data-media-drawer]") && key.startsWith("Arrow")) return true;
+  const dialog = el.closest('[role="dialog"]');
+  if (dialog !== null && dialog.getAttribute("data-testid") !== "preview") return true;
   const tag = el.tagName;
   // Only true text entry takes the keys. A combobox input (the speed list, an antd Select) does not take the typed keys:
   // its keys are the player's, and it is the list's own role that says so.

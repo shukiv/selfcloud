@@ -271,6 +271,7 @@
   "files.media.previous": "Previous file",
   "files.media.next": "Next file",
   "files.media.queue": "Playlist",
+  "files.media.closePlaylist": "Close playlist",
   "files.media.queueEmpty": "Nothing in the playlist.",
   "files.media.shuffle": "Shuffle",
   "files.media.repeat": "Repeat",

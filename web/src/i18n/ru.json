@@ -271,6 +271,7 @@
   "files.media.previous": "Предыдущий файл",
   "files.media.next": "Следующий файл",
   "files.media.queue": "Список воспроизведения",
+  "files.media.closePlaylist": "Закрыть список воспроизведения",
   "files.media.queueEmpty": "Список воспроизведения пуст.",
   "files.media.shuffle": "Перемешать",
   "files.media.repeat": "Повтор",

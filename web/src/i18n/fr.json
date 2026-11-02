@@ -271,6 +271,7 @@
   "files.media.previous": "Fichier précédent",
   "files.media.next": "Fichier suivant",
   "files.media.queue": "Liste de lecture",
+  "files.media.closePlaylist": "Fermer la liste de lecture",
   "files.media.queueEmpty": "La liste de lecture est vide.",
   "files.media.shuffle": "Aléatoire",
   "files.media.repeat": "Répéter",

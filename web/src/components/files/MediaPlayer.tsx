@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Gate, NO_RENEWALS, PROGRESS_SECONDS, afterProgress, mediaVerdict, takeRenewal, type Renewals } from "../../lib/files/media";
 import { refusedPlay } from "../../lib/files/mediaKeys";
 import { LATE_START_S, SaveClock, startAt as placeToStart, type Resume } from "../../lib/files/resume";
@@ -57,6 +57,8 @@ interface Props {
   tracks?: SubtitleTrack[];
   // active says the viewer shows the player, so its keys are read. A player kept on the page for audio alone is not active.
   active?: boolean;
+  // art is the audio file's stage above its bar: the cover, the name and the tags (MediaArt). Nothing for a video.
+  art?: ReactNode;
 }
 
 // STALL_MS is how long a player may wait for data while playing before it asks for a new link. Some browsers report a
@@ -81,6 +83,7 @@ export default function MediaPlayer({
   onElement,
   tracks,
   active = true,
+  art,
 }: Props) {
   const el = useRef<HTMLMediaElement | null>(null);
   // mediaEl and stageEl are the same elements as state, so the bar renders once they exist.
@@ -395,6 +398,7 @@ export default function MediaPlayer({
       ) : (
         <audio ref={attach} src={current.url} aria-label={name} dir="ltr" loop={loop} className="media-sound" {...handlers} />
       )}
+      {kind === "audio" && art}
       <MediaControls
         media={mediaEl}
         kind={kind}

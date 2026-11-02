@@ -67,7 +67,7 @@ async function openedName(page) {
   await sleep(900);
   return page.evaluate(`(() => {
     const d = document.querySelector('[data-testid="preview"]');
-    return d ? (d.querySelector('header bdi')?.textContent ?? '') : null;
+    return d ? (d.querySelector('header bdi, .media-art-name bdi')?.textContent ?? '') : null;
   })()`);
 }
 
@@ -80,7 +80,7 @@ async function closePreview(page) {
   try {
     await page.waitFor(`!document.querySelector('[data-testid="preview"]')`, 10000);
   } catch (err) {
-    const state = await page.evaluate(`(() => ({ previews: document.querySelectorAll('[data-testid="preview"]').length, width: innerWidth, title: document.querySelector('[data-testid="preview"] header bdi')?.textContent ?? null, buttons: [...document.querySelectorAll('[data-testid="preview"] button')].map((b) => b.textContent.trim()) }))()`);
+    const state = await page.evaluate(`(() => ({ previews: document.querySelectorAll('[data-testid="preview"]').length, width: innerWidth, title: document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent ?? null, buttons: [...document.querySelectorAll('[data-testid="preview"] button')].map((b) => b.textContent.trim()) }))()`);
     throw new Error(`${err.message}; ${clicked}; ${JSON.stringify(state)}`);
   }
 }
@@ -584,7 +584,8 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     };
     const playing = () => page.evaluate(`(() => {
       const d = document.querySelector('[data-testid="preview"]');
-      return d ? { name: d.querySelector('header bdi')?.textContent ?? '', text: d.querySelector('[data-testid="media-playlist"]')?.textContent ?? '' } : null;
+      // A video's name is in the head; an audio file's is under its cover on the stage (decision 63).
+      return d ? { name: d.querySelector('header bdi, .media-art-name bdi')?.textContent ?? '', text: d.querySelector('[data-testid="media-playlist"]')?.textContent ?? '' } : null;
     })()`);
     const menuPlay = async (name) => {
       const at = await point(page, name);

@@ -271,6 +271,7 @@
   "files.media.previous": "الملف السابق",
   "files.media.next": "الملف التالي",
   "files.media.queue": "قائمة التشغيل",
+  "files.media.closePlaylist": "إغلاق قائمة التشغيل",
   "files.media.queueEmpty": "قائمة التشغيل فارغة.",
   "files.media.shuffle": "خلط",
   "files.media.repeat": "تكرار",

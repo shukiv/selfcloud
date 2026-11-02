@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { bufferedEnd, clamp, formatTime, ignoredTarget, keyCommand } from "./mediaKeys";
+import { bufferedEnd, clamp, formatTime, ignoredTarget, isPopupTarget, keyCommand } from "./mediaKeys";
 
 describe("keyCommand", () => {
   it.each([
@@ -122,5 +122,73 @@ describe("clamp", () => {
     expect(clamp(-1, 0, 1)).toBe(0);
     expect(clamp(0.4, 0, 1)).toBe(0.4);
     expect(clamp(3, 0, 1)).toBe(1);
+  });
+});
+
+// The playlist drawer (slice x6, decision 63): an arrow pressed in the drawer moves its own list or field, never the player,
+// and a key pressed in a dialog belongs to the dialog.
+describe("ignoredTarget in the drawer and in a dialog", () => {
+  // nest builds a chain of elements, each inside the one before, and returns the innermost.
+  function nest(...chain: Array<[string, Record<string, string>?]>): HTMLElement {
+    let parent: HTMLElement | null = null;
+    let last: HTMLElement | null = null;
+    for (const [tag, attrs] of chain) {
+      const e = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs ?? {})) e.setAttribute(k, v);
+      (parent ?? document.body).appendChild(e);
+      parent = e;
+      last = e;
+    }
+    if (last === null) throw new Error("empty chain");
+    return last;
+  }
+
+  it("leaves the arrows to the drawer's rows and buttons", () => {
+    const b = nest(["div", { "data-media-drawer": "" }], ["ol"], ["li"], ["button"]);
+    expect(ignoredTarget(b, "ArrowDown")).toBe(true);
+    expect(ignoredTarget(b, "ArrowLeft")).toBe(true);
+  });
+
+  it("leaves every key pressed in a dialog to the dialog", () => {
+    const b = nest(["div", { role: "dialog" }], ["button"]);
+    expect(ignoredTarget(b, "ArrowRight")).toBe(true);
+    expect(ignoredTarget(b, "k")).toBe(true);
+  });
+
+  it("still lets the arrows through when the focus is on the player's own bar, outside the drawer", () => {
+    const b = nest(["div", { "data-testid": "media-stage" }], ["button"]);
+    expect(ignoredTarget(b, "ArrowRight")).toBe(false);
+  });
+
+  it("does not take the viewer's keys: the viewer is a dialog too, and it is the player's page", () => {
+    const b = nest(["div", { role: "dialog", "data-testid": "preview" }], ["div", { "data-testid": "media-stage" }], ["button"]);
+    expect(ignoredTarget(b, "ArrowRight")).toBe(false);
+    expect(ignoredTarget(b, "k")).toBe(false);
+  });
+});
+
+describe("isPopupTarget", () => {
+  // inside builds a parent with the given attributes and one child, and returns the child: the key's target.
+  function inside(attrs: Record<string, string>, childId = "x"): HTMLElement {
+    const parent = document.createElement("div");
+    for (const [k, v] of Object.entries(attrs)) parent.setAttribute(k, v);
+    const child = document.createElement("button");
+    child.id = childId;
+    parent.appendChild(child);
+    document.body.replaceChildren(parent);
+    return child;
+  }
+
+  it("is a menu item, a listbox option, a dropdown or a dialog other than the viewer", () => {
+    expect(isPopupTarget(inside({ role: "menu" }))).toBe(true);
+    expect(isPopupTarget(inside({ role: "listbox" }))).toBe(true);
+    expect(isPopupTarget(inside({ class: "ant-dropdown" }))).toBe(true);
+    expect(isPopupTarget(inside({ role: "dialog", "data-testid": "other" }))).toBe(true);
+  });
+
+  it("is not the viewer itself, nor a plain control or no target", () => {
+    expect(isPopupTarget(inside({ role: "dialog", "data-testid": "preview" }))).toBe(false);
+    expect(isPopupTarget(inside({}))).toBe(false);
+    expect(isPopupTarget(null)).toBe(false);
   });
 });

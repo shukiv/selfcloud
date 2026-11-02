@@ -11,6 +11,7 @@ import { kindOf } from "../../lib/files/kind";
 import { Pager } from "../../lib/files/pager";
 import type { Link } from "../files/MediaPlayer";
 import { PlayMark } from "../files/KindMarks";
+import HeadDownload from "../files/HeadDownload";
 
 // The player and its playlist load when a video or audio file opens.
 const MediaPlaylist = lazy(() => import("../files/MediaPlaylist"));
@@ -52,6 +53,8 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
   // listing is the folder the visitor last opened, with the children read and the page after them.
   const listing = useRef<{ id: string; items: Node[]; cursor: string | null } | null>(null);
   const [current, setCurrent] = useState<Node | null>(null);
+  // toggleSlot is the head row's place for the playlist button while a media file plays (MediaPlaylist).
+  const [toggleSlot, setToggleSlot] = useState<HTMLElement | null>(null);
   const [trail, setTrail] = useState<NodeRef[]>([]);
   const [children, setChildren] = useState<Node[]>([]);
   const [previewLink, setPreviewLink] = useState<Link | null>(null);
@@ -279,23 +282,30 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
             )
           ) : playing && media ? (
             <>
-              {mediaNow && mediaDownload?.id === mediaNow.id && mediaDownload.allowed && (
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                  <Button onClick={() => void downloadNow(mediaNow)}>{t("files.act.download")}</Button>
-                </div>
-              )}
+              {/* The head row: the playlist button (drawn by MediaPlaylist into toggleSlot) sits beside Download, as in the viewer. */}
+              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span ref={setToggleSlot} className="media-toggle-slot" style={{ display: "contents" }} />
+                {mediaNow && mediaDownload?.id === mediaNow.id && mediaDownload.allowed && (
+                  <HeadDownload label={t("files.act.download")} onClick={() => void downloadNow(mediaNow)} />
+                )}
+              </div>
               {mediaNow && mediaDownload?.id === mediaNow.id && !mediaDownload.allowed && (
                 <p style={{ fontSize: 14, color: "var(--ant-color-text-secondary)", marginBottom: 8 }}>{t("share.open.noDownload")}</p>
               )}
-              <Suspense fallback={<p role="status">{t("files.preview.loading")}</p>}>
-                <MediaPlaylist
-                  start={media.start}
-                  folder={media.folder}
-                  fetchLink={fetchLink}
-                  onCurrent={onMediaCurrent}
-                  onLost={shareGone}
-                />
-              </Suspense>
+              {/* The player needs a definite height: its screen, cover and video fill it. A share page has no viewer: the player
+                  takes the window below the page's head (the head row, the title and the page's bar), and 360 px at least. */}
+              <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 220px)", minHeight: 360 }}>
+                <Suspense fallback={<p role="status">{t("files.preview.loading")}</p>}>
+                  <MediaPlaylist
+                    start={media.start}
+                    folder={media.folder}
+                    fetchLink={fetchLink}
+                    onCurrent={onMediaCurrent}
+                    onLost={shareGone}
+                    toggleSlot={toggleSlot}
+                  />
+                </Suspense>
+              </div>
             </>
           ) : (
             <>

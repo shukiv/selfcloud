@@ -64,6 +64,14 @@ async function rowPoint(page, name) {
   return p;
 }
 
+// openDrawer opens the viewer's playlist drawer, as its toggle does, when a check measures its rows (decision 63).
+async function openDrawer(page) {
+  await page.evaluate(`(() => { const t = document.querySelector('.media-playlist-toggle'); if (t && t.getAttribute('aria-expanded') !== 'true') t.click(); })()`);
+  await until(page, `document.querySelector('[data-media-drawer]')?.dataset.open === 'true'`, 5000, 'the playlist drawer');
+  // The drawer slides in over 200 ms: positions read before it has settled are stale.
+  await until(page, `document.querySelector('[data-media-drawer]').getAnimations().length === 0`, 3000, 'the drawer has settled');
+}
+
 // openFolder shows a folder's listing in List view, with the first row given.
 async function openFolder(page, url, firstName) {
   await page.goto(url);
@@ -100,24 +108,26 @@ async function shot(page, name) {
 }
 
 // COVER reads the cover box of the player on screen: its size, and whether a picture is in it.
-const COVER = `(() => { const c = document.querySelector('[data-testid="preview"] [data-testid="tag-cover"]'); if (!c) return null; const r = c.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), cover: c.dataset.cover, img: !!c.querySelector('img'), icon: !!c.querySelector('svg') }; })()`;
+const COVER = `(() => { const c = document.querySelector('[data-testid="preview"] [data-testid="media-cover"]'); if (!c) return null; const r = c.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), cover: c.dataset.cover, img: !!c.querySelector('img'), icon: !!c.querySelector('svg') }; })()`;
 // SAMPLER records the header at every change of the page while the viewer is open: the title, the cover box, the header's height
 // and where the title line sits in it. The window keeps the samples for the check to read.
 const SAMPLER = `(() => {
   window.__x3Samples = [];
   window.__x3Watch = new MutationObserver(() => {
     const v = document.querySelector('[data-testid="preview"] header');
-    const c = v?.querySelector('[data-testid="tag-cover"]');
-    const t = v?.querySelector('bdi');
-    if (!c || !t) return;
+    const c = document.querySelector('[data-testid="preview"] [data-testid="media-cover"]');
+    const t = document.querySelector('[data-testid="preview"] .media-art-name bdi');
+    const art = document.querySelector('[data-testid="preview"] [data-testid="media-art"]');
+    if (!v || !c || !t || !art) return;
     const r = c.getBoundingClientRect();
     const hr = v.getBoundingClientRect();
-    window.__x3Samples.push({ title: t.textContent, cover: c.dataset.cover, box: Math.round(r.width) + 'x' + Math.round(r.height), header: Math.round(hr.height), top: Math.round(t.getBoundingClientRect().top - hr.top) });
+    // The cover's box is the stage's room: its size is what must not move while the tags and the cover arrive.
+    window.__x3Samples.push({ title: t.textContent, cover: c.dataset.cover, box: Math.round(r.width) + 'x' + Math.round(r.height), header: Math.round(hr.height), top: Math.round(t.getBoundingClientRect().top - art.getBoundingClientRect().top) });
   });
   window.__x3Watch.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });
   return true;
 })()`;
-const VIEW_TITLE = `document.querySelector('[data-testid="preview"] header bdi')?.textContent ?? null`;
+const VIEW_TITLE = `document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.textContent ?? null`;
 
 
 // lineUp checks the viewer's two lines start at the same edge in the page's direction, and the playlist row's title and artist are
@@ -125,12 +135,13 @@ const VIEW_TITLE = `document.querySelector('[data-testid="preview"] header bdi')
 async function lineUp(page, check, what) {
   const m = await page.evaluate(`(() => {
     const rtl = document.documentElement.dir === 'rtl';
-    const t = document.querySelector('[data-testid="preview"] header bdi').getBoundingClientRect();
+    const t = document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi').getBoundingClientRect();
     const a = document.querySelector('[data-testid="media-artist"]').getBoundingClientRect();
     const row = [...document.querySelectorAll('[data-testid="media-row"]')].find((x) => x.querySelector('.media-row-artist'));
     const rt = row.querySelector('.media-title bdi').getBoundingClientRect();
     const ra = row.querySelector('.media-row-artist').getBoundingClientRect();
-    return { rtl, apart: Math.round(rtl ? t.right - a.right : t.left - a.left), gap: Math.round(rtl ? rt.left - ra.right : ra.left - rt.right), titleCut: row.querySelector('.media-title bdi').scrollWidth > row.querySelector('.media-title bdi').clientWidth };
+    // The viewer's name and artist are centred under the cover (decision 63), so the check is that their centres line up.
+    return { rtl, apart: Math.round((t.left + t.right) / 2 - (a.left + a.right) / 2), gap: Math.round(rtl ? rt.left - ra.right : ra.left - rt.right), titleCut: row.querySelector('.media-title bdi').scrollWidth > row.querySelector('.media-title bdi').clientWidth };
   })()`);
   check(m.apart === 0, `${what}: the title and the artist start at the same edge (${q(m)})`);
   check(m.gap >= 6, `${what}: the row's title and artist have a gap (${q(m)})`);
@@ -238,19 +249,24 @@ export async function x3Checks(h, { page, base, accountKey, accountID, memberID 
       await dblClick(page, await rowPoint(page, 'tag24.mp3'));
       await holdPlaying(page);
       await until(page, `${VIEW_TITLE} === ${q(HEBREW_TITLE)}`, 20000, 'the Hebrew title in the player');
-      await until(page, `!!document.querySelector('[data-testid="preview"] [data-testid="tag-cover"][data-cover="yes"] img')`, 25000, 'the cover picture');
+      await until(page, `!!document.querySelector('[data-testid="preview"] [data-testid="media-cover"][data-cover="yes"] img')`, 25000, 'the cover picture');
       await sleep(300);
       const samples = await page.evaluate(`(() => { window.__x3Watch.disconnect(); return window.__x3Samples; })()`);
       const distinct = (k) => [...new Set(samples.map((s) => s[k]))];
       check(samples.some((s) => s.title === 'tag24.mp3' && s.cover === 'no'), `the file name and the icon show before the tags and the cover (${samples.length} samples, titles ${q(distinct('title'))})`);
       check(distinct('title').includes(HEBREW_TITLE) && samples.at(-1).cover === 'yes', `the title and the cover arrive (covers ${q(distinct('cover'))})`);
-      check(distinct('box').length === 1 && distinct('box')[0] === '48x48', `the cover box stays 48 by 48 px throughout (${q(distinct('box'))})`);
+      // The box and the title line are measured in whole pixels, and each is one size and one top for every sample: the cover
+      // box does not move when the text arrives, and the name's line keeps its height (x6 restored its fixed line height).
+      const dims = samples.map((s) => s.box.split('x').map(Number));
+      check(dims.every((d) => d[0] > 0 && d[1] > 0) && distinct('box').length === 1, `the cover box keeps its size throughout (${q(distinct('box'))})`);
       check(distinct('header').length === 1, `the header keeps its height throughout (${q(distinct('header'))})`);
       check(distinct('top').length === 1, `the title line does not move in the header (${q(distinct('top'))})`);
-      const dirAuto = await page.evaluate(`document.querySelector('[data-testid="preview"] header bdi')?.getAttribute('dir')`);
+      const dirAuto = await page.evaluate(`document.querySelector('[data-testid="preview"] header bdi, [data-testid="preview"] .media-art-name bdi')?.getAttribute('dir')`);
       check(dirAuto === 'auto', 'the title is set with dir="auto"');
       const artist = await page.evaluate(`(() => { const a = document.querySelector('[data-testid="media-artist"]'); return a ? { text: a.textContent, dir: a.getAttribute('dir') } : null; })()`);
       check(artist?.text === 'Artist One' && artist?.dir === 'auto', `the artist shows under the title with dir="auto" (${q(artist)})`);
+      // The rows are in the playlist drawer: a closed drawer is off the screen, and its rows load their covers only when shown.
+      await openDrawer(page);
       const row = await page.evaluate(`(() => { const r = [...document.querySelectorAll('[data-testid="media-row"]')].find((x) => x.querySelector('.media-title')?.title === 'tag24.mp3'); return r ? { title: r.querySelector('.media-title bdi')?.textContent, artist: r.querySelector('.media-row-artist')?.textContent } : null; })()`);
       check(row?.title === HEBREW_TITLE && row?.artist === 'Artist One', `the playlist row shows the title and the artist (${q(row)})`);
       await until(page, `[...document.querySelectorAll('[data-testid="media-row"]')].find((x) => x.querySelector('.media-title')?.title === 'tag24.mp3')?.querySelector('[data-testid="tag-cover"]')?.dataset.cover === 'yes'`, 15000, 'the cover in the playlist row');
@@ -276,9 +292,10 @@ export async function x3Checks(h, { page, base, accountKey, accountID, memberID 
       await openFolder(page, songsURL + '?lang=en', 'plain.ogg');
       await dblClick(page, await rowPoint(page, 'plain.ogg'));
       await until(page, `${VIEW_TITLE} === 'plain.ogg'`, 15000, 'the file name for an untagged file');
-      await until(page, `document.querySelector('[data-testid="preview"] [data-testid="tag-cover"]')?.dataset.cover === 'no'`, 15000, 'no cover');
+      await until(page, `document.querySelector('[data-testid="preview"] [data-testid="media-cover"]')?.dataset.cover === 'no'`, 15000, 'no cover');
       const box = await page.evaluate(COVER);
-      check(box.icon && !box.img && box.w === 48, `an untagged file has the icon in the box (${JSON.stringify(box)})`);
+      // The icon is the large fallback of the audio stage (decision 63), not the 48 px badge the header had before.
+      check(box.icon && !box.img && box.w >= 200 && box.h >= 200, `an untagged file has the large icon in the box (${JSON.stringify(box)})`);
       await page.evaluate(`document.querySelector('[data-testid="preview"] header button').click()`);
     });
 
@@ -306,7 +323,8 @@ export async function x3Checks(h, { page, base, accountKey, accountID, memberID 
           await dblClick(page, await rowPoint(page, 'tag24.mp3'));
           await holdPlaying(page);
           await until(page, `${VIEW_TITLE} === ${q(HEBREW_TITLE)}`, 20000, 'the Hebrew title');
-          await until(page, `!!document.querySelector('[data-testid="preview"] [data-testid="tag-cover"][data-cover="yes"] img')`, 25000, 'the cover');
+          await until(page, `!!document.querySelector('[data-testid="preview"] [data-testid="media-cover"][data-cover="yes"] img')`, 25000, 'the cover');
+          await openDrawer(page);
           await lineUp(page, check, `desktop ${tag}`);
           await rowFit(page, `desktop ${tag}`);
           await shot(page, `player-desktop-${tag}`);
@@ -321,6 +339,7 @@ export async function x3Checks(h, { page, base, accountKey, accountID, memberID 
           await holdPlaying(page);
           await until(page, `${VIEW_TITLE} === ${q(HEBREW_TITLE)}`, 20000, 'the Hebrew title on the phone');
           await sleep(500);
+          await openDrawer(page);
           await lineUp(page, check, `phone ${tag}`);
           await rowFit(page, `phone ${tag}`);
           await shot(page, `player-phone-${tag}`);

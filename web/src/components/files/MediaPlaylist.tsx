@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Alert, Button } from "antd";
+import { ListMusic, X } from "lucide-react";
 import { ApiError } from "../../lib/apiError";
 import { useT } from "../../lib/i18n";
 import { kindOf } from "../../lib/files/kind";
 import { Pager } from "../../lib/files/pager";
+import { isPopupTarget } from "../../lib/files/mediaKeys";
 import {
   addEnd,
   addNext,
@@ -30,6 +33,11 @@ import MediaPlayer, { type Link, type MediaFailure } from "./MediaPlayer";
 import MediaQueue from "./MediaQueue";
 import MediaPlaylists from "./MediaPlaylists";
 import { replaceEntries as replaceQueueEntries } from "../../lib/files/queue";
+import { usePaletteOrLight } from "../../theme/theme";
+import MediaArt from "./MediaArt";
+
+// DRAWER_ID names the playlist drawer for the toggle's aria-controls.
+const DRAWER_ID = "media-drawer";
 
 // MediaPlaylist plays a list of video and audio files one after another, with the panel that shows the list. The list is
 // the folder's playable files, read a page at a time as the player reaches their end (Pager), or the selection the person
@@ -89,6 +97,10 @@ export interface MediaPlaylistProps {
   onNav?: (nav: { next: () => void; previous: () => void }) => void;
   // active says the viewer shows the playlist, so the player reads its keys. A session kept for audio alone does not.
   active?: boolean;
+  // toggleSlot is the element the Playlist button is drawn into, on the owner's head row beside Download (the viewer and
+  // the share page each give one). Given as undefined, the button keeps a row of its own above the screen; given as null,
+  // the slot is not on screen yet and no button is drawn.
+  toggleSlot?: HTMLElement | null;
 }
 
 export default function MediaPlaylist({
@@ -107,8 +119,50 @@ export default function MediaPlaylist({
   onElement,
   onNav,
   active = true,
+  toggleSlot,
 }: MediaPlaylistProps) {
   const { t } = useT();
+  const palette = usePaletteOrLight();
+  // drawer says the playlist drawer is open. It is closed on every opening of the viewer (active turns on), and it is not
+  // kept: closing the viewer resets it (decision 63).
+  const [drawer, setDrawer] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!active) setDrawer(false);
+  }, [active]);
+  // Opening moves the focus into the drawer; closing by the person returns it to the toggle. A close the viewer makes (the
+  // viewer is hidden) does not move the focus.
+  // The focus moves in the task after the open: a press moves the focus to the toggle as it lands. A closed drawer is inert (out of
+  // the focus order and the accessibility tree) and off the screen, not visibility: hidden, which Chrome keeps hidden for a moment
+  // after the open, so the focus failed.
+  useEffect(() => {
+    if (!drawer) return;
+    const id = window.setTimeout(() => closeRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [drawer]);
+  const closeDrawer = () => {
+    setDrawer(false);
+    toggleRef.current?.focus();
+  };
+  // Escape closes the drawer first, and the viewer only with the drawer closed. It is read in the capture phase so the viewer's
+  // own Escape never sees it. A combo box or menu that is open, and a dialog (not the viewer), take their own Escape.
+  useEffect(() => {
+    if (!drawer) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const at = e.target instanceof HTMLElement ? e.target : null;
+      if (at !== null && at !== toggleRef.current && at.getAttribute("aria-expanded") === "true") return;
+      // A popup the page drew (a row's menu, a confirm) takes its own Escape.
+      if (isPopupTarget(at)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setDrawer(false);
+      toggleRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [drawer]);
   const lostRef = useRef(onLost);
   lostRef.current = onLost;
   const resumeRef = useRef(resumeOf);
@@ -433,10 +487,27 @@ export default function MediaPlaylist({
   // The add panel offers the folder's files that are not in the queue, in a selection too: the folder is what it adds from.
   const candidates = folder.loaded.filter((n) => !q.entries.some((e) => e.node.id === n.id));
 
+  // The Playlist button. Its name is the label on a wide window; at phone width the label is hidden and the name stays in
+  // aria-label, so the button is the icon alone there.
+  const toggle = (
+    <Button
+      ref={toggleRef}
+      className="media-btn media-playlist-toggle"
+      aria-label={t("files.media.queue")}
+      aria-expanded={drawer}
+      aria-controls={DRAWER_ID}
+      onClick={() => (drawer ? closeDrawer() : setDrawer(true))}
+      icon={<ListMusic size={16} aria-hidden="true" />}
+    >
+      <span className="media-queue-label">{t("files.media.queue")}</span>
+    </Button>
+  );
+
   return (
     <div className="media-playlist" data-testid="media-playlist">
       <div className="media-main">
-        <div className="media-screen" data-testid="media-screen">
+        {toggleSlot === undefined ? <div className="media-toolbar">{toggle}</div> : toggleSlot ? createPortal(toggle, toggleSlot) : null}
+        <div className={`media-screen${drawer ? " media-screen--drawer" : ""}`} data-testid="media-screen">
           {stop === "end" ? (
             <p role="status">{t("files.media.ended")}</p>
           ) : stop === "lost" ? (
@@ -522,8 +593,68 @@ export default function MediaPlaylist({
               onElement={onElement}
               active={active}
               nav={{ next, previous }}
+              art={kind === "audio" ? <MediaArt node={currentNode} /> : undefined}
             />
           ) : null}
+          {/* A stopped audio list keeps the last track's cover and name under its message, as the header did before (decision 63). */}
+          {stop !== null && kind === "audio" && currentNode !== undefined && <MediaArt node={currentNode} />}
+        <div
+          id={DRAWER_ID}
+          className={`media-drawer${drawer ? "" : " media-drawer--closed"}`}
+          data-media-drawer=""
+          data-open={drawer ? "true" : "false"}
+          {...(drawer ? {} : { inert: "" })}
+          style={{ background: palette.card, color: palette.text, borderColor: palette.line }}
+        >
+          <div className="media-drawer-head">
+            <Button
+              ref={closeRef}
+              className="media-btn media-drawer-close"
+              aria-label={t("files.media.closePlaylist")}
+              onClick={closeDrawer}
+              icon={<X size={18} aria-hidden="true" />}
+            />
+          </div>
+          <MediaQueue
+            entries={q.entries}
+            currentId={currentId}
+            repeat={q.repeat}
+            shuffle={q.shuffle}
+            capped={q.capped || (paged && folder.cut)}
+            moreLeft={paged && folder.hasMore && !q.capped && !folder.cut}
+            busy={busy}
+            candidates={candidates}
+            adding={adding}
+            playing={playing}
+            onAddOpen={() => setAdding((v) => !v)}
+            onAdd={(n, where) => commit(where === "next" ? addNext(qRef.current, n) : addEnd(qRef.current, n))}
+            onLoadMore={() => void loadMore()}
+            onPlay={(id) => {
+              const entry = qRef.current.entries.find((e) => e.node.id === id);
+              if (entry && entry.mark !== "restricted" && entry.mark !== "unavailable") pick(choose(qRef.current, id));
+            }}
+            onRemove={removeEntry}
+            onMove={(id, delta) => commit(move(qRef.current, id, delta))}
+            onShuffle={() => void shuffleToggle()}
+            onRepeat={() => commit(cycleRepeat(qRef.current))}
+            saved={
+              saved ? (
+                <MediaPlaylists
+                  queue={q.entries}
+                  onOpen={(entries) => {
+                    // Opening a saved playlist plays it: its first playable file starts. The file that was on screen is not in
+                    // the list, so it would otherwise leave the player with no file to show.
+                    setFromSaved(true);
+                    const next = replaceQueueEntries(qRef.current, entries);
+                    const first = next.entries.find((e) => e.mark === "ok");
+                    if (first) pick(choose(next, first.node.id));
+                    else commit(next);
+                  }}
+                />
+              ) : undefined
+            }
+          />
+        </div>
         </div>
 
         {/* One message for an unreadable folder: when the playlist has stopped as unreadable, its alert above says it. */}
@@ -543,45 +674,6 @@ export default function MediaPlaylist({
         )}
       </div>
 
-      <MediaQueue
-        entries={q.entries}
-        currentId={currentId}
-        repeat={q.repeat}
-        shuffle={q.shuffle}
-        capped={q.capped || (paged && folder.cut)}
-        moreLeft={paged && folder.hasMore && !q.capped && !folder.cut}
-        busy={busy}
-        candidates={candidates}
-        adding={adding}
-        playing={playing}
-        onAddOpen={() => setAdding((v) => !v)}
-        onAdd={(n, where) => commit(where === "next" ? addNext(qRef.current, n) : addEnd(qRef.current, n))}
-        onLoadMore={() => void loadMore()}
-        onPlay={(id) => {
-          const entry = qRef.current.entries.find((e) => e.node.id === id);
-          if (entry && entry.mark !== "restricted" && entry.mark !== "unavailable") pick(choose(qRef.current, id));
-        }}
-        onRemove={removeEntry}
-        onMove={(id, delta) => commit(move(qRef.current, id, delta))}
-        onShuffle={() => void shuffleToggle()}
-        onRepeat={() => commit(cycleRepeat(qRef.current))}
-        saved={
-          saved ? (
-            <MediaPlaylists
-              queue={q.entries}
-              onOpen={(entries) => {
-                // Opening a saved playlist plays it: its first playable file starts. The file that was on screen is not in
-                // the list, so it would otherwise leave the player with no file to show.
-                setFromSaved(true);
-                const next = replaceQueueEntries(qRef.current, entries);
-                const first = next.entries.find((e) => e.mark === "ok");
-                if (first) pick(choose(next, first.node.id));
-                else commit(next);
-              }}
-            />
-          ) : undefined
-        }
-      />
     </div>
   );
 }

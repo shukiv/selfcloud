@@ -164,8 +164,9 @@ describe("the tags of the file on screen", () => {
     render(<MediaHost />);
     act(() => startPlayback({ start: a, folder: folderOf([a]) }));
     await element("audio");
-    await waitFor(() => expect(document.querySelector('[data-testid="preview"] header bdi')?.textContent).toBe("<img src=x onerror=alert(1)>"));
-    const title = document.querySelector('[data-testid="preview"] header bdi') as HTMLElement;
+    // An audio file's name is on its stage, under the cover (MediaArt, decision 63).
+    await waitFor(() => expect(document.querySelector('[data-testid="media-art"] .media-art-name bdi')?.textContent).toBe("<img src=x onerror=alert(1)>"));
+    const title = document.querySelector('[data-testid="media-art"] .media-art-name bdi') as HTMLElement;
     expect(title.getAttribute("dir")).toBe("auto");
     expect(title.querySelector("img")).toBeNull();
     const artist = screen.getByTestId("media-artist");
@@ -188,9 +189,9 @@ describe("the tags of the file on screen", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    expect(document.querySelector('[data-testid="preview"] header bdi')?.textContent).toBe("t2.mp3");
+    expect(document.querySelector('[data-testid="media-art"] .media-art-name bdi')?.textContent).toBe("t2.mp3");
     expect(screen.getByTestId("media-artist").textContent).toBe("");
-    expect(document.querySelector('[data-testid="preview"] header [data-testid="tag-cover"] svg')).not.toBeNull();
+    expect(document.querySelector('[data-testid="media-cover"] .media-cover-empty svg')).not.toBeNull();
   });
 });
 
@@ -277,13 +278,32 @@ describe("a hidden viewer is not an open dialog", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("Escape closes the playlist drawer first, and the viewer only once the drawer is closed (decision 63)", async () => {
+    const a = file("a.ogg", "audio/ogg");
+    render(<MediaHost />);
+    act(() => startPlayback({ start: a, folder: folderOf([a]) }));
+    await element("audio");
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "Playlist" }));
+    expect(screen.getByRole("button", { name: "Playlist" }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Playlist" }).getAttribute("aria-expanded")).toBe("false");
+    expect(getPlayback().viewerOpen).toBe(true);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(getPlayback().viewerOpen).toBe(false));
+  });
+
   it("Tab from the last control goes back to the first, so focus stays in the open viewer", async () => {
     const a = file("a.ogg", "audio/ogg");
     render(<MediaHost />);
     act(() => startPlayback({ start: a, folder: folderOf([a]) }));
     await element("audio");
     const dialog = await screen.findByRole("dialog");
-    const controls = Array.from(dialog.querySelectorAll<HTMLElement>("button, [tabindex]:not([tabindex='-1'])")).filter((el) => !el.hasAttribute("disabled"));
+    // The closed playlist drawer is hidden, so its controls are not in the Tab order (decision 63).
+    // The same list the viewer wraps Tab over (MediaDock's FOCUSABLE), so "last" here is the last control the viewer can reach.
+    const controls = Array.from(dialog.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter(
+      (el) => !el.hasAttribute("disabled") && el.closest(".media-drawer--closed") === null,
+    );
     const first = controls[0];
     const last = controls[controls.length - 1];
     last.focus();
