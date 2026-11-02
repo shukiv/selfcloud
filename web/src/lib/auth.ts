@@ -11,12 +11,14 @@ export interface Info {
   passwordMinLength: number;
   // sharingMaxExpiryDays is the longest a share may run, in days; 0 for no cap.
   sharingMaxExpiryDays: number;
+  // features is the list of optional features the server has on, by name (see lib/files/convert.ts).
+  features: unknown;
 }
 
 // loadInfo reads the installation's name, colours and password rule; it needs no sign-in. A missing
 // or odd minimum falls back to 8, the server's floor.
 export async function loadInfo(): Promise<Info> {
-  const info = await api<{ brand?: Brand; password_min_length?: unknown; sharing_max_expiry_days?: unknown }>(
+  const info = await api<{ brand?: Brand; password_min_length?: unknown; sharing_max_expiry_days?: unknown; features?: unknown }>(
     'GET',
     '/api/v1/info',
     { noRedirect: true },
@@ -27,6 +29,7 @@ export async function loadInfo(): Promise<Info> {
     brand: info.brand ?? null,
     passwordMinLength: min,
     sharingMaxExpiryDays: sharingMaxExpiryDays(info),
+    features: info.features,
   };
 }
 

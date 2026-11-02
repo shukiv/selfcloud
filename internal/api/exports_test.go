@@ -317,7 +317,7 @@ func TestConverterRefusalIsStickyAndItsTextIsKept(t *testing.T) {
 	fx.col.SetConvertMode("refuse")
 	wantStatus(t, previewGet(t, fx, fx.doc.ID, ""), http.StatusAccepted)
 	waitRowState(t, fx, fx.doc, "pdf", store.DerivedFailed)
-	wantStatus(t, previewGet(t, fx, fx.doc.ID, ""), http.StatusNotFound)
+	wantError(t, previewGet(t, fx, fx.doc.ID, ""), http.StatusUnsupportedMediaType, apierr.UnsupportedMedia)
 	row := rowFor(t, fx, fx.doc, "pdf")
 	if span := row.RetryAt.Sub(row.FailedAt); span < 23*time.Hour || span > 25*time.Hour {
 		t.Errorf("a refusal is retried %v after it failed, want a day (decision 37)", span)

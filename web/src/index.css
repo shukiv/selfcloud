@@ -862,3 +862,11 @@ tr[data-drop-state="refused"] > td {
     min-height: 44px;
   }
 }
+
+/* Touch: the preview and export buttons are 44 px targets on a coarse pointer, as the media buttons are. */
+@media (pointer: coarse) {
+  .convert-btn.ant-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

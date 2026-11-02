@@ -21,6 +21,9 @@ import * as p3 from './p3.mjs';
 import * as p4 from './p4.mjs';
 import * as p5 from './p5.mjs';
 import * as s4a from './s4a.mjs';
+import * as s4b from './s4b.mjs';
+import { startConvertFake } from './convertFake.mjs';
+import { refusedOnPurpose } from './refusals.mjs';
 import { sortChecks } from './sort.mjs';
 import { mediaChecks } from './media.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
@@ -48,6 +51,10 @@ function check(ok, what) {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${what}`);
   if (!ok) throw new Error(`check failed: ${what}`);
 }
+
+// The node IDs the s4b section refuses on purpose. The section fills it right before each refusal, so a 415 counts as
+// expected only for a node the section refused.
+const s4bRefused = new Set();
 
 // The answers the run causes on purpose: the start-up probe of an anonymous visitor, and a sign-in link
 // used a second time. The browser logs each as a failed request; the run counts them instead.
@@ -119,6 +126,12 @@ const EXPECTED = [
   {
     name: 'dropped connection',
     matches: (e) => e.source === 'network' && /ERR_INTERNET_DISCONNECTED/.test(e.text ?? ''),
+  },
+  // The conversions the s4b checks refuse on purpose: a refused preview or export, and a file type the converter does not
+  // take. Only a 415 on a node s4b refused is expected; any other 415 on a preview or an export fails the run.
+  {
+    name: 'conversion refused',
+    matches: (e) => refusedOnPurpose(e, s4bRefused),
   },
 ];
 
@@ -508,6 +521,9 @@ async function main() {
   const base = `http://127.0.0.1:${port}`;
   const cfg = join(dir, 'selfcloud.yaml');
   const sink = await mailSink();
+  // The document converter is a fake HTTPS server on this host (convertFake.mjs). The server trusts its certificate through
+  // SSL_CERT_FILE, which is set for the server process only.
+  const fake = await startConvertFake(dir, await freePort());
   await writeFile(
     cfg,
     [
@@ -531,6 +547,10 @@ async function main() {
       `  smtp_port: ${sink.port}`,
       '  smtp_tls: "none"',
       '  from: "Selfcloud <drive@example.com>"',
+      // Document previews and exports go to the fake converter (decision 37).
+      'office:',
+      '  enabled: true',
+      `  discovery_url: "${fake.origin}/hosting/discovery"`,
       'ui:',
       '  brand:',
       `    name: "${BRAND.name}"`,
@@ -548,7 +568,10 @@ async function main() {
   const adminToken = /^token=(\S+)/m.exec(adminMade.stdout)?.[1];
   if (!adminToken) throw new Error('the CLI did not print the admin token');
 
-  const server = spawn(bin, ['serve', '-config', cfg], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const server = spawn(bin, ['serve', '-config', cfg], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, SSL_CERT_FILE: fake.certFile },
+  });
   let serverLog = '';
   server.stdout.on('data', (d) => (serverLog += d));
   server.stderr.on('data', (d) => (serverLog += d));
@@ -693,6 +716,7 @@ async function main() {
       await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
       await sortChecks(h, { page, base, accountKey, teamA });
     }
+    if (!only || only === 's4b') await s4b.s4bChecks(h, { page, base, accountKey, teamA, dir, fake, refused: s4bRefused });
     if (!only || only === 'media') await mediaChecks(h, { page, base, accountKey, teamA });
     if (!only || only === 'w1') await w1Checks(h, { page, base, accountKey, teamA, teamB, dir });
     if (!only || only === 'w2') await w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir });
@@ -744,7 +768,9 @@ async function main() {
     check(page.expectedAnswers.get('start-up probe')?.length >= 1, 'the start-up probe of an anonymous visitor was refused, and counted');
     check(page.expectedAnswers.get('used sign-in link')?.length === 1, 'the used sign-in link was refused once, on the second visit');
     // A blob: address is the page's own object (a thumbnail the page made from a same-origin answer), not a request elsewhere.
-    const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:') && !u.startsWith('blob:' + base + '/'));
+    // The browser's own PDF viewer is an extension inside the browser: a PDF in a frame loads its files from there, and nothing leaves the machine.
+    const pdfViewer = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/';
+    const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:') && !u.startsWith('blob:' + base + '/') && !u.startsWith(pdfViewer));
     check(foreign.length === 0, `every request is same-origin (${foreign.length} foreign: ${foreign.join(' ')})`);
     console.log(`requests seen: ${page.requests.length}, all on ${base}`);
     console.log('e2e passed');
@@ -754,6 +780,7 @@ async function main() {
     page?.close();
     browser?.kill();
     server.kill();
+    await fake.close();
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {
       await new Promise((r) => setTimeout(r, 200));
       await rm(dir, { recursive: true, force: true });

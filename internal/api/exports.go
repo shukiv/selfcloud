@@ -100,6 +100,13 @@ func failedAnswer(d *store.Derived) error {
 	return apierr.New(apierr.Unavailable, "the document converter is not available right now; ask again shortly").Retry(wait)
 }
 
+// convertFailed is the answer for a conversion the converter refused, or could not finish for this document: 415 with the
+// reason "failed", which every read of the conversion gives, so the page shows the failure and does not wait (decision 59).
+// The message is the server's English and is never shown to a person; the page reads the code and the reason.
+func convertFailed(message string) error {
+	return apierr.New(apierr.UnsupportedMedia, message).With("reason", "failed")
+}
+
 // readyFallback returns the newest ready row of a blob's kind made for extension ext, under any build of the converter, or
 // nil. A route uses it when the converter's build cannot be had, so a file already made is still served (decision 37).
 func (s *Server) readyFallback(ctx context.Context, accountID, blobID, kind, ext string) (*store.Derived, error) {
@@ -293,10 +300,14 @@ func (s *Server) answerConverted(w http.ResponseWriter, r *http.Request, n *stor
 		writeJSON(w, http.StatusAccepted, map[string]string{"state": "pending"})
 		return nil
 	}
+	if ans.State == "" {
+		// No row: nothing has been asked for, or a HEAD found none. That is not a failure.
+		return notFound("preview")
+	}
 	if err := failedAnswer(ans.Row); err != nil {
 		return err
 	}
-	return notFound("preview")
+	return convertFailed("this document could not be previewed")
 }
 
 // serveConvertedLink answers a signed preview link on the content origin. The link was checked when it was signed and is
@@ -390,7 +401,7 @@ func (s *Server) handleCreateExport(w http.ResponseWriter, r *http.Request) erro
 		if err := failedAnswer(ans.Row); err != nil {
 			return err
 		}
-		return apierr.New(apierr.UnsupportedMedia, "this document could not be exported to that format").With("reason", "failed")
+		return convertFailed("this document could not be exported to that format")
 	}
 	w.Header().Set("Location", "/api/v1/nodes/"+nodeID+"/exports/"+ans.ID)
 	w.Header().Set("Retry-After", convertRetryAfter)
@@ -454,7 +465,7 @@ func (s *Server) handleGetExport(w http.ResponseWriter, r *http.Request) error {
 	if err := failedAnswer(d); err != nil {
 		return err
 	}
-	return notFound("export")
+	return convertFailed("this document could not be exported to that format")
 }
 
 // writeConverted sends the file of a ready conversion with the headers every content response carries. The type is the

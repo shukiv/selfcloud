@@ -48,6 +48,7 @@ import { locate, joinPath, type Here } from "../lib/files/location";
 import { starNode, unstarNode } from "../lib/stars";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { makeZip, type ZipPhase } from "../lib/files/zips";
+import { officeConvert } from "../lib/files/convert";
 import { nameProblem, nameMessageKey, uploadTargetFor, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
 import { parseFilesPath, filesURL, type FilesRoute } from "../lib/files/route";
 import { trimCrumbs, type Crumb } from "../lib/files/breadcrumbs";
@@ -242,6 +243,10 @@ export default function FilesPage() {
   const hiddenList = useStore(hiddenFolders);
   const uploadList = useStore(uploads);
   const clip = useStore(clipboard);
+  // officeOn is true while the server offers document previews (decision 59). Then an office document opens in the viewer.
+  const officeOn = useStore(officeConvert);
+  // viewable is a file the viewer opens: a previewable one, or an office document while its preview is offered.
+  const viewable = (n: Node) => previewable(n) || (officeOn && kindOf(n) === "office");
   // room is the space the upload tray covers at the bottom of the page: the last rows are scrolled clear of it.
   const room = useStore(trayRoom);
   // menu is the right-click menu while it is open (see onRowContext and onSpaceContext).
@@ -673,7 +678,7 @@ export default function FilesPage() {
       if (here) go(filesURL(here.folder, n.id));
       return;
     }
-    if (previewable(n)) {
+    if (viewable(n)) {
       openPreview(n);
     } else {
       setTarget(n);
@@ -682,7 +687,7 @@ export default function FilesPage() {
   }
 
   function openPreview(n: Node) {
-    const list = sorted.filter((x) => previewable(x));
+    const list = sorted.filter((x) => viewable(x));
     setPreviewItems(list.map(gated));
     setPreviewIndex(Math.max(0, list.findIndex((x) => x.id === n.id)));
     // A video or audio file opens the folder's playlist, from that file; other files keep the steps through the list.
@@ -1393,9 +1398,9 @@ export default function FilesPage() {
       label: single ? t(previewKey(single)) : t("files.act.preview"),
       icon: single && previewKey(single) === "files.act.play" ? <Play {...ic} /> : <Eye {...ic} />,
       group: 1,
-      hidden: !items.some(previewable),
-      fits: selectedNodes.length === 0 || selectedNodes.some(previewable),
-      enabled: single !== null && previewable(single),
+      hidden: !items.some(viewable),
+      fits: selectedNodes.length === 0 || selectedNodes.some(viewable),
+      enabled: single !== null && viewable(single),
       run: () => {
         if (single) openPreview(single);
       },

@@ -8,6 +8,7 @@ import enUS from "antd/locale/en_US";
 import { loadInfo, loadMe } from "./lib/auth";
 import { applyBrand, brand, passwordMinLength } from "./lib/brand";
 import { maxExpiryDays } from "./lib/sharing/limits";
+import { CONVERT_FEATURE, featureOn, officeConvert } from "./lib/files/convert";
 import { go, signInURL } from "./lib/router";
 import { afterSignIn } from "./lib/next";
 import { session } from "./lib/session";
@@ -156,6 +157,7 @@ export function Boot({ children }: { children: ReactNode }) {
       applyBrand(info?.brand ?? get(brand));
       passwordMinLength.set(info?.passwordMinLength ?? 8);
       maxExpiryDays.set(info?.sharingMaxExpiryDays ?? 0);
+      officeConvert.set(info !== null && featureOn(info.features, CONVERT_FEATURE));
       const me = await loadMe().catch(() => null);
       chooseLang(me);
       setReady(true);

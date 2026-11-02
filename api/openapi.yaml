@@ -1026,9 +1026,10 @@ paths:
         The document converted by Collabora Online's conversion interface (decision 37). `format` is `pdf`
         (the whole document) or `png` (the first page as an image). The first request queues the conversion
         and answers `202` with `Retry-After`; later requests answer `202` until the file is ready, then `200`.
-        A conversion that fails for the document (refused, or an answer of the wrong type) answers `404` for
-        its key. A failure of the converter or the host answers `404` until a retry time, then the conversion
-        is queued again, up to three attempts.
+        A conversion that fails for the document (refused, or an answer of the wrong type) answers `415` with
+        the reason `failed`, on every read, for its key (decision 59). A failure of the converter or the host
+        answers `503` with `Retry-After` until a retry time, then the conversion is queued again, up to three
+        attempts.
 
         Only the types the converter's discovery document lists for conversion are converted; another type
         answers `415`. A source over `derived.max_source_bytes` answers `413` before anything is sent. The
@@ -1152,7 +1153,9 @@ paths:
       description: |
         The exported file, as an attachment, with `Range` support so an interrupted download resumes. It answers
         `202` while the export is being made. Access and the no-download rule are checked on every call. An export
-        made by another converter build, or under other limits, is not served as current, and answers `404`.
+        made by another converter build, or under other limits, is not served as current, and answers `404`. An
+        export the converter refused answers `415` with the reason `failed` on the first read, as a repeat
+        `POST` answers it (decision 59). A `HEAD` of the export answers the same status without a body.
       security: [{ bearer: [] }, { session: [] }]
       responses:
         "200":
@@ -6182,7 +6185,7 @@ components:
           example: 365
         features:
           type: array
-          description: Optional features this server has enabled.
+          description: "Optional features this server has enabled. `office_convert` means document previews and exports are offered (`office.enabled`, decision 59); the list is empty otherwise."
           items: { type: string }
 
     DirectoryEntry:
