@@ -19,6 +19,7 @@ import { newPlace, type NewPlace } from "../lib/files/newPlace";
 import { myStorage } from "../lib/storage/api";
 import { manager } from "../lib/files/uploads";
 import { formatBytes } from "../lib/files/format";
+import { SIDEBAR } from "../theme/tokens";
 
 // The folder lists and the hide call are replaced: each test states what the server answers.
 const mocks = vi.hoisted(() => ({
@@ -236,6 +237,27 @@ describe("Shell", () => {
       const nav = await openNav();
       expect(nav.querySelector('[data-tree-key="fld_a"]')?.getAttribute("aria-current")).toBe("location");
       expect(nav.querySelector('[data-tree-key="fld_p"]')?.getAttribute("aria-current")).toBeNull();
+    });
+
+    it("draws the current team's options button in the row's dark ink on the yellow, and the others in the sidebar's text", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A"), team("fld_b", "Team B")]);
+      treePlace.set({ folder: "fld_a", chain: [] });
+      renderShell("/files/fld_a");
+      const nav = await openNav();
+      // The button takes the colour of its row: the current row is dark on yellow, another row is white on the blue.
+      const ink = async (name: string) => {
+        const button = await within(nav).findByRole("button", { name: `Options for ${name}` });
+        const row = button.closest<HTMLElement>(".tree-row");
+        return { button: button.style.color, row: row?.style.color };
+      };
+      const css = (c: string) => {
+        const d = document.createElement("div");
+        d.style.color = c;
+        return d.style.color;
+      };
+      expect(await ink("Team A")).toEqual({ button: "inherit", row: css(SIDEBAR.onActive) });
+      expect(await ink("Team B")).toEqual({ button: "inherit", row: css(SIDEBAR.text) });
     });
 
     it("keeps My files as the current place inside the caller's own folder", async () => {

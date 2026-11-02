@@ -275,7 +275,9 @@ export default function Shell({ children }: { children: ReactNode }) {
   // folded to icons; then it is current on the files pages where the place is the person's own space.
   const menuFor = (filesEntry: boolean) => {
     // The Storage entry is its bar and figures; folded to icons, it is its title alone, which the tooltip shows.
-    const storageLabel = admin ? null : filesEntry ? storageTitle(storage, t) : <SidebarStorage my={storage} sidebar={sidebar} />;
+    // On the Storage page its row is the current one, the yellow pill: the block takes the pill's text colours (decision 67).
+    const onStorage = location.pathname === "/storage" || location.pathname.startsWith("/storage/");
+    const storageLabel = admin ? null : filesEntry ? storageTitle(storage, t) : <SidebarStorage my={storage} sidebar={sidebar} selected={onStorage} />;
     const sections = navFor(admin, owner, t, pending, (n) => translatePlural(lang, "nav.requests.count", n), filesEntry, storageLabel);
     const items: MenuProps["items"] = sections.flatMap((s, i) =>
       s.section
@@ -370,7 +372,8 @@ export default function Shell({ children }: { children: ReactNode }) {
           tabIndex={-1}
           aria-label={t("nav.spaceOptions", { name: team.name })}
           icon={<Ellipsis size={16} />}
-          style={{ flex: "none", color: sidebar.text, ...(coarse ? { minWidth: 44, minHeight: 44 } : {}) }}
+          // The button takes its row's ink: the sidebar's text, or the dark ink of the current row on the yellow.
+          style={{ flex: "none", color: "inherit", ...(coarse ? { minWidth: 44, minHeight: 44 } : {}) }}
         />
       </Dropdown>
     );

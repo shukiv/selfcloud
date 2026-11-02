@@ -9,6 +9,7 @@ import { ApiError } from "../../lib/apiError";
 import { session, type Session } from "../../lib/session";
 import type { FolderAccess, Node } from "../../lib/files/types";
 import { DEFAULT_TREE, type TreeState } from "../../lib/files/treeState";
+import { SIDEBAR, type Sidebar } from "../../theme/tokens";
 
 const api = vi.hoisted(() => ({ childrenPage: vi.fn() }));
 vi.mock("../../lib/files/api", async (orig) => ({ ...(await orig<typeof import("../../lib/files/api")>()), ...api }));
@@ -51,12 +52,14 @@ function Harness({
   start = DEFAULT_TREE,
   coarse = false,
   top,
+  colours,
 }: {
   folder?: string;
   chain?: string[];
   start?: TreeState;
   coarse?: boolean;
   top?: { id: string; name: string; role: string | undefined };
+  colours?: Sidebar;
 }) {
   const [state, setState] = useState(start);
   latest = state;
@@ -75,6 +78,7 @@ function Harness({
         onOpen={onOpen}
         coarse={coarse}
         top={top}
+        colours={colours}
       />
     </QueryClientProvider>
   );
@@ -240,5 +244,27 @@ describe("the folder tree", () => {
     const dt = { types: ["Files"], files: [new File(["x"], "d.txt")], items: [], dropEffect: "none" };
     const kept = fireEvent.drop(screen.getByTestId("folder-tree"), { dataTransfer: dt });
     expect(kept).toBe(false);
+  });
+});
+
+// In the sidebar the current folder is on the yellow pill, so its text takes the on-active colour (the menu's own). Other rows
+// keep the sidebar's text. The arrow of the current row follows its text.
+describe("the folder tree in the sidebar: the current row's text", () => {
+  const rowOf = (name: string) => screen.getByText(name).closest<HTMLElement>(".tree-row");
+
+  it("is the on-active colour on the current row, and the sidebar's text on the others", () => {
+    render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
+    const current = rowOf("Team A");
+    expect(current?.style.background).toBe("rgb(254, 204, 0)");
+    expect(current?.style.color).toBe("rgb(13, 33, 66)");
+    const other = rowOf("My files");
+    expect(other?.style.color).toBe("rgb(255, 255, 255)");
+    expect(other?.style.background).toBe("");
+  });
+
+  it("gives the arrow of the current row the on-active colour too", async () => {
+    render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
+    const arrow = await screen.findByRole("button", { name: "Collapse Team A" });
+    expect(arrow.style.color).toBe("rgb(13, 33, 66)");
   });
 });

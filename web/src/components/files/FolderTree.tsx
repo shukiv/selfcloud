@@ -85,7 +85,8 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
   const arrow = ctx.coarse ? 44 : 24;
   const link = ctx.coarse ? 44 : 28;
   const toggle = () => ctx.onChange(withExpanded(ctx.state, key, !open));
-  const textColour = side ? side.text : undefined;
+  // On the sidebar's yellow pill the current row's text is the on-active colour (the menu's own), the others keep the sidebar's.
+  const textColour = side ? (current ? side.onActive : side.text) : undefined;
   return (
     <li
       role="treeitem"

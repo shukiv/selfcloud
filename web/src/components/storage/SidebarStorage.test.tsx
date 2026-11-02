@@ -69,3 +69,37 @@ describe("the sidebar's storage block", () => {
     expect(storageTitle(null, t)).toBe("Storage");
   });
 });
+
+// On the Storage page its row is the yellow pill: the title and the figures take the on-active colours there, and the bar keeps
+// its track visible. Not selected, the block is as it was.
+describe("the sidebar's storage block on the selected row", () => {
+  beforeEach(async () => {
+    await setLang("en");
+  });
+
+  it("is the on-active colour for the title, and the figures at 75% of it, when the row is selected", () => {
+    render(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} selected />);
+    const title = screen.getByText("Storage (61% full)");
+    const line = screen.getByText(`${formatBytes(GB * 1.22, "en")} of ${formatBytes(2 * GB, "en")} used`);
+    expect(title.style.color).toBe("rgb(13, 33, 66)");
+    expect(line.style.color).toBe("rgba(13, 33, 66, 0.75)");
+  });
+
+  it("puts the bar's track on the yellow with a ring of the on-active colour outside it, and keeps the accent fill", () => {
+    render(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} selected />);
+    const bar = document.querySelector<HTMLElement>('[data-testid="sidebar-meter"]');
+    expect(bar?.style.background).toBe("rgba(13, 33, 66, 0.8)");
+    expect(bar?.style.boxShadow).toContain(SIDEBAR.onActive);
+    expect(bar?.firstElementChild instanceof HTMLElement && bar.firstElementChild.style.background).toBe("rgb(254, 204, 0)");
+  });
+
+  it("is the colours of the sidebar when the row is not selected", () => {
+    render(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} />);
+    expect(screen.getByText("Storage (61% full)").style.color).toBe("");
+    expect(screen.getByText("Storage (61% full)").parentElement?.style.color).toBe("rgb(255, 255, 255)");
+    const line = screen.getByText(`${formatBytes(GB * 1.22, "en")} of ${formatBytes(2 * GB, "en")} used`);
+    expect(line.style.color).toBe("rgb(169, 193, 230)");
+    const bar = document.querySelector<HTMLElement>('[data-testid="sidebar-meter"]');
+    expect(bar?.style.background).toBe("rgba(0, 0, 0, 0.35)");
+  });
+});

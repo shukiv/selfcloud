@@ -6,6 +6,8 @@
 // a folder the member cannot add to shows its entries disabled, with the reason. The storage line matches the Storage page, and
 // the bar takes its three colours at the member's limit (set through the API, and put back before the section ends). The
 // collapsed rail has a round New with a tooltip, the phone drawer has New at its top, and the toolbar has its New only on a phone.
+// The yellow pill of the current place keeps its text readable: the selected tree folder and the selected Storage row read at
+// 4.5:1 or more on the yellow, and the bar's track and fill at 3:1 or more (decision 67, the note on the yellow highlight).
 // With SELFCLOUD_E2E_SHOTS set (a folder), the run also saves the pictures.
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -162,6 +164,58 @@ function measureSize(selector, exact) {
 }
 const sizeAt = (page, selector, exact) => page.evaluate(`(${measureSize.toString()})(${q(selector)}, ${exact})`);
 const LINE = '.shell-menu .shell-storage-item .shell-storage > span:last-child';
+// The selected tree row and the selected Storage row (the yellow pill), and the bar inside the Storage row.
+const TREE_ROW = '[data-testid="folder-tree"] [role="treeitem"][aria-current="location"] > .tree-row';
+const SEL_ROW = '.shell-menu .shell-storage-item.ant-menu-item-selected';
+const METER = '[data-testid="sidebar-meter"]';
+
+// contrastOf reads a colour the way getComputedStyle gives it and the WCAG ratio of that colour on the colour it is drawn on.
+// bgs lists the layers the text sits on, top first; the last one (the bottom) must be opaque, and each layer above it is blended
+// over the one below, so an alpha colour (the track, the figures) is read as it looks. Returns null when a layer is missing.
+const contrastOf = (page, sel, prop, bgs) =>
+  page.evaluate(`(() => {
+    const parse = (s) => { const m = /rgba?\\(([^)]+)\\)/.exec(s); if (!m) return null; const p = m[1].split(',').map((x) => parseFloat(x)); return { rgb: p.slice(0, 3), a: p.length > 3 ? p[3] : 1 }; };
+    const over = (top, under) => top.rgb.map((c, i) => top.a * c + (1 - top.a) * under.rgb[i]);
+    const lum = (c) => { const [r, g, b] = c.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const el = document.querySelector(${q(sel)});
+    const layers = ${q(bgs)}.map((b) => document.querySelector(b));
+    if (!el || layers.some((x) => !x)) return null;
+    let under = parse(getComputedStyle(layers[layers.length - 1]).backgroundColor);
+    if (!under || under.a < 1) return null;
+    let bg = under.rgb;
+    for (let i = layers.length - 2; i >= 0; i--) {
+      const c = parse(getComputedStyle(layers[i]).backgroundColor);
+      if (!c) return null;
+      bg = over(c, { rgb: bg, a: 1 });
+    }
+    const fg = parse(getComputedStyle(el)[${q(prop)}]);
+    if (!fg) return null;
+    const rgb = over(fg, { rgb: bg, a: 1 });
+    const [hi, lo] = [lum(rgb), lum(bg)].sort((x, y) => y - x);
+    return { ratio: (hi + 0.05) / (lo + 0.05), text: getComputedStyle(el)[${q(prop)}], bg: bg.map(Math.round) };
+  })()`);
+
+// onYellow reads the Storage row's title, its figures, and the bar's track and fill, all on the selected row's yellow.
+const onYellow = (page) =>
+  Promise.all([
+    contrastOf(page, `${SEL_ROW} .shell-storage > span:first-child`, 'color', [SEL_ROW]),
+    contrastOf(page, `${SEL_ROW} .shell-storage > span:last-child`, 'color', [SEL_ROW]),
+    contrastOf(page, METER, 'backgroundColor', [SEL_ROW]),
+    contrastOf(page, `${METER} > span`, 'backgroundColor', [METER, SEL_ROW]),
+    contrastOf(page, METER, 'boxShadow', [SEL_ROW]),
+  ]).then(([title, line, track, fill, edge]) => ({ title, line, track, fill, edge }));
+// The tree's current row and the selected Storage row are drawn a moment after the page changes (the tree follows the folder the
+// listing shows), and their colours move over 0.3 s (the menu's and the links' transitions), so the colours are read once the
+// row is current and the transitions are done.
+const waitTreeCurrent = async (page, key) => {
+  await page.waitFor(`!!document.querySelector('[data-tree-key="${key}"][aria-current="location"]')`, 15000);
+  await sleep(700);
+};
+const waitYellow = async (page) => {
+  await page.waitFor(`(() => { const li = document.querySelector('${SEL_ROW}'); return !!li && getComputedStyle(li).backgroundColor === 'rgb(254, 204, 0)'; })()`, 15000);
+  await sleep(700);
+};
+const showRatio = (r) => (r ? `${r.ratio.toFixed(2)}:1, ${r.text} on rgb(${r.bg.join(', ')})` : 'not read');
 
 export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID }) {
   const { check, api, navigateTo, clickNav, press, rowAppears } = h;
@@ -260,6 +314,13 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     const at61 = await storageLine(page);
     check(at61.title === 'Storage (61% full)', `the row says the share held (${at61.title})`);
     check(at61.level === 'ok' && at61.fill === FILL.ok, `under 80% the bar is the accent (${at61.level}, ${at61.fill})`);
+    // The current folder is the yellow pill: its name and its arrow read on the yellow (decision 67, the note on the highlight).
+    await waitTreeCurrent(page, teamA);
+    const treeName = await contrastOf(page, `${TREE_ROW} a bdi`, 'color', [TREE_ROW]);
+    const treeArrow = await contrastOf(page, `${TREE_ROW} > button`, 'color', [TREE_ROW]);
+    check(treeName !== null && treeName.ratio >= 4.5, `the selected folder's name reads on the yellow at 4.5:1 or more (${showRatio(treeName)})`);
+    check(treeArrow !== null && treeArrow.ratio >= 4.5, `the selected folder's arrow reads on the yellow at 4.5:1 or more (${showRatio(treeArrow)})`);
+    await shotClip(page, shotsDir, 'c1-tree-selected-light.png', await boxOf(page, '.ant-layout-sider', 0));
     await snap('d2-desktop-en-light.png');
     const menuItems = await newMenu(page, 'New folder');
     check(['New folder', 'Upload files', 'Upload folder'].every((t) => menuItems.some((i) => i.text === t && !i.disabled)), `the New menu holds the three entries, all on (${JSON.stringify(menuItems)})`);
@@ -273,6 +334,15 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`[...document.querySelectorAll('p > span')].some((s) => s.textContent.trim().endsWith(' used'))`, 15000);
     const pageLine = await page.evaluate(`[...document.querySelectorAll('p > span')].map((s) => s.textContent.trim()).find((t) => t.endsWith(' used') && t.includes(' of ')) ?? null`);
     check(pageLine === at61.line, `the sidebar line matches the Storage page's figures (${at61.line} / ${pageLine})`);
+    // On this page the Storage row is the yellow pill: its title and figures read on it, and the bar keeps its track and fill.
+    await waitYellow(page);
+    const yEn = await onYellow(page);
+    check(yEn.title !== null && yEn.title.ratio >= 4.5, `on the selected Storage row the title reads on the yellow at 4.5:1 or more (${showRatio(yEn.title)})`);
+    check(yEn.line !== null && yEn.line.ratio >= 4.5, `on the selected Storage row the figures read on the yellow at 4.5:1 or more (${showRatio(yEn.line)})`);
+    check(yEn.track !== null && yEn.track.ratio >= 3, `on the selected Storage row the bar's track is 3:1 or more against the yellow (${showRatio(yEn.track)})`);
+    check(yEn.fill !== null && yEn.fill.ratio >= 3, `on the selected Storage row the bar's fill is 3:1 or more against its track (${showRatio(yEn.fill)})`);
+    check(yEn.edge !== null && yEn.edge.ratio >= 3, `on the selected Storage row the bar's edge is 3:1 or more against the yellow, so the yellow fill is outlined (${showRatio(yEn.edge)})`);
+    await shotClip(page, shotsDir, 'c1-storage-en-light.png', await boxOf(page, '.ant-layout-sider', 0));
     await navigateTo(page, `/files/${teamA}`);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="sidebar-meter"]')`, 15000);
 
@@ -355,6 +425,13 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     const lineAr = await sizeAt(page, LINE, false);
     check(lineAr !== null && lineAr.digit > lineAr.unit, `in Arabic the storage line keeps its right-to-left order, digits first (${JSON.stringify(lineAr)})`);
     await shotClip(page, shotsDir, 'b1-ar-storage-line.png', await boxOf(page, '.shell-menu .shell-storage-item'));
+    // The Storage page in Arabic: the selected row's title and figures read on the yellow there too.
+    await navigateTo(page, '/storage');
+    await page.waitFor(`location.pathname === '/storage' && !!document.querySelector('${SEL_ROW} .shell-storage > span:last-child')`, 15000);
+    await waitYellow(page);
+    const yAr = await onYellow(page);
+    check(yAr.title !== null && yAr.title.ratio >= 4.5 && yAr.line !== null && yAr.line.ratio >= 4.5, `in Arabic the selected Storage row reads on the yellow at 4.5:1 or more (title ${showRatio(yAr.title)}; figures ${showRatio(yAr.line)})`);
+    await shotClip(page, shotsDir, 'c1-storage-ar-light.png', await boxOf(page, '.ant-layout-sider', 0));
     await setLanguage(page, 'English');
     await page.waitFor(`document.documentElement.dir === 'ltr'`, 15000);
 
@@ -363,6 +440,10 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await navigateTo(page, `/files/${teamA}`);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
     await snap('d2-desktop-en-dark.png');
+    await waitTreeCurrent(page, teamA);
+    const treeDark = await contrastOf(page, `${TREE_ROW} a bdi`, 'color', [TREE_ROW]);
+    check(treeDark !== null && treeDark.ratio >= 4.5, `in dark, the selected folder's name reads on the yellow at 4.5:1 or more (${showRatio(treeDark)})`);
+    await shotClip(page, shotsDir, 'c1-tree-selected-dark.png', await boxOf(page, '.ant-layout-sider', 0));
     await setTheme(page, 'Light');
 
     // ---- New folder from Starred makes the folder in My files; the message opens it.
