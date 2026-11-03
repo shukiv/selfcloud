@@ -13,6 +13,7 @@ import {
   Download,
   Eye,
   FileArchive,
+  FolderOpen,
   FolderInput,
   FolderPlus,
   FolderUp,
@@ -29,6 +30,7 @@ import {
   Plus,
   Scissors,
   Share2,
+  Star,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -75,7 +77,9 @@ import type { ConflictChoice } from "../lib/files/conflict";
 import type { Job, Node, Page } from "../lib/files/types";
 import { manager, uploads } from "../lib/files/uploads";
 import Breadcrumbs, { type Place } from "../components/files/Breadcrumbs";
-import Listing, { type Click, useCoarsePointer } from "../components/files/Listing";
+import Listing, { type Click, type RowAct, useCoarsePointer } from "../components/files/Listing";
+import { groupMenu, type MenuSection } from "../lib/files/menuGroups";
+import { isMacPlatform, shortcutHint, shortcutKeys } from "../lib/files/shortcutHint";
 import { useGestures, type GestureCtl } from "../components/files/useGestures";
 import Details from "../components/files/Details";
 import Preview, { type MediaSeed } from "../components/files/Preview";
@@ -135,6 +139,8 @@ const MENU_FIT = { adjustX: 1, adjustY: 1, shiftX: true, shiftY: true } as const
 const MENU_SCROLL = { maxBlockSize: "calc(100dvh - 16px)", overflowY: "auto" } as const;
 // antd offsets a menu 4 px from its anchor after it has been fitted to the window; 4 px of padding in the popup keeps the offset menu inside.
 const MENU_POPUP = { paddingBlock: 4 } as const;
+// MAC_KEYS says whether the shortcuts a menu shows are the Mac's (the command sign) or the Windows and Linux ones (Ctrl).
+const MAC_KEYS = typeof navigator !== "undefined" && isMacPlatform(navigator);
 
 
 // useRoomy says whether the window is at least 360 pixels wide. Below it the selection panel keeps two icons, and the rest go in
@@ -159,8 +165,12 @@ function useRoomy(min = 360): boolean {
 interface BarAct {
   key: string;
   label: string;
+  // menuLabel is the entry's text in a menu, where it differs from the toolbar's (Delete is Move to trash in the menu).
+  menuLabel?: string;
   icon: ReactNode;
   group: number;
+  // section is the menu part the action sits in (lib/files/menuGroups.ts).
+  section: MenuSection;
   // fits is false when the selection is of a kind the action does not apply to; a menu leaves such an action out.
   fits: boolean;
   run: () => void;
@@ -418,8 +428,10 @@ export default function FilesPage() {
   useEffect(() => {
     if (!menu || !menuFromKey.current) return;
     menuFromKey.current = false;
+    // The first item takes the focus, so an arrow key moves on from it (review fix 1); the menu's list is the fallback.
     const frame = requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(".ant-dropdown:not(.ant-dropdown-hidden) [role='menu']")?.focus();
+      const first = document.querySelector<HTMLElement>(".ant-dropdown:not(.ant-dropdown-hidden) [role='menuitem']:not(.ant-dropdown-menu-item-disabled)");
+      (first ?? document.querySelector<HTMLElement>(".ant-dropdown:not(.ant-dropdown-hidden) [role='menu']"))?.focus();
     });
     return () => cancelAnimationFrame(frame);
   }, [menu]);
@@ -834,7 +846,7 @@ export default function FilesPage() {
     if (renameRef.current) return;
     const rtl = document.documentElement.dir === "rtl";
     // cols is 1: Up and Down in the tile view take their step from the tiles' places (tileRowDelta), not from a column count.
-    const action = keyAction(e, { cols: 1, grid: view === "grid", rtl, count: ids.length });
+    const action = keyAction(e, { cols: 1, grid: view === "grid", rtl, count: ids.length, mac: MAC_KEYS });
     if (!action) return;
     switch (action.kind) {
       case "move": {
@@ -904,7 +916,7 @@ export default function FilesPage() {
       return;
     }
     const rtl = document.documentElement.dir === "rtl";
-    const action = keyAction(e, { cols: 1, grid: view === "grid", rtl, count: ids.length });
+    const action = keyAction(e, { cols: 1, grid: view === "grid", rtl, count: ids.length, mac: MAC_KEYS });
     switch (action?.kind) {
       case "up":
         e.preventDefault();
@@ -1004,8 +1016,13 @@ export default function FilesPage() {
 
   // onRowContext opens the menu of an item: a right-click, or a finger held on it. An item not yet selected is selected
   // first, so the menu acts on what it shows; a selected one keeps the whole selection.
-  function onRowContext(id: string, index: number, x: number, y: number) {
+  function onRowContext(id: string, index: number, x: number, y: number, keyboardOrigin?: HTMLElement) {
     if (!sel.ids.includes(id)) setSelection({ ids: [id], anchor: index, focus: index });
+    if (keyboardOrigin) {
+      menuOrigin.current = keyboardOrigin;
+      menuFromKey.current = true;
+      menuChosen.current = false;
+    }
     setMenu(menuAt(x, y, "selection"));
   }
 
@@ -1467,33 +1484,26 @@ export default function FilesPage() {
     const allEdit = selectedNodes.length > 0 && selectedNodes.every((n) => can.edit(n.role));
     return [
     {
-      key: "download",
-      label: t("files.act.download"),
-      icon: <Download {...ic} />,
+      key: "open",
+      label: t("files.act.open"),
+      icon: <FolderOpen {...ic} />,
       group: 1,
-      hidden: !downloadable,
-      fits: pickedFile,
-      enabled: single !== null && single.kind === "file" && downloadAllowed(gated(single)),
+      section: "first",
+      // Enter opens a folder, and a file with no preview (its details): the entry is there for either, so the key has a menu entry
+      // (review fix 12).
+      hidden: !items.some((n) => n.kind === "dir") && !(single !== null && !viewable(single)),
+      fits: single !== null && (single.kind === "dir" || !viewable(single)),
+      enabled: single !== null,
       run: () => {
-        if (single) void download(single);
+        if (single) openNode(single);
       },
-    },
-    {
-      key: "zip",
-      label: t("files.act.zip"),
-      icon: <FileArchive {...ic} />,
-      group: 1,
-      hidden: !zippable,
-      // A zip is for folders and selections: one file is downloaded, so no zip is offered for it.
-      fits: single?.kind !== "file",
-      enabled: zipOffered(selectedNodes),
-      run: () => makeZipOf(selectedNodes),
     },
     {
       key: "preview",
       label: single ? t(previewKey(single)) : t("files.act.preview"),
       icon: single && previewKey(single) === "files.act.play" ? <Play {...ic} /> : <Eye {...ic} />,
       group: 1,
+      section: "first",
       hidden: !items.some(viewable),
       fits: selectedNodes.length === 0 || selectedNodes.some(viewable),
       enabled: single !== null && viewable(single),
@@ -1506,6 +1516,7 @@ export default function FilesPage() {
       label: t("files.act.playSelected"),
       icon: <Play {...ic} />,
       group: 1,
+      section: "first",
       hidden: !items.some(isPlayable),
       // Play selected plays the playable files of a selection of two or more, as a playlist.
       fits: selectedNodes.length > 1 && selectedNodes.some(isPlayable),
@@ -1517,6 +1528,7 @@ export default function FilesPage() {
       label: t("files.act.playMedia"),
       icon: <Play {...ic} />,
       group: 1,
+      section: "first",
       hidden: !items.some((n) => n.kind === "dir"),
       // A folder's own audio and video files. A file has Play, and a selection of files has Play selected.
       fits: single?.kind === "dir",
@@ -1526,24 +1538,51 @@ export default function FilesPage() {
       },
     },
     {
-      key: "details",
-      label: t("files.act.details"),
-      icon: <Info {...ic} />,
-      group: 2,
-      hidden: false,
-      fits: true,
-      enabled: single !== null,
+      key: "download",
+      label: t("files.act.download"),
+      icon: <Download {...ic} />,
+      group: 1,
+      section: "first",
+      hidden: !downloadable,
+      fits: pickedFile,
+      enabled: single !== null && single.kind === "file" && downloadAllowed(gated(single)),
       run: () => {
-        if (!single) return;
-        setTarget(single);
-        setDialog("details");
+        if (single) void download(single);
+      },
+    },
+    {
+      key: "zip",
+      label: t("files.act.zip"),
+      icon: <FileArchive {...ic} />,
+      group: 1,
+      section: "first",
+      hidden: !zippable,
+      // A zip is for folders and selections: one file is downloaded, so no zip is offered for it.
+      fits: single?.kind !== "file",
+      enabled: zipOffered(selectedNodes),
+      run: () => makeZipOf(selectedNodes),
+    },
+    {
+      key: "rename",
+      label: t("files.act.rename"),
+      icon: <Pencil {...ic} />,
+      group: 3,
+      section: "first",
+      hidden: !editable,
+      fits: true,
+      enabled: single !== null && can.edit(single.role),
+      run: () => {
+        if (single) startRename(single);
       },
     },
     {
       key: "share",
       label: t("share.open"),
+      // In the menu the entry opens the share dialog, as the Share submenu's title does not: its ellipsis says so.
+      menuLabel: `${t("share.open")}…`,
       icon: <Share2 {...ic} />,
       group: 2,
+      section: "share",
       // Hidden from a caller who may share none of the listed items, as a role that can never share sees no share action. For
       // one item it is disabled unless that item may be shared (the share dialog limits what each role sees of it).
       hidden: !shareable,
@@ -1560,6 +1599,7 @@ export default function FilesPage() {
       label: t("files.act.copyLink"),
       icon: <LinkIcon {...ic} />,
       group: 2,
+      section: "share",
       // This app's own address of the item: it makes no share link and grants nothing, so it is there for anyone who sees the item.
       hidden: false,
       fits: true,
@@ -1569,10 +1609,26 @@ export default function FilesPage() {
       },
     },
     {
+      key: "details",
+      label: t("files.act.details"),
+      icon: <Info {...ic} />,
+      group: 2,
+      section: "info",
+      hidden: false,
+      fits: true,
+      enabled: single !== null,
+      run: () => {
+        if (!single) return;
+        setTarget(single);
+        setDialog("details");
+      },
+    },
+    {
       key: "versions",
       label: t("files.act.versions"),
       icon: <History {...ic} />,
       group: 2,
+      section: "info",
       hidden: !versionable,
       fits: pickedFile,
       enabled: single !== null && single.kind === "file" && atLeast(single.role, "viewer"),
@@ -1583,22 +1639,33 @@ export default function FilesPage() {
       },
     },
     {
-      key: "rename",
-      label: t("files.act.rename"),
-      icon: <Pencil {...ic} />,
-      group: 3,
+      key: "move",
+      label: t("files.act.move"),
+      icon: <FolderInput {...ic} />,
+      group: 4,
+      section: "organize",
       hidden: !editable,
       fits: true,
-      enabled: single !== null && can.edit(single.role),
-      run: () => {
-        if (single) startRename(single);
-      },
+      enabled: allEdit,
+      run: () => startPick("move", selectedNodes),
+    },
+    {
+      key: "copy",
+      label: t("files.act.copy"),
+      icon: <CopyPlus {...ic} />,
+      group: 4,
+      section: "organize",
+      hidden: false,
+      fits: true,
+      enabled: selectedNodes.length > 0,
+      run: () => startPick("copy", selectedNodes),
     },
     {
       key: "shortcut",
       label: t("files.act.shortcut"),
       icon: <Link2 {...ic} />,
       group: 3,
+      section: "organize",
       hidden: !shortcutable,
       fits: selectedNodes.length === 0 || selectedNodes.some((n) => n.kind !== "shortcut"),
       enabled: single !== null && single.kind !== "shortcut",
@@ -1608,13 +1675,25 @@ export default function FilesPage() {
         setDialog("pickShortcut");
       },
     },
-    { key: "cut", label: t("files.act.cut"), icon: <Scissors {...ic} />, group: 4, hidden: !editable, fits: true, enabled: allEdit, run: cutPicked },
-    { key: "copyClip", label: t("files.act.copyClip"), icon: <Copy {...ic} />, group: 4, hidden: false, fits: true, enabled: selectedNodes.length > 0, run: copyPicked },
-    { key: "paste", label: t("files.act.paste"), icon: <ClipboardPaste {...ic} />, group: 4, hidden: !canUploadHere, fits: true, enabled: clip !== null, run: () => void pasteHere() },
-    { key: "move", label: t("files.act.move"), icon: <FolderInput {...ic} />, group: 4, hidden: !editable, fits: true, enabled: allEdit, run: () => startPick("move", selectedNodes) },
-    { key: "copy", label: t("files.act.copy"), icon: <CopyPlus {...ic} />, group: 4, hidden: false, fits: true, enabled: selectedNodes.length > 0, run: () => startPick("copy", selectedNodes) },
-    // Delete is marked as destructive in the toolbar and in the menus alike.
-    { key: "delete", label: t("files.act.delete"), icon: <Trash2 {...ic} />, group: 5, hidden: !editable, fits: true, enabled: allEdit, danger: true, run: () => askDelete(selectedNodes) },
+    { key: "cut", label: t("files.act.cut"), icon: <Scissors {...ic} />, group: 4, section: "organize", hidden: !editable, fits: true, enabled: allEdit, run: cutPicked },
+    { key: "copyClip", label: t("files.act.copyClip"), icon: <Copy {...ic} />, group: 4, section: "organize", hidden: false, fits: true, enabled: selectedNodes.length > 0, run: copyPicked },
+    { key: "paste", label: t("files.act.paste"), icon: <ClipboardPaste {...ic} />, group: 4, section: "organize", hidden: !canUploadHere, fits: true, enabled: clip !== null, run: () => void pasteHere() },
+    // Star is a toggle: the hover icon, the menu entry and the More menu share this one. Unstarred items show no star at all.
+    {
+      key: "star",
+      label: single?.starred ? t("star.removeTip") : t("star.addTip"),
+      icon: <Star {...ic} fill={single?.starred ? "currentColor" : "none"} />,
+      group: 4,
+      section: "organize",
+      hidden: !items.some((n) => n.starred !== undefined),
+      fits: true,
+      enabled: single !== null && single.starred !== undefined,
+      run: () => {
+        if (single) void toggleStar(single);
+      },
+    },
+    // Delete is marked as destructive in the toolbar and in the menus alike; the menu says Move to trash, which is what it does.
+    { key: "delete", label: t("files.act.delete"), menuLabel: t("files.act.trash"), icon: <Trash2 {...ic} />, group: 5, section: "trash", hidden: !editable, fits: true, enabled: allEdit, danger: true, run: () => askDelete(selectedNodes) },
     ];
   };
   const acts = buildActs(selectedNodes);
@@ -1628,15 +1707,15 @@ export default function FilesPage() {
   // newActs is the New menu: a folder, and the files or a folder uploaded. spaceActs is the menu of the empty space: the same,
   // and a paste. Both follow the toolbar's rules.
   const newActs: BarAct[] = [
-    { key: "newFolder", label: t("files.act.newFolder"), icon: <FolderPlus {...ic} />, group: 1, hidden: !canMakeFolder, fits: true, enabled: true, run: openNewFolder },
-    { key: "upload", label: t("files.act.upload"), icon: <Upload {...ic} />, group: 1, hidden: !canUploadHere, fits: true, enabled: true, run: () => fileInputRef.current?.click() },
-    { key: "uploadFolder", label: t("files.act.uploadFolder"), icon: <FolderUp {...ic} />, group: 1, hidden: !canUploadFolder, fits: true, enabled: true, run: () => folderInputRef.current?.click() },
+    { key: "newFolder", label: t("files.act.newFolder"), icon: <FolderPlus {...ic} />, group: 1, section: "first", hidden: !canMakeFolder, fits: true, enabled: true, run: openNewFolder },
+    { key: "upload", label: t("files.act.upload"), icon: <Upload {...ic} />, group: 1, section: "first", hidden: !canUploadHere, fits: true, enabled: true, run: () => fileInputRef.current?.click() },
+    { key: "uploadFolder", label: t("files.act.uploadFolder"), icon: <FolderUp {...ic} />, group: 1, section: "first", hidden: !canUploadFolder, fits: true, enabled: true, run: () => folderInputRef.current?.click() },
   ];
   const hasMedia = items.some(isPlayable);
   const spaceActs: BarAct[] = [
-    { key: "playMedia", label: t("files.act.playMedia"), icon: <Play {...ic} />, group: 0, hidden: !hasMedia, fits: true, enabled: true, run: () => playHere() },
+    { key: "playMedia", label: t("files.act.playMedia"), icon: <Play {...ic} />, group: 0, section: "first", hidden: !hasMedia, fits: true, enabled: true, run: () => playHere() },
     ...newActs,
-    { key: "paste", label: t("files.act.paste"), icon: <ClipboardPaste {...ic} />, group: 2, hidden: !canUploadHere, fits: true, enabled: clip !== null, run: () => void pasteHere() },
+    { key: "paste", label: t("files.act.paste"), icon: <ClipboardPaste {...ic} />, group: 2, section: "first", hidden: !canUploadHere, fits: true, enabled: clip !== null, run: () => void pasteHere() },
   ];
   // menuItems turns actions into the items of a menu: a divider between the groups, the hidden and the non-fitting actions left
   // out, and a disabled one shown greyed. Choosing an item closes the menu before the action runs.
@@ -1659,6 +1738,54 @@ export default function FilesPage() {
       };
       return i > 0 && shown[i - 1].group !== a.group ? [{ type: "divider" as const, key: `${a.key}-divider` }, item] : [item];
     });
+  };
+  // actItem is one entry of a menu built from an action: its shortcut at the right, and the same call as the toolbar's.
+  const actItem = (a: BarAct) => ({
+    key: a.key,
+    label: a.menuLabel ?? a.label,
+    icon: a.icon,
+    danger: a.danger,
+    disabled: !a.enabled,
+    // The shortcut is drawn at the entry's right from its data-hint (index.css), so the entry's text is its name alone.
+    // The hint is hidden from a screen reader (review fix 9): the entry's name is its text alone, and the shortcut is named by
+    // aria-keyshortcuts.
+    extra: shortcutHint(a.key, MAC_KEYS) ? <span aria-hidden="true" className="menu-hint" data-hint={shortcutHint(a.key, MAC_KEYS)} /> : undefined,
+    "aria-keyshortcuts": shortcutKeys(a.key, MAC_KEYS),
+    // A finger needs 44 pixels, as on each other item.
+    style: touchItem,
+    onClick: () => {
+      menuChosen.current = true;
+      setMenu(null);
+      a.run();
+    },
+  });
+  // groupedItems is the menu of a file, a folder or a selection, grouped as Drive groups it (decision 70): the first group flat,
+  // then Share, Organize and Information as submenus, then Move to trash. A submenu with nothing to show is not there.
+  const GROUP_TITLE = { share: "share.open", organize: "files.menu.organize", info: "files.menu.info" } as const;
+  const groupIcon = { share: <Share2 {...ic} />, organize: <FolderInput {...ic} />, info: <Info {...ic} /> } as const;
+  const groupedItems = (list: BarAct[]) =>
+    groupMenu(list).map((piece, i) => {
+      if (piece.kind === "divider") return { type: "divider" as const, key: `divider-${i}` };
+      if (piece.kind === "item") return actItem(piece.act);
+      return {
+        key: `group-${piece.section}`,
+        label: t(GROUP_TITLE[piece.section]),
+        icon: groupIcon[piece.section],
+        style: touchItem,
+        // A submenu has the root menu's height limit and scroll, so a short window reaches its last entry (review fix 5).
+        popupStyle: MENU_SCROLL,
+        children: piece.acts.map(actItem),
+      };
+    });
+  // rowActsFor gives the icons at a list row's end for one item: Share, Download (or Download as zip for a folder), Rename and
+  // Star. Each is the same action the menu runs, built for that item alone, so the permissions are the menu's.
+  const rowActsFor = (n: Node): RowAct[] => {
+    const list = buildActs([n]);
+    const pick = (key: string) => list.find((a) => a.key === key && !a.hidden && a.fits);
+    const download = pick("download") ?? pick("zip");
+    return [pick("share"), download, pick("rename"), pick("star")].flatMap((a) =>
+      a ? [{ key: a.key, label: a.label, icon: a.icon, enabled: a.enabled, run: a.run }] : [],
+    );
   };
   // On a touch screen the toolbar buttons and the menus' items are a finger's size, 44 pixels.
   const menuTheme = coarse ? { components: { Menu: { itemHeight: 44 } } } : {};
@@ -1707,7 +1834,7 @@ export default function FilesPage() {
       moreMenu={
         panelMore.length > 0 ? (
           <ConfigProvider theme={menuTheme}>
-            <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(panelMore), style: MENU_SCROLL }}>
+            <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: groupedItems(panelMore), style: MENU_SCROLL, triggerSubMenuAction: coarse ? "click" : "hover" }}>
               <IconButton label={t("files.act.more")} icon={<EllipsisVertical {...ic} />} aria-haspopup="menu" />
             </Dropdown>
           </ConfigProvider>
@@ -1916,7 +2043,7 @@ export default function FilesPage() {
                     const id = ids[i];
                     if (id) setSel((prev) => ({ ...prev, focusID: id }));
                   }}
-                  onStar={(n) => void toggleStar(n)}
+                  rowActs={rowActsFor}
                   onRowContext={onRowContext}
                   cutIDs={cutSet}
                   stickyTop={stickyTop(coarse)}
@@ -1953,7 +2080,11 @@ export default function FilesPage() {
                   // Closed without a choice (Escape, a click away), a menu opened from the keyboard gives the focus back to its row.
                   if (!chosen && origin?.isConnected) origin.focus();
                 }}
-                menu={{ items: menuItems(menu.scope === "space" ? spaceActs : barActs), style: MENU_SCROLL }}
+                menu={
+                  menu.scope === "space"
+                    ? { items: menuItems(spaceActs), style: MENU_SCROLL }
+                    : { items: groupedItems(barActs), style: MENU_SCROLL, triggerSubMenuAction: coarse ? "click" : "hover" }
+                }
               >
                 {/* pointer-events none: a touch's click lands on the row under the finger, not on the anchor, whose click closes the menu. */}
                 <span aria-hidden="true" style={{ position: "fixed", insetInlineStart: menu.inline, insetBlockStart: menu.block, width: 1, height: 1, pointerEvents: "none" }} />

@@ -41,6 +41,8 @@ import { d1Checks } from './d1.mjs';
 import { d2Checks } from './d2.mjs';
 import { i1Checks } from './i1.mjs';
 import { d3Checks } from './d3.mjs';
+import { l1Checks } from './l1.mjs';
+import { pickMenuEntry } from './menu.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -287,8 +289,8 @@ async function clickButton(page, text) {
   const toolbarButton = `[...document.querySelectorAll('[data-testid="browser-toolbar"] button, [data-testid="selection-panel"] button, [data-testid="new-button"]')].find((x) => x.textContent.trim() === ${q(holder)} || x.getAttribute('aria-label') === ${q(holder)})`;
   await page.waitFor(`!!${toolbarButton}`, 10000);
   await page.evaluate(`${toolbarButton}.click()`);
-  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(text)} && !i.classList.contains('ant-dropdown-menu-item-disabled'))`, 10000);
-  await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((i) => i.textContent.trim() === ${q(text)}).click()`);
+  // The entry is picked by its label; one in a submenu (decision 70) opens its submenu first.
+  await pickMenuEntry(page, text);
 }
 
 // rowAppears and rowGone wait for a row of the listing.
@@ -325,8 +327,10 @@ async function buttonTexts(page) {
   return page.evaluate(`[...document.querySelectorAll('button')].flatMap((b) => [b.textContent.trim(), b.getAttribute('aria-label')]).filter(Boolean)`);
 }
 
-// sizeCell reads the size column of a row: the check box is the first cell, the name the second.
-const sizeCell = (name) => `document.querySelector(${q(rowSel(name))}).querySelectorAll('td')[2].textContent.trim()`;
+// sizeCell reads the size column of a row. The column is found by its header, because the cells before it depend on the pointer:
+// a finger has a check box column, a mouse has the check box in the name cell (decision 70).
+const sizeCell = (name) =>
+  `(() => { const row = document.querySelector(${q(rowSel(name))}); const heads = [...(row.closest('.ant-table')?.querySelectorAll('thead th') ?? [])]; const i = heads.findIndex((h) => h.textContent.trim().startsWith('Size')); return i < 0 ? null : row.querySelectorAll('td')[i].textContent.trim(); })()`;
 
 // chooseLanguage picks a language from the language menu of the top bar.
 async function chooseLanguage(page, name) {
@@ -517,10 +521,18 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
   const afterRetry = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length - beforeRetry;
   check(afterRetry >= 1 && afterRetry <= 2, `an interrupted upload resumes and finishes, sending ${afterRetry} of its 3 pieces after the retry`);
 
+  // Star is one of the icons at the end of a selected row (decision 70); once starred, the same icon says Unstar.
   await page.waitFor(`!!document.querySelector(${q(rowSel('Reports'))})`);
-  await page.evaluate(`(() => { const b = document.querySelector(${q(rowSel('Reports'))}).querySelector('button[aria-pressed]'); b.click(); return true; })()`);
-  await page.waitFor(`document.querySelector(${q(rowSel('Reports'))}).querySelector('button[aria-pressed]').getAttribute('aria-pressed') === 'true'`, 10000);
+  await selectRow(page, 'Reports');
+  await page.waitFor(
+    `(() => { const b = document.querySelector(${q(rowSel('Reports'))})?.querySelector('.row-acts button[aria-label^="Star"]'); if (!b) return false; b.click(); return true; })()`,
+    10000,
+  );
+  await page.waitFor(`!!document.querySelector(${q(rowSel('Reports'))})?.querySelector('.row-acts button[aria-label^="Unstar"]')`, 10000);
   check(true, 'a file can be starred from the listing');
+  // Escape on the row clears the selection, so the steps after this one see the listing as before.
+  await press(page, rowSel('Reports'), 'Escape');
+  await page.waitFor(`!document.querySelector('[role="row"][aria-selected="true"]')`, 10000);
 
   await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
   await page.waitFor(`document.querySelectorAll('.ant-table-thead th').length === 3`, 10000);
@@ -608,6 +620,8 @@ async function main() {
   server.stdout.on('data', (d) => (serverLog += d));
   server.stderr.on('data', (d) => (serverLog += d));
   let browser = null;
+  // l1Browser is the list's own browser, while its checks run (see the l1 call).
+  let l1Browser = null;
   let page = null;
   let passed = false;
   try {
@@ -765,6 +779,28 @@ async function main() {
     if (!only || onlySet.has('d1')) await d1Checks(h, { page, base, accountKey, teamA });
     if (!only || onlySet.has('d2')) await d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID });
     if (!only || onlySet.has('i1')) await i1Checks(h, { page, base, accountKey, teamA, dir });
+    // The list's checks need a mouse's hover, which a headless browser has only from its launch (see launchBrowser), and an earlier
+    // section's touch emulation resets it. So l1 runs in its own browser, launched with a mouse, signed in as the member the shared page is signed in as before the sections (an editor), with the same
+    // content-policy listening as the shared page; its errors count in this run.
+    if (!only || onlySet.has('l1')) {
+      const l1Launch = await launchBrowser(await findBrowser(), join(dir, 'l1-profile'), { mouse: true });
+      l1Browser = l1Launch.proc;
+      const l1Page = new Page(l1Launch.wsUrl);
+      l1Page.base = base;
+      try {
+        await l1Page.start(EXPECTED);
+        await l1Page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+        await signIn(l1Page, MEMBER);
+        await l1Checks(h, { page: l1Page, base, accountKey, teamA, dir });
+        check(l1Page.errors.length === 0, `the list's browser has no console errors or policy violations (${l1Page.errors.join(' | ') || 'none'})`);
+        const l1Foreign = l1Page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:') && !u.startsWith('blob:' + base + '/'));
+        check(l1Foreign.length === 0, `the list's browser made no request to another origin (${l1Foreign.length} foreign)`);
+      } finally {
+        l1Page.close();
+        l1Browser.kill();
+        l1Browser = null;
+      }
+    }
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
@@ -825,6 +861,7 @@ async function main() {
     sink.close();
     page?.close();
     browser?.kill();
+    l1Browser?.kill();
     server.kill();
     await fake.close();
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {

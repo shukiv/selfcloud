@@ -7,6 +7,7 @@
 
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pickMenuEntry } from './menu.mjs';
 
 const q = (v) => JSON.stringify(v);
 // The sidebar's folder tree (decision 62): each space is a row with a link to the space.
@@ -55,8 +56,8 @@ async function clickButton(page, text) {
   const toolbarButton = `[...document.querySelectorAll('[data-testid="browser-toolbar"] button, [data-testid="selection-panel"] button, [data-testid="new-button"]')].find((x) => x.textContent.trim() === ${q(holder)} || x.getAttribute('aria-label') === ${q(holder)})`;
   await page.waitFor(`!!${toolbarButton}`, 10000);
   await page.evaluate(`${toolbarButton}.click()`);
-  await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((i) => i.textContent.trim() === ${q(text)} && !i.classList.contains('ant-dropdown-menu-item-disabled'))`, 10000);
-  await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((i) => i.textContent.trim() === ${q(text)}).click()`);
+  // The entry is picked by its label; one in a submenu (decision 70) opens its submenu first.
+  await pickMenuEntry(page, text);
 }
 
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;

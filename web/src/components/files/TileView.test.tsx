@@ -48,7 +48,6 @@ function props(over: Partial<ListingProps> = {}): ListingProps {
     onRename: vi.fn(),
     onKeyDown: vi.fn(),
     onFocusItem: vi.fn(),
-    onStar: vi.fn(),
     onRowContext: vi.fn(),
     ...over,
   };
@@ -94,18 +93,15 @@ describe("the tile view", () => {
     expect(box.style.direction).toBe("inherit");
   });
 
-  // The menu button is out of the tab order: Shift+F10 opens the item's menu from the tile. The star stays a tab stop, as a
-  // list row's star is, because the item menu has no Star action and the star has no other key. Arrow keys move on from both.
-  it("takes the menu button out of the tab order, keeps the star a tab stop, and lets arrow keys move on from both", () => {
+  // The menu button is out of the tab order: Shift+F10 opens the item's menu from the tile. The star is not a button on a tile
+  // (decision 70); the menu's Star entry changes it. Arrow keys move on from the menu button.
+  it("takes the menu button out of the tab order, and lets arrow keys move on from it", () => {
     const onKeyDown = vi.fn();
     render(<Listing {...props({ onKeyDown })} />);
-    const star = screen.getByRole("button", { name: "Star notes.txt" });
     const menu = screen.getByRole("button", { name: "More actions for plan.txt" });
-    expect(star.tabIndex).toBe(0);
     expect(menu.tabIndex).toBe(-1);
-    fireEvent.keyDown(star, { key: "ArrowDown" });
     fireEvent.keyDown(menu, { key: "ArrowRight" });
-    expect(onKeyDown.mock.calls.map((c) => c[0].key)).toEqual(["ArrowDown", "ArrowRight"]);
+    expect(onKeyDown.mock.calls.map((c) => c[0].key)).toEqual(["ArrowRight"]);
   });
 
   it("gives every item a menu button, and the button opens that item's menu at the button", () => {
@@ -120,11 +116,15 @@ describe("the tile view", () => {
     expect(onRowClick).not.toHaveBeenCalled();
   });
 
-  it("keeps the star on each item: a button on a chip and in a card's corner", () => {
+  // A starred tile shows a filled star after its name, in a chip and in a card alike; no tile has a star button (decision 70).
+  it("shows the star as a mark after the name of a starred item, and no star button on any tile", () => {
     render(<Listing {...props()} />);
-    expect(screen.getByRole("button", { name: "Star notes.txt" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Star plan.txt" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Star Docs" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Star notes.txt" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Star plan.txt" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Star Docs" })).toBeNull();
+    const starred = document.querySelector('[data-id="n2"]') as HTMLElement;
+    expect(starred.textContent).toContain("Starred");
+    expect(document.querySelector('[data-id="n1"]')?.textContent).not.toContain("Starred");
   });
 
   it("gives the files cards of one height: the preview is the same for each, whatever the name", () => {

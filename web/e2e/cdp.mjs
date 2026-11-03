@@ -20,12 +20,17 @@ export function freePort() {
 
 // launchBrowser starts headless Chrome with a debugging port and returns the process and the
 // WebSocket URL of its first page.
-export async function launchBrowser(binary, profileDir) {
+// mouse gives the browser a mouse's screen: hover is there and the primary pointer is fine, so the (hover: hover) and (pointer: fine)
+// rules apply. Headless Chrome reports neither hover nor a pointer by default. The flag is read at launch only; Emulation.setEmulatedMedia
+// does not change these media in this Chrome (checked 2026-11-02), so a finger's screen needs its own launch with
+// primaryHoverType=1 and primaryPointerType=2, which gives hover: none and pointer: coarse.
+export async function launchBrowser(binary, profileDir, { mouse = false } = {}) {
   const port = await freePort();
   const proc = spawn(
     binary,
     [
       '--headless=new',
+      ...(mouse ? ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'] : []),
       '--no-sandbox',
       '--disable-gpu',
       '--disable-dev-shm-usage',

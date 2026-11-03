@@ -8,7 +8,7 @@
 // SELFCLOUD_W2_SHOTS set to a folder, the run also saves the pictures for the slice.
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { barButtons, browserTitle, click, clearSelection, itemSel, q, setLanguage, setPhone, setTheme } from './media.mjs';
+import { barButtons, browserTitle, click, clearSelection, hoverOver, itemSel, q, setLanguage, setPhone, setTheme } from './media.mjs';
 
 const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 const MODS = { alt: 1, ctrl: 2, shift: 8 };
@@ -460,10 +460,17 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
   // ---- 11. Select all says it took only the loaded rows ----
   await step('Select all says it took only the loaded rows when more pages exist', async () => {
     await open(manyURL, 'List', 'm01.txt');
-    const box = await page.evaluate(`(() => { const c = document.querySelector('.ant-table-sticky-holder .ant-checkbox-input, thead .ant-checkbox-input'); const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    // The select-all box of a mouse is in the header's place and shows on a hovered header or while something is selected
+    // (decision 70). This browser reports no hover, so one row is selected first: the box then shows, and Select all takes the rest.
+    await click(page, await nameAt(page, 'm01.txt'));
+    await page.waitFor(`!!document.querySelector('.files-list .head-check') && getComputedStyle(document.querySelector('.files-list .head-check')).display !== 'none'`, 8000);
+    const box = await page.evaluate(`(() => { const c = document.querySelector('.files-list .head-check .ant-checkbox-input'); const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     check(await page.evaluate(`!!document.querySelector('.ant-btn') && [...document.querySelectorAll('button')].some((b) => /load more/i.test(b.textContent))`), 'the folder has more pages than are loaded');
     await click(page, box);
-    await page.waitFor(`document.body.innerText.includes('Selected the items loaded so far: 50')`, 8000);
+    await page.waitFor(`document.body.innerText.includes('Selected the items loaded so far: 50')`, 8000).catch(async (err) => {
+      const seen = await page.evaluate(`JSON.stringify({ box: ${q(box)}, head: (() => { const h = document.querySelector('.files-list .head-check'); const r = h?.getBoundingClientRect(); return h ? { display: getComputedStyle(h).display, x: r.left, y: r.top, w: r.width } : null; })(), input: (() => { const i = document.querySelector('.files-list .head-check input'); return i ? { checked: i.checked, indeterminate: i.indeterminate } : null; })(), theads: document.querySelectorAll('.files-list thead').length, selected: document.querySelectorAll('[role="row"][aria-selected="true"]').length, panel: document.querySelector('[data-testid="selection-panel"]')?.textContent?.slice(0, 60) ?? null })`);
+      throw new Error(`${err.message.slice(0, 80)}; ${seen}`);
+    });
     const took = await selectedNames(page);
     check(took.length === 50 && took[0] === 'm01.txt' && took[49] === 'm50.txt', `Select all took the 50 loaded rows, m01 to m50 (${took.length}: ${took[0]} to ${took[took.length - 1]})`);
     check(await page.evaluate(`document.body.innerText.includes('50 selected')`), 'the panel counts 50 selected');

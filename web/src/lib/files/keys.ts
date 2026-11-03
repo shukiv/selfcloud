@@ -21,6 +21,8 @@ export interface KeyLayout {
   grid: boolean;
   // rtl mirrors left and right.
   rtl: boolean;
+  // mac is true on Apple's systems, where Command+Backspace is the trash's key (review fix 8).
+  mac?: boolean;
   // count is how many items are listed; Home and End move by it.
   count: number;
 }
@@ -62,6 +64,8 @@ export function keyAction(e: KeyFields, layout: KeyLayout): KeyAction | null {
   const { cols, grid, rtl, count } = layout;
   const accel = e.ctrlKey || e.metaKey;
   if (e.key === "ArrowUp" && e.altKey) return { kind: "up" };
+  // On a Mac, Command+Backspace is Delete (move to the trash); Backspace alone still goes up a folder.
+  if (layout.mac && e.key === "Backspace" && e.metaKey && !e.shiftKey && !e.altKey) return { kind: "delete" };
   if (accel && !e.shiftKey && !e.altKey) {
     const letter = letterOf(e);
     if (letter === "c") return { kind: "copy" };

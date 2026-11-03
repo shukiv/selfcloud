@@ -99,3 +99,20 @@ describe("keyAction", () => {
     expect(keyAction(press("x"), grid)).toBeNull();
   });
 });
+
+// Review fix 8 (decision 70): on a Mac, Command+Backspace moves the selection to the trash; Backspace alone still goes up a folder,
+// and elsewhere Backspace is unchanged.
+describe("keyAction: Mac Delete", () => {
+  const mac: KeyLayout = { cols: 1, grid: false, rtl: false, count: 10, mac: true };
+  it("Command+Backspace on a Mac is the delete action", () => {
+    expect(keyAction(press("Backspace", { metaKey: true }), mac)).toEqual({ kind: "delete" });
+  });
+  it("Backspace alone on a Mac still goes up a folder", () => {
+    expect(keyAction(press("Backspace"), mac)).toEqual({ kind: "up" });
+  });
+  it("elsewhere, Command or Control with Backspace still goes up, and Delete is unchanged", () => {
+    expect(keyAction(press("Backspace", { metaKey: true }), list)).toEqual({ kind: "up" });
+    expect(keyAction(press("Backspace", { ctrlKey: true }), list)).toEqual({ kind: "up" });
+    expect(keyAction(press("Delete"), mac)).toEqual({ kind: "delete" });
+  });
+});

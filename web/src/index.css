@@ -1145,6 +1145,92 @@ tr[data-drop-state="refused"] > td {
   overflow: visible;
 }
 
+/* A menu entry's keyboard shortcut is drawn after the entry's name, from its data-hint: it is not text, so the entry reads as its name. */
+.menu-hint::after {
+  content: attr(data-hint);
+}
+
+/* A list row's bands (decision 70). antd paints a row's cells, so the bands are on the cells: a selected row is an accent band with
+   an accent edge, and it keeps the band under the pointer. The colours come from the list's own variables (set by Listing from the
+   theme tokens). antd paints a hovered row's cells with its own class (.ant-table-cell-row-hover), and a selected row's hovered cells
+   with a second one: both are matched here, with the row's selection read from aria-selected, so the list's bands win (review fix 3). */
+.files-list .ant-table-tbody > tr[aria-selected="true"] > td,
+.files-list .ant-table-tbody > tr[aria-selected="true"]:hover > td,
+.files-list .ant-table-tbody > tr[aria-selected="true"] > td.ant-table-cell-row-hover {
+  background: var(--sc-row-selected);
+  box-shadow: inset 0 1px 0 var(--sc-accent), inset 0 -1px 0 var(--sc-accent);
+}
+
+/* Hover is a mouse's (review fix 10): a finger's tap leaves no grey band and shows no icons or checkboxes. */
+@media (hover: hover) {
+  .files-list .ant-table-tbody > tr:not([aria-selected="true"]):hover > td,
+  .files-list .ant-table-tbody > tr:not([aria-selected="true"]) > td.ant-table-cell-row-hover {
+    background: var(--sc-row-hover);
+  }
+
+  /* The row end: the four icons show on a hovered row too, and keep their room when they do not, so a row never moves. */
+  .files-list tr:hover .row-acts {
+    visibility: visible;
+  }
+}
+
+/* The row end: the four icons show on a selected row, or on a row that has the focus (review fix 2): a focused icon stays shown
+   when the selection is cleared. A focused icon is focusable, so it is never visibility: hidden. */
+.files-list .row-acts {
+  visibility: hidden;
+}
+
+.files-list tr[aria-selected="true"] .row-acts,
+.files-list tr:focus-within .row-acts {
+  visibility: visible;
+}
+
+/* Checkboxes on demand, with a mouse: the box takes the file icon's place on a hovered row, on a selected row, on a row with the focus,
+   and on every row while anything is selected. The select-all box shows on the header's hover and while anything is selected. */
+.files-list .row-check,
+.files-list .head-check {
+  display: none;
+}
+
+.files-list tr[aria-selected="true"] .row-check,
+.files-list tr:focus-within .row-check,
+.files-list[data-has-selection="true"] .row-check,
+.files-list thead:focus-within .head-check,
+.files-list[data-has-selection="true"] .head-check {
+  display: inline-flex;
+}
+
+.files-list .row-icon {
+  display: inline-flex;
+}
+
+.files-list tr[aria-selected="true"] .row-icon,
+.files-list[data-has-selection="true"] .row-icon {
+  display: none;
+}
+
+@media (hover: hover) {
+  .files-list tr:hover .row-check,
+  .files-list thead:hover .head-check {
+    display: inline-flex;
+  }
+  .files-list tr:hover .row-icon {
+    display: none;
+  }
+}
+
+/* A touch screen with a mouse (any pointer coarse, the primary one fine): the checkboxes stay visible, so a finger can select (review
+   fix 10). */
+@media (any-pointer: coarse) {
+  .files-list .row-check,
+  .files-list .head-check {
+    display: inline-flex;
+  }
+  .files-list .row-icon {
+    display: none;
+  }
+}
+
 /* The file page fills the room under the header, whatever else sits above it, so its section can reach the window's bottom. */
 #main:has(> .files-layout) {
   display: flex;

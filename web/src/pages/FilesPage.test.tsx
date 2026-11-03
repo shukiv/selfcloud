@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { App as AntdApp } from "antd";
@@ -70,6 +70,7 @@ vi.mock("../lib/files/uploads", async () => {
   return { uploads: uploadList.store, manager: uploadsMock, conflictAsk: writable<string | null>(null) };
 });
 vi.mock("../lib/stars", () => ({ starNode: vi.fn(), unstarNode: vi.fn() }));
+import { starNode, unstarNode } from "../lib/stars";
 // The storage figures are read by the notice on My files; the test states them in the store and does not read them.
 vi.mock("../lib/storage/api", async (orig) => ({
   ...(await orig<typeof import("../lib/storage/api")>()),
@@ -133,10 +134,39 @@ export function node(id: string, name: string, extra: Partial<Node> = {}): Node 
 }
 
 // renderAt mounts the page at an address, in a router and a query client of its own.
+// menuEntry finds an entry of the open menu by its name. An entry in a submenu (decision 70) is reached by a hover on the
+// submenu's title, which opens it: the caller names the submenu.
+async function menuEntry(name: string, submenu?: "Share" | "Organize" | "Information"): Promise<HTMLElement> {
+  if (submenu) {
+    // The title is found by its text: a submenu's title is a menu item of its own, and the entry is read once it is open.
+    const title = await waitFor(() => {
+      const el = Array.from(document.querySelectorAll<HTMLElement>(".ant-dropdown-menu-submenu-title")).find((x) => x.textContent?.trim() === submenu);
+      if (!el) throw new Error(`no submenu ${submenu}`);
+      return el;
+    });
+    fireEvent.mouseEnter(title);
+  }
+  return screen.findByRole("menuitem", { name });
+}
+
+// inPanel finds a button of the selection panel. The rows have the same icons at their end (decision 70), so the panel is asked
+// for by its own test id.
+async function inPanel(name: string): Promise<HTMLElement> {
+  return within(await screen.findByTestId("selection-panel")).findByRole("button", { name });
+}
+
+// submenuOf names the submenu an entry is in, for the entries the tests pick (decision 70).
+function submenuOf(name: string): "Share" | "Organize" | "Information" | undefined {
+  if (["Details", "Versions"].includes(name)) return "Information";
+  if (["Move to…", "Copy to…", "Add shortcut", "Cut", "Copy", "Paste"].includes(name)) return "Organize";
+  if (["Share…", "Copy link"].includes(name)) return "Share";
+  return undefined;
+}
+
 // chooseMore opens the toolbar's More menu and picks the action with this name from it.
 async function chooseMore(name: string) {
   fireEvent.click(screen.getByRole("button", { name: "More" }));
-  fireEvent.click(await screen.findByRole("menuitem", { name }));
+  fireEvent.click(await menuEntry(name, submenuOf(name)));
 }
 
 // chooseNew opens the New menu and picks the item with this name from it.
@@ -490,7 +520,7 @@ describe("sharing from the browser", () => {
     await screen.findByRole("row", { name: "alpha.txt" });
     selectOnly("alpha.txt");
     await screen.findByRole("button", { name: "Delete" });
-    expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
+    expect(await inPanel("Share")).toBeTruthy();
   });
 
   it.each([
@@ -514,9 +544,9 @@ describe("sharing from the browser", () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     selectOnly("alpha.txt");
-    expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
+    expect(await inPanel("Share")).toBeTruthy();
     fireEvent.click(await screen.findByRole("row", { name: "beta.txt" }), { ctrlKey: true });
-    await waitFor(() => expect((screen.getByRole("button", { name: "Share" }) as HTMLButtonElement).disabled).toBe(true));
+    await waitFor(() => expect((within(screen.getByTestId("selection-panel")).getByRole("button", { name: "Share" }) as HTMLButtonElement).disabled).toBe(true));
   });
 
   it("Details shows Who has access to every caller, and its own Share only where Share is offered", async () => {
@@ -537,7 +567,7 @@ describe("sharing from the browser", () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     selectOnly("alpha.txt");
-    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    fireEvent.click(await inPanel("Share"));
     const dialog = await screen.findByRole("dialog", { name: "stub share" });
     expect(dialog).toBeTruthy();
     expect(shareStub.props.at(-1)?.node.id).toBe("n1");
@@ -550,7 +580,7 @@ describe("sharing from the browser", () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     selectOnly("alpha.txt");
-    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    fireEvent.click(await inPanel("Share"));
     await screen.findByRole("dialog", { name: "stub share" });
     expect(screen.getByRole("dialog", { name: "stub share" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "stub close" }));
@@ -563,7 +593,7 @@ describe("sharing from the browser", () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     selectOnly("alpha.txt");
-    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    fireEvent.click(await inPanel("Share"));
     await screen.findByRole("dialog", { name: "stub share" });
     api.childrenPage.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "stub changed" }));
@@ -576,7 +606,7 @@ describe("sharing from the browser", () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     selectOnly("alpha.txt");
-    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    fireEvent.click(await inPanel("Share"));
     await screen.findByRole("dialog", { name: "stub share" });
     act(() => {
       session.set(signedAs("u2", "t2"));
@@ -684,8 +714,8 @@ describe("the toolbar, the right-click menu and the clipboard keys", () => {
     const toolbar = screen.getByRole("toolbar", { name: "Folder actions" });
     for (const name of ["Delete", "Move to…", "Rename", "Cut", "Paste"]) expect(within(toolbar).queryByRole("button", { name })).toBeNull();
     fireEvent.contextMenu(rows("alpha.txt") as Element);
-    expect(await screen.findByRole("menuitem", { name: "Copy to…" })).toBeTruthy();
-    expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+    expect(await menuEntry("Copy to…", "Organize")).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Move to trash" })).toBeNull();
   });
 
   it("a right-click on an item that is not selected selects it, and opens the menu with the same actions", async () => {
@@ -707,7 +737,7 @@ describe("the toolbar, the right-click menu and the clipboard keys", () => {
     fireEvent.click(rows("alpha.txt") as Element);
     fireEvent.click(rows("beta.txt") as Element, { ctrlKey: true });
     fireEvent.contextMenu(rows("alpha.txt") as Element);
-    await screen.findByRole("menuitem", { name: "Delete" });
+    await screen.findByRole("menuitem", { name: "Move to trash" });
     expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("true");
     expect(rows("beta.txt")?.getAttribute("aria-selected")).toBe("true");
   });
@@ -1069,7 +1099,7 @@ describe("the review round: pastes, the clipboard's lifetime, the menus and the 
       expect(within(panel).getByRole("button", { name: "Download" })).toBeTruthy();
       expect(within(panel).queryByRole("button", { name: "Delete" })).toBeNull();
       fireEvent.click(within(panel).getByRole("button", { name: "More" }));
-      expect(await screen.findByRole("menuitem", { name: "Delete" })).toBeTruthy();
+      expect(await screen.findByRole("menuitem", { name: "Move to trash" })).toBeTruthy();
     } finally {
       window.matchMedia = original;
     }
@@ -1824,7 +1854,7 @@ describe("Play media", () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "one.mp4" });
     fireEvent.contextMenu(rows("one.mp4") as Element, { clientX: 40, clientY: 50 });
-    await screen.findByRole("menuitem", { name: "Details" });
+    await menuEntry("Details", "Information");
     expect(screen.queryByRole("menuitem", { name: "Play media" })).toBeNull();
   });
 });
@@ -1848,5 +1878,153 @@ describe("the toolbar's New (decision 66)", () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     expect(within(screen.getByRole("toolbar")).getByRole("button", { name: "New" })).toBeTruthy();
+  });
+});
+
+// The row end and the grouped menu (decision 70): the icons of a row are the menu's own actions, with the same permissions, and
+// the menu groups its entries as Drive does.
+// Review fixes 5, 8, 9, 12 and 13 (decision 70): a submenu scrolls like the root menu; a menu entry's name is its text alone, with the
+// shortcut named by aria-keyshortcuts; Open is in the first group for a file that Enter opens; Star and Unstar, from the hover icon and
+// from the menu, call the star functions.
+describe("review fixes: submenus, shortcut names, Open for Enter, and the star calls", () => {
+  it("a submenu has the root menu's height limit and scrolls (review fix 5)", async () => {
+    place.role = "editor";
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 50, clientY: 60 });
+    await menuEntry("Cut", "Organize");
+    const popup = document.querySelector(".ant-dropdown-menu-submenu-popup") as HTMLElement | null;
+    expect(popup).not.toBeNull();
+    expect(popup?.style.overflowY).toBe("auto");
+    expect(popup?.style.maxBlockSize).toBe("calc(100dvh - 16px)");
+  });
+
+  it("a menu entry's name is its text alone, its shortcut is hidden from a screen reader, and aria-keyshortcuts names it (review fix 9)", async () => {
+    place.role = "editor";
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 50, clientY: 60 });
+    const cut = await menuEntry("Cut", "Organize");
+    expect(cut.getAttribute("aria-keyshortcuts")).toBe("Control+X");
+    expect(cut.querySelector(".menu-hint")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("a file that Enter opens, and that has no preview, has Open in the first group with the Enter hint (review fix 12)", async () => {
+    place.role = "editor";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "archive.zip", { mime_type: "application/zip" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "archive.zip" });
+    fireEvent.contextMenu(rows("archive.zip") as Element, { clientX: 50, clientY: 60 });
+    const open = await menuEntry("Open");
+    expect(open.querySelector(".menu-hint")?.getAttribute("data-hint")).toBe("Enter");
+  });
+
+  it("the hover icon Star calls starNode, and the menu's Unstar on a starred file calls unstarNode (review fix 13)", async () => {
+    place.role = "editor";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "beta.txt", { starred: false }), node("n2", "gamma.txt", { starred: true })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "beta.txt" });
+    fireEvent.click(within(rows("beta.txt") as HTMLElement).getByRole("button", { name: "Star" }));
+    await waitFor(() => expect(starNode).toHaveBeenCalledWith("n1"));
+    fireEvent.contextMenu(rows("gamma.txt") as Element, { clientX: 50, clientY: 60 });
+    fireEvent.click(await menuEntry("Unstar", "Organize"));
+    await waitFor(() => expect(unstarNode).toHaveBeenCalledWith("n2"));
+  });
+});
+
+// Review fix 1 (decision 70): Enter or Space on a row's ⋮ opens the item's menu with the focus in it; the arrows move in the menu and
+// not the selection; Escape gives the focus back to the ⋮.
+describe("review fix 1: the keyboard opens a row's ⋮ menu", () => {
+  it("Enter on a row's ⋮ opens its menu with the focus on the first item, arrows move in the menu and not the selection, and Escape gives the focus back to the ⋮", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const more = within(rows("alpha.txt") as HTMLElement).getByRole("button", { name: "More actions for alpha.txt" });
+    more.focus();
+    // Enter on a button is a click with no pointer: its detail is 0.
+    fireEvent.click(more, { detail: 0 });
+    const menu = await screen.findByRole("menu");
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    expect((document.activeElement as HTMLElement).getAttribute("role")).toBe("menuitem");
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown", keyCode: 40 });
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    expect(rows("beta.txt")?.getAttribute("aria-selected")).toBe("false");
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape", keyCode: 27 });
+    await waitFor(() => expect(document.activeElement).toBe(more));
+  });
+
+  it("a mouse click on a row's ⋮ does not move the focus into the menu", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const more = within(rows("alpha.txt") as HTMLElement).getByRole("button", { name: "More actions for alpha.txt" });
+    fireEvent.click(more, { detail: 1 });
+    await screen.findByRole("menu");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByRole("menu").contains(document.activeElement)).toBe(false);
+  });
+});
+
+describe("the row end and the grouped menu (decision 70)", () => {
+  const folderRow = (id: string, name: string) => node(id, name, { kind: "dir", mime_type: "" });
+
+  it("an editor's row has the Rename icon, and a viewer's row has none", async () => {
+    place.role = "editor";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "editor" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    expect(within(await screen.findByRole("row", { name: "alpha.txt" })).getByRole("button", { name: "Rename" })).toBeTruthy();
+    cleanup();
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { role: "viewer" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    expect(within(await screen.findByRole("row", { name: "alpha.txt" })).queryByRole("button", { name: "Rename" })).toBeNull();
+  });
+
+  it("the right-click menu of a file lists its first group, then the submenus, and Move to trash last", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 50, clientY: 60 });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Rename" })).toBeTruthy();
+    const titles = Array.from(menu.querySelectorAll(".ant-dropdown-menu-submenu-title")).map((x) => x.textContent?.trim());
+    expect(titles).toEqual(["Share", "Organize", "Information"]);
+    expect(within(menu).queryByRole("menuitem", { name: "Move to…" })).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: "Move to trash" })).toBeTruthy();
+  });
+
+  it("an entry in Organize shows its keyboard shortcut at the right, as Ctrl on a Windows or Linux browser", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 50, clientY: 60 });
+    await menuEntry("Cut", "Organize");
+    const cut = screen.getByRole("menuitem", { name: "Cut" });
+    expect(cut.querySelector(".menu-hint")?.getAttribute("data-hint")).toBe("Ctrl+X");
+  });
+
+  it("a starred file's menu offers Unstar in Organize", async () => {
+    place.role = "editor";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt", { starred: true })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.contextMenu(rows("alpha.txt") as Element, { clientX: 50, clientY: 60 });
+    expect(await menuEntry("Unstar", "Organize")).toBeTruthy();
+  });
+
+  it("an unstarred file's menu offers Star in Organize, and its row shows no star mark", async () => {
+    place.role = "editor";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "beta.txt", { starred: false })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "beta.txt" });
+    expect(rows("beta.txt")?.textContent).not.toContain("Starred");
+    fireEvent.contextMenu(rows("beta.txt") as Element, { clientX: 50, clientY: 60 });
+    expect(await menuEntry("Star", "Organize")).toBeTruthy();
+  });
+
+  it("a folder's menu opens it first", async () => {
+    api.childrenPage.mockResolvedValue({ items: [folderRow("d1", "Music")], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "Music" });
+    fireEvent.contextMenu(rows("Music") as Element, { clientX: 50, clientY: 60 });
+    expect(await screen.findByRole("menuitem", { name: "Open" })).toBeTruthy();
   });
 });

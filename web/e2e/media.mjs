@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pngOf } from './s4a.mjs';
 import { playerChecks, stopMini } from './player.mjs';
+import { hoverMenuTitle, pickMenuEntry } from './menu.mjs';
 
 const media = fileURLToPath(new URL('./media/', import.meta.url));
 const q = (v) => JSON.stringify(v);
@@ -403,16 +404,28 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await sleep(300);
     check(tile === 'tone.ogg', `one tap on a tile on a phone opens the file (opened ${tile ?? 'nothing'}; the tap hit ${tileHit}; geometry ${geom}; events ${tapLog})`);
     await closePreview(page);
-    // The star is in the tile's corner: a tap on it stars the file and opens nothing.
-    // A tile is taller in the tile view (slice d1): the tile is brought into the window before its star is measured.
-    const star = await page.evaluate(`(() => { const b = document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-pressed]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, before: b.getAttribute('aria-pressed') }; })()`);
-    check(star !== null && star.w >= 44 && star.h >= 44, `the star is a 44 pixel target on a phone (${JSON.stringify(star)})`);
-    await tap(page, star);
+    // The tile's More button is the one target on a tile (decision 70: the star is a mark, changed in the menu). A tap on it opens the
+    // item's menu, and opens nothing. A tile is taller in the tile view (slice d1): the button is brought into the window first.
+    const more = await page.evaluate(`(() => { const b = document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-haspopup="menu"]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; })()`);
+    check(more !== null && more.w >= 44 && more.h >= 44, `the More button of a tile is a 44 pixel target on a phone (${JSON.stringify(more)})`);
+    await tap(page, more);
     await sleep(800);
-    const starredNow = await page.evaluate(`document.querySelector(${q(itemSel('tone.ogg'))})?.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed') ?? null`);
-    const starOpened = await openedName(page);
-    check(star !== null && starredNow !== star.before && starOpened === null, `a tap on the star stars tone.ogg and opens nothing (starred ${star?.before} to ${starredNow}; opened ${starOpened ?? 'nothing'})`);
-    await tap(page, star);
+    const menuOpened = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-title-content, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-title-content')].some((x) => x.textContent.trim() === 'Rename')`);
+    const moreOpened = await openedName(page);
+    check(menuOpened && moreOpened === null, `a tap on the More button opens the item's menu and opens nothing (menu ${menuOpened}; opened ${moreOpened ?? 'nothing'})`);
+    // The star is changed from the menu on a phone (review fix 13): Star in Organize stars the tile, and Unstar takes the mark away.
+    await pickMenuEntry(page, 'Star');
+    await sleep(800);
+    const starredOn = await page.evaluate(`!!document.querySelector(${q(itemSel('tone.ogg'))})?.textContent.includes('Starred')`);
+    check(starredOn, `on a phone the tile's menu stars the file, and its mark shows (${starredOn})`);
+    await tap(page, more);
+    await sleep(800);
+    await pickMenuEntry(page, 'Unstar');
+    await sleep(800);
+    const starredOff = await page.evaluate(`!document.querySelector(${q(itemSel('tone.ogg'))})?.textContent.includes('Starred')`);
+    check(starredOff, `on a phone the tile's menu unstars the file, and its mark goes (${starredOff})`);
+    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await sleep(500);
     await open('List');
     const listWide = await wideElements(page);
@@ -466,7 +479,10 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     const danger = await page.evaluate(`(() => { const d = [...document.querySelectorAll('[data-testid="selection-panel"] button')].find((b) => b.getAttribute('aria-label') === 'Delete'); return d ? d.classList.contains('ant-btn-dangerous') : null; })()`);
     check(danger === false, `Delete is an icon in the selection panel, not marked as destructive (${danger})`);
     await page.evaluate(`[...document.querySelectorAll('[data-testid="selection-panel"] button')].find((b) => b.getAttribute('aria-label') === 'More').click()`);
-    await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((x) => x.textContent.trim() === 'Details')`, 10000);
+    // Details is in the Information submenu (decision 70): the submenu opens on a hover of its title.
+    await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-title-content')].some((x) => x.textContent.trim() === 'Information')`, 10000);
+    await hoverMenuTitle(page, 'Information');
+    await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-title-content')].some((x) => x.textContent.trim() === 'Details')`, 10000);
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     await clearSelection(page);

@@ -59,9 +59,13 @@ export async function myFilesChecks(page, h, { base, accountKey, memberID, owner
   // had listed Team A, so the page is loaded again, as a person reloads it.
   await page.goto(base + `/files/${teamA}`);
   await h.rowAppears(page, note);
-  await page.waitFor(`(() => { const b = document.querySelector(${q(rowSel(note) + ' button[aria-pressed]')}); if (!b) return false; b.click(); return true; })()`);
-  await page.waitFor(`document.querySelector(${q(rowSel(note) + ' button[aria-pressed]')}).getAttribute('aria-pressed') === 'true'`);
-  h.check(true, 'a member stars a file from the listing, and the star button is pressed');
+  // Star is one of the icons at the end of a selected row (decision 70); once starred, the same icon says Unstar.
+  await h.selectRow(page, note);
+  await page.waitFor(`(() => { const b = document.querySelector(${q(rowSel(note) + ' .row-acts button[aria-label^="Star"]')}); if (!b) return false; b.click(); return true; })()`);
+  await page.waitFor(`!!document.querySelector(${q(rowSel(note) + ' .row-acts button[aria-label^="Unstar"]')})`);
+  h.check(true, 'a member stars a file from the listing, and its star icon then says Unstar');
+  await h.press(page, rowSel(note), 'Escape');
+  await page.waitFor(`!document.querySelector('[role="row"][aria-selected="true"]')`, 10000);
 
   // Starred lists it. (Home had its own starred section until decision 53; this page holds the same list.)
   await h.clickNav(page, 'Starred');

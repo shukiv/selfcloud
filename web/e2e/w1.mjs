@@ -7,6 +7,7 @@
 // width work too. With SELFCLOUD_W1_SHOTS set to a folder, the run also saves the pictures for the slice.
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { SUBMENU_OF, hoverMenuTitle } from './menu.mjs';
 import {
   barButtons,
   browserTitle,
@@ -24,6 +25,8 @@ import {
 } from './media.mjs';
 
 const MENU = '.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu';
+// MENU_TITLES reads every open menu's labels, a submenu's included (its popup is outside the root menu's list).
+const MENU_TITLES = '.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-title-content, .ant-dropdown-menu-submenu-popup .ant-dropdown-menu-title-content';
 const MODS = { alt: 1, ctrl: 2, shift: 8 };
 const KEYS = { Backspace: ['Backspace', 'Backspace', 8], Escape: ['Escape', 'Escape', 27], ArrowUp: ['ArrowUp', 'ArrowUp', 38], x: ['x', 'KeyX', 88], c: ['c', 'KeyC', 67], v: ['v', 'KeyV', 86] };
 // The long folder: thirty-four files, so the bottom rows are off the first screen, as on a real listing.
@@ -86,11 +89,12 @@ async function pointOf(page, selector, block = 'nearest') {
 const rowPoint = (page, nameText) => pointOf(page, itemSel(nameText), 'end');
 
 // menuItems is the text of the items of the open right-click menu.
-const menuItems = (page) => page.evaluate(`[...document.querySelectorAll(${q(`${MENU} .ant-dropdown-menu-item`)})].map((i) => i.textContent.trim())`);
+// menuItems reads the labels of the open menu (decision 70: a submenu's entries are read when it is open, by hoverMenuTitle).
+const menuItems = (page) => page.evaluate(`[...document.querySelectorAll(${q(MENU_TITLES)})].map((i) => i.textContent.trim())`);
 
 // menuItemDisabled says whether the item of the open menu with this text is greyed.
 const menuItemDisabled = (page, label) =>
-  page.evaluate(`(() => { const i = [...document.querySelectorAll(${q(`${MENU} .ant-dropdown-menu-item`)})].find((x) => x.textContent.trim() === ${q(label)}); return i ? i.classList.contains('ant-dropdown-menu-item-disabled') || i.getAttribute('aria-disabled') === 'true' : null; })()`);
+  page.evaluate(`(() => { const t = [...document.querySelectorAll(${q(MENU_TITLES)})].find((x) => x.textContent.trim() === ${q(label)}); const i = t ? t.closest('[role="menuitem"]') : null; return i ? i.classList.contains('ant-dropdown-menu-item-disabled') || i.getAttribute('aria-disabled') === 'true' : null; })()`);
 
 // menuPlaced waits until the open menu has been placed on the window. antd draws a new menu far off-screen (at -1000vw)
 // until it has measured where the menu goes; a click before that lands nowhere. It then waits for the opening motion.
@@ -115,7 +119,8 @@ async function menuShown(page) {
 
 // chooseMenuItem clicks the item of the open menu with this text, with the mouse.
 async function chooseMenuItem(page, label) {
-  const p = await page.evaluate(`(() => { const i = [...document.querySelectorAll(${q(`${MENU} .ant-dropdown-menu-item`)})].find((x) => x.textContent.trim() === ${q(label)}); if (!i) return null; const r = i.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  if (SUBMENU_OF[label]) await hoverMenuTitle(page, SUBMENU_OF[label]);
+  const p = await page.evaluate(`(() => { const t = [...document.querySelectorAll(${q(MENU_TITLES)})].find((x) => x.textContent.trim() === ${q(label)}); if (!t) return null; const r = t.closest('[role="menuitem"]').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   if (!p) throw new Error(`no menu item ${label}`);
   await click(page, p);
   await sleepMs(400);
@@ -224,9 +229,21 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
     await rightClick(page, await rowPoint(page, 'f02.txt'));
     await menuPlaced(page);
     const items = await menuItems(page);
-    for (const want of ['Download', 'Rename', 'Copy to…', 'Move to…', 'Delete', 'Details', 'Cut', 'Copy']) {
+    for (const want of ['Download', 'Rename', 'Share', 'Organize', 'Information', 'Move to trash']) {
       check(items.includes(want), `the menu of a file offers ${want} (${items.join(' / ')})`);
     }
+    // Each entry the menu named before is still in its group (review fix 13): Share and Copy link, Organize's Move to and Copy to,
+    // and Information's Details.
+    await hoverMenuTitle(page, 'Share');
+    const inShare = await menuItems(page);
+    // The member is an editor who may not share, so Share… is not in the menu (decision 70); Copy link is.
+    check(!inShare.includes('Share…') && inShare.includes('Copy link'), `Share holds Copy link, and no Share… for an editor who may not share (${inShare.join(' / ')})`);
+    await hoverMenuTitle(page, 'Organize');
+    const inOrganize = await menuItems(page);
+    check(['Move to…', 'Copy to…', 'Add shortcut', 'Cut', 'Copy', 'Paste'].every((x) => inOrganize.includes(x)), `Organize holds Move to…, Copy to…, Add shortcut, Cut, Copy and Paste (${inOrganize.join(' / ')})`);
+    await hoverMenuTitle(page, 'Information');
+    const inInfo = await menuItems(page);
+    check(inInfo.includes('Details') && inInfo.includes('Versions'), `Information holds Details and Versions (${inInfo.join(' / ')})`);
     check((await page.evaluate(`document.querySelector(${q(itemSel('f02.txt'))}).getAttribute('aria-selected')`)) === 'true', 'a right-click on an unselected row selects it');
     await chooseMenuItem(page, 'Details');
     check(await page.evaluate(`!!document.querySelector('[role="dialog"], .ant-drawer-open')`), 'Details opens the item');
@@ -239,7 +256,9 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
     await rightClick(page, await rowPoint(page, 'f03.txt'));
     await menuPlaced(page);
     const items = await menuItems(page);
-    check(items.includes('Copy') && items.includes('Cut') && items.includes('Delete'), `a tile's menu offers Cut, Copy and Delete (${items.join(' / ')})`);
+    await hoverMenuTitle(page, 'Organize');
+    const organize = await menuItems(page);
+    check(organize.includes('Copy') && organize.includes('Cut') && items.includes('Move to trash'), `a tile's menu offers Cut and Copy in Organize, and Move to trash (${organize.join(' / ')})`);
     await press(page, 'Escape');
     await sleepMs(300);
   });
@@ -396,16 +415,17 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
       check(mid && mid.top >= 0 && mid.bottom <= mid.height, `a right-click at y 300 of a 520 px window leaves the whole menu on the window (${JSON.stringify(mid)})`);
       await press(page, 'Escape');
       await sleepMs(300);
-      await page.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 300, deviceScaleFactor: 1, mobile: false });
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 200, deviceScaleFactor: 1, mobile: false });
       await sleepMs(300);
       await page.evaluate(`window.scrollTo(0, 400)`);
       await sleepMs(300);
-      const onRow = await page.evaluate(`!!document.elementFromPoint(800, 250)?.closest('[data-id]')`);
-      if (!onRow) throw new Error('no row under the point of the 300 px window');
-      await rightClick(page, { x: 800, y: 250 });
+      // The first row under the window's top part, at x 800 (the toolbar and the header take the top of a short window).
+      const rowY = await page.evaluate(`(() => { for (let y = 40; y < 200; y += 4) { if (document.elementFromPoint(800, y)?.closest('[data-id]')) return y; } return null; })()`);
+      if (rowY === null) throw new Error('no row under the point of the 200 px window');
+      await rightClick(page, { x: 800, y: rowY });
       await menuShown(page);
       const small = await menuBox(page);
-      check(small && small.top >= 0 && small.bottom <= small.height, `in a 300 px window the menu stays on the window (${JSON.stringify(small)})`);
+      check(small && small.top >= 0 && small.bottom <= small.height, `in a 200 px window the menu stays on the window (${JSON.stringify(small)})`);
       const reach = await page.evaluate(`(() => { const m = document.querySelector(${q(MENU)}); m.scrollTop = m.scrollHeight; const items = [...m.querySelectorAll('.ant-dropdown-menu-item')]; const last = items[items.length - 1].getBoundingClientRect(); const first = items[0]; m.scrollTop = 0; const f = first.getBoundingClientRect(); return { scrolls: m.scrollHeight > m.clientHeight, lastBottom: last.bottom, firstTop: f.top, height: innerHeight }; })()`);
       check(reach.scrolls && reach.lastBottom <= reach.height && reach.firstTop >= 0, `the menu scrolls and its first and last items can be reached (${JSON.stringify(reach)})`);
       await press(page, 'Escape');
@@ -470,7 +490,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
       });
       await menuPlaced(page);
       const items = await menuItems(page);
-      check(items.includes('Cut') && items.includes('Copy'), `a long press offers the item's menu (${items.join(' / ')})`);
+      check(items.includes('Organize') && items.includes('Share'), `a long press offers the item's menu (${items.join(' / ')})`);
       check(await page.evaluate(`!document.querySelector('[data-testid="preview"]')`), 'a long press opens no preview');
       await press(page, 'Escape');
       await clearSelection(page);
@@ -487,7 +507,9 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
       await rightClick(page, await rowPoint(page, 'f08.txt'));
       await menuPlaced(page);
       const items = await menuItems(page);
-      check(items.includes('גזור') && items.includes('העתק'), `the menu in Hebrew offers Cut and Copy (${items.join(' / ')})`);
+      await hoverMenuTitle(page, 'ארגון');
+      const organize = await menuItems(page);
+      check(organize.includes('גזור') && organize.includes('העתק'), `the menu in Hebrew offers Cut and Copy in its Organize submenu (${organize.join(' / ')})`);
       await press(page, 'Escape');
     } finally {
       await setLanguage(page, 'English');

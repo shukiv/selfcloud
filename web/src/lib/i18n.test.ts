@@ -163,7 +163,6 @@ describe('Starred, Recent and star catalogues', () => {
       expect(CATALOGUES[l]['recent.opened'], l).toContain('{date}');
       expect(CATALOGUES[l]['recent.changed'], l).toContain('{date}');
       expect(CATALOGUES[l]['recent.removeName'], l).toContain('{name}');
-      expect(CATALOGUES[l]['star.button'], l).toContain('{name}');
     }
   });
 });

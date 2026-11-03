@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
-import Listing, { type Click, type ListingProps } from "./Listing";
+import Listing, { type Click, type ListingProps, type RowAct } from "./Listing";
 
 function node(id: string, name: string, over: Partial<Node> = {}): Node {
   return {
@@ -44,7 +44,6 @@ function props(over: Partial<ListingProps> = {}): ListingProps {
     onRename: vi.fn(),
     onKeyDown: vi.fn(),
     onFocusItem: vi.fn(),
-    onStar: vi.fn(),
     ...over,
   };
 }
@@ -57,25 +56,21 @@ const starControls = (el: HTMLElement) => ({
   marks: Array.from(el.querySelectorAll(".sr-only")).filter((x) => x.textContent === "Starred").length,
 });
 
-describe("Listing: one star for a starred item", () => {
-  it("a list row shows the star button alone when the person may star", () => {
-    render(<Listing {...props()} />);
-    expect(starControls(rowOf("n2"))).toEqual({ buttons: 1, marks: 0 });
-  });
+// withStarButton is the listing as the page had it: an onStar handler, which made a star button on every starred item. The
+// rule is that no star button is drawn after the name, whatever the handler.
+const withStarButton = (over: Partial<ListingProps> = {}) => ({ ...props(over), onStar: vi.fn() }) as ListingProps;
 
-  it("a list row shows the mark alone where no star button is shown", () => {
-    render(<Listing {...props({ onStar: undefined })} />);
+describe("Listing: a starred item shows a filled star after its name, and no star button", () => {
+  it("a list row shows the mark alone, not a star button", () => {
+    render(<Listing {...withStarButton()} />);
     expect(starControls(rowOf("n2"))).toEqual({ buttons: 0, marks: 1 });
+    expect(starControls(rowOf("n1"))).toEqual({ buttons: 0, marks: 0 });
   });
 
-  it("a tile shows the star button alone when the person may star", () => {
-    render(<Listing {...props({ view: "grid" })} />);
-    expect(starControls(rowOf("n2"))).toEqual({ buttons: 1, marks: 0 });
-  });
-
-  it("a tile shows the mark alone where no star button is shown", () => {
-    render(<Listing {...props({ view: "grid", onStar: undefined })} />);
+  it("a tile shows the mark alone, not a star button", () => {
+    render(<Listing {...withStarButton({ view: "grid" })} />);
     expect(starControls(rowOf("n2"))).toEqual({ buttons: 0, marks: 1 });
+    expect(starControls(rowOf("n1"))).toEqual({ buttons: 0, marks: 0 });
   });
 });
 
@@ -129,7 +124,7 @@ describe("Listing: list view", () => {
     render(<Listing {...props()} />);
     const row = rowOf("n2");
     expect(within(row).getByText("Has a link")).toBeTruthy();
-    expect(within(row).getByRole("button", { name: "Star notes.txt" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(row).queryByRole("button", { name: "Star notes.txt" })).toBeNull();
     expect(within(rowOf("n1")).queryByText("Has a link")).toBeNull();
   });
 });
@@ -143,12 +138,9 @@ describe("Listing: grid view", () => {
     expect(screen.getByRole("listbox", { name: "Files" })).toBeTruthy();
   });
 
-  it("the star button calls onStar and does not select the tile", () => {
-    const p = props({ view: "grid" });
-    render(<Listing {...p} />);
-    fireEvent.click(screen.getByRole("button", { name: "Star plan.txt" }));
-    expect((p.onStar as ReturnType<typeof vi.fn>).mock.calls[0][0].id).toBe("n1");
-    expect(p.onRowClick).not.toHaveBeenCalled();
+  it("a tile has no star button: its star is the mark, and the star of the menu or the hover icon changes it", () => {
+    render(<Listing {...withStarButton({ view: "grid" })} />);
+    expect(screen.queryByRole("button", { name: "Star notes.txt" })).toBeNull();
   });
 });
 
@@ -239,12 +231,12 @@ describe("a checkbox click selects its row once", () => {
 });
 
 describe("the selection cell outside its checkbox", () => {
-  it("a click on the cell itself selects nothing, since only the checkbox selects", () => {
+  it("a click on the checkbox's own slot selects nothing, since only the checkbox selects", () => {
     const onRowClick = vi.fn();
     const { container } = render(<Listing {...props({ onRowClick })} />);
-    const cell = container.querySelector("tr[data-id='n1'] td.ant-table-selection-column") as HTMLElement;
-    expect(cell).not.toBeNull();
-    fireEvent.click(cell);
+    const slot = container.querySelector("tr[data-id='n1'] .row-check") as HTMLElement;
+    expect(slot).not.toBeNull();
+    fireEvent.click(slot);
     expect(onRowClick).not.toHaveBeenCalled();
   });
 });
@@ -427,5 +419,173 @@ describe("the listing's right-click and cut state", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// The row end (decision 70): the ⋮ button is on every list row; the four icons (Share, Download, Rename, Star) come from the
+// page's row actions, are drawn only where the pointer is a mouse, and are tab stops only in the focused row.
+const rowAct = (key: string, label: string, run = vi.fn(), over: Partial<RowAct> = {}): RowAct => ({
+  key,
+  label,
+  icon: <span />,
+  enabled: true,
+  run,
+  ...over,
+});
+const rowActs = (n: Node) => (n.id === "n1" ? [rowAct("share", "Share"), rowAct("download", "Download"), rowAct("rename", "Rename"), rowAct("star", "Star")] : []);
+
+const withPointer = (coarse: boolean) =>
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: coarse && query === "(pointer: coarse)", media: query, addEventListener() {}, removeEventListener() {} }));
+
+describe("the row end: the ⋮ button and the hover icons", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("every list row has a More actions button named for its item", () => {
+    render(<Listing {...props()} />);
+    expect(within(rowOf("n1")).getByRole("button", { name: "More actions for plan.txt" })).toBeTruthy();
+    expect(within(rowOf("n2")).getByRole("button", { name: "More actions for notes.txt" })).toBeTruthy();
+  });
+
+  it("with a mouse a row renders its four icons, and each is named", () => {
+    withPointer(false);
+    render(<Listing {...props({ rowActs })} />);
+    // The icons are drawn for a hovered row only (review fix 7): the mouse goes over n1 first.
+    fireEvent.pointerEnter(rowOf("n1"), { pointerType: "mouse" });
+    const row = rowOf("n1");
+    for (const name of ["Share", "Download", "Rename", "Star"]) expect(within(row).getByRole("button", { name })).toBeTruthy();
+    expect(within(rowOf("n2")).queryByRole("button", { name: "Rename" })).toBeNull();
+  });
+
+  it("on a finger the icons are not drawn, and the ⋮ button stays", () => {
+    withPointer(true);
+    render(<Listing {...props({ rowActs })} />);
+    expect(within(rowOf("n1")).queryByRole("button", { name: "Rename" })).toBeNull();
+    expect(within(rowOf("n1")).queryByRole("button", { name: "Star" })).toBeNull();
+    expect(within(rowOf("n1")).getByRole("button", { name: "More actions for plan.txt" })).toBeTruthy();
+  });
+
+  it("an icon is a tab stop only in the focused row, and the others keep it out of the tab order", () => {
+    withPointer(false);
+    render(<Listing {...props({ rowActs, focusID: "n1" })} />);
+    expect(within(rowOf("n1")).getByRole("button", { name: "Rename" }).getAttribute("tabindex")).toBe("0");
+    expect(within(rowOf("n1")).getByRole("button", { name: "More actions for plan.txt" }).getAttribute("tabindex")).toBe("0");
+    expect(within(rowOf("n2")).getByRole("button", { name: "More actions for notes.txt" }).getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("an icon runs its action on its own row and selects nothing", () => {
+    withPointer(false);
+    const rename = vi.fn();
+    const onRowClick = vi.fn();
+    render(<Listing {...props({ rowActs: (n) => (n.id === "n1" ? [rowAct("rename", "Rename", rename)] : []), onRowClick })} />);
+    fireEvent.pointerEnter(rowOf("n1"), { pointerType: "mouse" });
+    fireEvent.click(within(rowOf("n1")).getByRole("button", { name: "Rename" }));
+    expect(rename).toHaveBeenCalledTimes(1);
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  // A star icon is named for the action it does (Unstar on a starred item), and is not a toggle: no aria-pressed (review fix 6).
+  it("a starred item's star icon is named for its action, with no pressed state, and an item with no action list shows none", () => {
+    withPointer(false);
+    const starred = (n: Node) => (n.id === "n2" ? [rowAct("star", "Unstar")] : []);
+    render(<Listing {...props({ rowActs: starred })} />);
+    fireEvent.pointerEnter(rowOf("n2"), { pointerType: "mouse" });
+    const star = within(rowOf("n2")).getByRole("button", { name: "Unstar" });
+    expect(star.hasAttribute("aria-pressed")).toBe(false);
+    expect(within(rowOf("n1")).queryByRole("button", { name: /Star/ })).toBeNull();
+  });
+
+  // Review fix 7: a row's four icons are drawn only for the row the mouse is on, the selected rows and the row with the focus; the other
+  // rows keep only their ⋮.
+  it("draws the icons only for a hovered, selected or focused row (review fix 7)", () => {
+    withPointer(false);
+    render(<Listing {...props({ rowActs, focusID: null })} />);
+    const iconsIn = (id: string) => within(rowOf(id)).queryAllByRole("button", { name: /^(Share|Download|Rename|Star|Unstar)$/ }).length;
+    expect(iconsIn("n1")).toBe(0);
+    expect(iconsIn("n2")).toBe(0);
+    fireEvent.pointerEnter(rowOf("n1"), { pointerType: "mouse" });
+    expect(iconsIn("n1")).toBe(4);
+    expect(iconsIn("n2")).toBe(0);
+    fireEvent.pointerLeave(rowOf("n1"), { pointerType: "mouse" });
+    expect(iconsIn("n1")).toBe(0);
+  });
+
+  it("a selected row keeps its icons, and a row with the focus has them as tab stops", () => {
+    withPointer(false);
+    render(<Listing {...props({ rowActs, selected: new Set(["n1"]), focusID: "n1" })} />);
+    expect(within(rowOf("n1")).queryAllByRole("button", { name: /^(Share|Download|Rename|Star|Unstar)$/ }).length).toBe(4);
+    expect(within(rowOf("n1")).getByRole("button", { name: "Download" }).tabIndex).toBe(0);
+  });
+
+  // Review fix 11: the menu opens at the ⋮'s start edge: its left in English, its right in Hebrew.
+  it("the ⋮ menu opens at the button's start edge: its left in English and its right in Hebrew", () => {
+    const onRowContext = vi.fn();
+    render(<Listing {...props({ onRowContext })} />);
+    const more = within(rowOf("n1")).getByRole("button", { name: "More actions for plan.txt" });
+    more.getBoundingClientRect = () => ({ top: 40, bottom: 80, width: 40, height: 40, x: 100, y: 40, toJSON: () => ({}) }) as DOMRect;
+    fireEvent.click(more, { detail: 1 });
+    expect(onRowContext.mock.calls[0][2]).toBe(100);
+    document.documentElement.dir = "rtl";
+    try {
+      fireEvent.click(more, { detail: 1 });
+      expect(onRowContext.mock.calls[1][2]).toBe(140);
+    } finally {
+      document.documentElement.dir = "";
+    }
+  });
+
+  // Review fix 1: a key's click on the ⋮ passes the button as the origin the menu gives the focus back to; a mouse click does not.
+  it("a key's click on the ⋮ passes the button as its keyboard origin, and a mouse click passes none", () => {
+    const onRowContext = vi.fn();
+    render(<Listing {...props({ onRowContext })} />);
+    const more = within(rowOf("n1")).getByRole("button", { name: "More actions for plan.txt" });
+    fireEvent.click(more, { detail: 0 });
+    expect(onRowContext.mock.calls[0][4]).toBe(more);
+    fireEvent.click(more, { detail: 1 });
+    expect(onRowContext.mock.calls[1][4]).toBeUndefined();
+  });
+
+  it("the ⋮ button opens the item's menu at the button, and the row is not selected by it", () => {
+    const onRowContext = vi.fn();
+    const onRowClick = vi.fn();
+    render(<Listing {...props({ onRowContext, onRowClick })} />);
+    fireEvent.click(within(rowOf("n2")).getByRole("button", { name: "More actions for notes.txt" }));
+    expect(onRowContext).toHaveBeenCalledTimes(1);
+    expect(onRowContext.mock.calls[0][0]).toBe("n2");
+    expect(onRowContext.mock.calls[0][1]).toBe(1);
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+});
+
+describe("checkboxes on demand (decision 70)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("with a mouse the list has no checkbox column, and the row's checkbox is in its icon's place", () => {
+    withPointer(false);
+    const { container } = render(<Listing {...props()} />);
+    expect(container.querySelector(".ant-table-selection-column")).toBeNull();
+    expect(within(rowOf("n1")).getByRole("checkbox", { name: "Select plan.txt" })).toBeTruthy();
+  });
+
+  it("the list says whether anything is selected, so the checkboxes of every row can show", () => {
+    withPointer(false);
+    const { container, rerender } = render(<Listing {...props()} />);
+    expect(container.querySelector(".files-list")?.getAttribute("data-has-selection")).toBe("false");
+    rerender(<Listing {...props({ selected: new Set(["n2"]) })} />);
+    expect(container.querySelector(".files-list")?.getAttribute("data-has-selection")).toBe("true");
+  });
+
+  it("with a mouse the select-all box is in the name's header, and selects every item", () => {
+    withPointer(false);
+    const onSelectAll = vi.fn();
+    render(<Listing {...props({ onSelectAll })} />);
+    const all = screen.getByRole("checkbox", { name: "Select all" });
+    fireEvent.click(all);
+    expect(onSelectAll).toHaveBeenCalledWith(true);
+  });
+
+  it("on a finger the list keeps its checkbox column, as it has", () => {
+    withPointer(true);
+    const { container } = render(<Listing {...props()} />);
+    expect(container.querySelector(".ant-table-selection-column")).not.toBeNull();
   });
 });
