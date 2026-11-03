@@ -36,6 +36,12 @@ func (b BrandConfig) ContrastWarnings() []string {
 		}
 		return c.fallback, false
 	}
+	// The highlight's ink when the operator sets none: the default ink on the default highlight, and black or white,
+	// whichever reads better, on a highlight the operator set (as the web interface's textOn chooses it).
+	onActive := defaultSidebarOnActive
+	if b.Sidebar.Active != "" {
+		onActive = blackOrWhiteOn(b.Sidebar.Active)
+	}
 	pairs := []struct {
 		name   string
 		fg, bg colour
@@ -44,7 +50,7 @@ func (b BrandConfig) ContrastWarnings() []string {
 			colour{"sidebar.text", b.Sidebar.Text, defaultSidebarText},
 			colour{"sidebar.bg", b.Sidebar.Bg, defaultSidebarBg}},
 		{"sidebar.on_active on sidebar.active",
-			colour{"sidebar.on_active", b.Sidebar.OnActive, defaultSidebarOnActive},
+			colour{"sidebar.on_active", b.Sidebar.OnActive, onActive},
 			colour{"sidebar.active", b.Sidebar.Active, defaultSidebarActive}},
 		{"white on palette.light.accent_fill",
 			colour{"white", "#FFFFFF", "#FFFFFF"},
@@ -66,6 +72,17 @@ func (b BrandConfig) ContrastWarnings() []string {
 		}
 	}
 	return out
+}
+
+// blackOrWhiteOn is black or white, whichever has the higher contrast on bg; white on a colour that is not #rrggbb, which
+// the caller's ratio then skips.
+func blackOrWhiteOn(bg string) string {
+	w, okW := contrastRatio("#FFFFFF", bg)
+	k, okK := contrastRatio("#000000", bg)
+	if okW && okK && k > w {
+		return "#000000"
+	}
+	return "#FFFFFF"
 }
 
 // contrastRatio is the WCAG ratio of two #rrggbb colours; ok is false when either is not one.

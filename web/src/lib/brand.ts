@@ -216,6 +216,11 @@ export function resolveBrand(b: Brand): ResolvedBrand {
     const v = wire[w];
     if (typeof v === 'string' && validAccent(v)) sidebar[key] = v.toUpperCase();
   }
+  // A brand that sets its own highlight and no ink for it gets the ink that reads on that highlight; the ink chosen above
+  // was for the default highlight.
+  const ownActive = typeof wire.active === 'string' && validAccent(wire.active);
+  const ownInk = typeof wire.on_active === 'string' && validAccent(wire.on_active);
+  if (ownActive && !ownInk) sidebar.onActive = textOn(sidebar.active);
   // The caption is the sidebar's secondary text (the Storage figures and the bar's caption edge). Where it does not reach 4.5:1 on the
   // sidebar (a brand's own blue or teal), it is the sidebar's text colour, which textOn chose to read there (decision 69, review fix 2).
   if (contrast(sidebar.caption, sidebar.bg) < 4.5) sidebar.caption = sidebar.text;

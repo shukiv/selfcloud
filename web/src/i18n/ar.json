@@ -1369,6 +1369,7 @@
   "error.tenantAccessOff": "يتطلب هذا إعداد وصول المستأجرين، وهو معطّل على هذا التثبيت.",
   "error.adminPassword": "كلمة مرور المدير غير صحيحة.",
   "reason.password_change_required": "على المستخدم أن يختار كلمة مرور جديدة أولاً.",
+  "reason.limit": "سيتجاوز هذا الحد البالغ {limit}.",
   "change.forced": "اختر كلمة مرور جديدة قبل المتابعة. لا شيء آخر متاح حتى تفعل ذلك.",
   "tenant.users.reset": "إعادة تعيين كلمة المرور",
   "tenant.users.signInAs": "الدخول كمستخدم",

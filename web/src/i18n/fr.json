@@ -1369,6 +1369,7 @@
   "error.tenantAccessOff": "Cela nécessite le réglage d’accès aux locataires, désactivé sur cette installation.",
   "error.adminPassword": "Le mot de passe administrateur n’est pas correct.",
   "reason.password_change_required": "L’utilisateur doit d’abord choisir un nouveau mot de passe.",
+  "reason.limit": "Cela dépasserait la limite de {limit}.",
   "change.forced": "Choisissez un nouveau mot de passe avant de continuer. Rien d’autre n’est accessible tant que vous ne l’avez pas fait.",
   "tenant.users.reset": "Réinitialiser le mot de passe",
   "tenant.users.signInAs": "Se connecter comme utilisateur",

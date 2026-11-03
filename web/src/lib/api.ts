@@ -87,6 +87,12 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
     endedHandler?.(true);
     throw new ApiError(401, 'impersonation_ended', details, 0);
   }
+  // Turning admin.tenant_access off ends a sign-in as at once (decision 41): the admin's session is restored the same way,
+  // without the hour's message.
+  if (res.status === 401 && !opts.noRedirect && details.reason === 'tenant_access_off') {
+    endedHandler?.(false);
+    throw new ApiError(401, code, details, 0);
+  }
   if (res.status === 401 && !opts.noRedirect && issued !== '' && sessionKey(get(session)) === issued) {
     clearSession();
     go(signInURL(), { replace: true });

@@ -110,6 +110,47 @@ describe("registerWorker", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(listen.mock.calls.filter(([type]) => type === "controllerchange")).toHaveLength(1);
   });
+
+  // The worker claims the open page when it is first installed (sw.js activate). That page already runs the current version,
+  // and a reload then cleared a sign-in being typed (gate fu1b: the e2e sign-in found its field gone). Only a page that a
+  // worker controlled before reloads, since that one runs the old version.
+  async function changeOf(controller: object | null) {
+    const handlers: Array<() => void> = [];
+    const reg = { waiting: null, addEventListener: vi.fn(), update: vi.fn(async () => undefined) };
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        controller,
+        addEventListener: (type: string, fn: () => void) => type === "controllerchange" && handlers.push(fn),
+        register: vi.fn(async () => reg),
+      },
+    });
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    vi.resetModules();
+    const fresh = await import("./worker");
+    const reload = vi.fn();
+    fresh.registerWorker(reload);
+    return { take: () => handlers.forEach((fn) => fn()), reload };
+  }
+
+  it("does not reload a page that no worker controlled when the first worker takes it", async () => {
+    const { take, reload } = await changeOf(null);
+    take();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("reloads a page that a worker controlled when a new worker takes over", async () => {
+    const { take, reload } = await changeOf({});
+    take();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads on the next change after the first worker took an uncontrolled page", async () => {
+    const { take, reload } = await changeOf(null);
+    take();
+    take();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("reloadWhenIdle", () => {

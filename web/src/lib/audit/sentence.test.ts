@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { actorRef, isolate, renderSentence, sentence, type AuditEntry, type Names } from './sentence';
+import { actorRef, isolateText, renderSentence, sentence, type AuditEntry, type Names } from './sentence';
 
 const names: Names = {
   person: (id) => (id === 'usr_dana' ? 'Dana' : id === 'usr_omer' ? 'Omer' : undefined),
@@ -94,7 +94,26 @@ describe('renderSentence', () => {
     expect(seen).toContainEqual(['audit.someone', undefined]);
     const final = seen[seen.length - 1];
     expect(final[0]).toBe('audit.folder.create');
-    expect(final[1]?.name).toBe(isolate('Finance'));
+    expect(final[1]?.name).toBe(isolateText('Finance'));
     expect(final[1]?.actor).toBe('audit.someone');
+  });
+
+  // i18n isolates every parameter in a right-to-left language (decision 67), so the probe that finds the leading word
+  // starts with an isolateText mark, not with the marker. The lead must still be found.
+  it('finds the leading word when the translator isolates every parameter', () => {
+    const iso = (s: string) => `⁨${s}⁩`;
+    const translate = (key: string, params?: Record<string, string>) => {
+      if (key === 'audit.someone') return 'someone';
+      return `${iso(params?.actor ?? '')} added ${iso(params?.name ?? '')}`;
+    };
+    const out = renderSentence(
+      { key: 'audit.node.create', params: { actor: { key: 'audit.someone' }, name: { text: 'a.txt' } } },
+      translate,
+    );
+    expect(out.startsWith(iso('Someone'))).toBe(true);
+  });
+
+  it('isolates an empty name as nothing', () => {
+    expect(isolateText('')).toBe('');
   });
 });

@@ -1369,6 +1369,7 @@
   "error.tenantAccessOff": "Isto exige a definição de acesso aos clientes, que está desativada nesta instalação.",
   "error.adminPassword": "A palavra-passe de administração não está correta.",
   "reason.password_change_required": "O utilizador tem de escolher primeiro uma nova palavra-passe.",
+  "reason.limit": "Isto ultrapassaria o limite de {limit}.",
   "change.forced": "Escolha uma nova palavra-passe antes de continuar. Nada mais está disponível até o fazer.",
   "tenant.users.reset": "Repor palavra-passe",
   "tenant.users.signInAs": "Iniciar sessão como utilizador",

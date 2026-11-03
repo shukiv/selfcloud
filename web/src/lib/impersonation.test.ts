@@ -56,6 +56,41 @@ describe("an expired sign-in as", () => {
     expect(window.location.pathname).toBe("/admin/tenants");
   });
 
+  // Turning admin.tenant_access off ends a running sign-in as at once (auth.go, reason tenant_access_off). The admin's
+  // session is restored as at the hour's end, without the hour's message.
+  it("restores the admin session when tenant access is turned off", async () => {
+    session.set(impersonatingMember());
+    const { calls } = stubFetch((c: Call) => {
+      if (c.url === "/api/v1/files") return fail(401, "unauthenticated", { reason: "tenant_access_off" });
+      if (c.url === "/api/v1/auth/impersonation/end") return { status: 200, body: { user: admin, csrf_token: "admin-csrf" } };
+      if (c.url === "/api/v1/me") return { status: 200, body: adminMe };
+      return { status: 500, body: { error: { code: "internal" } } };
+    });
+
+    await expect(api("GET", "/api/v1/files")).rejects.toBeInstanceOf(ApiError);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls.filter((c) => c.url === "/api/v1/auth/impersonation/end")).toHaveLength(1);
+    expect(get(session)?.user.role).toBe("admin");
+    expect(get(flash)).toBeNull();
+    expect(window.location.pathname).toBe("/admin/tenants");
+  });
+
+  // Review of decision 71: an answer that left before the restore and arrives after it must not end the admin's own
+  // session (the end call would answer 409, and the page would sign out).
+  it("ignores a late ended answer once the admin's session is back", async () => {
+    session.set({ user: admin, account: null, csrf: "admin-csrf" } as unknown as Session);
+    const { calls } = stubFetch((c: Call) => {
+      if (c.url === "/api/v1/files") return fail(401, "unauthenticated", { reason: "tenant_access_off" });
+      if (c.url === "/api/v1/auth/impersonation/end") return fail(409, "conflict");
+      return { status: 200, body: {} };
+    });
+
+    await expect(api("GET", "/api/v1/files")).rejects.toBeInstanceOf(ApiError);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls.filter((c) => c.url === "/api/v1/auth/impersonation/end")).toHaveLength(0);
+    expect(get(session)?.user.role).toBe("admin");
+  });
+
   it("sends the browser to sign-in when the admin session cannot be restored", async () => {
     session.set(impersonatingMember());
     stubFetch((c: Call) => {

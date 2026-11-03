@@ -451,11 +451,16 @@ function wayName(way: string): string {
   }
 }
 
-// isolate wraps text in directional isolate marks, so a name in the other direction keeps its order inside a
-// sentence of this direction.
-export function isolate(text: string): string {
+// isolateText wraps text in directional isolate marks in every language, so a name in the other direction keeps its order
+// inside a sentence of this direction. Empty text stays empty. (i18n's isolate does the same for right-to-left languages
+// only, for sizes and numbers.)
+export function isolateText(text: string): string {
+  if (text === '') return '';
   return String.fromCharCode(0x2068) + text + String.fromCharCode(0x2069);
 }
+
+// The isolate marks U+2066 to U+2069, which a translator may put around each parameter.
+const ISOLATE_MARKS = /[⁦-⁩]/g;
 
 // renderSentence turns a sentence into text. translate looks a catalogue key up with parameters, so the same
 // function serves any language; text parameters are isolated, and key parameters are translated first.
@@ -471,7 +476,8 @@ export function renderSentence(s: Sentence, translate: (key: string, params?: Re
 function fill(key: string, refs: Record<string, Ref>, translate: (key: string, params?: Record<string, string>) => string): string {
   const markers: Record<string, string> = {};
   for (const name of Object.keys(refs)) markers[name] = `\u0001${name}\u0002`;
-  const probe = Object.keys(refs).length > 0 ? translate(key, markers) : '';
+  // The probe is read without isolate marks: a right-to-left translation wraps each marker in them (decision 67).
+  const probe = Object.keys(refs).length > 0 ? translate(key, markers).replace(ISOLATE_MARKS, '') : '';
   const lead = Object.keys(refs).find((name) => probe.startsWith(markers[name]) && 'key' in refs[name]);
   return translate(key, refParams(refs, translate, lead));
 }
@@ -484,7 +490,7 @@ function refParams(
   const params: Record<string, string> = {};
   for (const [name, ref] of Object.entries(refs)) {
     if ('text' in ref) {
-      params[name] = isolate(ref.text);
+      params[name] = isolateText(ref.text);
     } else {
       const word = translate(ref.key);
       params[name] = name === lead ? word.charAt(0).toLocaleUpperCase() + word.slice(1) : word;

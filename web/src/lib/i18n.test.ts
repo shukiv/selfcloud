@@ -11,6 +11,7 @@ import he from '../i18n/he.json';
 import {
   chooseLang,
   directionOf,
+  isolate,
   loadLang,
   LANGUAGES,
   matchLang,
@@ -71,6 +72,11 @@ describe('values in a right-to-left sentence', () => {
   it('isolates a Latin name in a Hebrew sentence, and leaves the rest of it alone', () => {
     expect(translate('he', 'files.newFolder.created', { name: 'Report.pdf' })).toBe(`נוצרה התיקייה ${FSI}Report.pdf${PDI}.`);
     expect(translate('ar', 'files.newFolder.created', { name: 'Report.pdf' })).toBe(`تم إنشاء ${FSI}Report.pdf${PDI}.`);
+  });
+
+  it('isolates empty text as nothing, in every direction', () => {
+    expect(isolate('he', '')).toBe('');
+    expect(isolate('en', '')).toBe('');
   });
 
   it('adds no isolate marks to English, Spanish or Russian', () => {

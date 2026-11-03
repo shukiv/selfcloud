@@ -99,6 +99,15 @@ describe('resolveBrand', () => {
     expect(r.sidebar.onActive).toBe('#ABCDEF');
   });
 
+  // A brand that gives its own highlight and no ink for it gets the ink chosen for that highlight, not for the default one.
+  it("chooses the highlight's ink from the brand's own highlight", () => {
+    for (const accent of ['#0F766E', '#F5C518']) {
+      const r = resolveBrand({ ...base, accent, sidebar: { active: '#1B2A6B' } });
+      expect(r.sidebar.active).toBe('#1B2A6B');
+      expect(contrast(r.sidebar.onActive, r.sidebar.active)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it('ignores a malformed explicit token', () => {
     const r = resolveBrand({ ...base, accent: '#053D8E', palette: { dark: { accent: 'blue' } } });
     expect(r.dark.accent).toBe(DARK.accent);

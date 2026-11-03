@@ -544,7 +544,13 @@ export default function Shell({ children }: { children: ReactNode }) {
               onClick={toggleRail}
               label={collapsed ? t("nav.showSidebar") : t("nav.hideSidebar")}
               data-testid="rail-toggle"
-              icon={collapsed ? <ChevronsRight size={18} aria-hidden="true" focusable="false" /> : <ChevronsLeft size={18} aria-hidden="true" focusable="false" />}
+              icon={
+                collapsed ? (
+                  <ChevronsRight className="icon-dir" size={18} aria-hidden="true" focusable="false" />
+                ) : (
+                  <ChevronsLeft className="icon-dir" size={18} aria-hidden="true" focusable="false" />
+                )
+              }
               style={{ color: sidebar.text, marginTop: 8 }}
             />
           </Layout.Sider>
@@ -688,7 +694,14 @@ export default function Shell({ children }: { children: ReactNode }) {
           <MediaHost />
           {settingsFor && (
             <Suspense fallback={null}>
-              <SpaceSettings space={settingsFor} onclose={() => setSettingsFor(null)} onsaved={() => void loadFolders().catch(() => undefined)} />
+              <SpaceSettings space={settingsFor} onclose={() => setSettingsFor(null)} onsaved={() => {
+                  // The spaces are read again after a save; a failed read is shown like any other (pending 85-86).
+                  const stale = sessionChanged();
+                  void loadFolders().catch((err: unknown) => {
+                    if (!stale()) setShellError(failureText(err, lang));
+                  });
+                }}
+              />
             </Suspense>
           )}
         </Layout>

@@ -511,10 +511,11 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
     await new Promise((r) => setTimeout(r, 20));
   }
   await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
-  await new Promise((r) => setTimeout(r, 1500));
-  await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
-  // The tray reports the failure; Retry sends the rest of the file from the offset the server has, not from the start.
+  // The tray reports the failure. The connection stays down until it does: the uploader tries a dropped piece again after a
+  // second, and a connection back by then let the upload finish on its own, with no failure to see (gate fu1b, under load).
   await page.waitFor(`document.querySelector('[data-testid="upload-tray"]')?.innerText.includes('resume.bin failed to upload.')`, 60000);
+  await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  // Retry sends the rest of the file from the offset the server has, not from the start.
   const beforeRetry = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length;
   await clickButton(page, 'Retry');
   await rowAppears(page, 'resume.bin', 60000);
@@ -866,7 +867,9 @@ async function main() {
     await fake.close();
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {
       await new Promise((r) => setTimeout(r, 200));
-      await rm(dir, { recursive: true, force: true });
+      // Chrome can still be writing its profile after the kill (gates d3d and fu1b failed a passed run on ENOTEMPTY), so
+      // the removal tries again for a few seconds.
+      await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
     }
     if (!passed || results.some((r) => !r.ok)) {
       console.error(serverLog);

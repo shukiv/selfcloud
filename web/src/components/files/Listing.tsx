@@ -454,7 +454,8 @@ export default function Listing(p: ListingProps) {
             },
             {
               key: "role",
-              title: t("files.col.role"),
+              // Not sortable, so not a button; the same weight as the sortable headers beside it.
+              title: <span style={{ fontWeight: 500 }}>{t("files.col.role")}</span>,
               width: 120,
               render: (_v: unknown, n: Node) => (
                 <span style={{ color: token.colorTextSecondary, fontSize: token.fontSizeSM }}>{n.role ? t(`role.${n.role}`) : ""}</span>

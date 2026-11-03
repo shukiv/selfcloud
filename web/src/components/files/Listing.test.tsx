@@ -109,6 +109,28 @@ describe("Listing: list view", () => {
     expect(nameHead.getAttribute("aria-sort")).toBe("descending");
   });
 
+  // pending 266b: "Your access" is not sortable, so it was antd's bolder header text beside the sortable headers' 500.
+  it("writes the plain header in the weight of the sortable headers", () => {
+    // A wide window, so the columns past Name are shown (antd's breakpoints read min-width queries).
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("min-width"),
+      media: query,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    try {
+      render(<Listing {...props()} />);
+      const size = screen.getByRole("button", { name: "Size" });
+      const access = within(screen.getByRole("columnheader", { name: "Your access" })).getByText("Your access");
+      expect(size.style.fontWeight).toBe("500");
+      expect(access.style.fontWeight).toBe(size.style.fontWeight);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("commits a rename on Enter and cancels on Escape, and the row's key handler does not run", () => {
     const p = props({ renameID: "n1", renameValue: "plan 2.txt" });
     render(<Listing {...p} />);

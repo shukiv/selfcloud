@@ -40,6 +40,14 @@ vi.mock("../lib/files/folders", async () => {
   };
 });
 vi.mock("../lib/sharing/api", () => ({ setHidden: mocks.setHidden, listAccessRequests: mocks.listAccessRequests }));
+// Space settings stands in as a button that reports a save, so the shell's re-read after a save can be driven.
+vi.mock("./share/SpaceSettings", () => ({
+  default: ({ onsaved }: { onsaved: () => void }) => (
+    <button type="button" onClick={onsaved}>
+      settings saved
+    </button>
+  ),
+}));
 
 import { folders, hiddenFolders } from "../lib/files/folders";
 
@@ -232,8 +240,11 @@ describe("Shell", () => {
       // The upload tray has a "Hide" button of its own, so the rail toggle is found by its test id.
       // Review fix (decision 68): its name says what it does, before and after the press.
       expect(screen.getByTestId("rail-toggle").getAttribute("aria-label")).toBe("Hide the sidebar");
+      // The chevrons point along the reading direction, so they mirror in a right-to-left page (index.css .icon-dir).
+      expect(screen.getByTestId("rail-toggle").querySelector("svg")?.classList.contains("icon-dir")).toBe(true);
       fireEvent.click(screen.getByTestId("rail-toggle"));
       expect(screen.getByTestId("rail-toggle").getAttribute("aria-label")).toBe("Show the sidebar");
+      expect(screen.getByTestId("rail-toggle").querySelector("svg")?.classList.contains("icon-dir")).toBe(true);
       expect(window.localStorage.getItem("selfcloud.navRail")).toBe("1");
       const sider = await waitFor(() => {
         const el = document.querySelector<HTMLElement>(".ant-layout-sider-collapsed");
@@ -403,6 +414,20 @@ describe("Shell", () => {
       const nav = await openNav();
       fireEvent.click(within(nav).getByRole("button", { name: "Options for Team A" }));
       expect(await screen.findByRole("menuitem", { name: "Space settings" })).toBeTruthy();
+    });
+
+    // pending 85-86: the re-read after a save of Space settings swallowed its failure.
+    it("shows a failed re-read of the spaces after Space settings saves", async () => {
+      signIn("member");
+      folders.set([team("fld_a", "Team A", { role: "manager" })]);
+      renderShell("/files");
+      const nav = await openNav();
+      fireEvent.click(within(nav).getByRole("button", { name: "Options for Team A" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Space settings" }));
+      mocks.loadFolders.mockRejectedValueOnce(new ApiError(500, "internal", { detail: "server text" }, 0));
+      fireEvent.click(await screen.findByRole("button", { name: "settings saved" }));
+      const alert = await within(await openNav()).findByRole("alert");
+      expect(alert.textContent).not.toContain("server text");
     });
 
     it("offers no Space settings to a viewer of the space", async () => {

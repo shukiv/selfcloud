@@ -225,3 +225,18 @@ func TestContrastWarningsForExplicitPairs(t *testing.T) {
 		t.Errorf("a low-contrast fill refused the config: %v", err)
 	}
 }
+
+// TestContrastWarningsCheckTheInkTheInterfaceUses: a brand that sets its own highlight and no ink for it gets black or
+// white, whichever reads on that highlight (web lib/brand.ts), so the warning checks that ink, not the default one.
+func TestContrastWarningsCheckTheInkTheInterfaceUses(t *testing.T) {
+	b := Defaults().UI.Brand
+	b.Sidebar.Active = "#1B2A6B" // a dark highlight; the default ink is dark too
+	if w := b.ContrastWarnings(); len(w) != 0 {
+		t.Errorf("a dark highlight with no ink of its own warns: %v", w)
+	}
+	b.Sidebar.OnActive = "#0D2142" // the same dark ink, set by the operator
+	w := b.ContrastWarnings()
+	if len(w) != 1 || !strings.Contains(w[0], "sidebar.on_active") {
+		t.Errorf("warnings for a dark ink set on a dark highlight = %v, want one about sidebar.on_active", w)
+	}
+}

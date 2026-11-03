@@ -4,7 +4,8 @@
 // page answers with a new session; the admin's own session is kept on the server, and the one-hour limit ends the user's
 // session. Going back (or the limit) restores the admin's session from the same server record.
 import { api, onSignInAsEnded } from './api';
-import { clearSession, flash, setMe, setSignedIn } from './session';
+import { clearSession, flash, session, setMe, setSignedIn } from './session';
+import { get } from './store';
 import { go, signInURL } from './router';
 import { homeFor } from './routes';
 import type { Me, SignedIn } from './types';
@@ -41,4 +42,9 @@ export function endImpersonation(expired = false): Promise<void> {
   return ending;
 }
 
-onSignInAsEnded((expired) => void endImpersonation(expired));
+// A late answer can report the end after the admin's session is back (it left before the restore): the page is no longer
+// signed in as anyone else, so there is nothing to end, and an end call would answer 409 and sign the admin out.
+onSignInAsEnded((expired) => {
+  if (!get(session)?.impersonation) return;
+  void endImpersonation(expired);
+});

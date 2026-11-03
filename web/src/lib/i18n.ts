@@ -58,8 +58,9 @@ const FSI = '\u2068';
 const PDI = '\u2069';
 
 // isolate wraps text shown inside a sentence of lang when lang is right to left, so that a size, a number or a Latin name keeps
-// its own order. A left-to-right language gets the text unchanged.
+// its own order. A left-to-right language gets the text unchanged, and empty text stays empty.
 export function isolate(lang: string | null | undefined, text: string): string {
+  if (text === '') return '';
   const l = matchLang(lang);
   return l !== null && directionOf(l) === 'rtl' ? `${FSI}${text}${PDI}` : text;
 }

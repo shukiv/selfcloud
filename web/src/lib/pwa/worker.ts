@@ -35,12 +35,21 @@ export function busy(): boolean {
 // registerWorker registers the worker once the page has loaded, so it stays out of the first load, and makes this tab answer
 // the other tabs' questions about updates. Where workers are not available (a plain http address, or an old browser) the app
 // works without it.
-export function registerWorker(): void {
+export function registerWorker(reload: () => void = () => window.location.reload()): void {
   if (registered || !("serviceWorker" in navigator) || !window.isSecureContext) return;
   registered = true;
   startTab(tabId, isBusy);
-  // One listener for the page: when a new worker takes over, this tab reloads, now or when it is idle.
-  navigator.serviceWorker.addEventListener("controllerchange", () => reloadWhenIdle());
+  // One listener for the page: when a new worker takes over, this tab reloads, now or when it is idle. The first worker claims
+  // a page that no worker controlled (sw.js activate): that page already runs the current version, and a reload would clear
+  // what is being typed, a sign-in for one, so only a page that a worker controlled before reloads.
+  let controlled = navigator.serviceWorker.controller !== null;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!controlled) {
+      controlled = true;
+      return;
+    }
+    reloadWhenIdle(reload);
+  });
   const start = () => {
     navigator.serviceWorker
       .register(WORKER_URL)

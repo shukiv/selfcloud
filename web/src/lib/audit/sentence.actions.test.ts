@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isolate, renderSentence, sentence, type AuditEntry, type Names } from './sentence';
+import { isolateText, renderSentence, sentence, type AuditEntry, type Names } from './sentence';
 
 // Every audit action the server writes reads as its own sentence (slice audit-s1), with full details and with none. A
 // sentence never shows a raw ID, a placeholder or "undefined", and a name the row holds is shown as text.
@@ -195,7 +195,7 @@ describe('sentences fall back when a field is missing', () => {
     read({ action, actor, target: 'nod_1', details });
 
   it('names a file or folder, and says so when the row lacks the name', () => {
-    expect(at('node.create', { kind: 'file', name: 'Report.pdf' })).toBe(`${isolate('Ada Admin')} added ${isolate('Report.pdf')}.`);
+    expect(at('node.create', { kind: 'file', name: 'Report.pdf' })).toBe(`${isolateText('Ada Admin')} added ${isolateText('Report.pdf')}.`);
     expect(at('node.create', { kind: 'file' })).toContain('added a file.');
     expect(at('node.create', { kind: 'dir' })).toContain('created a folder.');
   });
@@ -207,7 +207,7 @@ describe('sentences fall back when a field is missing', () => {
       target: 'nod_1',
       details: { kind: 'file', name: 'Scan.pdf', via: 'share_link', uploader_name: 'Visitor', uploader_email: 'v@example.com' },
     });
-    expect(text).toBe(`Someone sent ${isolate('Scan.pdf')} through a link.`);
+    expect(text).toBe(`Someone sent ${isolateText('Scan.pdf')} through a link.`);
     expect(text).not.toContain('v@example.com');
   });
 
@@ -224,7 +224,7 @@ describe('sentences fall back when a field is missing', () => {
   });
 
   it('shows a quota warning level and a storage default as the row has them', () => {
-    expect(at('account.quota_warning', { percent: 80 }, user)).toContain(`${isolate('80')} percent.`);
+    expect(at('account.quota_warning', { percent: 80 }, user)).toContain(`${isolateText('80')} percent.`);
     expect(at('account.quota_warning', {})).toContain('changed the quota warning level');
     expect(at('account.storage_policy', { user_quota_bytes: 0 })).toContain('removed the default limit');
     expect(at('account.storage_policy', { user_quota_bytes: 5000 })).toContain('changed the default limit');
@@ -250,7 +250,7 @@ describe('sentences fall back when a field is missing', () => {
       target: 'nod_1',
       details: { from: { name: 'a.txt' }, to: { name: 'b.txt' } },
     });
-    expect(text).toBe(`${isolate('Ada Admin')} moved ${isolate('b.txt')}.`);
+    expect(text).toBe(`${isolateText('Ada Admin')} moved ${isolateText('b.txt')}.`);
   });
 });
 
@@ -261,24 +261,24 @@ describe('user-supplied names render as text', () => {
 
   it('shows a file, folder or upload name literally', () => {
     const file = sentence({ action: 'node.create', actor: user, target: 'nod_1', details: { kind: 'file', name: hostile } }, names);
-    expect(renderSentence(file, translate)).toBe(`${isolate('Ada Admin')} added ${isolate(hostile)}.`);
+    expect(renderSentence(file, translate)).toBe(`${isolateText('Ada Admin')} added ${isolateText(hostile)}.`);
     const up = sentence({ action: 'upload.create', actor: user, target: 'upl_1', details: { name: hostile } }, names);
-    expect(renderSentence(up, translate)).toContain(isolate(hostile));
+    expect(renderSentence(up, translate)).toContain(isolateText(hostile));
   });
 
   it('shows the old and new names of a rename literally', () => {
     const s = sentence({ action: 'node.rename', actor: user, target: 'nod_1', details: { from: hostile, to: 'b.txt' } }, names);
-    expect(renderSentence(s, translate)).toBe(`${isolate('Ada Admin')} renamed ${isolate(hostile)} to ${isolate('b.txt')}.`);
+    expect(renderSentence(s, translate)).toBe(`${isolateText('Ada Admin')} renamed ${isolateText(hostile)} to ${isolateText('b.txt')}.`);
   });
 
   it('shows a webhook address literally', () => {
     const s = sentence({ action: 'webhook.create', actor: user, target: 'wh_1', details: { url: hostile } }, names);
-    expect(renderSentence(s, translate)).toContain(isolate(hostile));
+    expect(renderSentence(s, translate)).toContain(isolateText(hostile));
   });
 
   it('shows a person named in a sentence literally', () => {
     const s = sentence({ action: 'user.sign_in_link', actor: user, target: 'usr_mateo', details: {} }, hostileNames);
     // The actor is not a person the lookup knows here, so it reads as a generic word.
-    expect(renderSentence(s, translate)).toBe(`Someone made a sign-in link for ${isolate(hostile)}.`);
+    expect(renderSentence(s, translate)).toBe(`Someone made a sign-in link for ${isolateText(hostile)}.`);
   });
 });

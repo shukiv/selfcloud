@@ -21,10 +21,28 @@ describe("failureText", () => {
     expect(text).not.toContain("some_new_reason");
   });
 
-  it("the reasons without a sentence today fall back as well", () => {
-    for (const reason of ["exists", "limit", "links_off", "public_links_off", "manager_required", "members_only"]) {
+  // The link reasons are named by the share dialog and the drop dialog (GeneralAccess, RequestFiles), which do not use
+  // failureText; on a management page they fall back.
+  it("the link reasons fall back on a management page", () => {
+    for (const reason of ["exists", "links_off", "public_links_off", "manager_required", "members_only"]) {
       const text = failureText(new ApiError(409, "conflict", { reason }, 0), "en");
       expect(text).toBe(translate("en", "error.conflict"));
     }
+  });
+
+  // pending 113-114: a limit (label fields and choices, comments, playlists) says the number the server sends.
+  it("a limit says its number, in every language", () => {
+    const err = new ApiError(409, "conflict", { reason: "limit", limit: 50 }, 0);
+    expect(failureText(err, "en")).toBe("This would go over the limit of 50.");
+    for (const lang of ["he", "ar", "es", "fr", "pt", "ru"] as const) {
+      const text = failureText(err, lang);
+      expect(text).not.toBe(translate(lang, "error.conflict"));
+      expect(text).toContain("50");
+    }
+  });
+
+  it("a limit with no number falls back", () => {
+    const err = new ApiError(409, "conflict", { reason: "limit" }, 0);
+    expect(failureText(err, "en")).toBe(translate("en", "error.conflict"));
   });
 });

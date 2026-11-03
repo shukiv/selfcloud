@@ -1369,6 +1369,7 @@
   "error.tenantAccessOff": "This needs the tenant access setting. It is turned off on this installation.",
   "error.adminPassword": "Your admin password is not correct.",
   "reason.password_change_required": "The user must choose a new password first.",
+  "reason.limit": "This would go over the limit of {limit}.",
   "change.forced": "Choose a new password before you continue. Nothing else is open until you do.",
   "tenant.users.reset": "Reset password",
   "tenant.users.signInAs": "Sign in as",

@@ -9,6 +9,7 @@ import { brand, resolveBrand } from "../lib/brand";
 import { readNonce } from "../csp/nonce";
 import { LIGHT, RADIUS, SIDEBAR, type Palette, type Sidebar } from "./tokens";
 import { currentMark } from "./currentMark";
+import { antdVars } from "./antdVars";
 
 // The theme has three parts: the mode (light or dark, from the person's choice or the device), the
 // palette of that mode with the installation's brand applied, and the antd token set built from
@@ -220,6 +221,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     if (typeof linkColour === "string") document.documentElement.style.setProperty("--link-colour", linkColour);
   }, [linkColour]);
+
+  // The app's stylesheet and inline styles read antd's colours as var(--ant-...). antd's own CSS variables are off, so the
+  // computed tokens of the mode in effect are written on the root element here (antdVars.ts).
+  const vars = useMemo(() => antdVars(antdTheme.getDesignToken(antd) as unknown as Record<string, unknown>), [antd]);
+  useLayoutEffect(() => {
+    const style = document.documentElement.style;
+    for (const [name, value] of Object.entries(vars)) style.setProperty(name, value);
+  }, [vars]);
   const state = useMemo<ThemeState>(
     () => ({ mode, pref, palette, sidebar, setPref, toggle }),
     [mode, pref, palette, sidebar, setPref, toggle],

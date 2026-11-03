@@ -1369,6 +1369,7 @@
   "error.tenantAccessOff": "Hace falta el ajuste de acceso a los clientes, que está desactivado en esta instalación.",
   "error.adminPassword": "La contraseña de administrador no es correcta.",
   "reason.password_change_required": "El usuario debe elegir primero una contraseña nueva.",
+  "reason.limit": "Esto superaría el límite de {limit}.",
   "change.forced": "Elija una contraseña nueva antes de continuar. Nada más está disponible hasta que lo haga.",
   "tenant.users.reset": "Restablecer contraseña",
   "tenant.users.signInAs": "Entrar como usuario",

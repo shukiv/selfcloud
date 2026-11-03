@@ -285,7 +285,8 @@ async function main() {
     server.kill();
     sink.close();
     await sleep(200);
-    if (process.env.SELFCLOUD_E2E_KEEP !== '1') await rm(dir, { recursive: true, force: true });
+    // Chrome can still be writing its profile after the kill, so the removal tries again for a few seconds (as run.mjs).
+    if (process.env.SELFCLOUD_E2E_KEEP !== '1') await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
     if (!passed) {
       console.error(serverLog);
       if (page?.errors?.length) console.error(`browser errors: ${page.errors.join(' | ')}`);
