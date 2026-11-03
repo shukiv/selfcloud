@@ -24,12 +24,14 @@ export function freePort() {
 // rules apply. Headless Chrome reports neither hover nor a pointer by default. The flag is read at launch only; Emulation.setEmulatedMedia
 // does not change these media in this Chrome (checked 2026-11-02), so a finger's screen needs its own launch with
 // primaryHoverType=1 and primaryPointerType=2, which gives hover: none and pointer: coarse.
-export async function launchBrowser(binary, profileDir, { mouse = false } = {}) {
+export async function launchBrowser(binary, profileDir, { mouse = false, ignoreCertificateErrors = false } = {}) {
   const port = await freePort();
   const proc = spawn(
     binary,
     [
       '--headless=new',
+      // The fake editor's certificate is self-signed (convertFake.mjs); only the run's browser trusts it, for the editor frame's post.
+      ...(ignoreCertificateErrors ? ['--ignore-certificate-errors'] : []),
       ...(mouse ? ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'] : []),
       '--no-sandbox',
       '--disable-gpu',

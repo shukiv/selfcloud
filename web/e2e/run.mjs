@@ -43,6 +43,7 @@ import { i1Checks } from './i1.mjs';
 import { d3Checks } from './d3.mjs';
 import { l1Checks } from './l1.mjs';
 import { ic2Checks } from './ic2.mjs';
+import { l4Checks } from './l4.mjs';
 import { pickMenuEntry } from './menu.mjs';
 
 const execFileP = promisify(execFile);
@@ -659,7 +660,7 @@ async function main() {
     const p3ids = await p3.p3Setup({ api, rawPut }, base, accountKey, { accountID, teamA, teamB });
     const p4ids = await p4.p4Setup({ api }, base, accountKey, { accountID, teamA });
 
-    const launched = await launchBrowser(await findBrowser(), join(dir, 'chrome-profile'));
+    const launched = await launchBrowser(await findBrowser(), join(dir, 'chrome-profile'), { ignoreCertificateErrors: true });
     browser = launched.proc;
     page = new Page(launched.wsUrl);
     page.base = base;
@@ -821,6 +822,13 @@ async function main() {
         ic2Browser = null;
       }
     }
+    // l4 (decision 73): the editor from the member's menu, in the member's own browser, then the owner's break of the lock in the
+    // owner's browser. The owner signs in on the shared page.
+    if (!only || onlySet.has('l4')) {
+      await l4Checks(h, { page, base, accountKey, teamA, teamB, fake, dir, ownerPage: page, signInAs: async (p) => { await signOut(p); await signIn(p, OWNER); } });
+      await signOut(page);
+      await signIn(page, MEMBER);
+    }
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
@@ -872,7 +880,14 @@ async function main() {
     // A blob: address is the page's own object (a thumbnail the page made from a same-origin answer), not a request elsewhere.
     // The browser's own PDF viewer is an extension inside the browser: a PDF in a frame loads its files from there, and nothing leaves the machine.
     const pdfViewer = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/';
-    const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:') && !u.startsWith('blob:' + base + '/') && !u.startsWith(pdfViewer));
+    // The office editor is another server by design (decision 73): its page opens in a frame, posted to from this origin, and it
+    // reaches this server back only through WOPISrc. Such a request is let through only when it names this server's WOPI address.
+    const editorPage = (u) => {
+      if (!u.startsWith(fake.origin + '/browser/')) return false;
+      const src = new URL(u).searchParams.get('WOPISrc') ?? '';
+      return src.startsWith(base + '/wopi/files/');
+    };
+    const foreign = page.requests.filter((u) => !u.startsWith(base + '/') && u !== base && !u.startsWith('data:') && !u.startsWith('blob:' + base + '/') && !u.startsWith(pdfViewer) && !editorPage(u));
     check(foreign.length === 0, `every request is same-origin (${foreign.length} foreign: ${foreign.join(' ')})`);
     console.log(`requests seen: ${page.requests.length}, all on ${base}`);
     console.log('e2e passed');

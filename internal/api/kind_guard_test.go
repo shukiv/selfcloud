@@ -39,16 +39,19 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // folder or a shortcut fails closed), and the add refuses a node that is not a file with the same not_found as a missing
 // one. Neither decides access; reachRoles runs first in both. Decision 58 records them.
 var reviewedNodeKindSites = map[string]int{
-	"internal/api/access.go":           2,
-	"internal/api/playlists.go":        2,
-	"internal/api/access_requests.go":  1,
-	"internal/api/download.go":         1,
-	"internal/api/exports.go":          3,
-	"internal/api/links.go":            3,
-	"internal/api/lock_break.go":       1,
-	"internal/api/nodes.go":            12,
-	"internal/api/office.go":           2,
-	"internal/api/office_locks.go":     3,
+	"internal/api/access.go":          2,
+	"internal/api/playlists.go":       2,
+	"internal/api/access_requests.go": 1,
+	"internal/api/download.go":        1,
+	"internal/api/exports.go":         3,
+	"internal/api/links.go":           3,
+	"internal/api/lock_break.go":      1,
+	"internal/api/nodes.go":           12,
+	"internal/api/office.go":          2,
+	"internal/api/office_locks.go":    3,
+	// Slice l4 added one in office_rename.go: the WOPI RenameFile refuses a folder or a shortcut as not_found, after the
+	// token's read-only check and before the rename. It grants nothing; the token already names a file. Decision 73.
+	"internal/api/office_rename.go":    1,
 	"internal/api/share_links.go":      2,
 	"internal/api/shortcuts.go":        5,
 	"internal/api/thumbnails.go":       2,

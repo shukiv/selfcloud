@@ -2,6 +2,9 @@
 
 import { lazy, Suspense, useState, type CSSProperties } from "react";
 import { Button, Drawer } from "antd";
+import { api } from "../../lib/api";
+import { ApiError } from "../../lib/apiError";
+import Confirm from "../Confirm";
 import { useT, useLang } from "../../lib/i18n";
 import { session } from "../../lib/session";
 import { useStore } from "../../lib/store";
@@ -42,6 +45,25 @@ export default function Details({
   const lang = useLang();
   const me = useStore(session);
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
+  // Ending an editing session (a manager's break of the lock) is confirmed first; the confirmation says edits may be lost.
+  const [ending, setEnding] = useState(false);
+  const [endBusy, setEndBusy] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
+  async function endSession() {
+    setEndBusy(true);
+    setEndError(null);
+    try {
+      await api("POST", `/api/v1/nodes/${node.id}/unlock`);
+      setEnding(false);
+      onChanged?.({ ...node, editing: false, editing_by: undefined });
+    } catch (err) {
+      // Named by status: 409 is a file no editor holds any more, 404 a file that is gone. The server's text is not shown.
+      const status = err instanceof ApiError ? err.status : 0;
+      setEndError(status === 409 ? t("files.editing.gone") : status === 404 ? t("files.editor.notFound") : t("files.editing.failed"));
+    } finally {
+      setEndBusy(false);
+    }
+  }
 
   const who = (id: string | undefined, name: string | undefined): string | null => detailsPersonLabel(id, name, me, t);
 
@@ -99,6 +121,14 @@ export default function Details({
             </dd>
           </>
         )}
+        {node.editing && (
+          <>
+            <dt>{t("files.details.editing")}</dt>
+            <dd style={DD}>
+              <bdi>{node.editing_by || t("files.details.editingUnnamed")}</bdi>
+            </dd>
+          </>
+        )}
         <dt>{t("files.details.role")}</dt>
         <dd style={DD}>{node.role ? t(`role.${node.role}`) : ""}</dd>
         {node.sha256 && (
@@ -114,6 +144,27 @@ export default function Details({
           </>
         )}
       </dl>
+      {node.editing && node.role === "manager" && (
+        <Button block danger style={{ marginBlockStart: 16 }} onClick={() => setEnding(true)}>
+          {t("files.editing.end")}
+        </Button>
+      )}
+      {ending && (
+        <Confirm
+          id="end-editing"
+          title={t("files.editing.endTitle")}
+          message={t("files.editing.endText")}
+          action={t("files.editing.endAction")}
+          danger
+          busy={endBusy}
+          error={endError}
+          onconfirm={() => void endSession()}
+          onclose={() => {
+            setEnding(false);
+            setEndError(null);
+          }}
+        />
+      )}
       {node.kind === "shortcut" && node.unavailable && (
         <p role="note" style={{ marginBlockStart: 16 }}>
           {t("shortcut.unavailableBody")}

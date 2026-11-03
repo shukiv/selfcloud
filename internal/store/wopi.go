@@ -75,6 +75,19 @@ func (tx *Tx) RevokeWOPISessions(ctx context.Context, accountID, userID string, 
 	return res.RowsAffected()
 }
 
+// ForgetServedContent clears the served tag of the editing sessions (role "write") of the file nodeID in accountID, as a
+// broken lock does (decision 73). Lock and a save refuse a session with no served tag (decision 32), so an editor whose
+// lock was broken cannot take it again or save until the file is opened again; its token still reads. It returns how
+// many sessions it changed.
+func (tx *Tx) ForgetServedContent(ctx context.Context, accountID, nodeID string) (int64, error) {
+	res, err := tx.q.ExecContext(ctx, `UPDATE wopi_sessions SET served_tag = NULL
+		WHERE account_id = ? AND node_id = ? AND role = 'write' AND served_tag IS NOT NULL`, accountID, nodeID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // WOPISession returns the session with the given ID in accountID, or ErrNotFound.
 func (s *Store) WOPISession(ctx context.Context, accountID, id string) (*WOPISession, error) {
 	return getWOPISession(ctx, s.r, accountID, id)

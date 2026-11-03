@@ -392,10 +392,14 @@ func (s *Server) handleWOPICheckFileInfo(w http.ResponseWriter, r *http.Request)
 		"SupportsUpdate":          true,
 		"SupportsLocks":           true,
 		"SupportsGetLock":         true,
-		"DisablePrint":            g.restricted,
-		"DisableExport":           g.restricted,
-		"DisableCopy":             g.restricted,
-		"LastModifiedTime":        n.ModifiedAt.UTC().Format(wopiTimeFormat),
+		// A rename is RenameFile (office_rename.go): the editor may rename while it may write; the lock rule decides the
+		// rest, per call.
+		"SupportsRename":   true,
+		"UserCanRename":    write,
+		"DisablePrint":     g.restricted,
+		"DisableExport":    g.restricted,
+		"DisableCopy":      g.restricted,
+		"LastModifiedTime": n.ModifiedAt.UTC().Format(wopiTimeFormat),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

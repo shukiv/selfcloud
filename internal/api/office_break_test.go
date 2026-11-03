@@ -197,6 +197,29 @@ func TestBreakLockHolderIsRefusedAfterwards(t *testing.T) {
 	}
 }
 
+// TestBreakLockEndsTheEditingSession: after a break, the editor cannot take the lock again (review of decision 73).
+// Its session still held the file's current content, so a new LOCK was granted at once and the next save went through,
+// and the confirmation's "the editor's next save will be refused" did not hold. The LOCK now answers as for a file that
+// changed after the editor opened it, with no lock on the file. A viewer's session holds no lock and still reads.
+func TestBreakLockEndsTheEditingSession(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	tok := fx.openToken(t, "edit")
+	view := fx.openToken(t, "view")
+	fx.lockFor(t, tok, "OLD")
+	wantStatus(t, call(t, fx.s, "POST", breakPath(fx.doc.ID), fx.key, nil), 204)
+	wantLockAnswer(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, nil, wopiLockHdr("LOCK", "NEW")), "")
+	if got := liveLockID(t, fx.s, fx.acc.ID, fx.doc.ID); got != "" {
+		t.Fatalf("the editor took the lock %q back after the break", got)
+	}
+	saveRoute := nodeRoute(fx.doc.ID) + "/contents"
+	wantLockAnswer(t, fx.wopiCall(t, "POST", saveRoute, tok, strings.NewReader("editor"), saveHdr("NEW")), "")
+	if got := fx.fileText(t, fx.doc.ID); got != "hello" {
+		t.Fatalf("the editor saved %q after the break", got)
+	}
+	wantStatus(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), view, nil, nil), 200)
+}
+
 // TestBreakLockNeedsALockedFile: a break of a file that no editor holds is a conflict, and a folder has no lock to break.
 func TestBreakLockNeedsALockedFile(t *testing.T) {
 	t.Parallel()

@@ -135,6 +135,10 @@ type nodeJSON struct {
 	// access rules read the ancestors.
 	NoDownload      bool `json:"no_download"`
 	EditorsCanShare bool `json:"editors_can_share"`
+	// Editing says an office editor holds the file now (a live lock); EditingBy is that person's display name, "" when
+	// the holder is an account key or has no name. Set by withEditing for a stat and a listing.
+	Editing   bool   `json:"editing,omitempty"`
+	EditingBy string `json:"editing_by,omitempty"`
 	// CreatedBy and OwnerID are the IDs of the user (or key) that made the node and of the node's owner.
 	// The interface shows "you" when one is the signed-in user.
 	CreatedBy string `json:"created_by"`
@@ -439,6 +443,9 @@ func (s *Server) handleStatNode(w http.ResponseWriter, r *http.Request) error {
 	if err := s.withThumbnails(r.Context(), p, n.AccountID, &out); err != nil {
 		return err
 	}
+	if err := s.withEditing(r.Context(), p, n.AccountID, &out); err != nil {
+		return err
+	}
 	if p.Kind == auth.KindUser {
 		if err := s.withStarred(r, p.UserID, []*nodeJSON{&out}); err != nil {
 			return err
@@ -523,6 +530,9 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 			return err
 		}
 		if err := s.withThumbnails(ctx, p, dir.AccountID, ptrs...); err != nil {
+			return err
+		}
+		if err := s.withEditing(ctx, p, dir.AccountID, ptrs...); err != nil {
 			return err
 		}
 		if p.Kind == auth.KindUser {

@@ -44,6 +44,11 @@ func (s *Server) handleBreakNodeLock(w http.ResponseWriter, r *http.Request) err
 		if err != nil {
 			return err
 		}
+		// The editing sessions of the file forget the content they were given (decision 73). Otherwise an editor whose
+		// session still held the current content could take a new lock at once and save after the break.
+		if _, err := tx.ForgetServedContent(ctx, cur.AccountID, cur.ID); err != nil {
+			return err
+		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, cur.AccountID, "node.unlock", cur.ID,
 			map[string]any{"reason": "broken", "holder": l.Holder}, cur.FolderID))
 	})

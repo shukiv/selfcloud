@@ -5737,6 +5737,8 @@ components:
         created_by_name: { type: string, description: "The maker's display name, for a caller of the account who reaches the node. Absent for a link visitor, an installation admin, a deleted user or a user with no display name." }
         owner_name: { type: string, description: "The owner's display name, under the same rule as created_by_name. Absent when there is no owner." }
         owner_id: { type: string, description: "The ID of the user that owns the node." }
+        editing: { type: boolean, description: "Set while an office editor holds the file (a live lock, decision 32), and omitted otherwise. Set on a stat and a listing (decision 72)." }
+        editing_by: { type: string, description: "The display name of the person whose editor holds the file, set with editing. Absent when the holder is an account key or has no name." }
         has_link: { type: boolean, description: "Set in a listing of children, and omitted when false: the item carries a link the caller may know of. A visitor never gets it." }
         has_thumbnail: { type: boolean, description: "On an image file (JPEG, PNG or GIF), or an audio file with a cover: true when its smallest thumbnail is ready, false when not. Absent for other kinds, and absent for a link visitor." }
         tags: { $ref: "#/components/schemas/AudioTags", description: "On an audio file whose tags have been read: the values (decision 56). Absent for other kinds, for a link visitor, and until the read has run." }
@@ -6527,7 +6529,7 @@ components:
           example: 365
         features:
           type: array
-          description: "Optional features this server has enabled. `office_convert` means document previews and exports are offered (`office.enabled`, decision 59); the list is empty otherwise."
+          description: "Optional features this server has enabled. `office_convert` means document previews and exports are offered (`office.enabled`, decision 59). `office_edit` means the office editor is offered (decision 72). Both are listed while `office.enabled` is on; the list is empty otherwise."
           items: { type: string }
 
     DirectoryEntry:

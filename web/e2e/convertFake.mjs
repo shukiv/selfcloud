@@ -8,7 +8,7 @@
 // every conversion with refuse(true), to show the failed state. It serves HTTPS on 127.0.0.1 with a certificate made here;
 // the server under test trusts it through SSL_CERT_FILE, which the run sets.
 import { execFile } from 'node:child_process';
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:https';
 import { join } from 'node:path';
@@ -46,6 +46,68 @@ function minimalPDF() {
   return Buffer.from(out, 'latin1');
 }
 
+// The editor's page (decision 72). It stands in for Collabora's editor: a POST with the token in its body. The fake calls the
+// WOPI host itself, with the token in the query and proof headers it signs with its own key (the same expected-proof layout
+// the verifier reads), and it locks the file as an editor does. The page then tells its parent the document is loaded, and it
+// has a close button that tells the parent to close. It does not show the token.
+const DOT_NET_EPOCH_TICKS = 621355968000000000n;
+
+// signProof signs the expected proof of a WOPI request with the fake's key: a 4-byte big-endian length and the bytes of the
+// token, of the URL in uppercase, and of the timestamp (.NET ticks, 8 bytes big-endian).
+function signProof(privateKey, token, url, ticks) {
+  const part = (b) => Buffer.concat([Buffer.from([(b.length >>> 24) & 255, (b.length >>> 16) & 255, (b.length >>> 8) & 255, b.length & 255]), b]);
+  const tick = Buffer.alloc(8);
+  tick.writeBigInt64BE(ticks);
+  const expected = Buffer.concat([part(Buffer.from(token, 'utf8')), part(Buffer.from(url.toUpperCase(), 'utf8')), part(tick)]);
+  return sign('sha256', expected, privateKey).toString('base64');
+}
+
+const EDITOR_PATH = '/browser/42745e44dd/cool.html';
+
+// openAsEditor calls the WOPI host the way an editor does: CheckFileInfo with the token in the query, then a LOCK when the
+// caller may write. It returns what it saw, and nothing of the token.
+async function openAsEditor(privateKey, token, wopiSrc) {
+  const call = async (method, headers) => {
+    const target = new URL(wopiSrc);
+    target.searchParams.set('access_token', token);
+    const signed = target.toString();
+    const ticks = BigInt(Date.now()) * 10000n + DOT_NET_EPOCH_TICKS;
+    const proof = signProof(privateKey, token, signed, ticks);
+    return fetch(signed, {
+      method,
+      headers: { 'X-WOPI-Timestamp': String(ticks), 'X-WOPI-Proof': proof, ...headers },
+    });
+  };
+  const info = await call('GET', {});
+  if (!info.ok) return { name: '', userCanWrite: false, locked: false, checkStatus: info.status };
+  const body = await info.json();
+  const writable = body.UserCanWrite === true;
+  let locked = false;
+  if (writable) {
+    const lock = await call('POST', { 'X-WOPI-Override': 'LOCK', 'X-WOPI-Lock': 'fake-editor-lock' });
+    locked = lock.status === 200;
+  }
+  return { name: body.BaseFileName ?? '', userCanWrite: writable, locked, checkStatus: info.status };
+}
+
+// editorPage is the page the fake shows in the frame. It has no token in it: the token was only in the POST body.
+function editorPage({ name, userCanWrite, locked }) {
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Fake editor</title></head>
+<body style="font:16px sans-serif;margin:16px">
+<p id="fake-editor-file">${esc(name)}</p>
+<p id="fake-editor-write">${userCanWrite ? 'editable' : 'read only'}</p>
+<p id="fake-editor-lock">${locked ? 'locked' : 'not locked'}</p>
+<button id="fake-editor-close" type="button">Close</button>
+<script>
+  // The loading status, then the close button, are the two messages the page sends its parent.
+  window.parent.postMessage(JSON.stringify({ MessageId: 'App_LoadingStatus', Values: { Status: 'Document_Loaded' } }), '*');
+  document.getElementById('fake-editor-close').addEventListener('click', () => {
+    window.parent.postMessage(JSON.stringify({ MessageId: 'UI_Close', Values: {} }), '*');
+  });
+</script></body></html>`;
+}
+
 // startConvertFake serves the fake on port. It returns the address, the certificate file the server must trust, the hits it
 // received, and refuse(on) to make every conversion fail.
 export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
@@ -55,7 +117,7 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
     'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyFile, '-out', certFile, '-days', '2',
     '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1',
   ]);
-  const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const jwk = publicKey.export({ format: 'jwk' });
   const origin = `https://127.0.0.1:${port}`;
   const discovery = `<?xml version="1.0" encoding="utf-8"?>
@@ -86,6 +148,8 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
     productVersionHash: '42745e44dd',
   });
   const hits = [];
+  // editor is what each opening of the editor page saw: the file, whether it may write, whether it took the lock.
+  const editor = [];
   let refusing = false;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -99,6 +163,18 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
     if (req.method === 'GET' && url.pathname === '/hosting/capabilities') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(capabilities);
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === EDITOR_PATH) {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+      const token = form.get('access_token') ?? '';
+      const wopiSrc = url.searchParams.get('WOPISrc') ?? '';
+      const seen = await openAsEditor(privateKey, token, wopiSrc);
+      editor.push({ ...seen, actionHadToken: url.search.includes('access_token') });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(editorPage(seen));
       return;
     }
     const m = /^\/cool\/convert-to\/([a-z0-9]{1,8})$/.exec(url.pathname);
@@ -140,6 +216,7 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
     origin,
     certFile,
     hits,
+    editor,
     refuse(on) {
       refusing = on;
     },

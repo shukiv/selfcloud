@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Tag, theme as antdTheme } from "antd";
-import { CirclePlay } from "lucide-react";
+import { CirclePlay, Lock } from "lucide-react";
 import { useT } from "../../lib/i18n";
 import { isColour } from "../../lib/files/palette";
 import { kindOf } from "../../lib/files/kind";
@@ -23,7 +23,21 @@ export default function KindMarks({ node }: { node: Node }) {
       )}
       {colour && <span className="sr-only">{t("files.colour.label", { colour: t(`colour.${colour}`) })}</span>}
       {playable && <PlayMark kind={playable} />}
+      {node.editing && <EditingMark />}
     </>
+  );
+}
+
+// EditingMark shows that an office editor holds the file: a lock beside the name, with its words for a screen reader. The
+// name of the holder is in Details, not in a list.
+export function EditingMark() {
+  const { t } = useT();
+  const { token } = antdTheme.useToken();
+  return (
+    <span data-testid="editing-mark" style={{ display: "inline-flex", marginInlineStart: 6, color: token.colorWarning, verticalAlign: "middle", flex: "none" }}>
+      <Lock size={14} aria-hidden="true" focusable="false" />
+      <span className="sr-only">{t("files.editing.mark")}</span>
+    </span>
   );
 }
 

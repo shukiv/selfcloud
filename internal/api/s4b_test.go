@@ -53,7 +53,7 @@ func TestFailedPreviewAnswersItsReason(t *testing.T) {
 }
 
 // TestInfoNamesTheConversionWhileOfficeIsOn: the page learns from /api/v1/info whether conversion is offered, so it shows no
-// preview or export button while office is off. The list holds "office_convert" only while office.enabled is on.
+// preview or export button while office is off. The list holds "office_convert" and "office_edit" only while office.enabled is on.
 func TestInfoNamesTheConversionWhileOfficeIsOn(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
@@ -61,8 +61,8 @@ func TestInfoNamesTheConversionWhileOfficeIsOn(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	if got := decode[struct {
 		Features []string `json:"features"`
-	}](t, rec).Features; len(got) != 1 || got[0] != "office_convert" {
-		t.Errorf("features %v, want [office_convert]", got)
+	}](t, rec).Features; len(got) != 2 || got[0] != "office_convert" || got[1] != "office_edit" {
+		t.Errorf("features %v, want [office_convert office_edit]", got)
 	}
 	off := newAuthServer(t, &mail.Recorder{})
 	rec = call(t, off, "GET", "/api/v1/info", "", nil)

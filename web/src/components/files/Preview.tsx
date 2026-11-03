@@ -2,9 +2,11 @@
 
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Alert, Button, Dropdown, Modal } from "antd";
-import { ChevronLeft, ChevronRight, FileOutput, X, Download } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, FileOutput, Pencil, X, Download } from "lucide-react";
 import IconButton from "../IconButton";
 import { ApiError } from "../../lib/apiError";
+import { editorEntry, editorPath, officeEdit } from "../../lib/files/editor";
+import { go, location as routerLocation } from "../../lib/router";
 import { contentPath, signedLink } from "../../lib/files/api";
 import {
   exportFormatsFor,
@@ -20,7 +22,7 @@ import { startPlayback, type PlaybackSeed } from "../../lib/files/playback";
 import { downloadAllowed } from "../../lib/files/roles";
 import type { Node } from "../../lib/files/types";
 import { useT } from "../../lib/i18n";
-import { useStore } from "../../lib/store";
+import { get, useStore } from "../../lib/store";
 import ImageLightbox, { useKeysAfterStep } from "./ImageLightbox";
 import type { Link } from "./MediaPlayer";
 
@@ -114,6 +116,7 @@ export default function Preview({
   // The document's preview is asked for by the person, and watched until it is ready or has failed. A watch belongs to one file:
   // it stops when the viewer shows another one, or closes.
   const officeOn = useStore(officeConvert);
+  const editorOn = useStore(officeEdit);
   const [office, setOffice] = useState<{ id: string; state: OfficeState }>({ id: "", state: { status: "idle" } });
   const stopOffice = useRef<(() => void) | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
@@ -243,6 +246,8 @@ export default function Preview({
   const officeFile = node !== undefined && officeOn && kindNow === "office";
   const hasPreview = node ? previewable(node) || officeFile : false;
   const shownOffice: OfficeState = node && office.id === node.id ? office.state : { status: "idle" };
+  // The editor's entry: Open in editor for a file the caller may edit, Open in viewer otherwise, and none while the feature is off.
+  const editorMode = node ? editorEntry(node, editorOn) : null;
   const exportFormats = node && officeFile ? exportFormatsFor(node.name) : [];
 
   if (node && kindNow === "image" && hasPreview) {
@@ -292,6 +297,14 @@ export default function Preview({
           <span aria-live="polite" dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>
             {index + 1} / {items.length}
           </span>
+          {node && editorMode !== null && (
+            <IconButton
+              className="editor-btn"
+              label={editorMode === "view" ? t("files.act.openViewer") : t("files.act.openEditor")}
+              onClick={() => go(editorPath(node.id, editorMode, get(routerLocation).path + get(routerLocation).search))}
+              icon={editorMode === "view" ? <BookOpen size={18} aria-hidden="true" focusable="false" /> : <Pencil size={18} aria-hidden="true" focusable="false" />}
+            />
+          )}
           {officeFile && canDownload && exportFormats.length > 0 && (
             <Dropdown
               trigger={["click"]}

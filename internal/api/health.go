@@ -149,13 +149,17 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) error {
 // featureConvert names the document previews and exports of decision 37. The page shows its buttons only when the list holds it.
 const featureConvert = "office_convert"
 
+// featureEdit names the office editor (decision 72): the page offers "Open in editor" and "Open in viewer" only when the
+// list holds it.
+const featureEdit = "office_edit"
+
 // features lists the optional features this server offers, by name. It is empty when none is on. The list says what the
 // server is set to do, not whether a converter is up at this moment: a converter that is down answers unavailable, with a
 // retry time, to the routes that need it.
 func (s *Server) features() []string {
 	out := []string{}
 	if s.officeOn() {
-		out = append(out, featureConvert)
+		out = append(out, featureConvert, featureEdit)
 	}
 	return out
 }

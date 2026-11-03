@@ -306,3 +306,17 @@ func (tx *Tx) ReleaseUserLocks(ctx context.Context, accountID, userID, personalF
 		(SELECT id FROM nodes WHERE account_id = ? AND folder_id = ?))`, accountID, userID, accountID, personalFolderID)
 	return err
 }
+
+// LiveLocksOf returns the live locks of accountID by node ID: the files an editor holds now. The listing reads it for
+// its rows, so it is one read of the account's locks, not one per file.
+func (s *Store) LiveLocksOf(ctx context.Context, accountID string) (map[string]*WOPILock, error) {
+	locks, err := liveLocks(ctx, s.r, accountID, s.Clock())
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*WOPILock, len(locks))
+	for _, l := range locks {
+		out[l.NodeID] = l
+	}
+	return out, nil
+}

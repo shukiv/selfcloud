@@ -114,7 +114,12 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `search.max_text_total` | `1GiB` | Extracted text the whole installation may hold. `0` means no cap. Must be `0` or at least `search.max_text_per_account`. |
 
 Content search keeps the words of each file in the database. Deleting the text overwrites the freed pages of the database file (`PRAGMA secure_delete`, always on), and the full-text tables use FTS5's `secure-delete` option, also always on. The write-ahead log holds deleted words until a checkpoint: the sweep runs one every hour (`wal_checkpoint(TRUNCATE)`), so deleted words leave the database and its log within about an hour of the deletion. A checkpoint that a reader blocks is retried the next hour. The cost of FTS5's secure-delete is in decision 46. A `VACUUM INTO` copy carries only the text still held. Not closed, and outside Selfcloud: backups and file-system snapshots made before a deletion keep the words, as they keep the file; the file system may keep the bytes of an unlinked blob until its blocks are reused (a blob file is removed by the sweep, not overwritten); SSD wear levelling and the operating system's page cache.
-| `office.enabled` | `false` | Turns on the office editor route and the WOPI host for Collabora. Needs `office.discovery_url`. |
+| `office.enabled` | `false` | Turns on the office editor (the page in the interface and the WOPI host for Collabora). Needs `office.discovery_url`. Off, every `/wopi` route and the editor answer not found. |
+| `office.discovery_url` | (none) | Collabora's WOPI discovery address, https, ending in `/hosting/discovery`. Selfcloud fetches it, and only it, for office editing. Its host is where the browser loads the editor from, so the browser must reach it. |
+| `office.wopi_url` | (none) | The address Collabora uses to call Selfcloud, with no path, when it differs from `public_url` (a proxy in front, for example). Selfcloud checks Collabora's signatures on the URL built from it, so it must be the address Collabora really calls. |
+| `office.lock_minutes` | `30` | How long an editor's lock lasts without a refresh, at most 30 (the WOPI limit). A crashed editor frees its file after this. |
+| `office.token_minutes` | `600` | How long an editor's access token lives, at most a day. It never outlives the token that opened the editor. |
+| `office.max_file_bytes` | `50MiB` | The largest office file that may be opened in the editor, and the largest one a save may write. |
 | `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished uploads may hold. Set `100` for a single tenant. |
 | `tokens.max_ttl` | `1h` | Longest lifetime of a delegated token. A longer `ttl` is refused. |
 | `admin.tenant_access` | `false` | **Off by default.** When on, an installation admin may get into a tenant user's account three ways: a one-time reset link, a password the admin types (the user must change it at the next sign-in), and sign-in as the user for one hour. Turning it on means the people who run this installation can read and act as any user of any tenant. Each of these is recorded in the tenant's audit log under the admin's name. Off, the admin cannot use these three ways. Off does not stop an admin reaching a tenant's files, since an admin can create an account key, and that is audited too. The email reset stays available either way. |
@@ -137,11 +142,18 @@ Content search keeps the words of each file in the database. Deleting the text o
 
 ## Office editing and conversion (Collabora Online)
 
-`office.enabled` turns on the editor and the document previews and exports. Both use a Collabora Online server, which
+`office.enabled` turns on the office editor and the document previews and exports. Both use a Collabora Online server, which
 Selfcloud reaches at `office.discovery_url` (an https address ending in `/hosting/discovery`). Settings the operator must
-make, found by running against Collabora Online 26.04.5.2 (the image `collabora/code`):
+make, found by running against Collabora Online 26.04.5.2:
 
-- **A WOPI proof key.** Collabora must have one at `/etc/coolwsd/proof_key`. The image starts without it and logs
+- **Two directions.** The browser must reach Collabora (it loads the editor's page from the discovery address), and
+  Collabora must reach Selfcloud (at `office.wopi_url`, or `public_url`). The checks of these two directions were run
+  against a fake Collabora only, not a live one, so how a live Collabora reports either failure is not known here.
+- **The page's security headers.** Selfcloud's content security policy allows the discovery address's origin, and nothing
+  else, in `frame-src` and `form-action`, so the editor's frame and its form post are allowed. Nothing else of Collabora's
+  is allowed; a Collabora on another host than the discovery address cannot open a file, since each editor address must be
+  on the discovery host.
+- **A WOPI proof key.** Collabora must have one at `/etc/coolwsd/proof_key`. Collabora starts without it and logs
   `Could not open proof RSA key`. Without it the discovery document has no `proof-key`, and Selfcloud refuses it, so
   every office route answers `unavailable`. Create it with Collabora's own tool (`coolconfig generate-proof-key`) or
   with `openssl genrsa`, and mount it.

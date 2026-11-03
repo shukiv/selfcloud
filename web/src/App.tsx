@@ -9,6 +9,7 @@ import { loadInfo, loadMe } from "./lib/auth";
 import { applyBrand, brand, passwordMinLength } from "./lib/brand";
 import { maxExpiryDays } from "./lib/sharing/limits";
 import { CONVERT_FEATURE, featureOn, officeConvert } from "./lib/files/convert";
+import { EDIT_FEATURE, officeEdit } from "./lib/files/editor";
 import { go, signInURL } from "./lib/router";
 import { afterSignIn } from "./lib/next";
 import { session } from "./lib/session";
@@ -30,6 +31,7 @@ import { markSignedIn } from "./lib/pwa/cacheState";
 // Pages beyond the shell and the auth pages load on first use, so the first load of sign-in stays small.
 const FilesPage = lazy(() => import("./pages/FilesPage"));
 const NodeLinkPage = lazy(() => import("./pages/NodeLinkPage"));
+const OfficeEditPage = lazy(() => import("./pages/OfficeEditPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
 const SharedPage = lazy(() => import("./pages/SharedPage"));
 const RequestsPage = lazy(() => import("./pages/RequestsPage"));
@@ -58,17 +60,18 @@ const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 type View =
   | "login" | "verify" | "reset" | "forgot" | "sign-in" | "share-link"
   | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
-  | "manage" | "admin" | "change-password" | "notfound";
+  | "edit" | "manage" | "admin" | "change-password" | "notfound";
 
 const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "forgot", "sign-in", "share-link"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
-const DRIVE_VIEWS: View[] = ["files", "node", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications"];
+const DRIVE_VIEWS: View[] = ["files", "node", "edit", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications"];
 
 export function viewFor(path: string): View {
   // The root is My files: the gate sends a person there (or to the admin's home) with a replace, so it is never drawn.
   if (path === "/" || path === "/files" || path.startsWith("/files/")) return "files";
   if (path.startsWith("/n/")) return "node";
+  if (path.startsWith("/edit/")) return "edit";
   const target = targetOf(path);
   if (target !== null) return target.area;
   switch (path) {
@@ -159,6 +162,7 @@ export function Boot({ children }: { children: ReactNode }) {
       passwordMinLength.set(info?.passwordMinLength ?? 8);
       maxExpiryDays.set(info?.sharingMaxExpiryDays ?? 0);
       officeConvert.set(info !== null && featureOn(info.features, CONVERT_FEATURE));
+      officeEdit.set(info !== null && featureOn(info.features, EDIT_FEATURE));
       const me = await loadMe().catch(() => null);
       if (me) void markSignedIn();
       chooseLang(me);
@@ -303,6 +307,7 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "change-password": return <ChangePasswordPage />;
     case "files": return <FilesPage />;
     case "node": return <NodeLinkPage />;
+    case "edit": return <OfficeEditPage />;
     case "trash": return <TrashPage />;
     case "shared": return <SharedPage />;
     case "requests": return <RequestsPage />;

@@ -458,6 +458,8 @@ func (s *Server) handleWOPIOverride(w http.ResponseWriter, r *http.Request) erro
 		return s.handleWOPIRefreshLock(w, r)
 	case "UNLOCK":
 		return s.handleWOPIUnlock(w, r)
+	case "RENAME_FILE":
+		return s.handleWOPIRename(w, r)
 	}
 	if _, err := s.wopiRequest(w, r); err != nil {
 		s.wopiFail(w, r, err)

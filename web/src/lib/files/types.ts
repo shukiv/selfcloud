@@ -43,6 +43,10 @@ export interface Node {
   tags?: { title?: string; artist?: string; album?: string; duration_ms?: number };
   // starred is set for a signed-in caller (the caller's own star); absent for keys, admins and link visitors.
   starred?: boolean;
+  // editing is set while an office editor holds the file; editing_by is the holder's display name, absent when the holder
+  // has none (decision 72). Set on a stat and a listing.
+  editing?: boolean;
+  editing_by?: string;
 }
 
 export interface TrashItem extends Node {

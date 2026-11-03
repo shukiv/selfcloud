@@ -15,6 +15,7 @@ import {
   FileArchive,
   FolderOpen,
   FolderInput,
+  BookOpen,
   FolderPlus,
   FolderUp,
   History,
@@ -51,6 +52,7 @@ import { starNode, unstarNode } from "../lib/stars";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { makeZip, type ZipPhase } from "../lib/files/zips";
 import { officeConvert } from "../lib/files/convert";
+import { editorEntry, editorPath, officeEdit } from "../lib/files/editor";
 import { nameProblem, nameMessageKey, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
 import { newPlace, placeOfHere, queueInto } from "../lib/files/newPlace";
 import { useSidebarDocked } from "../lib/sidebarDocked";
@@ -261,6 +263,8 @@ export default function FilesPage() {
   const clip = useStore(clipboard);
   // officeOn is true while the server offers document previews (decision 59). Then an office document opens in the viewer.
   const officeOn = useStore(officeConvert);
+  // editorOn is true while the server offers the office editor (decision 72): the menu then offers Open in editor or Open in viewer.
+  const editorOn = useStore(officeEdit);
   // viewable is a file the viewer opens: a previewable one, or an office document while its preview is offered.
   const viewable = (n: Node) => previewable(n) || (officeOn && kindOf(n) === "office");
   // room is the space the upload tray covers at the bottom of the page: the last rows are scrolled clear of it.
@@ -1509,6 +1513,23 @@ export default function FilesPage() {
       enabled: single !== null && viewable(single),
       run: () => {
         if (single) openPreview(single);
+      },
+    },
+    {
+      key: "openEditor",
+      // Open in editor for a file the caller may edit, Open in viewer for one it may only read (decision 72).
+      label: single && editorEntry(single, editorOn) === "view" ? t("files.act.openViewer") : t("files.act.openEditor"),
+      icon: single && editorEntry(single, editorOn) === "view" ? <BookOpen {...ic} /> : <Pencil {...ic} />,
+      group: 1,
+      section: "first",
+      hidden: !items.some((n) => editorEntry(n, editorOn) !== null),
+      fits: single !== null && editorEntry(single, editorOn) !== null,
+      enabled: single !== null && editorEntry(single, editorOn) !== null,
+      run: () => {
+        if (single) {
+          const mode = editorEntry(single, editorOn);
+          if (mode) go(editorPath(single.id, mode, path + search));
+        }
       },
     },
     {
