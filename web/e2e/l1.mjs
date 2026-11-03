@@ -253,6 +253,16 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     check(cold && cold.actsVisible === false, `an unhovered row shows no icons (visibility ${cold?.actsVisible})`);
     check(cold && cold.checkShown === false && cold.iconShown === true, `an unhovered row shows its file icon, not a checkbox (check ${cold?.checkShown}, icon ${cold?.iconShown})`);
 
+    // A row with the focus, with nothing selected and no pointer on it, shows its checkbox in the icon's place, never both, and
+    // its name stays put (the owner, 2026-11-03: "bug. also it jumps when selecting"; the icon stayed beside the box).
+    await clearHover(page);
+    const coldBeta = await rowState(page, beta);
+    await page.evaluate(`document.querySelector(${q(rowSel(beta))}).focus(), true`);
+    const focused = await rowState(page, beta);
+    check(focused && focused.selected !== 'true' && focused.checkShown === true && focused.iconShown === false, `a focused row shows its checkbox in the icon's place, not both (check ${focused?.checkShown}, icon ${focused?.iconShown}, selected ${focused?.selected})`);
+    check(focused && coldBeta && focused.nameX === coldBeta.nameX, `the focused row's name does not move (${coldBeta?.nameX} to ${focused?.nameX})`);
+    await page.evaluate(`document.activeElement?.blur(), true`);
+
     // A hovered row shows the four icons, each named, and a tooltip with its name.
     await moveTo(page, beta);
     const hot = await rowState(page, beta);

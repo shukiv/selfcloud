@@ -1217,7 +1217,9 @@ tr[data-drop-state="refused"] > td {
   display: inline-flex;
 }
 
+/* The icon gives way wherever the box shows: a focused row too, or the two are drawn together (the owner, 2026-11-03). */
 .files-list tr[aria-selected="true"] .row-icon,
+.files-list tr:focus-within .row-icon,
 .files-list[data-has-selection="true"] .row-icon {
   display: none;
 }
