@@ -31,7 +31,7 @@ function mailBody(m) {
 // button carries a visually hidden suffix (the name it acts on), so the label is matched as a prefix.
 async function clickInRow(page, text, label, timeout = 10000) {
   await page.waitFor(
-    `(() => { const row = [...document.querySelectorAll('li, tr, [role="row"]')].find((r) => r.textContent.includes(${q(text)}) && [...r.querySelectorAll('button')].some((b) => b.textContent.trim().startsWith(${q(label)}))); if (!row) return false; [...row.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(${q(label)})).click(); return true; })()`,
+    `(() => { const row = [...document.querySelectorAll('li, tr, [role="row"]')].find((r) => r.textContent.includes(${q(text)}) && [...r.querySelectorAll('button')].some((b) => (b.getAttribute('aria-label') || b.textContent.trim()).startsWith(${q(label)}))); if (!row) return false; [...row.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') || b.textContent.trim()).startsWith(${q(label)})).click(); return true; })()`,
     timeout,
   );
 }

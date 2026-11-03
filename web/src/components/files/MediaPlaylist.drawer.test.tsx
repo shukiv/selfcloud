@@ -133,7 +133,7 @@ describe("MediaPlaylist drawer (decision 63)", () => {
     fireEvent.click(toggle());
     await waitFor(() => expect(document.activeElement).toBe(close()));
     // The row's menu is an antd Dropdown: its menu is drawn outside the drawer, and its focus is in the menu.
-    const more = screen.getAllByRole("button", { name: /Actions for/ })[0];
+    const more = screen.getAllByRole("button", { name: /More actions for/ })[0];
     fireEvent.click(more);
     const menu = await waitFor(() => {
       const m = document.querySelector('[role="menu"]');

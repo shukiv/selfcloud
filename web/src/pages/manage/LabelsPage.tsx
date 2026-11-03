@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { Pencil, Trash2 } from "lucide-react";
+import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
 import { Alert, Button, Tag } from "antd";
@@ -122,20 +124,11 @@ function LabelsView() {
                 </p>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <Button size="small" onClick={() => setEditing(f)}>
-                  {t("labels.edit")}
-                  <span className="sr-only">: {f.name}</span>
-                </Button>
-                <Button
-                  size="small"
-                  danger
+                <IconButton label={`${t("labels.edit")}: ${f.name}`} tip={t("labels.edit")} onClick={() => setEditing(f)} icon={<Pencil size={18} aria-hidden="true" focusable="false" />} />
+                <IconButton label={`${t("labels.delete")}: ${f.name}`} tip={t("labels.delete")} danger
                   onClick={() => {
                     void askDelete(f);
-                  }}
-                >
-                  {t("labels.delete")}
-                  <span className="sr-only">: {f.name}</span>
-                </Button>
+                  }} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
               </div>
             </li>
           ))}

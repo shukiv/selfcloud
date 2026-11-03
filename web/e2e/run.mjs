@@ -42,6 +42,7 @@ import { d2Checks } from './d2.mjs';
 import { i1Checks } from './i1.mjs';
 import { d3Checks } from './d3.mjs';
 import { l1Checks } from './l1.mjs';
+import { ic2Checks } from './ic2.mjs';
 import { pickMenuEntry } from './menu.mjs';
 
 const execFileP = promisify(execFile);
@@ -425,7 +426,7 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   await rowGone(page, 'hello.txt');
   await clickMenu(page, 'Trash');
   await page.waitFor(`location.pathname === '/trash' && [...document.querySelectorAll('.trash-item .name')].some((n) => n.textContent.includes('hello.txt'))`);
-  await page.evaluate(`(() => { const item = [...document.querySelectorAll('.trash-item')].find((li) => li.textContent.includes('hello.txt')); [...item.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Restore').click(); return true; })()`);
+  await page.evaluate(`(() => { const item = [...document.querySelectorAll('.trash-item')].find((li) => li.textContent.includes('hello.txt')); [...item.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Restore' || b.getAttribute('aria-label') === 'Restore').click(); return true; })()`);
   await page.waitFor(`document.querySelector('.ant-alert-success') && document.querySelector('.ant-alert-success').textContent.includes('hello.txt')`);
   check(true, 'the trash restores a deleted file');
   await page.evaluate(`history.back(), true`);
@@ -623,6 +624,7 @@ async function main() {
   let browser = null;
   // l1Browser is the list's own browser, while its checks run (see the l1 call).
   let l1Browser = null;
+  let ic2Browser = null;
   let page = null;
   let passed = false;
   try {
@@ -802,6 +804,23 @@ async function main() {
         l1Browser = null;
       }
     }
+    // Slice ic2 runs in its own browser with a mouse too (the tooltips open on hover), signed in as the owner for the trash.
+    if (!only || onlySet.has('ic2')) {
+      const ic2Launch = await launchBrowser(await findBrowser(), join(dir, 'ic2-profile'), { mouse: true });
+      ic2Browser = ic2Launch.proc;
+      const ic2Page = new Page(ic2Launch.wsUrl);
+      ic2Page.base = base;
+      try {
+        await ic2Page.start(EXPECTED);
+        await ic2Page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+        await ic2Checks(h, { page: ic2Page, base, accountKey, teamA, dir, signIn: (p, who) => signIn(p, who), OWNER });
+        check(ic2Page.errors.length === 0, `the icon browser has no console errors or policy violations (${ic2Page.errors.join(' | ') || 'none'})`);
+      } finally {
+        ic2Page.close();
+        ic2Browser.kill();
+        ic2Browser = null;
+      }
+    }
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
@@ -863,6 +882,7 @@ async function main() {
     page?.close();
     browser?.kill();
     l1Browser?.kill();
+    ic2Browser?.kill();
     server.kill();
     await fake.close();
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {

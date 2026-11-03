@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Alert, Button, Dropdown, Input } from "antd";
+import { MoreVertical } from "lucide-react";
+import IconButton from "../../components/IconButton";
 import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -244,9 +246,7 @@ function TenantsView() {
                   </time>
                 </div>
                 <Dropdown menu={menuFor(a)} trigger={["click"]}>
-                  <Button size="small" aria-haspopup="menu" aria-label={t("tenants.actionsFor", { name: a.name })}>
-                    …
-                  </Button>
+                  <IconButton aria-haspopup="menu" label={t("tenants.actionsFor", { name: a.name })} tip={t("files.selection.more")} icon={<MoreVertical size={18} aria-hidden="true" focusable="false" />} />
                 </Dropdown>
               </li>
             );

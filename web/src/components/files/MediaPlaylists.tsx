@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, App, Button, Input, Modal, Popconfirm } from "antd";
+import IconButton from "../IconButton";
 import { ArrowDown, ArrowUp, ListMusic, ListOrdered, Pencil, Play, Save, Trash2, X } from "lucide-react";
 import { useT } from "../../lib/i18n";
 import { kindOf } from "../../lib/files/kind";
@@ -100,10 +101,7 @@ export default function MediaPlaylists({ queue, onOpen }: Props) {
           <ListMusic size={16} aria-hidden="true" /> {t("files.playlists.title")}
         </h3>
         <div className="media-queue-actions">
-          <Button size="small" icon={<Save size={14} aria-hidden="true" />} disabled={queueNodes.length === 0} className="pl-touch"
-            onClick={() => setSaveOpen(true)}>
-            {t("files.playlists.saveQueue")}
-          </Button>
+          <IconButton label={t("files.playlists.saveQueue")} disabled={queueNodes.length === 0} className="pl-touch" onClick={() => setSaveOpen(true)} icon={<Save size={18} aria-hidden="true" focusable="false" />} />
         </div>
       </header>
 

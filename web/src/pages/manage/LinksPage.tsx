@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { Trash2 } from "lucide-react";
+import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
 import { Alert, Button, Select } from "antd";
@@ -197,14 +199,7 @@ function LinksView() {
                 </p>
               </div>
               <div style={{ flex: "none" }}>
-                <Button
-                  onClick={() => {
-                    setDeleteError(null);
-                    setDeleting(l);
-                  }}
-                >
-                  {t("links.delete.action")}
-                </Button>
+                <IconButton label={t("links.delete.action")} danger onClick={() => { setDeleteError(null); setDeleting(l); }} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
               </div>
             </li>
           ))}

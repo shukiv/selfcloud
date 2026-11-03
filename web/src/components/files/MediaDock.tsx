@@ -274,6 +274,7 @@ export default function MediaDock() {
         <MiniPlayer
           name={node?.name ?? ""}
           nod={node?.id ?? ""}
+          node={node ?? undefined}
           audio={audio}
           media={snap.media}
           nav={snap.nav}
@@ -290,6 +291,7 @@ export default function MediaDock() {
 function MiniPlayer({
   name,
   nod,
+  node,
   audio,
   media,
   nav,
@@ -298,6 +300,7 @@ function MiniPlayer({
 }: {
   name: string;
   nod: string;
+  node?: Pick<Node, "kind" | "mime_type" | "name">;
   audio: boolean;
   media: HTMLMediaElement | null;
   nav: PlaybackNav | null;
@@ -335,7 +338,7 @@ function MiniPlayer({
   const shown = drag ?? time;
   return (
     <div className="media-mini" role="region" aria-label={t("files.mini.label")} dir="ltr" data-testid="media-mini" style={{ background: SIDEBAR.bg, color: SIDEBAR.text }}>
-      {audio && <TagCover nod={nod} kind="audio" size={40} enabled />}
+      {audio && <TagCover nod={nod} kind="audio" size={40} enabled node={node ?? undefined} />}
       <p className="media-mini-name" title={name}>
         <bdi dir="auto">{displayTitle(name, tags)}</bdi>
         {artist !== undefined && (

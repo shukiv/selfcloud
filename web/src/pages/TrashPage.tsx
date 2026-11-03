@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Modal, Select, Skeleton, theme as antdTheme } from "antd";
+import { ArchiveRestore, Trash2 } from "lucide-react";
+import IconButton from "../components/IconButton";
 import { useLang, useT, translatePlural } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { session } from "../lib/session";
@@ -203,7 +205,7 @@ export default function TrashPage() {
               className="trash-item"
               style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: 12, border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 4 }}
             >
-              <Icon kind={kindOf(it)} size={28} />
+              <Icon kind={kindOf(it)} size={28} node={it} />
               <div style={{ flex: "1 1 200px", minWidth: 0 }}>
                 <p className="name" style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>
                   <bdi>{it.name}</bdi>
@@ -217,11 +219,9 @@ export default function TrashPage() {
                 <p style={{ margin: 0, fontSize: 14, opacity: 0.75 }}>{days(it)}</p>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {it.role && atLeast(it.role, "editor") && <Button onClick={() => void restore(it)}>{t("trash.restore")}</Button>}
+                {it.role && atLeast(it.role, "editor") && <IconButton label={t("trash.restore")} onClick={() => void restore(it)} icon={<ArchiveRestore size={18} aria-hidden="true" focusable="false" />} />}
                 {it.role === "manager" && (
-                  <Button danger onClick={() => setConfirm({ kind: "purge", item: it })}>
-                    {t("trash.purgeNow")}
-                  </Button>
+                  <IconButton label={t("trash.purgeNow")} danger onClick={() => setConfirm({ kind: "purge", item: it })} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
                 )}
               </div>
             </li>

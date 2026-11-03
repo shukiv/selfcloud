@@ -232,10 +232,10 @@ a {
   background: var(--sc-side-hover, rgba(255, 255, 255, 0.1));
 }
 
-/* The current place in the sidebar (decision 69, option B): a 3 px bar at the row's start edge, in the sidebar's mark colour. One
+/* A deeper current folder in the sidebar (decision 69, option B; decision 72): a 3 px bar at the row's start edge, in the sidebar's mark colour. One
    rule for the folder tree's current row and the menu's selected item, so the two look alike; the colour and the text are set by
    currentMark (theme/currentMark.ts). The menu's inline indicator (antd's ::after) is not drawn: the bar replaces it. */
-.shell-sider-body :is(.side-current, .ant-menu-item-selected)::before {
+.shell-sider-body .side-current::before {
   content: "";
   position: absolute;
   inset-block: 7px;
@@ -249,14 +249,24 @@ a {
 }
 /* The selected menu item's text is the mark colour (the same variable the folder tree's current row uses), with no background. */
 .shell-sider-body .shell-menu.ant-menu .ant-menu-item.ant-menu-item-selected {
-  color: var(--sc-side-ink, #fecc00);
-  background: transparent;
+  color: var(--sc-side-on-active, #0d2142);
+  background: var(--sc-side-active, #fecc00);
   font-weight: 400;
 }
 /* On hover the current item has the same hover tint as every other row, and keeps its mark colour (decision 69, option B). */
 .shell-sider-body .shell-menu.ant-menu .ant-menu-item.ant-menu-item-selected:hover {
-  background: var(--sc-side-hover, rgba(255, 255, 255, 0.1));
-  color: var(--sc-side-ink, #fecc00);
+  background: var(--sc-side-active, #fecc00);
+  color: var(--sc-side-on-active, #0d2142);
+}
+/* A top-level place in the tree (a space, or a top folder) is filled the same way: its fill and text are set inline from the sidebar's
+   colours, so its hover keeps them (decision 72). */
+.shell-sider-body .side-current-full {
+  font-weight: 400;
+}
+/* antd colours the link inside a selected item too: the link and its icon take the on-active colour (decision 72). */
+.shell-sider-body .shell-menu.ant-menu .ant-menu-item.ant-menu-item-selected > a,
+.shell-sider-body .shell-menu.ant-menu .ant-menu-item.ant-menu-item-selected > a:hover {
+  color: var(--sc-side-on-active, #0d2142);
 }
 
 /* The sidebar's rows share one icon column and one name column, and one font size (decision 66): an icon sits --sc-icon-col in
@@ -497,7 +507,9 @@ a {
   min-height: 0;
   position: relative;
   overflow: hidden;
+  /* The clip keeps a margin as big as the drawer's shadow blur, so the shadow is not cut at the playlist's edges (decision 72). */
   overflow: clip;
+  overflow-clip-margin: 24px;
 }
 .media-main {
   display: flex;
@@ -994,12 +1006,14 @@ a {
   transition: transform 200ms ease;
 }
 .media-drawer--closed {
-  transform: translateX(100%);
+  /* Off past the playlist clip margin (24 px, decision 72), so the margin shows none of it. Never hidden: that takes the focus
+     away on opening (MediaPlaylist.tsx). */
+  transform: translateX(calc(100% + 24px));
   /* The drawer's shadow would show on the screen's edge while the drawer is off it. */
   box-shadow: none;
 }
 :root[dir="rtl"] .media-drawer--closed {
-  transform: translateX(-100%);
+  transform: translateX(calc(-100% - 24px));
 }
 .media-drawer-head {
   display: flex;
@@ -1150,15 +1164,14 @@ tr[data-drop-state="refused"] > td {
   content: attr(data-hint);
 }
 
-/* A list row's bands (decision 70). antd paints a row's cells, so the bands are on the cells: a selected row is an accent band with
-   an accent edge, and it keeps the band under the pointer. The colours come from the list's own variables (set by Listing from the
+/* A list row's bands (decision 70, the selected row's edge lines taken away in decision 72). antd paints a row's cells, so the bands
+   are on the cells: a selected row is a light accent band, with no edge line, and it keeps the band under the pointer. The colours come from the list's own variables (set by Listing from the
    theme tokens). antd paints a hovered row's cells with its own class (.ant-table-cell-row-hover), and a selected row's hovered cells
    with a second one: both are matched here, with the row's selection read from aria-selected, so the list's bands win (review fix 3). */
 .files-list .ant-table-tbody > tr[aria-selected="true"] > td,
 .files-list .ant-table-tbody > tr[aria-selected="true"]:hover > td,
 .files-list .ant-table-tbody > tr[aria-selected="true"] > td.ant-table-cell-row-hover {
   background: var(--sc-row-selected);
-  box-shadow: inset 0 1px 0 var(--sc-accent), inset 0 -1px 0 var(--sc-accent);
 }
 
 /* Hover is a mouse's (review fix 10): a finger's tap leaves no grey band and shows no icons or checkboxes. */
@@ -1417,6 +1430,10 @@ tr[data-drop-state="refused"] > td {
    deliver them to a disabled control. */
 .icon-btn-wrap > .icon-btn:disabled {
   pointer-events: none;
+}
+/* The wrapper takes the pointer for a disabled button, so it shows the cursor the button would have (ic2, decision 71). */
+.icon-btn-wrap:has(> .icon-btn:disabled) {
+  cursor: not-allowed;
 }
 @media (pointer: coarse) {
   .icon-btn.ant-btn.ant-btn {

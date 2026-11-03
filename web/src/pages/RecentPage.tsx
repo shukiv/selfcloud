@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Modal, Skeleton } from "antd";
+import { Eraser, X } from "lucide-react";
+import IconButton from "../components/IconButton";
 import { useLang, useT } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { brand } from "../lib/brand";
@@ -123,7 +125,7 @@ export default function RecentPage() {
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 12px", marginBlockEnd: 16 }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{t("nav.recent")}</h1>
-        {items.length > 0 && <Button onClick={() => setAskClear(true)}>{t("recent.clear")}</Button>}
+        {items.length > 0 && <IconButton label={t("recent.clear")} onClick={() => setAskClear(true)} icon={<Eraser size={18} aria-hidden="true" focusable="false" />} />}
       </div>
 
       {error !== null && <Alert type="error" showIcon role="alert" message={error} style={{ marginBlockEnd: 12 }} />}
@@ -146,13 +148,7 @@ export default function RecentPage() {
                 node={n}
                 meta={t(activityKey(act), { date: formatDate(act.at, lang) })}
                 action={
-                  <Button
-                    disabled={busy.includes(n.id)}
-                    aria-label={t("recent.removeName", { name: n.name })}
-                    onClick={() => void remove(n)}
-                  >
-                    {t("recent.remove")}
-                  </Button>
+                  <IconButton disabled={busy.includes(n.id)} label={t("recent.removeName", { name: n.name })} tip={t("recent.remove")} onClick={() => void remove(n)} icon={<X size={18} aria-hidden="true" focusable="false" />} />
                 }
               />
             );

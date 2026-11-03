@@ -4,7 +4,8 @@
 // set. A chip's close button removes that filter alone. The controls only write the state; the page writes the address.
 import { useState } from "react";
 import { Button, Input, Select, theme as antdTheme } from "antd";
-import { X } from "lucide-react";
+import { Eraser, X } from "lucide-react";
+import IconButton from "../IconButton";
 import type { LabelField } from "../../lib/labels/api";
 import { useT, type Params } from "../../lib/i18n";
 import {
@@ -104,20 +105,10 @@ export default function SearchFilters({ state, change, fields, fieldsOff, coarse
               <span style={{ overflowWrap: "anywhere" }}>
                 <bdi>{c.text}</bdi>
               </span>
-              <Button
-                type="text"
-                size="small"
-                aria-label={t("search.chip.remove", { name: c.text })}
-                title={t("search.chip.remove", { name: c.text })}
-                onClick={() => change(c.remove(state))}
-                icon={<X size={14} aria-hidden="true" />}
-                style={{ minWidth: coarse ? 44 : 24, minHeight: coarse ? 44 : 24, flex: "none" }}
-              />
+              <IconButton label={t("search.chip.remove", { name: c.text })} onClick={() => change(c.remove(state))} icon={<X size={16} aria-hidden="true" focusable="false" />} />
             </span>
           ))}
-          <Button type="link" onClick={() => change({ ...state, kind: "", exts: [], modified: "", size: "", labels: [] })} style={touch(coarse)}>
-            {t("search.clear")}
-          </Button>
+          <IconButton label={t("search.clear")} onClick={() => change({ ...state, kind: "", exts: [], modified: "", size: "", labels: [] })} icon={<Eraser size={18} aria-hidden="true" focusable="false" />} />
         </div>
       )}
     </div>

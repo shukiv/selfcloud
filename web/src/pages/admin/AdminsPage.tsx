@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { UserMinus } from "lucide-react";
+import IconButton from "../../components/IconButton";
 
 import { Alert, Button, Input, Modal, Radio } from "antd";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
@@ -164,20 +166,13 @@ function AdminsView() {
                   <StatusTag tone={statusTone(a.status)}>{t(`people.status.${a.status}`)}</StatusTag>
                 </div>
                 <div>
-                  <Button
-                    size="small"
-                    danger
+                  <IconButton label={`${t("admins.remove")}: ${personLabel(a)}`} tip={last ? t("admins.lastHint") : t("admins.remove")} danger
                     disabled={last}
                     aria-describedby={last ? `last-admin-${a.id}` : undefined}
-                    title={last ? t("admins.lastHint") : undefined}
                     onClick={() => {
                       setRemoveError(null);
                       setRemoving(a);
-                    }}
-                  >
-                    {t("admins.remove")}
-                    <span className="sr-only">: {personLabel(a)}</span>
-                  </Button>
+                    }} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
                 </div>
               </li>
             );

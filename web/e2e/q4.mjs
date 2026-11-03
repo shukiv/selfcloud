@@ -159,7 +159,7 @@ function contrastReport(linkSel, clearText, markSel) {
     return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100;
   };
   const link = document.querySelector(linkSel);
-  const clear = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === clearText);
+  const clear = [...document.querySelectorAll('button')].find((b) => (b.textContent.trim() === clearText || b.getAttribute('aria-label') === clearText));
   const mark = markSel ? document.querySelector(markSel) : null;
   return {
     link: link ? ratio(link) : null,

@@ -5,6 +5,7 @@ import { theme as antdTheme } from "antd";
 import { describe, expect, it, beforeEach } from "vitest";
 import { ThemeProvider, antdTokens, useTheme } from "./theme";
 import { DARK, LIGHT, SIDEBAR, RADIUS } from "./tokens";
+import { contrast } from "../lib/brand";
 
 function Probe() {
   const { mode, pref, toggle, setPref } = useTheme();
@@ -33,9 +34,13 @@ describe("antdTokens", () => {
   it("paints the sidebar menu from the sidebar colours", () => {
     const menu = antdTokens("light", LIGHT, { ...SIDEBAR, bg: "#123456" }).components!.Menu!;
     expect(menu.darkItemBg).toBe("#123456");
-    // The current place has no background (decision 69, option B); its text is the mark colour.
-    expect(menu.darkItemSelectedBg).toBe("transparent");
-    expect(menu.darkItemSelectedColor).toBe(SIDEBAR.active);
+    // The current top-level place is filled with the active colour, and its text is the on-active colour (decision 72).
+    expect(menu.darkItemSelectedBg).toBe(SIDEBAR.active);
+    expect(menu.darkItemSelectedColor).toBe(SIDEBAR.onActive);
+  });
+
+  it("reads the on-active text on the active fill at 4.5:1 or more (decision 72)", () => {
+    expect(contrast(SIDEBAR.onActive, SIDEBAR.active)).toBeGreaterThanOrEqual(4.5);
   });
 });
 

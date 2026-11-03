@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Alert, Button, Dropdown, Tag, type MenuProps } from "antd";
+import { MoreVertical } from "lucide-react";
+import IconButton from "../../components/IconButton";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
 import { listPeople, resendVerification, sendPasswordReset, updatePerson } from "../../lib/manage/api";
@@ -161,9 +163,7 @@ function PeopleView() {
                   <span className="sr-only">: {personLabel(p)}</span>
                 </Button>
                 <Dropdown menu={{ items: menuFor(p) }} trigger={["click"]} disabled={busyRow === p.id}>
-                  <Button size="small" aria-haspopup="menu" aria-label={t("people.actionsFor", { name: personLabel(p) })} disabled={busyRow === p.id}>
-                    …
-                  </Button>
+                  <IconButton aria-haspopup="menu" label={t("people.actionsFor", { name: personLabel(p) })} tip={t("files.selection.more")} disabled={busyRow === p.id} icon={<MoreVertical size={18} aria-hidden="true" focusable="false" />} />
                 </Dropdown>
               </div>
             </li>

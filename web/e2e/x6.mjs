@@ -56,7 +56,7 @@ async function until(page, expr, ms = 15000, what = expr) {
   const deadline = Date.now() + ms;
   for (;;) {
     if (await page.evaluate(`!!(${expr})`).catch(() => false)) return;
-    if (Date.now() > deadline) throw new Error(`timed out (${ms} ms) waiting for: ${what}`);
+    if (Date.now() > deadline) { const st = await page.evaluate(`JSON.stringify({ path: location.pathname, title: document.title, nav: performance.getEntriesByType("navigation")[0]?.type, alerts: [...document.querySelectorAll("[role=alert]")].map((a) => a.innerText), text: document.body.innerText.slice(0, 400) })`).catch((e) => "state-unavailable " + e); throw new Error(`timed out (${ms} ms) waiting for: ${what} | DIAG ${st}`); }
     await sleep(100);
   }
 }

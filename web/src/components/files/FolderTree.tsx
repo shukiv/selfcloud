@@ -89,7 +89,10 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
   // The current place (decision 69, option B) has no background: a bar at the row's start edge, and its text and icon in the
   // mark colour, the same as the menu's selected item (theme/currentMark.ts). The others keep the sidebar's text.
   const mark = side ? currentMark(side) : null;
-  const textColour = side ? (current && mark ? mark.ink : side.text) : undefined;
+  // A top-level place (a space or a top folder, level 1) is filled with the sidebar's active colour and its on-active text, with no
+  // bar (decision 72). A deeper place keeps the bar.
+  const filled = side !== undefined && level === 1 && current;
+  const textColour = side ? (filled ? side.onActive : current && mark ? mark.ink : side.text) : undefined;
   return (
     <li
       role="treeitem"
@@ -111,7 +114,7 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
       style={{ listStyle: "none", outline: "none" }}
     >
       <div
-        className={side ? (current ? "tree-row tree-row-side side-current" : "tree-row tree-row-side") : "tree-row"}
+        className={side ? (filled ? "tree-row tree-row-side side-current-full" : current ? "tree-row tree-row-side side-current" : "tree-row tree-row-side") : "tree-row"}
         data-drop-folder={space}
         data-drop-dir={id ?? ""}
         data-drop-role={role ?? ""}
@@ -125,7 +128,7 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
           paddingInlineStart: (level - 1) * 14 + 2,
           borderRadius: token.borderRadiusSM,
           color: textColour,
-          background: current && !side ? token.colorPrimaryBg : undefined,
+          background: filled ? side?.active : current && !side ? token.colorPrimaryBg : undefined,
         }}
       >
         {hasKids ? (

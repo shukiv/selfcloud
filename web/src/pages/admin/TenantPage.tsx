@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { Pencil, Play, Ban } from "lucide-react";
+import IconButton from "../../components/IconButton";
 
 import { Alert, Button, Input } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -170,16 +172,7 @@ function TenantView({ id }: { id: string }) {
             <h1 style={{ ...pageTitle, margin: 0, overflowWrap: "anywhere" }}>
               <bdi>{tenant.name}</bdi>
             </h1>
-            <Button
-              size="small"
-              onClick={() => {
-                setNewName(tenant.name);
-                setRenameError(null);
-                setRenaming(true);
-              }}
-            >
-              {t("tenant.rename")}
-            </Button>
+            <IconButton label={t("tenant.rename")} onClick={() => { setNewName(tenant.name); setRenameError(null); setRenaming(true); }} icon={<Pencil size={18} aria-hidden="true" focusable="false" />} />
           </div>
         )}
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
@@ -193,15 +186,7 @@ function TenantView({ id }: { id: string }) {
           )}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <Button
-            disabled={stale}
-            onClick={() => {
-              setSuspendError(null);
-              setSuspending(true);
-            }}
-          >
-            {tenant.status === "suspended" ? t("tenant.resume") : t("tenant.suspend")}
-          </Button>
+          <IconButton disabled={stale} label={tenant.status === "suspended" ? t("tenant.resume") : t("tenant.suspend")} onClick={() => { setSuspendError(null); setSuspending(true); }} icon={tenant.status === "suspended" ? <Play size={18} aria-hidden="true" focusable="false" /> : <Ban size={18} aria-hidden="true" focusable="false" />} />
           <Button danger disabled={stale} onClick={() => setDeleting(true)}>
             {t("tenant.delete.open")}
           </Button>

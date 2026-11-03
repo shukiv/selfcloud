@@ -10,7 +10,7 @@ const CHOICES: Pref[] = ["system", "light", "dark"];
 const GLYPH = { system: Monitor, light: Sun, dark: Moon } as const;
 
 // ThemeMenu is the top bar's theme control (decision 68): one icon that shows the current choice, and a menu of the three
-// with their icons and words. The choice is saved in this browser, as the sign-in pages' switch does (ThemeToggle).
+// with their icons and words. The choice is saved in this browser, on the sign-in pages too (AuthLayout).
 export default function ThemeMenu() {
   const { t } = useT();
   const { pref, setPref } = useTheme();

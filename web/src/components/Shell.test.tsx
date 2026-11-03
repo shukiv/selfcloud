@@ -306,7 +306,8 @@ describe("Shell", () => {
         d.style.color = c;
         return d.style.color;
       };
-      expect(await ink("Team A")).toEqual({ button: "inherit", row: css(SIDEBAR.active) });
+      // The top-level current place is filled with the active colour, and its options button takes the on-active text (decision 72).
+      expect(await ink("Team A")).toEqual({ button: "inherit", row: css(SIDEBAR.onActive) });
       expect(await ink("Team B")).toEqual({ button: "inherit", row: css(SIDEBAR.text) });
     });
 

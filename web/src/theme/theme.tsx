@@ -8,7 +8,6 @@ import { useStore } from "../lib/store";
 import { brand, resolveBrand } from "../lib/brand";
 import { readNonce } from "../csp/nonce";
 import { LIGHT, RADIUS, SIDEBAR, type Palette, type Sidebar } from "./tokens";
-import { currentMark } from "./currentMark";
 import { antdVars } from "./antdVars";
 
 // The theme has three parts: the mode (light or dark, from the person's choice or the device), the
@@ -143,10 +142,10 @@ export function antdTokens(mode: Mode, p: Palette, sb: Sidebar): ThemeConfig {
         darkItemColor: sb.text,
         darkItemHoverBg: SIDEBAR.hover,
         darkItemHoverColor: sb.text,
-        // The current place has no background (decision 69, option B): its text takes the mark colour and its bar is in the sidebar's
-        // stylesheet (index.css), both from currentMark, the one definition the folder tree reads too.
-        darkItemSelectedBg: "transparent",
-        darkItemSelectedColor: currentMark(sb).ink,
+        // The current top-level place is filled with the sidebar's active colour and its on-active text (decision 72), as the tree's
+        // top-level row is (index.css, FolderTree). A deeper folder keeps the bar (currentMark).
+        darkItemSelectedBg: sb.active,
+        darkItemSelectedColor: sb.onActive,
         darkGroupTitleColor: sb.caption,
       },
     },

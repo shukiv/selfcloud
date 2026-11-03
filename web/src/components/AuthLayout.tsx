@@ -9,7 +9,7 @@ import { flash } from "../lib/session";
 import { RADIUS } from "../theme/tokens";
 import Alert from "./Alert";
 import LangSwitcher from "./LangSwitcher";
-import ThemeToggle from "./ThemeToggle";
+import ThemeMenu from "./ThemeMenu";
 
 // The page every signed-out screen shares. From md (768px) up it is split: a left half with the brand
 // and a three-line headline, and a right half with the form. Below md only the form shows, with the
@@ -65,8 +65,8 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             {children}
           </div>
           <div className="auth-controls">
-            <LangSwitcher />
-            <ThemeToggle />
+            <LangSwitcher compact />
+            <ThemeMenu />
           </div>
         </div>
       </main>

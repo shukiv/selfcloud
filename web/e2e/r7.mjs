@@ -19,7 +19,7 @@ async function centre(page, expr) {
 
 // pressButton presses the button with the given text inside the scope selector, as a person does.
 async function pressButton(page, text, scope = details) {
-  const at = await centre(page, `[...document.querySelectorAll(${q(`${scope} button`)})].find((b) => b.textContent.trim() === ${q(text)} && !b.disabled)`);
+  const at = await centre(page, `[...document.querySelectorAll(${q(`${scope} button`)})].find((b) => (b.textContent.trim() === ${q(text)} || b.getAttribute('aria-label') === ${q(text)}) && !b.disabled)`);
   if (!at) throw new Error(`no button "${text}" in ${scope}`);
   await click(page, at);
   await sleep(250);
@@ -171,7 +171,7 @@ async function r7Body(h, { page, base, accountKey, accountID, memberID }) {
 
   await step('the owner resolves the thread, and the button then offers Reopen', async () => {
     await pressButton(page, 'Resolve');
-    const resolved = `[...document.querySelectorAll(${q(`${details} [data-testid="comment"]`)})].some((a) => a.textContent.includes('Resolved') && [...a.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Reopen'))`;
+    const resolved = `[...document.querySelectorAll(${q(`${details} [data-testid="comment"]`)})].some((a) => a.textContent.includes('Resolved') && [...a.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Reopen' || b.getAttribute('aria-label') === 'Reopen'))`;
     await page.waitFor(resolved, 15000);
     check(await page.evaluate(resolved), 'the thread is shown as resolved, and its button offers Reopen');
   });
@@ -211,7 +211,7 @@ async function r7Body(h, { page, base, accountKey, accountID, memberID }) {
     const edited = await page.evaluate(`[...document.querySelectorAll(${q(`${details} [data-testid="comment-reply"]`)})].some((a) => a.textContent.includes('Edited'))`);
     check(edited, 'the edited reply shows Edited');
     const ownerEditable = await page.evaluate(
-      `[...document.querySelectorAll(${q(`${details} [data-testid="comment"]`)})].filter((a) => a.textContent.includes('Please review the plan')).some((a) => [...a.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Edit' && b.closest('article') === a))`,
+      `[...document.querySelectorAll(${q(`${details} [data-testid="comment"]`)})].filter((a) => a.textContent.includes('Please review the plan')).some((a) => [...a.querySelectorAll('button')].some((b) => (b.textContent.trim() === 'Edit' || b.getAttribute('aria-label') === 'Edit') && b.closest('article') === a))`,
     );
     check(!ownerEditable, 'the owner comment offers no Edit to the member');
   });

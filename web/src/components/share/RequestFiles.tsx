@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Input, Switch } from "antd";
+import { Copy } from "lucide-react";
+import IconButton from "../IconButton";
 import { useLang, useT, translate, translatePlural, type Lang } from "../../lib/i18n";
 import { ApiError } from "../../lib/apiError";
 import { useStore } from "../../lib/store";
@@ -340,9 +342,7 @@ export default function RequestFiles({ node, cap, onchanged }: RequestFilesProps
               <p className="hint" style={{ margin: 0, fontSize: 13 }}>{t("share.general.copyNow")}</p>
               <div style={{ display: "flex", gap: 8 }}>
                 <Input readOnly value={madeURL} aria-label={t("share.general.urlLabel")} onFocus={(e) => e.currentTarget.select()} />
-                <Button type="primary" onClick={() => void copy()}>
-                  {t("share.general.copy")}
-                </Button>
+                <IconButton label={t("share.general.copy")} onClick={() => void copy()} icon={<Copy size={18} aria-hidden="true" focusable="false" />} />
               </div>
             </div>
           )}

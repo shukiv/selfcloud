@@ -2,7 +2,7 @@
 
 // Slice l1: the list is a Drive list (decision 70). A member's browser, at 1280 wide in English and light, is checked for: each
 // row has a More button, and the four icons (Share, Download, Rename, Star) show on a hovered or a selected row only; a selected
-// row is an accent band with an accent edge, a hovered row a grey band; a row's checkbox takes its icon's place on hover and on
+// row is an accent band with no edge line (decision 72), a hovered row a grey band; a row's checkbox takes its icon's place on hover and on
 // every row while anything is selected; the More menu is grouped (the first group, then Share, Organize and Information as
 // submenus with their shortcuts at the right, then Move to trash), and Rename and Move to trash work from it. On a finger the
 // icons are gone and the checkboxes stay. In Hebrew the More button is at the start of the row, and in dark the bands hold.
@@ -268,13 +268,13 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
     const page0 = await pageBackground(page);
     check(hot && hot.bg !== null && hot.bg !== page0 && hot.bg !== 'rgba(0, 0, 0, 0)', `a hovered row is a grey band (${hot?.bg}, page ${page0})`);
 
-    // Selecting: the row is an accent band with an accent edge; the checkboxes of every row show.
+    // Selecting: the row is an accent band with no edge line (decision 72); the checkboxes of every row show.
     await selectRow(page, alpha);
     await clearHover(page);
     const sel = await rowState(page, alpha);
     check(sel && sel.selected === 'true', `the clicked row is selected (${sel?.selected})`);
     check(sel && sel.bg !== null && sel.bg !== page0 && sel.bg !== hot?.bg, `a selected row is an accent band (${sel?.bg})`);
-    check(sel && /rgb\(22, 119, 255\)|rgb\(0, 102, 255\)|rgb\(\d+, \d+, \d+\)/.test(sel.shadow ?? '') && (sel.shadow ?? '').includes('inset'), `a selected row has an accent edge (${sel?.shadow})`);
+    check(sel && (sel.shadow === 'none' || sel.shadow === ''), `a selected row has no edge line (${sel?.shadow})`);
     const other = await rowState(page, beta);
     check(other && other.checkShown === true && other.iconShown === false, `while something is selected every row shows its checkbox (${other?.checkShown})`);
     const head = await page.evaluate(`(() => { const c = document.querySelector('.files-list .head-check'); return c ? getComputedStyle(c).display !== 'none' : null; })()`);

@@ -83,7 +83,7 @@ export default function SharedPage() {
                   borderRadius: 4,
                 }}
               >
-                <Icon kind={kindOf(n)} size={24} />
+                <Icon kind={kindOf(n)} size={24} node={n} />
                 <a href={`/n/${n.id}`} style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere", fontWeight: 600 }}>
                   <bdi>{n.name}</bdi>
                 </a>

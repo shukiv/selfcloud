@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Select, Skeleton, Space } from "antd";
+import { Alert, Select, Skeleton, Space } from "antd";
+import { Check, X } from "lucide-react";
+import IconButton from "../components/IconButton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../lib/i18n";
 import { useStore } from "../lib/store";
@@ -171,12 +173,8 @@ export default function RequestsPage() {
                       />
                     </>
                   )}
-                  <Button type="primary" disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: true })}>
-                    {t("requests.approve")}
-                  </Button>
-                  <Button disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: false })}>
-                    {t("requests.deny")}
-                  </Button>
+                  <IconButton label={t("requests.approve")} disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: true })} icon={<Check size={18} aria-hidden="true" focusable="false" />} />
+                  <IconButton label={t("requests.deny")} disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: false })} icon={<X size={18} aria-hidden="true" focusable="false" />} />
                 </Space>
               </li>
             );

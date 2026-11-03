@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Film, Music } from "lucide-react";
 import { thumbnailPath, watchThumbnail } from "../../lib/files/thumbnail";
 import { getTags, markCover, subscribeTags } from "../../lib/files/tags";
+import type { Node } from "../../lib/files/types";
+import Icon from "./Icon";
 
 // TagCover is the cover of an audio file, the picture its server thumbnail shows (decision 56). The box has its size from the
 // first render, with a plain icon under the picture, so nothing moves when the cover arrives. The image is decorative: the title
@@ -15,11 +17,14 @@ export default function TagCover({
   kind,
   size,
   enabled,
+  node,
 }: {
   nod: string;
   kind: "audio" | "video";
   size: number;
   enabled: boolean;
+  // node, when given, makes the placeholder the file's coloured type icon (decision 72), not the outline note.
+  node?: Pick<Node, "kind" | "mime_type" | "name">;
 }) {
   // shown is the cover and the node it belongs to. A cover is shown only for its own node, so when nod changes the previous
   // file's picture is not drawn beside the new title, not even for one frame before the effect runs.
@@ -49,7 +54,7 @@ export default function TagCover({
       loaded.current = null;
     };
   }, [nod, enabled]);
-  const Icon = kind === "video" ? Film : Music;
+  const Note = kind === "video" ? Film : Music;
   return (
     <div
       className="tag-cover"
@@ -71,7 +76,7 @@ export default function TagCover({
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       ) : (
-        <Icon size={Math.round(size / 2)} aria-hidden="true" />
+        node ? <Icon kind={kind} size={size} node={node} /> : <Note size={Math.round(size / 2)} aria-hidden="true" />
       )}
     </div>
   );

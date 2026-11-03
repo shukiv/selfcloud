@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Checkbox, Input, Modal, Select } from "antd";
+import { FolderOpen, UserMinus } from "lucide-react";
+import IconButton from "../IconButton";
 import { useLang, useT, translate, translatePlural, type Lang } from "../../lib/i18n";
 import { ApiError } from "../../lib/apiError";
 import { session, sessionChanged } from "../../lib/session";
@@ -405,15 +407,13 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
                               <Button onClick={() => setConfirmRemove(null)}>{t("common.cancel")}</Button>
                             </span>
                           ) : (
-                            <Button onClick={() => setConfirmRemove(p)} disabled={busy}>
-                              {t("share.remove")}
-                            </Button>
+                            <IconButton label={t("share.remove")} onClick={() => setConfirmRemove(p)} disabled={busy} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
                           )}
                         </>
                       ) : manager ? (
                         <>
                           <span className="badge">{t(`role.${p.role}`)}</span>
-                          {p.inherited_from && <Button onClick={() => openParent(p)}>{t("share.openParent")}</Button>}
+                          {p.inherited_from && <IconButton label={t("share.openParent")} onClick={() => openParent(p)} icon={<FolderOpen size={18} aria-hidden="true" focusable="false" />} />}
                         </>
                       ) : (
                         <span className="badge">{t(`role.${p.role}`)}</span>

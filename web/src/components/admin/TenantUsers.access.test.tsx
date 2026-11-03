@@ -54,6 +54,7 @@ describe("the reset and sign-in actions follow the installation's switches", () 
     expect(screen.getAllByRole("button", { name: /Reset password/ })).toHaveLength(2);
     const signIns = screen.getAllByRole("button", { name: /Sign in as/ });
     expect(signIns).toHaveLength(1);
-    expect(signIns[0].textContent).toContain("Sign in as");
+    expect(signIns[0].getAttribute("aria-label")).toContain("Sign in as");
+    expect(signIns[0].textContent).toBe("");
   });
 });

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Skeleton } from "antd";
+import { StarOff } from "lucide-react";
+import IconButton from "../components/IconButton";
 import { useLang, useT } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { brand } from "../lib/brand";
@@ -110,9 +112,7 @@ export default function StarredPage() {
               node={n}
               meta={t("starred.on", { date: formatDate(n.starred_at, lang) })}
               action={
-                <Button disabled={busy.includes(n.id)} onClick={() => void unstar(n)}>
-                  {t("starred.remove")}
-                </Button>
+                <IconButton label={t("starred.remove")} disabled={busy.includes(n.id)} onClick={() => void unstar(n)} icon={<StarOff size={18} aria-hidden="true" focusable="false" />} />
               }
             />
           ))}

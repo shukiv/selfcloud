@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Input, Radio, Select } from "antd";
+import { Copy, FolderOpen } from "lucide-react";
+import IconButton from "../IconButton";
 import { useLang, useT, translate, translatePlural, type Lang } from "../../lib/i18n";
 import { ApiError } from "../../lib/apiError";
 import { session } from "../../lib/session";
@@ -511,9 +513,7 @@ export default function GeneralAccess({ node, cap, onchanged, onopen }: GeneralA
                   aria-label={t("share.general.urlLabel")}
                   onFocus={(e) => e.currentTarget.select()}
                 />
-                <Button type="primary" onClick={() => void copy()}>
-                  {t("share.general.copy")}
-                </Button>
+                <IconButton label={t("share.general.copy")} onClick={() => void copy()} icon={<Copy size={18} aria-hidden="true" focusable="false" />} />
               </div>
             </div>
           )}
@@ -521,7 +521,7 @@ export default function GeneralAccess({ node, cap, onchanged, onopen }: GeneralA
           {above.map((l) => (
             <div key={l.id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
               <span>{t("share.general.inherited", { role: t(`role.${l.role}`) })}</span>
-              <Button onClick={() => openNode(l.node_id)}>{t("share.openParent")}</Button>
+              <IconButton label={t("share.openParent")} onClick={() => openNode(l.node_id)} icon={<FolderOpen size={18} aria-hidden="true" focusable="false" />} />
             </div>
           ))}
         </>

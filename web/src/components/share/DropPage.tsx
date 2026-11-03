@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Alert, Button, Input } from "antd";
+import { X } from "lucide-react";
+import IconButton from "../IconButton";
 import { useT } from "../../lib/i18n";
 import { ApiError } from "../../lib/apiError";
 import { visitorInfo } from "../../lib/sharing/api";
@@ -271,7 +273,7 @@ export default function DropPage(props: DropPageProps) {
                   <progress max={100} value={percent(it)} style={{ width: 120 }}>
                     {percent(it)}%
                   </progress>
-                  <Button onClick={() => void managerRef.current?.cancel(it.id)}>{t("drop.cancel")}</Button>
+                  <IconButton label={t("drop.cancel")} onClick={() => void managerRef.current?.cancel(it.id)} icon={<X size={18} aria-hidden="true" focusable="false" />} />
                 </>
               )}
             </li>

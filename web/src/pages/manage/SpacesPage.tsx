@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { Pencil, Settings, Share2, Trash2 } from "lucide-react";
+import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
 import { Alert, Button } from "antd";
@@ -171,22 +173,10 @@ function SpacesView() {
                   )}
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <Button size="small" onClick={() => void openShare(s)}>
-                    {t("spaces.share")}
-                    <span className="sr-only">: {s.name}</span>
-                  </Button>
-                  <Button size="small" onClick={() => setSettings(asAccess(s))}>
-                    {t("spaces.settings")}
-                    <span className="sr-only">: {s.name}</span>
-                  </Button>
-                  <Button size="small" onClick={() => setRenaming(s)}>
-                    {t("spaces.rename")}
-                    <span className="sr-only">: {s.name}</span>
-                  </Button>
-                  <Button size="small" danger onClick={() => void openDelete(s)}>
-                    {t("spaces.delete")}
-                    <span className="sr-only">: {s.name}</span>
-                  </Button>
+                  <IconButton label={`${t("spaces.share")}: ${s.name}`} tip={t("spaces.share")} onClick={() => void openShare(s)} icon={<Share2 size={18} aria-hidden="true" focusable="false" />} />
+                  <IconButton label={`${t("spaces.settings")}: ${s.name}`} tip={t("spaces.settings")} onClick={() => setSettings(asAccess(s))} icon={<Settings size={18} aria-hidden="true" focusable="false" />} />
+                  <IconButton label={`${t("spaces.rename")}: ${s.name}`} tip={t("spaces.rename")} onClick={() => setRenaming(s)} icon={<Pencil size={18} aria-hidden="true" focusable="false" />} />
+                  <IconButton label={`${t("spaces.delete")}: ${s.name}`} tip={t("spaces.delete")} danger onClick={() => void openDelete(s)} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
                 </div>
               </li>
             );

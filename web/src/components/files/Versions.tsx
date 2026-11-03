@@ -2,6 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Alert, Button, Checkbox, Drawer, Input, List, Space, Typography } from "antd";
+import { Download, RotateCcw, Trash2 } from "lucide-react";
+import IconButton from "../IconButton";
 import { ApiError } from "../../lib/apiError";
 import { contentPath, deleteVersion, listVersions, restoreVersion, statNode, updateVersion } from "../../lib/files/api";
 import { fileErrorText } from "../../lib/files/fileErrors";
@@ -134,18 +136,18 @@ export default function Versions({
               {!v.current && v.replaced_at && <span>{t("files.versions.replaced", { date: formatDate(v.replaced_at, lang) })}</span>}
             </Space>
             <Space wrap style={{ marginBlock: 8 }}>
-              {downloadAllowed(node) && <Button onClick={() => void download(v)}>{t("files.versions.download")}</Button>}
+              {downloadAllowed(node) && (
+                <IconButton label={t("files.versions.download")} onClick={() => void download(v)} icon={<Download size={18} aria-hidden="true" focusable="false" />} />
+              )}
               {!v.current && can.restoreVersion(node.role) && (
-                <Button onClick={() => void restore(v)}>{t("files.versions.restore")}</Button>
+                <IconButton label={t("files.versions.restore")} onClick={() => void restore(v)} icon={<RotateCcw size={18} aria-hidden="true" focusable="false" />} />
               )}
               {can.editVersion(node.role) && !v.current && (
                 <>
                   <Checkbox checked={v.keep_forever} onChange={(e) => void keep(v, e.target.checked)}>
                     {t("files.versions.keep")}
                   </Checkbox>
-                  <Button danger onClick={() => void remove(v)}>
-                    {t("files.versions.delete")}
-                  </Button>
+                  <IconButton label={t("files.versions.delete")} danger onClick={() => void remove(v)} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
                 </>
               )}
             </Space>

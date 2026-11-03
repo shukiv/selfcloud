@@ -17,6 +17,9 @@ const MARK = 'rgb(254, 204, 0)';
 const TEXT = 'rgb(255, 255, 255)';
 const HOVER = 'rgba(255, 255, 255, 0.1)';
 const CLEAR = 'rgba(0, 0, 0, 0)';
+// Decision 72: a top-level place is filled with the sidebar's active colour (the yellow), and its text is the on-active colour.
+const ONACTIVE = 'rgb(0, 0, 0)';
+const noBar = (s) => s !== null && (s.bar.width === '0px' || s.bar.content === 'none');
 
 // styleOf reads the computed style of the element a selector names, and of its ::before (the bar): the text colour, the background,
 // the font weight and size, and the bar's colour, width, offsets and box.
@@ -154,14 +157,14 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     await page.waitFor(`!!document.querySelector(${q(starred)}) && document.querySelector(${q(starred)}).classList.contains('ant-menu-item-selected')`, 10000);
     const menuSelected = await styleOf(page, starred);
     check(
-      menuSelected.background === CLEAR && menuSelected.color === INK && menuSelected.weight === '400' && barOk(menuSelected),
-      `the menu's selected item has no background, the mark colour, weight 400 and the 3 px bar (${show(menuSelected)})`,
+      menuSelected.background === MARK && menuSelected.color === ONACTIVE && menuSelected.weight === '400' && noBar(menuSelected),
+      `the menu's selected item is filled with the yellow, the on-active text, weight 400, and no bar (${show(menuSelected)})`,
     );
     const selectedHover = await hoverStyle(page, starred);
     await snap('d3-starred-current-hover-light.png');
     await unhover(page);
     check(
-      selectedHover.color === INK && selectedHover.background === HOVER && barOk(selectedHover),
+      selectedHover.color === ONACTIVE && selectedHover.background === MARK && noBar(selectedHover),
       `the selected item on hover: the same hover background as any row, the mark colour and the bar (${show(selectedHover)})`,
     );
     await snap('d3-starred-current-light.png');
@@ -173,7 +176,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     const current = '.shell-sider [data-testid="folder-tree"] [role="treeitem"][aria-current="location"] > .tree-row[data-row-name="My files"]';
     const rowCurrent = await styleOf(page, current);
     check(
-      rowCurrent.background === CLEAR && rowCurrent.color === INK && rowCurrent.weight === '400' && barOk(rowCurrent),
+      rowCurrent.background === MARK && rowCurrent.color === ONACTIVE && rowCurrent.weight === '400' && noBar(rowCurrent),
       `the current tree row has no background, the mark colour, weight 400 and the 3 px bar (${show(rowCurrent)})`,
     );
     check(
@@ -184,7 +187,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     const currentHover = await hoverStyle(page, current);
     await snap('d3-hover-current-row-light.png');
     check(
-      currentHover.color === INK && currentHover.background === HOVER && barOk(currentHover),
+      currentHover.color === ONACTIVE && currentHover.background === MARK && noBar(currentHover),
       `on hover the current row keeps its mark colour and bar, and takes the same hover background as any row (${show(currentHover)})`,
     );
     const otherHover = await hoverStyle(page, '.shell-sider [data-testid="folder-tree"] [role="treeitem"]:not([aria-current]) > .tree-row');
@@ -202,9 +205,10 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     const storage = '.shell-sider .shell-menu .ant-menu-item.shell-storage-item';
     const title = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage > span'); const s = getComputedStyle(t); return { colour: s.color }; })()`);
     const line = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage > span:last-child'); return t ? getComputedStyle(t).color : null; })()`);
+    await sleep(500); // the fill fades in over 0.3 s (the menu's transition)
     const storageStyle = await styleOf(page, storage);
-    check(title.colour === INK && barOk(storageStyle), `the Storage row on its page: title in the mark colour, with the 3 px bar (${title.colour}; ${show(storageStyle)})`);
-    check(plainLine !== null && line === plainLine, `the Storage figures keep the caption colour when the row is selected (${line} / ${plainLine})`);
+    check(title.colour === ONACTIVE && storageStyle.background === MARK && noBar(storageStyle), `the Storage row on its page: title in the mark colour, with the 3 px bar (${title.colour}; ${show(storageStyle)})`);
+    check(line === ONACTIVE, `the Storage figures take the on-active colour when the row is filled (${line})`);
     await snap('d3-storage-light.png');
 
     // Dark theme: the current item keeps the mark on the dark page (the sidebar is the brand's in both themes).
@@ -216,7 +220,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     const darkSider = await page.evaluate(`getComputedStyle(document.querySelector('.shell-sider')).backgroundColor`);
     const darkMark = expectedMark(darkSider);
     const darkSel = await styleOf(page, '.shell-sider .shell-menu .ant-menu-item-selected');
-    check(darkSel.background === CLEAR && darkSel.color === darkMark.ink && darkSel.weight === '400' && barOk(darkSel) && BAR === darkMark.bar, `in dark the current item has no background, the mark colour (${darkMark.ink} on ${darkSider}) and the 3 px bar (${show(darkSel)})`);
+    check(darkSel.background === MARK && darkSel.color === ONACTIVE && darkSel.weight === '400' && noBar(darkSel), `in dark the current item has no background, the mark colour (${darkMark.ink} on ${darkSider}) and the 3 px bar (${show(darkSel)})`);
     await snap('d3-dark-sidebar.png');
     await setTheme(page, 'Light');
     await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
@@ -230,7 +234,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     // On the files page the current place is the tree's row: its bar is on the right in Hebrew, as the menu's is.
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="folder-tree"] [aria-current="location"] > .tree-row')`, 10000);
     const hebrewSel = await styleOf(page, '.shell-sider [data-testid="folder-tree"] [aria-current="location"] > .tree-row');
-    check(hebrewSel.bar.right === '0px' && hebrewSel.bar.left !== '0px', `in Hebrew the bar is on the right edge (left ${hebrewSel.bar.left}, right ${hebrewSel.bar.right})`);
+    check(hebrewSel.background === MARK && noBar(hebrewSel), `in Hebrew the top-level place is filled, with no bar (${show(hebrewSel)})`);
     await snap('d3-hebrew.png');
     await setLanguage(page, 'English');
     await page.waitFor(`document.documentElement.dir === 'ltr'`, 10000);
@@ -243,7 +247,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     await sleep(500);
     const railSel = await styleOf(page, '.ant-layout-sider-collapsed .shell-menu .ant-menu-item-selected');
     const railIcon = await page.evaluate(`getComputedStyle(document.querySelector('.ant-layout-sider-collapsed .shell-menu .ant-menu-item-selected svg')).color`);
-    check(railSel.background === CLEAR && railSel.color === INK && barOk(railSel) && railIcon === INK, `in the folded rail the current item has no background, the mark colour on its text and its icon (${railIcon}), and the 3 px bar (${show(railSel)})`);
+    check(railSel.background === MARK && railSel.color === ONACTIVE && noBar(railSel) && railIcon === ONACTIVE, `in the folded rail the current item has no background, the mark colour on its text and its icon (${railIcon}), and the 3 px bar (${show(railSel)})`);
     await snap('d3-rail.png');
     await page.evaluate(`document.querySelector('[data-testid="rail-toggle"]').click(), true`);
     await page.waitFor(`!document.querySelector('.ant-layout-sider-collapsed')`, 10000);
@@ -255,7 +259,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     await page.waitFor(`!!document.querySelector('.ant-drawer-open .shell-menu .ant-menu-item-selected')`, 10000);
     await sleep(400);
     const drawerSel = await styleOf(page, '.ant-drawer-open .shell-menu .ant-menu-item-selected');
-    check(drawerSel.background === CLEAR && drawerSel.color === INK && barOk(drawerSel), `in the phone drawer the current item has no background, the mark colour and the 3 px bar (${show(drawerSel)})`);
+    check(drawerSel.background === MARK && drawerSel.color === ONACTIVE && noBar(drawerSel), `in the phone drawer the current item has no background, the mark colour and the 3 px bar (${show(drawerSel)})`);
     const drawerName = await page.evaluate(`(() => { const d = document.querySelector('.ant-drawer-open [role="dialog"]'); const id = d?.getAttribute('aria-labelledby'); return { id, name: (id && document.getElementById(id)?.textContent.trim()) || d?.getAttribute('aria-label') || '' }; })()`);
     check(drawerName.name.length > 0, `the phone drawer has an accessible name (${JSON.stringify(drawerName)})`);
     await snap('d3-phone-drawer.png');

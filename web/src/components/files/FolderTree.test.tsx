@@ -279,22 +279,23 @@ describe("the folder tree", () => {
 describe("the folder tree in the sidebar: the current row's mark", () => {
   const rowOf = (name: string) => screen.getByText(name).closest<HTMLElement>(".tree-row");
 
-  it("has no background, a bar class and the mark colour on the current row; the sidebar's text on the others", () => {
+  it("fills a top-level current place with the sidebar's active colour and its on-active text (decision 72); the sidebar's text on the others", () => {
     render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
     const current = rowOf("Team A");
-    expect(current?.style.background).toBe("");
-    expect(current?.style.color).toBe("rgb(254, 204, 0)");
-    expect(current?.classList.contains("side-current")).toBe(true);
+    expect(current?.style.background).toBe("rgb(254, 204, 0)");
+    expect(current?.style.color).toBe("rgb(13, 33, 66)");
+    expect(current?.classList.contains("side-current-full")).toBe(true);
+    expect(current?.classList.contains("side-current")).toBe(false);
     const other = rowOf("My files");
     expect(other?.style.color).toBe("rgb(255, 255, 255)");
     expect(other?.style.background).toBe("");
     expect(other?.classList.contains("side-current")).toBe(false);
   });
 
-  it("gives the arrow of the current row the mark colour too", async () => {
+  it("gives the arrow of the filled top-level row the on-active colour too", async () => {
     render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
     const arrow = await screen.findByRole("button", { name: "Collapse Team A" });
-    expect(arrow.style.color).toBe("rgb(254, 204, 0)");
+    expect(arrow.style.color).toBe("rgb(13, 33, 66)");
   });
 
   // Decision 69: the current row is not bold, as the menu's selected item is not (the sidebar's rows look alike in every state).
@@ -307,7 +308,20 @@ describe("the folder tree in the sidebar: the current row's mark", () => {
   it("puts the mark on the nearest row on screen when the place is folded away", () => {
     render(<Harness colours={SIDEBAR} folder="fld_a" chain={["nod_one", "nod_deep"]} />);
     const current = rowOf("Team A");
-    expect(current?.classList.contains("side-current")).toBe(true);
-    expect(current?.style.color).toBe("rgb(254, 204, 0)");
+    expect(current?.classList.contains("side-current-full")).toBe(true);
+    expect(current?.style.background).toBe("rgb(254, 204, 0)");
+  });
+
+  // Decision 72: a folder below a top-level place keeps the bar, with no background; the place above is not marked.
+  it("marks a deeper current folder with the bar and no fill, and leaves its top-level row plain", async () => {
+    render(<Harness colours={SIDEBAR} folder="nod_one" chain={["nod_one"]} start={{ expanded: ["fld_a"] }} />);
+    await screen.findByText("Docs");
+    const deep = rowOf("Docs");
+    expect(deep?.classList.contains("side-current")).toBe(true);
+    expect(deep?.style.background).toBe("");
+    expect(deep?.style.color).toBe("rgb(254, 204, 0)");
+    const top = rowOf("Team A");
+    expect(top?.classList.contains("side-current-full")).toBe(false);
+    expect(top?.style.background).toBe("");
   });
 });

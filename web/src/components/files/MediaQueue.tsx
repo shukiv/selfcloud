@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { Alert, Button, Dropdown, type MenuProps } from "antd";
+import IconButton from "../IconButton";
 import { ArrowDown, ArrowUp, GripVertical, ListMusic, MoreHorizontal, Pause, Play, Plus, Repeat, Repeat1, Shuffle, Trash2 } from "lucide-react";
 import { useT } from "../../lib/i18n";
 import { kindOf } from "../../lib/files/kind";
@@ -114,15 +115,9 @@ export default function MediaQueue(p: Props) {
           <ListMusic size={16} aria-hidden="true" /> {t("files.media.queue")}
         </h3>
         <div className="media-queue-actions">
-          <Button size="small" aria-pressed={p.shuffle} onClick={p.onShuffle} icon={<Shuffle size={14} aria-hidden="true" />}>
-            {t("files.media.shuffle")}
-          </Button>
-          <Button size="small" onClick={p.onRepeat} aria-label={`${t("files.media.repeat")}: ${repeatLabel}`} icon={<RepeatIcon size={14} aria-hidden="true" />}>
-            {repeatLabel}
-          </Button>
-          <Button size="small" aria-expanded={p.adding} onClick={p.onAddOpen} icon={<Plus size={14} aria-hidden="true" />}>
-            {t("files.media.addFiles")}
-          </Button>
+          <IconButton label={t("files.media.shuffle")} pressed={p.shuffle} onClick={p.onShuffle} icon={<Shuffle size={18} aria-hidden="true" focusable="false" />} />
+          <IconButton label={`${t("files.media.repeat")}: ${repeatLabel}`} pressed={p.repeat !== "off"} onClick={p.onRepeat} icon={<RepeatIcon size={18} aria-hidden="true" focusable="false" />} />
+          <IconButton label={t("files.media.addFiles")} aria-expanded={p.adding} onClick={p.onAddOpen} icon={<Plus size={18} aria-hidden="true" focusable="false" />} />
         </div>
       </header>
 
@@ -171,6 +166,7 @@ export default function MediaQueue(p: Props) {
                   kind={kindOf(entry.node) === "video" ? "video" : "audio"}
                   size={28}
                   enabled={kindOf(entry.node) === "audio" && (entry.node.has_thumbnail === true || hasCover(id))}
+                  node={entry.node}
                 />
                 {entry.mark === "unavailable" ? (
                   <span className="media-title media-title--off" data-testid="media-unavailable">
@@ -216,7 +212,7 @@ export default function MediaQueue(p: Props) {
                 </span>
                 <span className="media-row-buttons">
                   <Dropdown menu={{ items, onClick: onMenu }} trigger={["click"]}>
-                    <Button className="media-btn" aria-label={t("files.media.more", { name })} icon={<MoreHorizontal size={16} aria-hidden="true" />} />
+                    <IconButton className="media-btn" label={t("files.media.more", { name })} tip={t("files.selection.more")} icon={<MoreHorizontal size={16} aria-hidden="true" focusable="false" />} />
                   </Dropdown>
                 </span>
               </li>

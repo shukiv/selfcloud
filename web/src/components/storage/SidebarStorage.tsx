@@ -5,7 +5,6 @@ import { useT, useLang } from "../../lib/i18n";
 import { formatBytes } from "../../lib/files/format";
 import { heldBytes, sidebarMeterLevel, storagePercent, type MeStorage } from "../../lib/storage/logic";
 import type { Sidebar } from "../../theme/tokens";
-import { currentMark } from "../../theme/currentMark";
 
 // The bar's colours on the sidebar's blue (decision 66). The accent is the sidebar's own yellow; the warning and the error
 // colours keep 3:1 against the track and the sidebar. The track is dark: a yellow fill keeps 3:1 against it.
@@ -21,7 +20,7 @@ export function storageTitle(s: MeStorage | null, t: (key: string, params?: Reco
 
 // SidebarStorage is the Storage entry of the sidebar: a row like the others, then a slim bar and the figures. With no limit it
 // is the row, and the line says what is used, with no bar. A null read (not yet known) shows the row alone. selected says the
-// row is the current page's: its title takes the mark colour (decision 69, option B: no background, the bar at the start edge).
+// row is the current page's: it is filled with the active colour and its text takes the on-active colour (decision 72).
 // The figures, the track and the fill are the same whether it is selected or not.
 export default function SidebarStorage({ my, sidebar, selected = false }: { my: MeStorage | null; sidebar: Sidebar; selected?: boolean }): ReactNode {
   const { t } = useT();
@@ -33,7 +32,8 @@ export default function SidebarStorage({ my, sidebar, selected = false }: { my: 
   // The bar and the text take the same figure (storagePercent), so 99.6% reads 99% and the bar is not full.
   const width = has ? (storagePercent(my) ?? 0) : 0;
   const colour = level === "danger" ? DANGER : level === "warning" ? WARNING : sidebar.active;
-  const ink = currentMark(sidebar).ink;
+  // A selected row is filled with the active colour (decision 72), so its text and figures take the on-active colour.
+  const ink = sidebar.onActive;
   const line = has
     ? t("usage.ofLimit", { used: formatBytes(held, lang), limit: formatBytes(quota, lang) })
     : t("nav.storageUsed", { used: formatBytes(held, lang) });
@@ -59,7 +59,7 @@ export default function SidebarStorage({ my, sidebar, selected = false }: { my: 
               <span style={{ display: "block", blockSize: "100%", inlineSize: `${width}%`, background: colour }} />
             </span>
           )}
-          <span style={{ fontSize: 12, color: sidebar.caption, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: 12, color: selected ? sidebar.onActive : sidebar.caption, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {line}
           </span>
         </>

@@ -112,7 +112,7 @@ describe("a row's usage and its actions", () => {
     stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [account()] } } : { status: 200, body: usage() }));
     renderPage();
     await screen.findByText("Acme Ltd");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Acme Ltd" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Acme Ltd" }));
     const open = await screen.findByRole("menuitem", { name: "Open" });
     expect(open.querySelector("a")?.getAttribute("href")).toBe("/admin/tenants/acc_1");
   });
@@ -131,7 +131,7 @@ describe("a change of person while a change is out", () => {
     });
     renderPage();
     await screen.findByText("Acme Ltd");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Acme Ltd" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Acme Ltd" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Suspend" }));
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Suspend" }));
     act(() => {
@@ -159,7 +159,7 @@ describe("suspend", () => {
     });
     renderPage();
     await screen.findByText("Acme Ltd");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Acme Ltd" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Acme Ltd" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Suspend" }));
     const dialog = await screen.findByRole("dialog");
     const go = within(dialog).getByRole("button", { name: "Suspend" });
@@ -178,7 +178,7 @@ describe("suspend", () => {
     });
     renderPage();
     await screen.findByText("Acme Ltd");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Acme Ltd" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Acme Ltd" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Suspend" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Suspend" }));
@@ -273,7 +273,7 @@ describe("delete", () => {
     });
     renderPage();
     await screen.findByText("Acme Ltd");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Acme Ltd" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Acme Ltd" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete tenant…" }));
     const dialog = await screen.findByRole("dialog");
     const go = within(dialog).getByRole("button", { name: "Delete Acme Ltd permanently" });
@@ -295,7 +295,7 @@ describe("delete", () => {
     });
     renderPage();
     await screen.findByText("Acme Ltd");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Acme Ltd" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Acme Ltd" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete tenant…" }));
     const dialog = await screen.findByRole("dialog");
     setField("delete-tenant-name", "Acme Ltd");
@@ -313,7 +313,7 @@ describe("delete", () => {
     });
     renderPage();
     await screen.findByText("Acme Ltd");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Acme Ltd" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Acme Ltd" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete tenant…" }));
     const dialog = await screen.findByRole("dialog");
     setField("delete-tenant-name", "Acme Ltd");

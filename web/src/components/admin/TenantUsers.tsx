@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { KeyRound, Link, LogIn, Send } from "lucide-react";
+import IconButton from "../IconButton";
 
 import { Alert, Button } from "antd";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -119,27 +121,15 @@ export default function TenantUsers({ account }: { account: string }) {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {ownerPending && (
                       <>
-                        <Button size="small" disabled={busy === p.id} onClick={() => void resend(p, "email")}>
-                          {t("tenant.users.resend")}
-                          <span className="sr-only">: {personLabel(p)}</span>
-                        </Button>
-                        <Button size="small" disabled={busy === p.id} onClick={() => void resend(p, "link")}>
-                          {t("tenant.users.newLink")}
-                          <span className="sr-only">: {personLabel(p)}</span>
-                        </Button>
+                        <IconButton label={`${t("tenant.users.resend")}: ${personLabel(p)}`} tip={t("tenant.users.resend")} disabled={busy === p.id} onClick={() => void resend(p, "email")} icon={<Send size={18} aria-hidden="true" focusable="false" />} />
+                        <IconButton label={`${t("tenant.users.newLink")}: ${personLabel(p)}`} tip={t("tenant.users.newLink")} disabled={busy === p.id} onClick={() => void resend(p, "link")} icon={<Link size={18} aria-hidden="true" focusable="false" />} />
                       </>
                     )}
                     {canReset && (
-                      <Button size="small" disabled={busy === p.id} onClick={() => setResetFor(p)}>
-                        {t("tenant.users.reset")}
-                        <span className="sr-only">: {personLabel(p)}</span>
-                      </Button>
+                      <IconButton label={`${t("tenant.users.reset")}: ${personLabel(p)}`} tip={t("tenant.users.reset")} disabled={busy === p.id} onClick={() => setResetFor(p)} icon={<KeyRound size={18} aria-hidden="true" focusable="false" />} />
                     )}
                     {canSignIn && (
-                      <Button size="small" disabled={busy === p.id} onClick={() => setSignInFor(p)}>
-                        {t("tenant.users.signInAs")}
-                        <span className="sr-only">: {personLabel(p)}</span>
-                      </Button>
+                      <IconButton label={`${t("tenant.users.signInAs")}: ${personLabel(p)}`} tip={t("tenant.users.signInAs")} disabled={busy === p.id} onClick={() => setSignInFor(p)} icon={<LogIn size={18} aria-hidden="true" focusable="false" />} />
                     )}
                   </div>
                 )}

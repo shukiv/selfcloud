@@ -85,10 +85,10 @@ describe("the queue panel", () => {
     const onMove = vi.fn();
     const onRemove = vi.fn();
     render(<MediaQueue {...props(["a.ogg", "b.ogg"], "a.ogg", onMove, onRemove)} />);
-    fireEvent.click(screen.getByRole("button", { name: "Actions for b.ogg" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for b.ogg" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Move b\.ogg up/ }));
     expect(onMove).toHaveBeenCalledWith("b.ogg", -1);
-    fireEvent.click(screen.getByRole("button", { name: "Actions for b.ogg" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for b.ogg" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Remove b\.ogg/ }));
     expect(onRemove).toHaveBeenCalledWith("b.ogg");
   });

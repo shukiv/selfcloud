@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Button, Card } from "antd";
+import { ChevronDown, ChevronUp, Eraser, Pause, Play, RefreshCw, X } from "lucide-react";
+import IconButton from "./IconButton";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { formatBytes, formatRate } from "../lib/files/format";
 import { conflictAsk, manager, uploads, type UploadItem } from "../lib/files/uploads";
@@ -136,10 +138,8 @@ export default function UploadTray() {
         styles={{ body: { overflow: "auto", padding: open ? 12 : 0 } }}
         extra={
           <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-            <Button aria-expanded={open} aria-controls="tray-list" onClick={() => setOpen(!open)}>
-              {open ? t("upload.collapse") : t("upload.expand")}
-            </Button>
-            <Button onClick={() => manager.clearFinished()}>{t("upload.clear")}</Button>
+            <IconButton label={open ? t("upload.collapse") : t("upload.expand")} aria-expanded={open} aria-controls="tray-list" onClick={() => setOpen(!open)} icon={open ? <ChevronDown size={18} aria-hidden="true" focusable="false" /> : <ChevronUp size={18} aria-hidden="true" focusable="false" />} />
+            <IconButton label={t("upload.clear")} onClick={() => manager.clearFinished()} icon={<Eraser size={18} aria-hidden="true" focusable="false" />} />
           </span>
         }
       >
@@ -203,13 +203,13 @@ export default function UploadTray() {
                 )}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {WAITING.includes(u.status) && (
-                    <Button onClick={() => manager.pause(u.id)}>{t("upload.pause")}</Button>
+                    <IconButton label={t("upload.pause")} onClick={() => manager.pause(u.id)} icon={<Pause size={18} aria-hidden="true" focusable="false" />} />
                   )}
-                  {u.status === "paused" && <Button onClick={() => manager.resume(u.id)}>{t("upload.resume")}</Button>}
-                  {u.status === "failed" && <Button onClick={() => manager.retry(u.id)}>{t("upload.retry")}</Button>}
+                  {u.status === "paused" && <IconButton label={t("upload.resume")} onClick={() => manager.resume(u.id)} icon={<Play size={18} aria-hidden="true" focusable="false" />} />}
+                  {u.status === "failed" && <IconButton label={t("upload.retry")} onClick={() => manager.retry(u.id)} icon={<RefreshCw size={18} aria-hidden="true" focusable="false" />} />}
                   {u.status === "interrupted" && <Button onClick={() => pickResume(u)}>{t("upload.resume.pick")}</Button>}
-                  {CANCELLABLE.includes(u.status) && <Button onClick={() => void manager.cancel(u.id)}>{t("upload.cancel")}</Button>}
-                  {FINISHED.includes(u.status) && <Button onClick={() => manager.dismiss(u.id)}>{t("upload.dismiss")}</Button>}
+                  {CANCELLABLE.includes(u.status) && <IconButton label={t("upload.cancel")} onClick={() => void manager.cancel(u.id)} icon={<X size={18} aria-hidden="true" focusable="false" />} />}
+                  {FINISHED.includes(u.status) && <IconButton label={t("upload.dismiss")} onClick={() => manager.dismiss(u.id)} icon={<X size={18} aria-hidden="true" focusable="false" />} />}
                 </div>
               </li>
             ))}

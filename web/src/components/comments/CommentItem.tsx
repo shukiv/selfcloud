@@ -2,6 +2,8 @@
 
 import { useId, useState, type CSSProperties } from "react";
 import { Alert, Button, Input, Space, Tag } from "antd";
+import { CheckCheck, Pencil, Reply, Trash2, Undo2 } from "lucide-react";
+import IconButton from "../IconButton";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang } from "../../lib/i18n";
 import { deleteComment, editComment, listReplies, resolveComment, type Comment } from "../../lib/comments/api";
@@ -187,31 +189,28 @@ export default function CommentItem({
       {!c.deleted && !editing && (showReply || showEdit || showDelete || showResolve) && (
         <Space wrap size={[8, 4]} style={{ marginBlockStart: 4 }}>
           {showReply && (
-            <Button type="link" onClick={() => setReplyOpen((o) => !o)} aria-expanded={replyOpen}>
-              {t("comments.reply")}
-            </Button>
+            <IconButton label={t("comments.reply")} aria-expanded={replyOpen} onClick={() => setReplyOpen((o) => !o)} icon={<Reply size={18} aria-hidden="true" focusable="false" />} />
           )}
           {showEdit && (
-            <Button
-              type="link"
+            <IconButton
+              label={t("comments.edit")}
               onClick={() => {
                 setEditText(c.body ?? "");
                 setEditError(null);
                 setEditing(true);
               }}
-            >
-              {t("comments.edit")}
-            </Button>
+              icon={<Pencil size={18} aria-hidden="true" focusable="false" />}
+            />
           )}
           {showResolve && (
-            <Button type="link" onClick={() => void toggleResolved()}>
-              {c.resolved ? t("comments.reopen") : t("comments.resolve")}
-            </Button>
+            <IconButton
+              label={c.resolved ? t("comments.reopen") : t("comments.resolve")}
+              onClick={() => void toggleResolved()}
+              icon={c.resolved ? <Undo2 size={18} aria-hidden="true" focusable="false" /> : <CheckCheck size={18} aria-hidden="true" focusable="false" />}
+            />
           )}
           {showDelete && (
-            <Button type="link" danger onClick={() => setConfirmDelete(true)}>
-              {t("comments.delete")}
-            </Button>
+            <IconButton label={t("comments.delete")} danger onClick={() => setConfirmDelete(true)} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
           )}
         </Space>
       )}

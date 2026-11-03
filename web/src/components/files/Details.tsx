@@ -10,6 +10,8 @@ import { detailsPersonLabel } from "../../lib/files/people";
 import { kindOf } from "../../lib/files/kind";
 import type { Node } from "../../lib/files/types";
 import Icon from "./Icon";
+import { Copy } from "lucide-react";
+import IconButton from "../IconButton";
 import Appearance from "./Appearance";
 import Labels from "./Labels";
 import SectionBoundary from "../SectionBoundary";
@@ -59,7 +61,7 @@ export default function Details({
       width="min(420px, 100vw)"
       title={
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon kind={kindOf(node)} size={24} colour={node.color} />
+          <Icon kind={kindOf(node)} size={24} colour={node.color} node={node} />
           <bdi>{node.name}</bdi>
         </span>
       }
@@ -104,7 +106,7 @@ export default function Details({
             <dt>{t("files.details.sha256")}</dt>
             <dd style={DD}>
               <code style={{ display: "block", overflowWrap: "anywhere", marginBlockEnd: 8 }}>{node.sha256}</code>
-              <Button onClick={copyHash}>{t("files.details.copy")}</Button>{" "}
+              <IconButton label={t("files.details.copy")} onClick={copyHash} icon={<Copy size={18} aria-hidden="true" focusable="false" />} />{" "}
               <span role="status">
                 {copied === "done" ? t("files.details.copied") : copied === "failed" ? t("files.details.copyFailed") : ""}
               </span>

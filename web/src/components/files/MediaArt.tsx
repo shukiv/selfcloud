@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useMemo, useState } from "react";
-import { Music } from "lucide-react";
+import Icon from "./Icon";
 import { thumbnailPath, watchThumbnail } from "../../lib/files/thumbnail";
 import { displayArtist, displayTitle, markCover } from "../../lib/files/tags";
 import { folderCovers, folderKeyOf, pickFolderCover, type Listing } from "../../lib/files/folderCover";
@@ -159,8 +159,8 @@ export default function MediaArt({ node }: { node: Node }) {
             }}
           />
         ) : (
-          <div className="media-cover-empty" aria-hidden="true">
-            <Music size={96} />
+          <div className="media-cover-empty" aria-hidden="true" style={{ background: "none" }}>
+            <Icon kind="audio" size={112} node={node} />
           </div>
         )}
       </div>

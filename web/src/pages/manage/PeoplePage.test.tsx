@@ -75,7 +75,7 @@ describe("the people list", () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_p", "pending")] } } : { status: 200, body: { items: [] } }));
     renderPage();
     await screen.findByText("Name usr_p");
-    fireEvent.click(screen.getByRole("button", { name: /Actions for Name usr_p|Actions/ }));
+    fireEvent.click(screen.getByRole("button", { name: /More actions for Name usr_p/ }));
     const menu = await screen.findByRole("menu");
     expect(within(menu).getByText("Resend invitation")).toBeTruthy();
     expect(within(menu).queryByText("Disable")).toBeNull();

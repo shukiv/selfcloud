@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { Pencil } from "lucide-react";
+import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
 import { Alert, Button, Modal, Tag } from "antd";
@@ -192,10 +194,7 @@ function StorageView() {
                         )}
                       </td>
                       <td style={{ textAlign: "end" }}>
-                        <Button size="small" onClick={() => setEditingPerson(p)}>
-                          {t("storage.change")}
-                          <span className="sr-only">: {personLabel(p)}</span>
-                        </Button>
+                        <IconButton label={`${t("storage.change")}: ${personLabel(p)}`} tip={t("storage.change")} onClick={() => setEditingPerson(p)} icon={<Pencil size={18} aria-hidden="true" focusable="false" />} />
                       </td>
                     </tr>
                   ))}

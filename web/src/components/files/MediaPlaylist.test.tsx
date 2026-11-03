@@ -151,7 +151,7 @@ describe("MediaPlaylist", () => {
     const { container } = render(<MediaPlaylist start={a} folder={new Pager([a, b], null, async () => ({ items: [] }))} fetchLink={fetchLink} />);
     await flush();
     // Remove is in the row's More menu.
-    fireEvent.click(screen.getByRole("button", { name: "Actions for a.webm" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for a.webm" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Remove a\.webm/ }));
     await flush();
     expect(playing(container)).toBe("https://content.example/b.webm");

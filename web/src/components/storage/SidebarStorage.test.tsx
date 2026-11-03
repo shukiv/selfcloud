@@ -77,13 +77,13 @@ describe("the sidebar's storage block on the selected row", () => {
     await setLang("en");
   });
 
-  it("takes the mark colour for the title, and keeps the figures in the caption colour, when the row is selected", () => {
+  it("takes the on-active colour for the title and the figures, when the row is filled as selected (decision 72)", () => {
     render(<SidebarStorage my={s(GB * 1.22, 0, 2 * GB)} sidebar={SIDEBAR} selected />);
     const title = screen.getByText("Storage (61% full)");
     const line = screen.getByText(`${formatBytes(GB * 1.22, "en")} of ${formatBytes(2 * GB, "en")} used`);
     expect(title.style.color).toBe("");
-    expect(title.parentElement?.style.color).toBe("rgb(254, 204, 0)");
-    expect(line.style.color).toBe("rgb(169, 193, 230)");
+    expect(title.parentElement?.style.color).toBe("rgb(13, 33, 66)");
+    expect(line.style.color).toBe("rgb(13, 33, 66)");
   });
 
   it("keeps the bar as it is when the row is selected: the normal track, with its caption edge, and the accent fill", () => {

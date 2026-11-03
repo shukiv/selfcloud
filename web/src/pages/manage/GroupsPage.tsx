@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { Pencil, Trash2, UserMinus, Users } from "lucide-react";
+import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
 import { Alert, Button } from "antd";
@@ -160,18 +162,9 @@ function GroupsView() {
                 <bdi>{g.name}</bdi>
               </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <Button size="small" aria-pressed={open?.id === g.id} onClick={() => { setOpen(g); setMemberError(null); setAdding(null); }}>
-                  {t("groups.members")}
-                  <span className="sr-only">: {g.name}</span>
-                </Button>
-                <Button size="small" onClick={() => setRenaming(g)}>
-                  {t("groups.rename")}
-                  <span className="sr-only">: {g.name}</span>
-                </Button>
-                <Button size="small" danger onClick={() => { setDeleteError(null); setDeleting(g); }}>
-                  {t("groups.delete")}
-                  <span className="sr-only">: {g.name}</span>
-                </Button>
+                <IconButton label={`${t("groups.members")}: ${g.name}`} tip={t("groups.members")} aria-pressed={open?.id === g.id} onClick={() => { setOpen(g); setMemberError(null); setAdding(null); }} icon={<Users size={18} aria-hidden="true" focusable="false" />} />
+                <IconButton label={`${t("groups.rename")}: ${g.name}`} tip={t("groups.rename")} onClick={() => setRenaming(g)} icon={<Pencil size={18} aria-hidden="true" focusable="false" />} />
+                <IconButton label={`${t("groups.delete")}: ${g.name}`} tip={t("groups.delete")} danger onClick={() => { setDeleteError(null); setDeleting(g); }} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
               </div>
             </li>
           ))}
@@ -207,10 +200,7 @@ function GroupsView() {
                   <p style={{ margin: 0 }}>
                     <bdi>{personText(usr)}</bdi>
                   </p>
-                  <Button size="small" onClick={() => void removeMember(usr)}>
-                    {t("groups.removeMember")}
-                    <span className="sr-only">: {personText(usr)}</span>
-                  </Button>
+                  <IconButton label={`${t("groups.removeMember")}: ${personText(usr)}`} tip={t("groups.removeMember")} onClick={() => void removeMember(usr)} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
                 </li>
               ))}
             </ul>
