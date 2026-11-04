@@ -7368,9 +7368,11 @@ components:
           type: boolean
           description: |
             The "Keep me signed in" box. `false` makes a session the browser does not keep: its cookie has no
-            Max-Age, so the browser drops it when it closes, and the server ends it `sessions.short_idle_timeout`
-            (12 hours by default) after its last use. `true`, or left out, keeps the session for `sessions.max_age`
-            (30 days by default), as API clients have always had it.
+            Max-Age, so a browser that closes drops it, but a browser that restores its last session may keep it.
+            The server ends such a session `sessions.short_idle_timeout` after its last use (unset, the shorter of
+            12 hours and `sessions.idle_timeout`). A session used at least every 12 hours still ends at
+            `sessions.max_age` (30 days by default). `true`, or left out, keeps the session for `sessions.max_age`,
+            as API clients have always had it.
 
     ForgotRequest:
       type: object

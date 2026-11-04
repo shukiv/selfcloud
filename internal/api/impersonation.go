@@ -367,7 +367,7 @@ func (s *Server) restoreAdminSession(ctx context.Context, hash []byte) (*restore
 	if err != nil {
 		return nil, err
 	}
-	if !time.Now().Before(sess.ExpiresAt) || sess.ImpersonatorID != "" {
+	if !s.sessionClock().Before(sess.ExpiresAt) || sess.ImpersonatorID != "" {
 		return nil, apierr.New(apierr.Unauthenticated, "the admin's session has ended; sign in again")
 	}
 	u, err := s.store.User(ctx, "", sess.UserID)

@@ -120,7 +120,24 @@ type SessionsConfig struct {
 	// MaxAge ends a session this long after it began, however busy it is.
 	MaxAge Duration `yaml:"max_age"`
 	// ShortIdleTimeout ends a session the browser did not keep ("Keep me signed in" unticked) after this long unused.
+	// Zero means unset: ShortIdle then gives the shorter of 12 hours and IdleTimeout.
 	ShortIdleTimeout Duration `yaml:"short_idle_timeout"`
+}
+
+// defaultShortIdle is the longest a session the browser did not keep may go unused, when the setting is unset.
+const defaultShortIdle = Duration(12 * time.Hour)
+
+// ShortIdle is the effective sessions.short_idle_timeout. Every reader uses this one value: the setting when it is
+// set, else the shorter of 12 hours and sessions.idle_timeout, so an installation with a shorter idle timeout starts
+// (decision 75).
+func (c SessionsConfig) ShortIdle() Duration {
+	if c.ShortIdleTimeout > 0 {
+		return c.ShortIdleTimeout
+	}
+	if c.IdleTimeout > 0 && c.IdleTimeout < defaultShortIdle {
+		return c.IdleTimeout
+	}
+	return defaultShortIdle
 }
 
 // MailConfig controls outgoing mail. Mail is configured when smtp_host and from are set.
@@ -627,9 +644,8 @@ func Defaults() *Config {
 			SignInURLTemplate: "{public_url}/sign-in#token={token}",
 		},
 		Sessions: SessionsConfig{
-			IdleTimeout:      Duration(168 * time.Hour),
-			MaxAge:           Duration(720 * time.Hour),
-			ShortIdleTimeout: Duration(12 * time.Hour),
+			IdleTimeout: Duration(168 * time.Hour),
+			MaxAge:      Duration(720 * time.Hour),
 		},
 		UI:     UIConfig{Enabled: true, Brand: BrandConfig{Name: "Selfcloud", Accent: "#053D8E"}},
 		Office: OfficeConfig{LockMinutes: 30, MaxFileBytes: 50 * MiB, TokenMinutes: 600},
@@ -822,8 +838,8 @@ func (c *Config) Validate() error {
 	if c.Sessions.IdleTimeout <= 0 || c.Sessions.MaxAge <= 0 {
 		bad("sessions.idle_timeout and sessions.max_age must be positive")
 	}
-	if c.Sessions.ShortIdleTimeout <= 0 || c.Sessions.ShortIdleTimeout > c.Sessions.IdleTimeout {
-		bad("sessions.short_idle_timeout must be positive and not more than sessions.idle_timeout")
+	if s := c.Sessions.ShortIdleTimeout; s < 0 || s > c.Sessions.IdleTimeout {
+		bad("sessions.short_idle_timeout must be unset or positive, and not more than sessions.idle_timeout")
 	}
 	if c.RateLimit.PerIPPerMinute <= 0 || c.RateLimit.PerEmailPerMinute <= 0 {
 		bad("rate_limit values must be positive")

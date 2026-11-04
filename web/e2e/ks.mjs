@@ -3,7 +3,7 @@
 // "Keep me signed in" on the sign-in page (slice ks, decision 75), run inside the shared end-to-end run (run.mjs) in its own
 // browser with its own profile, or alone with SELFCLOUD_E2E_ONLY=ks. The box is unticked on a fresh browser. A sign-in with it
 // unticked gives a browser-session cookie (no expiry); ticked, a cookie that lasts about 30 days. The browser remembers the
-// last choice across a reload. In Hebrew the box is on the right, with its words on its left. The shared signIn helper in
+// last choice across a reload. In Hebrew the box is on the right, with its words on its left (measured as text, against the box). The shared signIn helper in
 // run.mjs does not tick the box, so every other section signs in as before.
 
 // cookieOf reads the session cookie the browser holds for this origin, by CDP, as the browser sees it.
@@ -71,14 +71,23 @@ export async function ksChecks(h, { page, base, MEMBER }) {
   await page.evaluate(`localStorage.setItem('selfcloud.lang', 'he')`);
   await page.evaluate(`location.reload()`);
   await page.waitFor(`document.documentElement.dir === 'rtl' && !!document.getElementById('login-keep')`, 15000);
+  // The words are measured as text (a range over the label's text), not as the label's box: the words must end where the
+  // box starts, on its left, and the box must be on the right of the form.
   const layout = await page.evaluate(`(() => {
-    const box = document.getElementById('login-keep').getBoundingClientRect();
+    const label = document.querySelector('.login-keep');
+    const range = document.createRange();
+    range.selectNodeContents(label.lastElementChild);
+    const text = range.getBoundingClientRect();
+    const box = label.querySelector('.ant-checkbox').getBoundingClientRect();
     const form = document.querySelector('form').getBoundingClientRect();
-    const words = document.querySelector('.login-keep').textContent.trim();
-    return { boxRight: box.right, formMid: form.left + form.width / 2, words, boxLeft: box.left, width: window.innerWidth };
+    return {
+      words: label.lastElementChild.textContent.trim(),
+      textLeft: text.left, textRight: text.right, textWidth: text.width,
+      boxLeft: box.left, boxRight: box.right, formMid: form.left + form.width / 2,
+    };
   })()`);
-  check(layout.boxLeft > layout.formMid && layout.words.length > 0,
-    `in Hebrew the box is on the right of the form (box left ${Math.round(layout.boxLeft)}px, form middle ${Math.round(layout.formMid)}px) and its words are ${layout.words}`);
+  check(layout.textWidth > 0 && layout.textRight <= layout.boxLeft && layout.boxLeft > layout.formMid,
+    `in Hebrew the words are on the left of the box, and the box on the right of the form (words ${Math.round(layout.textLeft)}-${Math.round(layout.textRight)}px, box ${Math.round(layout.boxLeft)}-${Math.round(layout.boxRight)}px, form middle ${Math.round(layout.formMid)}px): ${layout.words}`);
 
   // At phone width with a finger (touch emulation, so the coarse-pointer rule applies), the box's target is 44 px tall
   // and the page does not scroll sideways.

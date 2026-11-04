@@ -174,7 +174,7 @@ func (s *Server) touchSession(ctx context.Context, sess *store.Session, now time
 func (s *Server) sessionExpiry(created, now time.Time, short bool) time.Time {
 	idleFor := s.cfg.Sessions.IdleTimeout.D()
 	if short {
-		idleFor = s.cfg.Sessions.ShortIdleTimeout.D()
+		idleFor = s.cfg.Sessions.ShortIdle().D()
 	}
 	idle := now.Add(idleFor)
 	if abs := created.Add(s.cfg.Sessions.MaxAge.D()); abs.Before(idle) {
