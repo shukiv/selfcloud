@@ -139,35 +139,62 @@ async function setCoarse(page, on) {
 
 // touchTargets measures the preview and export buttons of the viewer in the three states that change them: at rest, under the
 // pointer, and with keyboard focus. Each height is in CSS pixels.
+// The viewer opens with the dialog's zoom, which moves and scales its buttons for a few frames. A button read during the zoom
+// is in the wrong place and a little short: the stack gate fu3stacka sent the pointer to a header button's place mid-zoom
+// (750, 327; it came to rest at 1168, 12) and read 43 px. So each read waits for the viewer to settle: two buttons or more,
+// no animation running on a button or on anything around it, and every button where it was two frames before.
+const CONVERT = '[data-testid="preview"] .convert-btn';
+const nameOf = `(b) => b.getAttribute('aria-label') || b.textContent.trim()`;
+// byName finds a button by its name (its label, or its text), not by its place: a re-render may change the places.
+const byName = (name) => `[...document.querySelectorAll(${JSON.stringify(CONVERT)})].find((b) => (${nameOf})(b) === ${JSON.stringify(name)})`;
+const SETTLED = `new Promise((resolve) => {
+  const where = () => [...document.querySelectorAll(${JSON.stringify(CONVERT)})].map((b) => { const r = b.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].join(','); }).join('|');
+  const before = where();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const buttons = [...document.querySelectorAll(${JSON.stringify(CONVERT)})];
+    const moving = document.getAnimations().some((a) => a.playState === 'running' && a.effect && a.effect.target instanceof Element && buttons.some((b) => a.effect.target.contains(b)));
+    resolve(buttons.length >= 2 && !moving && where() === before);
+  }));
+})`;
+
+// settle waits, up to 15 seconds, for the viewer to settle (SETTLED). Each try reads two frames, so it is never a fixed wait.
+async function settle(page, what) {
+  const deadline = Date.now() + 15000;
+  while (!(await page.evaluate(SETTLED).catch(() => false))) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for: the viewer to settle (${what})`);
+  }
+}
+
 async function touchTargets(h, page) {
-  const measure = `[...document.querySelectorAll('[data-testid="preview"] .convert-btn')].map((b) => Math.round(b.getBoundingClientRect().height))`;
-  const rest = await page.evaluate(measure);
-  // The pointer is moved over each button, and the button is measured while it is under the pointer.
+  await settle(page, 'before the buttons are read');
+  const names = await page.evaluate(`[...document.querySelectorAll(${JSON.stringify(CONVERT)})].map(${nameOf})`);
+  if (new Set(names).size !== names.length) throw new Error(`two preview buttons share a name: ${names.join(' / ')}`);
+  const height = (name) => page.evaluate(`Math.round(${byName(name)}.getBoundingClientRect().height)`);
+  const rest = [];
+  for (const name of names) rest.push(await height(name));
+  // The pointer is moved over each button, and the button is measured while it is under the pointer. The pointer is sent again
+  // on each try, to where the button is then, so a button that moved is still found.
   const hover = [];
-  const count = rest.length;
-  for (let i = 0; i < count; i++) {
-    const box = await page.evaluate(
-      `(() => { const r = [...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
-    );
-    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
-    await until(page, `[...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].matches(':hover') && [...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getAnimations().length === 0`, `the pointer over button ${i}, its transition done`);
-    hover.push(
-      await page.evaluate(
-        `Math.round([...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getBoundingClientRect().height)`,
-      ),
-    );
+  for (const name of names) {
+    const deadline = Date.now() + 15000;
+    for (;;) {
+      await settle(page, `before the pointer goes to ${name}`);
+      const box = await page.evaluate(`(() => { const r = ${byName(name)}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
+      await page.evaluate(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`);
+      if (await page.evaluate(`(() => { const b = ${byName(name)}; return b.matches(':hover') && b.getAnimations().length === 0; })()`)) break;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for: the pointer over ${name}, its transition done`);
+    }
+    hover.push(await height(name));
   }
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
   const focus = [];
-  for (let i = 0; i < count; i++) {
-    await page.evaluate(`[...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].focus(), true`);
-    await until(page, `document.activeElement === [...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}] && [...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getAnimations().length === 0`, `button ${i} has the focus`);
-    focus.push(
-      await page.evaluate(
-        `Math.round([...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getBoundingClientRect().height)`,
-      ),
-    );
+  for (const name of names) {
+    await page.evaluate(`${byName(name)}.focus(), true`);
+    await until(page, `document.activeElement === ${byName(name)} && ${byName(name)}.getAnimations().length === 0`, `${name} has the focus`);
+    focus.push(await height(name));
   }
+  const count = names.length;
   h.check(
     count >= 2 && [...rest, ...hover, ...focus].every((px) => px >= 44),
     `the preview and export buttons are 44 px tall on a coarse pointer, at rest, under the pointer and focused (rest ${rest}, hover ${hover}, focus ${focus})`,
