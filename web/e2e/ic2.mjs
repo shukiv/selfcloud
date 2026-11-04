@@ -10,13 +10,14 @@
 // and the theme and the window are put back. With SELFCLOUD_E2E_SHOTS set (a folder), the pictures named in the brief are saved.
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { hoverOver, setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
+import { hoverOver, onActiveInk, setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
 const MEDIA = fileURLToPath(new URL('./media/', import.meta.url));
 const FILL = 'rgb(254, 204, 0)';
-// The on-active text is textOn(active) in lib/brand.ts: black on the default yellow (contrast 4.5:1 or more).
-const ON_ACTIVE = 'rgb(0, 0, 0)';
+// The on-active text the page draws on the yellow highlight, from the page's own sources (media.mjs onActiveInk). The e2e brand is a
+// custom accent, so it is textOn(yellow) in lib/brand.ts: black. A default install is not this brand: it keeps SIDEBAR.onActive.
+const ON_ACTIVE = await onActiveInk();
 const TREE_CURRENT = '.shell-sider [data-testid="folder-tree"] [role="treeitem"][aria-current="location"] > .tree-row';
 
 // tipAfter moves the pointer over the element and returns the text of the tooltip that opens (empty when none does).
@@ -85,17 +86,17 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     await page.send('Page.reload', { ignoreCache: true });
     await page.waitFor(`[...document.querySelectorAll('.trash-item .name')].some((n) => n.textContent.includes(${q(folderName)}))`, 20000);
 
-    const restore = await iconState(page, '.trash-item button[aria-label="Restore"]');
+    const restore = await iconState(page, '.trash-item button[aria-label^="Restore:"]');
     check(restore && restore.text === '' && restore.border === '0px' && restore.w === 40 && restore.h === 40, `Restore is a borderless 40 px icon with no words (${JSON.stringify(restore)})`);
-    const purge = await iconState(page, '.trash-item button[aria-label="Delete forever"]');
+    const purge = await iconState(page, '.trash-item button[aria-label^="Delete forever:"]');
     check(purge && purge.text === '' && purge.border === '0px', `Delete forever is a borderless icon with no words (${JSON.stringify(purge)})`);
     const empty = await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Empty trash') ? 'words' : null`);
     check(empty === 'words', "Empty trash keeps its words (the page's main call)");
-    const restoreTip = await tipAfter(page, '.trash-item button[aria-label="Restore"]');
+    const restoreTip = await tipAfter(page, '.trash-item button[aria-label^="Restore:"]');
     check(restoreTip.includes('Restore'), `Restore shows its tooltip on hover (${restoreTip})`);
     await snap('ic2-trash-light.png');
     await setTheme(page, 'Dark');
-    const dark = await iconState(page, '.trash-item button[aria-label="Restore"]');
+    const dark = await iconState(page, '.trash-item button[aria-label^="Restore:"]');
     check(dark && dark.border === '0px', 'the trash icons have no border in dark');
     await snap('ic2-trash-dark.png');
     await setTheme(page, 'Light');
@@ -147,8 +148,24 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     await page.evaluate(`(() => { document.querySelector('.media-playlist-toggle')?.click(); return true; })()`);
     await page.waitFor(`!!document.querySelector('.media-drawer:not(.media-drawer--closed)')`, 10000);
     await sleep(500);
-    const clip = await page.evaluate(`(() => { const p = getComputedStyle(document.querySelector('.media-playlist')); return { clip: p.overflowClipMargin, overflowX: p.overflowX }; })()`);
-    check(clip.clip === '24px', `the playlist clips with a 24 px margin, so the drawer's shadow is not cut (${JSON.stringify(clip)})`);
+    // The shadow is not cut: every ancestor that clips its painting (overflow other than visible) has a box that holds the shadow's
+    // whole extent, the drawer's box grown by the shadow's blur on each side. No clip margin is relied on (Safari has none, decision 72).
+    const shadow = await page.evaluate(`(() => {
+      const drawer = document.querySelector('.media-drawer:not(.media-drawer--closed)');
+      const r = drawer.getBoundingClientRect();
+      const px = getComputedStyle(drawer).boxShadow.split(' ').filter((v) => v.endsWith('px')).map(parseFloat);
+      const blur = px.length >= 3 ? px[2] : 0;
+      const ext = { l: r.left - blur, t: r.top - blur, r: r.right + blur, b: r.bottom + blur };
+      const clipping = [];
+      for (let el = drawer.parentElement; el && el !== document.body; el = el.parentElement) {
+        const s = getComputedStyle(el);
+        if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+        const c = el.getBoundingClientRect();
+        clipping.push({ cls: String(el.className), holds: c.left <= ext.l && c.top <= ext.t && c.right >= ext.r && c.bottom >= ext.b });
+      }
+      return { blur, clipping };
+    })()`);
+    check(shadow.blur > 0 && shadow.clipping.every((c) => c.holds), `the drawer's shadow (${shadow.blur} px blur) is inside every clipping box, so it is not cut (${JSON.stringify(shadow)})`);
     const row = await page.evaluate(`(() => { const t = document.querySelector('.media-queue [data-testid="tag-cover"]'); return t ? { tile: !!t.querySelector('.icon-tile') } : null; })()`);
     check(row === null || row.tile === true, `a playlist row with no cover shows the type icon (${JSON.stringify(row)})`);
     await snap('ic2-drawer-light.png');
@@ -189,6 +206,9 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     await setLanguage(page, 'עברית');
     await page.waitFor(`document.documentElement.dir === 'rtl'`, 10000);
     await sleep(500);
+    // A directional icon mirrors in the Hebrew page: the rail toggle's chevron (an icon-dir svg, index.css) has the mirror transform.
+    const mirrored = await page.evaluate(`(() => { const i = document.querySelector('[data-testid="rail-toggle"] svg.icon-dir'); return i ? getComputedStyle(i).transform : null; })()`);
+    check(mirrored === 'matrix(-1, 0, 0, 1, 0, 0)', `in Hebrew the rail toggle's directional chevron is mirrored (transform ${mirrored})`);
     await snap('ic2-hebrew-light.png');
     await setLanguage(page, 'English');
     await page.waitFor(`document.documentElement.dir === 'ltr'`, 10000);
@@ -203,7 +223,7 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     check(sideways <= 0, `the trash has no sideways scroll at 390 px (${sideways} px over)`);
     await setPhone(page, true);
     await sleep(300);
-    const coarse = await iconState(page, '.trash-item button[aria-label="Restore"]');
+    const coarse = await iconState(page, '.trash-item button[aria-label^="Restore:"]');
     check(coarse && coarse.h === 44 && coarse.w === 44, `on a finger the Restore icon is 44 px (${JSON.stringify(coarse)})`);
     await snap('ic2-phone-390.png');
   } finally {

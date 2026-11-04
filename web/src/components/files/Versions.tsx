@@ -108,6 +108,9 @@ export default function Versions({
     if (!ok) setError(t("files.err.downloadRestricted"));
   }
 
+  // rowName is the version's name as its row shows it: "Current", or the date it was saved. The icon buttons name it (decision 72).
+  const rowName = (v: Version) => (v.current ? t("files.versions.current") : formatDate(v.created_at, lang));
+
   function submitLabel(e: FormEvent, v: Version) {
     e.preventDefault();
     void saveLabel(v);
@@ -137,17 +140,17 @@ export default function Versions({
             </Space>
             <Space wrap style={{ marginBlock: 8 }}>
               {downloadAllowed(node) && (
-                <IconButton label={t("files.versions.download")} onClick={() => void download(v)} icon={<Download size={18} aria-hidden="true" focusable="false" />} />
+                <IconButton label={`${t("files.versions.download")}: ${rowName(v)}`} tip={t("files.versions.download")} onClick={() => void download(v)} icon={<Download size={18} aria-hidden="true" focusable="false" />} />
               )}
               {!v.current && can.restoreVersion(node.role) && (
-                <IconButton label={t("files.versions.restore")} onClick={() => void restore(v)} icon={<RotateCcw size={18} aria-hidden="true" focusable="false" />} />
+                <IconButton label={`${t("files.versions.restore")}: ${rowName(v)}`} tip={t("files.versions.restore")} onClick={() => void restore(v)} icon={<RotateCcw size={18} aria-hidden="true" focusable="false" />} />
               )}
               {can.editVersion(node.role) && !v.current && (
                 <>
                   <Checkbox checked={v.keep_forever} onChange={(e) => void keep(v, e.target.checked)}>
                     {t("files.versions.keep")}
                   </Checkbox>
-                  <IconButton label={t("files.versions.delete")} danger onClick={() => void remove(v)} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
+                  <IconButton label={`${t("files.versions.delete")}: ${rowName(v)}`} tip={t("files.versions.delete")} danger onClick={() => void remove(v)} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
                 </>
               )}
             </Space>

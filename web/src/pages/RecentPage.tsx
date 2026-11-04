@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Modal, Skeleton } from "antd";
-import { Eraser, X } from "lucide-react";
+import { X } from "lucide-react";
 import IconButton from "../components/IconButton";
 import { useLang, useT } from "../lib/i18n";
 import { useStore } from "../lib/store";
@@ -125,7 +125,7 @@ export default function RecentPage() {
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 12px", marginBlockEnd: 16 }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{t("nav.recent")}</h1>
-        {items.length > 0 && <IconButton label={t("recent.clear")} onClick={() => setAskClear(true)} icon={<Eraser size={18} aria-hidden="true" focusable="false" />} />}
+        {items.length > 0 && <Button onClick={() => setAskClear(true)}>{t("recent.clear")}</Button>}
       </div>
 
       {error !== null && <Alert type="error" showIcon role="alert" message={error} style={{ marginBlockEnd: 12 }} />}

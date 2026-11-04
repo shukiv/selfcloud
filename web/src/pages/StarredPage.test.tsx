@@ -53,6 +53,19 @@ afterEach(() => {
   session.set(null);
 });
 
+describe("Starred icon buttons name their item", () => {
+  it("each row's Remove star names the item it removes, so a screen reader can tell the rows apart", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.startsWith(STARRED)) return { status: 200, body: { items: [starred("nod_s1", "Budget.pdf"), starred("nod_s2", "Plan.doc")] } };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    await screen.findByRole("link", { name: "Budget.pdf" });
+    expect(screen.getByRole("button", { name: "Remove star: Budget.pdf" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove star: Plan.doc" })).toBeTruthy();
+  });
+});
+
 describe("Starred", () => {
   it("lists the starred items with their address and a Remove star button, and never a raw ID", async () => {
     stubFetch((c: Call) => {
@@ -62,7 +75,7 @@ describe("Starred", () => {
     renderPage();
     const link = await screen.findByRole("link", { name: "Budget.pdf" });
     expect(link.getAttribute("href")).toBe("/n/nod_s1");
-    expect(screen.getByRole("button", { name: translate("en", "starred.remove") })).toBeTruthy();
+    expect(screen.getByRole("button", { name: new RegExp(`^${translate("en", "starred.remove")}:`) })).toBeTruthy();
     expect(screen.queryByText("nod_s1")).toBeNull();
   });
 
@@ -86,7 +99,7 @@ describe("Starred", () => {
       return fail(404, "not_found");
     });
     renderPage();
-    const button = await screen.findByRole("button", { name: translate("en", "starred.remove") });
+    const button = await screen.findByRole("button", { name: new RegExp(`^${translate("en", "starred.remove")}:`) });
     fireEvent.click(button);
     fireEvent.click(button);
     await waitFor(() => expect(screen.queryByRole("link", { name: "Budget.pdf" })).toBeNull());
@@ -107,7 +120,7 @@ describe("Starred", () => {
       return fail(404, "not_found");
     });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: translate("en", "starred.remove") }));
+    fireEvent.click(await screen.findByRole("button", { name: new RegExp(`^${translate("en", "starred.remove")}:`) }));
     who = "bob";
     session.set(signedAs("bob"));
     await screen.findByRole("link", { name: "bob.pdf" });
@@ -123,7 +136,7 @@ describe("Starred", () => {
       return fail(404, "not_found");
     });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: translate("en", "starred.remove") }));
+    fireEvent.click(await screen.findByRole("button", { name: new RegExp(`^${translate("en", "starred.remove")}:`) }));
     await screen.findByRole("alert");
     expect(screen.getByRole("link", { name: "Budget.pdf" })).toBeTruthy();
   });

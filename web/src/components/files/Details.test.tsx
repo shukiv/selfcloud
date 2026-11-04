@@ -44,6 +44,16 @@ function signIn(id: string) {
   });
 }
 
+describe("Details copy button names the file", () => {
+  beforeEach(() => signIn("u1"));
+  afterEach(() => session.set(null));
+
+  it("the checksum's Copy names the file, as the other icon buttons do", () => {
+    render(<Details node={file()} canVersions={false} canShare={false} onShare={vi.fn()} onClose={vi.fn()} onVersions={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Copy: plan.txt" })).toBeTruthy();
+  });
+});
+
 describe("Details", () => {
   beforeEach(() => signIn("u1"));
   afterEach(() => session.set(null));

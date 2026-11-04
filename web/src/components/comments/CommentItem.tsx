@@ -65,6 +65,8 @@ export default function CommentItem({
   const refresh = () => refreshAfterChange(qc, nodeID);
 
   const author = c.mine ? t("comments.mine") : c.author_gone ? t("comments.former") : (c.author_name ?? "");
+  // named puts the author's name after a button's verb, as the row shows it, so the rows' buttons can be told apart (decision 72).
+  const named = (verb: string) => (author !== "" ? `${verb}: ${author}` : verb);
   const shownReplies = repliesOpen && replies.data ? replies.data.pages.flatMap((p) => p.items) : (c.replies ?? []);
 
   const saveEdit = async () => {
@@ -189,11 +191,12 @@ export default function CommentItem({
       {!c.deleted && !editing && (showReply || showEdit || showDelete || showResolve) && (
         <Space wrap size={[8, 4]} style={{ marginBlockStart: 4 }}>
           {showReply && (
-            <IconButton label={t("comments.reply")} aria-expanded={replyOpen} onClick={() => setReplyOpen((o) => !o)} icon={<Reply size={18} aria-hidden="true" focusable="false" />} />
+            <IconButton label={named(t("comments.reply"))} tip={t("comments.reply")} aria-expanded={replyOpen} onClick={() => setReplyOpen((o) => !o)} icon={<Reply className="icon-dir" size={18} aria-hidden="true" focusable="false" />} />
           )}
           {showEdit && (
             <IconButton
-              label={t("comments.edit")}
+              label={named(t("comments.edit"))}
+              tip={t("comments.edit")}
               onClick={() => {
                 setEditText(c.body ?? "");
                 setEditError(null);
@@ -204,13 +207,14 @@ export default function CommentItem({
           )}
           {showResolve && (
             <IconButton
-              label={c.resolved ? t("comments.reopen") : t("comments.resolve")}
+              label={named(c.resolved ? t("comments.reopen") : t("comments.resolve"))}
+              tip={c.resolved ? t("comments.reopen") : t("comments.resolve")}
               onClick={() => void toggleResolved()}
-              icon={c.resolved ? <Undo2 size={18} aria-hidden="true" focusable="false" /> : <CheckCheck size={18} aria-hidden="true" focusable="false" />}
+              icon={c.resolved ? <Undo2 className="icon-dir" size={18} aria-hidden="true" focusable="false" /> : <CheckCheck size={18} aria-hidden="true" focusable="false" />}
             />
           )}
           {showDelete && (
-            <IconButton label={t("comments.delete")} danger onClick={() => setConfirmDelete(true)} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
+            <IconButton label={named(t("comments.delete"))} tip={t("comments.delete")} danger onClick={() => setConfirmDelete(true)} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
           )}
         </Space>
       )}

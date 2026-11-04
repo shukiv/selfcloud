@@ -521,7 +521,7 @@ export default function GeneralAccess({ node, cap, onchanged, onopen }: GeneralA
           {above.map((l) => (
             <div key={l.id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
               <span>{t("share.general.inherited", { role: t(`role.${l.role}`) })}</span>
-              <IconButton label={t("share.openParent")} onClick={() => openNode(l.node_id)} icon={<FolderOpen size={18} aria-hidden="true" focusable="false" />} />
+              <IconButton label={`${t("share.openParent")}: ${t("share.general.inherited", { role: t(`role.${l.role}`) })}`} tip={t("share.openParent")} onClick={() => openNode(l.node_id)} icon={<FolderOpen size={18} aria-hidden="true" focusable="false" />} />
             </div>
           ))}
         </>

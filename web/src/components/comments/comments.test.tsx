@@ -78,6 +78,37 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+describe("comment icon buttons name their author", () => {
+  it("each comment's Reply, Resolve and Delete name its author as the row shows it, so the rows can be told apart", async () => {
+    stubFetch(async (c: Call): Promise<Answer> => {
+      if (c.method === "GET" && c.url.startsWith("/api/v1/nodes/nod_1/comments")) {
+        return page([comment({ id: "cmt_ann", author_name: "Ann Lee", body: "ann" }), comment({ id: "cmt_ben", author_name: "Ben Ko", body: "ben" })]);
+      }
+      return fail(404, "not_found");
+    });
+    wrap(<ListHost nodeID="nod_1" role="manager" />);
+    await screen.findByText("ann");
+    expect(screen.getByRole("button", { name: "Reply: Ann Lee" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete: Ann Lee" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resolve: Ann Lee" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reply: Ben Ko" })).toBeTruthy();
+  });
+
+  // The reply and the reopen glyphs are arrows: they carry icon-dir, so a right-to-left page mirrors them (index.css).
+  it("the reply and the reopen arrows carry icon-dir, so they mirror in a right-to-left page", async () => {
+    stubFetch(async (c: Call): Promise<Answer> => {
+      if (c.method === "GET" && c.url.startsWith("/api/v1/nodes/nod_1/comments")) {
+        return page([comment({ id: "cmt_ann", author_name: "Ann Lee", body: "ann" }), comment({ id: "cmt_ben", author_name: "Ben Ko", body: "ben", resolved: true })]);
+      }
+      return fail(404, "not_found");
+    });
+    wrap(<ListHost nodeID="nod_1" role="manager" />);
+    await screen.findByText("ann");
+    expect(screen.getByRole("button", { name: "Reply: Ann Lee" }).querySelector("svg")?.classList.contains("icon-dir")).toBe(true);
+    expect(screen.getByRole("button", { name: "Reopen: Ben Ko" }).querySelector("svg")?.classList.contains("icon-dir")).toBe(true);
+  });
+});
+
 describe("the comments panel for a commenter", () => {
   it("the composer sends the typed text and the picked mention, and clears only after the server takes it", async () => {
     const posted: Call[] = [];
@@ -160,16 +191,16 @@ describe("the comments panel for a commenter", () => {
     const { unmount } = wrap(<ListHost nodeID="nod_1" role="viewer" />);
     await screen.findByText("mine");
     // A viewer may not reply or edit (editing needs a commenter), and deletes only her own comment.
-    expect(screen.queryByRole("button", { name: "Reply" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^Reply/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Edit/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^Delete/ })).toHaveLength(1);
     unmount();
 
     wrap(<ListHost nodeID="nod_1" role="manager" />);
     await screen.findByText("theirs");
     // A manager deletes any comment; a commenter edits only her own, and a manager of the item is not an editor of others.
-    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /^Delete/ })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /^Edit/ })).toHaveLength(1);
   });
 
   it("delete asks first, then sends the delete and refreshes", async () => {
@@ -188,7 +219,7 @@ describe("the comments panel for a commenter", () => {
     });
     wrap(<ListHost nodeID="nod_1" role="commenter" />);
     await screen.findByText("to go");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Delete/ }));
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete comment" }));
@@ -208,7 +239,7 @@ describe("the comments panel for a commenter", () => {
     });
     wrap(<ListHost nodeID="nod_1" role="commenter" />);
     await screen.findByText("topic");
-    fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Resolve/ }));
     await waitFor(() => expect(bodies).toEqual([{ resolved: true }]));
   });
 
@@ -260,7 +291,7 @@ describe("the comments panel for a commenter", () => {
     // Replies are not replied to: the reply rows have no Reply button, only the top comment does.
     const replies = screen.getAllByTestId("comment-reply");
     expect(replies).toHaveLength(2);
-    for (const r of replies) expect(within(r).queryByRole("button", { name: "Reply" })).toBeNull();
+    for (const r of replies) expect(within(r).queryByRole("button", { name: /^Reply/ })).toBeNull();
   });
 });
 
@@ -492,7 +523,7 @@ describe("a refused write leaves the screen true to the server", () => {
     });
     wrap(<ListHost nodeID="nod_1" role="commenter" />);
     await screen.findByText("mine");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit/ }));
     const box = screen.getByRole("textbox", { name: "Edit comment" }) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: "changed" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -508,9 +539,9 @@ describe("a refused write leaves the screen true to the server", () => {
     });
     wrap(<ListHost nodeID="nod_1" role="commenter" />);
     await screen.findByText("topic");
-    fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Resolve/ }));
     expect((await screen.findByRole("alert")).textContent).toContain("The change was not saved.");
-    expect(screen.getByRole("button", { name: "Resolve" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Resolve/ })).toBeTruthy();
   });
 
   it("a failed delete keeps the confirm open with the reason", async () => {
@@ -523,7 +554,7 @@ describe("a refused write leaves the screen true to the server", () => {
     });
     wrap(<ListHost nodeID="nod_1" role="commenter" />);
     await screen.findByText("to go");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Delete/ }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete comment" }));
     expect(await within(dialog).findByRole("alert")).toBeTruthy();
@@ -545,7 +576,7 @@ describe("a refused write leaves the screen true to the server", () => {
     });
     wrap(<ListHost nodeID="nod_1" role="commenter" />);
     await screen.findByText("to go");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Delete/ }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete comment" }));
     expect(await screen.findByText("No comments yet.")).toBeTruthy();
@@ -567,7 +598,7 @@ describe("a refused write leaves the screen true to the server", () => {
     });
     wrap(<ListHost nodeID="nod_1" role="commenter" />);
     await screen.findByText("mine");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("No comments yet.")).toBeTruthy();
     expect(screen.queryByText("mine")).toBeNull();
@@ -588,7 +619,7 @@ describe("a refused write leaves the screen true to the server", () => {
     });
     wrap(<CommentsTabs nodeID="nod_1" role="commenter" />);
     await screen.findByText("topic");
-    fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Resolve/ }));
     expect(await screen.findByText("Comments are turned off for this account.")).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("tab", { name: "Comments" })).toBeNull());
   });

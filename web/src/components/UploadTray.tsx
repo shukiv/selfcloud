@@ -203,13 +203,13 @@ export default function UploadTray() {
                 )}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {WAITING.includes(u.status) && (
-                    <IconButton label={t("upload.pause")} onClick={() => manager.pause(u.id)} icon={<Pause size={18} aria-hidden="true" focusable="false" />} />
+                    <IconButton label={`${t("upload.pause")}: ${u.name}`} tip={t("upload.pause")} onClick={() => manager.pause(u.id)} icon={<Pause size={18} aria-hidden="true" focusable="false" />} />
                   )}
-                  {u.status === "paused" && <IconButton label={t("upload.resume")} onClick={() => manager.resume(u.id)} icon={<Play size={18} aria-hidden="true" focusable="false" />} />}
-                  {u.status === "failed" && <IconButton label={t("upload.retry")} onClick={() => manager.retry(u.id)} icon={<RefreshCw size={18} aria-hidden="true" focusable="false" />} />}
+                  {u.status === "paused" && <IconButton label={`${t("upload.resume")}: ${u.name}`} tip={t("upload.resume")} onClick={() => manager.resume(u.id)} icon={<Play size={18} aria-hidden="true" focusable="false" />} />}
+                  {u.status === "failed" && <IconButton label={`${t("upload.retry")}: ${u.name}`} tip={t("upload.retry")} onClick={() => manager.retry(u.id)} icon={<RefreshCw size={18} aria-hidden="true" focusable="false" />} />}
                   {u.status === "interrupted" && <Button onClick={() => pickResume(u)}>{t("upload.resume.pick")}</Button>}
-                  {CANCELLABLE.includes(u.status) && <IconButton label={t("upload.cancel")} onClick={() => void manager.cancel(u.id)} icon={<X size={18} aria-hidden="true" focusable="false" />} />}
-                  {FINISHED.includes(u.status) && <IconButton label={t("upload.dismiss")} onClick={() => manager.dismiss(u.id)} icon={<X size={18} aria-hidden="true" focusable="false" />} />}
+                  {CANCELLABLE.includes(u.status) && <IconButton label={`${t("upload.cancel")}: ${u.name}`} tip={t("upload.cancel")} onClick={() => void manager.cancel(u.id)} icon={<X size={18} aria-hidden="true" focusable="false" />} />}
+                  {FINISHED.includes(u.status) && <IconButton label={`${t("upload.dismiss")}: ${u.name}`} tip={t("upload.dismiss")} onClick={() => manager.dismiss(u.id)} icon={<X size={18} aria-hidden="true" focusable="false" />} />}
                 </div>
               </li>
             ))}

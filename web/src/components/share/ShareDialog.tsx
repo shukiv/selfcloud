@@ -407,13 +407,13 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
                               <Button onClick={() => setConfirmRemove(null)}>{t("common.cancel")}</Button>
                             </span>
                           ) : (
-                            <IconButton label={t("share.remove")} onClick={() => setConfirmRemove(p)} disabled={busy} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
+                            <IconButton label={`${t("share.remove")}: ${who}`} tip={t("share.remove")} onClick={() => setConfirmRemove(p)} disabled={busy} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
                           )}
                         </>
                       ) : manager ? (
                         <>
                           <span className="badge">{t(`role.${p.role}`)}</span>
-                          {p.inherited_from && <IconButton label={t("share.openParent")} onClick={() => openParent(p)} icon={<FolderOpen size={18} aria-hidden="true" focusable="false" />} />}
+                          {p.inherited_from && <IconButton label={`${t("share.openParent")}: ${who}`} tip={t("share.openParent")} onClick={() => openParent(p)} icon={<FolderOpen size={18} aria-hidden="true" focusable="false" />} />}
                         </>
                       ) : (
                         <span className="badge">{t(`role.${p.role}`)}</span>

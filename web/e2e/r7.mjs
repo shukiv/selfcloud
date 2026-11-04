@@ -19,7 +19,7 @@ async function centre(page, expr) {
 
 // pressButton presses the button with the given text inside the scope selector, as a person does.
 async function pressButton(page, text, scope = details) {
-  const at = await centre(page, `[...document.querySelectorAll(${q(`${scope} button`)})].find((b) => (b.textContent.trim() === ${q(text)} || b.getAttribute('aria-label') === ${q(text)}) && !b.disabled)`);
+  const at = await centre(page, `[...document.querySelectorAll(${q(`${scope} button`)})].find((b) => (b.textContent.trim() === ${q(text)} || (b.getAttribute('aria-label') ?? '').startsWith(${q(`${text}:`)})) && !b.disabled)`);
   if (!at) throw new Error(`no button "${text}" in ${scope}`);
   await click(page, at);
   await sleep(250);

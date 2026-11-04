@@ -112,7 +112,7 @@ export default function StarredPage() {
               node={n}
               meta={t("starred.on", { date: formatDate(n.starred_at, lang) })}
               action={
-                <IconButton label={t("starred.remove")} disabled={busy.includes(n.id)} onClick={() => void unstar(n)} icon={<StarOff size={18} aria-hidden="true" focusable="false" />} />
+                <IconButton label={`${t("starred.remove")}: ${n.name}`} tip={t("starred.remove")} disabled={busy.includes(n.id)} onClick={() => void unstar(n)} icon={<StarOff size={18} aria-hidden="true" focusable="false" />} />
               }
             />
           ))}

@@ -25,7 +25,7 @@ import * as s4b from './s4b.mjs';
 import { startConvertFake } from './convertFake.mjs';
 import { refusedOnPurpose } from './refusals.mjs';
 import { sortChecks } from './sort.mjs';
-import { accountName, mediaChecks, setTheme } from './media.mjs';
+import { accountName, E2E_ACCENT, mediaChecks, setTheme } from './media.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
 import { w1Checks } from './w1.mjs';
 import { w2Checks } from './w2.mjs';
@@ -52,7 +52,7 @@ const bin = process.env.SELFCLOUD_BIN ?? join(repo, 'bin', 'selfcloud');
 const OWNER = { email: 'olivia@example.com', name: 'Olivia Owner', password: 'correct horse battery staple' };
 const MEMBER = { email: 'mateo@example.com', name: 'Mateo Member', password: 'correct horse battery staple' };
 const ADMIN = { email: 'ada@example.com', name: 'Ada Admin', password: 'correct horse battery staple' };
-const BRAND = { name: 'E2E Drive', accent: '#0F766E' };
+const BRAND = { name: 'E2E Drive', accent: E2E_ACCENT };
 const INVITEE = { email: 'dana@example.com', name: 'Dana Invited', password: 'correct horse battery staple' };
 const TENANT = { name: 'Acme Ltd', owner: { email: 'owen@example.com', name: 'Owen Owner' } };
 
@@ -426,7 +426,7 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   await rowGone(page, 'hello.txt');
   await clickMenu(page, 'Trash');
   await page.waitFor(`location.pathname === '/trash' && [...document.querySelectorAll('.trash-item .name')].some((n) => n.textContent.includes('hello.txt'))`);
-  await page.evaluate(`(() => { const item = [...document.querySelectorAll('.trash-item')].find((li) => li.textContent.includes('hello.txt')); [...item.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Restore' || b.getAttribute('aria-label') === 'Restore').click(); return true; })()`);
+  await page.evaluate(`(() => { const item = [...document.querySelectorAll('.trash-item')].find((li) => li.textContent.includes('hello.txt')); [...item.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Restore' || b.getAttribute('aria-label') === 'Restore: hello.txt').click(); return true; })()`);
   await page.waitFor(`document.querySelector('.ant-alert-success') && document.querySelector('.ant-alert-success').textContent.includes('hello.txt')`);
   check(true, 'the trash restores a deleted file');
   await page.evaluate(`history.back(), true`);
@@ -518,7 +518,7 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
   await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   // Retry sends the rest of the file from the offset the server has, not from the start.
   const beforeRetry = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length;
-  await clickButton(page, 'Retry');
+  await clickButton(page, 'Retry: resume.bin');
   await rowAppears(page, 'resume.bin', 60000);
   const afterRetry = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length - beforeRetry;
   check(afterRetry >= 1 && afterRetry <= 2, `an interrupted upload resumes and finishes, sending ${afterRetry} of its 3 pieces after the retry`);

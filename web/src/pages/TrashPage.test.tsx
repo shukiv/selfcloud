@@ -67,6 +67,24 @@ function renderTrash(items: TrashItem[]) {
 // row waits for the listing to arrive, then returns the item's list entry.
 const row = async (name: string) => (await screen.findByText(name)).closest("li") as HTMLElement;
 
+describe("TrashPage icon buttons name their item", () => {
+  beforeEach(() => {
+    signIn();
+    api.getMe.mockResolvedValue({ personal_folder_id: "f1" });
+    api.statOrNull.mockResolvedValue({ id: "p1", parent_id: null, name: "Plans" });
+  });
+  afterEach(() => session.set(null));
+
+  it("each row's Restore and Delete forever name the item, so the rows can be told apart", async () => {
+    renderTrash([item("t1", "Budget.pdf", "manager"), item("t2", "Notes.txt", "manager")]);
+    const first = await row("Budget.pdf");
+    expect(within(first).getByRole("button", { name: "Restore: Budget.pdf" })).toBeTruthy();
+    expect(within(first).getByRole("button", { name: "Delete forever: Budget.pdf" })).toBeTruthy();
+    const second = await row("Notes.txt");
+    expect(within(second).getByRole("button", { name: "Restore: Notes.txt" })).toBeTruthy();
+  });
+});
+
 describe("TrashPage marks a shortcut and a coloured folder in words", () => {
   beforeEach(() => {
     signIn();
@@ -101,7 +119,7 @@ describe("TrashPage", () => {
   it("restores an item and shows the restored notice with its name", async () => {
     api.restoreNode.mockResolvedValue({ id: "a", name: "plan.txt" });
     renderTrash([item("a", "plan.txt", "editor")]);
-    fireEvent.click(await within(await row("plan.txt")).findByRole("button", { name: "Restore" }));
+    fireEvent.click(await within(await row("plan.txt")).findByRole("button", { name: /^Restore/ }));
     await waitFor(() => expect(api.restoreNode).toHaveBeenCalledWith("a"));
     expect(await screen.findByText("Restored plan.txt.")).toBeTruthy();
   });
@@ -109,7 +127,7 @@ describe("TrashPage", () => {
   it("delete forever opens a confirmation first, and only the confirm button purges", async () => {
     api.purgeTrashed.mockResolvedValue(undefined);
     renderTrash([item("b", "old.txt", "manager")]);
-    fireEvent.click(await within(await row("old.txt")).findByRole("button", { name: "Delete forever" }));
+    fireEvent.click(await within(await row("old.txt")).findByRole("button", { name: /^Delete forever/ }));
     const dialog = await screen.findByRole("dialog");
     expect(api.purgeTrashed).not.toHaveBeenCalled();
     const ok = within(dialog).getByRole("button", { name: "Delete forever" });
@@ -132,9 +150,9 @@ describe("TrashPage", () => {
 
   it("an editor gets Restore but not Delete forever, and no Empty trash", async () => {
     renderTrash([item("d", "shared.txt", "editor")]);
-    const r = await within(await row("shared.txt")).findByRole("button", { name: "Restore" });
+    const r = await within(await row("shared.txt")).findByRole("button", { name: /^Restore/ });
     expect(r).toBeTruthy();
-    expect(within(await row("shared.txt")).queryByRole("button", { name: "Delete forever" })).toBeNull();
+    expect(within(await row("shared.txt")).queryByRole("button", { name: /^Delete forever/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Empty trash" })).toBeNull();
   });
 });
@@ -185,7 +203,7 @@ describe("TrashPage reads and refreshes", () => {
     );
     await screen.findByText("a.txt");
     const row = (await screen.findByText("a.txt")).closest("li") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: "Restore" }));
+    fireEvent.click(within(row).getByRole("button", { name: /^Restore/ }));
     await waitFor(() => expect(api.restoreNode).toHaveBeenCalled());
     const keys = spy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey.join("/"));
     expect(keys.some((k) => k.endsWith("/children"))).toBe(true);
@@ -236,7 +254,7 @@ describe("TrashPage restore by role", () => {
   it("offers a viewer no Restore on an item", async () => {
     renderTrash([item("t1", "a.txt", "viewer")]);
     const row = await row_("a.txt");
-    expect(within(row).queryByRole("button", { name: "Restore" })).toBeNull();
+    expect(within(row).queryByRole("button", { name: /^Restore/ })).toBeNull();
   });
 });
 

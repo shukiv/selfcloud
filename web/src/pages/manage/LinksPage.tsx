@@ -199,7 +199,7 @@ function LinksView() {
                 </p>
               </div>
               <div style={{ flex: "none" }}>
-                <IconButton label={t("links.delete.action")} danger onClick={() => { setDeleteError(null); setDeleting(l); }} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
+                <IconButton label={`${t("links.delete.action")}: ${text(itemLabel(l, false))}`} tip={t("links.delete.action")} danger onClick={() => { setDeleteError(null); setDeleting(l); }} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
               </div>
             </li>
           ))}

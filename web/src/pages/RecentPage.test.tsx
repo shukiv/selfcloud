@@ -56,6 +56,15 @@ afterEach(() => {
   session.set(null);
 });
 
+describe("Recent clear is written out", () => {
+  it("the clear-all button shows its words, not an icon alone (decision 72: no icon says it plainly)", async () => {
+    stubFetch((c: Call) => (c.url.startsWith(RECENT) ? { status: 200, body: { items: [recent("nod_r1", "Plan.txt")] } } : fail(404, "x")));
+    renderPage();
+    const clear = await screen.findByRole("button", { name: "Clear all" });
+    expect(clear.textContent).toBe("Clear all");
+  });
+});
+
 describe("Recent", () => {
   it("lists the recent items, each with what the person did last and its address", async () => {
     stubFetch((c: Call) => (c.url.startsWith(RECENT) ? { status: 200, body: { items: [recent("nod_r1", "Plan.txt")] } } : fail(404, "x")));

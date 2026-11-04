@@ -106,7 +106,7 @@ export default function Details({
             <dt>{t("files.details.sha256")}</dt>
             <dd style={DD}>
               <code style={{ display: "block", overflowWrap: "anywhere", marginBlockEnd: 8 }}>{node.sha256}</code>
-              <IconButton label={t("files.details.copy")} onClick={copyHash} icon={<Copy size={18} aria-hidden="true" focusable="false" />} />{" "}
+              <IconButton label={`${t("files.details.copy")}: ${node.name}`} tip={t("files.details.copy")} onClick={copyHash} icon={<Copy size={18} aria-hidden="true" focusable="false" />} />{" "}
               <span role="status">
                 {copied === "done" ? t("files.details.copied") : copied === "failed" ? t("files.details.copyFailed") : ""}
               </span>

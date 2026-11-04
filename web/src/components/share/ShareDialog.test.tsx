@@ -129,6 +129,37 @@ function renderDialog(node: Node, props: { onclose?: () => void; onchanged?: () 
   return { ...view, client, onclose, onchanged, ui };
 }
 
+describe("share dialog icon buttons name the person", () => {
+  beforeEach(() => {
+    session.set(person("usr_ann", true));
+    maxExpiryDays.set(0);
+    passwordMinLength.set(8);
+    api.listPermissions.mockResolvedValue({ items: [own, mate] });
+    api.listShareLinks.mockResolvedValue({ items: [] });
+    api.statOrNull.mockResolvedValue(null);
+    api.searchDirectory.mockResolvedValue({ items: [] });
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+    session.set(null);
+  });
+
+  it("each person's Remove names that person, so the rows can be told apart", async () => {
+    renderDialog(nodeOf("manager"));
+    await screen.findByText("Mateo Member");
+    expect(screen.getByRole("button", { name: "Remove: Mateo Member" })).toBeTruthy();
+  });
+
+  it("an inherited person's Open parent names that person", async () => {
+    api.listPermissions.mockResolvedValue({ items: [own, { ...mate, inherited_from: "nod_rootaaaa" }] });
+    api.statOrNull.mockResolvedValue({ id: "nod_rootaaaa", name: "Plans" });
+    renderDialog(nodeOf("manager"));
+    // The ancestor's name is read after the rows, as the test above does: wait for that read before looking for the button.
+    await waitFor(() => expect(api.statOrNull).toHaveBeenCalledWith("nod_rootaaaa"));
+    expect(await screen.findByRole("button", { name: "Open the parent: Mateo Member" }, { timeout: 4000 })).toBeTruthy();
+  });
+});
+
 describe("the share dialog", () => {
   beforeEach(() => {
     session.set(person("usr_ann", true));
@@ -162,7 +193,7 @@ describe("the share dialog", () => {
     expect(screen.getByText("You have Can view access to this item.")).toBeTruthy();
     expect(document.getElementById("share-who")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Advanced" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
     expect(screen.getByText("You can see who has access, but only a manager of this item can share it.")).toBeTruthy();
   });
 
@@ -201,7 +232,7 @@ describe("the share dialog", () => {
     const user = userEvent.setup();
     renderDialog(nodeOf("manager"));
     await screen.findByText("Mateo Member");
-    await user.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+    await user.click(screen.getAllByRole("button", { name: /^Remove/ })[0]);
 
 
     expect(api.removePermission).not.toHaveBeenCalled();

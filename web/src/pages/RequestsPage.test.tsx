@@ -66,6 +66,25 @@ afterEach(() => {
   pendingRequests.set(null);
 });
 
+describe("access requests icon buttons name the person who asks", () => {
+  beforeEach(() => session.set(signedAs("olivia")));
+  afterEach(() => session.set(null));
+
+  it("each request's Approve and Deny name the asker, so the rows can be told apart", async () => {
+    stubFetch((c: Call) => {
+      if (c.url === "/api/v1/access-requests") {
+        return { status: 200, body: { items: [request("arq_1", "viewer", "Ann Lee"), request("arq_2", "editor", "Ben Ko")] } };
+      }
+      return fail(404, "not_found");
+    });
+    renderPage();
+    await screen.findByText("Ann Lee");
+    expect(screen.getByRole("button", { name: "Approve: Ann Lee" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Deny: Ann Lee" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Approve: Ben Ko" })).toBeTruthy();
+  });
+});
+
 describe("access requests", () => {
   it("the count is read again each time the page opens, not kept from the last visit (guard: refreshPendingRequests on mount)", async () => {
     pendingRequests.set(9);
@@ -105,7 +124,7 @@ describe("access requests", () => {
       return fail(404, "not_found");
     });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Approve/ }));
     await waitFor(() => expect(approvals).toEqual([{}]));
   });
 
@@ -130,7 +149,7 @@ describe("access requests", () => {
     });
     renderPage();
     const list = await screen.findByRole("list", { name: "Access requests" });
-    fireEvent.click(within(list).getByRole("button", { name: "Deny" }));
+    fireEvent.click(within(list).getByRole("button", { name: /^Deny/ }));
     expect(await screen.findByText("You can't decide this request.")).toBeTruthy();
   });
 });
@@ -156,7 +175,7 @@ describe("a decision answered after the person has changed", () => {
         <RequestsPage />
       </QueryClientProvider>,
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Approve/ }));
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/approve"))).toBe(true));
     // The person changes while the decision is out: the client is cleared, as the app does at a change of person.
     session.set(signedAs("bob"));

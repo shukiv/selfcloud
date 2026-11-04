@@ -55,6 +55,19 @@ afterEach(() => session.set(null));
 
 const isLinkDelete = (c: Call) => c.method === "DELETE" && c.url === "/api/v1/share-links/shl_1";
 
+describe("links icon buttons name their item", () => {
+  it("each row's Delete link names the item the link shares", async () => {
+    const other = { ...LINK, id: "shl_2", item_name: "budget.xlsx", item_path: "Plans/budget.xlsx" };
+    stubFetch((c) => {
+      if (c.url.includes("/sharing-policy")) return { status: 200, body: { public_links: true, anyone_links: 2 } };
+      return { status: 200, body: { items: [LINK, other] } };
+    });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Delete link: report.pdf" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete link: budget.xlsx" })).toBeTruthy();
+  });
+});
+
 describe("links", () => {
   it("a failed first load shows the error, never the empty message (guard: error before the empty state)", async () => {
     stubFetch((c) => (c.url.includes("/share-links") ? fail(403, "forbidden") : { status: 200, body: { anyone_links: 0, public_links: true } }));
@@ -99,7 +112,7 @@ describe("links", () => {
       return { status: 200, body: { items: [LINK] } };
     });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Delete link" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Delete link/ }));
     const go = (await screen.findAllByRole("button", { name: /Delete link/ })).at(-1)!;
     act(() => {
       fireEvent.click(go);

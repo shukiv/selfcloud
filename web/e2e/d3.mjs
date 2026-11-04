@@ -7,7 +7,7 @@
 // the run saves the pictures of each state.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { setLanguage, setPhone, setTheme } from './media.mjs';
+import { onActiveInk, setLanguage, setPhone, setTheme } from './media.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const q = (v) => JSON.stringify(v);
@@ -18,7 +18,8 @@ const TEXT = 'rgb(255, 255, 255)';
 const HOVER = 'rgba(255, 255, 255, 0.1)';
 const CLEAR = 'rgba(0, 0, 0, 0)';
 // Decision 72: a top-level place is filled with the sidebar's active colour (the yellow), and its text is the on-active colour.
-const ONACTIVE = 'rgb(0, 0, 0)';
+// The on-active text the page draws for this brand (media.mjs onActiveInk: textOn(SIDEBAR.active) for the e2e's custom accent).
+const ONACTIVE = await onActiveInk();
 const noBar = (s) => s !== null && (s.bar.width === '0px' || s.bar.content === 'none');
 
 // styleOf reads the computed style of the element a selector names, and of its ::before (the bar): the text colour, the background,

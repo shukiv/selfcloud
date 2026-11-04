@@ -273,7 +273,7 @@ export default function DropPage(props: DropPageProps) {
                   <progress max={100} value={percent(it)} style={{ width: 120 }}>
                     {percent(it)}%
                   </progress>
-                  <IconButton label={t("drop.cancel")} onClick={() => void managerRef.current?.cancel(it.id)} icon={<X size={18} aria-hidden="true" focusable="false" />} />
+                  <IconButton label={`${t("drop.cancel")}: ${it.name}`} tip={t("drop.cancel")} onClick={() => void managerRef.current?.cancel(it.id)} icon={<X size={18} aria-hidden="true" focusable="false" />} />
                 </>
               )}
             </li>

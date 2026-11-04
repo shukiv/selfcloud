@@ -268,7 +268,8 @@ export default function MediaDock() {
             {node && refused === node.id && <Alert type="info" role="status" showIcon message={t("files.err.downloadRestricted")} />}
           </>
         )}
-        <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>{playlist}</div>
+        {/* Not clipped here: an open playlist drawer's shadow reaches past this box (decision 72). The closed drawer is clipped by the screen. */}
+        <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", overflow: "visible" }}>{playlist}</div>
       </div>
       {!viewing && (
         <MiniPlayer

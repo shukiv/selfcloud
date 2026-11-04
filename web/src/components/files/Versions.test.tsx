@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiError";
+import { formatDate } from "../../lib/files/format";
 import type { Node, Version } from "../../lib/files/types";
 
 const api = vi.hoisted(() => ({
@@ -59,6 +60,18 @@ function renderVersions(over: Partial<{ node: Node; onChanged: () => void }> = {
   return { onClose, onChanged };
 }
 
+describe("Versions icon buttons name their version as the row shows it", () => {
+  it("each earlier version's Download, Restore and Delete name the version's date, the label the row shows", async () => {
+    for (const fn of Object.values(api)) fn.mockReset();
+    api.listVersions.mockResolvedValue({ items: [CURRENT, OLD] });
+    renderVersions();
+    const label = formatDate(OLD.created_at, "en");
+    expect(await screen.findByRole("button", { name: `Download: ${label}` })).toBeTruthy();
+    expect(screen.getByRole("button", { name: `Restore this version: ${label}` })).toBeTruthy();
+    expect(screen.getByRole("button", { name: `Delete: ${label}` })).toBeTruthy();
+  });
+});
+
 describe("Versions", () => {
   beforeEach(() => {
     for (const fn of Object.values(api)) fn.mockReset();
@@ -74,13 +87,13 @@ describe("Versions", () => {
     const items = await screen.findAllByTestId("version");
     expect(items.length).toBe(2);
     expect(within(items[0]).getByText("Current version")).toBeTruthy();
-    expect(within(items[1]).getByRole("button", { name: "Restore this version" })).toBeTruthy();
+    expect(within(items[1]).getByRole("button", { name: /^Restore this version/ })).toBeTruthy();
   });
 
   it("restores an earlier version with the fresh ETag and tells the page it changed", async () => {
     const { onChanged } = renderVersions();
     const items = await screen.findAllByTestId("version");
-    fireEvent.click(within(items[1]).getByRole("button", { name: "Restore this version" }));
+    fireEvent.click(within(items[1]).getByRole("button", { name: /^Restore this version/ }));
     await waitFor(() => expect(api.restoreVersion).toHaveBeenCalledWith("n1", "v1", "fresh"));
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/Restored\./)).toBeTruthy();
@@ -108,7 +121,7 @@ describe("Versions", () => {
     api.deleteVersion.mockRejectedValue(new ApiError(500, "internal", { message: "SQL: boom" }, 0));
     renderVersions();
     const items = await screen.findAllByTestId("version");
-    fireEvent.click(within(items[1]).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(items[1]).getByRole("button", { name: /^Delete/ }));
     await waitFor(() => expect(api.deleteVersion).toHaveBeenCalledWith("n1", "v1"));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("The server had a problem. Try again in a moment.");
@@ -133,7 +146,7 @@ describe("Versions by role", () => {
   it("offers a viewer no restore, and no download where the space forbids it", async () => {
     renderVersions({ node: { ...node, role: "viewer", no_download: true } });
     const items = await screen.findAllByTestId("version");
-    expect(within(items[1]).queryByRole("button", { name: "Restore this version" })).toBeNull();
+    expect(within(items[1]).queryByRole("button", { name: /^Restore this version/ })).toBeNull();
     expect(within(items[1]).queryByRole("button", { name: /download/i })).toBeNull();
   });
 });

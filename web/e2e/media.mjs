@@ -127,6 +127,39 @@ async function clearSelection(page) {
 // The selection actions can be read by a check as one list of buttons, whatever the width.
 export { accountName, barButtons, browserTitle, click, closePreview, clearSelection, dblClick, docTop, itemSel, openedName, point, q, setLanguage, setPhone, setTheme, shot, sleep, tap };
 
+// E2E_ACCENT is the brand accent the e2e server runs with (run.mjs BRAND). onActiveInk is the text colour the page draws on the
+// sidebar's active highlight, worked out from the sources the page itself uses, so a change there moves the expected colour too:
+// for a custom accent lib/brand.ts sets it to textOn(SIDEBAR.active), black or white, whichever reads better on the highlight;
+// for the default accent it keeps SIDEBAR.onActive (theme/tokens.ts). The e2e brand is custom, so its ink is textOn(yellow).
+export const E2E_ACCENT = '#0F766E';
+export async function onActiveInk(accent = E2E_ACCENT) {
+  const src = fileURLToPath(new URL('../src/', import.meta.url));
+  const tokens = await readFile(join(src, 'theme', 'tokens.ts'), 'utf8');
+  const sidebarStart = tokens.indexOf('export const SIDEBAR');
+  const sidebar = tokens.slice(sidebarStart, tokens.indexOf('} as const', sidebarStart));
+  const hexOf = (text, re) => {
+    const m = text.match(re);
+    if (!m) throw new Error(`no ${re} in the source`);
+    return m[1].toUpperCase();
+  };
+  const active = hexOf(sidebar, /\bactive:\s*"(#[0-9A-Fa-f]{6})"/);
+  const onActive = hexOf(sidebar, /\bonActive:\s*"(#[0-9A-Fa-f]{6})"/);
+  const defaultAccent = hexOf(tokens, /DEFAULT_ACCENT\s*=\s*"(#[0-9A-Fa-f]{6})"/);
+  // The same contrast formula as lib/brand.ts (luminance, contrast), used to pick black or white.
+  const lum = (hex) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const contrast = (a, b) => {
+    const x = lum(a);
+    const y = lum(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  };
+  const ink = accent.toUpperCase() === defaultAccent ? onActive : contrast(active, '#FFFFFF') >= contrast(active, '#000000') ? '#FFFFFF' : '#000000';
+  const n = parseInt(ink.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+}
+
 // wideElements lists the elements whose right edge is past a phone's 390 px width, widest first, with the page's
 // scrollWidth and innerWidth. A page wider than its window is shrunk by a phone browser, and taps then miss.
 async function wideElements(page) {

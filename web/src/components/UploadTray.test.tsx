@@ -44,6 +44,30 @@ function item(over: Partial<UploadItem>): UploadItem {
   };
 }
 
+describe("UploadTray icon buttons name their file", () => {
+  beforeEach(() => {
+    conflictAsk.set(null);
+    uploads.set([]);
+  });
+  afterEach(() => {
+    uploads.set([]);
+    conflictAsk.set(null);
+  });
+
+  it("each row's Pause, Cancel, Retry and Dismiss name the file, so the rows can be told apart", () => {
+    uploads.set([
+      item({ id: 1, name: "a.bin", status: "queued" }),
+      item({ id: 2, name: "b.bin", status: "failed" }),
+      item({ id: 3, name: "c.bin", status: "done" }),
+    ]);
+    render(<UploadTray />);
+    expect(screen.getByRole("button", { name: "Pause: a.bin" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel: a.bin" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry: b.bin" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Dismiss: c.bin" })).toBeTruthy();
+  });
+});
+
 describe("UploadTray", () => {
   beforeEach(() => {
     for (const fn of Object.values(manager)) fn.mockClear();
@@ -59,7 +83,7 @@ describe("UploadTray", () => {
     uploads.set([item({ id: 7, status: "queued" })]);
     render(<UploadTray />);
     expect(screen.getByText("Waiting in line")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Pause/ }));
     expect(manager.pause).toHaveBeenCalledWith(7);
   });
 
@@ -69,7 +93,7 @@ describe("UploadTray", () => {
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toBe("The file is too large.");
     expect(screen.queryByText("server text")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Retry/ }));
     expect(manager.retry).toHaveBeenCalledWith(2);
   });
 
@@ -87,7 +111,7 @@ describe("UploadTray", () => {
     uploads.set([item({ id: 4, status: "interrupted" })]);
     render(<UploadTray />);
     expect(screen.getByRole("button", { name: "Choose the file to resume" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Pause/ })).toBeNull();
   });
 
   it("a done upload has no progress bar and can be dismissed", () => {
@@ -96,7 +120,7 @@ describe("UploadTray", () => {
     // Every upload has ended, so the tray has folded itself: its list opens again on the person's request.
     fireEvent.click(screen.getByRole("button", { name: "Show" }));
     expect(container.querySelector("progress")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Dismiss/ }));
     expect(manager.dismiss).toHaveBeenCalledWith(5);
   });
 
@@ -151,7 +175,7 @@ describe("UploadTray cancel", () => {
   it("offers cancel only for an upload still in progress, never for a finished one", () => {
     uploads.set([item({ id: 1, status: "done", name: "done.pdf" })]);
     render(<UploadTray />);
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Cancel/ })).toBeNull();
   });
 });
 

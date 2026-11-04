@@ -290,7 +290,7 @@ export async function sharingChecks(page, ctx) {
   await page.waitFor(`location.pathname === '/requests' && !!document.querySelector('.requests .request')`);
   await page.waitFor(`document.querySelector('.requests .request').textContent.includes('secret.txt')`);
   await page.waitFor(
-    `(() => { const b = [...(document.querySelector('.requests .request')?.querySelectorAll('button') ?? [])].find((x) => x.textContent.trim() === 'Approve' || x.getAttribute('aria-label') === 'Approve'); if (!b) return false; b.click(); return true; })()`,
+    `(() => { const b = [...(document.querySelector('.requests .request')?.querySelectorAll('button') ?? [])].find((x) => x.textContent.trim() === 'Approve' || (x.getAttribute('aria-label') ?? '').startsWith('Approve:')); if (!b) return false; b.click(); return true; })()`,
   );
   await page.waitFor(`document.querySelector('.ant-alert-success') && !!document.querySelector('.ant-alert-success').textContent.includes('Access given to ${MEMBER.name}')`);
   check(true, 'the owner approves the request');

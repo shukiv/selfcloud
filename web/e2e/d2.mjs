@@ -11,7 +11,7 @@
 // With SELFCLOUD_E2E_SHOTS set (a folder), the run also saves the pictures.
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { setLanguage, setPhone, setTheme } from './media.mjs';
+import { onActiveInk, setLanguage, setPhone, setTheme } from './media.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const q = (v) => JSON.stringify(v);
@@ -372,7 +372,8 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     // Decision 69 (option B): the figures keep the caption colour when the row is selected, the same as when it is not (read above, on
     // the files page, where the row is not selected). The caption is the brand's: blue by default, and the text colour on a brand
     // whose sidebar the caption does not read on.
-    check(yEn.line !== null && yEn.line.text === 'rgb(0, 0, 0)', `on the selected Storage row the figures take the on-active colour (${yEn.line?.text})`);
+    const onActive = await onActiveInk();
+    check(yEn.line !== null && yEn.line.text === onActive,`on the selected Storage row the figures take the on-active colour (${yEn.line?.text})`);
     check(storageBarNone === true, `on the selected Storage row there is no bar: its fill marks it (decision 72)`);
     // The track is not checked against the sidebar: a yellow fill keeps 3:1 against a track dark enough to read on the blue, and a track
     // light enough to reach 3:1 against the blue leaves the yellow under 1.2:1 (computed for the default blue and the teal, review

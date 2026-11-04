@@ -219,9 +219,9 @@ export default function TrashPage() {
                 <p style={{ margin: 0, fontSize: 14, opacity: 0.75 }}>{days(it)}</p>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {it.role && atLeast(it.role, "editor") && <IconButton label={t("trash.restore")} onClick={() => void restore(it)} icon={<ArchiveRestore size={18} aria-hidden="true" focusable="false" />} />}
+                {it.role && atLeast(it.role, "editor") && <IconButton label={`${t("trash.restore")}: ${it.name}`} tip={t("trash.restore")} onClick={() => void restore(it)} icon={<ArchiveRestore size={18} aria-hidden="true" focusable="false" />} />}
                 {it.role === "manager" && (
-                  <IconButton label={t("trash.purgeNow")} danger onClick={() => setConfirm({ kind: "purge", item: it })} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
+                  <IconButton label={`${t("trash.purgeNow")}: ${it.name}`} tip={t("trash.purgeNow")} danger onClick={() => setConfirm({ kind: "purge", item: it })} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
                 )}
               </div>
             </li>

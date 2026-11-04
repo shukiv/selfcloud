@@ -506,10 +506,9 @@ a {
   flex: 1 1 auto;
   min-height: 0;
   position: relative;
-  overflow: hidden;
-  /* The clip keeps a margin as big as the drawer's shadow blur, so the shadow is not cut at the playlist's edges (decision 72). */
-  overflow: clip;
-  overflow-clip-margin: 24px;
+  /* Not clipped, so an open drawer's shadow reaches past the playlist's edges. A clip margin would do it, but Safari does not
+     support that property (decision 72). The screen takes its own clip off when the drawer is open (.media-screen--drawer below). */
+  overflow: visible;
 }
 .media-main {
   display: flex;
@@ -554,6 +553,11 @@ a {
   /* clip, not hidden: a focus inside the closed drawer must not scroll the screen sideways (decision 63). */
   overflow: hidden;
   overflow: clip;
+}
+/* An open drawer is not clipped by the screen, so its shadow is not cut at the screen's edges (decision 72). The closed drawer
+   is still clipped, by the rule above. */
+.media-screen--drawer {
+  overflow: visible;
 }
 .media-screen .media-stage {
   width: 100%;
@@ -1006,8 +1010,8 @@ a {
   transition: transform 200ms ease;
 }
 .media-drawer--closed {
-  /* Off past the playlist clip margin (24 px, decision 72), so the margin shows none of it. Never hidden: that takes the focus
-     away on opening (MediaPlaylist.tsx). */
+  /* Off past the screen's edge, where the screen's clip hides it (decision 72). Never hidden: that takes the focus away on
+     opening (MediaPlaylist.tsx). */
   transform: translateX(calc(100% + 24px));
   /* The drawer's shadow would show on the screen's edge while the drawer is off it. */
   box-shadow: none;

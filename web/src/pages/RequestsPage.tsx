@@ -173,8 +173,8 @@ export default function RequestsPage() {
                       />
                     </>
                   )}
-                  <IconButton label={t("requests.approve")} disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: true })} icon={<Check size={18} aria-hidden="true" focusable="false" />} />
-                  <IconButton label={t("requests.deny")} disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: false })} icon={<X size={18} aria-hidden="true" focusable="false" />} />
+                  <IconButton label={`${t("requests.approve")}: ${name}`} tip={t("requests.approve")} disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: true })} icon={<Check size={18} aria-hidden="true" focusable="false" />} />
+                  <IconButton label={`${t("requests.deny")}: ${name}`} tip={t("requests.deny")} disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: false })} icon={<X size={18} aria-hidden="true" focusable="false" />} />
                 </Space>
               </li>
             );
