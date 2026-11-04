@@ -367,9 +367,9 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     let holding = false;
     const held = [];
     const gone = [];
-    // The page may cancel a held request before it is let go (an older read of a folder is aborted when a newer one starts).
-    // Chrome then answers "Invalid InterceptionId", or "Invalid state", and there is nothing left to let go: that is not a
-    // failure of the page. It is named in a DIAG line, and it must not hide the step's own error.
+    // A held request may be gone before it is let go (the page left, or, as in gate stfu4b, another listener let it go).
+    // Chrome then answers "Invalid InterceptionId", or "Invalid state", and there is nothing left to let go. It is named in a
+    // DIAG line, and it must not hide the step's own error.
     const letGo = (id, url) =>
       page.send('Fetch.continueRequest', { requestId: id }).catch((e) => {
         gone.push(`${url}: ${e.message}`);
@@ -377,10 +377,15 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     const release = async () => {
       for (const r of held.splice(0)) await letGo(r.id, r.url);
     };
-    page.on('Fetch.requestPaused', (p) => {
+    // Another listener on paused requests would let the held listing go at once, and the folder would open under the keys
+    // (an earlier section left one in the full run: gate stfu4b). The step stops at once if one is there.
+    const others = page.listeners.get('Fetch.requestPaused')?.length ?? 0;
+    if (others > 0) throw new Error(`another section still answers paused requests (${others} listener(s)), so the listing cannot be held`);
+    const onPaused = (p) => {
       if (holding) held.push({ id: p.requestId, url: p.request.url });
       else void letGo(p.requestId, p.request.url);
-    });
+    };
+    page.on('Fetch.requestPaused', onPaused);
     await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/children*' }] });
     try {
       holding = true;
@@ -401,6 +406,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
       holding = false;
       await release();
       await page.send('Fetch.disable').catch(() => {});
+      page.off('Fetch.requestPaused', onPaused);
       if (gone.length) console.log(`DIAG held requests the page had cancelled: ${gone.join(' | ')}`);
     }
     await press(page, 'Backspace');

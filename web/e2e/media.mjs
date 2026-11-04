@@ -313,11 +313,13 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
   page.mintTimes = [];
   // pausedHook, when a check sets it, answers every paused request in its place (the retry check fails the English file).
   page.pausedHook = null;
-  page.on('Fetch.requestPaused', (p) => {
+  // The listener is removed at the end of the section, so it cannot answer a request that a later section holds.
+  const onPaused = (p) => {
     if (page.pausedHook) return page.pausedHook(p);
     if (linkHook) return linkHook(p);
     return page.send('Fetch.continueRequest', { requestId: p.requestId });
-  });
+  };
+  page.on('Fetch.requestPaused', onPaused);
   const linkMints = () => page.sent.filter((r) => r.method === 'POST' && /\/api\/v1\/nodes\/[^/]+\/links$/.test(r.url)).length;
 
   // ---- the files: a folder with a video, an audio file, a picture, a text file, a broken video and a folder ----
@@ -956,7 +958,8 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await shots(page, { folderURL, dir: process.env.SELFCLOUD_E2E_SHOTS });
   }
 
-  // The checks after this one expect the desktop window and no selection.
+  // The checks after this one expect the desktop window and no selection, and no listener of this section on paused requests.
+  page.off('Fetch.requestPaused', onPaused);
   await setPhone(page, false);
   await page.goto(folderURL).catch(() => undefined);
   if (failures.length > 0) throw new Error(`${failures.length} media check(s) failed: ${failures.join(' | ')}`);
