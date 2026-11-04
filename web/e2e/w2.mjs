@@ -449,11 +449,11 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     check(side <= 0, `with the tree open the page does not scroll sideways at 1280 px (${side})`);
     await page.evaluate(`window.scrollTo(0, 900)`);
     await sleepMs(300);
-    const pos = await page.evaluate(`(() => { const bar = document.querySelector('[data-testid="browser-toolbar"]').getBoundingClientRect(); const head = document.querySelector('.ant-table-sticky-holder thead')?.getBoundingClientRect(); return { barBottom: bar.bottom, headTop: head ? head.top : null, headBottom: head ? head.bottom : null, scroll: scrollY }; })()`);
-    const clip = await page.evaluate(`(() => { const out = []; for (let e = document.querySelector('.ant-table-sticky-holder'); e; e = e.parentElement) { const o = getComputedStyle(e); if (o.overflowX !== 'visible' || o.overflowY !== 'visible') out.push(e.tagName + '.' + e.className + ' ' + o.overflowX + '/' + o.overflowY); } return out.join(' | '); })()`);
+    const pos = await page.evaluate(`(() => { const bar = document.querySelector('[data-testid="browser-toolbar"]').getBoundingClientRect(); const head = document.querySelector('.files-list .ant-table-thead th')?.getBoundingClientRect(); return { barBottom: bar.bottom, headTop: head ? head.top : null, headBottom: head ? head.bottom : null, scroll: scrollY }; })()`);
+    const clip = await page.evaluate(`(() => { const out = []; for (let e = document.querySelector('.files-list .ant-table-thead'); e; e = e.parentElement) { const o = getComputedStyle(e); if (o.overflowX !== 'visible' || o.overflowY !== 'visible') out.push(e.tagName + '.' + e.className + ' ' + o.overflowX + '/' + o.overflowY); } return out.join(' | '); })()`);
     check(pos.headTop !== null && Math.abs(pos.headTop - pos.barBottom) <= 1.5, `the column header sits right under the toolbar (toolbar bottom ${pos.barBottom}, header top ${pos.headTop}, scrolled ${pos.scroll}; clipping ancestors: ${clip})`);
     // A row scrolled to by the keyboard is not left under the header.
-    const covered = await page.evaluate(`(() => { const head = document.querySelector('.ant-table-sticky-holder thead').getBoundingClientRect(); const row = document.querySelector(${q(itemSel('l30.txt'))}); row.focus(); row.scrollIntoView({ block: 'nearest' }); const r = row.getBoundingClientRect(); return { rowTop: r.top, headBottom: head.bottom }; })()`);
+    const covered = await page.evaluate(`(() => { const head = document.querySelector('.files-list .ant-table-thead th').getBoundingClientRect(); const row = document.querySelector(${q(itemSel('l30.txt'))}); row.focus(); row.scrollIntoView({ block: 'nearest' }); const r = row.getBoundingClientRect(); return { rowTop: r.top, headBottom: head.bottom }; })()`);
     check(covered.rowTop >= covered.headBottom - 1, `a row scrolled into view is not under the column header (${JSON.stringify(covered)})`);
   });
 

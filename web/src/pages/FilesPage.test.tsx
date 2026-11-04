@@ -7,7 +7,7 @@ import { App as AntdApp } from "antd";
 import { createQueryClient } from "../lib/query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/apiError";
-import type { Node, Role } from "../lib/files/types";
+import type { FolderAccess, Node, Role } from "../lib/files/types";
 import { session, type Session } from "../lib/session";
 import { writable } from "../lib/store";
 import { folders } from "../lib/files/folders";
@@ -645,9 +645,15 @@ describe("a change of address closes what was open at the last one", () => {
     await act(async () => {
       await router.navigate(`${FOLDER}/nod_bbbbbbbb`);
     });
-    // Wait for the new place to be shown: the page draws no dialog at all while it loads.
+    // The new place's rows are there at once, since the page keeps the last place on screen while it loads (fu3b). jsdom runs no
+    // close motion: a modal that is leaving has the motion's class, and is hidden by hand here as the motion does when it ends. A
+    // modal that is still open has no such class, so the button stays and the check fails.
     await screen.findByRole("row", { name: "alpha.txt" });
-    expect(screen.queryByRole("button", { name: "Move to trash" })).toBeNull();
+    await waitFor(() => {
+      const leaving = document.querySelector<HTMLElement>(".ant-modal.ant-zoom-leave");
+      if (leaving) (leaving.closest(".ant-modal-wrap") as HTMLElement).style.display = "none";
+      expect(screen.queryByRole("button", { name: "Move to trash" })).toBeNull();
+    });
     expect(api.deleteNode).not.toHaveBeenCalled();
   });
 });
@@ -1173,10 +1179,12 @@ describe("slice w2: the five fixes from w1's notes", () => {
   it("pins the list's column header under the toolbar", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
-    const holder = document.querySelector<HTMLElement>(".ant-table-sticky-holder");
-    expect(holder).not.toBeNull();
+    // The header is pinned in the list's own table (fu3b, item 1): its cells are sticky, at the place the list sets (the variable).
+    const region = document.querySelector<HTMLElement>(".files-list");
+    expect(document.querySelector(".ant-table-sticky-holder")).toBeNull();
     // The shell's header (56) and the toolbar's row (56 with a mouse).
-    expect(holder?.style.top).toBe("112px");
+    expect(region?.style.getPropertyValue("--sc-list-top")).toBe("112px");
+    expect(document.querySelector(".files-list .ant-table-thead th")).not.toBeNull();
   });
 
   // (c) Select all says that it took only the loaded rows when more pages exist.
@@ -2026,5 +2034,132 @@ describe("the row end and the grouped menu (decision 70)", () => {
     await screen.findByRole("row", { name: "Music" });
     fireEvent.contextMenu(rows("Music") as Element, { clientX: 50, clientY: 60 });
     expect(await screen.findByRole("menuitem", { name: "Open" })).toBeTruthy();
+  });
+});
+
+// Slice fu3b (decision 77, item 2): the previous listing stays on screen, marked busy, until the next folder is read. A place's
+// first read is the only one that shows nothing, and a failed read still shows its error.
+describe("the list while the next folder is read (fu3b)", () => {
+  const SUB = `${FOLDER}/nod_bbbbbbbb`;
+  const busyFrame = () => document.querySelector(".files-list")?.closest("[aria-busy]") ?? null;
+
+  it("keeps the previous rows, marked busy and inert, until the next folder is read, then swaps", async () => {
+    let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
+    );
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    // The old rows are still there: no frame without a listing. Assistive technology reads the area as busy, and its rows are inert.
+    expect(rows("alpha.txt")).not.toBeNull();
+    expect(busyFrame()?.getAttribute("aria-busy")).toBe("true");
+    expect(busyFrame()?.closest("[inert]")).not.toBeNull();
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+    expect(rows("alpha.txt")).toBeNull();
+    expect(busyFrame()).toBeNull();
+  });
+
+  it("keeps the page while the next place is looked up: no loading notice replaces the listing (fu3b)", async () => {
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? { items: [node("n3", "gamma.txt")], next_cursor: undefined } : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
+    );
+    const real = vi.mocked(locate).getMockImplementation()!;
+    let release!: () => void;
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    // The next place's lookup (the first one after this) waits until the test releases it.
+    vi.mocked(locate).mockImplementationOnce(
+      (folder: string, dirID: string | null, list: FolderAccess[]) =>
+        new Promise((resolve) => {
+          release = () => resolve(real(folder, dirID, list));
+        }),
+    );
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(vi.mocked(locate)).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", expect.anything()));
+    expect(document.querySelector('[role="status"][aria-busy="true"]')).toBeNull();
+    expect(rows("alpha.txt")).not.toBeNull();
+    expect(busyFrame()?.closest("[inert]")).not.toBeNull();
+    await act(async () => {
+      release();
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+    expect(busyFrame()).toBeNull();
+  });
+
+  it("does not start an upload into the folder shown before, while the next place is read (fu3b)", async () => {
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? { items: [node("n3", "gamma.txt")], next_cursor: undefined } : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
+    );
+    const real = vi.mocked(locate).getMockImplementation()!;
+    let release!: () => void;
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    vi.mocked(locate).mockImplementationOnce(
+      (folder: string, dirID: string | null, list: FolderAccess[]) =>
+        new Promise((resolve) => {
+          release = () => resolve(real(folder, dirID, list));
+        }),
+    );
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(vi.mocked(locate)).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", expect.anything()));
+    // The page still holds the folder it showed before, so a file dropped now would land there: it is refused.
+    const file = new File(["x"], "late.txt", { type: "text/plain" });
+    const dt = { types: ["Files"], files: [file], items: [], dropEffect: "none" };
+    const section = document.querySelector("section.browser") as HTMLElement;
+    fireEvent.dragOver(section, { dataTransfer: dt });
+    fireEvent.drop(section, { dataTransfer: dt });
+    // The drop reads the files before it queues them, so the page is given time to queue one if it would.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(uploadsMock.add).not.toHaveBeenCalled();
+    await act(async () => {
+      release();
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+    // The same drop, once the place is settled, is queued: the refusal above was the wait, not a dead drop.
+    fireEvent.drop(section, { dataTransfer: dt });
+    await waitFor(() => expect(uploadsMock.add).toHaveBeenCalled());
+  });
+
+  it("shows the error, and not the previous rows, when the next folder's first read fails", async () => {
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) => {
+      if (dir === "nod_bbbbbbbb") throw new ApiError(500, "internal", {}, 0);
+      return { items: [node("n1", "alpha.txt")], next_cursor: undefined };
+    });
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(document.querySelector('[role="alert"]')).not.toBeNull(), { timeout: 8000 });
+    expect(rows("alpha.txt")).toBeNull();
+    expect(busyFrame()).toBeNull();
+  }, 15000);
+
+  // Item 4: the page's New folder is the shared dialog; a folder made there is read again and shown, and the dialog closes.
+  it("a folder made from the page is read again, shown, and its dialog closes (fu3b)", async () => {
+    api.mkdir.mockResolvedValue({ id: "nod_new", name: "Plans", kind: "dir" });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await chooseNew("New folder");
+    const dialog = await screen.findByRole("dialog");
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n9", "Plans", { kind: "dir" })], next_cursor: undefined });
+    fireEvent.change(within(dialog).getByLabelText("Folder name"), { target: { value: "Plans" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create folder" }));
+    await screen.findByRole("row", { name: "Plans" });
+    expect(api.mkdir).toHaveBeenCalledWith("fld_aaaaaaaa", "/Plans");
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

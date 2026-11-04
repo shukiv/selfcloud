@@ -2,8 +2,8 @@
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { App, Alert, Button, ConfigProvider, Dropdown, Form, Input, Modal, Skeleton, theme as antdTheme } from "antd";
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { App, Alert, Button, ConfigProvider, Dropdown, Modal, Skeleton, theme as antdTheme } from "antd";
 import IconButton from "../components/IconButton";
 import SelectionBar from "../components/files/SelectionBar";
 import {
@@ -46,8 +46,8 @@ import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/f
 import { keepTargetOnSave } from "../lib/files/appearance";
 import { folderPageReader } from "../lib/files/folderPages";
 import { focusAfterClose } from "../lib/files/focusAfterClose";
-import { childrenPage, copyNode, deleteNode, getJob, getMe, mkdir, mkdirIn, moveNode, renameNode, restoreNode, serverLimits, statOrNull, type Transfer } from "../lib/files/api";
-import { locate, joinPath, type Here } from "../lib/files/location";
+import { childrenPage, copyNode, deleteNode, getJob, getMe, moveNode, renameNode, restoreNode, serverLimits, statOrNull, type Transfer } from "../lib/files/api";
+import { locate, type Here } from "../lib/files/location";
 import { starNode, unstarNode } from "../lib/stars";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { makeZip, type ZipPhase } from "../lib/files/zips";
@@ -105,6 +105,7 @@ import StorageNotice from "../components/storage/StorageNotice";
 const ShareDialog = lazy(() => import("../components/share/ShareDialog"));
 // The zip dialog is loaded on first use, as the share dialog is.
 const ZipDialog = lazy(() => import("../components/files/ZipDialog"));
+const NewFolderDialog = lazy(() => import("../components/files/NewFolderDialog"));
 // The folder tree is loaded when it is first shown, and not at all at phone width.
 
 // Sharing from this page: the Share button in the selection bar (when the caller may share the item), Share and
@@ -336,9 +337,6 @@ export default function FilesPage() {
   const [previewIndex, setPreviewIndex] = useState(0);
   // previewMedia is the playlist a video or audio file opened (or the selection played), with the folder's files to read on.
   const [previewMedia, setPreviewMedia] = useState<MediaSeed | null>(null);
-  const [newName, setNewName] = useState("");
-  const [newNameError, setNewNameError] = useState<string | null>(null);
-  const [newBusy, setNewBusy] = useState(false);
   const [jobs, setJobs] = useState<Array<{ id: string; status: Job["status"] }>>([]);
   const [conflict, setConflict] = useState<{ name: string; batch: boolean } | null>(null);
   const conflictResolve = useRef<((a: { choice: ConflictChoice; remember: boolean }) => void) | null>(null);
@@ -367,8 +365,12 @@ export default function FilesPage() {
     refetchOnMount: "always",
     queryFn: () => loadPlace(route),
     enabled: signedIn && route !== null && route.kind !== "node",
+    // While the next place is looked up, the page keeps the place it showed: its listing stays on screen, busy and inert, and
+    // the loading notice does not replace it (decision 77, item fu3b). The first place of the page has none, and shows the notice.
+    placeholderData: keepPreviousData,
   });
   const place = placeQ.data;
+  const placeBusy = placeQ.isPlaceholderData;
   const here = place?.kind === "ready" ? place.here : null;
   const personalID = place?.kind === "ready" ? place.personalID : null;
   // The sidebar's folder tree reads the place shown (treePlace). It is written each time the place changes, and it is kept
@@ -413,7 +415,11 @@ export default function FilesPage() {
     if (childrenQ.data) lastRows.current = { place: placeKey, items: fetched };
   }, [childrenQ.data, fetched, placeKey]);
   const kept = childrenQ.isError && childrenQ.data === undefined && lastRows.current?.place === placeKey ? lastRows.current.items : null;
-  const items = kept ?? fetched;
+  // While the next place (or sort) is read, the rows on screen are the last ones read, busy and inert, so no frame is left
+  // without a listing (decision 77, item fu3b). The first read of the page has none, and shows the loading notice.
+  const stale = childrenQ.isPending && lastRows.current !== null ? lastRows.current.items : null;
+  const busy = placeBusy || stale !== null;
+  const items = kept ?? stale ?? fetched;
   const hasMore = childrenQ.hasNextPage === true;
 
   // A place change starts with nothing selected and no notice, as a fresh load did. It also closes whatever dialog
@@ -597,7 +603,8 @@ export default function FilesPage() {
   const folderRole = here ? (here.dir ? (here.dir.role ?? "viewer") : here.folderRole) : "viewer";
   // Files can go into a directory by its ID, so a shared directory whose folder root is not reachable takes them.
   // Folders are made, and folder uploads placed, by path from the root, so those need a reachable path.
-  const canUploadHere = here !== null && (here.dir !== null || here.path !== null) && atLeast(folderRole, "contributor");
+  // While the next place is read, here is still the folder shown before: nothing is uploaded into it (fu3b).
+  const canUploadHere = !placeBusy && here !== null && (here.dir !== null || here.path !== null) && atLeast(folderRole, "contributor");
   const canUploadFolder = canUploadHere && here !== null && here.path !== null;
   const canMakeFolder = canUploadFolder;
   // The sidebar's New acts on the folder shown (decision 66). It is written when the place or what it takes changes, and cleared
@@ -912,7 +919,7 @@ export default function FilesPage() {
   function onShortcut(e: KeyboardEvent) {
     if (e.defaultPrevented || renameRef.current || isTextField(e.target) || dialogRef.current !== null || conflict !== null) return;
     if (dialogOpen()) return;
-    if (!here) return;
+    if (!here || placeBusy) return;
     // The context-menu key and Shift+F10 open the menu of the focused row, as a right click does.
     if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
       e.preventDefault();
@@ -1321,43 +1328,16 @@ export default function FilesPage() {
 
   // ---- create folder ----
 
+  // The dialog is the one the sidebar's New opens (NewFolderDialog, decision 77 item fu3b). Here it reads the listing again once
+  // the folder is made, as the page's own dialog did.
   function openNewFolder() {
-    setNewName("");
-    setNewNameError(null);
     setDialog("newFolder");
-  }
-
-  async function createFolder() {
-    if (!here || here.path === null || newBusy) return;
-    const name = newName.trim();
-    const problem = nameProblem(name);
-    if (problem) {
-      setNewNameError(t(nameMessageKey(problem)));
-      return;
-    }
-    const folderPath = joinPath(here.path, name);
-    if (!folderPath) return;
-    const changed = sessionChanged();
-    setNewBusy(true);
-    try {
-      // A folder in a directory names the directory by its ID; the root keeps the path form (decision 74).
-      if (here.dir) await mkdirIn(here.folder, here.dir.id, name);
-      else await mkdir(here.folder, folderPath);
-      if (changed()) return;
-      setDialog(null);
-      void message.success(t("files.newFolder.created", { name }));
-      await reload();
-    } catch (err) {
-      if (!changed()) setNewNameError(fileErrorText(err, lang));
-    } finally {
-      setNewBusy(false);
-    }
   }
 
   // ---- uploads ----
 
   function queueFiles(files: DroppedFile[]) {
-    if (!here) return;
+    if (!here || placeBusy) return;
     const skipped = queueInto(placeOfHere(here, canUploadHere, canUploadFolder).where, files);
     if (skipped > 0) void message.warning(t("files.upload.noPath"));
   }
@@ -1874,7 +1854,7 @@ export default function FilesPage() {
   // asks about a taken name, and pushes its undo.
   const WHY_KEY = { role: "files.drag.no.role", self: "files.drag.no.self", here: "files.drag.no.here", move: "files.drag.no.move" } as const;
   gestureCtl.current = {
-    enabled: () => here !== null && renameRef.current === null && dialogRef.current === null && conflict === null && !dialogOpen(),
+    enabled: () => here !== null && !placeBusy && renameRef.current === null && dialogRef.current === null && conflict === null && !dialogOpen(),
     startDrag: (id) => {
       const n = byID.get(id);
       if (!n) return null;
@@ -1940,7 +1920,7 @@ export default function FilesPage() {
         </h1>
       </header>
 
-      {childrenQ.isPending ? (
+      {childrenQ.isPending && stale === null ? (
         <div role="status" aria-busy="true">
           <span className="sr-only">{t("files.loading")}</span>
           <Skeleton active paragraph={{ rows: 6 }} />
@@ -1963,6 +1943,8 @@ export default function FilesPage() {
             role="toolbar"
             aria-label={t("files.toolbar")}
             data-testid="browser-toolbar"
+            // The toolbar acts on the place shown, which is the previous one while the next is looked up: it is inert then (fu3b).
+            {...(placeBusy ? { inert: "" } : {})}
             style={stickyBar}
             onFocus={() => {
               toolbarFocus.current = true;
@@ -2039,6 +2021,8 @@ export default function FilesPage() {
               </p>
             ) : (
               <>
+                {/* The rows of the last read stay while the next is read: the area is busy, and its rows cannot be used (fu3b). */}
+                <div aria-busy={busy ? "true" : undefined} {...(busy ? { inert: "" } : {})}>
                 <Listing
                   items={sorted}
                   view={view}
@@ -2072,6 +2056,7 @@ export default function FilesPage() {
                   stickyTop={stickyTop(coarse)}
                   containerRef={listRef}
                 />
+                </div>
                 {hasMore && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, paddingBlock: 16 }}>
                     <Button onClick={() => void loadMore()} disabled={childrenQ.isFetchingNextPage}>
@@ -2190,31 +2175,15 @@ export default function FilesPage() {
         />
       )}
 
-      <Modal
-        open={dialog === "newFolder"}
-        title={t("files.newFolder.title")}
-        okText={t("files.newFolder.submit")}
-        cancelText={t("common.cancel")}
-        onCancel={() => setDialog(null)}
-        onOk={() => void createFolder()}
-        confirmLoading={newBusy}
-        maskClosable={false}
-        destroyOnClose
-        afterOpenChange={(open) => {
-          if (open) document.getElementById("newfolder-name")?.focus();
-        }}
-      >
-        <Form layout="vertical" onFinish={() => void createFolder()}>
-          <Form.Item
-            htmlFor="newfolder-name"
-            label={t("files.newFolder.label")}
-            validateStatus={newNameError ? "error" : undefined}
-            help={newNameError ?? undefined}
-          >
-            <Input id="newfolder-name" value={newName} onChange={(e) => setNewName(e.target.value)} aria-invalid={newNameError ? true : undefined} />
-          </Form.Item>
-        </Form>
-      </Modal>
+      {dialog === "newFolder" && here && (
+        <Suspense fallback={null}>
+          <NewFolderDialog
+            where={{ folder: here.folder, dirID: here.dir?.id ?? null, path: here.path }}
+            openable={false}
+            onClose={() => setDialog(null)}
+          />
+        </Suspense>
+      )}
 
       <Modal
         open={dialog === "delete"}

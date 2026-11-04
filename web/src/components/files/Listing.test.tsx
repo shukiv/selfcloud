@@ -205,6 +205,48 @@ describe("the sort arrow on the list header", () => {
   });
 });
 
+describe("the list's column header (fu3b, item 1)", () => {
+  // The header is in the same table as the rows, so the two share their columns in every frame. A second table (antd's sticky
+  // holder) took its widths a frame later, and the first frame showed the header wrong.
+  it("is one table with the rows: no sticky holder with a table of its own", () => {
+    const { container } = render(<Listing {...props()} />);
+    expect(container.querySelector(".ant-table-sticky-holder")).toBeNull();
+    expect(container.querySelectorAll(".files-list table").length).toBe(1);
+    const table = container.querySelector(".files-list table") as HTMLElement;
+    expect(table.querySelector("thead th")).not.toBeNull();
+    expect(table.querySelectorAll("tbody tr[data-id]").length).toBe(2);
+  });
+
+  // Item 3 (fu3b, decision 70's keyboard rules): a tile is one tab stop, its More button is not one, and an arrow key pressed on the
+  // More button moves on as it does from the tile (only Enter and Space stop at the button).
+  it("a tile is the one tab stop of its card: its More button is not one, and an arrow on it moves on", () => {
+    const onKeyDown = vi.fn();
+    const { container } = render(<Listing {...props({ view: "grid", focusID: "n1", onKeyDown })} />);
+    const tile = container.querySelector('[data-id="n1"]') as HTMLElement;
+    expect(tile.getAttribute("tabindex")).toBe("0");
+    const more = tile.querySelector('button[aria-haspopup="menu"]') as HTMLElement;
+    expect(more.getAttribute("tabindex")).toBe("-1");
+    expect(tile.querySelectorAll('[tabindex="0"]').length).toBe(0);
+    fireEvent.keyDown(more, { key: "ArrowRight" });
+    expect(onKeyDown).toHaveBeenCalledWith(expect.objectContaining({ key: "ArrowRight" }));
+  });
+
+  it("a row's icon buttons keep the arrow keys for the list: an arrow on a row's More button reaches the list's handler", () => {
+    const onKeyDown = vi.fn();
+    const { container } = render(<Listing {...props({ focusID: "n1", onKeyDown })} />);
+    const row = container.querySelector('tr[data-id="n1"]') as HTMLElement;
+    const more = row.querySelector('button[aria-haspopup="menu"]') as HTMLElement;
+    fireEvent.keyDown(more, { key: "ArrowDown" });
+    expect(onKeyDown).toHaveBeenCalledWith(expect.objectContaining({ key: "ArrowDown" }));
+  });
+
+  it("gives its header cells the place under the toolbar as a variable, which the stylesheet pins to", () => {
+    const { container } = render(<Listing {...props({ stickyTop: 120 })} />);
+    const region = container.querySelector(".files-list") as HTMLElement;
+    expect(region.style.getPropertyValue("--sc-list-top")).toBe("120px");
+  });
+});
+
 describe("the table listing", () => {
   it("renders every row of a long folder, with no window that hides rows out of view", () => {
     const items = Array.from({ length: 250 }, (_, i) => node(`n${i}`, `file-${String(i).padStart(3, "0")}.txt`));

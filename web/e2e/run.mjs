@@ -46,6 +46,7 @@ import { ic2Checks } from './ic2.mjs';
 import { l4Checks } from './l4.mjs';
 import { ksChecks } from './ks.mjs';
 import { fu3aChecks } from './fu3a.mjs';
+import { fu3bChecks } from './fu3b.mjs';
 import { pickMenuEntry } from './menu.mjs';
 
 const execFileP = promisify(execFile);
@@ -389,7 +390,8 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
 
   // Open it. Upload a small file, then the 3 MiB file, which must go up in pieces.
   await openRow(page, 'Reports');
-  await page.waitFor(`location.pathname.split('/').length === 4`);
+  // The folder is settled when its title shows and the list is no longer busy: until then an upload is refused (fu3b).
+  await page.waitFor(`location.pathname.split('/').length === 4 && document.title.startsWith('Reports') && !document.querySelector('[aria-busy="true"]')`);
   await page.setFiles(UPLOAD, [small]);
   await rowAppears(page, 'hello.txt');
   check(true, 'a small file uploads and is listed');
@@ -767,7 +769,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a, fu3b or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -779,7 +781,7 @@ async function main() {
     }
     if (!only || onlySet.has('s4b')) await s4b.s4bChecks(h, { page, base, accountKey, teamA, dir, fake, refused: s4bRefused });
     if (!only || onlySet.has('media')) await mediaChecks(h, { page, base, accountKey, teamA });
-    if (!only || onlySet.has('w1')) await w1Checks(h, { page, base, accountKey, teamA, teamB, dir });
+    if (!only || onlySet.has('w1')) await w1Checks(h, { page, base, accountKey, teamA, teamB, dir, browserBinary: await findBrowser() });
     if (!only || onlySet.has('w2')) await w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir });
     if (!only || onlySet.has('x2')) await x2Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('q4')) await q4Checks(h, { page, base, accountKey, teamA });
@@ -864,6 +866,8 @@ async function main() {
         fuLaunch.proc.kill();
       }
     }
+    // Slice fu3b (decision 77): the list's first frames and place changes, sampled frame by frame in its own browser.
+    if (!only || onlySet.has('fu3b')) await fu3bChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER });
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });

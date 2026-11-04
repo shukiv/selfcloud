@@ -759,8 +759,13 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     })()`);
     const pictureReady = (name) =>
       page.waitFor(`(() => { const r = document.querySelector('.lightbox'); const i = r?.querySelector('.lightbox-picture img'); return !!i && i.complete && i.naturalWidth > 0 && r.querySelector('.lightbox-name bdi')?.textContent === ${q(name)}; })()`, 20000);
-    // Antd's own transitions move and size things for 0.2 seconds, so nothing is measured or pictured during them.
-    const settle = () => sleep(400);
+    // Antd's own transitions move and size things for 0.2 seconds, so nothing is measured or pictured during them. The wait is for
+    // the viewer's own animations to end (fu3b, item 8: a fixed 400 ms could end before a slow transition did, under load).
+    const settle = () =>
+      page.waitFor(
+        `document.getAnimations().every((a) => a.playState !== 'running' || !a.effect?.target?.closest?.('.ant-modal-root, .lightbox'))`,
+        10000,
+      );
     const shotDir = process.env.SELFCLOUD_E2E_SHOTS;
     if (shotDir) await mkdir(shotDir, { recursive: true });
     for (const [lang, oneOfTwo, twoOfTwo, rtl] of [['English', '1 of 2', '2 of 2', false], ['עברית', '1 מתוך 2', '2 מתוך 2', true]]) {

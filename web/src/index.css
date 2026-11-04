@@ -1171,6 +1171,16 @@ tr[data-drop-state="refused"] > td {
   overflow: visible;
 }
 
+/* The list's column header is pinned in the list's own table (Listing: no sticky holder), so it shares the rows' columns in every
+   frame (decision 77, item fu3b). The pin is to the window, under the shell's header and the toolbar (--sc-list-top, set by Listing).
+   The header's background is the list's (--sc-list-head). */
+.files-list .ant-table-thead > tr > th {
+  position: sticky;
+  top: var(--sc-list-top);
+  z-index: 2;
+  background: var(--sc-list-head);
+}
+
 /* A menu entry's keyboard shortcut is drawn after the entry's name, from its data-hint: it is not text, so the entry reads as its name. */
 .menu-hint::after {
   content: attr(data-hint);

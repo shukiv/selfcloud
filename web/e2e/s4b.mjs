@@ -115,14 +115,26 @@ async function noRawIDs(page) {
   return page.evaluate(`!/\\b(nod|drv|fld|usr)_[a-z0-9]{8,}/.test(document.body.innerText)`);
 }
 
+// until waits for an expression in the page to be true, up to 15 seconds: the condition is waited for, never a fixed time (fu3b).
+async function until(page, expr, what) {
+  const deadline = Date.now() + 15000;
+  for (;;) {
+    if (await page.evaluate(`!!(${expr})`).catch(() => false)) return;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for: ${what}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 // setCoarse makes the page's primary pointer a touch pointer, or takes that away. Touch emulation is what makes
 // (pointer: coarse) match in the browser; the media feature alone did not.
 async function setCoarse(page, on) {
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: on, maxTouchPoints: 1 });
   await page.send('Emulation.setEmulatedMedia', { features: on ? [{ name: 'hover', value: 'none' }] : [] });
-  // The media change reaches the page with the next frame. Two frames pass before anything is opened on top of the new pointer.
+  // The media change reaches the page on a later frame, under load too: the page's own query says when it has (fu3b, item 8: a
+  // fixed wait let the first measure run before the change, at 9 px instead of 44).
+  await until(page, `matchMedia('(pointer: coarse)').matches === ${on ? 'true' : 'false'}`, 'the coarse pointer media');
+  // Two frames pass before anything is opened on top of the new pointer.
   await page.evaluate(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`);
-  await new Promise((r) => setTimeout(r, 300));
 }
 
 // touchTargets measures the preview and export buttons of the viewer in the three states that change them: at rest, under the
@@ -138,7 +150,7 @@ async function touchTargets(h, page) {
       `(() => { const r = [...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
     );
     await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
-    await new Promise((r) => setTimeout(r, 400));
+    await until(page, `[...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].matches(':hover') && [...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getAnimations().length === 0`, `the pointer over button ${i}, its transition done`);
     hover.push(
       await page.evaluate(
         `Math.round([...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getBoundingClientRect().height)`,
@@ -149,7 +161,7 @@ async function touchTargets(h, page) {
   const focus = [];
   for (let i = 0; i < count; i++) {
     await page.evaluate(`[...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].focus(), true`);
-    await new Promise((r) => setTimeout(r, 400));
+    await until(page, `document.activeElement === [...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}] && [...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getAnimations().length === 0`, `button ${i} has the focus`);
     focus.push(
       await page.evaluate(
         `Math.round([...document.querySelectorAll('[data-testid="preview"] .convert-btn')][${i}].getBoundingClientRect().height)`,

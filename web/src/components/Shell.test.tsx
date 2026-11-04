@@ -555,6 +555,33 @@ describe("the sidebar's New (decision 66)", () => {
 
   const readOnlyFolder: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true };
 
+  // Item 7 (fu3b, decision 77): a dialog belongs to the address it was opened at. The sidebar's New folder dialog closes when Back
+  // (or any change of address) moves the page, as the files page's own dialogs already do.
+  it("a New folder dialog the sidebar opened closes when Back changes the address (fu3b)", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
+      const router = createMemoryRouter([{ path: "*", element: <Shell><p>page body</p></Shell> }], { initialEntries: ["/trash", "/starred"], initialIndex: 1 });
+      render(
+        <QueryClientProvider client={createQueryClient()}>
+          <ThemeProvider>
+            <Direction>
+              <RouterProvider router={router} />
+            </Direction>
+          </ThemeProvider>
+        </QueryClientProvider>,
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "New" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "New folder" }));
+      await waitFor(() => expect(document.getElementById("newfolder-name")).not.toBeNull());
+      await act(async () => {
+        await router.navigate(-1);
+      });
+      await waitFor(() => expect(router.state.location.pathname).toBe("/trash"));
+      await waitFor(() => expect(document.getElementById("newfolder-name")).toBeNull());
+    });
+  });
+
   it("off the files pages, New folder makes the folder in My files, from the dialog the sidebar holds", async () => {
     await wideScreen(async () => {
       signIn("member");

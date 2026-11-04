@@ -8,6 +8,7 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SUBMENU_OF, hoverMenuTitle } from './menu.mjs';
+import { launchBrowser, Page } from './cdp.mjs';
 import {
   barButtons,
   browserTitle,
@@ -162,7 +163,7 @@ async function openByDoubleClick(page, nameText) {
   await dblClick(page, await rowPoint(page, nameText));
 }
 
-export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir }) {
+export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, browserBinary }) {
   const { api, rawPut } = h;
   const failures = [];
   const wanted = process.env.SELFCLOUD_W1_STEPS ? new RegExp(process.env.SELFCLOUD_W1_STEPS) : null;
@@ -202,8 +203,21 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
 
   // open shows the long folder in a view, with nothing selected.
   const open = async (view, url = longURL) => {
+    const started = Date.now();
     await page.goto(url);
-    await page.waitFor(`!!document.querySelector(${q(itemSel('f01.txt'))})`, 15000);
+    // The wait ends on the listing's own outcome: its row, or the page's error alert (a read that failed), whichever comes first.
+    try {
+      await page.waitFor(`!!document.querySelector(${q(itemSel('f01.txt'))}) || !!document.querySelector('[role="alert"]')`, 15000);
+      if (!(await page.evaluate(`!!document.querySelector(${q(itemSel('f01.txt'))})`))) {
+        throw new Error(`the folder's read failed: ${await page.evaluate(`document.querySelector('[role="alert"]')?.textContent ?? ''`)}`);
+      }
+    } catch (e) {
+      // Diagnostics (fu3b, item 8): what the page shows when the listing has not come, and which of its reads have answered.
+      const state = await page.evaluate(`JSON.stringify({ path: location.pathname, busy: !!document.querySelector('[aria-busy="true"]'), alert: document.querySelector('[role="alert"]')?.textContent?.slice(0, 160) ?? null, status: document.querySelector('[role="status"]')?.textContent?.slice(0, 80) ?? null, rows: document.querySelectorAll('[role="row"],[role="option"]').length, files: performance.getEntriesByType('resource').filter((r) => /\\/children|\\/me$|\\/places?/.test(r.name)).map((r) => r.name.replace(/.*\\/api/, '') + ' ' + r.responseStatus) })`);
+      console.log(`DIAG open ${view} after ${Date.now() - started} ms: ${state}`);
+      throw e;
+    }
+    console.log(`DIAG open ${view} listed after ${Date.now() - started} ms`);
     await setView(page, view);
     await clearSelection(page);
   };
@@ -695,39 +709,48 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir })
   });
 
   // ---- 22. a failed English catalogue shows a retry, not a blank page; the retry loads the page ----
+  // It stands on its own (fu3b, item 6): it runs in a browser of its own, with an empty profile, so the English chunk is its first
+  // load there and nothing is in a memory cache. Its paused requests are answered by its own listener. In the shared page the
+  // listener was the media section's, so run alone the paused chunk was never answered, and the page stayed blank.
   await step('a failed English catalogue shows a retry, not a blank page, and the retry loads the page', async () => {
-    // The media checks answer paused requests through pausedHook while it is set (the run's listener defers to it).
-    let failing = true;
-    page.pausedHook = async (p) => {
-      if (failing) await page.send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'InternetDisconnected' });
-      else await page.send('Fetch.continueRequest', { requestId: p.requestId });
-    };
-    await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/assets/en-*.js' }] });
-    // The English chunk is in Chrome's memory cache from the steps before: a cached file is not a request, so it is not paused.
-    await page.send('Network.setCacheDisabled', { cacheDisabled: true });
-    // The service worker (decision 65) answers the app's files from its own cache, which no request reaches either: the page
-    // bypasses it while the chunk is made to fail.
-    await page.send('Network.setBypassServiceWorker', { bypass: true });
+    const fresh = await launchBrowser(browserBinary, join(dir, 'w1-fresh-profile'));
+    const fp = new Page(fresh.wsUrl);
+    fp.base = base;
     try {
-      await page.goto(longURL);
+      await fp.start([]);
+      await fp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+      let failing = true;
+      fp.on('Fetch.requestPaused', (p) =>
+        failing
+          ? fp.send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'InternetDisconnected' })
+          : fp.send('Fetch.continueRequest', { requestId: p.requestId }),
+      );
+      await fp.send('Fetch.enable', { patterns: [{ urlPattern: '*/assets/en-*.js' }] });
+      // The service worker (decision 65) answers the app's files from its own cache, which no request reaches either: the page
+      // bypasses it while the chunk is made to fail.
+      await fp.send('Network.setBypassServiceWorker', { bypass: true });
       try {
-        await page.waitFor(`document.body.innerText.includes('This page could not load')`, 30000);
-      } catch (e) {
-        const dump = await page.evaluate(`JSON.stringify({ text: document.body.innerText.slice(0, 200), root: document.getElementById('root')?.innerHTML.slice(0, 200), fails: performance.getEntriesByType('resource').filter((r) => /en-|\\.json/.test(r.name)).map((r) => r.name + ' ' + r.responseStatus) })`);
-        console.log('DIAG retry', dump);
-        throw e;
+        await fp.goto(`${base}/login`);
+        try {
+          await fp.waitFor(`document.body.innerText.includes('This page could not load')`, 30000);
+        } catch (e) {
+          const dump = await fp.evaluate(`JSON.stringify({ text: document.body.innerText.slice(0, 200), root: document.getElementById('root')?.innerHTML.slice(0, 200) })`);
+          console.log('DIAG retry', dump);
+          throw e;
+        }
+        check(await fp.evaluate(`!!document.querySelector('#root button')`), 'a failed English catalogue shows a retry button, not a blank page');
+      } finally {
+        failing = false;
+        await fp.send('Fetch.disable');
+        await fp.send('Network.setBypassServiceWorker', { bypass: false });
       }
-      check(await page.evaluate(`!!document.querySelector('#root button')`), 'a failed English catalogue shows a retry button, not a blank page');
+      await fp.evaluate(`[...document.querySelectorAll('#root button')].find((b) => b.textContent.trim() === 'Try again')?.click()`);
+      await fp.waitFor(`!!document.getElementById('login-email')`, 30000);
+      check(await fp.evaluate(`!document.body.innerText.includes('This page could not load')`), 'the retry loads the page');
     } finally {
-      failing = false;
-      page.pausedHook = null;
-      await page.send('Fetch.disable');
-      await page.send('Network.setCacheDisabled', { cacheDisabled: false });
-      await page.send('Network.setBypassServiceWorker', { bypass: false });
+      fp.close();
+      fresh.proc.kill();
     }
-    await page.evaluate(`[...document.querySelectorAll('#root button')].find((b) => b.textContent.trim() === 'Try again')?.click()`);
-    await page.waitFor(`!!document.querySelector('[data-testid="browser-toolbar"]')`, 30000);
-    check(await page.evaluate(`!document.body.innerText.includes('This page could not load')`), 'the retry loads the page');
   });
 
   // ---- 23. a folder cannot be pasted into itself: the cut stays and the reason shows; a cut into its own folder moves nothing ----

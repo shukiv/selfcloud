@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "../../lib/i18n";
 import NewFolderDialog from "./NewFolderDialog";
+import { refreshTree } from "../../lib/query";
 
 const mocks = vi.hoisted(() => ({ mkdir: vi.fn(), mkdirIn: vi.fn() }));
 vi.mock("../../lib/files/api", async (orig) => ({ ...(await orig<typeof import("../../lib/files/api")>()), mkdir: mocks.mkdir, mkdirIn: mocks.mkdirIn }));
@@ -36,6 +37,18 @@ describe("the new folder dialog", () => {
     const input = screen.getByLabelText("Folder name");
     expect(input.tagName).toBe("INPUT");
     expect(input.id).toBe("newfolder-name");
+  });
+
+  // Slice fu3b (decision 77, item 4): the files page's own dialog is this one. A folder made re-reads the branch it is in, which is
+  // where the page's listing comes from, so the page shows it without a reload of its own.
+  it("re-reads the branch the folder was made in, and closes (fu3b)", async () => {
+    mocks.mkdir.mockResolvedValue({ id: "nod_new", name: "Plans", kind: "dir" });
+    const onClose = vi.fn();
+    renderDialog(onClose);
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "Plans" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(refreshTree).toHaveBeenCalledWith(expect.anything(), [{ folder: "fld_mine", dir: null }]);
   });
 
   it("names the directory by its ID when the folder is made in a directory (decision 74)", async () => {

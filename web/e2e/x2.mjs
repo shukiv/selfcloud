@@ -293,7 +293,14 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID 
       await until(page, `!!document.querySelector('.media-mini .ant-slider-handle')`, 10000, 'the mini bar slider');
       await page.evaluate(`(() => { const v = ${MEDIA}; v.currentTime = v.duration * 0.25; return true; })()`);
       await until(page, `(() => { const v = ${MEDIA}; return v.currentTime > v.duration * 0.2 && v.currentTime < v.duration * 0.3; })()`, 10000, 'the place at 25 %');
-      await sleep(600); // the handle moves on a transition
+      // The handle and the played part move on a transition: the geometry is read once the played part is where 25 % puts it (fu3b,
+      // item 8: a fixed 600 ms wait read it mid-transition under load).
+      await until(
+        page,
+        `(() => { const r = document.querySelector('.media-mini .ant-slider-rail')?.getBoundingClientRect(); const t = document.querySelector('.media-mini .ant-slider-track')?.getBoundingClientRect(); return !!r && !!t && Math.abs(t.left - r.left) <= 1 && Math.abs(t.width - r.width * 0.25) <= 2; })()`,
+        10000,
+        'the played part at a quarter of the rail',
+      );
       const geo = () => page.evaluate(`(() => {
         const b = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { left: r.left, width: r.width, centre: r.left + r.width / 2, mid: r.top + r.height / 2 }; };
         return { rail: b('.media-mini .ant-slider-rail'), track: b('.media-mini .ant-slider-track'), handle: b('.media-mini .ant-slider-handle') };

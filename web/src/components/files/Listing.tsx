@@ -300,7 +300,14 @@ export default function Listing(p: ListingProps) {
 
   // The bands read their colours from these variables on the list: the theme's tokens are passed in here, as the app does not
   // define antd's CSS variables on the page, so a rule that reads them would paint nothing.
-  const bandVars = { "--sc-row-hover": token.colorFillSecondary, "--sc-row-selected": token.colorPrimaryBg, "--sc-accent": token.colorPrimary } as CSSProperties;
+  // The list's variables: its bands, its header's background, and the place the header is pinned at (under the toolbar).
+  const bandVars = {
+    "--sc-row-hover": token.colorFillSecondary,
+    "--sc-row-selected": token.colorPrimaryBg,
+    "--sc-accent": token.colorPrimary,
+    "--sc-list-head": token.colorBgContainer,
+    "--sc-list-top": `${stickyTop}px`,
+  } as CSSProperties;
   // indexOf is each item's place in the page's order, for the handlers that name a row by its index.
   const indexOf = new Map(p.items.map((n, i) => [n.id, i]));
   // rowCheck is a mouse's checkbox for a row. It takes the file icon's place when the row is hovered, or selected, or when
@@ -476,8 +483,9 @@ export default function Listing(p: ListingProps) {
           rowKey="id"
           size="middle"
           pagination={false}
-          // The column header stays under the toolbar as a long folder scrolls.
-          sticky={{ offsetHeader: stickyTop }}
+          // The column header is in this table, not in a table of its own (antd's sticky holder), so it shares the rows' columns in
+          // every frame. The stylesheet pins its cells under the toolbar, at --sc-list-top (decision 77, item fu3b).
+          tableLayout="fixed"
           columns={columns}
           dataSource={p.items}
           // A mouse has no checkbox column: each row's checkbox is in its icon's place (see rowCheck). A finger keeps the column.

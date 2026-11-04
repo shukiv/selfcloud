@@ -24,7 +24,7 @@ export function freePort() {
 // rules apply. Headless Chrome reports neither hover nor a pointer by default. The flag is read at launch only; Emulation.setEmulatedMedia
 // does not change these media in this Chrome (checked 2026-11-02), so a finger's screen needs its own launch with
 // primaryHoverType=1 and primaryPointerType=2, which gives hover: none and pointer: coarse.
-export async function launchBrowser(binary, profileDir, { mouse = false, ignoreCertificateErrors = false } = {}) {
+export async function launchBrowser(binary, profileDir, { mouse = false, finger = false, hybrid = false, ignoreCertificateErrors = false } = {}) {
   const port = await freePort();
   const proc = spawn(
     binary,
@@ -33,6 +33,11 @@ export async function launchBrowser(binary, profileDir, { mouse = false, ignoreC
       // The fake editor's certificate is self-signed (convertFake.mjs); only the run's browser trusts it, for the editor frame's post.
       ...(ignoreCertificateErrors ? ['--ignore-certificate-errors'] : []),
       ...(mouse ? ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'] : []),
+      // A finger's screen (fu3b): touch only, no hover, so (pointer: coarse) and (hover: none) apply from the launch.
+      ...(finger ? ['--blink-settings=primaryHoverType=1,availableHoverTypes=1,primaryPointerType=2,availablePointerTypes=2'] : []),
+      // A hybrid screen (fu3b): a mouse is the primary pointer, and a touch screen is there too, so (pointer: fine) and
+      // (pointer: coarse) both match, and (hover: hover) too.
+      ...(hybrid ? ['--blink-settings=primaryHoverType=2,availableHoverTypes=3,primaryPointerType=4,availablePointerTypes=6'] : []),
       '--no-sandbox',
       '--disable-gpu',
       '--disable-dev-shm-usage',

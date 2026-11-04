@@ -210,6 +210,13 @@ export default function Shell({ children }: { children: ReactNode }) {
     setSettingsFor(null);
     setShellError(null);
   }, [sessionID]);
+  // A dialog belongs to the address it was opened at. A change of address (Back, a link) closes the sidebar's dialogs, as the files
+  // page's own dialogs close (decision 77, item fu3b). Their menus do not navigate, so opening one does not close it.
+  useEffect(() => {
+    setFolderWhere(null);
+    setSettingsFor(null);
+    setIosFor(null);
+  }, [location.pathname]);
   // The sidebar's middle (the folder tree and the menu) scrolls inside the sider. When the address moves to a place below the
   // fold, its row is brought into view inside that scroll area alone, so the page does not move.
   useEffect(() => {
