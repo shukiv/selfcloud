@@ -271,13 +271,11 @@ a {
 
 /* The sidebar's rows share one icon column and one name column, and one font size (decision 66): an icon sits --sc-icon-col in
    from the sidebar's content edge (28 px, or 48 px on a finger), and the name follows an 18 px icon and a 10 px gap. The New
-   button, the folder tree and the menu use the same numbers. The folded rail keeps the menu's own centred icons. */
+   button and the folder tree use the same number. The menu's icon column is its inline indent (Shell.tsx, decision 81): antd sets
+   the item's start padding inline, so a stylesheet rule cannot set it. The folded rail keeps the menu's own centred icons. */
 .shell-sider-body {
   --sc-icon-col: 28px;
   font-size: 14px;
-}
-.shell-menu.ant-menu:not(.ant-menu-inline-collapsed) .ant-menu-item {
-  padding-inline-start: var(--sc-icon-col, 28px);
 }
 .shell-menu.ant-menu .ant-menu-item .ant-menu-item-icon + span {
   margin-inline-start: 10px;
