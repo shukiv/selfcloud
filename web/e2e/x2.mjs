@@ -412,7 +412,7 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID 
       // The subtitle choice is drawn once the file's subtitles are read, which is asynchronous (subtitlesOf): it is waited for.
       await page.waitFor(`!!document.querySelector('.media-subs .ant-select-selector')`, 15000);
       await page.evaluate(`document.querySelector('.media-subs .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
-      const pick =(name) => `[...document.querySelectorAll('.ant-select-item-option')].find((x) => x.textContent.trim() === ${q(name)})`;
+      const pick = (name) => `[...document.querySelectorAll('.ant-select-item-option')].find((x) => x.textContent.trim() === ${q(name)})`;
       await until(page, `!!${pick('clip.srt')}`, 5000, 'the SRT in the menu');
       await page.evaluate(`${pick('clip.srt')}.click()`);
       await page.evaluate(`(() => { const v = ${MEDIA}; v.pause(); v.currentTime = 2; return true; })()`);

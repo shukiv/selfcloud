@@ -163,6 +163,14 @@ async function openByDoubleClick(page, nameText) {
   await dblClick(page, await rowPoint(page, nameText));
 }
 
+// folderShown waits until the page shows the folder with this name and has read its listing. A change of folder keeps the rows
+// of the folder left, busy and inert, until the next listing is read (FilesPage busy guard, fu3b review 1). A key or a drag sent
+// before that is dropped, so every step waits here before it presses a key.
+async function folderShown(page, name) {
+  await page.waitFor(`document.querySelector('#browser-title')?.textContent === ${q(name)}`, 10000);
+  await page.waitFor(`!document.querySelector('section.browser [aria-busy="true"]')`, 15000);
+}
+
 export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, browserBinary }) {
   const { api, rawPut } = h;
   const failures = [];
@@ -317,23 +325,23 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     await press(page, 'x', ['ctrl']);
     await page.waitFor(`document.querySelector(${q(itemSel('f03.txt'))}).style.opacity === '0.5'`, 5000);
     await openByDoubleClick(page, 'Target');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Target'`, 10000);
+    await folderShown(page, 'Target');
     await press(page, 'v', ['ctrl']);
     const inTarget = await waitListed(api, base, teamA, '/w1-long/Target', accountKey, ['f03.txt']);
     check(inTarget.includes('f03.txt'), 'Ctrl+V moved f03.txt into Target');
     await press(page, 'Backspace');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'w1-long'`, 10000);
+    await folderShown(page, 'w1-long');
     // The listing may still show the row from its cache until its refetch ends: wait for the row to leave, then check. A row
     // that never leaves still fails the check.
     await page.waitFor(`!document.querySelector(${q(itemSel('f03.txt'))})`, 10000).catch(() => undefined);
     check(!(await listed(page)).includes('f03.txt'), 'f03.txt is no longer in the folder it left');
     // And back: cut it inside Target, go up with Alt+Up, paste.
     await openByDoubleClick(page, 'Target');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Target'`, 10000);
+    await folderShown(page, 'Target');
     await click(page, await rowPoint(page, 'f03.txt'));
     await press(page, 'x', ['ctrl']);
     await press(page, 'ArrowUp', ['alt']);
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'w1-long'`, 10000);
+    await folderShown(page, 'w1-long');
     await press(page, 'v', ['ctrl']);
     const back = await waitListed(api, base, teamA, '/w1-long', accountKey, ['f03.txt']);
     check(back.includes('f03.txt'), 'Alt+Up went up a folder, and Ctrl+V moved f03.txt back');
@@ -349,13 +357,13 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     await click(page, await rowPoint(page, 'f04.txt'));
     await press(page, 'c', ['ctrl']);
     await openByDoubleClick(page, 'Target');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Target'`, 10000);
+    await folderShown(page, 'Target');
     await press(page, 'v', ['ctrl']);
     const inTarget = await waitListed(api, base, teamA, '/w1-long/Target', accountKey, ['f04.txt']);
     const inLong = await waitListed(api, base, teamA, '/w1-long', accountKey, ['f04.txt']);
     check(inTarget.includes('f04.txt') && inLong.includes('f04.txt'), 'the copy is in Target and the source is still in the folder');
     await press(page, 'Backspace');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'w1-long'`, 10000);
+    await folderShown(page, 'w1-long');
   });
 
   // ---- 7. Escape cancels a cut: the file is no longer dimmed, and nothing moves ----
@@ -574,7 +582,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     at = await same('clearing the selection', at);
     // Paste into Target: the pasted name sorts after the first row there, so the first row keeps its place.
     await openByDoubleClick(page, 'Target');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Target'`, 10000);
+    await folderShown(page, 'Target');
     // The listing of Target is read after its title shows: the probe waits for its first row to be drawn.
     await page.waitFor(`!!document.querySelector('[role="row"][aria-label]')`, 15000);
     const inTarget = await probe();
@@ -583,7 +591,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     await sleepMs(500);
     await same('pasting into Target', inTarget);
     await press(page, 'Backspace');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'w1-long'`, 10000);
+    await folderShown(page, 'w1-long');
   });
 
   // ---- 16. Ctrl+C and Ctrl+V on a Hebrew keyboard: the key types a Hebrew letter, and its position is the key of C and V ----
@@ -593,12 +601,12 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     await pressAs(page, 'ב', 'KeyC', 67, ['ctrl']);
     await page.waitFor(`document.body.innerText.includes('Copied. Open a folder and paste it there.')`, 5000);
     await openByDoubleClick(page, 'Target');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Target'`, 10000);
+    await folderShown(page, 'Target');
     await pressAs(page, 'ה', 'KeyV', 86, ['ctrl']);
     const names = await waitListed(api, base, teamA, '/w1-long/Target', accountKey, ['f12.txt']);
     check(names.includes('f12.txt'), 'the Hebrew Ctrl+C and Ctrl+V copied f12.txt into Target');
     await press(page, 'Backspace');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'w1-long'`, 10000);
+    await folderShown(page, 'w1-long');
   });
 
   // ---- 17. a key held down pastes once; a press during a paste waits for it, and no name-taken question opens ----
@@ -607,7 +615,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     await click(page, await rowPoint(page, 'f13.txt'));
     await press(page, 'c', ['ctrl']);
     await openByDoubleClick(page, 'Target');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Target'`, 10000);
+    await folderShown(page, 'Target');
     await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86, nativeVirtualKeyCode: 86, modifiers: 2, autoRepeat: true });
     await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86, nativeVirtualKeyCode: 86, modifiers: 2 });
     await press(page, 'v', ['ctrl']);
@@ -616,7 +624,7 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     check(!(await modalOpen(page)), 'no name-taken question opened: the repeat did not paste again');
     check(names.filter((n) => n.startsWith('f13')).length === 1, `f13 is in Target once (${names.filter((n) => n.startsWith('f13')).join(', ')})`);
     await press(page, 'Backspace');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'w1-long'`, 10000);
+    await folderShown(page, 'w1-long');
   });
 
   // ---- 18. with text selected on the page, Ctrl+C is the browser's: it copies the text and no item ----
@@ -760,13 +768,13 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     await click(page, await rowPoint(page, 'Target'));
     await press(page, 'x', ['ctrl']);
     await openByDoubleClick(page, 'Target');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Target'`, 10000);
+    await folderShown(page, 'Target');
     await press(page, 'v', ['ctrl']);
     await page.waitFor(`!!document.querySelector('.ant-message-error')`, 10000);
     const reason = await page.evaluate(`document.querySelector('.ant-message-error')?.textContent.trim() ?? ''`);
     check(reason.length > 0, `the refusal shows its reason (${reason})`);
     await press(page, 'Backspace');
-    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'w1-long'`, 10000);
+    await folderShown(page, 'w1-long');
     const stillCut = await page.evaluate(`document.querySelector(${q(itemSel('Target'))})?.style.opacity === '0.5'`);
     check(stillCut, 'Target stays cut after the refused paste, so it can be pasted elsewhere');
     await click(page, await rowPoint(page, 'f16.txt'));
