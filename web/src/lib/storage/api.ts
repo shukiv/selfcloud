@@ -6,6 +6,7 @@ import { sessionChanged } from '../session';
 import { api } from '../api';
 import type { Page } from '../files/types';
 import { pageQuery, type MeStorage } from './logic';
+import type { Breakdown } from './breakdown';
 
 // myStorage is the caller's own storage, as the navigation meter shows it. null until read, and for an admin.
 export const myStorage = userWritable<MeStorage | null>(null);
@@ -14,12 +15,27 @@ export const myStorage = userWritable<MeStorage | null>(null);
 // figures always come from the last call started.
 let latestStorageRequest = 0;
 
+// myBreakdown is the old versions and the trash of My files, read by the Storage page (decision 79). It is kept apart
+// from myStorage, so a plain refresh of the meter does not clear it.
+export const myBreakdown = userWritable<Breakdown | null>(null);
+
 // refreshMyStorage reads GET /me and keeps only its storage block.
 export async function refreshMyStorage(): Promise<void> {
   const changed = sessionChanged();
   const request = ++latestStorageRequest;
   const me = await api<{ storage?: MeStorage }>('GET', '/api/v1/me');
   if (request === latestStorageRequest && !changed()) myStorage.set(me.storage ?? null);
+}
+
+// refreshMyBreakdown reads GET /me with the breakdown asked for: the meter's figures, and the old versions and the trash.
+export async function refreshMyBreakdown(): Promise<void> {
+  const changed = sessionChanged();
+  const request = ++latestStorageRequest;
+  const me = await api<{ storage?: MeStorage & { breakdown?: Breakdown } }>('GET', '/api/v1/me?storage=breakdown');
+  if (request !== latestStorageRequest || changed()) return;
+  const s = me.storage;
+  myStorage.set(s ? { used_bytes: s.used_bytes, reserved_bytes: s.reserved_bytes, quota_bytes: s.quota_bytes, available_bytes: s.available_bytes } : null);
+  myBreakdown.set(s?.breakdown ?? null);
 }
 
 // A file in a listing. in_trash is true when the file is in the trash, or below a trashed directory.
@@ -30,6 +46,9 @@ export interface LargestFile {
   versions_bytes: number;
   in_trash: boolean;
   modified_at: string;
+  // The media type the file was stored with, and the name of the folder it sits in ("" or absent at the top of My files).
+  mime_type?: string;
+  parent_name?: string;
 }
 
 // A file of a team space, as the account's largest list names it.
@@ -72,9 +91,10 @@ export interface StoragePerson {
 
 const acc = (id: string) => `/api/v1/accounts/${encodeURIComponent(id)}`;
 
-// myLargest reads one page of the caller's My files, largest first.
-export function myLargest(limit: number, cursor?: string | null): Promise<Page<LargestFile>> {
-  return api<Page<LargestFile>>('GET', `/api/v1/me/storage/largest${pageQuery({ limit, cursor })}`);
+// myLargest reads one page of the caller's My files, largest first. kind narrows it to one kind of file, or to the trash
+// ("" is every file).
+export function myLargest(limit: number, cursor?: string | null, kind = ''): Promise<Page<LargestFile>> {
+  return api<Page<LargestFile>>('GET', `/api/v1/me/storage/largest${pageQuery({ limit, cursor, extra: { kind } })}`);
 }
 
 // accountStorage reads the account's totals. An owner or the key also gets the team spaces and a page of people.

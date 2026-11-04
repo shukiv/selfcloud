@@ -329,6 +329,57 @@ a {
   min-height: 0;
 }
 
+/* The Storage page (decision 79): a card, the filter chips, and the table's old versions and date columns, which go at
+   phone width (under 720px) so the name, the size and the actions fit 390px without a sideways scroll. */
+.storage-card {
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  padding: 20px 24px;
+  min-width: 0;
+}
+
+.storage-chip {
+  height: 32px;
+  padding-inline: 14px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--ant-color-fill-tertiary);
+  color: var(--ant-color-text);
+}
+
+.storage-chip-on {
+  background: var(--ant-color-primary);
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-text-light-solid);
+}
+
+.storage-free-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  background: var(--ant-color-fill-tertiary);
+  color: var(--ant-color-primary);
+}
+
+.storage-wide {
+  display: table-cell;
+}
+
+@media (max-width: 719px) {
+  .storage-wide {
+    display: none;
+  }
+}
+
 /* Visually hidden text that screen readers still announce. */
 .sr-only {
   position: absolute;

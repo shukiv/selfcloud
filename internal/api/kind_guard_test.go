@@ -65,8 +65,11 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/store/nodes.go":          6,
 	"internal/store/webhook_events.go": 3,
 	"internal/store/sharing.go":        2,
-	"internal/store/storage.go":        1,
-	"internal/store/usage.go":          2,
+	// Slice st (decision 79) added two in PersonalBreakdown: the trash's file count and its bytes, each "n.kind = 'file'"
+	// on the caller's own My files, read for the Storage page. A shortcut holds no bytes and is not counted as a file, so
+	// it adds nothing to the figures; no access is decided here (the caller's own folder is its only input).
+	"internal/store/storage.go": 3,
+	"internal/store/usage.go":   2,
 	// Slice r1 added two in comments.go, both the same refusal: commentNode and the create write refuse a shortcut as
 	// not_found, since a shortcut has no comments of its own. That is a refusal on a kind the walk already reached, not
 	// an access decision: nodeAccessWith runs first, and it already refuses a shortcut to a link visitor. Decision 39.

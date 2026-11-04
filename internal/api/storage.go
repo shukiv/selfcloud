@@ -55,12 +55,23 @@ func effectiveQuota(u *store.User, acc *store.Account) *int64 {
 	return quotaOrNil(acc.UserQuotaBytes)
 }
 
-// storageJSON is the caller's own storage: its My files, against its limit.
+// storageJSON is the caller's own storage: its My files, against its limit. Breakdown is set only when GET /me asks
+// for it (?storage=breakdown): the Storage page reads it, and the other readers of /me do not pay for it.
 type storageJSON struct {
-	UsedBytes      int64  `json:"used_bytes"`
-	ReservedBytes  int64  `json:"reserved_bytes"`
-	QuotaBytes     *int64 `json:"quota_bytes"`
-	AvailableBytes *int64 `json:"available_bytes"`
+	UsedBytes      int64          `json:"used_bytes"`
+	ReservedBytes  int64          `json:"reserved_bytes"`
+	QuotaBytes     *int64         `json:"quota_bytes"`
+	AvailableBytes *int64         `json:"available_bytes"`
+	Breakdown      *breakdownJSON `json:"breakdown,omitempty"`
+}
+
+// breakdownJSON is what My files holds apart from its files: old versions (of files not in the trash), and the
+// trash (the files in it, with their versions). The files are the used bytes less these two.
+type breakdownJSON struct {
+	VersionsBytes int64 `json:"versions_bytes"`
+	VersionsFiles int64 `json:"versions_files"`
+	TrashBytes    int64 `json:"trash_bytes"`
+	TrashFiles    int64 `json:"trash_files"`
 }
 
 // myStorage is the storage of the user whose personal folder is pf. A user without one has none.
@@ -230,7 +241,9 @@ type largeFileJSON struct {
 	ID            string `json:"id"`
 	FolderID      string `json:"folder_id,omitempty"`
 	FolderName    string `json:"folder_name,omitempty"`
+	ParentName    string `json:"parent_name,omitempty"`
 	Name          string `json:"name"`
+	MimeType      string `json:"mime_type,omitempty"`
 	Size          int64  `json:"size"`
 	VersionsBytes int64  `json:"versions_bytes"`
 	InTrash       bool   `json:"in_trash"`
@@ -260,8 +273,8 @@ func largestPage(r *http.Request) (store.Page, error) {
 func largeFilesOut(files []store.LargeFile, withFolder bool) []largeFileJSON {
 	out := make([]largeFileJSON, 0, len(files))
 	for _, f := range files {
-		row := largeFileJSON{ID: f.ID, Name: f.Name, Size: f.Size, VersionsBytes: f.VersionBytes, InTrash: f.InTrash,
-			ModifiedAt: f.ModifiedAt.UTC().Format(time.RFC3339)}
+		row := largeFileJSON{ID: f.ID, Name: f.Name, MimeType: f.MimeType, ParentName: f.ParentName, Size: f.Size,
+			VersionsBytes: f.VersionBytes, InTrash: f.InTrash, ModifiedAt: f.ModifiedAt.UTC().Format(time.RFC3339)}
 		if withFolder {
 			row.FolderID, row.FolderName = f.FolderID, f.FolderName
 		}
@@ -311,13 +324,18 @@ func (s *Server) handleAccountLargest(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-// handleMyLargest lists the caller's own largest files: its My files, with their trash marks.
+// handleMyLargest lists the caller's own largest files: its My files, with their trash marks. ?kind= narrows it to
+// one kind of file (audio, video, image, document) or to the trash (trash); a kind not in that list is refused.
 func (s *Server) handleMyLargest(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	ctx := r.Context()
 	page, err := largestPage(r)
 	if err != nil {
 		return err
+	}
+	fileKind := r.URL.Query().Get("kind")
+	if !store.FileKindOK(fileKind) {
+		return apierr.New(apierr.InvalidRequest, "kind must be one of audio, video, image, document, trash")
 	}
 	pf, err := s.store.PersonalFolder(ctx, p.AccountID, p.UserID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -327,7 +345,7 @@ func (s *Server) handleMyLargest(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	files, next, err := s.store.LargestFiles(ctx, p.AccountID, pf.ID, "", page)
+	files, next, err := s.store.LargestFilesOf(ctx, p.AccountID, pf.ID, "", fileKind, page)
 	if err != nil {
 		return storeErr(err)
 	}

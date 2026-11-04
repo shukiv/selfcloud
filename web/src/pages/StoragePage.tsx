@@ -1,31 +1,40 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Skeleton, Tag } from "antd";
+import { Alert, Skeleton } from "antd";
 import { useLang, useT } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { brand } from "../lib/brand";
 import { isAdmin, session, sessionChanged, sessionKey, signingOut } from "../lib/session";
-import { formatBytes, formatDate } from "../lib/files/format";
 import { fileErrorText } from "../lib/files/fileErrors";
-import { myLargest, myStorage, refreshMyStorage, type LargestFile } from "../lib/storage/api";
-import { availableOf, heldBytes, LARGEST_PAGE, mergePage } from "../lib/storage/logic";
-import UsageMeter from "../components/UsageMeter";
+import { deleteNode, restoreNode } from "../lib/files/api";
+import { myBreakdown, myLargest, myStorage, refreshMyBreakdown, type LargestFile } from "../lib/storage/api";
+import { LARGEST_PAGE, mergePage } from "../lib/storage/logic";
+import { kindOfChip, type Breakdown, type ChipId } from "../lib/storage/breakdown";
+import StorageMeter from "../components/storage/StorageMeter";
+import FreeUpSpace from "../components/storage/FreeUpSpace";
+import LargestFilesCard from "../components/storage/LargestFiles";
 
-// Storage: the caller's own My files, what they hold against their limit, and the largest files in them. Team spaces
-// are not here; they count against the account, and the owner sees them in Manage > Storage. An installation admin has
-// no drive, so this page reads nothing for it. A failed first load shows its error and no empty state.
+// A server that does not send the breakdown shows the figures with the files only.
+const NO_BREAKDOWN: Breakdown = { versions_bytes: 0, versions_files: 0, trash_bytes: 0, trash_files: 0 };
+
+// Storage: the caller's own My files, what it holds against its limit, the old versions and the trash, and the largest files
+// in it, filtered by kind (decision 79). Team spaces are not here; they count against the account, and the owner sees them
+// in Manage > Storage. An installation admin has no drive, so this page reads nothing for it. A failed first load shows its
+// error and no empty state.
 export default function StoragePage() {
   const { t } = useT();
   const lang = useLang();
   const brandName = useStore(brand).name;
   const me = useStore(session);
   const my = useStore(myStorage);
+  const breakdown = useStore(myBreakdown);
   const signedIn = me !== null;
   const admin = me !== null && isAdmin(me.user);
   const sk = sessionKey(me);
   const [files, setFiles] = useState<LargestFile[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [chip, setChip] = useState<ChipId>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // figuresError is a failed read of the storage figures: the meter is not drawn then, and the error stands in its place.
@@ -33,54 +42,97 @@ export default function StoragePage() {
   // The language is read through a ref: a change of language must not clear the list and read it again.
   const langRef = useRef(lang);
   langRef.current = lang;
+  // The chip in use is read through a ref, so a page read that is in flight keeps the kind it was asked for.
+  const chipRef = useRef(chip);
+  chipRef.current = chip;
 
-  const load = useCallback(
-    async (reset: boolean, from: string | null) => {
-      const changed = sessionChanged();
-      setLoading(true);
-      try {
-        const page = await myLargest(LARGEST_PAGE, reset ? null : from);
-        if (changed()) return;
-        setFiles((prev) => (reset ? page.items : mergePage(prev, page.items)));
-        setCursor(page.next_cursor ?? null);
-        setError(null);
-      } catch (err) {
-        if (!changed() && !signingOut()) setError(fileErrorText(err, langRef.current));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
+  const load = useCallback(async (reset: boolean, from: string | null, kind: ChipId) => {
+    const changed = sessionChanged();
+    setLoading(true);
+    try {
+      const page = await myLargest(LARGEST_PAGE, reset ? null : from, kindOfChip(kind));
+      if (changed() || chipRef.current !== kind) return;
+      setFiles((prev) => (reset ? page.items : mergePage(prev, page.items)));
+      setCursor(page.next_cursor ?? null);
+      setError(null);
+    } catch (err) {
+      if (!changed() && !signingOut()) setError(fileErrorText(err, langRef.current));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // reloadAll reads the figures and the first page again, after a file moved to or out of the trash.
+  const reloadAll = useCallback(async () => {
+    const changed = sessionChanged();
+    try {
+      await refreshMyBreakdown();
+      setFiguresError(null);
+    } catch (err) {
+      if (!changed()) setFiguresError(fileErrorText(err, langRef.current));
+    }
+    if (!changed()) await load(true, null, chipRef.current);
+  }, [load]);
 
   useEffect(() => {
     document.title = `${t("storage.title")} · ${brandName}`;
   }, [t, brandName]);
 
-  // Each mount reads the storage figures and then the largest files, for the person who is signed in.
+  // Each mount reads the figures and then the largest files, for the person who is signed in.
   useEffect(() => {
     if (!signedIn || admin) return;
     setFiles([]);
     setCursor(null);
     setError(null);
     setFiguresError(null);
+    setChip("all");
+    chipRef.current = "all";
     const changed = sessionChanged();
     void (async () => {
       try {
-        await refreshMyStorage();
+        await refreshMyBreakdown();
       } catch (err) {
         if (!changed()) setFiguresError(fileErrorText(err, langRef.current));
       }
       if (changed()) return;
-      await load(true, null);
+      await load(true, null, "all");
     })();
   }, [sk, signedIn, admin, load]);
 
+  const pickChip = (id: ChipId) => {
+    if (id === chipRef.current) return;
+    setChip(id);
+    chipRef.current = id;
+    setFiles([]);
+    setCursor(null);
+    void load(true, null, id);
+  };
+
+  const trash = async (id: string) => {
+    try {
+      await deleteNode(id);
+    } catch (err) {
+      setError(fileErrorText(err, langRef.current));
+      return;
+    }
+    await reloadAll();
+  };
+
+  const restore = async (id: string) => {
+    try {
+      await restoreNode(id);
+    } catch (err) {
+      setError(fileErrorText(err, langRef.current));
+      return;
+    }
+    await reloadAll();
+  };
+
   if (admin) return null;
 
-  const held = my ? heldBytes(my) : 0;
-  const available = my ? availableOf(held, my.quota_bytes) : null;
   const empty = !loading && files.length === 0 && error === null;
+  const figures = my;
+  const parts = breakdown ?? NO_BREAKDOWN;
 
   return (
     <div>
@@ -89,92 +141,29 @@ export default function StoragePage() {
       {error !== null && <Alert type="error" showIcon role="alert" message={error} style={{ marginBlockEnd: 12 }} />}
       {figuresError !== null && <Alert type="error" showIcon role="alert" message={figuresError} style={{ marginBlockEnd: 12 }} />}
 
-      {my && figuresError === null && (
-        <section aria-labelledby="storage-meter" style={{ display: "grid", gap: 12, marginBlockEnd: 20 }}>
-          <h2 id="storage-meter" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
-            {t("storage.mine")}
-          </h2>
-          <UsageMeter used={held} quota={my.quota_bytes} />
-          <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, margin: 0 }}>
-            <div>
-              <dt style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t("storage.used")}</dt>
-              <dd style={{ margin: 0 }}>{formatBytes(my.used_bytes, lang)}</dd>
-            </div>
-            <div>
-              <dt style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t("storage.reserved")}</dt>
-              <dd style={{ margin: 0 }}>{formatBytes(my.reserved_bytes, lang)}</dd>
-            </div>
-            <div>
-              <dt style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t("storage.limit")}</dt>
-              <dd style={{ margin: 0 }}>{my.quota_bytes === null ? t("storage.noLimit") : formatBytes(my.quota_bytes, lang)}</dd>
-            </div>
-            {available !== null && (
-              <div>
-                <dt style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t("storage.available")}</dt>
-                <dd style={{ margin: 0 }}>{formatBytes(available, lang)}</dd>
-              </div>
-            )}
-          </dl>
-        </section>
+      {figures && figuresError === null && (
+        <div style={{ display: "grid", gap: 20, marginBlockEnd: 20 }}>
+          <StorageMeter figures={figures} breakdown={parts} />
+          <FreeUpSpace breakdown={parts} />
+        </div>
       )}
 
-      <section aria-labelledby="largest-title">
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: "8px 12px", marginBlockEnd: 8 }}>
-          <h2 id="largest-title" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
-            {t("storage.largest")}
-          </h2>
-          <a href="/trash">{t("storage.trashLink")}</a>
-        </div>
-
-        {loading && files.length === 0 && error === null && <Skeleton active />}
-
-        {empty && (
-          <p role="status" className="empty" style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
-            {t("storage.largestEmpty")}
-          </p>
-        )}
-
-        {files.length > 0 && (
-          // The table scrolls inside its box at phone width; the page itself never scrolls sideways.
-          <div style={{ overflowX: "auto" }}>
-            <table className="storage-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead>
-                <tr>
-                  <th scope="col" style={{ textAlign: "start", padding: 8 }}>{t("storage.name")}</th>
-                  <th scope="col" style={{ textAlign: "end", padding: 8 }}>{t("storage.size")}</th>
-                  <th scope="col" style={{ textAlign: "end", padding: 8 }}>{t("storage.oldVersions")}</th>
-                  <th scope="col" style={{ textAlign: "start", padding: 8 }}>{t("storage.modified")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {files.map((f) => (
-                  <tr key={f.id} style={{ borderBlockStart: "1px solid var(--ant-color-border-secondary)" }}>
-                    <th scope="row" style={{ textAlign: "start", padding: 8, fontWeight: 600, overflowWrap: "anywhere" }}>
-                      <a href={`/n/${encodeURIComponent(f.id)}`}>
-                        <bdi>{f.name}</bdi>
-                      </a>{" "}
-                      {f.in_trash && <Tag>{t("storage.inTrash")}</Tag>}
-                    </th>
-                    <td style={{ textAlign: "end", padding: 8, fontVariantNumeric: "tabular-nums" }}>{formatBytes(f.size, lang)}</td>
-                    <td style={{ textAlign: "end", padding: 8, fontVariantNumeric: "tabular-nums" }}>{formatBytes(f.versions_bytes, lang)}</td>
-                    <td style={{ textAlign: "start", padding: 8 }}>
-                      <time dateTime={f.modified_at}>{formatDate(f.modified_at, lang)}</time>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {cursor !== null && (
-          <div style={{ marginBlockStart: 12 }}>
-            <Button disabled={loading} onClick={() => void load(false, cursor)}>
-              {t("common.loadMore")}
-            </Button>
-          </div>
-        )}
-      </section>
+      <LargestFilesCard
+        files={files}
+        chip={chip}
+        onChip={pickChip}
+        hasMore={cursor !== null}
+        loading={loading}
+        onMore={() => void load(false, cursor, chipRef.current)}
+        onTrash={(id) => void trash(id)}
+        onRestore={(id) => void restore(id)}
+      />
+      {loading && files.length === 0 && error === null && <Skeleton active style={{ marginBlockStart: 12 }} />}
+      {empty && (
+        <p role="status" className="empty" style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
+          {t("storage.largestEmpty")}
+        </p>
+      )}
     </div>
   );
 }

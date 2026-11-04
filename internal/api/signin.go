@@ -688,6 +688,15 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// The Storage page asks for the breakdown of My files (decision 79); other readers of /me do not pay for it.
+	if r.URL.Query().Get("storage") == "breakdown" && out.Storage != nil && out.PersonalFolderID != nil {
+		b, err := s.store.PersonalBreakdown(ctx, p.AccountID, *out.PersonalFolderID)
+		if err != nil {
+			return err
+		}
+		out.Storage.Breakdown = &breakdownJSON{VersionsBytes: b.VersionsBytes, VersionsFiles: b.VersionsFiles,
+			TrashBytes: b.TrashBytes, TrashFiles: b.TrashFiles}
+	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

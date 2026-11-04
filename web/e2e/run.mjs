@@ -47,6 +47,7 @@ import { l4Checks } from './l4.mjs';
 import { ksChecks } from './ks.mjs';
 import { fu3aChecks } from './fu3a.mjs';
 import { fu3bChecks } from './fu3b.mjs';
+import { stChecks } from './st.mjs';
 import { pickMenuEntry } from './menu.mjs';
 
 const execFileP = promisify(execFile);
@@ -769,7 +770,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a, fu3b or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a, fu3b, st or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -868,6 +869,9 @@ async function main() {
     }
     // Slice fu3b (decision 77): the list's first frames and place changes, sampled frame by frame in its own browser.
     if (!only || onlySet.has('fu3b')) await fu3bChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER });
+    // The Storage page (slice st, decision 79): the member's My files, read in light, dark, Hebrew and at phone width.
+    // The page is signed in as the member here (the sections above sign the member in last).
+    if (!only || onlySet.has('st')) await stChecks(h, { page, base, accountKey, accountID, memberID, MEMBER, dir });
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });

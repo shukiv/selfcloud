@@ -7,8 +7,12 @@ import (
 	"database/sql"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 )
+
+// ErrBadKind is a file kind a largest-files list cannot be narrowed to.
+var ErrBadKind = errors.New("store: unknown file kind")
 
 // scanFunc adapts a row scanner, so a folder can be scanned together with columns after its own.
 type scanFunc func(...any) error
@@ -129,7 +133,8 @@ func (s *Store) FolderTotals(ctx context.Context, accountID string, teamOnly boo
 	return out, rows.Err()
 }
 
-// LargeFile is a file with the bytes its versions hold and whether it is in the trash.
+// LargeFile is a file with the bytes its versions hold, whether it is in the trash, its media type, and the name of
+// the folder it sits in ("" at the top of a folder).
 type LargeFile struct {
 	ID           string
 	FolderID     string
@@ -139,12 +144,50 @@ type LargeFile struct {
 	VersionBytes int64
 	InTrash      bool
 	ModifiedAt   time.Time
+	MimeType     string
+	ParentName   string
+}
+
+// fileKindCond is the SQL condition of each file kind the Storage page filters by (decision 79). The media type is
+// read without its parameters and in lower case; the sets are the ones the interface uses to classify a file
+// (web/src/lib/files/kind.ts). "trash" is a condition on the trash, not on the media type. A kind not in the map
+// is refused before this is used, so the strings below are the only SQL a kind adds.
+var fileKindCond = map[string]string{
+	"audio": `{base} LIKE 'audio/%'`,
+	"video": `{base} LIKE 'video/%'`,
+	"image": `{base} IN ('image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml')`,
+	"document": `({base} = 'application/pdf' OR {base} LIKE 'text/%' OR {base} IN ('application/json', 'application/xml',
+		'application/javascript', 'application/x-yaml', 'application/yaml', 'application/toml', 'application/x-sh',
+		'application/sql', 'application/x-httpd-php', 'application/msword',
+		'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel',
+		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-powerpoint',
+		'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+		'application/vnd.oasis.opendocument.text', 'application/vnd.oasis.opendocument.spreadsheet',
+		'application/vnd.oasis.opendocument.presentation'))`,
+	"trash": `n.id IN (SELECT nid FROM trashed)`,
+}
+
+// baseMimeSQL is a file's media type without its parameters, in lower case. It replaces {base} in fileKindCond.
+const baseMimeSQL = `lower(CASE WHEN instr(n.mime_type, ';') > 0 THEN substr(n.mime_type, 1, instr(n.mime_type, ';') - 1) ELSE n.mime_type END)`
+
+// FileKindOK reports whether kind is one a largest-files list can be narrowed to ("" is every kind).
+func FileKindOK(kind string) bool {
+	_, ok := fileKindCond[kind]
+	return kind == "" || ok
 }
 
 // LargestFiles lists the files of accountID, largest first (by size, then ID), one page at a time. folderID
 // narrows it to one folder; with "" the kind narrows it: KindTeam for team spaces, "" for every folder. The
 // page is picked in one query, and its versions and trash marks are read for that page only.
 func (s *Store) LargestFiles(ctx context.Context, accountID, folderID, kind string, p Page) ([]LargeFile, string, error) {
+	return s.LargestFilesOf(ctx, accountID, folderID, kind, "", p)
+}
+
+// LargestFilesOf is LargestFiles with a file kind as well (fileKind, one of fileKindCond's keys, or "" for any).
+func (s *Store) LargestFilesOf(ctx context.Context, accountID, folderID, kind, fileKind string, p Page) ([]LargeFile, string, error) {
+	if !FileKindOK(fileKind) {
+		return nil, "", ErrBadKind
+	}
 	var args []any
 	cond := ""
 	if folderID != "" {
@@ -154,6 +197,9 @@ func (s *Store) LargestFiles(ctx context.Context, accountID, folderID, kind stri
 	if kind != "" {
 		cond += " AND f.kind = ?"
 		args = append(args, kind)
+	}
+	if fileKind != "" {
+		cond += " AND " + strings.ReplaceAll(fileKindCond[fileKind], "{base}", baseMimeSQL)
 	}
 	if p.Cursor != "" {
 		parts, err := decodeCursor(p.Cursor, 2)
@@ -173,14 +219,17 @@ func (s *Store) LargestFiles(ctx context.Context, accountID, folderID, kind stri
 			UNION ALL
 			SELECT c.id FROM nodes c JOIN trashed t ON c.parent_id = t.nid WHERE c.account_id = ?
 		), page AS (
-			SELECT n.id, n.folder_id, n.name, n.size, n.modified_at FROM nodes n JOIN folders f ON f.id = n.folder_id AND f.staged = 0
+			SELECT n.id, n.folder_id, n.parent_id, n.name, n.size, n.modified_at, n.mime_type,
+				n.id IN (SELECT nid FROM trashed) AS trashed
+			FROM nodes n JOIN folders f ON f.id = n.folder_id AND f.staged = 0
 			WHERE n.account_id = ? AND n.kind = 'file'`+cond+`
 			ORDER BY n.size DESC, n.id DESC LIMIT ?
 		)
 		SELECT pg.id, pg.folder_id, f.name, pg.name, pg.size,
 			(SELECT COALESCE(SUM(v.size), 0) FROM versions v WHERE v.node_id = pg.id),
-			pg.modified_at, pg.id IN (SELECT nid FROM trashed)
+			pg.modified_at, pg.trashed, COALESCE(pg.mime_type, ''), COALESCE(par.name, '')
 		FROM page pg JOIN folders f ON f.id = pg.folder_id AND f.staged = 0
+		LEFT JOIN nodes par ON par.id = pg.parent_id
 		ORDER BY pg.size DESC, pg.id DESC`,
 		append([]any{accountID, accountID, accountID}, args...)...)
 	if err != nil {
@@ -193,7 +242,7 @@ func (s *Store) LargestFiles(ctx context.Context, accountID, folderID, kind stri
 		var modified int64
 		var trashed int64
 		if err := rows.Scan(&lf.ID, &lf.FolderID, &lf.FolderName, &lf.Name, &lf.Size, &lf.VersionBytes,
-			&modified, &trashed); err != nil {
+			&modified, &trashed, &lf.MimeType, &lf.ParentName); err != nil {
 			return nil, "", err
 		}
 		lf.ModifiedAt = fromMillis(modified)
@@ -210,6 +259,40 @@ func (s *Store) LargestFiles(ctx context.Context, accountID, folderID, kind stri
 		next = encodeCursor(strconv.FormatInt(last.Size, 10), last.ID)
 	}
 	return out, next, nil
+}
+
+// StorageBreakdown splits a folder's used bytes (decision 79): the old versions of its files that are not in the
+// trash, and the trash, which is the files in it with their own versions. The rest of the used bytes are the files
+// that are not in the trash.
+type StorageBreakdown struct {
+	VersionsBytes int64
+	VersionsFiles int64
+	TrashBytes    int64
+	TrashFiles    int64
+}
+
+// PersonalBreakdown reads the breakdown of folderID in accountID, in one query. The trash is every node below a
+// trashed node, as LargestFiles reads it. A folder with no trash and no versions gives zeros.
+func (s *Store) PersonalBreakdown(ctx context.Context, accountID, folderID string) (StorageBreakdown, error) {
+	var b StorageBreakdown
+	err := s.r.QueryRowContext(ctx, `WITH RECURSIVE trashed(nid) AS (
+			SELECT id FROM nodes WHERE account_id = ?1 AND folder_id = ?2 AND trashed_at IS NOT NULL
+			UNION ALL
+			SELECT c.id FROM nodes c JOIN trashed t ON c.parent_id = t.nid WHERE c.account_id = ?1
+		)
+		SELECT
+			(SELECT COALESCE(SUM(v.size), 0) FROM versions v JOIN nodes n ON n.id = v.node_id
+				WHERE n.account_id = ?1 AND n.folder_id = ?2 AND n.id NOT IN (SELECT nid FROM trashed)),
+			(SELECT COUNT(DISTINCT v.node_id) FROM versions v JOIN nodes n ON n.id = v.node_id
+				WHERE n.account_id = ?1 AND n.folder_id = ?2 AND n.id NOT IN (SELECT nid FROM trashed)),
+			(SELECT COALESCE(SUM(n.size), 0) FROM nodes n
+				WHERE n.account_id = ?1 AND n.folder_id = ?2 AND n.kind = 'file' AND n.id IN (SELECT nid FROM trashed))
+			+ (SELECT COALESCE(SUM(v.size), 0) FROM versions v JOIN nodes n ON n.id = v.node_id
+				WHERE n.account_id = ?1 AND n.folder_id = ?2 AND n.id IN (SELECT nid FROM trashed)),
+			(SELECT COUNT(*) FROM nodes n
+				WHERE n.account_id = ?1 AND n.folder_id = ?2 AND n.kind = 'file' AND n.id IN (SELECT nid FROM trashed))`,
+		accountID, folderID).Scan(&b.VersionsBytes, &b.VersionsFiles, &b.TrashBytes, &b.TrashFiles)
+	return b, err
 }
 
 // FolderUsage returns a folder's counters: the bytes and files of its tree, and the bytes its uploads reserve.

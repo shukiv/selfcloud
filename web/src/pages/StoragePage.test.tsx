@@ -5,7 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../lib/query";
 import { session, type Session } from "../lib/session";
-import { myStorage } from "../lib/storage/api";
+import { myBreakdown, myStorage } from "../lib/storage/api";
 import { setLang, translate } from "../lib/i18n";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
 import StoragePage from "./StoragePage";
@@ -28,9 +28,11 @@ const largest = (id: string, name: string, size = 500, in_trash = false) => ({
   in_trash,
 });
 
-const ME = "/api/v1/me";
+// The page reads GET /me with the breakdown asked for (decision 79).
+const ME = "/api/v1/me?storage=breakdown";
 const LARGEST = "/api/v1/me/storage/largest";
-const STORAGE = { used_bytes: 4_000_000_000, reserved_bytes: 0, quota_bytes: 10_000_000_000 };
+const BREAKDOWN = { versions_bytes: 0, versions_files: 0, trash_bytes: 0, trash_files: 0 };
+const STORAGE = { used_bytes: 4_000_000_000, reserved_bytes: 0, quota_bytes: 10_000_000_000, available_bytes: 6_000_000_000, breakdown: BREAKDOWN };
 
 function renderPage() {
   return render(
@@ -47,6 +49,7 @@ beforeEach(() => {
 afterEach(() => {
   session.set(null);
   myStorage.set(null);
+  myBreakdown.set(null);
 });
 
 describe("Storage", () => {
@@ -57,23 +60,65 @@ describe("Storage", () => {
       return fail(404, "x");
     });
     renderPage();
-    const meter = await screen.findByRole("meter");
-    expect(meter.getAttribute("aria-valuemax")).toBe("10000000000");
-    expect(meter.getAttribute("aria-valuenow")).toBe("4000000000");
+    const meter = await screen.findByRole("img", { name: /of 10 GB used/ });
+    expect(meter.getAttribute("aria-label")).toContain("files 4 GB");
     const link = await screen.findByRole("link", { name: "Movie.mkv" });
     expect(link.getAttribute("href")).toBe("/n/nod_big");
-    expect(screen.getByText(translate("en", "storage.inTrash"))).toBeTruthy();
+    expect(screen.getAllByText(translate("en", "storage.inTrash")).length).toBeGreaterThan(0);
     expect(screen.queryByText("nod_big")).toBeNull();
   });
 
-  it("the limit row shows No limit when the account has none", async () => {
+  it("with no limit the meter says so and has no free part", async () => {
     stubFetch((c: Call) => {
-      if (c.url === ME) return { status: 200, body: { user: {}, storage: { ...STORAGE, quota_bytes: null } } };
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: { ...STORAGE, quota_bytes: null, available_bytes: null } } };
       return { status: 200, body: { items: [] } };
     });
     renderPage();
-    expect(await screen.findByText(translate("en", "storage.noLimit"))).toBeTruthy();
-    expect(screen.queryByRole("meter")).toBeNull();
+    expect(await screen.findByText(translate("en", "storage.meter.noLimit"))).toBeTruthy();
+    expect(screen.getByRole("img", { name: /no limit/ })).toBeTruthy();
+    expect(screen.queryByText(translate("en", "storage.free"))).toBeNull();
+  });
+
+  // The old versions and the trash come from the breakdown: a card for each that has something to free (decision 79).
+  it("shows the Free up space cards only for what has something to free, and Go to Trash lands on the trash", async () => {
+    stubFetch((c: Call) => {
+      if (c.url === ME)
+        return {
+          status: 200,
+          body: { user: {}, storage: { ...STORAGE, breakdown: { versions_bytes: 4_100_000, versions_files: 6, trash_bytes: 0, trash_files: 0 } } },
+        };
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    expect(await screen.findByText(translate("en", "storage.free.versionsText", { size: "4.1 MB", files: "6 files" }))).toBeTruthy();
+    expect(screen.queryByText(translate("en", "storage.free.trashTitle"))).toBeNull();
+  });
+
+  it("shows the trash card with Go to Trash, linking to the trash, when the trash has files", async () => {
+    stubFetch((c: Call) => {
+      if (c.url === ME)
+        return { status: 200, body: { user: {}, storage: { ...STORAGE, breakdown: { versions_bytes: 0, versions_files: 0, trash_bytes: 7_900_000, trash_files: 3 } } } };
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    expect(await screen.findByText(translate("en", "storage.free.trashTitle"))).toBeTruthy();
+    expect(screen.getByRole("link", { name: translate("en", "storage.trashLink") }).getAttribute("href")).toBe("/trash");
+    expect(screen.queryByText(translate("en", "storage.oldVersions"), { selector: "strong" })).toBeNull();
+  });
+
+  // A chip asks the server for its kind, and the list is read again from the first page.
+  it("a filter chip asks for its kind and reads the first page again", async () => {
+    const { calls } = stubFetch((c: Call) => {
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
+      if (c.url.startsWith(LARGEST)) return { status: 200, body: { items: [largest("nod_a", "Song.mp3")] } };
+      return fail(404, "x");
+    });
+    renderPage();
+    await screen.findByRole("link", { name: "Song.mp3" });
+    fireEvent.click(screen.getByRole("button", { name: translate("en", "storage.chip.audio") }));
+    await waitFor(() => expect(calls.some((c) => c.url.startsWith(LARGEST) && c.url.includes("kind=audio"))).toBe(true));
+    expect(screen.getByRole("button", { name: translate("en", "storage.chip.audio") }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: translate("en", "storage.chip.trash") }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("a failed first load shows its error and never the empty state (guard: empty only after a successful read)", async () => {
@@ -148,7 +193,7 @@ describe("Storage", () => {
     });
     renderPage();
     expect((await screen.findByRole("alert")).textContent).toContain("The server had a problem");
-    expect(screen.queryByRole("meter")).toBeNull();
+    expect(screen.queryByRole("img", { name: /used/ })).toBeNull();
   });
 
   // A change of language keeps the list on screen and does not read it again: the page reads the language when it needs it.
