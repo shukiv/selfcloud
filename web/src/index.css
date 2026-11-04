@@ -358,6 +358,14 @@ a {
   color: var(--ant-color-text-light-solid);
 }
 
+/* The "Free up space" cards sit side by side where there is room for two of at least 260 px, and one under the other at
+   phone width; a card alone takes the full width. */
+.storage-free-cards {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
 .storage-free-icon {
   display: inline-flex;
   flex: none;

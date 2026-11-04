@@ -46,21 +46,41 @@ export default function StoragePage() {
   const chipRef = useRef(chip);
   chipRef.current = chip;
 
+  // latestLoad numbers the list's requests. Only the newest one may end the loading or show an error: an answer to an older
+  // request (the previous chip's, say) must not clear the loading of the one still in flight.
+  const latestLoad = useRef(0);
+
   const load = useCallback(async (reset: boolean, from: string | null, kind: ChipId) => {
     const changed = sessionChanged();
+    const request = ++latestLoad.current;
     setLoading(true);
     try {
       const page = await myLargest(LARGEST_PAGE, reset ? null : from, kindOfChip(kind));
-      if (changed() || chipRef.current !== kind) return;
+      if (changed() || chipRef.current !== kind || request !== latestLoad.current) return;
       setFiles((prev) => (reset ? page.items : mergePage(prev, page.items)));
       setCursor(page.next_cursor ?? null);
       setError(null);
     } catch (err) {
-      if (!changed() && !signingOut()) setError(fileErrorText(err, langRef.current));
+      if (!changed() && !signingOut() && request === latestLoad.current) setError(fileErrorText(err, langRef.current));
     } finally {
-      setLoading(false);
+      if (request === latestLoad.current) setLoading(false);
     }
   }, []);
+
+  // focusAfter is the row an action leaves the focus on, once the list is read again: the row that takes the removed
+  // row's place (or the one before it, when the last row went), or the list's heading when no row is left (decision 79).
+  const focusAfter = useRef<number | null>(null);
+  useEffect(() => {
+    if (loading || focusAfter.current === null) return;
+    const index = focusAfter.current;
+    focusAfter.current = null;
+    if (files.length === 0) {
+      document.getElementById("largest-title")?.focus();
+      return;
+    }
+    const row = Math.min(index, files.length - 1);
+    document.querySelector<HTMLElement>(`tr[data-row-index="${row}"] [data-first-action]`)?.focus();
+  }, [files, loading]);
 
   // reloadAll reads the figures and the first page again, after a file moved to or out of the trash.
   const reloadAll = useCallback(async () => {
@@ -109,9 +129,11 @@ export default function StoragePage() {
   };
 
   const trash = async (id: string) => {
+    focusAfter.current = files.findIndex((f) => f.id === id);
     try {
       await deleteNode(id);
     } catch (err) {
+      focusAfter.current = null;
       setError(fileErrorText(err, langRef.current));
       return;
     }
@@ -119,9 +141,11 @@ export default function StoragePage() {
   };
 
   const restore = async (id: string) => {
+    focusAfter.current = files.findIndex((f) => f.id === id);
     try {
       await restoreNode(id);
     } catch (err) {
+      focusAfter.current = null;
       setError(fileErrorText(err, langRef.current));
       return;
     }

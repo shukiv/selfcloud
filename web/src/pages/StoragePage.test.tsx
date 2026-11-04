@@ -214,3 +214,162 @@ describe("Storage", () => {
     expect(calls.filter((c) => c.url.startsWith(LARGEST)).length).toBe(before);
   });
 });
+
+// Review fixes (decision 79): the row actions, their effect on the server and on the list, the focus after one, the stale
+// answer of a chip, and the size bar of each row.
+describe("Storage row actions and the review fixes (decision 79)", () => {
+  beforeEach(async () => {
+    // The language test above leaves Hebrew on; these tests name the English labels.
+    await setLang("en");
+    session.set(signedAs("olivia"));
+  });
+
+  afterEach(() => {
+    session.set(null);
+    myStorage.set(null);
+    myBreakdown.set(null);
+  });
+
+  it("Move to trash is named for its file, sends the delete, then reads the figures and the list again", async () => {
+    let trashed = false;
+    const { calls } = stubFetch((c: Call) => {
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
+      if (c.method === "DELETE") {
+        trashed = true;
+        return { status: 204 };
+      }
+      if (c.url.startsWith(LARGEST)) {
+        return { status: 200, body: { items: trashed ? [largest("nod_2", "Two.bin", 100)] : [largest("nod_1", "One.bin"), largest("nod_2", "Two.bin", 100)] } };
+      }
+      return fail(404, "x");
+    });
+    renderPage();
+    await screen.findByRole("link", { name: "One.bin" });
+    expect(screen.getByRole("link", { name: "Download: One.bin" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Move to trash: One.bin" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: "One.bin" })).toBeNull());
+    const del = calls.findIndex((c) => c.method === "DELETE");
+    expect(calls[del].url).toBe("/api/v1/nodes/nod_1");
+    expect(calls.slice(del + 1).some((c) => c.url === ME)).toBe(true);
+    expect(calls.slice(del + 1).some((c) => c.url.startsWith(LARGEST))).toBe(true);
+  });
+
+  it("Restore is named for its file, sends the restore for a file in the trash, then reads the list again", async () => {
+    let restored = false;
+    const { calls } = stubFetch((c: Call) => {
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
+      if (c.method === "POST" && c.url.endsWith("/restore")) {
+        restored = true;
+        return { status: 200, body: { id: "nod_big", name: "Movie.mkv" } };
+      }
+      if (c.url.startsWith(LARGEST)) {
+        return { status: 200, body: { items: restored ? [] : [largest("nod_big", "Movie.mkv", 3_000_000_000, true)] } };
+      }
+      return fail(404, "x");
+    });
+    renderPage();
+    await screen.findByRole("link", { name: "Movie.mkv" });
+    fireEvent.click(screen.getByRole("button", { name: "Restore: Movie.mkv" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Movie.mkv" })).toBeNull());
+    const post = calls.findIndex((c) => c.method === "POST");
+    expect(calls[post].url).toBe("/api/v1/nodes/nod_big/restore");
+    expect(calls.slice(post + 1).some((c) => c.url === ME)).toBe(true);
+  });
+
+  it("after Move to trash the focus goes to the next row's first button, and to the heading when no row is left", async () => {
+    let trashed = false;
+    stubFetch((c: Call) => {
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
+      if (c.method === "DELETE") {
+        trashed = true;
+        return { status: 204 };
+      }
+      if (c.url.startsWith(LARGEST)) {
+        return { status: 200, body: { items: trashed ? [largest("nod_2", "Two.bin", 100)] : [largest("nod_1", "One.bin"), largest("nod_2", "Two.bin", 100)] } };
+      }
+      return fail(404, "x");
+    });
+    renderPage();
+    await screen.findByRole("link", { name: "One.bin" });
+    fireEvent.click(screen.getByRole("button", { name: "Move to trash: One.bin" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: "Download: Two.bin" })));
+  });
+
+  it("when the last row goes, the focus goes to the heading of the list", async () => {
+    let trashed = false;
+    stubFetch((c: Call) => {
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
+      if (c.method === "DELETE") {
+        trashed = true;
+        return { status: 204 };
+      }
+      if (c.url.startsWith(LARGEST)) return { status: 200, body: { items: trashed ? [] : [largest("nod_1", "One.bin")] } };
+      return fail(404, "x");
+    });
+    renderPage();
+    await screen.findByRole("link", { name: "One.bin" });
+    fireEvent.click(screen.getByRole("button", { name: "Move to trash: One.bin" }));
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById("largest-title")));
+  });
+
+  // The table's paddings are logical, so a right-to-left page keeps the name's inset on its start side.
+  it("the name cell's padding is logical (inline start and end), not left and right", async () => {
+    stubFetch((c: Call) => {
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
+      if (c.url.startsWith(LARGEST)) return { status: 200, body: { items: [largest("nod_1", "One.bin")] } };
+      return fail(404, "x");
+    });
+    renderPage();
+    const name = (await screen.findByRole("rowheader", { name: /One\.bin/ })) as HTMLElement;
+    expect(name.style.paddingInlineStart).toBe("20px");
+    expect(name.style.paddingInlineEnd).toBe("8px");
+  });
+
+  it("each row shows a size bar against the largest row, hidden from assistive technology", async () => {
+    stubFetch((c: Call) => {
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
+      if (c.url.startsWith(LARGEST)) return { status: 200, body: { items: [largest("nod_a", "A.bin", 500), largest("nod_b", "B.bin", 250)] } };
+      return fail(404, "x");
+    });
+    const { container } = renderPage();
+    await screen.findByRole("link", { name: "B.bin" });
+    const bars = Array.from(container.querySelectorAll<HTMLElement>("[data-size-bar]"));
+    expect(bars.map((b) => b.style.width)).toEqual(["100%", "50%"]);
+    expect(bars.every((b) => b.closest('[aria-hidden="true"]') !== null)).toBe(true);
+  });
+
+  // A chip's answer that comes back after the next chip was picked must not end the loading of the next one.
+  it("a stale answer for the previous chip does not show the empty state while the new chip is still loading", async () => {
+    let releaseAudio!: () => void;
+    let releaseVideo!: () => void;
+    const audioGate = new Promise<void>((r) => (releaseAudio = r));
+    const videoGate = new Promise<void>((r) => (releaseVideo = r));
+    stubFetch(async (c: Call) => {
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
+      if (c.url.includes("kind=audio")) {
+        await audioGate;
+        return { status: 200, body: { items: [largest("nod_a", "Song.mp3")] } };
+      }
+      if (c.url.includes("kind=video")) {
+        await videoGate;
+        return { status: 200, body: { items: [largest("nod_v", "Clip.mp4")] } };
+      }
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    await screen.findByRole("status");
+    fireEvent.click(screen.getByRole("button", { name: translate("en", "storage.chip.audio") }));
+    fireEvent.click(screen.getByRole("button", { name: translate("en", "storage.chip.video") }));
+    await act(async () => {
+      releaseAudio();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(document.querySelector(".ant-skeleton")).not.toBeNull();
+    await act(async () => {
+      releaseVideo();
+    });
+    await screen.findByRole("link", { name: "Clip.mp4" });
+    expect(screen.queryByRole("link", { name: "Song.mp3" })).toBeNull();
+  });
+});

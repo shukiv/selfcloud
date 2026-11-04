@@ -12,7 +12,8 @@ import Icon from "../files/Icon";
 
 // LargestFilesCard is "Largest files" (decision 79): filter chips, then a table of the files with their type, size, old
 // versions and where they are, then the row actions (icons first, each with a tooltip, then More). "Show more" loads the
-// next page. The chips ask the server for the kind, so the list stays the largest of that kind.
+// next page. The chips ask the server for the kind, so the list stays the largest of that kind. Each row's bar shows its
+// size against the largest row, and is decorative: the number beside it says the size.
 export default function LargestFilesCard({
   files,
   chip,
@@ -34,10 +35,12 @@ export default function LargestFilesCard({
 }) {
   const { t } = useT();
   const lang = useLang();
+  const top = files.reduce((m, f) => Math.max(m, f.size), 0);
   return (
     <section aria-labelledby="largest-title" className="storage-card" style={{ padding: 0 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px 16px", padding: "16px 20px 12px" }}>
-        <h2 id="largest-title" style={{ margin: 0, fontSize: 16, fontWeight: 600, flex: "1 1 auto" }}>
+        {/* tabIndex -1 lets the page move the focus here when no row is left after an action (decision 79). */}
+        <h2 id="largest-title" tabIndex={-1} style={{ margin: 0, fontSize: 16, fontWeight: 600, flex: "1 1 auto", outline: "none" }}>
           {t("storage.largest")}
         </h2>
         <div role="group" aria-label={t("storage.kindLabel")} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -63,17 +66,19 @@ export default function LargestFilesCard({
         <table className="storage-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
           <thead>
             <tr>
-              <th scope="col" style={{ textAlign: "start", padding: "8px 8px 8px 20px" }}>{t("storage.name")}</th>
+              <th scope="col" style={{ textAlign: "start", paddingBlock: 8, paddingInlineStart: 20, paddingInlineEnd: 8 }}>{t("storage.name")}</th>
               <th scope="col" style={{ textAlign: "end", padding: 8 }}>{t("storage.size")}</th>
               <th scope="col" className="storage-wide" style={{ textAlign: "end", padding: 8 }}>{t("storage.oldVersions")}</th>
               <th scope="col" className="storage-wide" style={{ textAlign: "start", padding: 8 }}>{t("storage.modified")}</th>
-              <th scope="col" style={{ padding: "8px 12px 8px 8px" }}><span className="sr-only">{t("storage.actions")}</span></th>
+              <th scope="col" style={{ paddingBlock: 8, paddingInlineStart: 8, paddingInlineEnd: 12 }}>
+                <span className="sr-only">{t("storage.actions")}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {files.map((f) => (
-              <tr key={f.id} style={{ borderBlockStart: "1px solid var(--ant-color-border-secondary)" }}>
-                <th scope="row" style={{ textAlign: "start", padding: "10px 8px 10px 20px", fontWeight: 600, overflowWrap: "anywhere" }}>
+            {files.map((f, i) => (
+              <tr key={f.id} data-row-index={i} style={{ borderBlockStart: "1px solid var(--ant-color-border-secondary)" }}>
+                <th scope="row" style={{ textAlign: "start", paddingBlock: 10, paddingInlineStart: 20, paddingInlineEnd: 8, fontWeight: 600, overflowWrap: "anywhere" }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                     <Icon kind={kindOf({ kind: "file", mime_type: f.mime_type })} node={{ kind: "file", mime_type: f.mime_type, name: f.name }} size={28} />
                     <span style={{ minWidth: 0 }}>
@@ -87,14 +92,31 @@ export default function LargestFilesCard({
                     </span>
                   </span>
                 </th>
-                <td style={{ textAlign: "end", padding: 8, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{formatBytes(f.size, lang)}</td>
+                <td style={{ textAlign: "end", padding: 8, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                  {formatBytes(f.size, lang)}
+                  <span
+                    aria-hidden="true"
+                    style={{ display: "block", height: 4, borderRadius: 2, marginTop: 6, background: "var(--ant-color-fill-secondary)" }}
+                  >
+                    <span
+                      data-size-bar
+                      style={{
+                        display: "block",
+                        height: 4,
+                        borderRadius: 2,
+                        width: `${top > 0 ? Math.round((f.size / top) * 100) : 0}%`,
+                        background: "var(--ant-color-primary-text)",
+                      }}
+                    />
+                  </span>
+                </td>
                 <td className="storage-wide" style={{ textAlign: "end", padding: 8, fontVariantNumeric: "tabular-nums" }}>
                   {f.versions_bytes > 0 ? formatBytes(f.versions_bytes, lang) : "—"}
                 </td>
                 <td className="storage-wide" style={{ textAlign: "start", padding: 8 }}>
                   <time dateTime={f.modified_at}>{formatDate(f.modified_at, lang)}</time>
                 </td>
-                <td style={{ padding: "4px 12px 4px 8px", whiteSpace: "nowrap" }}>
+                <td style={{ paddingBlock: 4, paddingInlineStart: 8, paddingInlineEnd: 12, whiteSpace: "nowrap" }}>
                   <RowActions file={f} onTrash={onTrash} onRestore={onRestore} />
                 </td>
               </tr>
@@ -114,7 +136,9 @@ export default function LargestFilesCard({
   );
 }
 
-// RowActions are the icons of one row: download, move to the trash (or restore, for a file in the trash), and More.
+// RowActions are the icons of one row: download, move to the trash (or restore, for a file in the trash), and More. Each
+// button's name starts with its tooltip's verb and names its file ("Download: name"), so a screen reader and a sighted
+// person hear the same action (decision 68).
 function RowActions({ file, onTrash, onRestore }: { file: LargestFile; onTrash: (id: string) => void; onRestore: (id: string) => void }) {
   const { t } = useT();
   const menu: MenuProps = {
@@ -123,20 +147,46 @@ function RowActions({ file, onTrash, onRestore }: { file: LargestFile; onTrash: 
   return (
     <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
       <Tooltip title={t("files.act.download")}>
-        <Button type="text" shape="circle" href={contentPath(file.id)} aria-label={t("files.act.download")} icon={<Download size={18} aria-hidden="true" />} />
+        <Button
+          type="text"
+          shape="circle"
+          href={contentPath(file.id)}
+          data-first-action
+          aria-label={t("storage.act.downloadFor", { name: file.name })}
+          icon={<Download size={18} aria-hidden="true" />}
+        />
       </Tooltip>
       {file.in_trash ? (
         <Tooltip title={t("trash.restore")}>
-          <Button type="text" shape="circle" aria-label={t("trash.restore")} icon={<RotateCcw size={18} aria-hidden="true" />} onClick={() => onRestore(file.id)} />
+          <Button
+            type="text"
+            shape="circle"
+            aria-label={t("storage.act.restoreFor", { name: file.name })}
+            icon={<RotateCcw size={18} aria-hidden="true" />}
+            onClick={() => onRestore(file.id)}
+          />
         </Tooltip>
       ) : (
         <Tooltip title={t("files.act.trash")}>
-          <Button type="text" shape="circle" aria-label={t("files.act.trash")} icon={<Trash2 size={18} aria-hidden="true" />} onClick={() => onTrash(file.id)} />
+          <Button
+            type="text"
+            shape="circle"
+            aria-label={t("storage.act.trashFor", { name: file.name })}
+            icon={<Trash2 size={18} aria-hidden="true" />}
+            onClick={() => onTrash(file.id)}
+          />
         </Tooltip>
       )}
-      <Dropdown menu={menu} trigger={["click"]}>
-        <Button type="text" shape="circle" aria-label={t("files.selection.more")} icon={<MoreHorizontal size={18} aria-hidden="true" />} />
-      </Dropdown>
+      <Tooltip title={t("files.selection.more")}>
+        <Dropdown menu={menu} trigger={["click"]}>
+          <Button
+            type="text"
+            shape="circle"
+            aria-label={t("storage.act.moreFor", { name: file.name })}
+            icon={<MoreHorizontal size={18} aria-hidden="true" />}
+          />
+        </Dropdown>
+      </Tooltip>
     </span>
   );
 }

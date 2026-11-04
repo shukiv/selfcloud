@@ -6,7 +6,16 @@
 // meter and its text alternative, the "Free up space" cards, "Go to Trash" landing on the trash, each filter chip showing its
 // kind (the server filters, so the list is the largest of that kind), and no sideways scroll. With SELFCLOUD_E2E_SHOTS set to a
 // folder, the pictures are saved there. The limit the section sets is taken off again, and the seeded files are removed.
+import { readFileSync } from 'node:fs';
 import { setLanguage, setPhone, setTheme, setThemeByPlace, shot, sleep } from './media.mjs';
+
+// The Hebrew words the checks look for come from the catalogue itself: the text before the first placeholder.
+const he = JSON.parse(readFileSync(new URL('../src/i18n/he.json', import.meta.url), 'utf8'));
+const heStem = (key) => he[key].split('{')[0].trim();
+
+// cardsOf reads the two "Free up space" cards' boxes, as the page draws them.
+const cardsOf = (page) =>
+  page.evaluate(`[...document.querySelectorAll('.storage-free-card')].map((c) => { const r = c.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; })`);
 
 const q = (v) => JSON.stringify(v);
 
@@ -126,6 +135,10 @@ export async function stChecks(h, { page, base, accountKey, accountID, memberID,
     check(shown.includes(names.song) && shown.includes(names.clip), 'All files shows every kind again');
     const sideways = await page.evaluate(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
     check(sideways <= 0, `the Storage page has no sideways scroll at 1280 px (overflow ${sideways}px)`);
+    // At desktop width the two "Free up space" cards sit side by side, on one line.
+    const desk = await cardsOf(page);
+    check(desk.length === 2 && Math.abs(desk[0].top - desk[1].top) < 2 && desk[1].left >= desk[0].right,
+      `at 1280 px the two Free up space cards sit side by side (${JSON.stringify(desk)})`);
 
     // Dark, with no limit: no free part, and the bar says no limit. A limit of 0 is no limit (null would follow the account's
     // default, which this account may set). The page is left and opened again, so it reads the limit anew.
@@ -145,22 +158,38 @@ export async function stChecks(h, { page, base, accountKey, accountID, memberID,
     // Hebrew, right to left, in dark and then in light.
     await setLanguage(page, 'עברית');
     await page.waitFor(`document.documentElement.dir === 'rtl'`, 10000);
+    // The page's title and the meter's text alternative are the Hebrew words of the catalogue, not the English ones.
+    const heTitle = await page.evaluate(`document.querySelector('h1')?.textContent.trim() ?? null`);
+    check(heTitle === he['storage.title'], `in Hebrew the title is the Hebrew one (${heTitle})`);
     const heAlt = await meterAlt(page);
-    check(heAlt !== null, 'in Hebrew the meter still has its text alternative');
+    check(heAlt !== null && heAlt.includes(heStem('storage.meter.partTrash')) && heAlt.includes(heStem('storage.meter.partVersions')) && !/in the trash/.test(heAlt),
+      `in Hebrew the meter's text alternative is the Hebrew one (${heAlt})`);
     await snap('st-he-dark.png');
     await setThemeByPlace(page, 1, 'light');
     await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
+    // In light the card is light: its background's channels add up to more than 600 of 765.
+    const lightCard = await page.evaluate(`getComputedStyle(document.querySelector('.storage-card')).backgroundColor`);
+    const lightSum = (lightCard.match(/\d+/g) ?? []).slice(0, 3).reduce((s, n) => s + Number(n), 0);
+    check(lightSum > 600, `in Hebrew light the card is light (${lightCard})`);
     await snap('st-he-light.png');
 
-    // Phone width, in Hebrew and light: the cards one under the other, and no sideways scroll.
+    // Phone width, in Hebrew and light: the cards one under the other, the chips and the row actions on the screen, and no
+    // sideways scroll.
     await setPhone(page, true);
     await page.waitFor(`!!document.querySelector('.storage-bar')`, 15000);
     const phone = await page.evaluate(`(() => ({ overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, width: document.documentElement.clientWidth }))()`);
     check(phone.overflow <= 0 && phone.width <= 390, `at 390 px the Storage page has no sideways scroll (overflow ${phone.overflow}px, width ${phone.width}px)`);
+    const stacked = await cardsOf(page);
+    check(stacked.length === 2 && stacked[1].top >= stacked[0].bottom - 1,
+      `at 390 px the two Free up space cards are one under the other (${JSON.stringify(stacked)})`);
+    const chipsIn = await page.evaluate(`[...document.querySelectorAll('[role="group"] button')].every((b) => b.getBoundingClientRect().right <= document.documentElement.clientWidth)`);
+    check(chipsIn, 'at 390 px every filter chip is on the screen');
     // The table's wrapper hides overflow, so the page can pass the scroll check while its columns are cut off: the row
     // actions must sit inside the screen.
-    const reach = await page.evaluate(`(() => { const b = [...document.querySelectorAll('.storage-table tbody button')]; return b.length ? Math.max(...b.map((x) => x.getBoundingClientRect().right)) : -1; })()`);
-    check(reach > 0 && reach <= phone.width, `at 390 px the row actions are on the screen (rightmost action at ${Math.round(reach)} px of ${phone.width} px)`);
+    // Both edges count: in Hebrew the table is mirrored and its actions sit on the left.
+    const reach = await page.evaluate(`(() => { const b = [...document.querySelectorAll('.storage-table tbody .ant-btn')].map((x) => x.getBoundingClientRect()); return b.length ? { n: b.length, left: Math.min(...b.map((r) => r.left)), right: Math.max(...b.map((r) => r.right)) } : null; })()`);
+    check(reach !== null && reach.n > 0 && reach.left >= 0 && reach.right <= phone.width,
+      `at 390 px the row actions are on the screen (${reach ? `${reach.n} actions from ${Math.round(reach.left)} to ${Math.round(reach.right)} px of ${phone.width}` : 'no actions'})`);
     await snap('st-phone.png');
     await setPhone(page, false);
   } finally {

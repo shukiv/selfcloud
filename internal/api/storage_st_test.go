@@ -12,7 +12,7 @@ import (
 // largest-files list, and the folder each file sits in.
 
 // TestMeStorageBreakdown: GET /me?storage=breakdown adds the old versions and the trash to the caller's own storage.
-// Plain GET /me does not compute them.
+// A plain GET /me answer carries no breakdown key (the test checks the answer, not how the server computes it).
 func TestMeStorageBreakdown(t *testing.T) {
 	t.Parallel()
 	fx := newP1Fixture(t)
@@ -36,8 +36,9 @@ func TestMeStorageBreakdown(t *testing.T) {
 	}
 }
 
-// TestMyLargestKindAndFolder: ?kind= narrows the list by the media type, and ?kind=trash to the trash. Each row
-// names the folder it sits in (parent_name), and its media type.
+// TestMyLargestKindAndFolder: ?kind= narrows the list by the media type, and ?kind=trash to the trash, and an unknown kind
+// is refused. A row in a folder names the folder directly above it (parent_name). The test checks that one audio row
+// carries its parent_name and mime_type, and that a file at the top of My files has no parent_name.
 func TestMyLargestKindAndFolder(t *testing.T) {
 	t.Parallel()
 	fx := newP1Fixture(t)

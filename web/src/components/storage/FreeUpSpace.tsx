@@ -20,7 +20,7 @@ export default function FreeUpSpace({ breakdown }: { breakdown: Breakdown }) {
       <h2 id="free-up-title" style={{ margin: "0 0 12px", fontSize: 16, fontWeight: 600 }}>
         {t("storage.free.title")}
       </h2>
-      <div className="storage-free-cards" style={{ display: "grid", gap: 16 }}>
+      <div className="storage-free-cards">
         {show.trash && (
           <article className="storage-card storage-free-card" aria-labelledby="free-trash">
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
