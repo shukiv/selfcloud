@@ -360,8 +360,10 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     // The sidebar's figures are the Storage page's figures.
     await navigateTo(page, '/storage');
     await page.waitFor(`location.pathname === '/storage'`, 15000);
-    await page.waitFor(`[...document.querySelectorAll('p > span')].some((s) => s.textContent.trim().endsWith(' used'))`, 15000);
-    const pageLine = await page.evaluate(`[...document.querySelectorAll('p > span')].map((s) => s.textContent.trim()).find((t) => t.endsWith(' used') && t.includes(' of ')) ?? null`);
+    // The Storage page is mock-up A (decision 79): its meter's bar says the figures in its text alternative, "X of Y used: parts".
+    const meterAlt = `document.querySelector('.storage-card .storage-bar[role="img"]')?.getAttribute('aria-label') ?? ''`;
+    await page.waitFor(`(${meterAlt}).includes(' used: ')`, 15000);
+    const pageLine = await page.evaluate(`(${meterAlt}).split(': ')[0] || null`);
     check(pageLine === at61.line, `the sidebar line matches the Storage page's figures (${at61.line} / ${pageLine})`);
     // On this page the Storage row is the current place: its title and figures read on the sidebar, and the bar keeps its track and fill.
     await waitSelected(page);
@@ -455,10 +457,12 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(cellHe !== null && cellHe.digit < cellHe.unit, `in Hebrew a file's size cell draws its digits, then the unit, left to right (${JSON.stringify(cellHe)})`);
     await shotClip(page, shotsDir, 'b1-he-listing-sizes.png', await boxOf(page, `[role="row"][aria-label="${uploadName}"]`));
     await navigateTo(page, '/storage');
-    await page.waitFor(`location.pathname === '/storage' && !!document.querySelector('dd')`, 15000);
-    const pageHe = await sizeAt(page, 'dd', true);
+    // The page's figure is the meter's large amount (mock-up A, decision 79): the first number in its card.
+    const FIGURE = '.storage-card .num';
+    await page.waitFor(`location.pathname === '/storage' && !!document.querySelector(${q(FIGURE)})`, 15000);
+    const pageHe = await sizeAt(page, FIGURE, true);
     check(pageHe !== null && pageHe.digit < pageHe.unit, `in Hebrew the Storage page's figure draws its digits, then the unit, left to right (${JSON.stringify(pageHe)})`);
-    await shotClip(page, shotsDir, 'b1-he-storage-page.png', await boxOf(page, 'dd'));
+    await shotClip(page, shotsDir, 'b1-he-storage-page.png', await boxOf(page, FIGURE));
     // Arabic reads right to left, so its digits come first at the right: the digits sit right of the unit.
     await setLanguage(page, 'العربية');
     await page.waitFor(`document.documentElement.dir === 'rtl' && document.documentElement.lang === 'ar'`, 15000);

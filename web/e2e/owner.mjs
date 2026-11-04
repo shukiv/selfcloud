@@ -198,9 +198,11 @@ export async function p1MemberChecks(page, h, { dir, writeFile, randomBytes, joi
   h.check(!(await page.evaluate(`!!document.querySelector(${q(rowSel('p1-over.bin'))})`)), 'the refused file is not listed in My files');
 
   await h.clickNav(page, 'Storage');
-  await page.waitFor(`location.pathname === '/storage' && !!document.querySelector('main [role="meter"]')`);
-  const max = await page.evaluate(`document.querySelector('main [role="meter"]').getAttribute('aria-valuemax')`);
-  h.check(max === '10000000', `the storage page shows the meter against the 10 MB limit (aria-valuemax ${max})`);
+  // The Storage page is mock-up A (decision 79): the meter's bar says "X of LIMIT used: parts" in its text alternative.
+  const meterAlt = `document.querySelector('main .storage-card .storage-bar[role="img"]')?.getAttribute('aria-label') ?? ''`;
+  await page.waitFor(`location.pathname === '/storage' && (${meterAlt}).includes(' used: ')`);
+  const alt = await page.evaluate(meterAlt);
+  h.check(alt.includes(' of 10 MB used: '), `the storage page shows the meter against the 10 MB limit (${alt})`);
   await page.waitFor(`[...document.querySelectorAll('.storage-table th')].some((th) => th.textContent.includes('p1-ledger.bin'))`, 15000);
   h.check(true, "the storage page lists the member's largest file");
 }
