@@ -110,6 +110,12 @@ export class Page {
     this.listeners.set(method, [...(this.listeners.get(method) ?? []), fn]);
   }
 
+  // off removes a listener that on added. A section that answers paused requests removes its listener when it ends, so the
+  // next section that holds a request is the only one to answer it (decision 80, gate fix).
+  off(method, fn) {
+    this.listeners.set(method, (this.listeners.get(method) ?? []).filter((f) => f !== fn));
+  }
+
   send(method, params = {}) {
     const id = this.nextId++;
     this.ws.send(JSON.stringify({ id, method, params }));
