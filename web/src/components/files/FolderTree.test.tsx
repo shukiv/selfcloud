@@ -325,3 +325,35 @@ describe("the folder tree in the sidebar: the current row's mark", () => {
     expect(top?.style.background).toBe("");
   });
 });
+
+// Decision 81: every row of the sidebar's tree takes the menu row's metrics (the same height, inline margin and radius as an
+// antd menu item, read from the same tokens), on a mouse and on a finger. The tree outside the sidebar keeps its own rows.
+describe("the folder tree in the sidebar: the menu row's metrics (decision 81)", () => {
+  const rowOf = (name: string) => screen.getByText(name).closest<HTMLElement>(".tree-row");
+
+  it("gives every sidebar row the menu item's height, inline margin and radius on a mouse", async () => {
+    render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
+    await screen.findByText("Docs");
+    for (const name of ["My files", "Team A", "Docs"]) {
+      const style = rowOf(name)?.getAttribute("style") ?? "";
+      expect(style, name).toContain("min-block-size: 40px");
+      expect(style, name).toContain("margin-inline: 4px");
+      expect(style, name).toContain("border-radius: 4px");
+    }
+  });
+
+  it("gives every sidebar row 44 px on a finger", async () => {
+    render(<Harness colours={SIDEBAR} coarse folder="fld_a" start={{ expanded: ["fld_a"] }} />);
+    await screen.findByText("Docs");
+    for (const name of ["My files", "Team A", "Docs"]) {
+      expect(rowOf(name)?.getAttribute("style") ?? "", name).toContain("min-block-size: 44px");
+    }
+  });
+
+  it("keeps a tree outside the sidebar at its own row size, with no inline margin", () => {
+    render(<Harness start={{ expanded: ["fld_a"] }} />);
+    const style = rowOf("My files")?.getAttribute("style") ?? "";
+    expect(style).toContain("min-block-size: 32px");
+    expect(style).not.toContain("margin-inline");
+  });
+});

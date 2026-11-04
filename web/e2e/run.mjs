@@ -43,6 +43,7 @@ import { i1Checks } from './i1.mjs';
 import { d3Checks } from './d3.mjs';
 import { l1Checks } from './l1.mjs';
 import { ic2Checks } from './ic2.mjs';
+import { sbChecks } from './sb.mjs';
 import { l4Checks } from './l4.mjs';
 import { ksChecks } from './ks.mjs';
 import { fu3aChecks } from './fu3a.mjs';
@@ -770,7 +771,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a, fu3b, st or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -789,6 +790,8 @@ async function main() {
     if (!only || onlySet.has('r7')) await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (!only || onlySet.has('r7b')) await r7bChecks(h, { page, base, accountKey, accountID, memberID, teamA, dir });
     if (!only || onlySet.has('d1')) await d1Checks(h, { page, base, accountKey, teamA });
+    // Slice sb: the sidebar's tree rows have the menu row's metrics (decision 81). It runs on the shared page, after d1.
+    if (!only || onlySet.has('sb')) await sbChecks(h, { page, base, accountKey, teamA });
     if (!only || onlySet.has('d2')) await d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID });
     if (!only || onlySet.has('i1')) await i1Checks(h, { page, base, accountKey, teamA, dir });
     // The list's checks need a mouse's hover, which a headless browser has only from its launch (see launchBrowser), and an earlier

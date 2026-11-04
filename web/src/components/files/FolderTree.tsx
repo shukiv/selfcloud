@@ -12,6 +12,7 @@ import { fileErrorText } from "../../lib/files/fileErrors";
 import { loadDirs } from "../../lib/files/treeLoad";
 import { withExpanded, type TreeState } from "../../lib/files/treeState";
 import { currentMark } from "../../theme/currentMark";
+import { sidebarRow } from "../../theme/sidebarRow";
 import type { FolderAccess } from "../../lib/files/types";
 import type { Sidebar } from "../../theme/tokens";
 
@@ -81,9 +82,12 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
   const hasKids = !unreachable && (q.data === undefined || dirs.length > 0 || q.data.capped);
   const current = ctx.currentKey === key;
   const side = ctx.colours;
+  // A sidebar row has the menu item's metrics (decision 81: its height, inline margin and radius come from the menu's tokens). Outside
+  // the sidebar the rows keep their own: a finger 44 px, a mouse 32 px, no margin.
+  const row = side ? sidebarRow(token, ctx.coarse) : null;
   // On a finger the row, its arrow and its link are each 44 px; with a mouse the arrow is 24 and the link 28 in a row of 32.
   const size = ctx.coarse ? 44 : 32;
-  const arrow = ctx.coarse ? 44 : 24;
+  const arrow = row ? row.indent : ctx.coarse ? 44 : 24;
   const link = ctx.coarse ? 44 : 28;
   const toggle = () => ctx.onChange(withExpanded(ctx.state, key, !open));
   // The current place (decision 69, option B) has no background: a bar at the row's start edge, and its text and icon in the
@@ -123,10 +127,13 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 2,
-          minBlockSize: size,
-          paddingInlineStart: (level - 1) * 14 + 2,
-          borderRadius: token.borderRadiusSM,
+          // A sidebar row's margin is the menu's 4 px, so its arrow takes the icon column's start: no gap and no start padding,
+          // and the icon sits where the menu's does (decision 81).
+          gap: row ? 0 : 2,
+          minBlockSize: row?.height ?? size,
+          marginInline: row?.inline,
+          paddingInlineStart: (level - 1) * 14 + (row ? 0 : 2),
+          borderRadius: row ? row.radius : token.borderRadiusSM,
           color: textColour,
           background: filled ? side?.active : current && !side ? token.colorPrimaryBg : undefined,
         }}
