@@ -19,6 +19,7 @@ import SpaceSettings from "../../components/share/SpaceSettings";
 import Confirm from "../../components/Confirm";
 import NameDialog from "../../components/manage/NameDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
+import { LOCK } from "../../lib/manage/locks";
 
 // Spaces: the team spaces of the account. Sharing a space goes through the share dialog on its root, the same one the
 // file browser uses. Deleting a space removes it and everything in it for everyone.
@@ -76,7 +77,7 @@ function SpacesView() {
 
   // openShare reads the space's root, which the share dialog works on.
   const openShare = (s: Space) =>
-    once(s.id, async () => {
+    once(LOCK.spaceShare(s.id), async () => {
       const stale = sessionChanged();
       setActionError(null);
       try {
@@ -91,7 +92,7 @@ function SpacesView() {
 
   // openDelete reads the space's totals first, so the confirmation can say what goes.
   const openDelete = (s: Space) =>
-    once(s.id, async () => {
+    once(LOCK.spaceOpenDelete(s.id), async () => {
       const stale = sessionChanged();
       setActionError(null);
       try {
@@ -106,7 +107,7 @@ function SpacesView() {
     });
 
   const confirmDelete = () =>
-    once(deleting?.space.id ?? "", async () => {
+    once(LOCK.spaceDelete(deleting?.space.id ?? ""), async () => {
       if (!deleting) return;
       const stale = sessionChanged();
       const target = deleting.space;

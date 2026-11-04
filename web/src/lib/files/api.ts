@@ -183,8 +183,12 @@ export function deleteVersion(nod: string, ver: string): Promise<void> {
   return api<void>('DELETE', `/api/v1/nodes/${nod}/versions/${ver}`);
 }
 
+// COMMIT_TIMEOUT_MS is the wait for a commit. The server assembles a large file's pieces when it commits, which can take
+// minutes; the default minute would mark the upload failed while the server may still finish it.
+export const COMMIT_TIMEOUT_MS = 10 * 60_000;
+
 export function commitUpload(uploadPath: string, body: { name?: string; on_conflict?: string }): Promise<Node> {
-  return api<Node>('POST', `${uploadPath}/commit`, { body });
+  return api<Node>('POST', `${uploadPath}/commit`, { body, timeoutMs: COMMIT_TIMEOUT_MS });
 }
 
 export function serverLimits(): Promise<{ max_chunk_size: number; max_file_size: number }> {

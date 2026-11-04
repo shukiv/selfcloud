@@ -43,7 +43,7 @@ function renderDialog(onclose = vi.fn(), ondone = vi.fn()) {
       </QueryClientProvider>
     </App>,
   );
-  return { onclose, ondone };
+  return { onclose, ondone, qc };
 }
 
 beforeEach(() => session.set(signedAs()));
@@ -130,13 +130,16 @@ describe("the files question of the remove dialog", () => {
           }),
       ),
     );
-    const { onclose, ondone } = renderDialog();
+    const { onclose, ondone, qc } = renderDialog();
+    const refresh = vi.spyOn(qc, "invalidateQueries");
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(signals).toHaveLength(1));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(signals[0].aborted).toBe(true);
     expect(onclose).toHaveBeenCalledTimes(1);
     expect(ondone).not.toHaveBeenCalled();
+    // The removal may have gone through, so the lists are read again (guard: a cancelled write refreshes the lists).
+    expect(refresh).toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 });

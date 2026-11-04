@@ -18,6 +18,7 @@ import PeopleCombobox from "../../components/share/PeopleCombobox";
 import Confirm from "../../components/Confirm";
 import NameDialog from "../../components/manage/NameDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
+import { LOCK } from "../../lib/manage/locks";
 
 // Groups: a group is a named set of people. A permission on a team space given to a group reaches each member at once,
 // and removing a member ends that access at once.
@@ -74,7 +75,7 @@ function GroupsView() {
   const refreshMembers = () => qc.invalidateQueries({ queryKey: queryKey("manage", account, "group-members") });
 
   const addMember = () =>
-    once(`group:${open?.id ?? ""}`, async () => {
+    once(LOCK.groupAdd(open?.id ?? ""), async () => {
       if (!open || !adding) return;
       const stale = sessionChanged();
       setMemberError(null);
@@ -91,7 +92,7 @@ function GroupsView() {
     });
 
   const removeMember = (usr: string) =>
-    once(`member:${usr}`, async () => {
+    once(LOCK.groupMember(open?.id ?? "", usr), async () => {
       if (!open) return;
       const stale = sessionChanged();
       setMemberError(null);
@@ -106,7 +107,7 @@ function GroupsView() {
     });
 
   const confirmDelete = () =>
-    once(`group:${deleting?.id ?? ""}`, async () => {
+    once(LOCK.groupDelete(deleting?.id ?? ""), async () => {
       if (!deleting) return;
       const stale = sessionChanged();
       const target = deleting;

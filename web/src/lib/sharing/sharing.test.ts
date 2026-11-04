@@ -201,6 +201,12 @@ describe('the access-request confirmation', () => {
     expect(requestOutcome(new ApiError(0, 'network', {}, 0))).toBe('failed');
     expect(requestOutcome(new Error('x'))).toBe('failed');
   });
+
+  // A request that timed out may have been received: the page must not say it failed (guard: a write's timeout is unsure).
+  it('says a timed-out request is unsure, since the server may have received it', () => {
+    expect(requestOutcome(new ApiError(0, 'timeout', { write: true }, 0))).toBe('unsure');
+    expect(requestOutcome(new ApiError(0, 'network', {}, 0))).toBe('failed');
+  });
 });
 
 describe('expiry', () => {

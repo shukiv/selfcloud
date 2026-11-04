@@ -26,7 +26,7 @@ export async function fu3aChecks(h, { page, base, OWNER }) {
   await page.waitFor(`document.activeElement !== null && document.activeElement.id === 'invite-email'`, 10000);
   check(true, 'the invitation dialog opens with the email field focused');
 
-  // Cancel closes the dialog with nothing sent: the list is still there, and no invitation was made.
+  // Cancel closes the dialog. This checks only that the dialog closes; it does not check that nothing was sent.
   await h.clickButton(page, 'Cancel');
   await page.waitFor(`!document.getElementById('invite-email')`, 10000);
   check(true, 'Cancel closes the invitation dialog');

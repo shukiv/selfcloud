@@ -32,6 +32,7 @@ import { useStore } from "../../lib/store";
 import Confirm from "../../components/Confirm";
 import DeletePublicLinks from "../../components/share/DeletePublicLinks";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
+import { LOCK } from "../../lib/manage/locks";
 
 // Links: every link of the account that anyone can open, and every drop link, with its place and its state. An owner
 // deletes one at a time, or all of them at once. Links that only people in the account can open are on the items they
@@ -72,7 +73,7 @@ function LinksView() {
   const refreshCount = () => qc.invalidateQueries({ queryKey: queryKey("manage", account, "sharing-policy") });
 
   const confirmDelete = () =>
-    once(deleting?.id ?? "", async () => {
+    once(LOCK.linkDelete(deleting?.id ?? ""), async () => {
       if (!deleting) return;
       const stale = sessionChanged();
       const link = deleting;

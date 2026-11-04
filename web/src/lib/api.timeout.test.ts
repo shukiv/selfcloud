@@ -58,6 +58,45 @@ describe('a request with no answer', () => {
     expect(signals[0].aborted).toBe(false);
   });
 
+  // A call that gives no time limit is cut at the default, a minute (guard: the default applies, and is not zero).
+  it('cuts a call with no time given at 60 s, and not before', async () => {
+    vi.useFakeTimers();
+    try {
+      const signals: AbortSignal[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          (_path: string, init: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              const signal = init.signal as AbortSignal;
+              signals.push(signal);
+              signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+            }),
+        ),
+      );
+      const pending = api('GET', '/api/v1/accounts/acc_1/usage').catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(signals[0].aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signals[0].aborted).toBe(true);
+      expect(await pending).toMatchObject({ code: 'timeout' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // A cancel while the answer's body is still arriving is a cancelled call, not an answer with no body: a success with a null
+  // body would make the caller read fields that are not there (guard: a cancel during the body read is a failure).
+  it('a cancel during the body read ends as cancelled, not as a null answer', async () => {
+    const stalled = new ReadableStream<Uint8Array>({ start: () => undefined });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(stalled, { status: 201 })));
+    const caller = new AbortController();
+    const pending = api('POST', '/api/v1/accounts', { body: {}, signal: caller.signal, timeoutMs: 60_000 });
+    await new Promise((r) => setTimeout(r, 10));
+    caller.abort();
+    await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+  });
+
   it('is limited by the default when no time is given, and a cancelled call ends as cancelled', async () => {
     expect(REQUEST_TIMEOUT_MS).toBe(60_000);
     const caller = new AbortController();

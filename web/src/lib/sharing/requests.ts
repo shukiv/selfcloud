@@ -5,11 +5,13 @@ import { ApiError } from '../apiError';
 // RequestOutcome is what the access-request form shows after it sends. The server answers 202 whether or
 // not the item exists, so every answer about the item itself reads "sent". Only a rate limit, or a failure
 // to reach the server at all, is reported differently: those say nothing about the item.
-export type RequestOutcome = 'sent' | 'limited' | 'failed';
+// unsure is a request that timed out: the server may have received it, so the page does not say it failed.
+export type RequestOutcome = 'sent' | 'limited' | 'failed' | 'unsure';
 
 export function requestOutcome(err: unknown): RequestOutcome {
   if (err === undefined) return 'sent';
   if (err instanceof ApiError) {
+    if (err.status === 0 && err.code === 'timeout' && err.details.write === true) return 'unsure';
     if (err.status === 0) return 'failed';
     if (err.code === 'rate_limited') return 'limited';
     return 'sent';

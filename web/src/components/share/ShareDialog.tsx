@@ -7,6 +7,7 @@ import { FolderOpen, UserMinus } from "lucide-react";
 import IconButton from "../IconButton";
 import { useLang, useT, translate, translatePlural, type Lang } from "../../lib/i18n";
 import { ApiError } from "../../lib/apiError";
+import { statusZeroKey } from "../../lib/errors";
 import { session, sessionChanged } from "../../lib/session";
 import { useStore } from "../../lib/store";
 import { queryKey } from "../../lib/query";
@@ -52,7 +53,7 @@ export function shareErrorText(err: unknown, lang: Lang, maxDays: number): strin
     }
     if (err.code === "invalid_request") return translate(lang, "share.err.invalid");
     if (err.code === "rate_limited") return translate(lang, "share.err.limited");
-    if (err.status === 0) return translate(lang, "error.network");
+    if (err.status === 0) return translate(lang, statusZeroKey(err));
   }
   return translate(lang, "error.generic");
 }

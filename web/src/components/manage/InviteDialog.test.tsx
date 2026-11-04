@@ -50,9 +50,12 @@ describe("the invite dialog", () => {
       ),
     );
     const onclose = vi.fn();
+    const qc = createQueryClient();
+    // A cancelled write may have gone through, so the lists are read again (guard: a cancelled write refreshes the lists).
+    const refresh = vi.spyOn(qc, "invalidateQueries");
     render(
       <App>
-        <QueryClientProvider client={createQueryClient()}>
+        <QueryClientProvider client={qc}>
           <InviteDialog account="acc_1" onclose={onclose} oncreated={vi.fn()} />
         </QueryClientProvider>
       </App>,
@@ -64,6 +67,7 @@ describe("the invite dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(signals[0].aborted).toBe(true);
     expect(onclose).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalled();
     expect(await screen.findByText("Cancelled. The change may or may not have been saved; check the list before you try again.")).toBeTruthy();
   });
 });

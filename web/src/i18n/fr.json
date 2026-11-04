@@ -1229,6 +1229,7 @@
   "storage.files": "Fichiers",
   "storage.spaceLargest": "Plus gros fichiers des espaces d'équipe",
   "storage.limitSaved": "Limite enregistrée.",
+  "storage.limitSavedNoRead": "La limite est enregistrée. La page n’a pas pu relire la personne. Rechargez la page pour voir la dernière version.",
   "storage.limitFor": "Limite de {name}",
   "storage.saveLimit": "Enregistrer la limite",
   "storage.limitAmount": "Quantité",

@@ -55,6 +55,14 @@ export function errorMessage(err: unknown, ctx: Context = 'generic'): Message {
   }
 }
 
+// statusZeroKey is the message for a request that got no status. A write that timed out may have been saved, so it
+// says so; a read that timed out says the server did not answer; anything else is the network. Every page that maps
+// a status-0 failure uses this, so none of them reads a timeout as a dropped connection.
+export function statusZeroKey(err: ApiError): 'error.timeout' | 'error.timeoutRead' | 'error.network' {
+  if (err.code === 'timeout') return err.details.write === true ? 'error.timeout' : 'error.timeoutRead';
+  return 'error.network';
+}
+
 // isLinkFailure reports whether a link (verify or reset) is no longer usable, so the page shows no
 // form.
 export function isLinkFailure(err: unknown): boolean {

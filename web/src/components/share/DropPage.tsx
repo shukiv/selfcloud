@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import IconButton from "../IconButton";
 import { useT } from "../../lib/i18n";
 import { ApiError } from "../../lib/apiError";
+import { statusZeroKey } from "../../lib/errors";
 import { visitorInfo } from "../../lib/sharing/api";
 import { renewDelay } from "../../lib/sharing/anyone";
 import {
@@ -175,7 +176,7 @@ export default function DropPage(props: DropPageProps) {
     if (err.code === "too_many_uploads") return t("drop.err.tooMany");
     if (err.code === "rate_limited") return tp("error.rateLimited", 1);
     if (err.code === "too_large") return t("drop.err.tooLarge");
-    if (err.status === 0) return t("error.network");
+    if (err.status === 0) return t(statusZeroKey(err));
     return t("error.generic");
   };
 

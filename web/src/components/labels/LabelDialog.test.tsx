@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../../lib/session";
+import { createQueryClient } from "../../lib/query";
 import type { LabelField } from "../../lib/labels/api";
 import LabelDialog from "./LabelDialog";
+
+// The dialog reads the query client (its cancel refreshes the lists), so every render has the provider.
+const render = (ui: ReactNode) => rtlRender(<QueryClientProvider client={createQueryClient()}>{ui}</QueryClientProvider>);
 
 function signedAs(): Session {
   return {

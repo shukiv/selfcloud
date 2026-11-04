@@ -17,6 +17,7 @@ import InviteDialog from "../../components/manage/InviteDialog";
 import PersonDialog from "../../components/manage/PersonDialog";
 import RemoveDialog from "../../components/manage/RemoveDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
+import { LOCK } from "../../lib/manage/locks";
 
 // People: the account's owners and members, invited by email. An owner changes a person's role or status and removes a
 // person here. The server answers every change; a refusal is shown by its code and reason.
@@ -61,7 +62,7 @@ function PeopleView() {
 
   // act runs one change on a row: one at a time, and an answer for a person who has gone is not shown.
   const act = (p: Person, fn: () => Promise<string | null>) =>
-    once(p.id, async () => {
+    once(LOCK.person(p.id), async () => {
       const stale = sessionChanged();
       setBusyRows((s) => new Set(s).add(p.id));
       setActionError(null);

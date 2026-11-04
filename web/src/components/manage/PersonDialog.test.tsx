@@ -83,6 +83,32 @@ describe("the person dialog", () => {
     expect(await screen.findByText(formatBytes(2 * GB, "en"))).toBeTruthy();
   });
 
+  // The save and the re-read are two steps. A kept save whose re-read fails is still reported as saved, with a softer note
+  // that the page could not read the person again, and the value shown is the one that was saved (guard: a failed re-read
+  // is not a failed save).
+  it("a kept limit whose re-read fails is reported as saved, with a softer note (guard: save and re-read are separate)", async () => {
+    const GB = 1024 ** 3;
+    let saved = false;
+    renderDialog((c) => {
+      if (c.method === "PATCH") {
+        saved = true;
+        return { status: 200, body: {} };
+      }
+      if (c.url.includes("/users/usr_ada")) {
+        return saved ? fail(500, "internal") : { status: 200, body: { ...person, quota_bytes: GB, effective_quota_bytes: GB } };
+      }
+      return { status: 200, body: { items: [] } };
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Change limit" }));
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "4" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save limit/ }));
+    expect(await screen.findByText("Limit saved.")).toBeTruthy();
+    // The unit typed is GB (decimal), so the saved value is 4 x 1000^3 bytes, shown as the value that was saved.
+    expect(screen.getByText(formatBytes(4 * 1000 ** 3, "en"))).toBeTruthy();
+    expect(screen.getByText("The limit is saved. The page could not read the person again. Reload the page to see the latest.")).toBeTruthy();
+    expect(screen.queryByText(/The server had a problem/)).toBeNull();
+  });
+
   // After a save the dialog shows the value the server applies. It reads the person again before it closes the editor, so the
   // old value and the "Limit saved" notice never show together (guard: no old value after save).
   it("after a limit save the old value is not shown next to the saved notice (guard: re-read before the dialog closes)", async () => {

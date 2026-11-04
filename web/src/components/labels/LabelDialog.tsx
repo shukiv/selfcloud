@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { App, Alert, Button, Checkbox, Input, Modal, Select } from "antd";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
 import { failureText } from "../../lib/manage/failure";
 import { useFlight } from "../../lib/flight";
@@ -36,10 +37,15 @@ export default function LabelDialog({ id, field, onsave, onclose }: LabelDialogP
   const once = useOnce();
   const flight = useFlight();
   const { message } = App.useApp();
+  const qc = useQueryClient();
   const locked = editing && (field?.values ?? 0) > 0;
   // cancel closes the dialog at once, busy or not. A save on its way is aborted; the page says it may or may not have happened.
   const cancel = () => {
-    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    if (flight.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      // The save may have gone through: the lists are read again, so it shows.
+      void qc.invalidateQueries();
+    }
     onclose();
   };
   const choosing = type === "choice";

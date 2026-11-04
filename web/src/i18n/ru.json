@@ -1229,6 +1229,7 @@
   "storage.files": "Файлы",
   "storage.spaceLargest": "Самые большие файлы в общих пространствах",
   "storage.limitSaved": "Лимит сохранён.",
+  "storage.limitSavedNoRead": "Лимит сохранён. Страница не смогла заново прочитать данные человека. Обновите страницу, чтобы увидеть последние данные.",
   "storage.limitFor": "Лимит для {name}",
   "storage.saveLimit": "Сохранить лимит",
   "storage.limitAmount": "Количество",

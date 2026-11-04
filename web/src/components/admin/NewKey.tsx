@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { App, Alert, Button, Input, Modal, Select } from "antd";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
 import { useFlight } from "../../lib/flight";
@@ -27,6 +28,7 @@ export default function NewKey({
   const guard = useGuard();
   const flight = useFlight();
   const { message } = App.useApp();
+  const qc = useQueryClient();
   const [name, setName] = useState("");
   const [expires, setExpires] = useState<ExpiryChoice>("never");
   const [busy, setBusy] = useState(false);
@@ -34,7 +36,11 @@ export default function NewKey({
 
   // cancel closes the dialog at once, busy or not. A key on its way is aborted; the page says it may or may not have been made.
   const cancel = () => {
-    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    if (flight.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      // The key may have been made: the lists are read again, so it shows.
+      void qc.invalidateQueries();
+    }
     onClose();
   };
 

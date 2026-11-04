@@ -1229,6 +1229,7 @@
   "storage.files": "Files",
   "storage.spaceLargest": "Largest files in team spaces",
   "storage.limitSaved": "Limit saved.",
+  "storage.limitSavedNoRead": "The limit is saved. The page could not read the person again. Reload the page to see the latest.",
   "storage.limitFor": "Limit for {name}",
   "storage.saveLimit": "Save limit",
   "storage.limitAmount": "Amount",

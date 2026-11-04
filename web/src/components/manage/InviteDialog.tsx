@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { App, Alert, Button, Input, Modal, Radio, Select, type InputRef } from "antd";
+import { useQueryClient } from "@tanstack/react-query";
 import { LANGUAGES, NATIVE_NAMES, useLang, useT, type Lang } from "../../lib/i18n";
 import { createPerson, type NewPerson } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
@@ -39,12 +40,17 @@ export default function InviteDialog({ account, onclose, oncreated }: InviteDial
   const once = useOnce();
   const flight = useFlight();
   const { message } = App.useApp();
+  const qc = useQueryClient();
   const emailOk = EMAIL.test(email.trim());
 
   // cancel closes the dialog at once, busy or not. A request on its way is aborted, and the page says the invitation may
   // or may not have gone out.
   const cancel = () => {
-    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    if (flight.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      // The write may have gone through: the lists are read again, so it shows.
+      void qc.invalidateQueries();
+    }
     onclose();
   };
 

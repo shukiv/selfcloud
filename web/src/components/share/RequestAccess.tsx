@@ -20,7 +20,7 @@ export default function RequestAccess({ nodeID }: { nodeID: string }) {
   const [role, setRole] = useState<Asked>("viewer");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const [outcome, setOutcome] = useState<"idle" | "sent" | "limited" | "failed">("idle");
+  const [outcome, setOutcome] = useState<"idle" | "sent" | "limited" | "failed" | "unsure">("idle");
   const [limitText, setLimitText] = useState("");
 
   const send = async (e: FormEvent) => {
@@ -80,8 +80,13 @@ export default function RequestAccess({ nodeID }: { nodeID: string }) {
               {t("share.messageHint", { count: message.length })}
             </p>
           </div>
-          {(outcome === "limited" || outcome === "failed") && (
-            <Alert type="error" showIcon role="alert" message={outcome === "limited" ? limitText : t("error.network")} />
+          {(outcome === "limited" || outcome === "failed" || outcome === "unsure") && (
+            <Alert
+              type="error"
+              showIcon
+              role="alert"
+              message={outcome === "limited" ? limitText : outcome === "unsure" ? t("error.timeout") : t("error.network")}
+            />
           )}
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <Button type="primary" htmlType="submit" disabled={sending}>

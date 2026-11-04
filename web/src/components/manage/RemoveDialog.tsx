@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { App, Alert, Button, Modal, Radio, Select } from "antd";
+import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../../lib/apiError";
 import { useLang, useT } from "../../lib/i18n";
 import { failureText } from "../../lib/manage/failure";
@@ -37,13 +38,18 @@ export default function RemoveDialog({ account, person, candidates, onclose, ond
   const once = useOnce();
   const flight = useFlight();
   const { message } = App.useApp();
+  const qc = useQueryClient();
   const label = personLabel(person);
   const movable = candidates.filter((c) => c.id !== person.id && c.role === "member" && c.status === "active");
   const canGo = choice === "delete" || target !== "";
 
   // cancel closes the dialog at once, busy or not. A removal on its way is aborted, and the page says it may or may not have happened.
   const cancel = () => {
-    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    if (flight.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      // The removal may have gone through: the lists are read again, so it shows.
+      void qc.invalidateQueries();
+    }
     onclose();
   };
 

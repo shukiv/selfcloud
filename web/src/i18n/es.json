@@ -1229,6 +1229,7 @@
   "storage.files": "Archivos",
   "storage.spaceLargest": "Archivos más grandes en los espacios de equipo",
   "storage.limitSaved": "Límite guardado.",
+  "storage.limitSavedNoRead": "El límite está guardado. La página no pudo volver a leer a la persona. Recarga la página para ver lo último.",
   "storage.limitFor": "Límite de {name}",
   "storage.saveLimit": "Guardar límite",
   "storage.limitAmount": "Cantidad",

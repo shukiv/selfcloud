@@ -89,6 +89,7 @@ export default function PersonDialog({ account, person, names, onclose }: Person
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [read, setRead] = useState<Detail["limit"] | null>(null);
+  const [readNote, setReadNote] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const once = useOnce();
@@ -104,22 +105,33 @@ export default function PersonDialog({ account, person, names, onclose }: Person
 
   // saveLimit sets the person's limit and then reads the person again. The dialog closes the editor and shows the value only
   // once that read has answered, so the old value never shows beside the saved notice.
+  // The save and the re-read are two steps. A save the server kept is reported as saved even when the re-read fails; the
+  // re-read's failure is a softer note, and the value shown is the one that was saved (or the list's, for the effective one).
   const saveLimit = (value: number | null) =>
     once(async () => {
       const stale = sessionChanged();
       setSaveError(null);
+      setReadNote(false);
       try {
         await setPersonLimit(account, person.id, value);
-        if (stale()) return;
-        const fresh = await qc.fetchQuery({ queryKey: key, queryFn: () => readDetail(account, person), staleTime: 0 });
-        if (stale()) return;
-        setRead(fresh.limit);
-        setEditing(false);
-        setNotice(t("storage.limitSaved"));
       } catch (err) {
         if (stale()) return;
         setSaveError(failureText(err, lang));
+        return;
       }
+      if (stale()) return;
+      let shown: Detail["limit"];
+      try {
+        const fresh = await qc.fetchQuery({ queryKey: key, queryFn: () => readDetail(account, person), staleTime: 0, retry: false });
+        shown = fresh.limit;
+      } catch {
+        setReadNote(true);
+        shown = { quota_bytes: value, effective_quota_bytes: value ?? (d?.limit.effective_quota_bytes ?? null) };
+      }
+      if (stale()) return;
+      setRead(shown);
+      setEditing(false);
+      setNotice(t("storage.limitSaved"));
     });
 
   // The limit the dialog shows: the last value read here, else the detail, else the person's own limit from the list. The
@@ -163,6 +175,7 @@ export default function PersonDialog({ account, person, names, onclose }: Person
 
         {saveError && <Alert type="error" showIcon role="alert" message={saveError} />}
         {notice && !editing && <Alert type="success" showIcon role="status" message={notice} />}
+        {readNote && !editing && <Alert type="warning" showIcon role="status" message={t("storage.limitSavedNoRead")} />}
 
         <section id="person-limit" aria-labelledby="person-limit-title">
           <h3 id="person-limit-title" style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 600 }}>
@@ -182,6 +195,7 @@ export default function PersonDialog({ account, person, names, onclose }: Person
                 size="small"
                 onClick={() => {
                   setNotice(null);
+                  setReadNote(false);
                   setSaveError(null);
                   setEditing(true);
                 }}
@@ -194,7 +208,8 @@ export default function PersonDialog({ account, person, names, onclose }: Person
 
         {q.isPending && <p role="status">{t("app.loading")}</p>}
         {q.isError && !d && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} />}
-        {q.isError && d && <Alert type="warning" showIcon role="alert" message={failureText(q.error, lang)} />}
+        {/* While the softer note says the re-read failed, the query's own warning would say the same again. */}
+        {q.isError && d && !readNote && <Alert type="warning" showIcon role="alert" message={failureText(q.error, lang)} />}
 
         {d && (
           <>

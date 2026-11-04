@@ -73,6 +73,9 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   const expired = new Promise<typeof EXPIRED>((resolve) => {
     expire = () => resolve(EXPIRED);
   });
+  // An abort (a cancel, a sign-out, or the timer) ends the body read at once, whether or not the body has started.
+  ctl.signal.addEventListener('abort', () => expire(), { once: true });
+  if (ctl.signal.aborted) expire();
   const limit = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const timer = limit > 0 ? window.setTimeout(() => {
     timedOut = true;
@@ -103,12 +106,12 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   let data: unknown = null;
   try {
     const got: unknown = await Promise.race([res.json().catch(() => null), expired]);
-    if (got === EXPIRED) throw failed();
+    // A timeout or a cancel during the body read is a failure, never an answer with no body (a null would read as success).
+    if (got === EXPIRED || timedOut || ctl.signal.aborted) throw failed();
     data = got;
   } finally {
     window.clearTimeout(timer);
   }
-  if (timedOut) throw failed();
   const env = data as { error?: { code?: unknown; details?: unknown } } | null;
   const code = typeof env?.error?.code === 'string' ? env.error.code : 'internal';
   const raw = env?.error?.details;

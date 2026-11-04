@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { App, Alert, Button, Input, Modal } from "antd";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
 import { failureText } from "../../lib/manage/failure";
 import { useFlight } from "../../lib/flight";
@@ -29,11 +30,16 @@ export default function NameDialog({ id, title, label, initial = "", action, ons
   const once = useOnce();
   const flight = useFlight();
   const { message } = App.useApp();
+  const qc = useQueryClient();
   const ok = name.trim() !== "" && name.trim().length <= 255;
 
   // cancel closes the dialog at once, busy or not. A save on its way is aborted, and the page says it may or may not have happened.
   const cancel = () => {
-    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    if (flight.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      // The write may have gone through: the lists are read again, so it shows.
+      void qc.invalidateQueries();
+    }
     onclose();
   };
 

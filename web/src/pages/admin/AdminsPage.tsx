@@ -110,12 +110,19 @@ function AdminsView() {
 
   // cancelForm and cancelRemove close their dialog at once, busy or not. A request on its way is aborted, and the page says
   // the admin may or may not have been added or removed.
+  // A cancelled write may have gone through, so the list is read again and shows it.
+  const cancelWrite = () => {
+    if (!request.abort()) return false;
+    void message.warning(t("common.cancelledMaybe"));
+    void refresh();
+    return true;
+  };
   const cancelForm = () => {
-    if (request.abort()) void message.warning(t("common.cancelledMaybe"));
+    cancelWrite();
     setCreating(false);
   };
   const cancelRemove = () => {
-    if (request.abort()) void message.warning(t("common.cancelledMaybe"));
+    cancelWrite();
     setRemoving(null);
   };
 

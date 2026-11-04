@@ -1229,6 +1229,7 @@
   "storage.files": "קבצים",
   "storage.spaceLargest": "הקבצים הגדולים ביותר במרחבי הצוות",
   "storage.limitSaved": "המכסה נשמרה.",
+  "storage.limitSavedNoRead": "המכסה נשמרה. לא הצלחנו לקרוא שוב את המשתמש. טענו את הדף מחדש כדי לראות את העדכני.",
   "storage.limitFor": "מכסה של {name}",
   "storage.saveLimit": "שמירת מכסה",
   "storage.limitAmount": "כמות",

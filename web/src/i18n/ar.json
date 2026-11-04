@@ -1229,6 +1229,7 @@
   "storage.files": "الملفات",
   "storage.spaceLargest": "أكبر الملفات في مساحات الفريق",
   "storage.limitSaved": "تم حفظ الحد.",
+  "storage.limitSavedNoRead": "تم حفظ الحد. تعذّرت قراءة الشخص مرة أخرى. أعد تحميل الصفحة لرؤية أحدث البيانات.",
   "storage.limitFor": "حد {name}",
   "storage.saveLimit": "حفظ الحد",
   "storage.limitAmount": "المقدار",

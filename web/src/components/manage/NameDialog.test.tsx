@@ -2,7 +2,9 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "antd";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
+import { createQueryClient } from "../../lib/query";
 import NameDialog from "./NameDialog";
 
 // A save that never answers keeps the dialog busy. Cancel must still close it, and abort the save's request.
@@ -17,9 +19,13 @@ describe("the name dialog", () => {
         }),
     );
     const onclose = vi.fn();
+    const qc = createQueryClient();
+    const refresh = vi.spyOn(qc, "invalidateQueries");
     render(
       <App>
-        <NameDialog id="group-new" title="New group" label="Name" action="Create" onsave={onsave} onclose={onclose} />
+        <QueryClientProvider client={qc}>
+          <NameDialog id="group-new" title="New group" label="Name" action="Create" onsave={onsave} onclose={onclose} />
+        </QueryClientProvider>
       </App>,
     );
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Finance" } });
@@ -29,6 +35,7 @@ describe("the name dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(signals[0].aborted).toBe(true);
     expect(onclose).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalled();
     expect(await screen.findByText("Cancelled. The change may or may not have been saved; check the list before you try again.")).toBeTruthy();
   });
 });
