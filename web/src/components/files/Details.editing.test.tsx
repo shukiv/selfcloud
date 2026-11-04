@@ -96,7 +96,8 @@ describe("the lock in Details", () => {
     const call = apiMock.mock.calls.find((c) => String(c[1]).endsWith("/unlock"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect((call?.[2] as { signal?: AbortSignal }).signal?.aborted).toBe(true);
-    expect(onChanged).not.toHaveBeenCalled();
+    // fu4 review 3: the unlock may have gone through, so the file is read again and the drawer shows its state.
+    await waitFor(() => expect(apiMock.mock.calls.some((c) => c[0] === "GET" && c[1] === "/api/v1/nodes/nod_a1")).toBe(true));
   });
 
   it("does not offer it to an editor, and does not offer it for a file no one is editing", () => {

@@ -2,7 +2,7 @@
 
 import { Alert, App, Button, Input, Modal } from "antd";
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
 import { formatBytes } from "../../lib/files/format";
 import { useFlight } from "../../lib/flight";
@@ -43,6 +43,7 @@ export default function DeleteTenant({
   const stopPolling = useRef<(() => void) | null>(null);
   const request = useFlight();
   const { message } = App.useApp();
+  const qc = useQueryClient();
   const [sending, setSending] = useState(false);
   const figuresQ = useQuery({ queryKey: queryKey("usage", id), queryFn: () => usage(id), retry: false });
   const figures = figuresQ.data ?? null;
@@ -121,6 +122,9 @@ export default function DeleteTenant({
   const cancelSend = () => {
     if (!request.abort()) return;
     void message.warning(t("common.cancelledMaybe"));
+    // The deletion may have started: the tenant list and this tenant are read again, as after a success (fu4 review 3).
+    void qc.invalidateQueries({ queryKey: queryKey("admin-tenants") });
+    void qc.invalidateQueries({ queryKey: queryKey("admin-tenant", id) });
     onClose();
   };
 

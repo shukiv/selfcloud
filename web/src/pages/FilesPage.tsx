@@ -425,8 +425,13 @@ export default function FilesPage() {
   const busy = placeBusy || stale !== null;
   // The notice for a key pressed while busy is shown once per busy period (fu4, decision 80).
   const busyNoticed = useRef(false);
+  // The same text is held in a polite live region, which assistive technology reads (antd's message is not one; fu4 review 1).
+  const [busyNote, setBusyNote] = useState("");
   useEffect(() => {
-    if (!busy) busyNoticed.current = false;
+    if (!busy) {
+      busyNoticed.current = false;
+      setBusyNote("");
+    }
   }, [busy]);
   const items = kept ?? stale ?? fetched;
   const hasMore = childrenQ.hasNextPage === true;
@@ -990,9 +995,15 @@ export default function FilesPage() {
   // noteBusyKey says, once per busy period, that the folder is still opening, for a key that would have acted on it (fu4).
   // It uses the app's own notice, as copying does, so assistive technology hears it the way the other notices are heard.
   function noteBusyKey(e: KeyboardEvent) {
+    // A control keeps its own keys (a button, a link, a field): they are not the listing's (fu4 review 2).
+    if (e.target instanceof Element && e.target.closest('button, a, input, textarea, select, [role="button"]')) return;
     const kind = keyAction(e, { cols: 1, grid: view === "grid", rtl: document.documentElement.dir === "rtl", count: ids.length, mac: MAC_KEYS })?.kind;
     if (!kind || !BUSY_NOTICE_KEYS.has(kind) || busyNoticed.current) return;
+    // Only a key that would have acted says so: copy, cut, Delete and F2 need a picked item, paste needs something on the clipboard.
+    const acts = kind === "paste" ? clip !== null : kind === "copy" || kind === "cut" || kind === "delete" || kind === "f2" ? picked.length > 0 : true;
+    if (!acts) return;
     busyNoticed.current = true;
+    setBusyNote(t("files.busy.keyWait"));
     void message.info(t("files.busy.keyWait"));
   }
 
@@ -1981,6 +1992,7 @@ export default function FilesPage() {
               {t("files.loading")}
             </span>
           )}
+          <span aria-live="polite" className="sr-only">{busyNote}</span>
           {notice && <Alert type="info" showIcon role="status" message={notice} closable onClose={() => setNotice(null)} />}
           {readFailure && <Alert type="info" showIcon role="status" message={readFailure} />}
 

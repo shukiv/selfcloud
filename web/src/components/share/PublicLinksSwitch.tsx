@@ -70,7 +70,7 @@ export default function PublicLinksSwitch({ account }: { account: string }) {
           <p className="hint" style={{ margin: 0, fontSize: 13 }}>
             {tp("policy.anyoneLinks", shown.anyone_links)}
           </p>
-          <DeletePublicLinks account={account} count={shown.anyone_links} ondone={() => void qc.invalidateQueries({ queryKey: key })} />
+          <DeletePublicLinks account={account} count={shown.anyone_links} ondone={() => void qc.invalidateQueries({ queryKey: key })} onunsure={() => void qc.invalidateQueries({ queryKey: key })} />
         </>
       )}
     </section>

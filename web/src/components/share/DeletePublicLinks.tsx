@@ -16,10 +16,13 @@ export default function DeletePublicLinks({
   account,
   count,
   ondone,
+  onunsure,
 }: {
   account: string;
   count: number;
   ondone: (deleted: number) => void;
+  // onunsure is called when a cancel leaves the delete unsure: the links are read again, as after a success (fu4 review 3).
+  onunsure?: () => void;
 }) {
   const { t, tp } = useT();
   const lang = useLang();
@@ -34,7 +37,10 @@ export default function DeletePublicLinks({
   // cancel closes the dialog at once, busy or not: the delete on its way is aborted, and the page says it may or may not have
   // happened (fu4, decision 76's rule for writes). The links are read again by the parent's next visit.
   const cancel = () => {
-    if (request.abort()) void message.warning(t("common.cancelledMaybe"));
+    if (request.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      onunsure?.();
+    }
     setError(null);
     setAsking(false);
   };

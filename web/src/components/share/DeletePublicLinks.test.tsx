@@ -106,6 +106,21 @@ describe("delete all public links", () => {
     expect(ondone).not.toHaveBeenCalled();
   });
 
+  // fu4 review 3: the delete may have gone through, so the page is asked to read the links again.
+  it("a cancel after the delete was sent asks the page to read the links again (fu4 review 3)", async () => {
+    const user = userEvent.setup();
+    const onunsure = vi.fn();
+    api.deleteAllPublicLinks.mockImplementationOnce(() => new Promise(() => undefined));
+    render(<App><DeletePublicLinks account="acc_1" count={2} ondone={vi.fn()} onunsure={onunsure} /></App>);
+    await user.click(screen.getByRole("button", { name: "Delete all public links" }));
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("dialog").querySelector(".ant-btn-primary") as HTMLElement);
+    await waitFor(() => expect(api.deleteAllPublicLinks).toHaveBeenCalled());
+    const open = screen.getByRole("dialog");
+    await user.click([...open.querySelectorAll("button")].find((b) => b.textContent === "Cancel") as HTMLElement);
+    expect(onunsure).toHaveBeenCalledTimes(1);
+  });
+
   it("Cancel closes the dialog while the delete is in flight, and aborts it (fu4, item 2)", async () => {
     const user = userEvent.setup();
     api.deleteAllPublicLinks.mockImplementationOnce(() => new Promise(() => undefined));

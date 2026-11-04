@@ -54,7 +54,11 @@ export default function Details({
   const request = useFlight();
   const { message } = App.useApp();
   const cancelEnd = () => {
-    if (request.abort()) void message.warning(t("common.cancelledMaybe"));
+    if (request.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      // The unlock may have gone through: the file is read again, so the drawer does not show it as still being edited (fu4 review 3).
+      void api<Node>("GET", `/api/v1/nodes/${node.id}`).then((fresh) => onChanged?.(fresh), () => undefined);
+    }
     setEndError(null);
     setEnding(false);
   };
