@@ -36,4 +36,30 @@ describe("cancelling the tenant deletion while its request is out", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(calls.find((c) => c.method === "DELETE")?.signal?.aborted).toBe(true);
   });
+
+  // fu4 review 3: the deletion may have started, so the tenant list and this tenant are read again.
+  it("a cancel after the deletion was sent reads the tenant list and the tenant again (fu4 review 3)", async () => {
+    session.set(signedAs("admin", "admin_1"));
+    const onClose = vi.fn();
+    const { calls: sent } = stubFetch((c: Call): Answer | Promise<Answer> => {
+      if (c.method === "DELETE") return new Promise<Answer>(() => undefined);
+      return { status: 200, body: usage() };
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    render(
+      <App>
+        <QueryClientProvider client={qc}>
+          <DeleteTenant id="acc_1" name="Acme Ltd" onClose={onClose} onDeleted={vi.fn()} />
+        </QueryClientProvider>
+      </App>,
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Acme Ltd" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /Acme Ltd/ }));
+    await waitFor(() => expect(sent.some((c) => c.method === "DELETE")).toBe(true));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(invalidate.mock.calls.some(([arg]) => JSON.stringify(arg).includes("admin-tenant"))).toBe(true);
+  });
 });

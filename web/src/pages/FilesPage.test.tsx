@@ -2216,10 +2216,102 @@ describe("the list while the next folder is read (fu3b)", () => {
     await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
     fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
     fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
-    await screen.findByText("The folder is still opening. Try again in a moment.");
+    await waitFor(() => expect(busyNotices()).toBe(1));
     // One notice for the busy period, not one per key.
-    expect(screen.getAllByText("The folder is still opening. Try again in a moment.")).toHaveLength(1);
+    expect(busyNotices()).toBe(1);
     expect(api.moveNode).not.toHaveBeenCalled();
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+  });
+
+  // fu4 review: the notice is read by assistive technology, and only a key that would have done something says it.
+  const BUSY_TEXT = "The folder is still opening. Try again in a moment.";
+  const busyNotices = () => [...document.querySelectorAll(".ant-message-notice")].filter((n) => n.textContent?.includes(BUSY_TEXT)).length;
+  const liveHasNotice = () => [...document.querySelectorAll('[aria-live="polite"]')].some((n) => n.textContent?.includes(BUSY_TEXT));
+  // busyFolder opens the folder whose listing is held, and returns once the page is busy.
+  // With clip, alpha.txt is cut first, so something is on the clipboard when the page is busy.
+  async function busyFolder({ clip = false } = {}) {
+    let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
+    );
+    api.moveNode.mockResolvedValue(node("n1", "alpha.txt"));
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    if (clip) {
+      fireEvent.click(rows("alpha.txt") as Element);
+      fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    }
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    return { answer };
+  }
+
+  it("the notice is also held in a polite live region, which screen readers announce (fu4 review 1)", async () => {
+    const { answer } = await busyFolder({ clip: true });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(liveHasNotice()).toBe(true));
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+  });
+
+  it("Ctrl+C with nothing picked says nothing while busy (fu4 review 2)", async () => {
+    const { answer } = await busyFolder();
+    fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(busyNotices()).toBe(0);
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+  });
+
+  it("Delete and F2 with nothing picked say nothing while busy (fu4 review 2)", async () => {
+    const { answer } = await busyFolder();
+    fireEvent.keyDown(document.body, { key: "Delete" });
+    fireEvent.keyDown(document.body, { key: "F2" });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(busyNotices()).toBe(0);
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+  });
+
+  it("Ctrl+V with nothing on the clipboard says nothing while busy (fu4 review 2)", async () => {
+    const { answer } = await busyFolder();
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(busyNotices()).toBe(0);
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+  });
+
+  it("a key typed on a button outside the listing says nothing while busy (fu4 review 2)", async () => {
+    const { answer } = await busyFolder();
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    fireEvent.keyDown(outside, { key: "Enter" });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    outside.remove();
+    expect(busyNotices()).toBe(0);
     await act(async () => {
       answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
     });

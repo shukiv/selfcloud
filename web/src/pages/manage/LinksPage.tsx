@@ -160,7 +160,7 @@ function LinksView() {
 
       {count.isError && <Alert type="error" showIcon role="alert" message={failureText(count.error, lang)} style={{ marginBottom: 12 }} />}
       {!count.isError && count.data && (
-        <DeletePublicLinks account={account} count={anyoneCount} ondone={() => { setNotice(null); void refresh(); void refreshCount(); }} />
+        <DeletePublicLinks account={account} count={anyoneCount} ondone={() => { setNotice(null); void refresh(); void refreshCount(); }} onunsure={() => { void refresh(); void refreshCount(); }} />
       )}
 
       {notice !== null && <p role="status" style={{ margin: "8px 0", fontSize: 13 }}>{notice}</p>}

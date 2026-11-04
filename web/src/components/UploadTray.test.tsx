@@ -143,6 +143,13 @@ describe("UploadTray", () => {
     expect(screen.getByRole("status").textContent).not.toContain("running");
   });
 
+  it("a name waiting for an answer is not counted as running (fu4 review 4)", () => {
+    uploads.set([item({ id: 8, status: "conflict" }), item({ id: 9, status: "uploading", offset: 100, size: 1000 })]);
+    conflictAsk.set("report.pdf");
+    render(<UploadTray />);
+    expect(screen.getByRole("status").textContent).toContain("1 upload running");
+  });
+
   it("answers a taken name through the conflict dialog, batch only with more than one active upload", () => {
     uploads.set([item({ id: 8, status: "conflict" }), item({ id: 9, status: "queued" })]);
     conflictAsk.set("report.pdf");
