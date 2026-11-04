@@ -63,10 +63,3 @@ export function nextTab(current: TenantTab, key: string): TenantTab | null {
       return null;
   }
 }
-
-// isLastActiveAdmin is true when removing the admin would leave no active admin. The page then disables the
-// removal and says why. The server refuses it too, unless an admin key without an expiry can still act.
-export function isLastActiveAdmin(admins: Array<{ id: string; status: string }>, target: string): boolean {
-  const active = admins.filter((a) => a.status === 'active');
-  return active.length === 1 && active[0].id === target;
-}

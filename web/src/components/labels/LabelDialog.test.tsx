@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../../lib/session";
 import type { LabelField } from "../../lib/labels/api";
@@ -72,10 +73,37 @@ describe("label dialog", () => {
     render(<LabelDialog id="f" field={STATUS} onsave={onsave} onclose={() => {}} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "State" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(onsave).toHaveBeenCalledWith({
-      name: "State",
-      restricted: false,
-      choices: [{ id: "lbc_open", name: "Open", archived: false }],
-    });
+    expect(onsave).toHaveBeenCalledWith(
+      {
+        name: "State",
+        restricted: false,
+        choices: [{ id: "lbc_open", name: "Open", archived: false }],
+      },
+      expect.any(AbortSignal),
+    );
+  });
+
+  // A save that never answers can be cancelled: the request is aborted and the dialog closes (guard: busy dialogs can be cancelled).
+  it("Cancel on a busy save aborts the request and closes the dialog", async () => {
+    const signals: AbortSignal[] = [];
+    const onsave = vi.fn(
+      (_body: unknown, signal: AbortSignal) =>
+        new Promise<void>((_resolve, reject) => {
+          signals.push(signal);
+          signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    );
+    const onclose = vi.fn();
+    render(
+      <App>
+        <LabelDialog id="f" field={STATUS} onsave={onsave} onclose={onclose} />
+      </App>,
+    );
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "State" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(signals).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(signals[0].aborted).toBe(true);
+    expect(onclose).toHaveBeenCalledTimes(1);
   });
 });

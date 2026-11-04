@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useState } from "react";
-import { Alert, Button, Checkbox, Input, Modal, Select } from "antd";
+import { App, Alert, Button, Checkbox, Input, Modal, Select } from "antd";
 import { useLang, useT } from "../../lib/i18n";
 import { failureText } from "../../lib/manage/failure";
+import { useFlight } from "../../lib/flight";
 import { sessionChanged } from "../../lib/session";
 import type { LabelChoice, LabelField, LabelFieldBody, LabelFieldPatch, LabelType } from "../../lib/labels/api";
 import { choiceProblem, LABEL_TYPES, nameProblem, labelFailure, type ChoiceRow } from "../../lib/labels/logic";
@@ -15,7 +16,8 @@ import { useOnce } from "../manage/OwnerPage";
 export interface LabelDialogProps {
   id: string;
   field: LabelField | null;
-  onsave: (body: LabelFieldBody | LabelFieldPatch) => Promise<void>;
+  // onsave gets the signal of its request: a cancelled dialog aborts it.
+  onsave: (body: LabelFieldBody | LabelFieldPatch, signal: AbortSignal) => Promise<void>;
   onclose: () => void;
 }
 
@@ -32,7 +34,14 @@ export default function LabelDialog({ id, field, onsave, onclose }: LabelDialogP
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const once = useOnce();
+  const flight = useFlight();
+  const { message } = App.useApp();
   const locked = editing && (field?.values ?? 0) > 0;
+  // cancel closes the dialog at once, busy or not. A save on its way is aborted; the page says it may or may not have happened.
+  const cancel = () => {
+    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    onclose();
+  };
   const choosing = type === "choice";
 
   // The first problem is said under the form, and disables Save. The server checks the same things again.
@@ -64,15 +73,17 @@ export default function LabelDialog({ id, field, onsave, onclose }: LabelDialogP
           const body: LabelFieldPatch = { name: name.trim(), restricted };
           if (type !== field.type) body.type = type;
           if (choices) body.choices = choices;
-          await onsave(body);
+          await onsave(body, flight.start());
         } else {
-          await onsave({ name: name.trim(), type, restricted, choices: choices?.map((c) => ({ name: c.name })) });
+          await onsave({ name: name.trim(), type, restricted, choices: choices?.map((c) => ({ name: c.name })) }, flight.start());
         }
       } catch (err) {
         if (stale()) return;
         const reason = labelFailure(err);
         setError(reason !== null ? t(`labels.err.${reason}`) : failureText(err, lang));
         setBusy(false);
+      } finally {
+        flight.end();
       }
     });
 
@@ -80,7 +91,7 @@ export default function LabelDialog({ id, field, onsave, onclose }: LabelDialogP
     <Modal
       open
       title={editing ? t("labels.editTitle", { name: field.name }) : t("labels.createTitle")}
-      onCancel={busy ? undefined : onclose}
+      onCancel={cancel}
       maskClosable={false}
       footer={null}
       destroyOnClose
@@ -158,7 +169,7 @@ export default function LabelDialog({ id, field, onsave, onclose }: LabelDialogP
         {error !== null && <Alert type="error" showIcon role="alert" message={error} />}
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
-          <Button disabled={busy} onClick={onclose}>
+          <Button onClick={cancel}>
             {t("common.cancel")}
           </Button>
           <Button type="primary" htmlType="submit" loading={busy} disabled={busy || problem !== null}>

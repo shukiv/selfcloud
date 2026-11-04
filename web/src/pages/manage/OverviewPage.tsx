@@ -7,10 +7,10 @@ import { useLang, useT } from "../../lib/i18n";
 import { formatNumber } from "../../lib/files/format";
 import { auditLog, listSpaces, usage } from "../../lib/manage/api";
 import { collectAll } from "../../lib/manage/paging";
-import { loadNames } from "../../lib/manage/names";
+import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { failureText } from "../../lib/manage/failure";
 import { queryKey } from "../../lib/query";
-import type { AuditEntry, Names } from "../../lib/audit/sentence";
+import type { AuditEntry } from "../../lib/audit/sentence";
 import type { Usage } from "../../lib/manage/types";
 import UsageMeter from "../../components/UsageMeter";
 import AuditItem from "../../components/manage/AuditItem";
@@ -19,22 +19,21 @@ import PublicLinksSwitch from "../../components/share/PublicLinksSwitch";
 const SharingSwitches = lazy(() => import("../../components/comments/SharingSwitches"));
 import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage/OwnerPage";
 
-// Overview: the account's usage and people, its recent activity, and the next steps while it is new.
+// Overview: the account's usage and people, its recent activity, and the next steps while it is new. The names for the
+// activity are read apart from the figures, so a failed names read leaves the figures and falls back to NO_NAMES.
 interface Overview {
   usage: Usage;
   spaceCount: number;
   activity: Array<AuditEntry & { id: string; time: string }>;
-  names: Names;
 }
 
 async function readOverview(account: string): Promise<Overview> {
-  const [u, spaces, log, looked] = await Promise.all([
+  const [u, spaces, log] = await Promise.all([
     usage(account),
     collectAll((c) => listSpaces(account, c)),
     auditLog(account, { limit: 10 }),
-    loadNames(account),
   ]);
-  return { usage: u, spaceCount: spaces.items.length, activity: log.items, names: looked.names };
+  return { usage: u, spaceCount: spaces.items.length, activity: log.items };
 }
 
 function OverviewView() {
@@ -49,6 +48,13 @@ function OverviewView() {
     enabled: account !== "",
     refetchOnMount: "always",
   });
+  const names = useQuery({
+    queryKey: queryKey("manage", account, "names"),
+    queryFn: () => loadNames(account),
+    enabled: account !== "",
+    refetchOnMount: "always",
+  });
+  const lookup = names.data?.names ?? NO_NAMES;
   const data = q.data;
   const people = data ? data.usage.users_active + data.usage.users_pending : 0;
   const fresh = data !== undefined && people <= 1 && data.spaceCount === 0;
@@ -130,7 +136,7 @@ function OverviewView() {
             ) : (
               <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
                 {data.activity.map((entry) => (
-                  <AuditItem key={entry.id} entry={entry} names={data.names} />
+                  <AuditItem key={entry.id} entry={entry} names={lookup} />
                 ))}
               </ul>
             )}

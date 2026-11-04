@@ -22,6 +22,9 @@ export function errorMessage(err: unknown, ctx: Context = 'generic'): Message {
   switch (err.code) {
     case 'network':
       return { key: 'error.network' };
+    // The server gave no answer in the time limit (api.ts). A write may or may not have happened, so the page says so.
+    case 'timeout':
+      return { key: err.details.write === true ? 'error.timeout' : 'error.timeoutRead' };
     case 'unauthenticated':
       return { key: ctx === 'login' ? 'error.unauthenticated' : 'error.sessionEnded' };
     case 'user_not_verified':

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Input, Modal, Select } from "antd";
+import { App, Alert, Button, Input, Modal, Select } from "antd";
 import { useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
+import { useFlight } from "../../lib/flight";
 import { sessionChanged } from "../../lib/session";
 import { createKey } from "../../lib/manage/api";
 import { expiryFor, type ExpiryChoice } from "../../lib/manage/admin";
@@ -23,27 +24,36 @@ export default function NewKey({
 }) {
   const { t } = useT();
   const lang = useLang();
-  const flight = useGuard();
+  const guard = useGuard();
+  const flight = useFlight();
+  const { message } = App.useApp();
   const [name, setName] = useState("");
   const [expires, setExpires] = useState<ExpiryChoice>("never");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // cancel closes the dialog at once, busy or not. A key on its way is aborted; the page says it may or may not have been made.
+  const cancel = () => {
+    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    onClose();
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (name.trim() === "") return;
-    void flight(async () => {
+    void guard(async () => {
       const changed = sessionChanged();
       setBusy(true);
       setError(null);
       try {
-        const key = await createKey(account, { name: name.trim(), expires_at: expiryFor(expires, new Date()) });
+        const key = await createKey(account, { name: name.trim(), expires_at: expiryFor(expires, new Date()) }, flight.start());
         if (changed()) return;
         onCreated(key);
       } catch (err) {
         if (changed()) return;
         setError(failureText(err, lang));
       } finally {
+        flight.end();
         setBusy(false);
       }
     });
@@ -55,9 +65,7 @@ export default function NewKey({
       title={t("keys.new.title")}
       footer={null}
       maskClosable={false}
-      keyboard={!busy}
-      closable={!busy}
-      onCancel={busy ? undefined : onClose}
+      onCancel={cancel}
     >
       <form style={formStyle} onSubmit={submit} noValidate>
         <div style={field}>
@@ -80,7 +88,7 @@ export default function NewKey({
         </div>
         {error !== null && <Alert type="error" showIcon role="alert" message={error} />}
         <div style={foot}>
-          <Button disabled={busy} onClick={onClose}>{t("common.cancel")}</Button>
+          <Button onClick={cancel}>{t("common.cancel")}</Button>
           <Button type="primary" htmlType="submit" loading={busy} disabled={busy || name.trim() === ""}>
             {t("keys.new.create")}
           </Button>

@@ -115,6 +115,9 @@ export async function ownerChecks(page, h, { base, sink, waitForMail, INVITEE })
   await page.waitFor(`location.pathname === '/manage/people' && !!document.querySelector('main')`);
   await h.clickButton(page, 'Invite person');
   await page.waitFor(`!!document.getElementById('invite-email')`);
+  // The email field has the focus once the dialog is open, so the owner can type at once (InviteDialog moves it there).
+  await page.waitFor(`document.activeElement !== null && document.activeElement.id === 'invite-email'`);
+  h.check(true, 'the invitation dialog opens with the email field focused');
   await h.setInput(page, 'invite-email', INVITEE.email);
   await h.setInput(page, 'invite-name', INVITEE.name);
   await dialogSubmit(h, page);

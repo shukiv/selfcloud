@@ -52,8 +52,9 @@ export interface NewAccount {
   owner: { email: string; display_name?: string; locale?: string; verification: 'email' | 'link' };
 }
 
-export function createAccount(body: NewAccount): Promise<Account & { owner?: PersonReply }> {
-  return api<Account & { owner?: PersonReply }>('POST', '/api/v1/accounts', { body });
+// The calls a dialog makes take an optional signal: a cancelled dialog aborts its write (see lib/flight.ts).
+export function createAccount(body: NewAccount, signal?: AbortSignal): Promise<Account & { owner?: PersonReply }> {
+  return api<Account & { owner?: PersonReply }>('POST', '/api/v1/accounts', { body, signal });
 }
 
 export function updateAccount(id: string, body: { name?: string; quota_bytes?: number; status?: 'active' | 'suspended' }): Promise<Account> {
@@ -73,8 +74,8 @@ export function listKeys(id: string): Promise<{ items: ApiKey[] }> {
   return api<{ items: ApiKey[] }>('GET', `${acc(id)}/keys`);
 }
 
-export function createKey(id: string, body: { name: string; expires_at?: string }): Promise<NewKey> {
-  return api<NewKey>('POST', `${acc(id)}/keys`, { body });
+export function createKey(id: string, body: { name: string; expires_at?: string }, signal?: AbortSignal): Promise<NewKey> {
+  return api<NewKey>('POST', `${acc(id)}/keys`, { body, signal });
 }
 
 export function revokeKey(id: string, key: string): Promise<void> {
@@ -85,12 +86,12 @@ export function listAdmins(cursor?: string): Promise<Page<Person>> {
   return api<Page<Person>>('GET', `/api/v1/admins${query({ cursor, limit: PAGE_SIZE })}`);
 }
 
-export function createAdmin(body: { email: string; display_name?: string; verification: 'email' | 'link' }): Promise<PersonReply> {
-  return api<PersonReply>('POST', '/api/v1/admins', { body });
+export function createAdmin(body: { email: string; display_name?: string; verification: 'email' | 'link' }, signal?: AbortSignal): Promise<PersonReply> {
+  return api<PersonReply>('POST', '/api/v1/admins', { body, signal });
 }
 
-export function deleteAdmin(id: string): Promise<void> {
-  return api<void>('DELETE', `/api/v1/admins/${id}`);
+export function deleteAdmin(id: string, signal?: AbortSignal): Promise<void> {
+  return api<void>('DELETE', `/api/v1/admins/${id}`, { signal });
 }
 
 export function getInfo(): Promise<Info> {
@@ -119,8 +120,8 @@ export interface NewPerson {
   verification: 'email' | 'link';
 }
 
-export function createPerson(id: string, body: NewPerson): Promise<PersonReply> {
-  return api<PersonReply>('POST', `${acc(id)}/users`, { body });
+export function createPerson(id: string, body: NewPerson, signal?: AbortSignal): Promise<PersonReply> {
+  return api<PersonReply>('POST', `${acc(id)}/users`, { body, signal });
 }
 
 export function updatePerson(
@@ -133,11 +134,16 @@ export function updatePerson(
 
 // removePerson removes a person. When its My files hold files, the server refuses unless the call names
 // transfer_to (an active member, which takes the files) or delete_files (which deletes them for good).
-export function removePerson(id: string, usr: string, files?: { transfer_to?: string; delete_files?: boolean }): Promise<void> {
+export function removePerson(
+  id: string,
+  usr: string,
+  files?: { transfer_to?: string; delete_files?: boolean },
+  signal?: AbortSignal,
+): Promise<void> {
   return api<void>('DELETE', `${acc(id)}/users/${usr}${query({
     transfer_to: files?.transfer_to,
     delete_files: files?.delete_files ? 'true' : undefined,
-  })}`);
+  })}`, { signal });
 }
 
 export function resendVerification(id: string, usr: string, method: 'email' | 'link'): Promise<PersonReply> {
@@ -183,12 +189,12 @@ export function listGroups(id: string, cursor?: string): Promise<Page<Group>> {
   return api<Page<Group>>('GET', `${acc(id)}/groups${query({ cursor, limit: PAGE_SIZE })}`);
 }
 
-export function createGroup(id: string, name: string): Promise<Group> {
-  return api<Group>('POST', `${acc(id)}/groups`, { body: { name } });
+export function createGroup(id: string, name: string, signal?: AbortSignal): Promise<Group> {
+  return api<Group>('POST', `${acc(id)}/groups`, { body: { name }, signal });
 }
 
-export function renameGroup(id: string, grp: string, name: string): Promise<Group> {
-  return api<Group>('PATCH', `${acc(id)}/groups/${grp}`, { body: { name } });
+export function renameGroup(id: string, grp: string, name: string, signal?: AbortSignal): Promise<Group> {
+  return api<Group>('PATCH', `${acc(id)}/groups/${grp}`, { body: { name }, signal });
 }
 
 export function deleteGroup(id: string, grp: string): Promise<void> {
@@ -217,12 +223,12 @@ export function getSpace(id: string, fld: string): Promise<SpaceDetail> {
   return api<SpaceDetail>('GET', `${acc(id)}/folders/${fld}`);
 }
 
-export function createSpace(id: string, name: string): Promise<Space> {
-  return api<Space>('POST', `${acc(id)}/folders`, { body: { name } });
+export function createSpace(id: string, name: string, signal?: AbortSignal): Promise<Space> {
+  return api<Space>('POST', `${acc(id)}/folders`, { body: { name }, signal });
 }
 
-export function renameSpace(id: string, fld: string, name: string): Promise<Space> {
-  return api<Space>('PATCH', `${acc(id)}/folders/${fld}`, { body: { name } });
+export function renameSpace(id: string, fld: string, name: string, signal?: AbortSignal): Promise<Space> {
+  return api<Space>('PATCH', `${acc(id)}/folders/${fld}`, { body: { name }, signal });
 }
 
 export function deleteSpace(id: string, fld: string): Promise<void> {

@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { formatBytes } from "../../lib/files/format";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
@@ -64,5 +65,48 @@ describe("the person dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /Save limit/ }));
     await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ quota_bytes: null });
+  });
+
+  // The person's own limit is on the list, so the limit line shows at once, before the detail has loaded (guard: the limit
+  // at once). The detail here never answers.
+  it("shows the limit from the list at once, while the detail is still loading (guard: limit at once)", async () => {
+    const GB = 1024 ** 3;
+    stubFetch((c: Call) => {
+      if (c.url.includes("/users/usr_ada")) return new Promise<{ status: number }>(() => undefined);
+      return { status: 200, body: { items: [] } };
+    });
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <PersonDialog account="acc_1" person={{ ...person, quota_bytes: 2 * GB }} names={{ person: () => undefined, space: () => undefined }} onclose={() => undefined} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText(formatBytes(2 * GB, "en"))).toBeTruthy();
+  });
+
+  // After a save the dialog shows the value the server applies. It reads the person again before it closes the editor, so the
+  // old value and the "Limit saved" notice never show together (guard: no old value after save).
+  it("after a limit save the old value is not shown next to the saved notice (guard: re-read before the dialog closes)", async () => {
+    const GB = 1024 ** 3;
+    let saved = false;
+    const seen: string[] = [];
+    const observer = new MutationObserver(() => seen.push(document.body.textContent ?? ""));
+    renderDialog((c) => {
+      if (c.method === "PATCH") {
+        saved = true;
+        return { status: 200, body: {} };
+      }
+      if (c.url.includes("/users/usr_ada")) {
+        const quota = saved ? 4 * GB : GB;
+        return { status: 200, body: { ...person, quota_bytes: quota, effective_quota_bytes: quota } };
+      }
+      return { status: 200, body: { items: [] } };
+    });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Change limit" }));
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "4" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save limit/ }));
+    expect(await screen.findByText(formatBytes(4 * GB, "en"))).toBeTruthy();
+    observer.disconnect();
+    expect(seen.some((s) => s.includes("Limit saved.") && s.includes(formatBytes(GB, "en")))).toBe(false);
   });
 });

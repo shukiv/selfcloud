@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
@@ -73,24 +74,20 @@ describe("the new tenant dialog", () => {
 
 describe("the new tenant dialog while the tenant is being created", () => {
   // The request may still create the tenant, so the dialog stays open until the answer comes (guard: busy on the dialog).
-  it("Cancel, Escape and the close button do nothing while the request is out (guard: busy)", async () => {
-    let answer!: (a: { status: number; body?: unknown }) => void;
-    stubFetch((c: Call) =>
-      c.method === "POST" ? new Promise((r) => (answer = r)) : { status: 200, body: {} },
-    );
+  // A busy form can be cancelled: it closes at once, and its request is aborted (busyCancel.test.tsx checks the abort).
+  it("Cancel on the busy form closes it at once (guard: busy forms can be cancelled)", async () => {
+    const { calls } = stubFetch((c: Call) => (c.method === "POST" ? new Promise(() => undefined) : { status: 200, body: {} }));
     const onClose = vi.fn();
-    const onCreated = vi.fn();
-    render(<NewTenant onClose={onClose} onCreated={onCreated} />);
+    render(
+      <App>
+        <NewTenant onClose={onClose} onCreated={vi.fn()} />
+      </App>,
+    );
     fill();
     setField("new-tenant-limit", "5");
     fireEvent.click(screen.getByRole("button", { name: "Create tenant" }));
-    await waitFor(() => expect(answer).toBeDefined());
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.keyDown(document.querySelector(".ant-modal") as HTMLElement, { key: "Escape" });
-    const close = document.querySelector(".ant-modal-close");
-    if (close) fireEvent.click(close);
-    expect(onClose).not.toHaveBeenCalled();
-    answer({ status: 201, body: { ...account(), owner: undefined } });
-    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

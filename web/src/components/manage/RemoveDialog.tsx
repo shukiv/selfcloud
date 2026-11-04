@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useState } from "react";
-import { Alert, Button, Modal, Radio, Select } from "antd";
+import { App, Alert, Button, Modal, Radio, Select } from "antd";
 import { ApiError } from "../../lib/apiError";
 import { useLang, useT } from "../../lib/i18n";
 import { failureText } from "../../lib/manage/failure";
 import { personLabel } from "../../lib/manage/people";
 import { removePerson } from "../../lib/manage/api";
+import { useFlight } from "../../lib/flight";
 import type { Person } from "../../lib/manage/types";
 import { sessionChanged } from "../../lib/session";
 import Confirm from "../Confirm";
@@ -34,9 +35,17 @@ export default function RemoveDialog({ account, person, candidates, onclose, ond
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const once = useOnce();
+  const flight = useFlight();
+  const { message } = App.useApp();
   const label = personLabel(person);
   const movable = candidates.filter((c) => c.id !== person.id && c.role === "member" && c.status === "active");
   const canGo = choice === "delete" || target !== "";
+
+  // cancel closes the dialog at once, busy or not. A removal on its way is aborted, and the page says it may or may not have happened.
+  const cancel = () => {
+    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    onclose();
+  };
 
   const go = (files?: Files) =>
     once(async () => {
@@ -44,7 +53,7 @@ export default function RemoveDialog({ account, person, candidates, onclose, ond
       setBusy(true);
       setError(null);
       try {
-        await removePerson(account, person.id, files);
+        await removePerson(account, person.id, files, flight.start());
         if (stale()) return;
         ondone();
       } catch (err) {
@@ -56,6 +65,7 @@ export default function RemoveDialog({ account, person, candidates, onclose, ond
           setError(failureText(err, lang));
         }
       } finally {
+        flight.end();
         setBusy(false);
       }
     });
@@ -72,6 +82,7 @@ export default function RemoveDialog({ account, person, candidates, onclose, ond
         error={error}
         onconfirm={() => void go()}
         onclose={onclose}
+        oncancel={cancel}
       />
     );
   }
@@ -83,7 +94,7 @@ export default function RemoveDialog({ account, person, candidates, onclose, ond
   };
 
   return (
-    <Modal open title={t("people.remove.filesTitle", { name: label })} onCancel={busy ? undefined : onclose} maskClosable={false} footer={null} destroyOnClose>
+    <Modal open title={t("people.remove.filesTitle", { name: label })} onCancel={cancel} maskClosable={false} footer={null} destroyOnClose>
       <form
         id="remove-files"
         onSubmit={(e) => {
@@ -117,7 +128,7 @@ export default function RemoveDialog({ account, person, candidates, onclose, ond
         </div>
         {error && <Alert type="error" showIcon role="alert" message={error} />}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
-          <Button disabled={busy} onClick={onclose}>
+          <Button onClick={cancel}>
             {t("common.cancel")}
           </Button>
           <Button type="primary" danger={choice === "delete"} htmlType="submit" loading={busy} disabled={busy || !canGo}>

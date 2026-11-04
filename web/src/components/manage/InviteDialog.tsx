@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Input, Modal, Radio, Select, type InputRef } from "antd";
+import { App, Alert, Button, Input, Modal, Radio, Select, type InputRef } from "antd";
 import { LANGUAGES, NATIVE_NAMES, useLang, useT, type Lang } from "../../lib/i18n";
 import { createPerson, type NewPerson } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
+import { useFlight } from "../../lib/flight";
 import { sessionChanged } from "../../lib/session";
 import type { PersonReply } from "../../lib/manage/types";
 import { useOnce } from "./OwnerPage";
@@ -36,7 +37,16 @@ export default function InviteDialog({ account, onclose, oncreated }: InviteDial
   }, []);
   const [error, setError] = useState<string | null>(null);
   const once = useOnce();
+  const flight = useFlight();
+  const { message } = App.useApp();
   const emailOk = EMAIL.test(email.trim());
+
+  // cancel closes the dialog at once, busy or not. A request on its way is aborted, and the page says the invitation may
+  // or may not have gone out.
+  const cancel = () => {
+    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    onclose();
+  };
 
   const submit = () =>
     once(async () => {
@@ -47,13 +57,14 @@ export default function InviteDialog({ account, onclose, oncreated }: InviteDial
       setError(null);
       const body: NewPerson = { email: email.trim(), display_name: name.trim(), locale, role, verification: "email" };
       try {
-        const reply = await createPerson(account, body);
+        const reply = await createPerson(account, body, flight.start());
         if (stale()) return;
         oncreated(reply);
       } catch (err) {
         if (stale()) return;
         setError(failureText(err, lang));
       } finally {
+        flight.end();
         setBusy(false);
       }
     });
@@ -62,7 +73,7 @@ export default function InviteDialog({ account, onclose, oncreated }: InviteDial
     <Modal
       open
       title={t("people.invite.title")}
-      onCancel={busy ? undefined : onclose}
+      onCancel={cancel}
       maskClosable={false}
       footer={null}
       width={560}
@@ -117,7 +128,7 @@ export default function InviteDialog({ account, onclose, oncreated }: InviteDial
         </div>
         {error && <Alert type="error" showIcon role="alert" message={error} />}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
-          <Button disabled={busy} onClick={onclose}>
+          <Button onClick={cancel}>
             {t("common.cancel")}
           </Button>
           <Button type="primary" htmlType="submit" loading={busy} disabled={busy || !emailOk}>

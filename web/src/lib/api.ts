@@ -16,9 +16,17 @@ export interface RequestOptions {
   noRedirect?: boolean;
   // allowWhileSigningOut is for the sign-out call itself; every other request is refused while a sign-out runs.
   allowWhileSigningOut?: boolean;
-  // signal aborts the request when it fires (a sign-out gives its call a time limit).
+  // signal aborts the request when it fires (a sign-out gives its call a time limit, and a cancelled dialog its write).
   signal?: AbortSignal;
+  // timeoutMs is how long the call may wait for its answer, headers and body both; 0 turns the limit off.
+  timeoutMs?: number;
 }
+
+// REQUEST_TIMEOUT_MS is the default wait for an answer. A call here is small JSON that the server answers in well under
+// a second, so a minute with no answer means the server or the network has stopped. Uploads and downloads do not go
+// through api(), so they have no such limit.
+export const REQUEST_TIMEOUT_MS = 60_000;
+const EXPIRED = Symbol('expired');
 
 export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
@@ -59,23 +67,48 @@ export async function api<T = void>(method: Method, path: string, opts: RequestO
   opts.signal?.addEventListener('abort', () => ctl.abort(), { once: true });
   if (opts.signal?.aborted) ctl.abort();
   const forget = opts.allowWhileSigningOut ? () => undefined : trackRequest(ctl);
+  // The timer covers the answer's headers and its body. When it fires, the request is aborted and the call fails as a timeout.
+  let timedOut = false;
+  let expire: () => void = () => undefined;
+  const expired = new Promise<typeof EXPIRED>((resolve) => {
+    expire = () => resolve(EXPIRED);
+  });
+  const limit = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const timer = limit > 0 ? window.setTimeout(() => {
+    timedOut = true;
+    ctl.abort();
+    expire();
+  }, limit) : undefined;
+  // A timeout says whether the call was a write: only a write may have been saved (the message says so).
+  const failed = (): ApiError =>
+    timedOut
+      ? new ApiError(0, 'timeout', { write: method !== 'GET' }, 0)
+      : new ApiError(0, ctl.signal.aborted && signingOut() ? 'signing_out' : opts.signal?.aborted ? 'cancelled' : 'network', {}, 0);
   let res: Response;
   try {
     res = await fetch(path, { method, headers, body, credentials: 'same-origin', cache: 'no-store', signal: ctl.signal });
   } catch {
-    throw new ApiError(0, ctl.signal.aborted && signingOut() ? 'signing_out' : 'network', {}, 0);
+    window.clearTimeout(timer);
+    throw failed();
   } finally {
     forget();
   }
 
-  if (res.status === 204) return undefined as T;
+  if (res.status === 204) {
+    window.clearTimeout(timer);
+    return undefined as T;
+  }
 
+  // The body is read against the same timer: a body that never ends is a timeout, whether or not the fetch honours the abort.
   let data: unknown = null;
   try {
-    data = await res.json();
-  } catch {
-    data = null;
+    const got: unknown = await Promise.race([res.json().catch(() => null), expired]);
+    if (got === EXPIRED) throw failed();
+    data = got;
+  } finally {
+    window.clearTimeout(timer);
   }
+  if (timedOut) throw failed();
   const env = data as { error?: { code?: unknown; details?: unknown } } | null;
   const code = typeof env?.error?.code === 'string' ? env.error.code : 'internal';
   const raw = env?.error?.details;

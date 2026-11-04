@@ -16,7 +16,7 @@ import { sessionChanged } from "../../lib/session";
 import InviteDialog from "../../components/manage/InviteDialog";
 import PersonDialog from "../../components/manage/PersonDialog";
 import RemoveDialog from "../../components/manage/RemoveDialog";
-import { OwnerOnly, useAccountID, useManageTitle, useOnce } from "../../components/manage/OwnerPage";
+import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 
 // People: the account's owners and members, invited by email. An owner changes a person's role or status and removes a
 // person here. The server answers every change; a refusal is shown by its code and reason.
@@ -28,11 +28,12 @@ function PeopleView() {
   useManageTitle("manage.people.title");
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [busyRow, setBusyRow] = useState<string | null>(null);
+  // The rows with an action out: each row's own, so one row's end does not clear another row's busy state.
+  const [busyRows, setBusyRows] = useState<ReadonlySet<string>>(() => new Set());
   const [inviting, setInviting] = useState(false);
   const [detail, setDetail] = useState<Person | null>(null);
   const [removing, setRemoving] = useState<Person | null>(null);
-  const once = useOnce();
+  const once = useOncePer();
 
   const q = useInfiniteQuery({
     queryKey: queryKey("manage", account, "people"),
@@ -60,9 +61,9 @@ function PeopleView() {
 
   // act runs one change on a row: one at a time, and an answer for a person who has gone is not shown.
   const act = (p: Person, fn: () => Promise<string | null>) =>
-    once(async () => {
+    once(p.id, async () => {
       const stale = sessionChanged();
-      setBusyRow(p.id);
+      setBusyRows((s) => new Set(s).add(p.id));
       setActionError(null);
       setNotice(null);
       try {
@@ -74,7 +75,11 @@ function PeopleView() {
         if (stale()) return;
         setActionError(failureText(err, lang));
       } finally {
-        setBusyRow(null);
+        setBusyRows((s) => {
+          const next = new Set(s);
+          next.delete(p.id);
+          return next;
+        });
       }
     });
 
@@ -162,8 +167,8 @@ function PeopleView() {
                   {t("people.open")}
                   <span className="sr-only">: {personLabel(p)}</span>
                 </Button>
-                <Dropdown menu={{ items: menuFor(p) }} trigger={["click"]} disabled={busyRow === p.id}>
-                  <IconButton aria-haspopup="menu" label={t("people.actionsFor", { name: personLabel(p) })} tip={t("files.selection.more")} disabled={busyRow === p.id} icon={<MoreVertical size={18} aria-hidden="true" focusable="false" />} />
+                <Dropdown menu={{ items: menuFor(p) }} trigger={["click"]} disabled={busyRows.has(p.id)}>
+                  <IconButton aria-haspopup="menu" label={t("people.actionsFor", { name: personLabel(p) })} tip={t("files.selection.more")} disabled={busyRows.has(p.id)} icon={<MoreVertical size={18} aria-hidden="true" focusable="false" />} />
                 </Dropdown>
               </div>
             </li>

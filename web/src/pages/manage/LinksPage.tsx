@@ -31,7 +31,7 @@ import { session, sessionChanged } from "../../lib/session";
 import { useStore } from "../../lib/store";
 import Confirm from "../../components/Confirm";
 import DeletePublicLinks from "../../components/share/DeletePublicLinks";
-import { OwnerOnly, useAccountID, useManageTitle, useOnce } from "../../components/manage/OwnerPage";
+import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 
 // Links: every link of the account that anyone can open, and every drop link, with its place and its state. An owner
 // deletes one at a time, or all of them at once. Links that only people in the account can open are on the items they
@@ -47,7 +47,7 @@ function LinksView() {
   const [deleting, setDeleting] = useState<AccountLink | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const once = useOnce();
+  const once = useOncePer();
   const viewer = useStore(session)?.user.id ?? "";
 
   const q = useInfiniteQuery({
@@ -72,7 +72,7 @@ function LinksView() {
   const refreshCount = () => qc.invalidateQueries({ queryKey: queryKey("manage", account, "sharing-policy") });
 
   const confirmDelete = () =>
-    once(async () => {
+    once(deleting?.id ?? "", async () => {
       if (!deleting) return;
       const stale = sessionChanged();
       const link = deleting;

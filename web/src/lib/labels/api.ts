@@ -56,12 +56,12 @@ export function listLabelFields(): Promise<{ items: LabelField[] }> {
   return api<{ items: LabelField[] }>('GET', '/api/v1/label-fields');
 }
 
-export function createLabelField(account: string, body: LabelFieldBody): Promise<LabelField> {
-  return api<LabelField>('POST', `/api/v1/accounts/${account}/label-fields`, { body });
+export function createLabelField(account: string, body: LabelFieldBody, signal?: AbortSignal): Promise<LabelField> {
+  return api<LabelField>('POST', `/api/v1/accounts/${account}/label-fields`, { body, signal });
 }
 
-export function updateLabelField(account: string, field: string, body: LabelFieldPatch): Promise<LabelField> {
-  return api<LabelField>('PATCH', `/api/v1/accounts/${account}/label-fields/${field}`, { body });
+export function updateLabelField(account: string, field: string, body: LabelFieldPatch, signal?: AbortSignal): Promise<LabelField> {
+  return api<LabelField>('PATCH', `/api/v1/accounts/${account}/label-fields/${field}`, { body, signal });
 }
 
 export function deleteLabelField(account: string, field: string): Promise<void> {

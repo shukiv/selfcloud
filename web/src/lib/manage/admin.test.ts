@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { expiryFor, isLastActiveAdmin, nextTab, tabFrom, tenantQuery, tenantSearch } from './admin';
+import { expiryFor, nextTab, tabFrom, tenantQuery, tenantSearch } from './admin';
 
 describe('tenantQuery and tenantSearch', () => {
   it('reads the list address, with the defaults for anything else', () => {
@@ -44,14 +44,3 @@ describe('tabs', () => {
   });
 });
 
-describe('isLastActiveAdmin', () => {
-  it('is true only for the one active admin', () => {
-    const admins = [
-      { id: 'usr_a', status: 'active' },
-      { id: 'usr_b', status: 'pending' },
-    ];
-    expect(isLastActiveAdmin(admins, 'usr_a')).toBe(true);
-    expect(isLastActiveAdmin(admins, 'usr_b')).toBe(false);
-    expect(isLastActiveAdmin([...admins, { id: 'usr_c', status: 'active' }], 'usr_a')).toBe(false);
-  });
-});

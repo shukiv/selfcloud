@@ -51,4 +51,20 @@ describe("the owner overview", () => {
     expect((await screen.findByRole("alert")).className).toContain("ant-alert-error");
     expect(screen.queryByText("Usage")).toBeNull();
   });
+
+  // The names are read on their own, as the People, Audit and Groups pages read them: a failed names read leaves the figures
+  // and the activity, and the names fall back to the generic words (guard: names read apart from the overview).
+  it("a failed names read keeps the figures and the activity (guard: names read apart)", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("/usage")) return { status: 200, body: { ...USAGE, users_active: 2 } };
+      if (c.url.includes("/users")) return fail(500, "internal");
+      if (c.url.includes("/folders")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/audit")) return { status: 200, body: { items: [] } };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    expect(await screen.findByText("Storage")).toBeTruthy();
+    // The overview's own failure text is not shown (other lazy parts of the page may show alerts of their own).
+    expect(screen.queryByText(/The server had a problem/)).toBeNull();
+  });
 });

@@ -2,7 +2,8 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { App } from "antd";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import { LINK, person, signedAs } from "../../test/adminFixtures";
@@ -11,14 +12,32 @@ import AdminsPage from "./AdminsPage";
 function renderAdmins() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(
-    <QueryClientProvider client={qc}>
-      <AdminsPage />
-    </QueryClientProvider>,
+    <App>
+      <QueryClientProvider client={qc}>
+        <AdminsPage />
+      </QueryClientProvider>
+    </App>,
   );
   return qc;
 }
 
 const path = (c: Call) => new URL(c.url, "http://x").pathname;
+
+// hangingAdmins answers the list with one admin and never answers a write; each write's signal is recorded, and an abort
+// rejects the write as the browser does.
+function hangingAdmins(signals: AbortSignal[]) {
+  return (_url: string, init: RequestInit = {}) => {
+    if ((init.method ?? "GET") === "GET") {
+      const body = { items: [person()] };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
+    }
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init.signal as AbortSignal;
+      signals.push(signal);
+      signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    });
+  };
+}
 
 beforeEach(() => session.set(signedAs("admin")));
 afterEach(() => session.set(null));
@@ -41,12 +60,38 @@ describe("the admins list", () => {
     expect(screen.queryByRole("list", { name: "Admins" })).toBeNull();
   });
 
-  it("the last active admin cannot be removed, and the page says why (guard: isLastActiveAdmin)", async () => {
-    stubFetch((c) => (path(c) === "/api/v1/admins" ? { status: 200, body: { items: [person()] } } : fail(404, "not_found")));
+  // The page does not decide who is the last admin: it sees only the pages loaded so far, and the server counts every admin
+  // and the admin keys that do not expire. A removal is sent, and the server's refusal is shown (guard: no page-side check).
+  it("a removal is sent even when the loaded page holds one active admin, and the server's refusal is shown", async () => {
+    const seen: string[] = [];
+    stubFetch((c) => {
+      if (c.method === "DELETE") {
+        seen.push(path(c));
+        return fail(409, "conflict", { reason: "last_admin" });
+      }
+      return path(c) === "/api/v1/admins" ? { status: 200, body: { items: [person()], next_cursor: "more" } } : fail(404, "not_found");
+    });
     renderAdmins();
     const remove = await screen.findByRole("button", { name: /Remove/ });
-    expect((remove as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("The last active admin cannot be removed.")).toBeTruthy();
+    expect((remove as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(remove);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toContain("The last active admin cannot be removed."));
+    expect(seen).toEqual(["/api/v1/admins/usr_1"]);
+  });
+
+  // A removal that never answers can be cancelled: the request is aborted and the confirmation closes (guard: Cancel on a busy confirm).
+  it("Cancel on a busy removal aborts the request and closes the confirmation", async () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal("fetch", hangingAdmins(signals));
+    renderAdmins();
+    fireEvent.click(await screen.findByRole("button", { name: /Remove/ }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(signals).toHaveLength(1));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    expect(signals[0].aborted).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    vi.unstubAllGlobals();
   });
 
   it("an invitation link for a new admin is shown once and is gone when it closes", async () => {
@@ -119,25 +164,22 @@ describe("the admins list", () => {
 });
 
 describe("the new admin form", () => {
-  // The request may still add the admin, so the form stays open until the answer comes (guard: busy on the form).
-  it("Cancel, Escape and the close button do nothing while the request is out (guard: busy)", async () => {
-    let answer!: (a: { status: number; body?: unknown }) => void;
-    stubFetch((c: Call) =>
-      c.method === "POST" ? new Promise((r) => (answer = r)) : { status: 200, body: { items: [person()] } },
-    );
+  // A busy form can be cancelled: the request is aborted and the form closes, and the page says the admin may or may not
+  // have been added (guard: busy forms can be cancelled).
+  it("Cancel on the busy form aborts the request and closes the form", async () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal("fetch", hangingAdmins(signals));
     renderAdmins();
     await screen.findByRole("list", { name: "Admins" });
     fireEvent.click(screen.getByRole("button", { name: "New admin" }));
     fireEvent.change(document.getElementById("admin-email") as HTMLInputElement, { target: { value: "bo@example.com" } });
     fireEvent.click(document.querySelector('form button[type="submit"]') as HTMLButtonElement);
-    await waitFor(() => expect(answer).toBeDefined());
+    await waitFor(() => expect(signals).toHaveLength(1));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.keyDown(document.querySelector(".ant-modal") as HTMLElement, { key: "Escape" });
-    const close = document.querySelector(".ant-modal-close");
-    if (close) fireEvent.click(close);
-    expect(document.getElementById("admin-email")).not.toBeNull();
-    answer({ status: 201, body: { ...person({ id: "usr_2", email: "bo@example.com", display_name: "Bo" }), verification: { method: "link", url: LINK } } });
-    expect(await screen.findByDisplayValue(LINK)).toBeTruthy();
+    expect(signals[0].aborted).toBe(true);
+    await waitFor(() => expect(document.getElementById("admin-email")).toBeNull());
+    expect(await screen.findByText("Cancelled. The change may or may not have been saved; check the list before you try again.")).toBeTruthy();
+    vi.unstubAllGlobals();
   });
 
   // The form holds what the admin typed, so a change of person closes it (guard: useOnSessionChange).

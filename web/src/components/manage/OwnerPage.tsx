@@ -40,6 +40,21 @@ export function useOnce(): (fn: () => Promise<void>) => Promise<void> {
   };
 }
 
+// useOncePer is useOnce with one lock for each key, such as a row's ID: an action on one row runs while another row's
+// action is out, and a second action on the same row is dropped until the first one ends.
+export function useOncePer(): (key: string, fn: () => Promise<void>) => Promise<void> {
+  const running = useRef(new Set<string>());
+  return async (key, fn) => {
+    if (running.current.has(key)) return;
+    running.current.add(key);
+    try {
+      await fn();
+    } finally {
+      running.current.delete(key);
+    }
+  };
+}
+
 // useAccountID is the account the signed-in owner manages, or "" with no session.
 export function useAccountID(): string {
   return useStore(session)?.account?.id ?? "";

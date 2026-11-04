@@ -17,7 +17,7 @@ import { sessionChanged } from "../../lib/session";
 import PeopleCombobox from "../../components/share/PeopleCombobox";
 import Confirm from "../../components/Confirm";
 import NameDialog from "../../components/manage/NameDialog";
-import { OwnerOnly, useAccountID, useManageTitle, useOnce } from "../../components/manage/OwnerPage";
+import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 
 // Groups: a group is a named set of people. A permission on a team space given to a group reaches each member at once,
 // and removing a member ends that access at once.
@@ -37,7 +37,7 @@ function GroupsView() {
   const [adding, setAdding] = useState<DirectoryEntry | null>(null);
   const [comboKey, setComboKey] = useState(0);
   const [memberError, setMemberError] = useState<string | null>(null);
-  const once = useOnce();
+  const once = useOncePer();
 
   const q = useInfiniteQuery({
     queryKey: queryKey("manage", account, "groups"),
@@ -74,7 +74,7 @@ function GroupsView() {
   const refreshMembers = () => qc.invalidateQueries({ queryKey: queryKey("manage", account, "group-members") });
 
   const addMember = () =>
-    once(async () => {
+    once(`group:${open?.id ?? ""}`, async () => {
       if (!open || !adding) return;
       const stale = sessionChanged();
       setMemberError(null);
@@ -91,7 +91,7 @@ function GroupsView() {
     });
 
   const removeMember = (usr: string) =>
-    once(async () => {
+    once(`member:${usr}`, async () => {
       if (!open) return;
       const stale = sessionChanged();
       setMemberError(null);
@@ -106,7 +106,7 @@ function GroupsView() {
     });
 
   const confirmDelete = () =>
-    once(async () => {
+    once(`group:${deleting?.id ?? ""}`, async () => {
       if (!deleting) return;
       const stale = sessionChanged();
       const target = deleting;
@@ -229,9 +229,9 @@ function GroupsView() {
           label={t("groups.nameLabel")}
           action={t("groups.create")}
           onclose={() => setCreating(false)}
-          onsave={async (name) => {
+          onsave={async (name, signal) => {
             const stale = sessionChanged();
-            await createGroup(account, name);
+            await createGroup(account, name, signal);
             setCreating(false);
             if (stale()) return;
             await refreshGroups();
@@ -247,10 +247,10 @@ function GroupsView() {
           initial={renaming.name}
           action={t("groups.save")}
           onclose={() => setRenaming(null)}
-          onsave={async (name) => {
+          onsave={async (name, signal) => {
             const stale = sessionChanged();
             const g = renaming;
-            await renameGroup(account, g.id, name);
+            await renameGroup(account, g.id, name, signal);
             setRenaming(null);
             if (stale()) return;
             await refreshGroups();

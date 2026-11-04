@@ -88,6 +88,7 @@ export default function PersonDialog({ account, person, names, onclose }: Person
   const lang = useLang();
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const [read, setRead] = useState<Detail["limit"] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const once = useOnce();
@@ -101,7 +102,8 @@ export default function PersonDialog({ account, person, names, onclose }: Person
   });
   const d = q.data;
 
-  // saveLimit sets the person's limit and then reads the person again, so the dialog shows what the server applies.
+  // saveLimit sets the person's limit and then reads the person again. The dialog closes the editor and shows the value only
+  // once that read has answered, so the old value never shows beside the saved notice.
   const saveLimit = (value: number | null) =>
     once(async () => {
       const stale = sessionChanged();
@@ -109,19 +111,28 @@ export default function PersonDialog({ account, person, names, onclose }: Person
       try {
         await setPersonLimit(account, person.id, value);
         if (stale()) return;
+        const fresh = await qc.fetchQuery({ queryKey: key, queryFn: () => readDetail(account, person), staleTime: 0 });
+        if (stale()) return;
+        setRead(fresh.limit);
         setEditing(false);
         setNotice(t("storage.limitSaved"));
-        await qc.invalidateQueries({ queryKey: key });
       } catch (err) {
         if (stale()) return;
         setSaveError(failureText(err, lang));
       }
     });
 
+  // The limit the dialog shows: the last value read here, else the detail, else the person's own limit from the list. The
+  // list has the person's own limit only, so the effective value (the default when the own limit is unset) waits for the detail.
+  const current = read ?? d?.limit ?? null;
+  const ownLimit = current !== null ? current.quota_bytes : (person.quota_bytes ?? null);
+  const effective = current !== null ? current.effective_quota_bytes : (person.quota_bytes ?? undefined);
+  // The limit is known once the detail has loaded, or at once when the person has an own limit on the list.
+  const known = current !== null || person.quota_bytes != null;
+
   const limitLine = (): string => {
-    const eff = d?.limit.effective_quota_bytes;
-    if (eff === null || eff === undefined) return t("storage.noLimit");
-    return formatBytes(eff, lang);
+    if (effective === null || effective === undefined) return t("storage.noLimit");
+    return formatBytes(effective, lang);
   };
 
   return (
@@ -157,13 +168,13 @@ export default function PersonDialog({ account, person, names, onclose }: Person
           <h3 id="person-limit-title" style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 600 }}>
             {t("storage.limit")}
           </h3>
-          {d && editing ? (
-            <LimitEditor current={d.limit.quota_bytes} allowDefault onsave={saveLimit} oncancel={() => setEditing(false)} />
-          ) : d ? (
+          {known && editing ? (
+            <LimitEditor current={ownLimit} allowDefault onsave={saveLimit} oncancel={() => setEditing(false)} />
+          ) : known ? (
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <p style={{ margin: 0 }}>
                 {limitLine()}
-                {d.limit.quota_bytes === null && (
+                {ownLimit === null && (
                   <span style={{ color: "var(--ant-color-text-secondary)" }}> · {t("storage.followsDefault")}</span>
                 )}
               </p>

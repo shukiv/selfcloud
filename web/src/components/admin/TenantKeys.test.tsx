@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
@@ -12,9 +13,11 @@ const SECRET = "scl_SECRET-KEY-VALUE-1234567890";
 
 function renderKeys(qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
   render(
-    <QueryClientProvider client={qc}>
-      <TenantKeys account="acc_1" />
-    </QueryClientProvider>,
+    <App>
+      <QueryClientProvider client={qc}>
+        <TenantKeys account="acc_1" />
+      </QueryClientProvider>
+    </App>,
   );
   return qc;
 }
@@ -134,23 +137,16 @@ describe("API keys of a tenant", () => {
 
 describe("the new key dialog while a key is being created", () => {
   // The request may still create the key, so the dialog stays open until the answer comes (guard: busy on the dialog).
-  it("Cancel, Escape and the close button do nothing while the request is out (guard: busy)", async () => {
-    let answer!: (a: Answer) => void;
-    stubFetch((c: Call) =>
-      c.method === "POST" ? new Promise<Answer>((r) => (answer = r)) : { status: 200, body: { items: [] } },
-    );
+  // A busy form can be cancelled: it closes at once, and its request is aborted (busyCancel.test.tsx checks the abort).
+  it("Cancel on the busy form closes it at once (guard: busy forms can be cancelled)", async () => {
+    const { calls } = stubFetch((c: Call) => (c.method === "POST" ? new Promise<Answer>(() => undefined) : { status: 200, body: { items: [] } }));
     renderKeys();
     await screen.findByText("No API keys yet.");
     fireEvent.click(screen.getByRole("button", { name: "New key" }));
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "Deploy" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
-    await waitFor(() => expect(answer).toBeDefined());
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.keyDown(document.querySelector(".ant-modal") as HTMLElement, { key: "Escape" });
-    const close = document.querySelector(".ant-modal-close");
-    if (close) fireEvent.click(close);
-    expect(document.getElementById("new-key-name")).not.toBeNull();
-    answer({ status: 201, body: { ...key({ id: "key_2", name: "Deploy" }), key: SECRET } });
-    expect(((await screen.findByDisplayValue(SECRET)) as HTMLInputElement).id).toBe("new-key-once-value");
+    await waitFor(() => expect(document.getElementById("new-key-name")).toBeNull());
   });
 });

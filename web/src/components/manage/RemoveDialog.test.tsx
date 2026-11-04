@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
@@ -36,9 +37,11 @@ function signedAs(): Session {
 function renderDialog(onclose = vi.fn(), ondone = vi.fn()) {
   const qc = createQueryClient();
   render(
-    <QueryClientProvider client={qc}>
-      <RemoveDialog account="acc_1" person={person} candidates={[person, other]} onclose={onclose} ondone={ondone} />
-    </QueryClientProvider>,
+    <App>
+      <QueryClientProvider client={qc}>
+        <RemoveDialog account="acc_1" person={person} candidates={[person, other]} onclose={onclose} ondone={ondone} />
+      </QueryClientProvider>
+    </App>,
   );
   return { onclose, ondone };
 }
@@ -111,5 +114,29 @@ describe("the files question of the remove dialog", () => {
     renderDialog();
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(await screen.findByRole("radiogroup", { name: "My files are private, so they are not listed here. Choose what happens to them." })).toBeTruthy();
+  });
+
+  // A removal that never answers can be cancelled: the request is aborted and the dialog closes (guard: Cancel on a busy confirm).
+  it("Cancel on a busy confirmation aborts the removal and closes the dialog", async () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_path: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init.signal as AbortSignal;
+            signals.push(signal);
+            signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+      ),
+    );
+    const { onclose, ondone } = renderDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(signals).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(signals[0].aborted).toBe(true);
+    expect(onclose).toHaveBeenCalledTimes(1);
+    expect(ondone).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

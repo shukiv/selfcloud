@@ -19,6 +19,8 @@ export interface ConfirmProps {
   error?: string | null;
   onconfirm: () => void;
   onclose: () => void;
+  // oncancel, when given, closes the dialog even while busy: the parent aborts the request it has out (lib/flight.ts).
+  oncancel?: () => void;
 }
 
 export default function Confirm({
@@ -32,18 +34,21 @@ export default function Confirm({
   error = null,
   onconfirm,
   onclose,
+  oncancel,
 }: ConfirmProps) {
   const { t } = useT();
   const [typed, setTyped] = useState("");
   const ok = requireName === null || typedNameMatches(typed, requireName);
+  const closeOwn = oncancel ?? onclose;
+  const locked = busy && oncancel === undefined;
   return (
     <Modal
       open
       title={title}
-      onCancel={busy ? undefined : onclose}
+      onCancel={locked ? undefined : closeOwn}
       maskClosable={false}
       footer={[
-        <Button key="cancel" disabled={busy} onClick={onclose}>
+        <Button key="cancel" disabled={locked} onClick={closeOwn}>
           {t("common.cancel")}
         </Button>,
         <Button

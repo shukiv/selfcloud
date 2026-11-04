@@ -48,11 +48,11 @@ function LabelsView() {
     else await refresh();
   };
 
-  const save = async (body: LabelFieldBody | LabelFieldPatch) => {
+  const save = async (body: LabelFieldBody | LabelFieldPatch, signal?: AbortSignal) => {
     const stale = sessionChanged();
     const target = editing;
-    if (target === "new") await createLabelField(account, body as LabelFieldBody);
-    else if (target) await updateLabelField(account, target.id, body as LabelFieldPatch);
+    if (target === "new") await createLabelField(account, body as LabelFieldBody, signal);
+    else if (target) await updateLabelField(account, target.id, body as LabelFieldPatch, signal);
     if (stale()) return;
     setEditing(null);
     setNotice(t("labels.saved"));

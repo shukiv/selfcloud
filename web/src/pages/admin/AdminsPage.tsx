@@ -2,7 +2,7 @@
 import { UserMinus } from "lucide-react";
 import IconButton from "../../components/IconButton";
 
-import { Alert, Button, Input, Modal, Radio } from "antd";
+import { App, Alert, Button, Input, Modal, Radio } from "antd";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -12,7 +12,7 @@ import { isAdmin, session, sessionChanged } from "../../lib/session";
 import { queryKey } from "../../lib/query";
 import { createAdmin, deleteAdmin, listAdmins } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
-import { isLastActiveAdmin } from "../../lib/manage/admin";
+import { useFlight } from "../../lib/flight";
 import { personLabel, statusTone } from "../../lib/manage/people";
 import type { Person, PersonReply } from "../../lib/manage/types";
 import NotFoundPage from "../NotFoundPage";
@@ -25,7 +25,7 @@ import { useGuard, useOnSessionChange } from "../../components/admin/hooks";
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // AdminsPage lists the people who run this installation, for an installation admin only. The last active admin cannot be
-// removed: the page disables the removal and says why, and the server refuses it too.
+// removed: the server refuses it, and its refusal is shown in the confirmation.
 export default function AdminsPage() {
   const user = useStore(session)?.user;
   return isAdmin(user) ? <AdminsView /> : <NotFoundPage />;
@@ -36,7 +36,9 @@ function AdminsView() {
   const lang = useLang();
   const brandName = useStore(brand).name;
   const qc = useQueryClient();
-  const flight = useGuard();
+  const guard = useGuard();
+  const request = useFlight();
+  const { message } = App.useApp();
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [email, setEmail] = useState("");
@@ -80,12 +82,12 @@ function AdminsView() {
     e.preventDefault();
     const address = email.trim();
     if (!EMAIL.test(address)) return;
-    void flight(async () => {
+    void guard(async () => {
       const changed = sessionChanged();
       setBusy(true);
       setFormError(null);
       try {
-        const reply: PersonReply = await createAdmin({ email: address, display_name: name.trim(), verification: how });
+        const reply: PersonReply = await createAdmin({ email: address, display_name: name.trim(), verification: how }, request.start());
         if (changed()) return;
         setCreating(false);
         setEmail("");
@@ -100,20 +102,34 @@ function AdminsView() {
         if (changed()) return;
         setFormError(failureText(err, lang));
       } finally {
+        request.end();
         setBusy(false);
       }
     });
   };
 
+  // cancelForm and cancelRemove close their dialog at once, busy or not. A request on its way is aborted, and the page says
+  // the admin may or may not have been added or removed.
+  const cancelForm = () => {
+    if (request.abort()) void message.warning(t("common.cancelledMaybe"));
+    setCreating(false);
+  };
+  const cancelRemove = () => {
+    if (request.abort()) void message.warning(t("common.cancelledMaybe"));
+    setRemoving(null);
+  };
+
+  // The server decides who is the last active admin: it counts every admin and the admin keys that do not expire, and
+  // its refusal (reason last_admin) is shown in the confirmation. The page sees only the pages loaded so far.
   const confirmRemove = () => {
     const target = removing;
     if (!target) return Promise.resolve();
-    return flight(async () => {
+    return guard(async () => {
       const changed = sessionChanged();
       setRemoveBusy(true);
       setRemoveError(null);
       try {
-        await deleteAdmin(target.id);
+        await deleteAdmin(target.id, request.start());
         if (changed()) return;
         setNotice(t("admins.removed", { name: personLabel(target) }));
         setRemoving(null);
@@ -122,6 +138,7 @@ function AdminsView() {
         if (changed()) return;
         setRemoveError(failureText(err, lang));
       } finally {
+        request.end();
         setRemoveBusy(false);
       }
     });
@@ -145,38 +162,28 @@ function AdminsView() {
       {/* The list stays on screen when a refetch fails: react-query keeps the data, so the error goes above it. */}
       {!firstFailed && q.data !== undefined && (
         <ul style={list} aria-label={t("admin.admins.title")}>
-          {admins.map((a) => {
-            const last = isLastActiveAdmin(admins, a.id);
-            return (
-              <li key={a.id} style={row}>
-                <div style={rowMain}>
-                  <p style={rowTitle}>
-                    <bdi>{personLabel(a)}</bdi>
-                  </p>
-                  <p style={muted}>
-                    <bdi>{a.email}</bdi>
-                  </p>
-                  {last && (
-                    <p id={`last-admin-${a.id}`} style={muted}>
-                      {t("admins.lastHint")}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <StatusTag tone={statusTone(a.status)}>{t(`people.status.${a.status}`)}</StatusTag>
-                </div>
-                <div>
-                  <IconButton label={`${t("admins.remove")}: ${personLabel(a)}`} tip={last ? t("admins.lastHint") : t("admins.remove")} danger
-                    disabled={last}
-                    aria-describedby={last ? `last-admin-${a.id}` : undefined}
-                    onClick={() => {
-                      setRemoveError(null);
-                      setRemoving(a);
-                    }} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
-                </div>
-              </li>
-            );
-          })}
+          {admins.map((a) => (
+            <li key={a.id} style={row}>
+              <div style={rowMain}>
+                <p style={rowTitle}>
+                  <bdi>{personLabel(a)}</bdi>
+                </p>
+                <p style={muted}>
+                  <bdi>{a.email}</bdi>
+                </p>
+              </div>
+              <div>
+                <StatusTag tone={statusTone(a.status)}>{t(`people.status.${a.status}`)}</StatusTag>
+              </div>
+              <div>
+                <IconButton label={`${t("admins.remove")}: ${personLabel(a)}`} tip={t("admins.remove")} danger
+                  onClick={() => {
+                    setRemoveError(null);
+                    setRemoving(a);
+                  }} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
+              </div>
+            </li>
+          ))}
         </ul>
       )}
       {!firstFailed && q.hasNextPage && (
@@ -194,9 +201,7 @@ function AdminsView() {
           width={560}
           footer={null}
           maskClosable={false}
-          keyboard={!busy}
-          closable={!busy}
-          onCancel={busy ? undefined : () => setCreating(false)}
+          onCancel={cancelForm}
         >
           <form style={formStyle} onSubmit={add} noValidate>
             <div style={field}>
@@ -221,7 +226,7 @@ function AdminsView() {
             </fieldset>
             {formError !== null && <Alert type="error" showIcon role="alert" message={formError} />}
             <div style={foot}>
-              <Button disabled={busy} onClick={() => setCreating(false)}>{t("common.cancel")}</Button>
+              <Button onClick={cancelForm}>{t("common.cancel")}</Button>
               <Button type="primary" htmlType="submit" loading={busy} disabled={busy || !emailOk}>
                 {t("admins.new.send")}
               </Button>
@@ -252,6 +257,7 @@ function AdminsView() {
           busy={removeBusy}
           onconfirm={() => void confirmRemove()}
           onclose={() => setRemoving(null)}
+          oncancel={cancelRemove}
         />
       )}
     </div>

@@ -18,7 +18,7 @@ import ShareDialog from "../../components/share/ShareDialog";
 import SpaceSettings from "../../components/share/SpaceSettings";
 import Confirm from "../../components/Confirm";
 import NameDialog from "../../components/manage/NameDialog";
-import { OwnerOnly, useAccountID, useManageTitle, useOnce } from "../../components/manage/OwnerPage";
+import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 
 // Spaces: the team spaces of the account. Sharing a space goes through the share dialog on its root, the same one the
 // file browser uses. Deleting a space removes it and everything in it for everyone.
@@ -61,7 +61,7 @@ function SpacesView() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [sharing, setSharing] = useState<{ node: Node; space: FolderAccess } | null>(null);
   const [settings, setSettings] = useState<FolderAccess | null>(null);
-  const once = useOnce();
+  const once = useOncePer();
 
   const q = useInfiniteQuery({
     queryKey: queryKey("manage", account, "spaces"),
@@ -76,7 +76,7 @@ function SpacesView() {
 
   // openShare reads the space's root, which the share dialog works on.
   const openShare = (s: Space) =>
-    once(async () => {
+    once(s.id, async () => {
       const stale = sessionChanged();
       setActionError(null);
       try {
@@ -91,7 +91,7 @@ function SpacesView() {
 
   // openDelete reads the space's totals first, so the confirmation can say what goes.
   const openDelete = (s: Space) =>
-    once(async () => {
+    once(s.id, async () => {
       const stale = sessionChanged();
       setActionError(null);
       try {
@@ -106,7 +106,7 @@ function SpacesView() {
     });
 
   const confirmDelete = () =>
-    once(async () => {
+    once(deleting?.space.id ?? "", async () => {
       if (!deleting) return;
       const stale = sessionChanged();
       const target = deleting.space;
@@ -199,9 +199,9 @@ function SpacesView() {
           label={t("spaces.nameLabel")}
           action={t("spaces.create")}
           onclose={() => setCreating(false)}
-          onsave={async (name) => {
+          onsave={async (name, signal) => {
             const stale = sessionChanged();
-            await createSpace(account, name);
+            await createSpace(account, name, signal);
             setCreating(false);
             if (stale()) return;
             setNotice(t("spaces.created", { name }));
@@ -218,10 +218,10 @@ function SpacesView() {
           initial={renaming.name}
           action={t("spaces.save")}
           onclose={() => setRenaming(null)}
-          onsave={async (name) => {
+          onsave={async (name, signal) => {
             const stale = sessionChanged();
             const s = renaming;
-            await renameSpace(account, s.id, name);
+            await renameSpace(account, s.id, name, signal);
             setRenaming(null);
             if (stale()) return;
             await refresh();

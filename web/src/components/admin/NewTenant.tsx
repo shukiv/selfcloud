@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Checkbox, Collapse, Input, Modal, Radio, Select } from "antd";
+import { App, Alert, Button, Checkbox, Collapse, Input, Modal, Radio, Select } from "antd";
 import { useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
+import { useFlight } from "../../lib/flight";
 import { sessionChanged } from "../../lib/session";
 import { createAccount, type NewAccount } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
@@ -24,7 +25,14 @@ export default function NewTenant({
 }) {
   const { t } = useT();
   const lang = useLang();
-  const flight = useGuard();
+  const guard = useGuard();
+  const flight = useFlight();
+  const { message } = App.useApp();
+  // cancel closes the dialog at once, busy or not. A tenant on its way is aborted; the page says it may or may not have been made.
+  const cancel = () => {
+    if (flight.abort()) void message.warning(t("common.cancelledMaybe"));
+    onClose();
+  };
   const [name, setName] = useState("");
   const [noLimit, setNoLimit] = useState(false);
   const [amount, setAmount] = useState("");
@@ -57,18 +65,19 @@ export default function NewTenant({
       owner: { email: email.trim(), display_name: ownerName.trim(), verification: how },
     };
     if (externalId.trim() !== "") body.external_id = externalId.trim();
-    void flight(async () => {
+    void guard(async () => {
       const changed = sessionChanged();
       setBusy(true);
       setError(null);
       try {
-        const created = await createAccount(body);
+        const created = await createAccount(body, flight.start());
         if (changed()) return;
         onCreated(created, created.owner);
       } catch (err) {
         if (changed()) return;
         setError(failureText(err, lang));
       } finally {
+        flight.end();
         setBusy(false);
       }
     });
@@ -81,9 +90,7 @@ export default function NewTenant({
       width={560}
       footer={null}
       maskClosable={false}
-      keyboard={!busy}
-      closable={!busy}
-      onCancel={busy ? undefined : onClose}
+      onCancel={cancel}
     >
       <form style={formStyle} onSubmit={submit} noValidate>
         <div style={field}>
@@ -164,7 +171,7 @@ export default function NewTenant({
 
         {error !== null && <Alert type="error" showIcon role="alert" message={error} />}
         <div style={foot}>
-          <Button disabled={busy} onClick={onClose}>{t("common.cancel")}</Button>
+          <Button onClick={cancel}>{t("common.cancel")}</Button>
           <Button type="primary" htmlType="submit" loading={busy} disabled={busy || !nameOk || !emailOk}>
             {t("tenant.new.create")}
           </Button>

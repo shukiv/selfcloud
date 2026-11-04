@@ -45,6 +45,7 @@ import { l1Checks } from './l1.mjs';
 import { ic2Checks } from './ic2.mjs';
 import { l4Checks } from './l4.mjs';
 import { ksChecks } from './ks.mjs';
+import { fu3aChecks } from './fu3a.mjs';
 import { pickMenuEntry } from './menu.mjs';
 
 const execFileP = promisify(execFile);
@@ -766,7 +767,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -847,6 +848,20 @@ async function main() {
         ksPage.close();
         ksBrowser.kill();
         ksBrowser = null;
+      }
+    }
+    // The web follow-ups of fu3a (decision 76): the invitation dialog's focus, in its own browser.
+    if (!only || onlySet.has('fu3a')) {
+      const fuLaunch = await launchBrowser(await findBrowser(), join(dir, 'fu3a-profile'));
+      const fuPage = new Page(fuLaunch.wsUrl);
+      fuPage.base = base;
+      try {
+        await fuPage.start(EXPECTED);
+        await fu3aChecks(h, { page: fuPage, base, OWNER });
+        check(fuPage.errors.length === 0, `the fu3a browser has no console errors or policy violations (${fuPage.errors.join(' | ') || 'none'})`);
+      } finally {
+        fuPage.close();
+        fuLaunch.proc.kill();
       }
     }
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
