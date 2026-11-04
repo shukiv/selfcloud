@@ -54,6 +54,11 @@ async function dragOnto(page, fromSel, toSel) {
   }
   await sleep(150);
   const state = await page.evaluate(`document.querySelector(${q(toSel)})?.dataset.dropState ?? null`);
+  // A drop state other than ok once in a full run (gate stfu4c, 1 of 5; d1 alone 5 of 5 ok): say what the pointer was over.
+  if (state !== 'ok') {
+    const seen = await page.evaluate(`(() => { const t = document.querySelector(${q(toSel)}); const r = t?.getBoundingClientRect(); const at = document.elementFromPoint(${b.x}, ${b.y}); return { target: r ? [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)] : null, point: [${Math.round(b.x)}, ${Math.round(b.y)}], at: at ? at.tagName.toLowerCase() + '.' + String(at.className).split(' ')[0] + (at.closest('[data-drop-name]') ? ' in ' + at.closest('[data-drop-name]').dataset.dropName : '') : null, dragging: !!document.querySelector('[data-drop-state]'), scrollY: Math.round(scrollY) }; })()`);
+    console.log(`DIAG d1 drag: ${JSON.stringify(seen)}`);
+  }
   await mouse(page, 'mouseReleased', b.x, b.y);
   await sleep(300);
   return state;
