@@ -82,6 +82,8 @@ type Server struct {
 	limits     map[string]*limiter // rate limiters by "endpoint.dimension"
 	// limitClock is the time the rate limiters read. Production keeps time.Now; tests freeze it.
 	limitClock func() time.Time
+	// sessionClock is the time the web sessions read. Production keeps time.Now; tests move it.
+	sessionClock func() time.Time
 	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (round 2, item 1).
 	dropFlight dropFlight
 	pwFails    passwordFails // wrong current passwords, per session, for POST /me/password
@@ -305,6 +307,7 @@ func New(opts Options) (*Server, error) {
 	}
 	s := &Server{
 		limitClock:    time.Now,
+		sessionClock:  time.Now,
 		cfg:           cfg,
 		log:           log,
 		store:         opts.Store,

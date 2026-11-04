@@ -119,6 +119,8 @@ type SessionsConfig struct {
 	IdleTimeout Duration `yaml:"idle_timeout"`
 	// MaxAge ends a session this long after it began, however busy it is.
 	MaxAge Duration `yaml:"max_age"`
+	// ShortIdleTimeout ends a session the browser did not keep ("Keep me signed in" unticked) after this long unused.
+	ShortIdleTimeout Duration `yaml:"short_idle_timeout"`
 }
 
 // MailConfig controls outgoing mail. Mail is configured when smtp_host and from are set.
@@ -625,8 +627,9 @@ func Defaults() *Config {
 			SignInURLTemplate: "{public_url}/sign-in#token={token}",
 		},
 		Sessions: SessionsConfig{
-			IdleTimeout: Duration(168 * time.Hour),
-			MaxAge:      Duration(720 * time.Hour),
+			IdleTimeout:      Duration(168 * time.Hour),
+			MaxAge:           Duration(720 * time.Hour),
+			ShortIdleTimeout: Duration(12 * time.Hour),
 		},
 		UI:     UIConfig{Enabled: true, Brand: BrandConfig{Name: "Selfcloud", Accent: "#053D8E"}},
 		Office: OfficeConfig{LockMinutes: 30, MaxFileBytes: 50 * MiB, TokenMinutes: 600},
@@ -818,6 +821,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Sessions.IdleTimeout <= 0 || c.Sessions.MaxAge <= 0 {
 		bad("sessions.idle_timeout and sessions.max_age must be positive")
+	}
+	if c.Sessions.ShortIdleTimeout <= 0 || c.Sessions.ShortIdleTimeout > c.Sessions.IdleTimeout {
+		bad("sessions.short_idle_timeout must be positive and not more than sessions.idle_timeout")
 	}
 	if c.RateLimit.PerIPPerMinute <= 0 || c.RateLimit.PerEmailPerMinute <= 0 {
 		bad("rate_limit values must be positive")

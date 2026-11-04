@@ -31,6 +31,7 @@
   "login.email": "Email",
   "login.password": "Password",
   "login.forgot": "Forgot password?",
+  "login.keep": "Keep me signed in",
   "login.submit": "Sign in",
   "login.pick.title": "Choose an account",
   "login.pick.body": "This email address is in more than one account. Choose the account to sign in to.",

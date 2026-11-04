@@ -7364,6 +7364,13 @@ components:
         account:
           type: string
           description: The account to sign in to, when the email is in several.
+        remember:
+          type: boolean
+          description: |
+            The "Keep me signed in" box. `false` makes a session the browser does not keep: its cookie has no
+            Max-Age, so the browser drops it when it closes, and the server ends it `sessions.short_idle_timeout`
+            (12 hours by default) after its last use. `true`, or left out, keeps the session for `sessions.max_age`
+            (30 days by default), as API clients have always had it.
 
     ForgotRequest:
       type: object

@@ -42,14 +42,14 @@ func checkPassword(p string) error {
 	return nil
 }
 
-// newSession makes a session for u, begun now by r's client. It returns the cookie value and the
-// session to store. Only the hash of the value is stored.
-func (s *Server) newSession(r *http.Request, u *store.User, now time.Time) (string, *store.Session) {
+// newSession makes a session for u, begun now by r's client. short marks a session the browser did not keep
+// (decision 75). It returns the cookie value and the session to store. Only the hash of the value is stored.
+func (s *Server) newSession(r *http.Request, u *store.User, now time.Time, short bool) (string, *store.Session) {
 	secret, hash := auth.NewToken()
 	csrf, _ := auth.NewToken()
 	info := infoFrom(r.Context())
 	sess := &store.Session{IDHash: hash, UserID: u.ID, AccountID: u.AccountID, CSRFToken: csrf,
-		CreatedAt: now, LastSeenAt: now, ExpiresAt: s.sessionExpiry(now, now),
+		CreatedAt: now, LastSeenAt: now, ExpiresAt: s.sessionExpiry(now, now, short), Short: short,
 		UserAgent: truncate(r.UserAgent(), 256)}
 	if info != nil && info.ip.IsValid() {
 		sess.IP = info.ip.String()
@@ -59,12 +59,18 @@ func (s *Server) newSession(r *http.Request, u *store.User, now time.Time) (stri
 
 // setSessionCookie sets the session cookie. HttpOnly keeps script away from it; SameSite=Lax
 // keeps it off cross-site requests; Path=/ and the __Host- name (https only) pin it to this site.
-func (s *Server) setSessionCookie(w http.ResponseWriter, value string) {
+// A kept session's cookie lasts sessions.max_age; a session the browser did not keep (short) is a
+// browser-session cookie, with neither Max-Age nor Expires, so the browser drops it when it closes.
+func (s *Server) setSessionCookie(w http.ResponseWriter, value string, short bool) {
+	var maxAge int
+	if !short {
+		maxAge = int(s.cfg.Sessions.MaxAge.D().Seconds())
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.sessionCookie,
 		Value:    value,
 		Path:     "/",
-		MaxAge:   int(s.cfg.Sessions.MaxAge.D().Seconds()),
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   s.sessionCookie != "selfcloud_session",
 		SameSite: http.SameSiteLaxMode,
@@ -93,7 +99,7 @@ type signedIn struct {
 // writeSignedIn sets the cookie and answers with the user. The CSRF token is in the body, so
 // the page can make unsafe requests.
 func (s *Server) writeSignedIn(w http.ResponseWriter, secret string, u *store.User, sess *store.Session) {
-	s.setSessionCookie(w, secret)
+	s.setSessionCookie(w, secret, sess.Short)
 	writeJSON(w, http.StatusOK, signedIn{User: toUserJSON(u), CSRFToken: sess.CSRFToken})
 }
 
@@ -189,7 +195,8 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) error {
 		if err := s.endBrowserSession(r, tx); err != nil {
 			return err
 		}
-		secret, sess = s.newSession(r, u, at)
+		// A verification link is the person's own choice of nothing: the session is not kept (decision 75).
+		secret, sess = s.newSession(r, u, at, true)
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
 		}
@@ -213,6 +220,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 		Account  string `json:"account"`
+		// Remember is the "Keep me signed in" box. Left out, the session is kept, as API clients have always had it.
+		Remember *bool `json:"remember"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -306,7 +315,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		secret, sess = s.newSession(r, u, store.Now())
+		short := in.Remember != nil && !*in.Remember
+		secret, sess = s.newSession(r, u, store.Now(), short)
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
 		}
@@ -585,7 +595,8 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		if err := s.endBrowserSession(r, tx); err != nil {
 			return err
 		}
-		secret, sess = s.newSession(r, u, at)
+		// A reset link is not the person's choice of a box, so the session is not kept (decision 75).
+		secret, sess = s.newSession(r, u, at, true)
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
 		}
@@ -936,7 +947,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 		if err := tx.DeleteUserSessions(ctx, found.ID); err != nil {
 			return err
 		}
-		secret, sess = s.newSession(r, found, now)
+		// The new session keeps the choice of the one it replaces (decision 75).
+		secret, sess = s.newSession(r, found, now, sessionOf(r).Short)
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
 		}
@@ -945,7 +957,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
-	s.setSessionCookie(w, secret)
+	s.setSessionCookie(w, secret, sess.Short)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

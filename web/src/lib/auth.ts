@@ -49,9 +49,12 @@ export async function loadMe(): Promise<Me | null> {
   }
 }
 
-export function signIn(email: string, password: string, account?: string): Promise<SignedIn> {
-  const body: Record<string, string> = { email, password };
+// signIn checks the password. remember is the "Keep me signed in" box (decision 75): false makes a session the browser
+// does not keep. Left out, the session is kept, as API clients have always had it.
+export function signIn(email: string, password: string, account?: string, remember?: boolean): Promise<SignedIn> {
+  const body: Record<string, string | boolean> = { email, password };
   if (account) body.account = account;
+  if (remember !== undefined) body.remember = remember;
   return api<SignedIn>('POST', '/api/v1/auth/login', { body, noRedirect: true });
 }
 

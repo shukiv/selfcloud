@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useState, type FormEvent } from "react";
-import { Button, Input, Radio, Typography } from "antd";
+import { Button, Checkbox, Input, Radio, Typography } from "antd";
 import { ApiError } from "../lib/api";
 import { establish, signIn } from "../lib/auth";
+import { keepChoice, saveKeepChoice } from "../lib/signin";
 import { errorMessage, type Message } from "../lib/errors";
 import { go } from "../lib/router";
 import { afterSignIn } from "../lib/next";
@@ -14,11 +15,13 @@ import Alert from "../components/Alert";
 import Field, { describedBy } from "../components/Field";
 import PasswordField from "../components/PasswordField";
 
-// LoginPage signs in with an email and a password. An email in several accounts asks which one.
+// LoginPage signs in with an email and a password. An email in several accounts asks which one. "Keep me signed in"
+// is unticked by default; the browser remembers the last choice (decision 75).
 export default function LoginPage() {
   const { t } = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [keep, setKeep] = useState(() => keepChoice());
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [error, setError] = useState<Message | null>(null);
@@ -46,7 +49,7 @@ export default function LoginPage() {
     // address then no longer carries the next the person came from.
     const next = new URLSearchParams(window.location.search).get("next");
     try {
-      const signed = await signIn(email.trim(), password, account || undefined);
+      const signed = await signIn(email.trim(), password, account || undefined, keep);
       await establish(signed);
       // One navigation, to the place the person is going: the gate does not have to move the page on a second time.
       go(afterSignIn(next, signed.user), { replace: true });
@@ -93,6 +96,18 @@ export default function LoginPage() {
         <p style={{ margin: "0 0 16px" }}>
           <Typography.Link href="/forgot">{t("login.forgot")}</Typography.Link>
         </p>
+        <Checkbox
+          id="login-keep"
+          className="login-keep"
+          checked={keep}
+          onChange={(e) => {
+            setKeep(e.target.checked);
+            saveKeepChoice(e.target.checked);
+          }}
+          style={{ margin: "0 0 16px" }}
+        >
+          {t("login.keep")}
+        </Checkbox>
         {accounts && (
           <fieldset style={{ border: 0, padding: 0, margin: "0 0 16px" }}>
             <legend style={{ fontWeight: 600, marginBottom: 6 }}>{t("login.pick.title")}</legend>

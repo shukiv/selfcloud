@@ -129,6 +129,7 @@ Content search keeps the words of each file in the database. Deleting the text o
 | `versions.max_count` | `100` | Most versions a file keeps that are not kept forever; the oldest go first. `0` means no count limit. |
 | `versions.max_age` | `720h` | How long a version that is not kept forever is kept after its content was replaced. `0` means no age limit. |
 | `versions.max_kept` | `200` | Most versions of one file that may be kept forever. Marking another is refused with a conflict. Must be positive. |
+| `sessions.short_idle_timeout` | `12h` | How long a session the browser did not keep ("Keep me signed in" unticked on the sign-in page, or `remember: false` in the API) may go unused before the server ends it. Its cookie is a browser-session cookie, so it also ends when the browser closes. Must be more than `0` and not more than `sessions.idle_timeout`, so an installation whose idle timeout is under 12 hours sets this too; the server does not start otherwise. A kept session lasts `sessions.idle_timeout` unused and `sessions.max_age` in all. |
 | `cors.allowed_origins` | none | Origins whose pages may call the API, as exact origins such as `https://app.example.com`. Empty turns CORS off. |
 | `metrics_listen` | none | Serve `/metrics` on a separate address. |
 | `admin_key_file` | none | File holding an admin key to add on start. |

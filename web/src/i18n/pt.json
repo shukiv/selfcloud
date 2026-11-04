@@ -31,6 +31,7 @@
   "login.email": "Correio eletrónico",
   "login.password": "Palavra-passe",
   "login.forgot": "Esqueceu a palavra-passe?",
+  "login.keep": "Manter a sessão iniciada",
   "login.submit": "Iniciar sessão",
   "login.pick.title": "Escolha uma conta",
   "login.pick.body": "Este endereço de correio eletrónico está em mais do que uma conta. Escolha a conta em que quer entrar.",

@@ -300,7 +300,8 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 		}
 		u = found
 		next = l.Next
-		secret, sess = s.newSession(r, u, at)
+		// An application's sign-in link decides the lifetime, as before: the session is kept (decision 75).
+		secret, sess = s.newSession(r, u, at, false)
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
 		}
@@ -314,7 +315,7 @@ func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) 
 	if stateErr != nil {
 		return stateErr
 	}
-	s.setSessionCookie(w, secret)
+	s.setSessionCookie(w, secret, sess.Short)
 	writeJSON(w, http.StatusOK, signedInLink{
 		signedIn: signedIn{User: toUserJSON(u), CSRFToken: sess.CSRFToken},
 		Next:     next,

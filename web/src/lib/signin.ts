@@ -2,7 +2,22 @@
 
 import { ApiError } from './apiError';
 import { afterSignIn } from './next';
+import { readPref, writePref } from './prefs';
 import type { User } from './types';
+
+// PREF_KEEP is the browser's last choice of the "Keep me signed in" box on the sign-in page (decision 75).
+export const PREF_KEEP = 'selfcloud.keepSignedIn';
+
+// keepChoice is the box's last choice in this browser. It is unticked when nothing is stored, or when the storage
+// cannot be read.
+export function keepChoice(): boolean {
+  return readPref(PREF_KEEP) === '1';
+}
+
+// saveKeepChoice remembers the box's choice in this browser. A choice that cannot be saved lasts for the page only.
+export function saveKeepChoice(keep: boolean): void {
+  writePref(PREF_KEEP, keep ? '1' : '0');
+}
 
 // tokenFromFragment reads the sign-in token from a URL fragment such as "#token=...". It returns ""
 // when there is none.

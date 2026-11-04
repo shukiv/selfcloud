@@ -44,6 +44,7 @@ import { d3Checks } from './d3.mjs';
 import { l1Checks } from './l1.mjs';
 import { ic2Checks } from './ic2.mjs';
 import { l4Checks } from './l4.mjs';
+import { ksChecks } from './ks.mjs';
 import { pickMenuEntry } from './menu.mjs';
 
 const execFileP = promisify(execFile);
@@ -627,6 +628,8 @@ async function main() {
   // l1Browser is the list's own browser, while its checks run (see the l1 call).
   let l1Browser = null;
   let ic2Browser = null;
+  // ksBrowser is the sign-in box's own browser, while its checks run (see the ks call).
+  let ksBrowser = null;
   let page = null;
   let passed = false;
   try {
@@ -763,7 +766,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, d3, x3, x4, x6 or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -829,6 +832,22 @@ async function main() {
       await l4Checks(h, { page, base, accountKey, teamA, teamB, fake, dir, ownerPage: page, signInAs: async (p) => { await signOut(p); await signIn(p, OWNER); } });
       await signOut(page);
       await signIn(page, MEMBER);
+    }
+    // The sign-in box's checks (ks) run in their own browser with their own profile, so the first sign-in there is a fresh browser's.
+    if (!only || onlySet.has('ks')) {
+      const ksLaunch = await launchBrowser(await findBrowser(), join(dir, 'ks-profile'));
+      ksBrowser = ksLaunch.proc;
+      const ksPage = new Page(ksLaunch.wsUrl);
+      ksPage.base = base;
+      try {
+        await ksPage.start(EXPECTED);
+        await ksChecks(h, { page: ksPage, base, MEMBER });
+        check(ksPage.errors.length === 0, `the sign-in box's browser has no console errors or policy violations (${ksPage.errors.join(' | ') || 'none'})`);
+      } finally {
+        ksPage.close();
+        ksBrowser.kill();
+        ksBrowser = null;
+      }
     }
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
@@ -899,6 +918,7 @@ async function main() {
     browser?.kill();
     l1Browser?.kill();
     ic2Browser?.kill();
+    ksBrowser?.kill();
     server.kill();
     await fake.close();
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {

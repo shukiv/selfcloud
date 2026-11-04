@@ -31,6 +31,7 @@
   "login.email": "דוא״ל",
   "login.password": "סיסמה",
   "login.forgot": "שכחתם סיסמה?",
+  "login.keep": "הישארו מחוברים",
   "login.submit": "התחברו",
   "login.pick.title": "בחרו חשבון",
   "login.pick.body": "כתובת הדוא״ל הזאת נמצאת ביותר מחשבון אחד. בחרו את החשבון שאליו תרצו להתחבר.",

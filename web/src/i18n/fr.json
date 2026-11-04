@@ -31,6 +31,7 @@
   "login.email": "Adresse e-mail",
   "login.password": "Mot de passe",
   "login.forgot": "Mot de passe oublié ?",
+  "login.keep": "Rester connecté",
   "login.submit": "Se connecter",
   "login.pick.title": "Choisissez un compte",
   "login.pick.body": "Cette adresse e-mail figure dans plusieurs comptes. Choisissez le compte auquel vous connecter.",

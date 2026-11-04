@@ -78,7 +78,7 @@ func (s *Server) authenticateSession(r *http.Request) (*auth.Principal, *store.S
 	if err != nil {
 		return nil, nil, err
 	}
-	now := time.Now()
+	now := s.sessionClock()
 	// An impersonation ends an hour after it began, whatever its idle expiry says (decision 41). The row stays, so the
 	// Go back route can still restore the admin's session.
 	if sess.ImpersonatorID != "" && !now.Before(sess.CreatedAt.Add(impersonationTTL)) {
@@ -165,13 +165,18 @@ func (s *Server) checkCSRF(r *http.Request, sess *store.Session) error {
 // past its maximum age).
 func (s *Server) touchSession(ctx context.Context, sess *store.Session, now time.Time) error {
 	return s.store.Write(ctx, func(tx *store.Tx) error {
-		return tx.TouchSession(ctx, sess.IDHash, now, s.sessionExpiry(sess.CreatedAt, now))
+		return tx.TouchSession(ctx, sess.IDHash, now, s.sessionExpiry(sess.CreatedAt, now, sess.Short))
 	})
 }
 
-// sessionExpiry returns when a session that began at created, and was last used at now, ends.
-func (s *Server) sessionExpiry(created, now time.Time) time.Time {
-	idle := now.Add(s.cfg.Sessions.IdleTimeout.D())
+// sessionExpiry returns when a session that began at created, and was last used at now, ends. A session the browser
+// did not keep (short) ends sessions.short_idle_timeout after its last use; a kept one, sessions.idle_timeout.
+func (s *Server) sessionExpiry(created, now time.Time, short bool) time.Time {
+	idleFor := s.cfg.Sessions.IdleTimeout.D()
+	if short {
+		idleFor = s.cfg.Sessions.ShortIdleTimeout.D()
+	}
+	idle := now.Add(idleFor)
 	if abs := created.Add(s.cfg.Sessions.MaxAge.D()); abs.Before(idle) {
 		return abs
 	}

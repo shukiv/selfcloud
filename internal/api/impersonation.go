@@ -241,7 +241,8 @@ func (s *Server) handleSignInAs(w http.ResponseWriter, r *http.Request) error {
 	}
 	ctx := r.Context()
 	now := time.Now()
-	secret, next := s.newSession(r, &store.User{ID: r.PathValue("usr"), AccountID: acc.ID}, now)
+	// The sign-in-as takes the admin's choice of box: an unticked admin's sign-in-as is a browser-session one too.
+	secret, next := s.newSession(r, &store.User{ID: r.PathValue("usr"), AccountID: acc.ID}, now, sess.Short)
 	var target *store.User
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		u, err := tx.User(ctx, acc.ID, r.PathValue("usr"))
@@ -283,8 +284,8 @@ func (s *Server) handleSignInAs(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.pwFails.clear(sess.IDHash)
 	parked, _ := r.Cookie(s.sessionCookie)
-	s.setReturnCookie(w, parked.Value)
-	s.setSessionCookie(w, secret)
+	s.setReturnCookie(w, parked.Value, sess.Short)
+	s.setSessionCookie(w, secret, next.Short)
 	writeJSON(w, http.StatusOK, signedIn{User: toUserJSON(target), CSRFToken: next.CSRFToken})
 	return nil
 }
@@ -345,7 +346,7 @@ func (s *Server) handleEndImpersonation(w http.ResponseWriter, r *http.Request) 
 		s.clearSessionCookie(w)
 		return err
 	}
-	s.setSessionCookie(w, rc.Value)
+	s.setSessionCookie(w, rc.Value, admin.session.Short)
 	writeJSON(w, http.StatusOK, signedIn{User: toUserJSON(admin.user), CSRFToken: admin.session.CSRFToken})
 	return nil
 }
@@ -468,12 +469,16 @@ func (s *Server) returnCookieName() string {
 
 // setReturnCookie parks the admin's session cookie value. HttpOnly keeps script away from it, SameSite=Strict keeps
 // it off every cross-site request, and the path sends it only to the Go back route.
-func (s *Server) setReturnCookie(w http.ResponseWriter, value string) {
+func (s *Server) setReturnCookie(w http.ResponseWriter, value string, short bool) {
+	var maxAge int
+	if !short {
+		maxAge = int(s.cfg.Sessions.MaxAge.D().Seconds())
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.returnCookieName(),
 		Value:    value,
 		Path:     impersonationPath,
-		MaxAge:   int(s.cfg.Sessions.MaxAge.D().Seconds()),
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   s.sessionCookie != "selfcloud_session",
 		SameSite: http.SameSiteStrictMode,

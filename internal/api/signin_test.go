@@ -416,7 +416,8 @@ func TestCookieAttributes(t *testing.T) {
 	rec := call(t, s, "POST", "/api/v1/auth/verify", "", map[string]any{"token": token, "password": testPassword})
 	wantStatus(t, rec, 200)
 	c := cookieNamed(t, rec, "selfcloud_session")
-	if c.Secure || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.Path != "/" || c.MaxAge <= 0 {
+	// A verification's session is not kept, so its cookie is a browser-session one with no Max-Age (decision 75).
+	if c.Secure || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.Path != "/" || c.MaxAge != 0 {
 		t.Errorf("http cookie = %+v", c)
 	}
 

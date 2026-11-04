@@ -294,6 +294,14 @@ a {
   align-self: flex-start;
   margin-block-start: 1px;
 }
+/* The sign-in page's "Keep me signed in" box: a finger gets the 44 px target the other controls have. */
+@media (pointer: coarse) {
+  .login-keep.ant-checkbox-wrapper {
+    min-block-size: 44px;
+    align-items: center;
+  }
+}
+
 /* A finger gets the 44 px target the other sidebar targets have (the tree rows and the New button take 44 on a coarse pointer). */
 @media (pointer: coarse) {
   .shell-menu.ant-menu .shell-storage-item.ant-menu-item {
