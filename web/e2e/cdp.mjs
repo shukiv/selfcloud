@@ -79,6 +79,9 @@ export class Page {
     this.requests = [];
     // sent records each request's method and URL, so a test can count the pieces of an upload.
     this.sent = [];
+    // inflight holds the requests not yet finished, by the browser's request ID: { url, at (ms), status (0 until the
+    // answer's headers come) }. A wait that times out prints it, so a request that never ended can be named.
+    this.inflight = new Map();
     // expectedAnswers maps a name the run chose to the URLs of the failed requests it caused on
     // purpose (for example a 401 for a wrong password). The browser logs each failed request; the
     // run counts these and checks that they came from the step it ran.
@@ -145,7 +148,14 @@ export class Page {
         for (const f of s.callFrames ?? []) frames.push(`${f.functionName || '?'}@${(f.url ?? '').split('/').pop()}:${f.lineNumber}:${f.columnNumber}`);
       }
       this.sent.push({ method: p.request.method, url: p.request.url, initiator: frames.slice(0, 12).join(' < ') });
+      this.inflight.set(p.requestId, { url: p.request.url, at: Date.now(), status: 0 });
     });
+    this.on('Network.responseReceived', (p) => {
+      const r = this.inflight.get(p.requestId);
+      if (r) r.status = p.response.status;
+    });
+    this.on('Network.loadingFinished', (p) => this.inflight.delete(p.requestId));
+    this.on('Network.loadingFailed', (p) => this.inflight.delete(p.requestId));
     await this.send('Runtime.enable');
     // Async stacks, so a request's initiator shows the code that awaited its way to the fetch.
     await this.send('Runtime.setAsyncCallStackDepth', { maxDepth: 8 });

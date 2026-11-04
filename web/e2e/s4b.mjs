@@ -152,8 +152,16 @@ const SETTLED = `new Promise((resolve) => {
   const before = where();
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const buttons = [...document.querySelectorAll(${JSON.stringify(CONVERT)})];
-    const moving = document.getAnimations().some((a) => a.playState === 'running' && a.effect && a.effect.target instanceof Element && buttons.some((b) => a.effect.target.contains(b)));
-    resolve(buttons.length >= 2 && !moving && where() === before);
+    // An animation counts until it has finished: antd's zoom is first attached paused at its first frame (scale 0.2), and is
+    // only set running a little later. A wait that looked only for a running animation read 9 px there (gate fu3stackb).
+    const moving = document.getAnimations().some((a) => a.playState !== 'finished' && a.effect && a.effect.target instanceof Element && buttons.some((b) => a.effect.target.contains(b)));
+    // Nothing around a button is scaled: the button and every box that holds it are at their full size.
+    const scaled = buttons.some((b) => { for (let e = b; e; e = e.parentElement) { const t = getComputedStyle(e).transform; if (t !== 'none') { const m = new DOMMatrixReadOnly(t); if (Math.abs(m.a - 1) > 0.001 || Math.abs(m.d - 1) > 0.001) return true; } } return false; });
+    // No box around a button is in an antd motion. antd puts its motion class (ant-zoom-appear and its steps) on the dialog from
+    // the first frame it draws and takes it away when the zoom has ended. Its first step has no transform and no animation, so
+    // the two checks above pass there; the zoom then starts, at scale 0.2 (9 px read, gate fu3stackb and this machine).
+    const inMotion = buttons.some((b) => { for (let e = b; e; e = e.parentElement) { if (/(^|\\s)[\\w-]+-(appear|enter|leave)(\\s|$)/.test(String(e.className))) return true; } return false; });
+    resolve(buttons.length >= 2 && !moving && !scaled && !inMotion && where() === before);
   }));
 })`;
 

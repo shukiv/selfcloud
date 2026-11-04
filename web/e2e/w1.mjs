@@ -223,6 +223,11 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
       // Diagnostics (fu3b, item 8): what the page shows when the listing has not come, and which of its reads have answered.
       const state = await page.evaluate(`JSON.stringify({ path: location.pathname, busy: !!document.querySelector('[aria-busy="true"]'), alert: document.querySelector('[role="alert"]')?.textContent?.slice(0, 160) ?? null, status: document.querySelector('[role="status"]')?.textContent?.slice(0, 80) ?? null, rows: document.querySelectorAll('[role="row"],[role="option"]').length, files: performance.getEntriesByType('resource').filter((r) => /\\/children|\\/me$|\\/places?/.test(r.name)).map((r) => r.name.replace(/.*\\/api/, '') + ' ' + r.responseStatus) })`);
       console.log(`DIAG open ${view} after ${Date.now() - started} ms: ${state}`);
+      // What the page is waiting on (the stack gate fu3stackb found no rows, no alert and no finished read after 15 s): the
+      // document's state, the start of its text, its errors, and every request of this origin that has not ended.
+      const doc = await page.evaluate(`JSON.stringify({ ready: document.readyState, root: document.getElementById('root')?.childElementCount ?? null, list: !!document.querySelector('.files-list'), text: document.body.innerText.replace(/\\s+/g, ' ').slice(0, 240) })`).catch((x) => String(x));
+      const unended = [...page.inflight.values()].filter((r) => r.url.startsWith(page.base)).map((r) => `${r.url.slice(page.base.length)} status ${r.status} for ${Date.now() - r.at} ms`);
+      console.log(`DIAG open ${view} page ${doc}; requests not ended: ${unended.join(' ; ') || 'none'}; errors: ${page.errors.slice(-5).join(' | ') || 'none'}`);
       throw e;
     }
     console.log(`DIAG open ${view} listed after ${Date.now() - started} ms`);
