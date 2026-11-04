@@ -46,6 +46,9 @@ async function centreOf(page, selector, timeout = 10000) {
 async function dragOnto(page, fromSel, toSel) {
   const a = await centreOf(page, fromSel);
   const b = await centreOf(page, toSel);
+  // What the press lands on, and the sidebar's scroll, before the drag (for the DIAG below).
+  const sideScroll = `(() => { const s = [...document.querySelectorAll('.shell-sider *')].find((e) => e.scrollHeight > e.clientHeight + 1 && getComputedStyle(e).overflowY !== 'visible'); return s ? Math.round(s.scrollTop) : null; })()`;
+  const before = await page.evaluate(`({ press: (() => { const at = document.elementFromPoint(${a.x}, ${a.y}); const row = at?.closest('[data-id]'); return at ? at.tagName.toLowerCase() + (row ? ' in row ' + (row.getAttribute('aria-label') ?? '') : '') : null; })(), side: ${sideScroll} })`);
   await mouse(page, 'mouseMoved', a.x, a.y);
   await mouse(page, 'mousePressed', a.x, a.y);
   for (let i = 1; i <= 6; i++) {
@@ -56,8 +59,8 @@ async function dragOnto(page, fromSel, toSel) {
   const state = await page.evaluate(`document.querySelector(${q(toSel)})?.dataset.dropState ?? null`);
   // A drop state other than ok once in a full run (gate stfu4c, 1 of 5; d1 alone 5 of 5 ok): say what the pointer was over.
   if (state !== 'ok') {
-    const seen = await page.evaluate(`(() => { const t = document.querySelector(${q(toSel)}); const r = t?.getBoundingClientRect(); const at = document.elementFromPoint(${b.x}, ${b.y}); return { target: r ? [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)] : null, point: [${Math.round(b.x)}, ${Math.round(b.y)}], at: at ? at.tagName.toLowerCase() + '.' + String(at.className).split(' ')[0] + (at.closest('[data-drop-name]') ? ' in ' + at.closest('[data-drop-name]').dataset.dropName : '') : null, dragging: !!document.querySelector('[data-drop-state]'), scrollY: Math.round(scrollY) }; })()`);
-    console.log(`DIAG d1 drag: ${JSON.stringify(seen)}`);
+    const seen = await page.evaluate(`(() => { const t = document.querySelector(${q(toSel)}); const r = t?.getBoundingClientRect(); const at = document.elementFromPoint(${b.x}, ${b.y}); return { target: r ? [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)] : null, point: [${Math.round(b.x)}, ${Math.round(b.y)}], at: at ? at.tagName.toLowerCase() + '.' + String(at.className).split(' ')[0] + (at.closest('[data-drop-name]') ? ' in ' + at.closest('[data-drop-name]').dataset.dropName : '') : null, dragging: !!document.querySelector('[data-drop-state]'), scrollY: Math.round(scrollY), side: ${sideScroll}, selection: String(getSelection() ?? '').slice(0, 40) }; })()`);
+    console.log(`DIAG d1 drag: ${JSON.stringify({ ...seen, before })}`);
   }
   await mouse(page, 'mouseReleased', b.x, b.y);
   await sleep(300);

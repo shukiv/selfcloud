@@ -52,11 +52,16 @@ async function step(name, fn) {
 }
 
 // until polls a page expression with a bound, and returns when it is true.
+// unendedOf names the page's requests that have not ended, with their status and age: a listing that never shows says
+// whether its read is still out (gate stfu4d: twice "Loading the folder" in the player sections).
+const unendedOf = (page) =>
+  [...(page.inflight?.values() ?? [])].map((r) => `${r.url.startsWith(page.base) ? r.url.slice(page.base.length) : r.url.slice(0, 80)} status ${r.status} for ${Date.now() - r.at} ms`).join(' ; ') || 'none';
+
 async function until(page, expr, ms = 15000, what = expr) {
   const deadline = Date.now() + ms;
   for (;;) {
     if (await page.evaluate(`!!(${expr})`).catch(() => false)) return;
-    if (Date.now() > deadline) { const st = await page.evaluate(`JSON.stringify({ path: location.pathname, title: document.title, nav: performance.getEntriesByType("navigation")[0]?.type, alerts: [...document.querySelectorAll("[role=alert]")].map((a) => a.innerText), text: document.body.innerText.slice(0, 400) })`).catch((e) => "state-unavailable " + e); throw new Error(`timed out (${ms} ms) waiting for: ${what} | DIAG ${st}`); }
+    if (Date.now() > deadline) { const st = await page.evaluate(`JSON.stringify({ path: location.pathname, title: document.title, nav: performance.getEntriesByType("navigation")[0]?.type, alerts: [...document.querySelectorAll("[role=alert]")].map((a) => a.innerText), text: document.body.innerText.slice(0, 400) })`).catch((e) => "state-unavailable " + e); throw new Error(`timed out (${ms} ms) waiting for: ${what} | DIAG ${st} | requests not ended: ${unendedOf(page)}`); }
     await sleep(100);
   }
 }

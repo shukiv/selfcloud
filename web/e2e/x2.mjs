@@ -52,7 +52,13 @@ async function until(page, expr, ms = 15000, what = expr) {
   const deadline = Date.now() + ms;
   for (;;) {
     if (await page.evaluate(`!!(${expr})`).catch(() => false)) return;
-    if (Date.now() > deadline) throw new Error(`timed out (${ms} ms) waiting for: ${what}`);
+    if (Date.now() > deadline) {
+      // The page's state and its requests not ended, so a listing that never shows says whether its read is still out
+      // (gate stfu4d: twice "Loading the folder" in the player sections).
+      const st = await page.evaluate(`JSON.stringify({ path: location.pathname, text: document.body.innerText.slice(0, 300) })`).catch((e) => `state-unavailable ${e}`);
+      const unended = [...(page.inflight?.values() ?? [])].map((r) => `${r.url.startsWith(page.base) ? r.url.slice(page.base.length) : r.url.slice(0, 80)} status ${r.status} for ${Date.now() - r.at} ms`).join(' ; ') || 'none';
+      throw new Error(`timed out (${ms} ms) waiting for: ${what} | DIAG ${st} | requests not ended: ${unended}`);
+    }
     await sleep(100);
   }
 }
