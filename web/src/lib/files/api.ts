@@ -132,6 +132,12 @@ export function mkdir(folder: string, path: string): Promise<Node> {
   return api<Node>('POST', `/api/v1/folders/${folder}/directories`, { body: { path, parents: false } });
 }
 
+// mkdirIn makes a folder named name in the directory parent (a node ID). The parent is named by its ID, so a rename or
+// move made in another session a moment before cannot send the folder to an old path (decision 74).
+export function mkdirIn(folder: string, parent: string, name: string): Promise<Node> {
+  return api<Node>('POST', `/api/v1/folders/${folder}/directories`, { body: { parent, name } });
+}
+
 // contentPath is the same-origin download address. It carries no credential: the session cookie sends.
 export function contentPath(nod: string, disposition: 'attachment' | 'inline' = 'attachment'): string {
   return `/api/v1/nodes/${nod}/content?disposition=${disposition}`;

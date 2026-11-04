@@ -144,7 +144,7 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../api/nodes.go InsertNode":                                    {1, lockAdds, "newNode's insert: the caller's node.create reports a file; a folder reports nothing"},
 	"../api/nodes.go UpdateNode":                                    {2, lockGuarded, "a rename, refused while the file is open; and handleCreateFile's new file, which no lock can hold"},
 	"../api/nodes.go UpdateNodeHeld":                                {1, lockHolder, "replaceContent's write: a PUT holds no lock, so an open file refuses it; PutFile passes its lock ID"},
-	"../api/nodes.go newNode":                                       {3, lockAdds, "a folder on the path or a mkdir (nothing), and PUT create of a file (node.create, file.created)"},
+	"../api/nodes.go newNode":                                       {4, lockAdds, "a folder on the path or a mkdir (nothing), a mkdir under a parent ID (fu2, decision 74), and PUT create of a file (node.create, file.created)"},
 	"../api/nodes.go replaceContent":                                {1, lockHolder, "PUT's replacement: its node.write reports file.updated, as the WOPI PutFile's does"},
 	"../api/office_rename.go UpdateNodeHeld":                        {1, lockHolder, "WOPI RenameFile: refused unless the lock ID matches the live lock; an unlocked file takes the rename with no holder; reported as node.rename (file.updated)"},
 	"../api/office_locks.go replaceContent":                         {1, lockHolder, "WOPI PutFile: its node.write reports file.updated through the same helper as PUT; the holder is the lock ID"},

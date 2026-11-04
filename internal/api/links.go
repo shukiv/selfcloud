@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -320,6 +321,47 @@ type linkJSON struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 
+// signedLinkLife is the longest a signed link made by this request may live, whatever it asks for: the time its
+// delegated token has left, its visitor's credential has left, and the impersonation has left. Each applies only to a
+// caller that holds it. Every signed link (the API's, the thumbnail's and the preview's on the content origin) takes
+// its lifetime from here, so none outlives the credential it was made with (decisions 41 and 74). A credential that
+// has already ended is refused here.
+func signedLinkLife(r *http.Request) (time.Duration, error) {
+	life := time.Duration(math.MaxInt64)
+	p := principalOf(r)
+	if p == nil {
+		return life, nil
+	}
+	if p.Token != nil {
+		left := time.Until(p.Token.ExpiresAt).Truncate(time.Second)
+		if left < time.Second {
+			return 0, apierr.New(apierr.TokenExpired, "the token has expired")
+		}
+		life = min(life, left)
+	}
+	// A visitor of a link that anyone can open gets the same cap: its signed links end with its credential.
+	if p.Kind == auth.KindShareLink && p.Link != nil {
+		left := time.Until(p.Link.ExpiresAt).Truncate(time.Second)
+		if left < time.Second {
+			return 0, apierr.New(apierr.Unauthenticated, "the credential has expired; open the link again")
+		}
+		life = min(life, left)
+	}
+	// A signed link made while an installation admin is signed in as the user lives no longer than that sign-in-as
+	// (decision 41), so the viewer's preview link works and the link does not outlive the admin's hour.
+	if p.Impersonator != "" {
+		if sess := sessionOf(r); sess != nil {
+			left := time.Until(sess.CreatedAt.Add(impersonationTTL)).Truncate(time.Second)
+			if left < time.Second {
+				return 0, apierr.New(apierr.Unauthenticated, "the impersonation has ended; go back to the admin").
+					With("reason", "impersonation_ended")
+			}
+			life = min(life, left)
+		}
+	}
+	return life, nil
+}
+
 // handleCreateLink makes a signed link to a file the caller can read. A ttl above links.max_ttl
 // is refused, not shortened, so a caller never gets less than it asked for without knowing it.
 func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error {
@@ -344,33 +386,11 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	// A link is a capability that no revocation reaches, so one made with a delegated token may not
 	// outlive the token: its longest life is what the token has left.
 	ttl, maxTTL := s.cfg.Links.DefaultTTL.D(), s.cfg.Links.MaxTTL.D()
-	if p.Token != nil {
-		left := time.Until(p.Token.ExpiresAt).Truncate(time.Second)
-		if left < time.Second {
-			return apierr.New(apierr.TokenExpired, "the token has expired")
-		}
-		ttl, maxTTL = min(ttl, left), min(maxTTL, left)
+	life, err := signedLinkLife(r)
+	if err != nil {
+		return err
 	}
-	// A visitor of a link that anyone can open gets the same cap: its signed links end with its credential.
-	if p.Kind == auth.KindShareLink && p.Link != nil {
-		left := time.Until(p.Link.ExpiresAt).Truncate(time.Second)
-		if left < time.Second {
-			return apierr.New(apierr.Unauthenticated, "the credential has expired; open the link again")
-		}
-		ttl, maxTTL = min(ttl, left), min(maxTTL, left)
-	}
-	// A signed link made while an installation admin is signed in as the user lives no longer than that sign-in-as
-	// (decision 41), so the viewer's preview link works and the link does not outlive the admin's hour.
-	if p.Impersonator != "" {
-		if sess := sessionOf(r); sess != nil {
-			left := time.Until(sess.CreatedAt.Add(impersonationTTL)).Truncate(time.Second)
-			if left < time.Second {
-				return apierr.New(apierr.Unauthenticated, "the impersonation has ended; go back to the admin").
-					With("reason", "impersonation_ended")
-			}
-			ttl, maxTTL = min(ttl, left), min(maxTTL, left)
-		}
-	}
+	ttl, maxTTL = min(ttl, life), min(maxTTL, life)
 	if in.TTL != nil {
 		if *in.TTL < 1 {
 			return apierr.New(apierr.InvalidRequest, "ttl must be at least 1 second")
@@ -443,7 +463,7 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) error {
 	// Charged before the token is parsed or the database is read: a flood of guesses costs
 	// little, and a player's seeks come from one address.
-	if err := s.rateLimit("links.serve", clientKey(r)); err != nil {
+	if err := s.rateLimit("links.serve", addressKey(r)); err != nil {
 		return err
 	}
 	ctx := r.Context()

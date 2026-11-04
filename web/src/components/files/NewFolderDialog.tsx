@@ -5,7 +5,7 @@ import { App, Button, Form, Input, Modal } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useT, useLang } from "../../lib/i18n";
-import { mkdir } from "../../lib/files/api";
+import { mkdir, mkdirIn } from "../../lib/files/api";
 import { fileErrorText } from "../../lib/files/fileErrors";
 import { joinPath } from "../../lib/files/location";
 import { nameMessageKey, nameProblem, type UploadWhere } from "../../lib/files/ops";
@@ -39,7 +39,8 @@ export default function NewFolderDialog({ where, openable, onClose }: { where: U
     const changed = sessionChanged();
     setBusy(true);
     try {
-      const node = await mkdir(where.folder, path);
+      // A folder in a directory names the directory by its ID; the root keeps the path form (decision 74).
+      const node = where.dirID ? await mkdirIn(where.folder, where.dirID, clean) : await mkdir(where.folder, path);
       if (changed()) return;
       onClose();
       // The branch the folder is in is read again, and the listing with it, so the new folder shows where it belongs.

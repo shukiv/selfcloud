@@ -46,7 +46,7 @@ import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/f
 import { keepTargetOnSave } from "../lib/files/appearance";
 import { folderPageReader } from "../lib/files/folderPages";
 import { focusAfterClose } from "../lib/files/focusAfterClose";
-import { childrenPage, copyNode, deleteNode, getJob, getMe, mkdir, moveNode, renameNode, restoreNode, serverLimits, statOrNull, type Transfer } from "../lib/files/api";
+import { childrenPage, copyNode, deleteNode, getJob, getMe, mkdir, mkdirIn, moveNode, renameNode, restoreNode, serverLimits, statOrNull, type Transfer } from "../lib/files/api";
 import { locate, joinPath, type Here } from "../lib/files/location";
 import { starNode, unstarNode } from "../lib/stars";
 import { fileErrorText } from "../lib/files/fileErrors";
@@ -1340,7 +1340,9 @@ export default function FilesPage() {
     const changed = sessionChanged();
     setNewBusy(true);
     try {
-      await mkdir(here.folder, folderPath);
+      // A folder in a directory names the directory by its ID; the root keeps the path form (decision 74).
+      if (here.dir) await mkdirIn(here.folder, here.dir.id, name);
+      else await mkdir(here.folder, folderPath);
       if (changed()) return;
       setDialog(null);
       void message.success(t("files.newFolder.created", { name }));

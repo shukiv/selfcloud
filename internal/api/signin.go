@@ -100,12 +100,13 @@ func (s *Server) writeSignedIn(w http.ResponseWriter, secret string, u *store.Us
 // handleVerify completes a verification link: the user sets a password (if they have none) and
 // becomes active, and the link stops working. The answer signs the user in.
 func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) error {
-	if err := s.rateLimit("verify.ip", clientKey(r)); err != nil {
+	if err := s.rateLimit("verify.ip", addressKey(r)); err != nil {
 		return err
 	}
 	var in struct {
 		Token    string  `json:"token"`
 		Password *string `json:"password"`
+		Confirm  bool    `json:"confirm"` // the browser's answer to signed_in_as_other (fu2, decision 74)
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -164,6 +165,9 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) error {
 		if found.PasswordHash == "" {
 			return apierr.New(apierr.InvalidRequest, "a password is required to verify this account")
 		}
+		if err := s.switchRefusal(ctx, tx, r, found, now, in.Confirm); err != nil {
+			return err
+		}
 		at := store.Now()
 		found.Status = store.UserActive
 		if found.VerifiedAt == nil {
@@ -182,6 +186,9 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		u = found
+		if err := s.endBrowserSession(r, tx); err != nil {
+			return err
+		}
 		secret, sess = s.newSession(r, u, at)
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
@@ -215,7 +222,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		return apierr.New(apierr.InvalidRequest, "email and password are required")
 	}
 	key := emailKey(email)
-	if err := s.rateLimit("login.ip", clientKey(r)); err != nil {
+	if err := s.rateLimit("login.ip", addressKey(r)); err != nil {
 		return err
 	}
 	if err := s.rateLimit("login.email", key); err != nil {
@@ -409,7 +416,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 	email := strings.TrimSpace(in.Email)
-	if err := s.rateLimit("forgot.ip", clientKey(r)); err != nil {
+	if err := s.rateLimit("forgot.ip", addressKey(r)); err != nil {
 		return err
 	}
 	if err := s.rateLimit("forgot.email", emailKey(email)); err != nil {
@@ -418,7 +425,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) er
 	ctx := r.Context()
 	// Over the per-address or per-IP forgot budget, nothing is sent, and the answer stays 202: the
 	// budget must not show whether the address is known.
-	if email != "" && s.mailer != nil && s.chargeAll(charge{"mail.forgot.ip", clientKey(r)}) == nil {
+	if email != "" && s.mailer != nil && s.chargeAll(charge{"mail.forgot.ip", addressKey(r)}) == nil {
 		if err := s.sendResetLinks(ctx, r, emailKey(email), loginScope(in.Account)); err != nil {
 			return err
 		}
@@ -495,12 +502,13 @@ func (s *Server) sendResetLinks(ctx context.Context, r *http.Request, key, accou
 // handleResetPassword completes a reset link: the password changes, every session of the user
 // ends, and the caller gets a new session.
 func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) error {
-	if err := s.rateLimit("reset.ip", clientKey(r)); err != nil {
+	if err := s.rateLimit("reset.ip", addressKey(r)); err != nil {
 		return err
 	}
 	var in struct {
 		Token    string `json:"token"`
 		Password string `json:"password"`
+		Confirm  bool   `json:"confirm"` // the browser's answer to signed_in_as_other (fu2, decision 74)
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -546,6 +554,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		case store.UserPending:
 			return errBadLink
 		}
+		if err := s.switchRefusal(ctx, tx, r, found, now, in.Confirm); err != nil {
+			return err
+		}
 		at := store.Now()
 		found.PasswordHash = hashed
 		found.MustChangePassword = false
@@ -571,6 +582,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 			return err
 		}
 		u = found
+		if err := s.endBrowserSession(r, tx); err != nil {
+			return err
+		}
 		secret, sess = s.newSession(r, u, at)
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
@@ -584,6 +598,37 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 	}
 	s.writeSignedIn(w, secret, u, sess)
 	return nil
+}
+
+// switchRefusal is the 409 that verify and reset give when the browser holds a session of another user and has not
+// confirmed the switch: the answer a sign-in link gives too (fu2, decision 74). Nothing is written here, so the link
+// stays live for the prompt's second answer, which carries confirm.
+func (s *Server) switchRefusal(ctx context.Context, tx *store.Tx, r *http.Request, target *store.User, now time.Time,
+	confirm bool) error {
+	if confirm {
+		return nil
+	}
+	cur, err := s.signedInUser(ctx, tx, r, now)
+	if err != nil {
+		return err
+	}
+	if cur != nil && cur.ID != target.ID {
+		return apierr.New(apierr.Conflict, "this browser is signed in as another user").
+			With("reason", "signed_in_as_other").
+			With("current", userNameOf(cur)).
+			With("target", userNameOf(target))
+	}
+	return nil
+}
+
+// endBrowserSession ends the session this browser holds, if it holds one, as the sign-in that replaces it does: a
+// password sign-in and a sign-in link end it the same way (fu2, decision 74).
+func (s *Server) endBrowserSession(r *http.Request, tx *store.Tx) error {
+	c, err := r.Cookie(s.sessionCookie)
+	if err != nil || !auth.ValidToken(c.Value) {
+		return nil
+	}
+	return tx.DeleteSession(r.Context(), auth.HashToken(c.Value))
 }
 
 // meResponse is the signed-in user, their account and the CSRF token.
@@ -836,7 +881,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 	if err := s.rateLimit("changepw.user", p.UserID); err != nil {
 		return err
 	}
-	if err := s.rateLimit("changepw.ip", clientKey(r)); err != nil {
+	if err := s.rateLimit("changepw.ip", addressKey(r)); err != nil {
 		return err
 	}
 	ctx := r.Context()

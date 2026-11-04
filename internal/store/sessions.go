@@ -93,6 +93,11 @@ func (tx *Tx) ImpersonationsBy(ctx context.Context, adminID string) ([]*Session,
 	return tx.impersonations(ctx, "impersonator_user_id = ?", adminID)
 }
 
+// ImpersonationsIn returns the impersonation sessions whose member belongs to the account (fu2, decision 74).
+func (tx *Tx) ImpersonationsIn(ctx context.Context, accountID string) ([]*Session, error) {
+	return tx.impersonations(ctx, "account_id = ?", accountID)
+}
+
 func (tx *Tx) impersonations(ctx context.Context, where string, arg string) ([]*Session, error) {
 	rows, err := tx.q.QueryContext(ctx, "SELECT "+sessionCols+" FROM sessions WHERE impersonator_user_id IS NOT NULL AND "+
 		where, arg)

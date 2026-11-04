@@ -36,10 +36,10 @@ type impFix struct {
 	mailer    *mail.Recorder
 }
 
-func newImpFix(t *testing.T, tenantAccess bool) *impFix {
+func newImpFix(t *testing.T, tenantAccess bool, mutate ...func(*config.Config)) *impFix {
 	t.Helper()
 	rec := &mail.Recorder{}
-	s := newAuthServer(t, rec, func(c *config.Config) { c.Admin.TenantAccess = tenantAccess })
+	s := newAuthServer(t, rec, append([]func(*config.Config){func(c *config.Config) { c.Admin.TenantAccess = tenantAccess }}, mutate...)...)
 	admin := adminKey(t, s)
 	adminUser, adminSess := newAdminUser(t, s, admin, "ann@example.com")
 	acc, accKey := newAccount(t, s, admin, "Acme")

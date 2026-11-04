@@ -159,18 +159,25 @@ func (s *Server) deliver(ctx context.Context, r *http.Request, u *store.User, it
 		}
 		return &verificationJSON{Method: methodLink, URL: it.link, Token: it.token, ExpiresAt: &it.expires}
 	}
-	sent := true
-	outcome := "ok"
-	if err := s.sendToken(ctx, u, it); err != nil {
-		sent = false
-		outcome = "failed"
-		s.log.Warn("cannot send mail", "request_id", requestID(r), "purpose", it.purpose, "error", err)
-	}
+	// The row is written before the mail leaves (fu2, decision 74), so no mail goes out unrecorded. A write that fails
+	// stops the send, and the answer says the mail was not sent, as for a send that failed.
 	entry := s.auditEntry(r, u.AccountID, "verification.send", u.ID,
 		map[string]any{"purpose": it.purpose, "method": methodEmail})
-	entry.Outcome = outcome
 	if err := s.store.Write(ctx, func(tx *store.Tx) error { return tx.InsertAudit(ctx, entry) }); err != nil {
-		s.log.Error("cannot audit mail", "request_id", requestID(r), "error", err)
+		s.log.Error("cannot audit mail; not sent", "request_id", requestID(r), "error", err)
+		sent := false
+		return &verificationJSON{Method: methodEmail, Sent: &sent}
+	}
+	sent := true
+	if err := s.sendToken(ctx, u, it); err != nil {
+		sent = false
+		s.log.Warn("cannot send mail", "request_id", requestID(r), "purpose", it.purpose, "error", err)
+		failed := s.auditEntry(r, u.AccountID, "verification.send", u.ID,
+			map[string]any{"purpose": it.purpose, "method": methodEmail})
+		failed.Outcome = "failed"
+		if err := s.store.Write(ctx, func(tx *store.Tx) error { return tx.InsertAudit(ctx, failed) }); err != nil {
+			s.log.Error("cannot audit a failed mail", "request_id", requestID(r), "error", err)
+		}
 	}
 	return &verificationJSON{Method: methodEmail, Sent: &sent}
 }
@@ -183,17 +190,9 @@ func (s *Server) checkMailBudget(accountID, address string) error {
 	return s.chargeAll(charge{"mail.account", accountID}, charge{"mail.target", emailKey(address)})
 }
 
-// clientKey is the rate-limit key for a request's client address.
-func clientKey(r *http.Request) string {
-	if info := infoFrom(r.Context()); info != nil && info.ip.IsValid() {
-		return info.ip.String()
-	}
-	return "unknown"
-}
-
-// addressKey is clientKey for the limits and lockouts that count one address. An IPv6 client counts by its /64,
-// since a host holds the whole /64 and could otherwise change address at will; an IPv4 client counts as clientKey
-// does. clientKey itself is unchanged, since other limits use it.
+// addressKey is the rate-limit key for a request's client address, used by every limit and lockout that counts one
+// address. An IPv6 client counts by its /64, since a host holds the whole /64 and could otherwise change address at
+// will; an IPv4 client counts by its address (fu2, decision 74).
 func addressKey(r *http.Request) string {
 	info := infoFrom(r.Context())
 	if info == nil || !info.ip.IsValid() {

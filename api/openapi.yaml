@@ -2338,7 +2338,9 @@ paths:
         With `parents: true`, missing directories on the path are made, and a directory that
         already exists is answered `200` (like `mkdir -p`). Otherwise a missing parent is
         `not_found` and an existing name is `conflict`. A file where a directory is needed is
-        `invalid_path`.
+        `invalid_path`. With `parent` and `name` (the parent form, decision 74) the directory is
+        made in the named node, which must be a directory of this folder that the caller can write
+        to (contributor and up); it is `201`, or `409` `conflict` when the name is taken.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -5845,12 +5847,20 @@ components:
         next_cursor: { type: string }
 
     DirectoryCreate:
+      description: |
+        Either a path (with optional parents), or a parent and a name (fu2, decision 74). The parent form names the
+        directory by its node ID, so a rename or move made just before the call does not send the new directory to an
+        old path. Give one form or the other, not both; a parent form with parents is invalid_request.
       type: object
-      required: [path]
       additionalProperties: false
       properties:
-        path: { type: string, maxLength: 4096, description: "Relative to the folder's root, e.g. /a/b." }
-        parents: { type: boolean, default: false }
+        path: { type: string, maxLength: 4096, description: "Relative to the folder's root, e.g. /a/b. Path form." }
+        parents: { type: boolean, default: false, description: "Path form only." }
+        parent: { type: string, description: "Parent form: the node ID of the directory to make the folder in. It must be a directory of the folder named in the URL; a parent in the trash, or of another account, is not_found." }
+        name: { type: string, description: "Parent form: the new directory's name, one path element (no slash, not empty)." }
+      oneOf:
+        - required: [path]
+        - required: [parent, name]
 
     TrashItem:
       description: A node in the trash, with what the trash keeps about it.

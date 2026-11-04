@@ -44,6 +44,16 @@ const BY_EMAIL = 'a passphrase set by email 2026';
 const WRONG = 'not the admin password';
 
 const results = [];
+// acceptSwitchIfAsked: a reset link opened in a browser signed in as the admin asks before it switches (decision 74).
+// The member's link is the reason for the switch, so the step accepts it: the dialog's primary button, which is "Switch to
+// <member>" in every language. A browser with no session goes straight on.
+async function acceptSwitchIfAsked(page) {
+  await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') || !!document.querySelector('.ant-modal .ant-btn-primary')`, 15000);
+  if (!(await page.evaluate(`!!document.querySelector('[data-testid="account-menu"]')`))) {
+    await page.evaluate(`document.querySelector('.ant-modal .ant-btn-primary').click()`);
+  }
+}
+
 function check(ok, what) {
   results.push({ ok: ok === true, what });
   console.log(`${ok === true ? 'PASS' : 'FAIL'} ${what}`);
@@ -442,7 +452,8 @@ async function runSteps(page, { base, accountID, sink }) {
   await page.setInput('#reset-password', BY_EMAIL);
   await page.setInput('#reset-confirm', BY_EMAIL);
   await page.evaluate(`document.querySelector('form button[type="submit"]').click()`);
-  await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') && location.pathname.startsWith('/files/')`, 15000);
+  await acceptSwitchIfAsked(page);
+  await page.waitFor(`location.pathname.startsWith('/files/')`, 15000);
   check((await accountMenu(page)).includes(MATEO.name), 'the emailed link sets the password, and the member is signed in with it');
   await signOutFromMenu(page);
   await signIn(page, ADMIN);
@@ -472,7 +483,8 @@ async function runSteps(page, { base, accountID, sink }) {
   await page.setInput('#reset-password', BY_LINK);
   await page.setInput('#reset-confirm', BY_LINK);
   await page.evaluate(`document.querySelector('form button[type="submit"]').click()`);
-  await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') && location.pathname.startsWith('/files/')`, 15000);
+  await acceptSwitchIfAsked(page);
+  await page.waitFor(`location.pathname.startsWith('/files/')`, 15000);
   check((await accountMenu(page)).includes(RITA.name), 'the link sets the password, and the member is signed in with it');
   await signOutFromMenu(page);
 

@@ -61,8 +61,11 @@ export async function establish(signed: SignedIn): Promise<void> {
   await loadMe();
 }
 
-export function verifyAccount(token: string, password: string): Promise<SignedIn> {
-  return api<SignedIn>('POST', '/api/v1/auth/verify', { body: { token, password }, noRedirect: true });
+// verifyAccount sets the password and signs the account in. confirm is sent only when true: it accepts the switch from a
+// browser signed in as another person (decision 74).
+export function verifyAccount(token: string, password: string, confirm = false): Promise<SignedIn> {
+  const body = confirm ? { token, password, confirm: true } : { token, password };
+  return api<SignedIn>('POST', '/api/v1/auth/verify', { body, noRedirect: true });
 }
 
 // signInWithLink redeems a sign-in link: the server starts a session and answers the path to open. confirm
@@ -72,8 +75,10 @@ export function signInWithLink(token: string, confirm = false): Promise<SignedIn
   return api<SignedInLink>('POST', '/api/v1/auth/sign-in-link', { body, noRedirect: true });
 }
 
-export function resetPassword(token: string, password: string): Promise<SignedIn> {
-  return api<SignedIn>('POST', '/api/v1/auth/password/reset', { body: { token, password }, noRedirect: true });
+// resetPassword chooses the password and signs the person in. confirm is sent only when true, as verifyAccount's is.
+export function resetPassword(token: string, password: string, confirm = false): Promise<SignedIn> {
+  const body = confirm ? { token, password, confirm: true } : { token, password };
+  return api<SignedIn>('POST', '/api/v1/auth/password/reset', { body, noRedirect: true });
 }
 
 export function forgotPassword(email: string): Promise<void> {

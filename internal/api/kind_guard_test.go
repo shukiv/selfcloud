@@ -46,7 +46,7 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/api/exports.go":         3,
 	"internal/api/links.go":           3,
 	"internal/api/lock_break.go":      1,
-	"internal/api/nodes.go":           12,
+	"internal/api/nodes.go":           13, // 13th: mkdirUnder's parent must be a directory (fu2, decision 74); a shortcut or file parent is refused
 	"internal/api/office.go":          2,
 	"internal/api/office_locks.go":    3,
 	// Slice l4 added one in office_rename.go: the WOPI RenameFile refuses a folder or a shortcut as not_found, after the

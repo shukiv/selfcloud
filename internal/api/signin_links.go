@@ -189,7 +189,7 @@ type signedInLink struct {
 // can fail, other than a refused user or account, answers the same invalid_request as a verification
 // link, so the answer reveals nothing about the link's history.
 func (s *Server) handleRedeemSignInLink(w http.ResponseWriter, r *http.Request) error {
-	if err := s.rateLimit("signlink.ip", clientKey(r)); err != nil {
+	if err := s.rateLimit("signlink.ip", addressKey(r)); err != nil {
 		return err
 	}
 	var in struct {

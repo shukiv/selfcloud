@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useRef, useState } from "react";
-import { Button, Modal } from "antd";
 import { establish, signInWithLink } from "../lib/auth";
 import { errorMessage, isLinkFailure, type Message } from "../lib/errors";
 import { go } from "../lib/router";
-import { signInTarget, looksLikeToken, switchPromptOf, tokenFromFragment, type SwitchPrompt } from "../lib/signin";
+import { signInTarget, looksLikeToken, switchPromptOf, tokenFromFragment, type SwitchPrompt as SwitchQuestion } from "../lib/signin";
 import { useT } from "../lib/i18n";
 import AuthLayout from "../components/AuthLayout";
 import Alert from "../components/Alert";
-import Sentence from "../components/Sentence";
+import SwitchPrompt from "../components/SwitchPrompt";
 
 // SignInPage redeems a sign-in link: the token is in the address's fragment, read and removed from
 // the address bar before any request. A browser already signed in as someone else is asked first.
@@ -17,7 +16,7 @@ export default function SignInPage() {
   const { t } = useT();
   const [error, setError] = useState<Message | null>(null);
   const [working, setWorking] = useState(true);
-  const [prompt, setPrompt] = useState<SwitchPrompt | null>(null);
+  const [prompt, setPrompt] = useState<SwitchQuestion | null>(null);
   // The token is kept only for a switch the person confirms.
   const [token, setToken] = useState("");
   const started = useRef(false);
@@ -63,7 +62,6 @@ export default function SignInPage() {
     go("/files", { replace: true });
   }
 
-  const names: Record<string, string> = prompt ? { current: prompt.current, target: prompt.target } : {};
   return (
     <AuthLayout>
       <h1 style={{ marginTop: 0, fontSize: 24 }}>{t("signin.title")}</h1>
@@ -73,31 +71,7 @@ export default function SignInPage() {
         </p>
       )}
       <Alert message={error} />
-      <Modal
-        open={prompt !== null}
-        title={t("signin.switch.title")}
-        onCancel={stay}
-        // A click outside answers a question about the session, so it must not answer it: only the buttons do.
-        maskClosable={false}
-        footer={null}
-        destroyOnHidden
-      >
-        {prompt && (
-          <div style={{ display: "grid", gap: 12 }}>
-            <p style={{ margin: 0 }}>
-              <Sentence template={t("signin.switch.message")} names={names} />
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
-              <Button type="primary" onClick={() => void redeem(token, true)}>
-                <Sentence template={t("signin.switch.confirm")} names={names} />
-              </Button>
-              <Button onClick={stay}>
-                <Sentence template={t("signin.switch.stay")} names={names} />
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      <SwitchPrompt prompt={prompt} onConfirm={() => void redeem(token, true)} onStay={stay} />
     </AuthLayout>
   );
 }

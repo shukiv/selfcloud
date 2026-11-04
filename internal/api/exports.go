@@ -285,8 +285,13 @@ func (s *Server) answerConverted(w http.ResponseWriter, r *http.Request, n *stor
 	switch ans.State {
 	case store.DerivedReady:
 		if s.cfg.ContentURL != "" {
+			// The link lives no longer than the caller's credential (signedLinkLife, decision 74).
+			life, err := signedLinkLife(r)
+			if err != nil {
+				return err
+			}
 			c := linkClaims{nod: n.ID, acc: n.AccountID, disp: previewDispPrefix + format,
-				exp: time.Now().Add(s.cfg.Links.DefaultTTL.D()).Unix()}
+				exp: time.Now().Add(min(s.cfg.Links.DefaultTTL.D(), life)).Unix()}
 			w.Header().Set("Cache-Control", "private, no-cache")
 			w.Header().Set("Location", s.cfg.ContentURL+linkPrefix+s.links.sign(c, n.ContentTag))
 			w.WriteHeader(http.StatusSeeOther)

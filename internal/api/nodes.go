@@ -646,14 +646,26 @@ func (s *Server) handleListPathChildren(w http.ResponseWriter, r *http.Request) 
 // ---- creating ----
 
 // handleMkdir makes a directory in a folder. With parents, missing directories on the way are
-// made, and an existing directory is answered with 200 rather than a conflict.
+// made, and an existing directory is answered with 200 rather than a conflict. The body either
+// gives a path, or gives parent (a node ID) and name (fu2, decision 74: the parent form).
 func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Path    string `json:"path"`
 		Parents bool   `json:"parents"`
+		Parent  string `json:"parent"`
+		Name    string `json:"name"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
+	}
+	if in.Parent != "" {
+		if in.Path != "" || in.Parents {
+			return apierr.New(apierr.InvalidRequest, "give a parent and a name, or a path, not both")
+		}
+		return s.mkdirUnder(w, r, in.Parent, in.Name)
+	}
+	if in.Name != "" {
+		return apierr.New(apierr.InvalidRequest, "a name goes with a parent; give a path otherwise")
 	}
 	segs, err := parsePath(in.Path)
 	if err != nil {
@@ -714,6 +726,61 @@ func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Location", "/api/v1/nodes/"+out.ID)
 	}
 	writeJSON(w, status, toNodeJSON(out))
+	return nil
+}
+
+// mkdirUnder makes the directory name in the directory parentID, which the URL's folder must hold (fu2, decision 74).
+// The parent is found by its ID, so a parent renamed or moved since the caller read it still receives the directory.
+// The caller needs contributor on the parent, checked again inside the write. A parent in the trash, or of another
+// account, is not_found, as for every write; a file, or a name that is not one path element, is refused.
+func (s *Server) mkdirUnder(w http.ResponseWriter, r *http.Request, parentID, name string) error {
+	segs, err := parsePath("/" + name)
+	if err != nil {
+		return err
+	}
+	if len(segs) != 1 {
+		return apierr.New(apierr.InvalidPath, "a name is one element of a path, with no slash and not empty")
+	}
+	ctx := r.Context()
+	p := principalOf(r)
+	fld := r.PathValue("fld")
+	leaf := segs[0]
+	if _, err := s.nodeOf(r, parentID, store.RoleContributor); err != nil {
+		return err
+	}
+	var out *store.Node
+	s.atWrite()
+	err = s.store.Write(ctx, func(tx *store.Tx) error {
+		parent, err := requireNodeRole(ctx, tx, p, parentID, store.RoleContributor)
+		if err != nil {
+			return err
+		}
+		if parent.FolderID != fld {
+			return nodeNotFound()
+		}
+		if parent.Kind != store.KindDir {
+			return apierr.New(apierr.InvalidRequest, "the parent is not a folder")
+		}
+		existing, err := nameTakenBy(tx.Child(ctx, parent.AccountID, parent.ID, leaf.key))
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			return nameConflict(existing)
+		}
+		dir, err := s.newNode(ctx, tx, parent.AccountID, parent.FolderID, parent.ID, leaf, store.KindDir, p.ID)
+		if err != nil {
+			return err
+		}
+		out = dir
+		return tx.InsertAudit(ctx, s.auditEntry(r, parent.AccountID, "node.create", dir.ID,
+			map[string]any{"kind": store.KindDir, "name": leaf.name, "parent": parent.ID}, parent.FolderID))
+	})
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Location", "/api/v1/nodes/"+out.ID)
+	writeJSON(w, http.StatusCreated, toNodeJSON(out))
 	return nil
 }
 
