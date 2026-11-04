@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
@@ -22,9 +23,11 @@ const GROUP = { id: "grp_1", external_id: null, name: "Finance", created_at: "20
 function renderPage() {
   const qc = createQueryClient();
   render(
-    <QueryClientProvider client={qc}>
-      <GroupsPage />
-    </QueryClientProvider>,
+    <App>
+      <QueryClientProvider client={qc}>
+        <GroupsPage />
+      </QueryClientProvider>
+    </App>,
   );
   return qc;
 }
@@ -61,6 +64,21 @@ describe("groups", () => {
     });
     await waitFor(() => expect(calls.filter(isGroupDelete)).toHaveLength(1));
     release({ status: 204 });
+  });
+
+  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+    const { calls } = stubFetch((c) => {
+      if (isGroupDelete(c)) return new Promise<Answer>(() => undefined);
+      if (c.url.includes("/groups")) return { status: 200, body: { items: [GROUP] } };
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Delete.*Finance/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Delete$/ }));
+    await waitFor(() => expect(calls.filter(isGroupDelete)).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.find(isGroupDelete)?.signal?.aborted).toBe(true);
   });
 
   it("a deletion answered after the person has changed shows nothing (guard: sessionChanged before the await)", async () => {

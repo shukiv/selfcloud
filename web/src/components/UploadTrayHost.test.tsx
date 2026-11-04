@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { conflictAsk, uploads, type UploadItem } from "../lib/files/uploads";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { conflictAsk, manager, uploads, type UploadItem } from "../lib/files/uploads";
 import UploadTrayHost from "./UploadTrayHost";
 
 // The host loads the tray only once an upload or a conflict question exists. These tests run the real tray.
@@ -53,5 +53,15 @@ describe("the upload tray's host", () => {
     conflictAsk.set("report.pdf");
     render(<UploadTrayHost />);
     expect((await screen.findByRole("dialog")).textContent).toContain("report.pdf");
+  });
+
+  it("a name taken at creation, through the real manager, puts the question on screen (fu4, item 3)", async () => {
+    const taken = { error: { code: "conflict", message: "taken", details: {} } };
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify(taken), { status: 409 }));
+    render(<UploadTrayHost />);
+    manager.add([{ file: new File(["hello"], "q4-clear-111327.txt"), target: { folder: "f1" } }]);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("q4-clear-111327.txt");
+    vi.unstubAllGlobals();
   });
 });

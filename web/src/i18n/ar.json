@@ -323,6 +323,7 @@
   "files.media.remove": "إزالة {name} من قائمة التشغيل",
   "files.drop.here": "أفلت هنا للرفع",
   "files.upload.noPath": "لا يمكن رفع بعض الملفات إلى مجلد لا يمكنك الوصول إليه من هنا.",
+  "files.busy.keyWait": "المجلد ما زال يُفتح. حاول مرة أخرى بعد لحظة.",
   "files.copy.done": "تم النسخ.",
   "files.jobs": "النسخ",
   "files.job.running": "جارٍ النسخ…",

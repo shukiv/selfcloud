@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import type { ReactElement } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ctranslate, loadComments } from "../../lib/comments/i18n";
@@ -43,7 +44,11 @@ function client(): QueryClient {
 }
 
 function wrap(ui: ReactElement, qc = client()) {
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+  return render(
+    <App>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </App>,
+  );
 }
 
 function comment(over: Partial<Comment> = {}): Comment {
@@ -225,6 +230,27 @@ describe("the comments panel for a commenter", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete comment" }));
     await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
     expect(await screen.findByText("No comments yet.")).toBeTruthy();
+  });
+
+  // fu4, item 2: a delete that never answers is cancelled at once, and its request is aborted.
+  it("a delete that never answers: Cancel closes the confirm and aborts the request (fu4, item 2)", async () => {
+    const calls: Call[] = [];
+    stubFetch(async (c: Call): Promise<Answer> => {
+      calls.push(c);
+      if (c.method === "GET" && c.url.startsWith("/api/v1/nodes/nod_1/comments")) return page([comment({ id: "cmt_mine", mine: true, body: "to go" })]);
+      if (c.method === "DELETE") return new Promise<Answer>(() => undefined);
+      return fail(404, "not_found");
+    });
+    wrap(<ListHost nodeID="nod_1" role="commenter" />);
+    await screen.findByText("to go");
+    fireEvent.click(screen.getByRole("button", { name: /^Delete/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete comment" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.find((c) => c.method === "DELETE")?.signal?.aborted).toBe(true);
+    expect(screen.getByText("to go")).toBeTruthy();
   });
 
   it("resolve sends the new state for a top-level comment", async () => {

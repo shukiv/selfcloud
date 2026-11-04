@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
@@ -43,9 +44,11 @@ const LINK = {
 function renderPage() {
   const qc = createQueryClient();
   render(
-    <QueryClientProvider client={qc}>
-      <LinksPage />
-    </QueryClientProvider>,
+    <App>
+      <QueryClientProvider client={qc}>
+        <LinksPage />
+      </QueryClientProvider>
+    </App>,
   );
   return qc;
 }
@@ -99,6 +102,22 @@ describe("links", () => {
     const options = await screen.findAllByText("Anyone with the link");
     fireEvent.click(options[options.length - 1]);
     await waitFor(() => expect(calls.some((c) => c.url.includes("audience=anyone"))).toBe(true));
+  });
+
+  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+    const { calls } = stubFetch((c) => {
+      if (isLinkDelete(c)) return new Promise<Answer>(() => undefined);
+      if (c.url.includes("/sharing-policy")) return { status: 200, body: { public_links: true, anyone_links: 1 } };
+      return { status: 200, body: { items: [LINK] } };
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /^Delete link/ }));
+    const go = (await screen.findAllByRole("button", { name: /Delete link/ })).at(-1)!;
+    fireEvent.click(go);
+    await waitFor(() => expect(calls.filter(isLinkDelete)).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.find(isLinkDelete)?.signal?.aborted).toBe(true);
   });
 
   it("deleting a link asks first and sends one request for a double click (guard: confirm and once-at-a-time)", async () => {

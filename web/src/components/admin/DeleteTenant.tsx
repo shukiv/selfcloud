@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Input, Modal } from "antd";
+import { Alert, App, Button, Input, Modal } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
 import { formatBytes } from "../../lib/files/format";
+import { useFlight } from "../../lib/flight";
 import { deleteAccount, getJob, usage } from "../../lib/manage/api";
+import type { Job } from "../../lib/manage/types";
 import { failureText } from "../../lib/manage/failure";
 import { poll } from "../../lib/jobs/backoff";
 import { typedNameMatches } from "../../lib/manage/confirm";
@@ -39,6 +41,9 @@ export default function DeleteTenant({
   // started is true from the first send until the deletion fails: a second click while it is out sends nothing.
   const started = useRef(false);
   const stopPolling = useRef<(() => void) | null>(null);
+  const request = useFlight();
+  const { message } = App.useApp();
+  const [sending, setSending] = useState(false);
   const figuresQ = useQuery({ queryKey: queryKey("usage", id), queryFn: () => usage(id), retry: false });
   const figures = figuresQ.data ?? null;
   const ok = typedNameMatches(typed, name);
@@ -58,8 +63,22 @@ export default function DeleteTenant({
       const changed = sessionChanged();
       setStage("deleting");
       setError(null);
+      // The request that asks for the deletion can be cancelled while it is out: the answer may or may not have come (fu4).
+      const signal = request.start();
+      setSending(true);
+      let job: Job;
       try {
-        const job = await deleteAccount(id);
+        job = await deleteAccount(id, signal);
+      } catch (err) {
+        request.end();
+        setSending(false);
+        if (changed() || signal.aborted) return;
+        fail(failureText(err, lang));
+        return;
+      }
+      request.end();
+      setSending(false);
+      try {
         if (changed()) return;
         stopPolling.current = poll(
           () => getJob(job.id),
@@ -97,6 +116,14 @@ export default function DeleteTenant({
     onClose();
   };
 
+  // cancelSend closes the dialog while the request that asks for the deletion is out: the request is aborted, and the
+  // person is told it may or may not have been started. Once the job exists, the dialog stays until it ends.
+  const cancelSend = () => {
+    if (!request.abort()) return;
+    void message.warning(t("common.cancelledMaybe"));
+    onClose();
+  };
+
   const running = stage === "deleting";
   const footer =
     stage === "background"
@@ -106,7 +133,13 @@ export default function DeleteTenant({
           </Button>,
         ]
       : running
-        ? null
+        ? sending
+          ? [
+              <Button key="cancel" onClick={cancelSend}>
+                {t("common.cancel")}
+              </Button>,
+            ]
+          : null
         : [
             <Button key="cancel" onClick={close}>
               {t("common.cancel")}
@@ -120,10 +153,10 @@ export default function DeleteTenant({
     <Modal
       open
       title={t("tenant.delete.title", { name })}
-      closable={!running}
-      keyboard={!running}
+      closable={!running || sending}
+      keyboard={!running || sending}
       maskClosable={false}
-      onCancel={close}
+      onCancel={sending ? cancelSend : close}
       footer={footer}
     >
       {stage === "deleting" && <p role="status">{t("tenant.delete.running")}</p>}

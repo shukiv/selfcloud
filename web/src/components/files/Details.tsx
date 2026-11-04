@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { lazy, Suspense, useState, type CSSProperties } from "react";
-import { Button, Drawer } from "antd";
+import { App, Button, Drawer } from "antd";
 import { api } from "../../lib/api";
+import { useFlight } from "../../lib/flight";
 import { ApiError } from "../../lib/apiError";
 import Confirm from "../Confirm";
 import { useT, useLang } from "../../lib/i18n";
@@ -49,18 +50,29 @@ export default function Details({
   const [ending, setEnding] = useState(false);
   const [endBusy, setEndBusy] = useState(false);
   const [endError, setEndError] = useState<string | null>(null);
+  // The unlock on its way is the request the confirm cancels (fu4, decision 76's rule for writes).
+  const request = useFlight();
+  const { message } = App.useApp();
+  const cancelEnd = () => {
+    if (request.abort()) void message.warning(t("common.cancelledMaybe"));
+    setEndError(null);
+    setEnding(false);
+  };
   async function endSession() {
+    const signal = request.start();
     setEndBusy(true);
     setEndError(null);
     try {
-      await api("POST", `/api/v1/nodes/${node.id}/unlock`);
+      await api("POST", `/api/v1/nodes/${node.id}/unlock`, { signal });
       setEnding(false);
       onChanged?.({ ...node, editing: false, editing_by: undefined });
     } catch (err) {
       // Named by status: 409 is a file no editor holds any more, 404 a file that is gone. The server's text is not shown.
+      if (signal.aborted) return;
       const status = err instanceof ApiError ? err.status : 0;
       setEndError(status === 409 ? t("files.editing.gone") : status === 404 ? t("files.editor.notFound") : t("files.editing.failed"));
     } finally {
+      request.end();
       setEndBusy(false);
     }
   }
@@ -163,6 +175,7 @@ export default function Details({
             setEnding(false);
             setEndError(null);
           }}
+          oncancel={cancelEnd}
         />
       )}
       {node.kind === "shortcut" && node.unavailable && (

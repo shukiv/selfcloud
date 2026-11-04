@@ -3,7 +3,8 @@ import { Pencil, Trash2 } from "lucide-react";
 import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
-import { Alert, Button, Tag } from "antd";
+import { App, Alert, Button, Tag } from "antd";
+import { useFlight } from "../../lib/flight";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
 import { createLabelField, deleteLabelField, listLabelFields, updateLabelField, type LabelField, type LabelFieldBody, type LabelFieldPatch } from "../../lib/labels/api";
@@ -28,6 +29,17 @@ function LabelsView() {
   const [deleting, setDeleting] = useState<LabelField | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const flight = useFlight();
+  const { message } = App.useApp();
+  // cancelDelete closes the dialog at once, busy or not: the delete on its way is aborted, and the fields are read again (fu4).
+  const cancelDelete = () => {
+    if (flight.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      void refresh();
+    }
+    setDeleteError(null);
+    setDeleting(null);
+  };
   const once = useOnce();
 
   const q = useQuery({
@@ -64,18 +76,20 @@ function LabelsView() {
       if (!deleting) return;
       const stale = sessionChanged();
       const target = deleting;
+      const signal = flight.start();
       setDeleteBusy(true);
       setDeleteError(null);
       try {
-        await deleteLabelField(account, target.id);
+        await deleteLabelField(account, target.id, signal);
         if (stale()) return;
         setNotice(t("labels.deleted", { name: target.name }));
         setDeleting(null);
         await refresh();
       } catch (err) {
-        if (stale()) return;
+        if (stale() || signal.aborted) return;
         setDeleteError(failureText(err, lang));
       } finally {
+        flight.end();
         setDeleteBusy(false);
       }
     });
@@ -155,6 +169,7 @@ function LabelsView() {
           error={deleteError}
           onconfirm={() => void confirmDelete()}
           onclose={() => setDeleting(null)}
+          oncancel={cancelDelete}
         />
       )}
     </div>

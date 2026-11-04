@@ -134,6 +134,15 @@ describe("UploadTray", () => {
     expect(within(screen.getByRole("list")).getByText("report.pdf")).toBeTruthy();
   });
 
+  it("a name-taken row offers Cancel, and its count is not called running (fu4, item 3)", () => {
+    uploads.set([item({ id: 8, status: "conflict" })]);
+    conflictAsk.set("report.pdf");
+    render(<UploadTray />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel: report.pdf" }));
+    expect(manager.cancel).toHaveBeenLastCalledWith(8);
+    expect(screen.getByRole("status").textContent).not.toContain("running");
+  });
+
   it("answers a taken name through the conflict dialog, batch only with more than one active upload", () => {
     uploads.set([item({ id: 8, status: "conflict" }), item({ id: 9, status: "queued" })]);
     conflictAsk.set("report.pdf");

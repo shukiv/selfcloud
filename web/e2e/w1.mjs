@@ -356,6 +356,48 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     check(cleared, 'the pasted file is no longer dimmed: the clipboard was emptied by the move');
   });
 
+  // ---- 5b. a paste sent while the folder opens: the page says it is still opening, once, and moves nothing (fu4, item 1) ----
+  // The listing request of the folder is held (Fetch), so the folder stays busy until the keys have been sent. Only requests
+  // paused after the hold starts are held; every other request is answered at once.
+  await step('a paste while the folder opens says so once, and moves nothing', async () => {
+    const NOTICE = 'The folder is still opening. Try again in a moment.';
+    await open('List');
+    await click(page, await rowPoint(page, 'f04.txt'));
+    await press(page, 'c', ['ctrl']);
+    let holding = false;
+    const held = [];
+    const release = async () => {
+      for (const id of held.splice(0)) await page.send('Fetch.continueRequest', { requestId: id });
+    };
+    page.on('Fetch.requestPaused', (p) => {
+      if (holding) held.push(p.requestId);
+      else void page.send('Fetch.continueRequest', { requestId: p.requestId });
+    });
+    await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/children*' }] });
+    try {
+      holding = true;
+      await openByDoubleClick(page, 'Target');
+      await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Target'`, 10000);
+      await page.waitFor(`!!document.querySelector('section.browser [aria-busy="true"]')`, 10000);
+      await press(page, 'v', ['ctrl']);
+      await press(page, 'v', ['ctrl']);
+      await page.waitFor(`document.body.textContent.includes(${q(NOTICE)})`, 10000);
+      const shown = await page.evaluate(`[...document.querySelectorAll('.ant-message-notice')].filter((n) => n.textContent.includes(${q(NOTICE)})).length`);
+      check(shown === 1, 'a paste while the folder opens shows the notice once');
+      holding = false;
+      await release();
+      await folderShown(page, 'Target');
+      const names = await waitListed(api, base, teamA, '/w1-long/Target', accountKey, []);
+      check(!names.includes('f04.txt'), 'the paste while the folder opened moved nothing into Target');
+    } finally {
+      holding = false;
+      await release();
+      await page.send('Fetch.disable');
+    }
+    await press(page, 'Backspace');
+    await folderShown(page, 'w1-long');
+  });
+
   // ---- 6. copy: Ctrl+C and Ctrl+V into a folder; the source stays where it is ----
   await step('copy a file into a folder with Ctrl+C and Ctrl+V', async () => {
     await open('List');

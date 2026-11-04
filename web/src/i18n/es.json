@@ -323,6 +323,7 @@
   "files.media.remove": "Quitar {name} de la lista de reproducción",
   "files.drop.here": "Suelte aquí para subir",
   "files.upload.noPath": "Algunos archivos no se pueden subir a una carpeta a la que no puede acceder desde aquí.",
+  "files.busy.keyWait": "La carpeta todavía se está abriendo. Inténtalo de nuevo en un momento.",
   "files.copy.done": "Copiado.",
   "files.jobs": "Copias",
   "files.job.running": "Copiando…",

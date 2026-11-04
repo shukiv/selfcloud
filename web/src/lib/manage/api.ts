@@ -57,13 +57,17 @@ export function createAccount(body: NewAccount, signal?: AbortSignal): Promise<A
   return api<Account & { owner?: PersonReply }>('POST', '/api/v1/accounts', { body, signal });
 }
 
-export function updateAccount(id: string, body: { name?: string; quota_bytes?: number; status?: 'active' | 'suspended' }): Promise<Account> {
-  return api<Account>('PATCH', acc(id), { body });
+export function updateAccount(
+  id: string,
+  body: { name?: string; quota_bytes?: number; status?: 'active' | 'suspended' },
+  signal?: AbortSignal,
+): Promise<Account> {
+  return api<Account>('PATCH', acc(id), { body, signal });
 }
 
 // deleteAccount answers 202 with a job, which removes the account in the background.
-export function deleteAccount(id: string): Promise<Job> {
-  return api<Job>('DELETE', acc(id));
+export function deleteAccount(id: string, signal?: AbortSignal): Promise<Job> {
+  return api<Job>('DELETE', acc(id), { signal });
 }
 
 export function getJob(id: string): Promise<Job> {
@@ -78,8 +82,8 @@ export function createKey(id: string, body: { name: string; expires_at?: string 
   return api<NewKey>('POST', `${acc(id)}/keys`, { body, signal });
 }
 
-export function revokeKey(id: string, key: string): Promise<void> {
-  return api<void>('DELETE', `${acc(id)}/keys/${key}`);
+export function revokeKey(id: string, key: string, signal?: AbortSignal): Promise<void> {
+  return api<void>('DELETE', `${acc(id)}/keys/${key}`, { signal });
 }
 
 export function listAdmins(cursor?: string): Promise<Page<Person>> {
@@ -197,8 +201,8 @@ export function renameGroup(id: string, grp: string, name: string, signal?: Abor
   return api<Group>('PATCH', `${acc(id)}/groups/${grp}`, { body: { name }, signal });
 }
 
-export function deleteGroup(id: string, grp: string): Promise<void> {
-  return api<void>('DELETE', `${acc(id)}/groups/${grp}`);
+export function deleteGroup(id: string, grp: string, signal?: AbortSignal): Promise<void> {
+  return api<void>('DELETE', `${acc(id)}/groups/${grp}`, { signal });
 }
 
 export function listGroupMembers(id: string, grp: string, cursor?: string): Promise<Page<GroupMember>> {
@@ -231,8 +235,8 @@ export function renameSpace(id: string, fld: string, name: string, signal?: Abor
   return api<Space>('PATCH', `${acc(id)}/folders/${fld}`, { body: { name }, signal });
 }
 
-export function deleteSpace(id: string, fld: string): Promise<void> {
-  return api<void>('DELETE', `${acc(id)}/folders/${fld}`);
+export function deleteSpace(id: string, fld: string, signal?: AbortSignal): Promise<void> {
+  return api<void>('DELETE', `${acc(id)}/folders/${fld}`, { signal });
 }
 
 // listAccountLinks reads one page of the account's links that anyone can open or that take uploads, with the
@@ -243,8 +247,8 @@ export function listAccountLinks(id: string, filter: LinkFilter, cursor: string 
 
 // deleteAllPublicLinks deletes every link that anyone can open, and every drop link, of the account. It answers
 // how many it deleted. Links that only people in the account can open stay.
-export function deleteAllPublicLinks(id: string): Promise<{ deleted: number }> {
-  return api<{ deleted: number }>('POST', `${acc(id)}/share-links/delete-public`);
+export function deleteAllPublicLinks(id: string, signal?: AbortSignal): Promise<{ deleted: number }> {
+  return api<{ deleted: number }>('POST', `${acc(id)}/share-links/delete-public`, { signal });
 }
 
 export function auditLog(

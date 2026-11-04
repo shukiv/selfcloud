@@ -2,7 +2,8 @@
 
 import { sessionChanged } from "../../lib/session";
 import { useState } from "react";
-import { Alert, Button, Modal } from "antd";
+import { Alert, App, Button, Modal } from "antd";
+import { useFlight } from "../../lib/flight";
 import { useLang, useT } from "../../lib/i18n";
 import { failureText } from "../../lib/manage/failure";
 import { canDeleteAll, deleteAllCount } from "../../lib/manage/links";
@@ -24,25 +25,37 @@ export default function DeletePublicLinks({
   const lang = useLang();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
+  const request = useFlight();
+  const { message } = App.useApp();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const n = deleteAllCount(count);
 
+  // cancel closes the dialog at once, busy or not: the delete on its way is aborted, and the page says it may or may not have
+  // happened (fu4, decision 76's rule for writes). The links are read again by the parent's next visit.
+  const cancel = () => {
+    if (request.abort()) void message.warning(t("common.cancelledMaybe"));
+    setError(null);
+    setAsking(false);
+  };
+
   const confirmDelete = async () => {
     // A change of person while the delete is out: its answer is not shown to the next person.
     const stale = sessionChanged();
+    const signal = request.start();
     setBusy(true);
     setError(null);
     try {
-      const reply = await deleteAllPublicLinks(account);
+      const reply = await deleteAllPublicLinks(account, signal);
       if (stale()) return;
       setAsking(false);
       setNotice(tp("links.deleteAll.done", reply.deleted));
       ondone(reply.deleted);
     } catch (err) {
-      if (stale()) return;
+      if (stale() || signal.aborted) return;
       setError(failureText(err, lang));
     } finally {
+      request.end();
       setBusy(false);
     }
   };
@@ -65,15 +78,11 @@ export default function DeletePublicLinks({
       <Modal
         open={asking}
         title={t("links.deleteAll.title")}
-        // Escape and the close button wait for the answer: a dialog closed mid-request would hide the outcome.
-        onCancel={() => {
-          if (!busy) setAsking(false);
-        }}
-        keyboard={!busy}
-        closable={!busy}
+        // Escape, the close button and Cancel end the wait at once: the request is aborted and the outcome is said as unsure.
+        onCancel={cancel}
         maskClosable={false}
         footer={[
-          <Button key="cancel" disabled={busy} onClick={() => setAsking(false)}>
+          <Button key="cancel" onClick={cancel}>
             {t("common.cancel")}
           </Button>,
           <Button key="go" danger type="primary" loading={busy} disabled={busy} onClick={() => void confirmDelete()}>

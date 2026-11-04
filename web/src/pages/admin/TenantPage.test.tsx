@@ -2,18 +2,21 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { session } from "../../lib/session";
-import { fail, stubFetch, type Call } from "../../test/fetchStub";
+import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import { account, signedAs, usage } from "../../test/adminFixtures";
 import TenantPage from "./TenantPage";
 
 function renderTenant(id = "acc_1") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(
-    <QueryClientProvider client={qc}>
-      <TenantPage account={id} />
-    </QueryClientProvider>,
+    <App>
+      <QueryClientProvider client={qc}>
+        <TenantPage account={id} />
+      </QueryClientProvider>
+    </App>,
   );
 }
 
@@ -69,6 +72,22 @@ describe("a tenant page", () => {
     keys.focus();
     fireEvent.keyDown(keys, { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "Audit log" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("a suspend that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+    const { calls } = stubFetch((c: Call) => {
+      if (c.method === "PATCH") return new Promise<Answer>(() => undefined);
+      if (path(c) === "/api/v1/accounts/acc_1") return { status: 200, body: account() };
+      return overviewReads(c) ?? { status: 200, body: { items: [] } };
+    });
+    renderTenant();
+    fireEvent.click(await screen.findByRole("button", { name: "Suspend" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Suspend" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.find((c) => c.method === "PATCH")?.signal?.aborted).toBe(true);
   });
 
   it("a double click on suspend sends one request (guard: useGuard in confirmSuspend)", async () => {

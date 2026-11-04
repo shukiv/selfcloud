@@ -143,8 +143,8 @@ export function resetShareLink(shl: string): Promise<ShareLinkCreated> {
   return api<ShareLinkCreated>('POST', `/api/v1/share-links/${shl}/reset`);
 }
 
-export function deleteShareLink(shl: string): Promise<void> {
-  return api<void>('DELETE', `/api/v1/share-links/${shl}`);
+export function deleteShareLink(shl: string, signal?: AbortSignal): Promise<void> {
+  return api<void>('DELETE', `/api/v1/share-links/${shl}`, { signal });
 }
 
 // OpenedLink is what a link opens to. An organisation link, opened by a signed-in member, names its node.

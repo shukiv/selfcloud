@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useId, useState, type CSSProperties } from "react";
-import { Alert, Button, Input, Space, Tag } from "antd";
+import { App, Alert, Button, Input, Space, Tag } from "antd";
+import { useFlight } from "../../lib/flight";
 import { CheckCheck, Pencil, Reply, Trash2, Undo2 } from "lucide-react";
 import IconButton from "../IconButton";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
@@ -49,6 +50,8 @@ export default function CommentItem({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const request = useFlight();
+  const { message } = App.useApp();
   const [actionError, setActionError] = useState<string | null>(null);
   const [repliesOpen, setRepliesOpen] = useState(false);
 
@@ -93,17 +96,28 @@ export default function CommentItem({
     }
   };
 
+  // cancelDelete closes the confirm at once, busy or not: the delete on its way is aborted, and the thread is read again (fu4).
+  const cancelDelete = () => {
+    if (request.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      void refresh();
+    }
+    setDeleteError(null);
+    setConfirmDelete(false);
+  };
+
   const doDelete = async () => {
+    const signal = request.start();
     setDeleteBusy(true);
     setDeleteError(null);
     const stale = sessionChanged();
     try {
-      await deleteComment(c.id);
+      await deleteComment(c.id, signal);
       if (stale()) return;
       setConfirmDelete(false);
       await refresh();
     } catch (err) {
-      if (stale()) return;
+      if (stale() || signal.aborted) return;
       // A comment that is gone, or a switch that is off, needs no retry: the confirm closes and the list is read again.
       if (listIsStale(err)) {
         setConfirmDelete(false);
@@ -112,6 +126,7 @@ export default function CommentItem({
       }
       setDeleteError(faultMessage(err, t, "comments.failed"));
     } finally {
+      request.end();
       setDeleteBusy(false);
     }
   };
@@ -285,6 +300,7 @@ export default function CommentItem({
             setConfirmDelete(false);
             setDeleteError(null);
           }}
+          oncancel={cancelDelete}
         />
       )}
     </article>

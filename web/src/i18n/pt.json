@@ -323,6 +323,7 @@
   "files.media.remove": "Remover {name} da lista de reprodução",
   "files.drop.here": "Largue aqui para carregar",
   "files.upload.noPath": "Alguns ficheiros não podem ser carregados para uma pasta que não alcança daqui.",
+  "files.busy.keyWait": "A pasta ainda está a abrir. Tente novamente daqui a pouco.",
   "files.copy.done": "Copiado.",
   "files.jobs": "Cópias",
   "files.job.running": "A copiar…",

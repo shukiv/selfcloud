@@ -2,9 +2,10 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "../../lib/session";
-import { fail, stubFetch, type Call } from "../../test/fetchStub";
+import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import { account, signedAs, usage, LINK } from "../../test/adminFixtures";
 import TenantsPage from "./TenantsPage";
 
@@ -12,9 +13,11 @@ import TenantsPage from "./TenantsPage";
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
-    <QueryClientProvider client={qc}>
-      <TenantsPage />
-    </QueryClientProvider>,
+    <App>
+      <QueryClientProvider client={qc}>
+        <TenantsPage />
+      </QueryClientProvider>
+    </App>,
   );
   return { qc, ...view };
 }
@@ -119,6 +122,24 @@ describe("a row's usage and its actions", () => {
 });
 
 describe("a change of person while a change is out", () => {
+  it("a suspend that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+    const { calls } = stubFetch((c) => {
+      if (c.method === "PATCH") return new Promise<Answer>(() => undefined);
+      if (path(c).pathname === "/api/v1/accounts") return { status: 200, body: { items: [account()] } };
+      return { status: 200, body: usage() };
+    });
+    renderPage();
+    await screen.findByText("Acme Ltd");
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Acme Ltd" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Suspend" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Suspend" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.find((c) => c.method === "PATCH")?.signal?.aborted).toBe(true);
+  });
+
   it("the answer to a suspend that arrives after the person changed is not shown (guard: sessionChanged in confirmSuspend)", async () => {
     let release!: (a: { status: number; body?: unknown }) => void;
     const gate = new Promise<{ status: number; body?: unknown }>((resolve) => {

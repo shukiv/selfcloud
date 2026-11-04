@@ -279,6 +279,35 @@ describe('sending pieces', () => {
   });
 });
 
+describe('a name taken at creation (fu4, item 3)', () => {
+  const taken = { error: { code: 'conflict', message: 'taken', details: {} } };
+
+  it('asks the question, and sends no piece', async () => {
+    const file = new File(['hello world'], 'q4-clear-111327.txt', { lastModified: LM });
+    const m = new U.UploadManager();
+    m.bind(USER_A);
+    stubFetch(() => new Response(JSON.stringify(taken), { status: 409 }));
+
+    m.add([{ file, target: { folder: FLD } }]);
+    await vi.waitFor(() => expect(get(U.uploads)[0].status).toBe('conflict'));
+    expect(get(U.conflictAsk)).toBe('q4-clear-111327.txt');
+    expect(FakeXHR.sent).toHaveLength(0);
+  });
+
+  it('cancelling that row ends its question, so no dialog is left with nothing to answer', async () => {
+    const file = new File(['hello world'], 'q4-clear-111327.txt', { lastModified: LM });
+    const m = new U.UploadManager();
+    m.bind(USER_A);
+    stubFetch(() => new Response(JSON.stringify(taken), { status: 409 }));
+
+    m.add([{ file, target: { folder: FLD } }]);
+    await vi.waitFor(() => expect(get(U.uploads)[0].status).toBe('conflict'));
+    await m.cancel(get(U.uploads)[0].id);
+    expect(get(U.uploads)[0].status).toBe('cancelled');
+    expect(get(U.conflictAsk)).toBeNull();
+  });
+});
+
 describe('a drop link transport', () => {
   it('a drop upload is done when its last piece is taken, though the server names no node to a visitor', async () => {
     const file = new File(['hello world'], 'a.txt', { lastModified: LM });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { App } from "antd";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,7 +33,7 @@ describe("delete all public links", () => {
     expect(api.deleteAllPublicLinks).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog");
     await user.click(dialog.querySelector(".ant-btn-primary") as HTMLElement);
-    await waitFor(() => expect(api.deleteAllPublicLinks).toHaveBeenCalledWith("acc_1"));
+    await waitFor(() => expect(api.deleteAllPublicLinks).toHaveBeenCalledWith("acc_1", expect.anything()));
     await waitFor(() => expect(ondone).toHaveBeenCalledWith(2));
   });
 
@@ -82,25 +83,41 @@ describe("delete all public links", () => {
   });
 
   // Escape during the delete would close the dialog while the outcome is still out: the close waits for the answer.
-  it("Escape does not close the dialog while the delete is in flight (guard: keyboard and onCancel check busy)", async () => {
+  // antd's motion does not end in jsdom, so a closed dialog stays in its leave state (ant-zoom-leave) for the whole test.
+  const leaving = () => {
+    const modal = document.querySelector(".ant-modal");
+    return modal === null || modal.classList.contains("ant-zoom-leave");
+  };
+
+  // fu4, item 2: a busy dialog can be cancelled. Escape and Cancel close it at once and abort the request.
+  it("Escape and Cancel close the dialog while the delete is in flight, and abort it (fu4, item 2)", async () => {
     const user = userEvent.setup();
-    let release!: (v: { deleted: number }) => void;
-    api.deleteAllPublicLinks.mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+    api.deleteAllPublicLinks.mockImplementationOnce(() => new Promise(() => undefined));
     const ondone = vi.fn();
-    render(<DeletePublicLinks account="acc_1" count={2} ondone={ondone} />);
+    render(<App><DeletePublicLinks account="acc_1" count={2} ondone={ondone} /></App>);
     await user.click(screen.getByRole("button", { name: "Delete all public links" }));
     await screen.findByRole("dialog");
     await user.click(screen.getByRole("dialog").querySelector(".ant-btn-primary") as HTMLElement);
     await waitFor(() => expect(api.deleteAllPublicLinks).toHaveBeenCalled());
+    const signal = api.deleteAllPublicLinks.mock.calls[0][1] as AbortSignal;
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape", code: "Escape", keyCode: 27 });
-    await new Promise((r) => setTimeout(r, 600));
-    expect(screen.queryByRole("dialog")).not.toBeNull();
-    // Nor can the dialog be closed by its own close button or its Cancel button while the delete is out.
+    await waitFor(() => expect(leaving()).toBe(true));
+    expect(signal.aborted).toBe(true);
+    expect(ondone).not.toHaveBeenCalled();
+  });
+
+  it("Cancel closes the dialog while the delete is in flight, and aborts it (fu4, item 2)", async () => {
+    const user = userEvent.setup();
+    api.deleteAllPublicLinks.mockImplementationOnce(() => new Promise(() => undefined));
+    render(<App><DeletePublicLinks account="acc_1" count={2} ondone={vi.fn()} /></App>);
+    await user.click(screen.getByRole("button", { name: "Delete all public links" }));
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("dialog").querySelector(".ant-btn-primary") as HTMLElement);
+    await waitFor(() => expect(api.deleteAllPublicLinks).toHaveBeenCalled());
+    const signal = api.deleteAllPublicLinks.mock.calls[0][1] as AbortSignal;
     const open = screen.getByRole("dialog");
-    expect(open.querySelector(".ant-modal-close")).toBeNull();
-    const cancel = [...open.querySelectorAll("button")].find((b) => b.textContent === "Cancel") as HTMLButtonElement;
-    expect(cancel.disabled).toBe(true);
-    release({ deleted: 2 });
-    await waitFor(() => expect(ondone).toHaveBeenCalledWith(2));
+    await user.click([...open.querySelectorAll("button")].find((b) => b.textContent === "Cancel") as HTMLElement);
+    await waitFor(() => expect(leaving()).toBe(true));
+    expect(signal.aborted).toBe(true);
   });
 });

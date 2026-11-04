@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button } from "antd";
+import { App, Alert, Button } from "antd";
+import { useFlight } from "../../lib/flight";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -34,6 +35,8 @@ export default function TenantKeys({ account }: { account: string }) {
   const [creating, setCreating] = useState(false);
   const [shown, setShown] = useState<NewKeyReply | null>(null);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
+  const request = useFlight();
+  const { message } = App.useApp();
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -51,23 +54,36 @@ export default function TenantKeys({ account }: { account: string }) {
     return t("keys.state.active");
   };
 
+  // cancelRevoke closes the dialog at once, busy or not: the revoke on its way is aborted, and the keys are read again, since
+  // the key may have been revoked (fu4, decision 76's rule for writes).
+  const cancelRevoke = () => {
+    if (request.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      void qc.invalidateQueries({ queryKey: keysKey });
+    }
+    setRevokeError(null);
+    setRevoking(null);
+  };
+
   const confirmRevoke = async () => {
     const target = revoking;
     if (!target || inFlight.current) return;
     inFlight.current = true;
     const changed = sessionChanged();
+    const signal = request.start();
     setRevokeBusy(true);
     setRevokeError(null);
     try {
-      await revokeKey(account, target.id);
+      await revokeKey(account, target.id, signal);
       if (changed()) return;
       setNotice(t("keys.revokedNotice", { name: target.name }));
       setRevoking(null);
       void qc.invalidateQueries({ queryKey: keysKey });
     } catch (err) {
-      if (changed()) return;
+      if (changed() || signal.aborted) return;
       setRevokeError(failureText(err, lang));
     } finally {
+      request.end();
       inFlight.current = false;
       setRevokeBusy(false);
     }
@@ -181,6 +197,7 @@ export default function TenantKeys({ account }: { account: string }) {
           busy={revokeBusy}
           onconfirm={() => void confirmRevoke()}
           onclose={() => setRevoking(null)}
+          oncancel={cancelRevoke}
         />
       )}
     </div>

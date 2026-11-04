@@ -2,10 +2,11 @@
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
-import { fail, stubFetch, type Call } from "../../test/fetchStub";
+import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import LabelsPage from "./LabelsPage";
 
 function signedAs(): Session {
@@ -30,9 +31,11 @@ const STATUS = {
 function renderPage() {
   const qc = createQueryClient();
   render(
-    <QueryClientProvider client={qc}>
-      <LabelsPage />
-    </QueryClientProvider>,
+    <App>
+      <QueryClientProvider client={qc}>
+        <LabelsPage />
+      </QueryClientProvider>
+    </App>,
   );
 }
 
@@ -56,6 +59,21 @@ describe("labels page", () => {
     expect(within(list).getByText("Note")).toBeTruthy();
     expect(within(list).getByText("Restricted")).toBeTruthy();
     expect(within(list).getByText("Items with a value: 3")).toBeTruthy();
+  });
+
+  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+    const { calls } = stubFetch((c) => {
+      if (isDelete(c)) return new Promise<Answer>(() => undefined);
+      return { status: 200, body: { items: [NOTE, STATUS] } };
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Delete: Status/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Delete$/ }));
+    await waitFor(() => expect(calls.filter(isDelete)).toHaveLength(1));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.find(isDelete)?.signal?.aborted).toBe(true);
   });
 
   it("deleting a field states how many items lose their value, then sends the delete once", async () => {

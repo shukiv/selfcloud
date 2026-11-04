@@ -9,6 +9,8 @@ export interface Call {
   url: string;
   auth: string | null;
   body: unknown;
+  // The signal the request was sent with, if any: a cancelled dialog aborts it (fu4, decision 76).
+  signal?: AbortSignal;
 }
 
 // An answer is a status and, optionally, a JSON body. An error answer uses the server's envelope.
@@ -27,9 +29,13 @@ export function stubFetch(answer: (c: Call) => Answer | Promise<Answer>) {
   const fn = vi.fn(async (url: string, init: RequestInit = {}) => {
     const headers = (init.headers ?? {}) as Record<string, string>;
     const body = typeof init.body === "string" ? (JSON.parse(init.body) as unknown) : null;
-    const call: Call = { method: init.method ?? "GET", url, auth: headers.Authorization ?? null, body };
+    const call: Call = { method: init.method ?? "GET", url, auth: headers.Authorization ?? null, body, signal: init.signal ?? undefined };
     calls.push(call);
-    const a = await answer(call);
+    // An abort rejects the request, as the browser does, even when the answer never comes.
+    const aborted = new Promise<never>((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    });
+    const a = await Promise.race([answer(call), aborted]);
     return new Response(a.body === undefined ? null : JSON.stringify(a.body), {
       status: a.status,
       headers: { "Content-Type": "application/json" },

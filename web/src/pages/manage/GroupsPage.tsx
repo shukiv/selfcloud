@@ -3,7 +3,8 @@ import { Pencil, Trash2, UserMinus, Users } from "lucide-react";
 import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
-import { Alert, Button } from "antd";
+import { App, Alert, Button } from "antd";
+import { useFlight } from "../../lib/flight";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
 import { addGroupMember, createGroup, deleteGroup, listGroupMembers, listGroups, removeGroupMember, renameGroup } from "../../lib/manage/api";
@@ -34,6 +35,8 @@ function GroupsView() {
   const [deleting, setDeleting] = useState<Group | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const flight = useFlight();
+  const { message } = App.useApp();
   const [open, setOpen] = useState<Group | null>(null);
   const [adding, setAdding] = useState<DirectoryEntry | null>(null);
   const [comboKey, setComboKey] = useState(0);
@@ -106,24 +109,37 @@ function GroupsView() {
       }
     });
 
+  // cancelDelete closes the dialog at once, busy or not: the delete on its way is aborted, and the groups are read again,
+  // since the group may have been deleted (fu4, decision 76's rule for writes).
+  const cancelDelete = () => {
+    if (flight.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      void refreshGroups();
+    }
+    setDeleteError(null);
+    setDeleting(null);
+  };
+
   const confirmDelete = () =>
     once(LOCK.groupDelete(deleting?.id ?? ""), async () => {
       if (!deleting) return;
       const stale = sessionChanged();
       const target = deleting;
+      const signal = flight.start();
       setDeleteBusy(true);
       setDeleteError(null);
       try {
-        await deleteGroup(account, target.id);
+        await deleteGroup(account, target.id, signal);
         if (stale()) return;
         if (open?.id === target.id) setOpen(null);
         setNotice(t("groups.deleted", { name: target.name }));
         setDeleting(null);
         await refreshGroups();
       } catch (err) {
-        if (stale()) return;
+        if (stale() || signal.aborted) return;
         setDeleteError(failureText(err, lang));
       } finally {
+        flight.end();
         setDeleteBusy(false);
       }
     });
@@ -270,6 +286,7 @@ function GroupsView() {
           error={deleteError}
           onconfirm={() => void confirmDelete()}
           onclose={() => setDeleting(null)}
+          oncancel={cancelDelete}
         />
       )}
     </div>

@@ -64,8 +64,8 @@ export function updateLabelField(account: string, field: string, body: LabelFiel
   return api<LabelField>('PATCH', `/api/v1/accounts/${account}/label-fields/${field}`, { body, signal });
 }
 
-export function deleteLabelField(account: string, field: string): Promise<void> {
-  return api<void>('DELETE', `/api/v1/accounts/${account}/label-fields/${field}`);
+export function deleteLabelField(account: string, field: string, signal?: AbortSignal): Promise<void> {
+  return api<void>('DELETE', `/api/v1/accounts/${account}/label-fields/${field}`, { signal });
 }
 
 export function listNodeLabels(node: string): Promise<{ items: NodeLabel[] }> {
