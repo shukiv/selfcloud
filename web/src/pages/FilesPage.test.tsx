@@ -2200,6 +2200,32 @@ describe("the list while the next folder is read (fu3b)", () => {
     await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
   });
 
+  it("Ctrl+V during the load says the folder is still opening, once, and moves nothing (fu4, item 1)", async () => {
+    let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
+    );
+    api.moveNode.mockResolvedValue(node("n1", "alpha.txt"));
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await screen.findByText("The folder is still opening. Try again in a moment.");
+    // One notice for the busy period, not one per key.
+    expect(screen.getAllByText("The folder is still opening. Try again in a moment.")).toHaveLength(1);
+    expect(api.moveNode).not.toHaveBeenCalled();
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+  });
+
   it("the sidebar's New is read-only while the next folder's listing is read, and while its place is looked up (fu3b review 3)", async () => {
     let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
     api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>

@@ -145,6 +145,10 @@ const MENU_POPUP = { paddingBlock: 4 } as const;
 // MAC_KEYS says whether the shortcuts a menu shows are the Mac's (the command sign) or the Windows and Linux ones (Ctrl).
 const MAC_KEYS = typeof navigator !== "undefined" && isMacPlatform(navigator);
 
+// The keys that would have acted on the folder left behind while the next one loads. Each gets a short notice, once per
+// busy period (decision 80). Arrow keys, Tab and Escape do nothing and say nothing.
+const BUSY_NOTICE_KEYS: ReadonlySet<string> = new Set(["copy", "cut", "paste", "delete", "f2", "selectAll", "enter"]);
+
 
 // useRoomy says whether the window is at least 360 pixels wide. Below it the selection panel keeps two icons, and the rest go in
 // its More menu, so the panel never runs past the window's edge; a window that cannot say its width is taken as roomy.
@@ -419,6 +423,11 @@ export default function FilesPage() {
   // without a listing (decision 77, item fu3b). The first read of the page has none, and shows the loading notice.
   const stale = childrenQ.isPending && lastRows.current !== null ? lastRows.current.items : null;
   const busy = placeBusy || stale !== null;
+  // The notice for a key pressed while busy is shown once per busy period (fu4, decision 80).
+  const busyNoticed = useRef(false);
+  useEffect(() => {
+    if (!busy) busyNoticed.current = false;
+  }, [busy]);
   const items = kept ?? stale ?? fetched;
   const hasMore = childrenQ.hasNextPage === true;
 
@@ -870,7 +879,8 @@ export default function FilesPage() {
   }
 
   function onKey(e: ReactKeyboardEvent<HTMLElement>) {
-    if (renameRef.current) return;
+    // While the folder left behind is busy, its rows take no key (fu4): the page's own notice, if any, is shown by onShortcut.
+    if (renameRef.current || busy) return;
     const rtl = document.documentElement.dir === "rtl";
     // cols is 1: Up and Down in the tile view take their step from the tiles' places (tileRowDelta), not from a column count.
     const action = keyAction(e, { cols: 1, grid: view === "grid", rtl, count: ids.length, mac: MAC_KEYS });
@@ -935,8 +945,13 @@ export default function FilesPage() {
   function onShortcut(e: KeyboardEvent) {
     if (e.defaultPrevented || renameRef.current || isTextField(e.target) || dialogRef.current !== null || conflict !== null) return;
     if (dialogOpen()) return;
-    // While the rows on screen are the folder left behind (busy), no key acts on them (fu3b review 1).
-    if (!here || busy) return;
+    if (!here) return;
+    // While the rows on screen are the folder left behind (busy), no key acts on them (fu3b review 1). A key that would have
+    // acted says why it did nothing, once (fu4, decision 80).
+    if (busy) {
+      noteBusyKey(e);
+      return;
+    }
     // The context-menu key and Shift+F10 open the menu of the focused row, as a right click does.
     if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
       e.preventDefault();
@@ -970,6 +985,15 @@ export default function FilesPage() {
         if (clip?.mode === "cut") clearClip();
         return;
     }
+  }
+
+  // noteBusyKey says, once per busy period, that the folder is still opening, for a key that would have acted on it (fu4).
+  // It uses the app's own notice, as copying does, so assistive technology hears it the way the other notices are heard.
+  function noteBusyKey(e: KeyboardEvent) {
+    const kind = keyAction(e, { cols: 1, grid: view === "grid", rtl: document.documentElement.dir === "rtl", count: ids.length, mac: MAC_KEYS })?.kind;
+    if (!kind || !BUSY_NOTICE_KEYS.has(kind) || busyNoticed.current) return;
+    busyNoticed.current = true;
+    void message.info(t("files.busy.keyWait"));
   }
 
   // openMenuFromFocus opens the menu of the focused row, or the place's menu when no row has the focus, from the keyboard. The

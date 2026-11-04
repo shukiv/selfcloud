@@ -323,6 +323,7 @@
   "files.media.remove": "הסרת {name} מרשימת ההשמעה",
   "files.drop.here": "שחררו כאן כדי להעלות",
   "files.upload.noPath": "לא ניתן להעלות חלק מהקבצים לתיקייה שאין לכם אליה גישה מכאן.",
+  "files.busy.keyWait": "התיקייה עדיין נפתחת. נסו שוב בעוד רגע.",
   "files.copy.done": "הועתק.",
   "files.jobs": "העתקות",
   "files.job.running": "מעתיקים…",

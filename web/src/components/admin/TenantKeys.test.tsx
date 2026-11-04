@@ -68,6 +68,22 @@ describe("API keys of a tenant", () => {
     await waitFor(() => expect(screen.queryByDisplayValue(SECRET)).toBeNull());
   });
 
+  it("a revoke that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+    const { calls } = stubFetch((c: Call) => {
+      if (c.method === "DELETE") return new Promise<Answer>(() => undefined);
+      return { status: 200, body: { items: [key()] } };
+    });
+    renderKeys();
+    await screen.findByText("CI");
+    fireEvent.click(screen.getByRole("button", { name: /Revoke/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.find((c) => c.method === "DELETE")?.signal?.aborted).toBe(true);
+  });
+
   it("revoke asks first, and a double click sends one request (the revoke button is disabled while the request is out; the inFlight ref is not proven here)", async () => {
     let revokes = 0;
     stubFetch((c: Call) => {

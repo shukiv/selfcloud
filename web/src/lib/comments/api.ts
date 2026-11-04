@@ -93,8 +93,8 @@ export function editComment(id: string, body: string): Promise<Comment> {
   return api<Comment>("PATCH", `/api/v1/comments/${encodeURIComponent(id)}`, { body: { body } });
 }
 
-export function deleteComment(id: string): Promise<void> {
-  return api<void>("DELETE", `/api/v1/comments/${encodeURIComponent(id)}`);
+export function deleteComment(id: string, signal?: AbortSignal): Promise<void> {
+  return api<void>("DELETE", `/api/v1/comments/${encodeURIComponent(id)}`, { signal });
 }
 
 export function resolveComment(id: string, resolved: boolean): Promise<Comment> {

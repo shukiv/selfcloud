@@ -323,6 +323,7 @@
   "files.media.remove": "Retirer {name} de la liste de lecture",
   "files.drop.here": "Déposer ici pour envoyer",
   "files.upload.noPath": "Certains fichiers ne peuvent pas être envoyés dans un dossier inaccessible d’ici.",
+  "files.busy.keyWait": "Le dossier s’ouvre encore. Réessayez dans un instant.",
   "files.copy.done": "Copié.",
   "files.jobs": "Copies",
   "files.job.running": "Copie en cours…",

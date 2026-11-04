@@ -3,7 +3,8 @@ import { Trash2 } from "lucide-react";
 import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
-import { Alert, Button, Select } from "antd";
+import { App, Alert, Button, Select } from "antd";
+import { useFlight } from "../../lib/flight";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
 import { formatDate } from "../../lib/files/format";
@@ -48,6 +49,18 @@ function LinksView() {
   const [deleting, setDeleting] = useState<AccountLink | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const flight = useFlight();
+  const { message } = App.useApp();
+  // cancelDelete closes the dialog at once, busy or not: the delete on its way is aborted, and the links are read again (fu4).
+  const cancelDelete = () => {
+    if (flight.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      void refresh();
+      void refreshCount();
+    }
+    setDeleteError(null);
+    setDeleting(null);
+  };
   const once = useOncePer();
   const viewer = useStore(session)?.user.id ?? "";
 
@@ -77,19 +90,21 @@ function LinksView() {
       if (!deleting) return;
       const stale = sessionChanged();
       const link = deleting;
+      const signal = flight.start();
       setDeleteBusy(true);
       setDeleteError(null);
       try {
-        await deleteShareLink(link.id);
+        await deleteShareLink(link.id, signal);
         if (stale()) return;
         setDeleting(null);
         setNotice(t("links.deleted"));
         await refresh();
         await refreshCount();
       } catch (err) {
-        if (stale()) return;
+        if (stale() || signal.aborted) return;
         setDeleteError(failureText(err, lang));
       } finally {
+        flight.end();
         setDeleteBusy(false);
       }
     });
@@ -226,6 +241,7 @@ function LinksView() {
           error={deleteError}
           onconfirm={() => void confirmDelete()}
           onclose={() => setDeleting(null)}
+          oncancel={cancelDelete}
         />
       )}
     </div>

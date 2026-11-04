@@ -2,7 +2,8 @@
 import { Pencil, Play, Ban } from "lucide-react";
 import IconButton from "../../components/IconButton";
 
-import { Alert, Button, Input } from "antd";
+import { App, Alert, Button, Input } from "antd";
+import { useFlight } from "../../lib/flight";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -40,6 +41,18 @@ function TenantView({ id }: { id: string }) {
   const brandName = useStore(brand).name;
   const qc = useQueryClient();
   const flight = useGuard();
+  // The suspend or resume on its way is the request the dialog cancels (fu4, decision 76's rule for writes). The account is
+  // read again, since the change may have gone through.
+  const request = useFlight();
+  const { message } = App.useApp();
+  const cancelSuspend = () => {
+    if (request.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      void getAccount(id).then(setAccount, () => undefined);
+    }
+    setSuspendError(null);
+    setSuspending(false);
+  };
   const tenantKey = queryKey("admin-tenant", id);
   const q = useQuery({ queryKey: tenantKey, queryFn: () => getAccount(id), refetchOnMount: "always", retry: false });
   const tenant = q.data;
@@ -106,18 +119,20 @@ function TenantView({ id }: { id: string }) {
     const next = target.status === "suspended" ? "active" : "suspended";
     return flight(async () => {
       const changed = sessionChanged();
+      const signal = request.start();
       setSuspendBusy(true);
       setSuspendError(null);
       try {
-        const updated = await updateAccount(target.id, { status: next });
+        const updated = await updateAccount(target.id, { status: next }, signal);
         if (changed()) return;
         setAccount(updated);
         setSuspending(false);
         setNotice(next === "suspended" ? t("tenant.suspendedNotice") : t("tenant.resumedNotice"));
       } catch (err) {
-        if (changed()) return;
+        if (changed() || signal.aborted) return;
         setSuspendError(failureText(err, lang));
       } finally {
+        request.end();
         setSuspendBusy(false);
       }
     });
@@ -233,6 +248,7 @@ function TenantView({ id }: { id: string }) {
           busy={suspendBusy}
           onconfirm={() => void confirmSuspend()}
           onclose={() => setSuspending(false)}
+          oncancel={cancelSuspend}
         />
       )}
 

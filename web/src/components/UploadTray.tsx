@@ -19,7 +19,7 @@ import Conflict from "./files/Conflict";
 // Its height is reported to trayRoom, so the listing keeps its last rows clear of it.
 const ACTIVE = ["queued", "uploading", "waiting", "conflict", "awaiting_name"];
 const WAITING = ["uploading", "queued", "waiting"];
-const CANCELLABLE = ["uploading", "queued", "waiting", "paused", "interrupted", "awaiting_name"];
+const CANCELLABLE = ["uploading", "queued", "waiting", "paused", "interrupted", "awaiting_name", "conflict"];
 const FINISHED = ["done", "skipped", "cancelled", "failed"];
 const ENDED = ["done", "skipped", "cancelled"];
 // NEEDS is a state that waits for the person: a name, a resume, or a wait the person may end. A tray that folded opens for it.
@@ -71,8 +71,10 @@ export default function UploadTray() {
   const seen = useRef(new Map<number, string>());
 
   const active = useMemo(() => list.filter((u) => ACTIVE.includes(u.status)), [list]);
-  const total = active.reduce((n, u) => n + u.size, 0);
-  const sent = active.reduce((n, u) => n + u.offset, 0);
+  // A name taken waits for the person's answer, so it is not counted as running in the summary.
+  const running = useMemo(() => active.filter((u) => u.status !== "conflict"), [active]);
+  const total = running.reduce((n, u) => n + u.size, 0);
+  const sent = running.reduce((n, u) => n + u.offset, 0);
   const percent = total > 0 ? Math.floor((sent / total) * 100) : 0;
 
   // The announcement follows the list; the seen map keeps a finish from being announced twice.
@@ -143,7 +145,7 @@ export default function UploadTray() {
           </span>
         }
       >
-        <p role="status">{active.length > 0 ? tp("upload.summary", active.length, { percent: String(percent) }) : ""}</p>
+        <p role="status">{running.length > 0 ? tp("upload.summary", running.length, { percent: String(percent) }) : ""}</p>
         <p aria-live="polite" style={SR_ONLY}>
           {announce}
         </p>

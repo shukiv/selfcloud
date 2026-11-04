@@ -323,6 +323,7 @@
   "files.media.remove": "Remove {name} from the playlist",
   "files.drop.here": "Drop to upload here",
   "files.upload.noPath": "Some files cannot be uploaded into a folder you cannot reach from here.",
+  "files.busy.keyWait": "The folder is still opening. Try again in a moment.",
   "files.copy.done": "Copied.",
   "files.jobs": "Copies",
   "files.job.running": "Copying…",

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Button, Dropdown, Input } from "antd";
+import { App, Alert, Button, Dropdown, Input } from "antd";
+import { useFlight } from "../../lib/flight";
 import { MoreVertical } from "lucide-react";
 import IconButton from "../../components/IconButton";
 import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
@@ -43,6 +44,17 @@ function TenantsView() {
   const brandName = useStore(brand).name;
   const qc = useQueryClient();
   const flight = useGuard();
+  // The suspend or resume on its way is the request the dialog cancels (fu4, decision 76's rule for writes).
+  const request = useFlight();
+  const { message } = App.useApp();
+  const cancelSuspend = () => {
+    if (request.abort()) {
+      void message.warning(t("common.cancelledMaybe"));
+      void refreshList();
+    }
+    setSuspendError(null);
+    setSuspending(null);
+  };
   // The address is read where it is: the router's location store lags behind a replaced address.
   const initial = tenantQuery(window.location.search);
   const [text, setText] = useState(initial.q);
@@ -103,10 +115,11 @@ function TenantsView() {
     const next = target.status === "suspended" ? "active" : "suspended";
     return flight(async () => {
       const changed = sessionChanged();
+      const signal = request.start();
       setSuspendBusy(true);
       setSuspendError(null);
       try {
-        const updated = await updateAccount(target.id, { status: next });
+        const updated = await updateAccount(target.id, { status: next }, signal);
         if (changed()) return;
         setNotice(
           next === "suspended"
@@ -116,9 +129,10 @@ function TenantsView() {
         setSuspending(null);
         void refreshList();
       } catch (err) {
-        if (changed()) return;
+        if (changed() || signal.aborted) return;
         setSuspendError(failureText(err, lang));
       } finally {
+        request.end();
         setSuspendBusy(false);
       }
     });
@@ -290,6 +304,7 @@ function TenantsView() {
           busy={suspendBusy}
           onconfirm={() => void confirmSuspend()}
           onclose={() => setSuspending(null)}
+          oncancel={cancelSuspend}
         />
       )}
 

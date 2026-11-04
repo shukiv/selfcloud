@@ -2,10 +2,11 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
-import { fail, stubFetch, type Call } from "../../test/fetchStub";
+import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import SpacesPage from "./SpacesPage";
 
 function signedAs(): Session {
@@ -33,9 +34,11 @@ const SPACE = {
 function renderPage() {
   const qc = createQueryClient();
   render(
-    <QueryClientProvider client={qc}>
-      <SpacesPage />
-    </QueryClientProvider>,
+    <App>
+      <QueryClientProvider client={qc}>
+        <SpacesPage />
+      </QueryClientProvider>
+    </App>,
   );
   return qc;
 }
@@ -62,6 +65,19 @@ describe("team spaces", () => {
     renderPage();
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.queryByText(/No team spaces yet/)).toBeNull();
+  });
+
+  it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
+    const { calls } = stubFetch((c) => (isSpaceDelete(c) ? new Promise<Answer>(() => undefined) : answerFor(() => null)(c)));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Delete.*Plans/ }));
+    await screen.findByRole("button", { name: /Delete team space/ });
+    fireEvent.change(document.getElementById("space-delete-name") as HTMLInputElement, { target: { value: "Plans" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Delete team space/ }));
+    await waitFor(() => expect(calls.filter(isSpaceDelete)).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.find(isSpaceDelete)?.signal?.aborted).toBe(true);
   });
 
   it("deleting a space needs its exact name typed; the button stays off until it matches (guard: requireName on the confirmation)", async () => {

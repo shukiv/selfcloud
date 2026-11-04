@@ -2,6 +2,7 @@
 
 import { fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { App } from "antd";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../../lib/query";
@@ -52,8 +53,10 @@ async function modalOf(): Promise<HTMLElement> {
 
 function open(node: Node, onChanged = vi.fn()) {
   return render(
-    <Details node={node} canVersions={false} canShare={false} onClose={() => undefined} onVersions={() => undefined}
-      onShare={() => undefined} onChanged={onChanged} />,
+    <App>
+      <Details node={node} canVersions={false} canShare={false} onClose={() => undefined} onVersions={() => undefined}
+        onShare={() => undefined} onChanged={onChanged} />
+    </App>,
   );
 }
 
@@ -77,8 +80,23 @@ describe("the lock in Details", () => {
     expect(within(dialog).getByText(/unsaved changes/i)).toBeTruthy();
     expect(apiMock.mock.calls.some((c) => String(c[1]).endsWith("/unlock"))).toBe(false);
     fireEvent.click(within(dialog).getByRole("button", { name: "End the session" }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith("POST", "/api/v1/nodes/nod_a1/unlock"));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith("POST", "/api/v1/nodes/nod_a1/unlock", expect.anything()));
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ editing: false })));
+  });
+
+  // fu4, item 2: the end of a session that never answers is cancelled at once, and its request is aborted.
+  it("a session end that never answers: Cancel closes the confirmation and aborts the request (fu4, item 2)", async () => {
+    ended(() => new Promise(() => undefined));
+    const onChanged = vi.fn();
+    open(file(), onChanged);
+    fireEvent.click(screen.getByRole("button", { name: "End the editing session" }));
+    const dialog = await modalOf();
+    fireEvent.click(within(dialog).getByRole("button", { name: "End the session" }));
+    await waitFor(() => expect(apiMock.mock.calls.some((c) => String(c[1]).endsWith("/unlock"))).toBe(true));
+    const call = apiMock.mock.calls.find((c) => String(c[1]).endsWith("/unlock"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect((call?.[2] as { signal?: AbortSignal }).signal?.aborted).toBe(true);
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   it("does not offer it to an editor, and does not offer it for a file no one is editing", () => {

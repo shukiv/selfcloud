@@ -359,6 +359,8 @@ export class UploadManager {
       rt.xhr?.abort();
     }
     this.update(id, { status: 'cancelled', speed: 0 });
+    // A row whose name was taken was waiting for an answer: its question closes, or the next row's opens.
+    if (it.status === 'conflict') this.askNext();
     this.forget(id);
     if (it.url) {
       try {
@@ -400,7 +402,11 @@ export class UploadManager {
   // answerConflict settles the open question. remember makes the choice hold for the rest of the batch.
   answerConflict(choice: ConflictChoice, remember: boolean): void {
     const asked = this.items.find((x) => x.status === 'conflict');
-    if (!asked) return;
+    if (!asked) {
+      // No row waits for the answer any more: the question closes rather than stay open with nothing to answer.
+      this.askNext();
+      return;
+    }
     const { state, effect } = conflictReducer(this.conflict, { type: 'answer', choice, forBatch: remember });
     this.conflict = state;
     this.applyConflict(asked.id, effect);
@@ -548,7 +554,12 @@ export class UploadManager {
   // askNext opens the question for the next upload whose name is taken, if no batch choice settles it.
   private askNext(): void {
     const next = this.items.find((x) => x.status === 'conflict');
-    if (!next) return;
+    if (!next) {
+      // Nothing waits for an answer, so a question still open is stale: it closes.
+      if (this.conflict.asking !== null) this.conflict = { ...this.conflict, asking: null };
+      this.publish();
+      return;
+    }
     const { state, effect } = conflictReducer(this.conflict, { type: 'conflict', name: next.name });
     this.conflict = state;
     this.applyConflict(next.id, effect);
