@@ -447,7 +447,8 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   await selectRow(page, 'hello.txt');
   await clickButton(page, 'Versions');
   await page.waitFor(`document.querySelectorAll('[data-testid="version"]').length >= 2`);
-  await clickButton(page, 'Restore this version');
+  // A version's buttons are icons named "verb: version" (decision 72), so the old version's Restore is found by that name.
+  await page.waitFor(`(() => { const b = [...document.querySelectorAll('[data-testid="version"] button')].find((x) => !x.disabled && (x.getAttribute('aria-label') ?? '').startsWith('Restore this version: ')); if (!b) return false; b.click(); return true; })()`, 10000);
   await page.waitFor(`document.body.textContent.includes('Restored.')`);
   await page.waitFor(`(() => { const r = document.querySelector(${q(rowSel('hello.txt'))}); return !!r && ${sizeCell('hello.txt')} === window.__oldSize; })()`, 20000);
   check(true, 'restoring an earlier version makes it current again');

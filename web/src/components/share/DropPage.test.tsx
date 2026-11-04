@@ -46,7 +46,7 @@ describe("a drop page's icon buttons name the file", () => {
     // The upload is held until the test ends, then refused, so it cannot send anything into the next test's stub.
     let release!: (a: Answer) => void;
     const held = new Promise<Answer>((r) => (release = r));
-    stubFetch((c: Call) => (c.url === "/api/v1/share/info" ? { status: 200, body: DROP_INFO } : held));
+    const { calls } = stubFetch((c: Call) => (c.url === "/api/v1/share/info" ? { status: 200, body: DROP_INFO } : held));
     const { container } = render(<DropPage {...props()} />);
     await screen.findByRole("heading", { name: "Send the report" });
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
@@ -54,6 +54,9 @@ describe("a drop page's icon buttons name the file", () => {
       target: { files: [new File(["the brief"], "brief.txt", { type: "text/plain" })] },
     });
     expect(await screen.findByRole("button", { name: "Cancel: brief.txt" })).toBeTruthy();
+    // The upload's first request is made in this test, before it is refused: on a slow machine it was made after the test
+    // ended and landed in the next test's stub (the gate's run, 2026-11-03).
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/uploads")).toBe(true));
     release(fail(401, "unauthenticated"));
   });
 });
