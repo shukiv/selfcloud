@@ -20,6 +20,8 @@ import { myStorage } from "../lib/storage/api";
 import { manager } from "../lib/files/uploads";
 import { formatBytes } from "../lib/files/format";
 import { SIDEBAR } from "../theme/tokens";
+import { sidebarRow } from "../theme/sidebarRow";
+import { theme as antdTheme } from "antd";
 
 // The folder lists and the hide call are replaced: each test states what the server answers.
 const mocks = vi.hoisted(() => ({
@@ -713,4 +715,44 @@ describe("the sidebar's picker (decision 66)", () => {
       }
     });
   });
+});
+
+// Decision 81: the sidebar's menu items take the row metrics of sidebarRow (theme/sidebarRow.ts): the start indent that holds the
+// icon column (antd's inline padding, from the Menu's inlineIndent) and the item height. The expected values are read from the
+// theme's design token, not written as numbers. Checked on a mouse and a finger, in left-to-right and right-to-left.
+describe("the sidebar's menu takes the row metrics (decision 81)", () => {
+  beforeEach(async () => {
+    window.localStorage.clear();
+    folders.set([]);
+    hiddenFolders.set([]);
+    mocks.loadHiddenFolders.mockReset().mockResolvedValue([]);
+  });
+
+  for (const lang of ["en", "he"] as const) {
+    for (const coarse of [false, true]) {
+      it(`an item's start indent and height are the row metrics (${lang}, ${coarse ? "finger" : "mouse"})`, async () => {
+        const original = window.matchMedia;
+        window.matchMedia = (query: string) => ({ ...original(query), matches: coarse && query.includes("pointer: coarse") }) as MediaQueryList;
+        try {
+          await setLang(lang);
+          signIn("member");
+          renderShell("/starred");
+          const nav = await openNav();
+          const starred = await waitFor(() => {
+            const el = within(nav).getAllByRole("menuitem").find((m) => (m.getAttribute("data-menu-id") ?? "").includes("starred"));
+            if (!el) throw new Error("no Starred item");
+            return el;
+          });
+          const metrics = sidebarRow(antdTheme.getDesignToken(), coarse);
+          // antd's menu sets the start indent as a physical padding: the right in a right-to-left page, the left otherwise.
+          const indentProp = `padding${lang === "he" ? "Right" : "Left"}`;
+          expect((starred.style as unknown as Record<string, string>)[indentProp]).toBe(`${metrics.indent}px`);
+          expect(getComputedStyle(starred).height).toBe(`${metrics.height}px`);
+        } finally {
+          window.matchMedia = original;
+          await setLang("en");
+        }
+      });
+    }
+  }
 });

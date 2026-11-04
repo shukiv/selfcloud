@@ -147,6 +147,8 @@ export default function Shell({ children }: { children: ReactNode }) {
   const isMobile = !screens.lg;
   // On a finger the account button is a 44 pixel target; with a mouse it keeps the button's usual size.
   const coarse = useCoarsePointer();
+  // The sidebar's row metrics (decision 81), read once for the sidebar's menu and its icon column.
+  const row = sidebarRow(token, coarse);
   const lang = useLang();
   const rtl = directionOf(lang) === "rtl";
   const me = useStore(session);
@@ -403,9 +405,9 @@ export default function Shell({ children }: { children: ReactNode }) {
           "--sc-side-mark": currentMark(sidebar).bar,
           "--sc-side-ink": currentMark(sidebar).ink,
           "--sc-side-hover": sidebar.hover,
-          // The icon column of every row (New, the tree, the menu) from the sidebar's content edge: a row's icon sits 28 px in, or
-          // 48 px on a finger, where the tree's arrow is 44 px (decision 66).
-          "--sc-icon-col": coarse ? "48px" : "28px",
+          // The icon column of every row (New, the tree, the menu) from the sidebar's content edge: the row's margin and its icon
+          // indent, 28 px in, or 48 px on a finger (decisions 66 and 81).
+          "--sc-icon-col": `${row.inline + row.indent}px`,
         } as CSSProperties}
       >
         {newShown && <SidebarNew place={newWhere} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} onPick={pick} onFolder={(where) => setFolderWhere(where)} />}
@@ -458,9 +460,9 @@ export default function Shell({ children }: { children: ReactNode }) {
             theme={{
               components: {
                 Menu: {
-                  itemHeight: sidebarRow(token, coarse).height,
-                  itemMarginInline: sidebarRow(token, coarse).inline,
-                  itemBorderRadius: sidebarRow(token, coarse).radius,
+                  itemHeight: row.height,
+                  itemMarginInline: row.inline,
+                  itemBorderRadius: row.radius,
                 },
               },
             }}
@@ -468,7 +470,7 @@ export default function Shell({ children }: { children: ReactNode }) {
             <Menu
               theme="dark"
               mode="inline"
-              inlineIndent={sidebarRow(token, coarse).indent}
+              inlineIndent={row.indent}
               inlineCollapsed={collapsedNow}
               selectedKeys={selected}
               items={items}

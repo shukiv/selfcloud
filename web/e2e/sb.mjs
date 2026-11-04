@@ -10,6 +10,8 @@ import { setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
 const q = (v) => JSON.stringify(v);
 const SUB = 'SB Opened';
 const TOL = 0.5;
+// The tree's step from one level to the next (FolderTree.tsx, paddingInlineStart: (level - 1) * 14).
+const TREE_LEVEL_STEP = 14;
 const same = (a, b) => Math.abs(a - b) <= TOL;
 // SCOPE is the sidebar on the screen: the phone drawer when it is open, else the desktop sidebar.
 const SCOPE = `(document.querySelector('.ant-drawer-open') ?? document.querySelector('.shell-sider'))`;
@@ -28,7 +30,9 @@ const rows = (page) =>
     const first = scope.querySelector('[data-testid="folder-tree"] [role="tree"] > [role="treeitem"] > .tree-row');
     const myFiles = box(first);
     const iconOf = (el) => { const r = el?.getBoundingClientRect(); return r ? r.left : null; };
-    const sub = box(scope.querySelector('[data-testid="folder-tree"] [data-drop-name="${SUB}"]'));
+    const subEl = scope.querySelector('[data-testid="folder-tree"] [data-drop-name="${SUB}"]');
+    const sub = box(subEl);
+    if (sub) sub.icon = iconOf(subEl.querySelector('a svg'));
     const menu = [...scope.querySelectorAll('.shell-menu li.ant-menu-item')];
     const starredLi = menu.find((li) => (li.getAttribute('data-menu-id') ?? '').includes('starred'));
     const starred = box(starredLi);
@@ -50,12 +54,31 @@ async function pair(page, check, label) {
   if (!ready) return m;
   check(same(m.myFiles.height, m.starred.height), `${label}: My files and Starred are one height (${m.myFiles.height} and ${m.starred.height})`);
   check(same(m.sub.height, m.starred.height), `${label}: the opened folder under My files is the same height (${m.sub.height} and ${m.starred.height})`);
+  check(same(m.sub.left, m.starred.left) && same(m.sub.right, m.starred.right), `${label}: the opened folder has the inline edges of Starred (${m.sub.left}-${m.sub.right} and ${m.starred.left}-${m.starred.right})`);
+  // The opened folder sits one tree level in from My files: its icon is one level step (14 px, FolderTree's paddingInlineStart) away,
+  // inward, which is to the right in English and to the left in Hebrew.
+  const step = m.sub.icon - m.myFiles.icon;
+  check(same(Math.abs(step), TREE_LEVEL_STEP) && (m.rtl ? step < 0 : step > 0), `${label}: the opened folder's icon is one tree level (${TREE_LEVEL_STEP} px) in from My files' icon (${step})`);
   check(same(m.myFiles.left, m.starred.left) && same(m.myFiles.right, m.starred.right), `${label}: My files has the inline edges of Starred (${m.myFiles.left}-${m.myFiles.right} and ${m.starred.left}-${m.starred.right})`);
   check(m.myFiles.radius === m.starred.radius && m.sub.radius === m.starred.radius, `${label}: the same corner radius (${m.myFiles.radius}, ${m.sub.radius} and ${m.starred.radius})`);
   console.log(`INFO ${label}: icons ${JSON.stringify({ my: m.myFiles.icon, starred: m.starred.icon, pad: m.starred.pad, spanMy: m.myFiles.spanLeft, spanStarred: m.starred.spanLeft, left: m.myFiles.left, starredLeft: m.starred.left })}`);
   check(same(m.myFiles.icon, m.starred.icon), `${label}: My files' icon is in Starred's icon column (${m.myFiles.icon} and ${m.starred.icon})`);
   return m;
 }
+
+// storageFit reads the Storage entry of the sidebar on the screen: its bar and its figures, and whether the entry scrolls sideways
+// (a clipped row). Null when the entry is not drawn.
+const storageFit = (page) =>
+  page.evaluate(`(() => {
+    const scope = ${SCOPE};
+    const side = scope?.querySelector('.shell-sider-body') ?? scope;
+    const item = scope?.querySelector('.shell-menu .shell-storage-item');
+    if (!side || !item) return null;
+    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width }; };
+    const meter = item.querySelector('[data-testid="sidebar-meter"]');
+    const figures = [...item.querySelectorAll('span')].find((s) => s.style.fontSize === '12px');
+    return { side: box(side), item: box(item), scroll: item.scrollWidth - item.clientWidth, meter: box(meter), figures: box(figures) };
+  })()`);
 
 // openMyFiles expands My files in the tree (its arrow) when it is folded, and waits for the folder under it.
 async function openMyFiles(page) {
@@ -66,7 +89,7 @@ async function openMyFiles(page) {
   await page.waitFor(`!!${SCOPE}?.querySelector('[data-drop-name="${SUB}"]')`, 15000);
 }
 
-export async function sbChecks(h, { page, base, accountKey, teamA }) {
+async function sbBody(h, { page, base, accountKey, teamA, accountID, memberID }) {
   const { check, api, navigateTo } = h;
   const shotsDir = process.env.SELFCLOUD_E2E_SHOTS || null;
   if (shotsDir) await mkdir(shotsDir, { recursive: true });
@@ -77,6 +100,11 @@ export async function sbChecks(h, { page, base, accountKey, teamA }) {
   };
   const size = (w, hgt, mobile) => page.send('Emulation.setDeviceMetricsOverride', { width: w, height: hgt, deviceScaleFactor: 1, mobile });
   const themeWas = await page.evaluate(`document.documentElement.dataset.theme ?? 'light'`);
+  // The member gets a limit of 10 GiB, so the sidebar draws the Storage bar (with no limit it draws the figures alone). The page
+  // reads the storage at sign-in, so it is reloaded for the new limit.
+  await api(base, 'PATCH', `/api/v1/accounts/${accountID}/users/${memberID}`, accountKey, { quota_bytes: 10 * 1024 ** 3 });
+  await page.send('Page.reload', { ignoreCache: true });
+  await page.waitFor(`!!document.querySelector('.shell-sider')`, 20000);
 
   // The fixture: a folder under My files, opened in the tree. The personal folder's id is in the address My files opens.
   await setPhone(page, false);
@@ -122,6 +150,14 @@ export async function sbChecks(h, { page, base, accountKey, teamA }) {
   // The drawer slides in: its rows are measured once it has stopped.
   await sleep(700);
   const phone = await pair(page, check, 'phone drawer');
+  // The Storage entry on a finger: its bar and figures are inside the sidebar, and the entry is not clipped (no sideways scroll).
+  const fit = await storageFit(page);
+  check(fit !== null && fit.meter !== null && fit.figures !== null, `on a finger the Storage entry shows its bar and figures (${JSON.stringify(fit)})`);
+  if (fit && fit.meter && fit.figures) {
+    const inside = (b) => b.left >= fit.side.left - TOL && b.right <= fit.side.right + TOL;
+    check(fit.scroll <= 0, `on a finger the Storage entry is not clipped sideways (scroll ${fit.scroll}px)`);
+    check(inside(fit.meter) && inside(fit.figures), `on a finger the Storage bar and figures are inside the sidebar (bar ${fit.meter.left}-${fit.meter.right}, figures ${fit.figures.left}-${fit.figures.right}, sidebar ${fit.side.left}-${fit.side.right})`);
+  }
   if (phone) {
     const short = [...phone.treeRows, ...phone.menuRows].filter((r) => r.height < 44 - TOL);
     check(phone.treeRows.length > 0 && phone.menuRows.length > 0 && short.length === 0, `on a finger every sidebar row is at least 44 px (${phone.treeRows.length} tree rows, ${phone.menuRows.length} menu items; short: ${JSON.stringify(short)})`);
@@ -138,4 +174,17 @@ export async function sbChecks(h, { page, base, accountKey, teamA }) {
   const back = themeWas === 'dark' ? 'Dark' : 'Light';
   await setTheme(page, back);
   await page.waitFor(`document.documentElement.dataset.theme === ${q(back.toLowerCase())}`, 10000).catch(() => undefined);
+}
+
+// The member's limit is put back when the section ends, whatever happens in between: null follows the default (as d2 does).
+export async function sbChecks(h, args) {
+  const { api } = h;
+  const { base, accountKey, accountID, memberID } = args;
+  const before = await api(base, 'GET', `/api/v1/accounts/${accountID}/storage?users_limit=200`, accountKey);
+  const original = before.users?.find((u) => u.id === memberID)?.quota_bytes ?? null;
+  try {
+    await sbBody(h, args);
+  } finally {
+    await api(base, 'PATCH', `/api/v1/accounts/${accountID}/users/${memberID}`, accountKey, { quota_bytes: original });
+  }
 }

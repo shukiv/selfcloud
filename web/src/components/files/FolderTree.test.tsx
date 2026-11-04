@@ -10,6 +10,8 @@ import { session, type Session } from "../../lib/session";
 import type { FolderAccess, Node } from "../../lib/files/types";
 import { DEFAULT_TREE, type TreeState } from "../../lib/files/treeState";
 import { SIDEBAR, type Sidebar } from "../../theme/tokens";
+import { sidebarRow } from "../../theme/sidebarRow";
+import { theme as antdTheme } from "antd";
 
 const api = vi.hoisted(() => ({ childrenPage: vi.fn() }));
 vi.mock("../../lib/files/api", async (orig) => ({ ...(await orig<typeof import("../../lib/files/api")>()), ...api }));
@@ -331,22 +333,26 @@ describe("the folder tree in the sidebar: the current row's mark", () => {
 describe("the folder tree in the sidebar: the menu row's metrics (decision 81)", () => {
   const rowOf = (name: string) => screen.getByText(name).closest<HTMLElement>(".tree-row");
 
+  // The expected metrics are read from the same theme the menu reads (sidebarRow over antd's design token), not written as numbers,
+  // so a change of the theme moves both sides and a tree that stops reading sidebarRow fails.
   it("gives every sidebar row the menu item's height, inline margin and radius on a mouse", async () => {
+    const menu = sidebarRow(antdTheme.getDesignToken(), false);
     render(<Harness colours={SIDEBAR} folder="fld_a" start={{ expanded: ["fld_a"] }} />);
     await screen.findByText("Docs");
     for (const name of ["My files", "Team A", "Docs"]) {
       const style = rowOf(name)?.getAttribute("style") ?? "";
-      expect(style, name).toContain("min-block-size: 40px");
-      expect(style, name).toContain("margin-inline: 4px");
-      expect(style, name).toContain("border-radius: 4px");
+      expect(style, name).toContain(`min-block-size: ${menu.height}px`);
+      expect(style, name).toContain(`margin-inline: ${menu.inline}px`);
+      expect(style, name).toContain(`border-radius: ${menu.radius}px`);
     }
   });
 
-  it("gives every sidebar row 44 px on a finger", async () => {
+  it("gives every sidebar row the menu item's height on a finger", async () => {
+    const menu = sidebarRow(antdTheme.getDesignToken(), true);
     render(<Harness colours={SIDEBAR} coarse folder="fld_a" start={{ expanded: ["fld_a"] }} />);
     await screen.findByText("Docs");
     for (const name of ["My files", "Team A", "Docs"]) {
-      expect(rowOf(name)?.getAttribute("style") ?? "", name).toContain("min-block-size: 44px");
+      expect(rowOf(name)?.getAttribute("style") ?? "", name).toContain(`min-block-size: ${menu.height}px`);
     }
   });
 
