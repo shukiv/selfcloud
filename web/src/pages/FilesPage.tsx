@@ -587,6 +587,22 @@ export default function FilesPage() {
     });
   }, [items]);
 
+  // While the rows on screen are the folder left behind, nothing is selected in them: the selection is cleared as the change
+  // starts (fu3b review 1). Focus that was in the rows is put in the next listing once it loads (fu3b review 4).
+  useEffect(() => {
+    if (busy) setSel(NO_SEL);
+  }, [busy]);
+  const listWrap = useRef<HTMLDivElement | null>(null);
+  const listFocused = useRef(false);
+  useEffect(() => {
+    if (busy || !listFocused.current) return;
+    listFocused.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const first = listWrap.current?.querySelector<HTMLElement>('[role="row"]');
+    (first ?? listWrap.current)?.focus();
+  }, [busy]);
+
   // ---- sorting, selection and keys ----
 
   // The server sorts the whole directory (decision 47), so the loaded rows are already in order.
@@ -604,7 +620,7 @@ export default function FilesPage() {
   // Files can go into a directory by its ID, so a shared directory whose folder root is not reachable takes them.
   // Folders are made, and folder uploads placed, by path from the root, so those need a reachable path.
   // While the next place is read, here is still the folder shown before: nothing is uploaded into it (fu3b).
-  const canUploadHere = !placeBusy && here !== null && (here.dir !== null || here.path !== null) && atLeast(folderRole, "contributor");
+  const canUploadHere = !busy && here !== null && (here.dir !== null || here.path !== null) && atLeast(folderRole, "contributor");
   const canUploadFolder = canUploadHere && here !== null && here.path !== null;
   const canMakeFolder = canUploadFolder;
   // The sidebar's New acts on the folder shown (decision 66). It is written when the place or what it takes changes, and cleared
@@ -919,7 +935,8 @@ export default function FilesPage() {
   function onShortcut(e: KeyboardEvent) {
     if (e.defaultPrevented || renameRef.current || isTextField(e.target) || dialogRef.current !== null || conflict !== null) return;
     if (dialogOpen()) return;
-    if (!here || placeBusy) return;
+    // While the rows on screen are the folder left behind (busy), no key acts on them (fu3b review 1).
+    if (!here || busy) return;
     // The context-menu key and Shift+F10 open the menu of the focused row, as a right click does.
     if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
       e.preventDefault();
@@ -1337,7 +1354,7 @@ export default function FilesPage() {
   // ---- uploads ----
 
   function queueFiles(files: DroppedFile[]) {
-    if (!here || placeBusy) return;
+    if (!here || busy) return;
     const skipped = queueInto(placeOfHere(here, canUploadHere, canUploadFolder).where, files);
     if (skipped > 0) void message.warning(t("files.upload.noPath"));
   }
@@ -1854,7 +1871,7 @@ export default function FilesPage() {
   // asks about a taken name, and pushes its undo.
   const WHY_KEY = { role: "files.drag.no.role", self: "files.drag.no.self", here: "files.drag.no.here", move: "files.drag.no.move" } as const;
   gestureCtl.current = {
-    enabled: () => here !== null && !placeBusy && renameRef.current === null && dialogRef.current === null && conflict === null && !dialogOpen(),
+    enabled: () => here !== null && !busy && renameRef.current === null && dialogRef.current === null && conflict === null && !dialogOpen(),
     startDrag: (id) => {
       const n = byID.get(id);
       if (!n) return null;
@@ -1934,6 +1951,12 @@ export default function FilesPage() {
         </div>
       ) : (
         <>
+          {/* The change of folder is announced while the rows of the last read are kept (fu3b review 2). */}
+          {busy && (
+            <span role="status" className="sr-only">
+              {t("files.loading")}
+            </span>
+          )}
           {notice && <Alert type="info" showIcon role="status" message={notice} closable onClose={() => setNotice(null)} />}
           {readFailure && <Alert type="info" showIcon role="status" message={readFailure} />}
 
@@ -1944,7 +1967,7 @@ export default function FilesPage() {
             aria-label={t("files.toolbar")}
             data-testid="browser-toolbar"
             // The toolbar acts on the place shown, which is the previous one while the next is looked up: it is inert then (fu3b).
-            {...(placeBusy ? { inert: "" } : {})}
+            {...(busy ? { inert: "" } : {})}
             style={stickyBar}
             onFocus={() => {
               toolbarFocus.current = true;
@@ -2022,7 +2045,19 @@ export default function FilesPage() {
             ) : (
               <>
                 {/* The rows of the last read stay while the next is read: the area is busy, and its rows cannot be used (fu3b). */}
-                <div aria-busy={busy ? "true" : undefined} {...(busy ? { inert: "" } : {})}>
+                <div
+                  ref={listWrap}
+                  tabIndex={-1}
+                  aria-busy={busy ? "true" : undefined}
+                  {...(busy ? { inert: "" } : {})}
+                  // Focus in the rows is kept across a change: when the next listing loads, it goes to its first row (fu3b review 4).
+                  onFocus={() => {
+                    listFocused.current = true;
+                  }}
+                  onBlur={(e) => {
+                    if (e.relatedTarget instanceof Node && !e.currentTarget.contains(e.relatedTarget)) listFocused.current = false;
+                  }}
+                >
                 <Listing
                   items={sorted}
                   view={view}

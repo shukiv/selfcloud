@@ -1178,7 +1178,8 @@ tr[data-drop-state="refused"] > td {
   position: sticky;
   top: var(--sc-list-top);
   z-index: 2;
-  background: var(--sc-list-head);
+  /* antd's header tint (the theme's colorFillAlter) over a solid background: rows must not show through the pinned header. */
+  background: linear-gradient(var(--sc-list-head-tint), var(--sc-list-head-tint)), var(--sc-list-head);
 }
 
 /* A menu entry's keyboard shortcut is drawn after the entry's name, from its data-hint: it is not text, so the entry reads as its name. */

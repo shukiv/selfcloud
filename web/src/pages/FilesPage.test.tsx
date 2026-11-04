@@ -17,6 +17,7 @@ import { get } from "../lib/store";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { translate } from "../lib/i18n";
 import { myStorage } from "../lib/storage/api";
+import { newPlace } from "../lib/files/newPlace";
 
 // The API, the place reader, the uploads and the stars are replaced, so each test states what the server answers.
 const api = vi.hoisted(() => ({
@@ -2058,6 +2059,11 @@ describe("the list while the next folder is read (fu3b)", () => {
     expect(rows("alpha.txt")).not.toBeNull();
     expect(busyFrame()?.getAttribute("aria-busy")).toBe("true");
     expect(busyFrame()?.closest("[inert]")).not.toBeNull();
+    // The rows are present but not actionable: Ctrl+A selects none of them (fu3b review 1).
+    fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("false");
+    // The change is announced to assistive technology while the rows are kept (fu3b review 2).
+    expect(screen.getByText("Loading the folder").closest('[role="status"]')).not.toBeNull();
     await act(async () => {
       answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
     });
@@ -2085,7 +2091,8 @@ describe("the list while the next folder is read (fu3b)", () => {
       await router.navigate(SUB);
     });
     await waitFor(() => expect(vi.mocked(locate)).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", expect.anything()));
-    expect(document.querySelector('[role="status"][aria-busy="true"]')).toBeNull();
+    // The load is announced while the place is looked up, and the rows stay (fu3b review 2).
+    expect(screen.getByText("Loading the folder").closest('[role="status"]')).not.toBeNull();
     expect(rows("alpha.txt")).not.toBeNull();
     expect(busyFrame()?.closest("[inert]")).not.toBeNull();
     await act(async () => {
@@ -2131,6 +2138,127 @@ describe("the list while the next folder is read (fu3b)", () => {
     // The same drop, once the place is settled, is queued: the refusal above was the wait, not a dead drop.
     fireEvent.drop(section, { dataTransfer: dt });
     await waitFor(() => expect(uploadsMock.add).toHaveBeenCalled());
+  });
+
+  // Review fixes of fu3b (decision 77): while the rows on screen are the folder left behind, nothing acts on them.
+  it("Ctrl+A and Ctrl+X during the load select and cut nothing of the folder left, and a paste after it moves nothing of that folder (fu3b review 1)", async () => {
+    let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
+    );
+    api.moveNode.mockResolvedValue(node("n1", "alpha.txt"));
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    // The change clears the selection made in the folder left. Ctrl+A selects none of the rows shown.
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("false");
+    fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
+    expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("false");
+    // A row of the folder left is picked while its rows are shown (jsdom does not apply inert to a click): Ctrl+X cuts nothing.
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    expect((rows("alpha.txt") as HTMLElement).style.opacity).not.toBe("0.5");
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(api.moveNode).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+V during the load moves nothing, and the same paste after it does (fu3b review 3)", async () => {
+    let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
+    );
+    api.moveNode.mockResolvedValue(node("n1", "alpha.txt"));
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(rows("alpha.txt") as Element);
+    fireEvent.keyDown(document.body, { key: "x", ctrlKey: true });
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(api.moveNode).not.toHaveBeenCalled();
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+    fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
+  });
+
+  it("the sidebar's New is read-only while the next folder's listing is read, and while its place is looked up (fu3b review 3)", async () => {
+    let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt")], next_cursor: undefined },
+    );
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(get(newPlace)?.canUpload).toBe(true);
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    // The place resolves; the listing does not yet: the page still holds the folder's rows, and the New menu acts on nothing.
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    expect(get(newPlace)?.canUpload).toBe(false);
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+    expect(get(newPlace)?.canUpload).toBe(true);
+  });
+
+  it("focus in the folder left moves to the first row of the next folder once it loads (fu3b review 4)", async () => {
+    let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
+    );
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    (rows("alpha.txt") as HTMLElement).focus();
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+    expect(document.activeElement).toBe(rows("gamma.txt"));
+  });
+
+  // The file picker is offered by the same rule as upload: while the rows of the folder left are shown, there is no picker.
+  it("the file picker is not offered while the next folder is read (fu3b review 3)", async () => {
+    let answer!: (page: { items: Node[]; next_cursor: undefined }) => void;
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) =>
+      dir === "nod_bbbbbbbb" ? new Promise((resolve) => (answer = resolve)) : { items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined },
+    );
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(document.querySelector('[role="toolbar"] input[type="file"]')).not.toBeNull();
+    await act(async () => {
+      await router.navigate(SUB);
+    });
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    expect(document.querySelector('[role="toolbar"] input[type="file"]')).toBeNull();
+    expect(uploadsMock.add).not.toHaveBeenCalled();
+    await act(async () => {
+      answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
   });
 
   it("shows the error, and not the previous rows, when the next folder's first read fails", async () => {

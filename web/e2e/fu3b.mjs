@@ -35,6 +35,8 @@ const SAMPLER = `(() => {
       t: Math.round(performance.now()),
       list: !!list,
       busy: !!list?.closest('[aria-busy="true"]'),
+      // The rows of a busy frame are the folder left behind: they must be inert (no pointer, no key, no focus) (fu3b review 3).
+      inert: !!list?.closest('[inert]'),
       rows: list ? list.querySelectorAll('[role="row"]').length : 0,
       // The header is compared only when it is drawn (visible): a header hidden until its columns are measured paints nothing.
       head: list && getComputedStyle(list.querySelector('.ant-table-header') ?? list).visibility === 'visible' ? widths('.files-list .ant-table-thead th') : [],
@@ -72,6 +74,7 @@ export async function fu3bChecks(h, { base, accountKey, teamA, dir, browserBinar
   const mountWorst = [];
   const changeWorst = [];
   const blankFrames = [];
+  const inertBusyFrames = [];
   try {
     await page.start(EXPECTED);
     await page.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -118,6 +121,8 @@ export async function fu3bChecks(h, { base, accountKey, teamA, dir, browserBinar
       const badChange = changeFrames.find((f) => mismatch(f) > 1);
       if (badChange) console.log(`DIAG run ${run} first bad change frame ${JSON.stringify(badChange)}`);
       blankFrames.push(changeFrames.filter((f) => !f.list).length);
+      // A frame whose rows are kept (busy) must have them inert: a busy frame with rows that are not inert is a failure.
+      inertBusyFrames.push(changeFrames.filter((f) => f.busy && f.list && !f.inert).length);
       console.log(`DIAG run ${run} change: ${changeFrames.length} frames, ${sequence(changeFrames)}, worst header/body gap ${changeWorst.at(-1)} px`);
     }
 
@@ -128,6 +133,10 @@ export async function fu3bChecks(h, { base, accountKey, teamA, dir, browserBinar
     check(
       blankFrames.every((b) => b === 0),
       `from a folder's click to the next listing, every frame holds a listing (frames without one per run ${JSON.stringify(blankFrames)})`,
+    );
+    check(
+      inertBusyFrames.every((b) => b === 0),
+      `while a folder's rows are kept, they are inert in every frame (busy frames with live rows per run ${JSON.stringify(inertBusyFrames)})`,
     );
     check(
       changeWorst.every((w) => w >= 0 && w <= 1),
@@ -150,6 +159,10 @@ export async function fu3bChecks(h, { base, accountKey, teamA, dir, browserBinar
 
     // Item 5: a finger's screen and a hybrid screen, each in its own browser. A finger has no hover and a coarse pointer: the 44 px
     // targets and the list without its hover icons; the 200 px window's submenu scrolls and its last entry is reachable.
+    // Review fix 5, the pinned header: at phone width, with the selection bar shown, the header is pinned below the toolbar; in
+    // Hebrew its columns sit over the body's.
+    await layoutChecks(h, page, { base, teamA, aID, navigateTo, rowAppears, suffix });
+
     await touchChecks(h, { base, teamA, aID, dir, browserBinary, MEMBER, suffix, signIn, navigateTo, rowAppears, EXPECTED });
   } finally {
     page.close();
@@ -157,6 +170,32 @@ export async function fu3bChecks(h, { base, accountKey, teamA, dir, browserBinar
     // The folder and its files go, with the account's own key: the section leaves nothing behind.
     if (rootID) await api(base, 'DELETE', `/api/v1/nodes/${rootID}?permanent=true`, accountKey).catch(() => undefined);
   }
+}
+
+// layoutChecks reads the pinned header at phone width with a selection (the selection bar is the toolbar's taller form), then the
+// Hebrew list's columns against the body's. The language is put back to English after it, as the touch checks read English labels.
+async function layoutChecks(h, page, { base, teamA, aID, navigateTo, rowAppears, suffix }) {
+  const { check } = h;
+  const last = `file-39-${suffix}.txt`;
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 740, deviceScaleFactor: 1, mobile: false });
+  await navigateTo(page, `/files/${teamA}/${aID}`);
+  await rowAppears(page, last);
+  await page.evaluate(`(() => { document.querySelector('[role="row"][aria-label=${JSON.stringify(last)}]').click(); return true; })()`);
+  await page.waitFor(`!!document.querySelector('[data-testid="selection-panel"]')`, 10000);
+  await page.evaluate(`window.scrollTo(0, 600), true`);
+  await page.waitFor(`document.querySelector('.files-list .ant-table-thead th').getBoundingClientRect().top <= 200`, 10000);
+  const pin = await page.evaluate(`(() => { const bar = document.querySelector('[role="toolbar"]').getBoundingClientRect(); const th = document.querySelector('.files-list .ant-table-thead th').getBoundingClientRect(); return { bar: Math.round(bar.bottom), head: Math.round(th.top) }; })()`);
+  check(pin.head >= pin.bar, `at phone width with the selection bar shown, the list's header is pinned below the toolbar (header top ${pin.head} px, toolbar bottom ${pin.bar} px)`);
+
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  // The language is asked for in the address: navigateTo takes a path, so the page is opened with its own navigation.
+  await page.send('Page.navigate', { url: `${base}/files/${teamA}/${aID}?lang=he` });
+  await rowAppears(page, last);
+  const cols = await page.evaluate(`(() => { const heads = [...document.querySelectorAll('.files-list .ant-table-thead th')].map((c) => c.getBoundingClientRect()); const row = document.querySelector('.files-list tbody tr[data-id]'); const cells = row ? [...row.children].map((c) => c.getBoundingClientRect()) : []; return { dir: document.documentElement.dir, heads: heads.map((r) => [Math.round(r.left), Math.round(r.width)]), cells: cells.map((r) => [Math.round(r.left), Math.round(r.width)]) }; })()`);
+  const gap = cols.heads.length === cols.cells.length && cols.heads.length > 0 ? Math.max(...cols.heads.map((hd, i) => Math.max(Math.abs(hd[0] - cols.cells[i][0]), Math.abs(hd[1] - cols.cells[i][1])))) : Infinity;
+  check(cols.dir === 'rtl' && gap <= 1, `in Hebrew the list's header columns sit over the body's (dir ${cols.dir}, worst gap ${gap} px)`);
+  await page.send('Page.navigate', { url: `${base}/files/${teamA}/${aID}?lang=en` });
+  await rowAppears(page, last);
 }
 
 // touchChecks runs the list in two more browsers: a finger's (touch, no hover: the coarse pointer) and a hybrid one (a mouse and a

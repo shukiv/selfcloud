@@ -306,6 +306,7 @@ export default function Listing(p: ListingProps) {
     "--sc-row-selected": token.colorPrimaryBg,
     "--sc-accent": token.colorPrimary,
     "--sc-list-head": token.colorBgContainer,
+    "--sc-list-head-tint": token.colorFillAlter,
     "--sc-list-top": `${stickyTop}px`,
   } as CSSProperties;
   // indexOf is each item's place in the page's order, for the handlers that name a row by its index.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { App as AntdApp } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,6 +50,31 @@ describe("the new folder dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(refreshTree).toHaveBeenCalledWith(expect.anything(), [{ folder: "fld_mine", dir: null }]);
+  });
+
+  // The Shell closes the sidebar's dialog on a change of address by unmounting it. A folder whose call is still in flight then
+  // is still made, and its result is still told to the person (fu3b review 6).
+  it("tells the person the folder was made when the dialog was unmounted while the call was in flight (fu3b review 6)", async () => {
+    let finish!: (node: { id: string; name: string; kind: string }) => void;
+    mocks.mkdir.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    const qc = new QueryClient();
+    // The app's antd App stays mounted above the Shell; only the dialog is unmounted here, as a route change does it.
+    const tree = (open: boolean) => (
+      <QueryClientProvider client={qc}>
+        <AntdApp>
+          <MemoryRouter>{open && <NewFolderDialog where={where} openable onClose={vi.fn()} />}</MemoryRouter>
+        </AntdApp>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(tree(true));
+    fireEvent.change(screen.getByLabelText("Folder name"), { target: { value: "Plans" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
+    await waitFor(() => expect(mocks.mkdir).toHaveBeenCalled());
+    rerender(tree(false));
+    await act(async () => {
+      finish({ id: "nod_new", name: "Plans", kind: "dir" });
+    });
+    await waitFor(() => expect(document.body.textContent).toContain("Plans"));
   });
 
   it("names the directory by its ID when the folder is made in a directory (decision 74)", async () => {

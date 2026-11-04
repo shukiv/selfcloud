@@ -297,7 +297,7 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID 
       // item 8: a fixed 600 ms wait read it mid-transition under load).
       await until(
         page,
-        `(() => { const r = document.querySelector('.media-mini .ant-slider-rail')?.getBoundingClientRect(); const t = document.querySelector('.media-mini .ant-slider-track')?.getBoundingClientRect(); return !!r && !!t && Math.abs(t.left - r.left) <= 1 && Math.abs(t.width - r.width * 0.25) <= 2; })()`,
+        `(() => { const r = document.querySelector('.media-mini .ant-slider-rail')?.getBoundingClientRect(); const t = document.querySelector('.media-mini .ant-slider-track')?.getBoundingClientRect(); return !!r && r.width > 0 && !!t && Math.abs(t.left - r.left) <= 1 && Math.abs(t.width - r.width * 0.25) <= 2; })()`,
         10000,
         'the played part at a quarter of the rail',
       );
@@ -409,8 +409,10 @@ export async function x2Checks(h, { page, base, accountKey, accountID, memberID 
       await openFolder(page, heURL, 'clip.webm');
       await dblClick(page, await rowPoint(page, 'clip.webm'));
       await playing(page);
+      // The subtitle choice is drawn once the file's subtitles are read, which is asynchronous (subtitlesOf): it is waited for.
+      await page.waitFor(`!!document.querySelector('.media-subs .ant-select-selector')`, 15000);
       await page.evaluate(`document.querySelector('.media-subs .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
-      const pick = (name) => `[...document.querySelectorAll('.ant-select-item-option')].find((x) => x.textContent.trim() === ${q(name)})`;
+      const pick =(name) => `[...document.querySelectorAll('.ant-select-item-option')].find((x) => x.textContent.trim() === ${q(name)})`;
       await until(page, `!!${pick('clip.srt')}`, 5000, 'the SRT in the menu');
       await page.evaluate(`${pick('clip.srt')}.click()`);
       await page.evaluate(`(() => { const v = ${MEDIA}; v.pause(); v.currentTime = 2; return true; })()`);
