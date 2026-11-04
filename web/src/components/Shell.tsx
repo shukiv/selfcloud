@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
 import { keepInView } from "./menuScroll";
-import { Alert as AntdAlert, App, Button, Checkbox, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
+import { Alert as AntdAlert, App, Button, Checkbox, ConfigProvider, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
 import { Clock, FolderOpen, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
 import IconButton from "./IconButton";
@@ -30,6 +30,7 @@ import { uploads } from "../lib/files/uploads";
 import { myStorage, refreshMyStorage } from "../lib/storage/api";
 import { useSidebar } from "../theme/theme";
 import { currentMark } from "../theme/currentMark";
+import { sidebarRow } from "../theme/sidebarRow";
 import { useCoarsePointer } from "../lib/pointer";
 import Alert from "./Alert";
 import LangSwitcher from "./LangSwitcher";
@@ -452,16 +453,30 @@ export default function Shell({ children }: { children: ReactNode }) {
               )}
             </div>
           )}
-          <Menu
-            theme="dark"
-            mode="inline"
-            inlineCollapsed={collapsedNow}
-            selectedKeys={selected}
-            items={items}
-            onClick={({ key }) => go(key)}
-            className="shell-menu"
-            style={{ border: "none", background: "transparent" }}
-          />
+          {/* The menu's items take the sidebar's row metrics (decision 81), the same values the folder tree's rows read. */}
+          <ConfigProvider
+            theme={{
+              components: {
+                Menu: {
+                  itemHeight: sidebarRow(token, coarse).height,
+                  itemMarginInline: sidebarRow(token, coarse).inline,
+                  itemBorderRadius: sidebarRow(token, coarse).radius,
+                },
+              },
+            }}
+          >
+            <Menu
+              theme="dark"
+              mode="inline"
+              inlineIndent={sidebarRow(token, coarse).indent}
+              inlineCollapsed={collapsedNow}
+              selectedKeys={selected}
+              items={items}
+              onClick={({ key }) => go(key)}
+              className="shell-menu"
+              style={{ border: "none", background: "transparent" }}
+            />
+          </ConfigProvider>
         </div>
       </div>
     );
