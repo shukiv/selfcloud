@@ -366,12 +366,20 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     await press(page, 'c', ['ctrl']);
     let holding = false;
     const held = [];
+    const gone = [];
+    // The page may cancel a held request before it is let go (an older read of a folder is aborted when a newer one starts).
+    // Chrome then answers "Invalid InterceptionId", or "Invalid state", and there is nothing left to let go: that is not a
+    // failure of the page. It is named in a DIAG line, and it must not hide the step's own error.
+    const letGo = (id, url) =>
+      page.send('Fetch.continueRequest', { requestId: id }).catch((e) => {
+        gone.push(`${url}: ${e.message}`);
+      });
     const release = async () => {
-      for (const id of held.splice(0)) await page.send('Fetch.continueRequest', { requestId: id });
+      for (const r of held.splice(0)) await letGo(r.id, r.url);
     };
     page.on('Fetch.requestPaused', (p) => {
-      if (holding) held.push(p.requestId);
-      else void page.send('Fetch.continueRequest', { requestId: p.requestId });
+      if (holding) held.push({ id: p.requestId, url: p.request.url });
+      else void letGo(p.requestId, p.request.url);
     });
     await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/children*' }] });
     try {
@@ -392,7 +400,8 @@ export async function w1Checks(h, { page, base, accountKey, teamA, teamB, dir, b
     } finally {
       holding = false;
       await release();
-      await page.send('Fetch.disable');
+      await page.send('Fetch.disable').catch(() => {});
+      if (gone.length) console.log(`DIAG held requests the page had cancelled: ${gone.join(' | ')}`);
     }
     await press(page, 'Backspace');
     await folderShown(page, 'w1-long');
