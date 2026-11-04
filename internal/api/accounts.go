@@ -322,7 +322,7 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) err
 			return err
 		}
 		// The sign-ins-as of its members end with it, as a disabled user's do (decision 41; fu2, decision 74).
-		if err := s.endAccountImpersonations(ctx, tx, acc.ID, "account_deleted"); err != nil {
+		if err := s.endAccountImpersonations(ctx, tx, acc.ID, acc.Name, "account_deleted"); err != nil {
 			return err
 		}
 		job = &store.Job{ID: id.New("job"), AccountID: acc.ID, Kind: jobAccountDelete, Target: acc.ID,

@@ -147,9 +147,11 @@ func (s *Server) sendToken(ctx context.Context, u *store.User, it *issuedToken) 
 }
 
 // deliver hands a new token to its user. For "link" the link goes back to the caller, and the
-// audit entry was already written with the token. For "email" the mail is sent now, outside any
-// transaction, and the outcome is audited in a transaction of its own. A failed send does not fail
-// the request: the user exists and can be sent a new token later.
+// audit entry was already written with the token. For "email" the mail is audited and sent here,
+// outside any transaction. The audit log is append-only, so a mail is two rows: an "attempted" row
+// written before the send (a crash after it leaves an attempt on record, never a sent mail), and a
+// result row after the send, "ok" or "failed". A write that fails before the send stops the send.
+// A failed send does not fail the request: the user exists and can be sent a new token later.
 func (s *Server) deliver(ctx context.Context, r *http.Request, u *store.User, it *issuedToken, method string) *verificationJSON {
 	if method == methodLink {
 		// Defence in depth: a member or owner session never receives a token, whatever the method
@@ -159,25 +161,26 @@ func (s *Server) deliver(ctx context.Context, r *http.Request, u *store.User, it
 		}
 		return &verificationJSON{Method: methodLink, URL: it.link, Token: it.token, ExpiresAt: &it.expires}
 	}
-	// The row is written before the mail leaves (fu2, decision 74), so no mail goes out unrecorded. A write that fails
-	// stops the send, and the answer says the mail was not sent, as for a send that failed.
-	entry := s.auditEntry(r, u.AccountID, "verification.send", u.ID,
-		map[string]any{"purpose": it.purpose, "method": methodEmail})
-	if err := s.store.Write(ctx, func(tx *store.Tx) error { return tx.InsertAudit(ctx, entry) }); err != nil {
+	// The attempt is written before the mail leaves (fu2, decision 74; review fix 1), so no mail goes out with no row.
+	// A write that fails stops the send, and the answer says the mail was not sent, as for a send that failed.
+	details := map[string]any{"purpose": it.purpose, "method": methodEmail}
+	attempt := s.auditEntry(r, u.AccountID, "verification.send", u.ID, details)
+	attempt.Outcome = "attempted"
+	if err := s.store.Write(ctx, func(tx *store.Tx) error { return tx.InsertAudit(ctx, attempt) }); err != nil {
 		s.log.Error("cannot audit mail; not sent", "request_id", requestID(r), "error", err)
 		sent := false
 		return &verificationJSON{Method: methodEmail, Sent: &sent}
 	}
 	sent := true
+	result := s.auditEntry(r, u.AccountID, "verification.send", u.ID, details)
+	result.Outcome = "ok"
 	if err := s.sendToken(ctx, u, it); err != nil {
 		sent = false
 		s.log.Warn("cannot send mail", "request_id", requestID(r), "purpose", it.purpose, "error", err)
-		failed := s.auditEntry(r, u.AccountID, "verification.send", u.ID,
-			map[string]any{"purpose": it.purpose, "method": methodEmail})
-		failed.Outcome = "failed"
-		if err := s.store.Write(ctx, func(tx *store.Tx) error { return tx.InsertAudit(ctx, failed) }); err != nil {
-			s.log.Error("cannot audit a failed mail", "request_id", requestID(r), "error", err)
-		}
+		result.Outcome = "failed"
+	}
+	if err := s.store.Write(ctx, func(tx *store.Tx) error { return tx.InsertAudit(ctx, result) }); err != nil {
+		s.log.Error("cannot audit the mail's result", "request_id", requestID(r), "error", err)
 	}
 	return &verificationJSON{Method: methodEmail, Sent: &sent}
 }

@@ -415,7 +415,7 @@ func (s *Server) endImpersonations(ctx context.Context, tx *store.Tx, userID, re
 // decision 74). It runs inside tx, as endImpersonations does, so a deleting account keeps no sign-in-as for the admin's
 // Go back to restore from. Each end is audited under the admin who began it; the entry is the account's, so the
 // deletion job removes it with the account's other entries (decision 48).
-func (s *Server) endAccountImpersonations(ctx context.Context, tx *store.Tx, accountID, reason string) error {
+func (s *Server) endAccountImpersonations(ctx context.Context, tx *store.Tx, accountID, accountName, reason string) error {
 	rows, err := tx.ImpersonationsIn(ctx, accountID)
 	if err != nil {
 		return err
@@ -425,6 +425,13 @@ func (s *Server) endAccountImpersonations(ctx context.Context, tx *store.Tx, acc
 			return err
 		}
 		if err := tx.InsertAudit(ctx, impersonationEnd(sess, reason)); err != nil {
+			return err
+		}
+		// The account's entries go with it at the job (decision 48), so the installation keeps this copy, named by
+		// the account as account.delete is (review fix 2, decision 74).
+		kept := impersonationEnd(sess, reason)
+		kept.AccountID, kept.Target = "", accountName
+		if err := tx.InsertAudit(ctx, kept); err != nil {
 			return err
 		}
 	}
