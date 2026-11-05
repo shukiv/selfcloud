@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -52,32 +53,8 @@ func TestJSONBodyThatStallsIsEnded(t *testing.T) {
 	}
 }
 
-// sec1 item 3 (decision 84): a download's writes extend the write deadline, so a reader that stops ends the response
-// and a reader that keeps reading does not. The deadline is set on each write, not once for the whole response.
-func TestDownloadWritesExtendTheWriteDeadline(t *testing.T) {
-	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
-	w := newWriteDeadlineWriter(rec, 50*time.Millisecond)
-	for i := 0; i < 3; i++ {
-		if _, err := w.Write([]byte("chunk")); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if len(rec.deadlines) != 3 {
-		t.Fatalf("write deadlines set = %d, want one per write", len(rec.deadlines))
-	}
-	for i := 1; i < len(rec.deadlines); i++ {
-		if !rec.deadlines[i].After(rec.deadlines[i-1]) {
-			t.Errorf("deadline %d (%v) does not move past deadline %d (%v)", i, rec.deadlines[i], i-1, rec.deadlines[i-1])
-		}
-	}
-	if got := rec.deadlines[0].Sub(time.Now()); got > 60*time.Millisecond || got < 0 {
-		t.Errorf("first deadline is %v away, want about the timeout (50ms)", got)
-	}
-}
-
 // downloadFixture makes a file of size bytes and returns a live server, its key, and the file's node ID. The download
-// deadline is tuned by mutate.
+// settings are tuned by mutate.
 func downloadFixture(t *testing.T, size int, mutate func(*config.Config)) (*httptest.Server, *Server, string, string) {
 	t.Helper()
 	s := newAuthServer(t, &mail.Recorder{}, mutate)
@@ -90,12 +67,23 @@ func downloadFixture(t *testing.T, size int, mutate func(*config.Config)) (*http
 	return srv, s, key, node.ID
 }
 
-// sec1 item 3, rework (decision 84): a download's write deadline is its base time plus its bytes over min_rate, set once
-// before the copy. A reader that stops is cut off after about that time; the copy itself is not chunked.
-func TestDownloadThatStopsBeingReadIsCutOff(t *testing.T) {
+// setSegment makes the download segments size bytes for one test, and restores them afterwards. Tests that call it do
+// not run in parallel.
+func setSegment(t *testing.T, size int64) {
+	t.Helper()
+	saved := downloadSegmentBytes
+	downloadSegmentBytes = size
+	t.Cleanup(func() { downloadSegmentBytes = saved })
+}
+
+// sec1 item 3, rework 2 (decision 84): a reader that reads part of a download and then stops is cut off within about one
+// segment's deadline (download.timeout plus the segment over download.min_rate), not after the whole file's time.
+// Before, one deadline covered the whole file: 12 MiB at 1 MiB/s here is about 12 s, and this test reads after 3 s.
+func TestDownloadThatStopsBeingReadIsCutOffWithinASegment(t *testing.T) {
+	setSegment(t, 1<<20)
 	const size = 12 << 20
 	srv, _, key, id := downloadFixture(t, size, func(c *config.Config) {
-		c.Download.MinRate = config.ByteSize(8 << 20)
+		c.Download.MinRate = config.ByteSize(1 << 20)
 		c.Download.Timeout = config.Duration(200 * time.Millisecond)
 	})
 	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
@@ -104,22 +92,28 @@ func TestDownloadThatStopsBeingReadIsCutOff(t *testing.T) {
 	}
 	defer conn.Close()
 	fmt.Fprintf(conn, "GET /api/v1/nodes/%s/content HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer %s\r\nConnection: close\r\n\r\n", id, key)
-	// The reader waits longer than the computed deadline (about 1.7 s) before it reads.
+	// The reader waits past one segment's deadline (about 1.2 s), and well short of the whole file's (about 12 s).
 	time.Sleep(3 * time.Second)
-	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+	if err := conn.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
+	start := time.Now()
 	n, _ := io.Copy(io.Discard, conn)
 	if n >= size {
-		t.Errorf("a reader that stopped was sent the whole download (%d bytes); the write deadline did not end it", n)
+		t.Errorf("a reader that stopped was sent the whole download (%d bytes): the deadline did not end it", n)
+	}
+	if took := time.Since(start); took > 6*time.Second {
+		t.Errorf("the connection ended only after %v, after the reader resumed", took)
 	}
 }
 
-// sec1 item 3, rework (decision 84): a reader that keeps up gets the whole download.
-func TestDownloadCompletesForAReaderThatKeepsUp(t *testing.T) {
-	const size = 12 << 20
+// sec1 item 3, rework 2 (decision 84): a reader that keeps reading above download.min_rate completes the download. There
+// is no absolute cap on the total time: each segment gets its own deadline as the reader moves on.
+func TestDownloadCompletesForASlowReaderAboveTheMinimumRate(t *testing.T) {
+	setSegment(t, 512<<10)
+	const size = 2 << 20
 	srv, _, key, id := downloadFixture(t, size, func(c *config.Config) {
-		c.Download.MinRate = config.ByteSize(8 << 20)
+		c.Download.MinRate = config.ByteSize(512 << 10)
 		c.Download.Timeout = config.Duration(200 * time.Millisecond)
 	})
 	req, err := http.NewRequest("GET", srv.URL+"/api/v1/nodes/"+id+"/content", nil)
@@ -132,17 +126,68 @@ func TestDownloadCompletesForAReaderThatKeepsUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	n, err := io.Copy(io.Discard, resp.Body)
-	if err != nil || n != size {
-		t.Errorf("download read %d bytes, err %v; want %d", n, err, size)
+	// About 2 MiB a second: above the minimum of 512 KiB a second, but not a full-speed read.
+	buf := make([]byte, 64<<10)
+	var n int64
+	for {
+		m, rerr := resp.Body.Read(buf)
+		n += int64(m)
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			t.Fatalf("slow reader: read %d bytes, then %v", n, rerr)
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	if n != size {
+		t.Errorf("slow reader got %d bytes, want %d", n, size)
 	}
 }
 
-// sec1 item 3, rework (decision 84): the download goes straight to the response, so net/http's ReadFrom (the sendfile
-// path for a file) is reached. The recorder below stands in for the response, and the middleware passes ReadFrom
-// through, so the call reaching it shows the copy was not chunked by a wrapper.
-func TestDownloadCopyGoesThroughTheResponsesReadFrom(t *testing.T) {
-	s, key, id := downloadServer(t)
+// sec1 item 3, rework 2 (decision 84): a single range and a multipart range both complete.
+func TestDownloadRangesComplete(t *testing.T) {
+	setSegment(t, 512<<10)
+	const size = 2 << 20
+	srv, _, key, id := downloadFixture(t, size, func(c *config.Config) {
+		c.Download.MinRate = config.ByteSize(512 << 10)
+		c.Download.Timeout = config.Duration(200 * time.Millisecond)
+	})
+	get := func(rng string) (*http.Response, []byte) {
+		t.Helper()
+		req, err := http.NewRequest("GET", srv.URL+"/api/v1/nodes/"+id+"/content", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+key)
+		req.Header.Set("Range", rng)
+		resp, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("range %q: %v after %d bytes", rng, err, len(body))
+		}
+		return resp, body
+	}
+	resp, body := get("bytes=100-1099999")
+	if resp.StatusCode != http.StatusPartialContent || len(body) != 1099900 {
+		t.Errorf("single range: status %d, %d bytes; want 206 and 1099900", resp.StatusCode, len(body))
+	}
+	resp, body = get("bytes=0-9,20-29,100000-100019")
+	if resp.StatusCode != http.StatusPartialContent || len(body) < 30+20 {
+		t.Errorf("multipart range: status %d, %d bytes; want 206 with the parts", resp.StatusCode, len(body))
+	}
+}
+
+// sec1 item 3, rework 2 (decision 84): a whole file is sent by sendfile, one segment at a time. The response's ReadFrom
+// receives the segments, each as a limited reader over the file, and that is the path net/http turns into sendfile. The
+// recorder stands in for the connection's writer.
+func TestDownloadSendsFileSegmentsThroughReadFrom(t *testing.T) {
+	setSegment(t, 512<<10)
+	s, key, id := downloadServer(t, 2<<20)
 	rec := &readFromRecorder{ResponseRecorder: httptest.NewRecorder()}
 	req := httptest.NewRequest("GET", "/api/v1/nodes/"+id+"/content", nil)
 	req.Header.Set("Authorization", "Bearer "+key)
@@ -150,40 +195,36 @@ func TestDownloadCopyGoesThroughTheResponsesReadFrom(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
 	}
-	if rec.readFrom != 1 {
-		t.Errorf("the response's ReadFrom was called %d times, want 1 (sendfile is not reached)", rec.readFrom)
+	if rec.fileSegments != 4 {
+		t.Errorf("file segments through the response's ReadFrom = %d (of %d calls), want 4", rec.fileSegments, rec.readFrom)
 	}
 }
 
-// downloadServer is a server with one small file, for the copy-path test.
-func downloadServer(t *testing.T) (*Server, string, string) {
+// downloadServer is a server with one file of size bytes, for the copy-path test.
+func downloadServer(t *testing.T, size int) (*Server, string, string) {
 	t.Helper()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	f := newFolder(t, s, key, acc.ID, "Docs")
-	node := putTyped(t, s, key, f.ID, "small.bin", "application/octet-stream", "some bytes")
+	node := putTyped(t, s, key, f.ID, "big.bin", "application/octet-stream", strings.Repeat("x", size))
 	return s, key, node.ID
 }
 
-// readFromRecorder counts the ReadFrom calls made on it, and copies as a plain writer would.
+// readFromRecorder counts the ReadFrom calls made on it, and the calls whose source is a limited reader over a file. It
+// copies as a plain writer would.
 type readFromRecorder struct {
 	*httptest.ResponseRecorder
-	readFrom int
+	readFrom     int
+	fileSegments int
 }
 
 func (r *readFromRecorder) ReadFrom(src io.Reader) (int64, error) {
 	r.readFrom++
+	if lr, ok := src.(*io.LimitedReader); ok {
+		if _, ok := lr.R.(*os.File); ok {
+			r.fileSegments++
+		}
+	}
 	return io.Copy(struct{ io.Writer }{r.ResponseRecorder}, src)
-}
-
-// deadlineRecorder is a test writer that records the write deadlines it is given, as a real connection's writer does.
-type deadlineRecorder struct {
-	*httptest.ResponseRecorder
-	deadlines []time.Time
-}
-
-func (d *deadlineRecorder) SetWriteDeadline(t time.Time) error {
-	d.deadlines = append(d.deadlines, t)
-	return nil
 }

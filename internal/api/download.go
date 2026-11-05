@@ -396,54 +396,10 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, n *store.Node
 	h.Set("Content-Disposition", contentDisposition(disp, n.Name))
 	// The preconditions were checked above, so ServeContent's own pass gives the same answer, and
 	// the ranges it sees are valid. Its one plain-text error, 416, cannot happen here.
-	// The copy goes straight to the response, so the kernel's sendfile path is used. One write deadline is set before it:
-	// the base time plus the bytes sent over download.min_rate, so a reader that stops is cut off (sec1, decision 84).
-	s.setDownloadDeadline(w, bytesSent(r.Header.Get("Range"), n.Size))
-	http.ServeContent(w, r, n.Name, mod, f)
+	// The copy is sent in segments under deadlines that follow the reader's progress, through sendfile (sec1, decision 84).
+	pw := newProgressWriter(w, s.cfg.Download.Timeout.D(), int64(s.cfg.Download.MinRate))
+	http.ServeContent(pw, r, n.Name, mod, f)
 	return nil
-}
-
-// setDownloadDeadline sets the write deadline of a download that sends bytes: download.timeout plus bytes over
-// download.min_rate. The deadline is set once, before the copy.
-func (s *Server) setDownloadDeadline(w http.ResponseWriter, bytes int64) {
-	secs := float64(bytes) / float64(s.cfg.Download.MinRate)
-	d := s.cfg.Download.Timeout.D() + time.Duration(secs*float64(time.Second))
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
-}
-
-// bytesSent is the number of body bytes a response with this Range header sends for a file of size: the size with no
-// range, else the sum of the parts. The header is normalised by applyRange (absolute, sorted, merged). Anything this does
-// not read as a plain byte range counts as the whole file, which is the larger deadline.
-func bytesSent(rangeHeader string, size int64) int64 {
-	spec, ok := strings.CutPrefix(rangeHeader, "bytes=")
-	if !ok || spec == "" {
-		return size
-	}
-	var total int64
-	for _, part := range strings.Split(spec, ",") {
-		first, last, ok := strings.Cut(strings.TrimSpace(part), "-")
-		if !ok {
-			return size
-		}
-		a, err := parseRangeNumber(first)
-		if err != nil {
-			return size
-		}
-		b := size - 1
-		if last != "" {
-			if b, err = parseRangeNumber(last); err != nil {
-				return size
-			}
-		}
-		b = min(b, size-1)
-		if b >= a {
-			total += b - a + 1
-		}
-	}
-	if total == 0 {
-		return size
-	}
-	return total
 }
 
 // handleGetContent sends a file's contents to a caller who may read the file. The body is an
