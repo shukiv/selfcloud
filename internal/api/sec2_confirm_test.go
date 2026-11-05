@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/mail"
 	"github.com/shukiv/selfcloud/internal/store"
@@ -689,6 +690,23 @@ func TestAnEmailCeilingRefusalGivesBackTheAddressBudget(t *testing.T) {
 	// Read at the limiter's clock, which the tests freeze: time.Now would refill the bucket and hide the refund.
 	if got := b.lim.TokensAt(s.limitClock()); got < 0.5 {
 		t.Errorf("address budget holds %.2f tokens after the ceiling refused, want 1: the refusal must give it back", got)
+	}
+}
+
+// Round 6: the audit source a job uses shares nothing with the request's principal. A change to the principal, its token
+// scope (including the folder list) or its link scope after the copy does not reach the copy.
+func TestAuditSourceSharesNothingWithThePrincipal(t *testing.T) {
+	t.Parallel()
+	p := &auth.Principal{Kind: auth.KindUser, ID: "u1",
+		Token: &auth.TokenScope{Folders: []string{"f1"}, Audience: "api"},
+		Link:  &auth.LinkScope{Node: "n1", Role: "viewer"}}
+	cp := copyPrincipal(p)
+	p.ID = "changed"
+	p.Token.Folders[0] = "changed"
+	p.Token.Audience = "changed"
+	p.Link.Node = "changed"
+	if cp.ID != "u1" || cp.Token.Folders[0] != "f1" || cp.Token.Audience != "api" || cp.Link.Node != "n1" {
+		t.Errorf("the copy changed with the principal: %+v, token %+v, link %+v", cp, cp.Token, cp.Link)
 	}
 }
 

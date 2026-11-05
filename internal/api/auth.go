@@ -267,9 +267,6 @@ func (s *Server) managedAccount(r *http.Request) (*store.Account, error) {
 	return acc, err
 }
 
-// auditEntry describes an action by the request's caller, for the audit log.
-// folders, when given, are the folders the entry is about; an entry about a personal folder is
-// private to its user (store.AuditEntry.Folders).
 // auditSource is what an audit entry takes from a request: the user agent, the client address and the principal. A
 // background job copies it before its goroutine starts, so the job never reads the request (round 5).
 type auditSource struct {
@@ -278,15 +275,40 @@ type auditSource struct {
 	principal *auth.Principal
 }
 
-// auditSourceOf copies what an audit entry takes from r.
+// auditSourceOf copies what an audit entry takes from r. The principal is copied with its token and link scopes, so the
+// copy shares no pointer or slice with the request's principal (round 6).
 func auditSourceOf(r *http.Request) auditSource {
 	src := auditSource{userAgent: r.UserAgent()}
 	if info := infoFrom(r.Context()); info != nil {
-		src.ip, src.principal = info.ip, info.principal
+		src.ip = info.ip
+		src.principal = copyPrincipal(info.principal)
 	}
 	return src
 }
 
+// copyPrincipal returns a copy of p that shares no pointer or slice with it: the principal, its token scope (including
+// the folder list) and its link scope are each copied by value. A later change to the request's principal does not reach
+// the copy.
+func copyPrincipal(p *auth.Principal) *auth.Principal {
+	if p == nil {
+		return nil
+	}
+	cp := *p
+	if p.Token != nil {
+		t := *p.Token
+		t.Folders = append([]string(nil), p.Token.Folders...)
+		cp.Token = &t
+	}
+	if p.Link != nil {
+		l := *p.Link
+		cp.Link = &l
+	}
+	return &cp
+}
+
+// auditEntry describes an action by the request's caller, for the audit log.
+// folders, when given, are the folders the entry is about; an entry about a personal folder is
+// private to its user (store.AuditEntry.Folders).
 func (s *Server) auditEntry(r *http.Request, accountID, action, target string, details map[string]any, folders ...string) *store.AuditEntry {
 	return s.auditEntryFrom(auditSourceOf(r), accountID, action, target, details, folders...)
 }
