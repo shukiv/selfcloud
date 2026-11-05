@@ -301,9 +301,8 @@ describe("the folder tree in the sidebar", () => {
     restore();
   });
 
-  // Decision 69: the tree starts folded. A place deep in the tree opens nothing on the way, and the folder shown is marked on
-  // the nearest row that is on screen.
-  it("starts folded: a deep place opens none of the folders on the way, and the nearest row on screen is the mark", async () => {
+  // Decision 88 (changes decision 69): a deep place opens the folders on the way to it, and the folder shown is marked on its own row.
+  it("a deep place opens the way to it, saves it, and marks the folder shown", async () => {
     signIn("member");
     folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
     mocks.childrenPage.mockResolvedValue({ items: [dir("nod_docs", "Docs", "fld_p")], next_cursor: undefined });
@@ -314,15 +313,16 @@ describe("the folder tree in the sidebar", () => {
       if (!el) throw new Error("no tree yet");
       return el;
     });
-    const mine = await waitFor(() => {
-      const el = tree.querySelector<HTMLElement>('[data-tree-key="fld_p"][aria-current="location"]');
+    const docs = await waitFor(() => {
+      const el = tree.querySelector<HTMLElement>('[data-tree-key="nod_docs"][aria-current="location"]');
       if (!el) throw new Error("not marked");
       return el;
     });
-    expect(mine.getAttribute("aria-expanded")).toBe("false");
-    expect(within(tree).queryByText("Docs")).toBeNull();
-    expect(mocks.childrenPage).not.toHaveBeenCalled();
-    expect(JSON.parse(window.localStorage.getItem("selfcloud.tree.v2.u1") ?? '{"expanded":[]}').expanded).toEqual([]);
+    expect(docs.getAttribute("aria-level")).toBe("2");
+    expect(tree.querySelector<HTMLElement>('[data-tree-key="fld_p"]')?.getAttribute("aria-expanded")).toBe("true");
+    expect(mocks.childrenPage).toHaveBeenCalledTimes(1);
+    expect(mocks.childrenPage).toHaveBeenCalledWith("fld_p", null, undefined, expect.anything());
+    expect(JSON.parse(window.localStorage.getItem("selfcloud.tree.v2.u1") ?? '{"expanded":[]}').expanded).toEqual(["fld_p"]);
     restore();
   });
 
@@ -363,12 +363,15 @@ describe("the folder tree in the sidebar", () => {
     restore();
   });
 
-  // Decision 69, review fix 8: the place changes after the tree is mounted: no folder on the way opens, and the mark is on the nearest
-  // row that is on screen (the space's own row).
-  it("a place changed after mount opens none of the folders on its way, and marks the nearest row on screen", async () => {
+  // Decision 88: a place changed after mount opens the way to it. The folder below My files is read and opened, and the place's
+  // folder (not in the tree here) is not opened: the nearest row on screen is marked until the way has been read.
+  it("a place changed after mount opens the way to it, and marks the nearest row on screen", async () => {
     signIn("member");
     folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
-    mocks.childrenPage.mockResolvedValue({ items: [dir("nod_docs", "Docs", "fld_p")], next_cursor: undefined });
+    mocks.childrenPage.mockImplementation(async (...args: unknown[]) => ({
+      items: args[1] === null ? [dir("nod_docs", "Docs", "fld_p")] : [],
+      next_cursor: undefined,
+    }));
     const { router } = renderShell("/starred");
     const tree = await waitFor(() => {
       const el = document.querySelector<HTMLElement>('[data-testid="folder-tree"]');
@@ -378,15 +381,16 @@ describe("the folder tree in the sidebar", () => {
     expect(tree.querySelector('[aria-current="location"]')).toBeNull();
     treePlace.set({ folder: "fld_p", chain: ["nod_docs", "nod_deep"] });
     await router.navigate("/files/fld_p/nod_deep");
-    const mine = await waitFor(() => {
-      const el = tree.querySelector<HTMLElement>('[data-tree-key="fld_p"][aria-current="location"]');
+    await waitFor(() => expect(tree.querySelector('[data-tree-key="nod_docs"]')?.getAttribute("aria-expanded")).toBe("true"));
+    const docs = await waitFor(() => {
+      const el = tree.querySelector<HTMLElement>('[data-tree-key="nod_docs"][aria-current="location"]');
       if (!el) throw new Error("not marked");
       return el;
     });
-    expect(mine.getAttribute("aria-expanded")).toBe("false");
-    expect(within(tree).queryByText("Docs")).toBeNull();
-    expect(mocks.childrenPage).not.toHaveBeenCalled();
-    expect(JSON.parse(window.localStorage.getItem("selfcloud.tree.v2.u1") ?? '{"expanded":[]}').expanded).toEqual([]);
+    expect(docs).toBeTruthy();
+    expect(mocks.childrenPage).toHaveBeenCalledWith("fld_p", null, undefined, expect.anything());
+    expect(mocks.childrenPage).toHaveBeenCalledWith("fld_p", "nod_docs", undefined, expect.anything());
+    expect(JSON.parse(window.localStorage.getItem("selfcloud.tree.v2.u1") ?? '{"expanded":[]}').expanded).toEqual(["fld_p", "nod_docs"]);
     restore();
   });
 

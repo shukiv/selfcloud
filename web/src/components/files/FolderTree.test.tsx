@@ -64,9 +64,11 @@ function Harness({
   colours?: Sidebar;
 }) {
   const [state, setState] = useState(start);
+  // One client for the whole mount, as the app has: a rerender with a new place must not forget what was read.
+  const [client] = useState(createQueryClient);
   latest = state;
   return (
-    <QueryClientProvider client={createQueryClient()}>
+    <QueryClientProvider client={client}>
       <FolderTree
         spaces={[space("fld_a", "Team A"), space("fld_me", "Mine", { kind: "personal" })]}
         folder={folder}
@@ -133,13 +135,15 @@ describe("the folder tree", () => {
     expect(onOpen).not.toHaveBeenCalled();
   });
 
-  // Decision 69: the tree starts folded. A place deep in the tree does not open the folders on the way; the nearest row on screen
-  // (here, the space's own row) is the one marked.
-  it("starts folded: the folders on the way to the place are not opened, and the nearest row on screen is marked", () => {
+  // Decision 88 (changes decision 69): a place deep in the tree opens the folders on the way to it, top down, and marks the place's
+  // own row. Until the way is read, the nearest row on screen keeps the mark.
+  it("opens the folders on the way to a place that is folded away, and marks the place's own row", async () => {
     render(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} />);
     expect(screen.getByRole("treeitem", { name: "Team A" }).getAttribute("aria-current")).toBe("location");
-    expect(screen.queryByText("Docs")).toBeNull();
-    expect(latest.expanded).toEqual([]);
+    expect(await screen.findByText("Deep")).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: "Deep" }).getAttribute("aria-current")).toBe("location");
+    expect(screen.getByRole("treeitem", { name: "Docs" }).getAttribute("aria-current")).toBeNull();
+    expect(latest.expanded).toEqual(["fld_a", "nod_one"]);
   });
 
   // Decision 69, review fix 8: the place changes after the tree is mounted: no folder on its way opens, and a row is marked only
@@ -222,13 +226,13 @@ describe("the folder tree", () => {
 
   it("starts at the folder the person was given when the space's root is not theirs, and reads from there", async () => {
     render(<Harness folder="fld_a" chain={["nod_top", "nod_below"]} top={{ id: "nod_top", name: "Open", role: "viewer" }} />);
-    // The space's own root is not in the tree, and the given folder is a row, folded (decision 69), and it is the mark: the
-    // nearest row on screen. Nothing under it is read until the person opens it.
-    expect(api.childrenPage).not.toHaveBeenCalledWith("fld_a", null, expect.anything(), expect.anything());
-    expect(api.childrenPage).not.toHaveBeenCalled();
+    // The space's own root is not in the tree. The given folder is a row, and it is the mark until the way below it is read (decision 88:
+    // the given folder is on the way, so it is opened and read; the place below it is not in its listing, so it stays the mark).
     expect(screen.queryByText("Team A")).toBeNull();
     const top = screen.getByText("Open").closest<HTMLElement>(".tree-row") as HTMLElement;
     expect(top.parentElement?.getAttribute("aria-current")).toBe("location");
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_a", "nod_top", undefined, { key: "name", dir: "asc" }));
+    expect(api.childrenPage).not.toHaveBeenCalledWith("fld_a", null, expect.anything(), expect.anything());
     expect(top.dataset.dropDir).toBe("nod_top");
     expect(top.dataset.dropPath).toBe("fld_a,nod_top");
     expect(top.dataset.dropRole).toBe("viewer");
@@ -273,6 +277,89 @@ describe("the folder tree", () => {
     const dt = { types: ["Files"], files: [new File(["x"], "d.txt")], items: [], dropEffect: "none" };
     const kept = fireEvent.drop(screen.getByTestId("folder-tree"), { dataTransfer: dt });
     expect(kept).toBe(false);
+  });
+});
+
+// Decision 88: the sidebar's tree opens the way to the folder being viewed, top down, and marks that folder's own row. The tests use
+// a folder three levels below the space's root, so the way has three folders on it (the space's root and two more).
+describe("the folder tree opens the way to the place (decision 88)", () => {
+  const readThreeDeep = async (folder: string, d: string | null) => {
+    if (folder === "fld_a" && d === null) return { items: [dir("nod_one", "Docs"), dir("nod_two", "Pics", "viewer")], next_cursor: undefined };
+    if (d === "nod_one") return { items: [dir("nod_deep", "Deep")], next_cursor: undefined };
+    if (d === "nod_deep") return { items: [dir("nod_third", "Third")], next_cursor: undefined };
+    return { items: [], next_cursor: undefined };
+  };
+  const threeDeep = () => api.childrenPage.mockImplementation(readThreeDeep);
+  const deep = ["nod_one", "nod_deep", "nod_third"];
+  const reads = () => api.childrenPage.mock.calls.map((c) => c[1]);
+
+  it("opens the three folders on the way, each read once and top down, and marks the viewed folder's row", async () => {
+    threeDeep();
+    render(<Harness folder="fld_a" chain={deep} />);
+    expect(await screen.findByRole("treeitem", { name: "Third" })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: "Third" }).getAttribute("aria-current")).toBe("location");
+    expect(reads()).toEqual([null, "nod_one", "nod_deep"]);
+    expect(latest.expanded).toEqual(["fld_a", "nod_one", "nod_deep"]);
+  });
+
+  it("opens nothing when the place is a space's own root, as landing on My files", async () => {
+    threeDeep();
+    render(<Harness folder="fld_me" chain={[]} />);
+    expect(screen.getByRole("treeitem", { name: "My files" }).getAttribute("aria-current")).toBe("location");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.childrenPage).not.toHaveBeenCalled();
+    expect(latest.expanded).toEqual([]);
+  });
+
+  it("stops the way when the place changes while it is read: the old way is not opened, and the new place is marked", async () => {
+    threeDeep();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    api.childrenPage.mockImplementation(async (folder: string, d: string | null) => {
+      if (folder === "fld_a" && d === null) await gate;
+      return readThreeDeep(folder, d);
+    });
+    const { rerender } = render(<Harness folder="fld_a" chain={deep} />);
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_a", null, undefined, expect.anything()));
+    rerender(<Harness folder="fld_a" chain={["nod_two"]} />);
+    release();
+    expect(await screen.findByRole("treeitem", { name: "Pics" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("treeitem", { name: "Pics" }).getAttribute("aria-current")).toBe("location"));
+    expect(latest.expanded).toEqual(["fld_a"]);
+    expect(reads()).not.toContain("nod_one");
+    expect(reads()).not.toContain("nod_deep");
+  });
+
+  it("a hand close on the way moves the mark to that folder and stops the way; the next change of place reveals again", async () => {
+    threeDeep();
+    const { rerender } = render(<Harness folder="fld_a" chain={deep} />);
+    expect(await screen.findByRole("treeitem", { name: "Third" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Docs" }));
+    expect(screen.getByRole("treeitem", { name: "Docs" }).getAttribute("aria-current")).toBe("location");
+    expect(screen.queryByRole("treeitem", { name: "Third" })).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(latest.expanded).not.toContain("nod_one");
+    expect(screen.queryByRole("treeitem", { name: "Deep" })).toBeNull();
+    // Another place, then the deep one again: the way is revealed again.
+    rerender(<Harness folder="fld_a" chain={["nod_two"]} />);
+    await waitFor(() => expect(screen.getByRole("treeitem", { name: "Pics" }).getAttribute("aria-current")).toBe("location"));
+    rerender(<Harness folder="fld_a" chain={deep} />);
+    expect(await screen.findByRole("treeitem", { name: "Third" })).toBeTruthy();
+    expect(latest.expanded).toEqual(expect.arrayContaining(["fld_a", "nod_one", "nod_deep"]));
+  });
+
+  it("a folder on the way that fails to read leaves the mark on the deepest row that did read, and says only the failure", async () => {
+    api.childrenPage.mockImplementation(async (folder: string, d: string | null) => {
+      if (folder === "fld_a" && d === null) return { items: [dir("nod_one", "Docs")], next_cursor: undefined };
+      throw new ApiError(500, "internal", {}, 0);
+    });
+    render(<Harness folder="fld_a" chain={deep} />);
+    const alert = await screen.findByRole("alert", undefined, { timeout: 8000 });
+    expect(within(alert).getByText(/could not be loaded/)).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: "Team A" }).getAttribute("aria-current")).toBe("location");
+    expect(screen.getByRole("treeitem", { name: "Docs" }).getAttribute("aria-current")).toBeNull();
+    expect(screen.queryByRole("treeitem", { name: "Third" })).toBeNull();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 });
 

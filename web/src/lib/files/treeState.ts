@@ -12,8 +12,9 @@ export const DEFAULT_TREE: TreeState = { expanded: [] };
 // MAX_EXPANDED keeps a long-lived list from growing for ever: the folders opened longest ago are forgotten first.
 export const MAX_EXPANDED = 60;
 
-// The key is "v2" since decision 69: the tree no longer opens folders on its own, and the open folders saved under the old key (which
-// the tree used to reveal) are not read, so every person starts with the tree folded once.
+// The key is "v2" since decision 69: the tree stopped opening folders on its own, and the open folders saved under the old key are not
+// read, so every person starts with the tree folded once. Since decision 88 the tree opens the way to the folder being viewed, and
+// those folders are saved here like any folder the person opened by hand; the key stays "v2" so no saved state is reset.
 const key = (user: string): string => `selfcloud.tree.v2.${user}`;
 
 // parseTree reads stored state, ignoring anything it does not recognise. A state saved when the tree had its own column

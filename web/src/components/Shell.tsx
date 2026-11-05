@@ -229,12 +229,23 @@ export default function Shell({ children }: { children: ReactNode }) {
       if (region && item) keepInView(region, item);
     };
     follow();
-    // The region's height is settled by the sider's flex column after the first paint, so the scroll follows each resize of the box.
     const region = document.querySelector<HTMLElement>(".shell-scroll");
-    if (!region || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(follow);
-    observer.observe(region);
-    return () => observer.disconnect();
+    if (!region) return;
+    const observers: { disconnect: () => void }[] = [];
+    // The region's height is settled by the sider's flex column after the first paint, so the scroll follows each resize of the box.
+    if (typeof ResizeObserver !== "undefined") {
+      const resize = new ResizeObserver(follow);
+      resize.observe(region);
+      observers.push(resize);
+    }
+    // The tree opens the way to the place after the first paint (decision 88), so the place's row can come into being below the fold after
+    // this effect ran. The mark moving is what the follow waits for: only a change of aria-current scrolls the box again.
+    if (typeof MutationObserver !== "undefined") {
+      const mark = new MutationObserver(() => follow());
+      mark.observe(region, { subtree: true, attributes: true, attributeFilter: ["aria-current"] });
+      observers.push(mark);
+    }
+    return () => observers.forEach((o) => o.disconnect());
   }, [location.pathname, collapsed, isMobile]);
   useEffect(() => {
     if (admin) return;

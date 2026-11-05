@@ -51,6 +51,8 @@ interface Ctx extends FolderTreeProps {
   currentKey: string | null;
   tabKey: string;
   setTabKey: (k: string) => void;
+  // setOpen opens or closes a folder by the person's hand (the arrow and the keys), and a close on the way ends the reveal.
+  setOpen: (key: string, on: boolean) => void;
 }
 
 // Branch is one folder in the tree and, when it is open, the folders in it. root is set on a space's own row.
@@ -89,7 +91,7 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
   const size = ctx.coarse ? 44 : 32;
   const arrow = row ? row.indent : ctx.coarse ? 44 : 24;
   const link = ctx.coarse ? 44 : 28;
-  const toggle = () => ctx.onChange(withExpanded(ctx.state, key, !open));
+  const toggle = () => ctx.setOpen(key, !open);
   // The current place (decision 69, option B) has no background: a bar at the row's start edge, and its text and icon in the
   // mark colour, the same as the menu's selected item (theme/currentMark.ts). The others keep the sidebar's text.
   const mark = side ? currentMark(side) : null;
@@ -105,6 +107,8 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
       aria-selected={current}
       aria-current={current ? "location" : undefined}
       data-tree-key={key}
+      // A folder whose read failed is not the mark while another row on screen is (decision 88): the mark falls to the deepest row that read.
+      data-failed={q.isError ? "" : undefined}
       // A row is named by its own folder: the name of the subtree under it would read every folder and arrow inside.
       aria-label={name}
       tabIndex={ctx.tabKey === key ? 0 : -1}
@@ -257,12 +261,28 @@ function treeKey(e: KeyboardEvent<HTMLElement>, a: { open: boolean; hasKids: boo
 export default function FolderTree(props: FolderTreeProps) {
   const { t } = useT();
   const { spaces, folder, chain, marking, top } = props;
-  // The place's mark (decision 69): the folder shown, or the nearest folder on the way to it that is on screen. Folders are not
-  // opened for the place, so a deep place is marked on the row above its folded branch, and the mark moves down as the branches
-  // open. The places on the way, deepest first, are read here; settleTab picks the first one that is rendered.
+  // The place's mark (decisions 69 and 88): the folder shown, or else the nearest folder on the way to it that is on screen and has not
+  // failed to read. The places on the way, deepest first, are read here; settleTab picks the first one that is eligible.
   const wanted = marking && folder ? [...[...chain].reverse(), folder] : [];
   const wantedRef = useRef<string[]>(wanted);
   wantedRef.current = wanted;
+  // The way (decision 88): the folders that open so the folder shown is on screen, from the space's root down, or from the top folder
+  // the person was given. The folder shown is not on it: it is marked, not opened.
+  // A space's own root has no way: it is the folder shown, and a place with no chain is that root.
+  const way = marking && folder && chain.length > 0 ? (top ? chain.slice(0, -1) : [folder, ...chain.slice(0, -1)]) : [];
+  const wayRef = useRef<string[]>(way);
+  wayRef.current = way;
+  // The reveal is for one place at a time: it starts when the place changes, and a close of a folder on the way by hand ends it, so the
+  // next change of place reveals again. propsRef is the last render's props, read by the observer's callbacks.
+  const placeText = marking && folder ? [folder, ...chain, top?.id ?? ""].join("|") : "";
+  const placeRef = useRef<string | null>(null);
+  const revealRef = useRef<string | null>(null);
+  if (placeText !== placeRef.current) {
+    placeRef.current = placeText;
+    revealRef.current = placeText === "" ? null : placeText;
+  }
+  const propsRef = useRef(props);
+  propsRef.current = props;
   const [currentKey, setCurrentKey] = useState<string | null>(null);
   const currentRef = useRef<string | null>(null);
   // The tree is one tab stop, and it is always on a row that is rendered: the place's row when it is shown, else the first row.
@@ -274,13 +294,39 @@ export default function FolderTree(props: FolderTreeProps) {
   const navRef = useRef<HTMLElement | null>(null);
   const tabRef = useRef(tabKey);
   tabRef.current = tabKey;
+  // setOpen is the person's own open or close. A close of a folder on the way ends the reveal (the mark then falls back to the nearest row on
+  // screen until the next change of place).
+  const setOpen = (key: string, on: boolean) => {
+    if (!on && wayRef.current.includes(key)) revealRef.current = null;
+    propsRef.current.onChange(withExpanded(propsRef.current.state, key, on));
+  };
   const settleTab = () => {
-    const keys = Array.from(navRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? []).map((r) => r.dataset.treeKey ?? "");
-    const mark = wantedRef.current.find((k) => keys.includes(k)) ?? null;
+    const rows = new Map(
+      Array.from(navRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? []).map((r) => [r.dataset.treeKey ?? "", r] as const),
+    );
+    // The viewed folder is the mark when it is shown. A folder on the way is the mark when it is shown and did not fail to read; while it
+    // is being read it is the nearest row on screen, so the mark does not flicker.
+    const mark = wantedRef.current.find((k, i) => {
+      const row = rows.get(k);
+      return row !== undefined && (i === 0 || row.dataset.failed === undefined);
+    }) ?? null;
     if (mark !== currentRef.current) {
       currentRef.current = mark;
       setCurrentKey(mark);
     }
+    // The reveal (decision 88): the first folder on the way that is shown and not open is opened. A folder under it is shown only once the
+    // one above has been read, so the way is read top down, one folder at a time, and each is read once. A folder that is not shown stops
+    // the reveal here: nothing below it is opened, and a failed read shows its own error and stops the way.
+    if (revealRef.current !== null) {
+      for (const k of wayRef.current) {
+        if (!rows.has(k)) break;
+        if (!propsRef.current.state.expanded.includes(k)) {
+          propsRef.current.onChange(withExpanded(propsRef.current.state, k, true));
+          break;
+        }
+      }
+    }
+    const keys = Array.from(rows.keys());
     if (keys.length === 0) return;
     const next = keys.includes(tabRef.current) ? tabRef.current : (mark ?? keys[0]);
     if (next !== tabRef.current) setTabKey(next);
@@ -296,7 +342,7 @@ export default function FolderTree(props: FolderTreeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // The mark is shown only while the tree marks (the files pages): leaving them takes it off at once, whatever the last read of it said.
-  const ctx: Ctx = { ...props, currentKey: marking ? currentKey : null, tabKey, setTabKey };
+  const ctx: Ctx = { ...props, currentKey: marking ? currentKey : null, tabKey, setTabKey, setOpen };
   // A file dragged from the desktop onto the tree is not taken and does not open in the browser: an upload is made from the
   // listing, where the drop is read (FilesPage), so the tree only stops the browser's own navigation.
   const fileDrag = (e: DragEvent<HTMLElement>) => {
