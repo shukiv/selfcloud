@@ -30,6 +30,40 @@ beforeEach(() => {
 });
 afterEach(() => session.set(null));
 
+// A pending owner's invitation: resend by email needs mail, and a new link to an admin's session needs tenant access
+// (decision 41). The server refuses the other way, so the page offers only these.
+const pendingOwner = person({ id: "usr_owner", email: "owen@example.com", display_name: "Owen", role: "owner", status: "pending" });
+
+describe("a pending owner's invitation actions follow the installation's switches", () => {
+  beforeEach(() => {
+    stubFetch(() => ({ status: 200, body: { items: [pendingOwner] } }));
+  });
+
+  it("with neither mail nor tenant access, neither resend nor a new link is offered", async () => {
+    adminWith({ tenantAccess: false, mailConfigured: false });
+    renderUsers();
+    await screen.findByText("Owen");
+    expect(screen.queryByRole("button", { name: /Resend invitation/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /New link/ })).toBeNull();
+  });
+
+  it("with mail only, resend by email is offered and no new link", async () => {
+    adminWith({ tenantAccess: false, mailConfigured: true });
+    renderUsers();
+    await screen.findByText("Owen");
+    expect(screen.getByRole("button", { name: /Resend invitation/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /New link/ })).toBeNull();
+  });
+
+  it("with tenant access only, a new link is offered and no resend by email", async () => {
+    adminWith({ tenantAccess: true, mailConfigured: false });
+    renderUsers();
+    await screen.findByText("Owen");
+    expect(screen.queryByRole("button", { name: /Resend invitation/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /New link/ })).toBeTruthy();
+  });
+});
+
 describe("the reset and sign-in actions follow the installation's switches", () => {
   it("with neither mail nor tenant access, no reset and no sign-in is offered", async () => {
     adminWith({ tenantAccess: false, mailConfigured: false });

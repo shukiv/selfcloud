@@ -6,7 +6,7 @@ import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
-import { LINK, person, signedAs } from "../../test/adminFixtures";
+import { person, signedAs } from "../../test/adminFixtures";
 import AdminsPage from "./AdminsPage";
 
 function renderAdmins() {

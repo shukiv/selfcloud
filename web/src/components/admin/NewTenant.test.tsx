@@ -9,7 +9,7 @@ import { createQueryClient } from "../../lib/query";
 // The dialog reads the query client (its cancel refreshes the lists), so every render has the provider.
 const render = (ui: ReactNode) => rtlRender(<QueryClientProvider client={createQueryClient()}>{ui}</QueryClientProvider>);
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { session } from "../../lib/session";
+import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import NewTenant from "./NewTenant";
 import { account, signedAs } from "../../test/adminFixtures";
@@ -18,13 +18,47 @@ function setField(id: string, value: string) {
   fireEvent.change(document.getElementById(id) as HTMLInputElement, { target: { value } });
 }
 
-beforeEach(() => session.set(signedAs("admin")));
+// The admin's session carries the installation's two switches, as /me sends them (decision 41).
+function adminWith(switches: { tenantAccess: boolean; mailConfigured: boolean }) {
+  session.set({ ...signedAs("admin"), ...switches } as Session);
+}
+
+beforeEach(() => adminWith({ tenantAccess: true, mailConfigured: true }));
 afterEach(() => session.set(null));
 
 function fill() {
   setField("new-tenant-name", "Acme");
   setField("new-tenant-owner-email", "owen@example.com");
 }
+
+// The owner's ways in: the server takes email only with mail, and a link to an admin's session only with tenant access.
+describe("the owner's ways in follow the installation's switches (decision 41)", () => {
+  it("with mail only, offers the email invitation and no link", () => {
+    adminWith({ tenantAccess: false, mailConfigured: true });
+    render(<NewTenant onClose={vi.fn()} onCreated={vi.fn()} />);
+    expect(screen.getByRole("radio", { name: "Send an email invitation" })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: /link/i })).toBeNull();
+  });
+
+  it("with tenant access only, offers the link, selected, and no email", () => {
+    adminWith({ tenantAccess: true, mailConfigured: false });
+    render(<NewTenant onClose={vi.fn()} onCreated={vi.fn()} />);
+    expect(screen.queryByRole("radio", { name: "Send an email invitation" })).toBeNull();
+    expect((screen.getByRole("radio", { name: /link/i }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("with neither, offers no way in, says so, and creates nothing", async () => {
+    adminWith({ tenantAccess: false, mailConfigured: false });
+    const { calls } = stubFetch(() => ({ status: 201, body: account() }));
+    render(<NewTenant onClose={vi.fn()} onCreated={vi.fn()} />);
+    fill();
+    setField("new-tenant-limit", "5");
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.getByRole("dialog").textContent).toContain("Mail is not set up");
+    expect((screen.getByRole("button", { name: "Create tenant" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(calls).toEqual([]);
+  });
+});
 
 describe("the new tenant dialog", () => {
   it("a click on the backdrop does not close it, since it holds a form (guard: maskClosable false)", async () => {

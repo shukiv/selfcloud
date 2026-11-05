@@ -910,6 +910,7 @@
   "tenant.new.how": "Comment le propriétaire se connecte",
   "tenant.new.howEmail": "Envoyer une invitation par courriel",
   "tenant.new.howLink": "Me montrer un lien à transmettre",
+  "tenant.new.noWay": "Le courriel n’est pas configuré sur ce serveur, et admin.tenant_access est désactivé : il n’y a donc pas de moyen d’inviter le propriétaire depuis cette page.",
   "tenant.new.advanced": "Avancé",
   "tenant.new.externalId": "Identifiant externe",
   "tenant.new.externalHint": "Votre propre référence pour ce locataire, par exemple un identifiant d’un autre système.",

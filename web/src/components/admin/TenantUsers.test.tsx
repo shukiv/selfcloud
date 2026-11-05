@@ -3,7 +3,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { session } from "../../lib/session";
+import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import TenantUsers from "./TenantUsers";
 import { LINK, person, signedAs } from "../../test/adminFixtures";
@@ -20,7 +20,8 @@ function renderUsers() {
   return qc;
 }
 
-beforeEach(() => session.set(signedAs("admin")));
+// Both switches on, so the pending owner offers resend by email and a new link (decision 41).
+beforeEach(() => session.set({ ...signedAs("admin"), tenantAccess: true, mailConfigured: true } as Session));
 afterEach(() => session.set(null));
 
 describe("people of a tenant", () => {

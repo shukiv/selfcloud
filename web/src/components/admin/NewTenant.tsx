@@ -5,7 +5,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
 import { useFlight } from "../../lib/flight";
-import { sessionChanged } from "../../lib/session";
+import { session, sessionChanged } from "../../lib/session";
+import { useStore } from "../../lib/store";
 import { createAccount, type NewAccount } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
 import { limitBytes, type LimitUnit } from "../../lib/quota";
@@ -45,17 +46,25 @@ export default function NewTenant({
   const [unit, setUnit] = useState<LimitUnit>("GB");
   const [email, setEmail] = useState("");
   const [ownerName, setOwnerName] = useState("");
-  const [how, setHow] = useState<"email" | "link">("email");
+  // The ways in the server takes for this admin (decision 41): email needs mail; a link to an admin's session needs
+  // admin.tenant_access. mail_configured and tenant_access are sent to an installation admin's own session only.
+  const me = useStore(session);
+  const mailConfigured = me?.mailConfigured === true;
+  const tenantAccess = me?.tenantAccess === true;
+  const ways: ("email" | "link")[] = [...(mailConfigured ? (["email"] as const) : []), ...(tenantAccess ? (["link"] as const) : [])];
+  const [how, setHow] = useState<"email" | "link">(mailConfigured ? "email" : "link");
   const [externalId, setExternalId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const nameOk = name.trim() !== "";
   const emailOk = EMAIL.test(email.trim());
+  const waysOk = ways.length > 0;
+  const via = ways.includes(how) ? how : ways[0];
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!nameOk || !emailOk) return;
+    if (!nameOk || !emailOk || !waysOk) return;
     let quota = 0;
     if (!noLimit) {
       const bytes = limitBytes(amount, unit);
@@ -68,7 +77,7 @@ export default function NewTenant({
     const body: NewAccount = {
       name: name.trim(),
       quota_bytes: quota,
-      owner: { email: email.trim(), display_name: ownerName.trim(), verification: how },
+      owner: { email: email.trim(), display_name: ownerName.trim(), verification: via },
     };
     if (externalId.trim() !== "") body.external_id = externalId.trim();
     void guard(async () => {
@@ -146,15 +155,16 @@ export default function NewTenant({
           </div>
           <fieldset style={fieldset}>
             <legend>{t("tenant.new.how")}</legend>
-            <Radio.Group
-              name="how"
-              value={how}
-              onChange={(e) => setHow(e.target.value as "email" | "link")}
-              options={[
-                { value: "email", label: t("tenant.new.howEmail") },
-                { value: "link", label: t("tenant.new.howLink") },
-              ]}
-            />
+            {waysOk ? (
+              <Radio.Group
+                name="how"
+                value={via}
+                onChange={(e) => setHow(e.target.value as "email" | "link")}
+                options={ways.map((w) => ({ value: w, label: w === "email" ? t("tenant.new.howEmail") : t("tenant.new.howLink") }))}
+              />
+            ) : (
+              <Alert type="info" showIcon role="status" message={t("tenant.new.noWay")} />
+            )}
           </fieldset>
         </fieldset>
 
@@ -178,7 +188,7 @@ export default function NewTenant({
         {error !== null && <Alert type="error" showIcon role="alert" message={error} />}
         <div style={foot}>
           <Button onClick={cancel}>{t("common.cancel")}</Button>
-          <Button type="primary" htmlType="submit" loading={busy} disabled={busy || !nameOk || !emailOk}>
+          <Button type="primary" htmlType="submit" loading={busy} disabled={busy || !nameOk || !emailOk || !waysOk}>
             {t("tenant.new.create")}
           </Button>
         </div>

@@ -910,6 +910,7 @@
   "tenant.new.how": "كيف يدخل المالك",
   "tenant.new.howEmail": "إرسال دعوة بالبريد الإلكتروني",
   "tenant.new.howLink": "أرني رابطًا لأمرره",
+  "tenant.new.noWay": "البريد غير مُعدّ على هذا الخادم، و admin.tenant_access مُعطّل، لذلك لا توجد طريقة لدعوة المالك من هنا.",
   "tenant.new.advanced": "متقدم",
   "tenant.new.externalId": "المعرّف الخارجي",
   "tenant.new.externalHint": "مرجعكم الخاص لهذا المستأجر، مثل معرّف في نظام آخر.",

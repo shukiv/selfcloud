@@ -910,6 +910,7 @@
   "tenant.new.how": "How the owner gets in",
   "tenant.new.howEmail": "Send an email invitation",
   "tenant.new.howLink": "Show me a link to pass on",
+  "tenant.new.noWay": "Mail is not set up on this server, and admin.tenant_access is off, so there is no way to invite the owner from here.",
   "tenant.new.advanced": "Advanced",
   "tenant.new.externalId": "External ID",
   "tenant.new.externalHint": "Your own reference for this tenant, for example an ID in another system.",

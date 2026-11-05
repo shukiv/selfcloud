@@ -910,6 +910,7 @@
   "tenant.new.how": "איך הבעלים ייכנס",
   "tenant.new.howEmail": "שליחת הזמנה בדואר אלקטרוני",
   "tenant.new.howLink": "הצגת קישור להעברה",
+  "tenant.new.noWay": "שליחת דואר אינה מוגדרת בשרת הזה, ו-admin.tenant_access כבוי, ולכן אין דרך להזמין את הבעלים מכאן.",
   "tenant.new.advanced": "מתקדם",
   "tenant.new.externalId": "מזהה חיצוני",
   "tenant.new.externalHint": "ההפניה שלכם ללקוח זה, למשל מזהה במערכת אחרת.",

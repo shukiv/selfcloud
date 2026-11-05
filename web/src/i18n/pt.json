@@ -910,6 +910,7 @@
   "tenant.new.how": "Como entra o proprietário",
   "tenant.new.howEmail": "Enviar um convite por correio eletrónico",
   "tenant.new.howLink": "Mostrar-me uma ligação para passar",
+  "tenant.new.noWay": "O correio não está configurado neste servidor, e admin.tenant_access está desligado, por isso não há forma de convidar o proprietário a partir daqui.",
   "tenant.new.advanced": "Avançado",
   "tenant.new.externalId": "ID externo",
   "tenant.new.externalHint": "A sua própria referência para este cliente, por exemplo um ID de outro sistema.",

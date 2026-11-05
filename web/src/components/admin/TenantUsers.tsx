@@ -103,6 +103,9 @@ export default function TenantUsers({ account }: { account: string }) {
             const ownerPending = p.role === "owner" && p.status === "pending";
             const canReset = mailConfigured || tenantAccess;
             const canSignIn = tenantAccess && p.status === "active";
+            // A pending owner's invitation: by email only with mail, and as a new link only with tenant access (decision 41).
+            const canResend = ownerPending && mailConfigured;
+            const canNewLink = ownerPending && tenantAccess;
             return (
               <li key={p.id} style={row}>
                 <div style={rowMain}>
@@ -117,13 +120,13 @@ export default function TenantUsers({ account }: { account: string }) {
                 <div>
                   <StatusTag tone={statusTone(p.status)}>{t(`people.status.${p.status}`)}</StatusTag>
                 </div>
-                {(ownerPending || canReset || canSignIn) && (
+                {(canResend || canNewLink || canReset || canSignIn) && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {ownerPending && (
-                      <>
-                        <IconButton label={`${t("tenant.users.resend")}: ${personLabel(p)}`} tip={t("tenant.users.resend")} disabled={busy === p.id} onClick={() => void resend(p, "email")} icon={<Send className="icon-dir" size={18} aria-hidden="true" focusable="false" />} />
-                        <IconButton label={`${t("tenant.users.newLink")}: ${personLabel(p)}`} tip={t("tenant.users.newLink")} disabled={busy === p.id} onClick={() => void resend(p, "link")} icon={<Link size={18} aria-hidden="true" focusable="false" />} />
-                      </>
+                    {canResend && (
+                      <IconButton label={`${t("tenant.users.resend")}: ${personLabel(p)}`} tip={t("tenant.users.resend")} disabled={busy === p.id} onClick={() => void resend(p, "email")} icon={<Send className="icon-dir" size={18} aria-hidden="true" focusable="false" />} />
+                    )}
+                    {canNewLink && (
+                      <IconButton label={`${t("tenant.users.newLink")}: ${personLabel(p)}`} tip={t("tenant.users.newLink")} disabled={busy === p.id} onClick={() => void resend(p, "link")} icon={<Link size={18} aria-hidden="true" focusable="false" />} />
                     )}
                     {canReset && (
                       <IconButton label={`${t("tenant.users.reset")}: ${personLabel(p)}`} tip={t("tenant.users.reset")} disabled={busy === p.id} onClick={() => setResetFor(p)} icon={<KeyRound size={18} aria-hidden="true" focusable="false" />} />

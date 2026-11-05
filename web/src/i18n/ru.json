@@ -910,6 +910,7 @@
   "tenant.new.how": "Как владелец войдёт",
   "tenant.new.howEmail": "Отправить приглашение по почте",
   "tenant.new.howLink": "Показать ссылку, чтобы передать",
+  "tenant.new.noWay": "Почта на этом сервере не настроена, а admin.tenant_access выключен, так что пригласить владельца отсюда нельзя.",
   "tenant.new.advanced": "Дополнительно",
   "tenant.new.externalId": "Внешний ID",
   "tenant.new.externalHint": "Ваша собственная ссылка на этого арендатора, например ID из другой системы.",
