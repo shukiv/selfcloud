@@ -4,6 +4,7 @@ package search
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -179,6 +180,119 @@ func TestOfficeExtRefusesAZip64OverTheCapBeforeBuildingTheEntries(t *testing.T) 
 	}
 	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 1<<20 {
 		t.Errorf("officeExt allocated %d bytes for a refused zip64 of 70,000 entries", alloc)
+	}
+}
+
+// zipData is a zip of names, in memory.
+func zipData(t *testing.T, names []string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, n := range names {
+		if _, err := zw.Create(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// openBytes writes data to a file and opens it.
+func openBytes(t *testing.T, data []byte) (*os.File, int64) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "doc.zip")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	return f, int64(len(data))
+}
+
+// sec1 item 6, review F5 round 3 (decision 84): a zip whose end record declares more entries than the cap, with two real
+// headers, is refused before its entries are read. The declaration is a zip64 count of 65,538, which archive/zip accepts
+// for two headers (the count is compared modulo 65,536). Mutation: without the declared-count check the zip is read and
+// decided as a document.
+func TestOfficeExtRefusesADeclaredCountOverTheCap(t *testing.T) {
+	data := zipData(t, []string{"junk.txt", "word/document.xml"})
+	eoc := len(data) - eocdLen
+	dirSize := binary.LittleEndian.Uint32(data[eoc+12 : eoc+16])
+	dirOff := binary.LittleEndian.Uint32(data[eoc+16 : eoc+20])
+	// The zip64 record and its locator go where the end record is; the end record follows them, with a 16-bit count of
+	// 0xFFFF so the zip64 count is used.
+	z64 := make([]byte, eocd64Len)
+	binary.LittleEndian.PutUint32(z64[0:4], eocd64Sig)
+	binary.LittleEndian.PutUint64(z64[4:12], eocd64Len-12)
+	binary.LittleEndian.PutUint16(z64[12:14], 45)
+	binary.LittleEndian.PutUint16(z64[14:16], 45)
+	binary.LittleEndian.PutUint64(z64[24:32], 2)
+	binary.LittleEndian.PutUint64(z64[32:40], 65538)
+	binary.LittleEndian.PutUint64(z64[40:48], uint64(dirSize))
+	binary.LittleEndian.PutUint64(z64[48:56], uint64(dirOff))
+	loc := make([]byte, eocd64LocLen)
+	binary.LittleEndian.PutUint32(loc[0:4], eocd64LocSig)
+	binary.LittleEndian.PutUint64(loc[8:16], uint64(eoc))
+	binary.LittleEndian.PutUint32(loc[16:20], 1)
+	end := append([]byte{}, data[eoc:]...)
+	binary.LittleEndian.PutUint16(end[10:12], 0xffff)
+	binary.LittleEndian.PutUint16(end[8:10], 0xffff)
+	out := bytes.Join([][]byte{data[:eoc], z64, loc, end}, nil)
+	f, size := openBytes(t, out)
+	if got := officeExt(f, size); got != "" {
+		t.Errorf("officeExt with a declared count over the cap = %q, want \"\" (refused)", got)
+	}
+}
+
+// sec1 item 6, review F5 round 3 (decision 84): a zip with data in front of it (base above zero) and more real headers than
+// the cap is refused, whichever directory start archive/zip takes. Mutation: walking only from dirOff, where this zip's
+// headers are not, lets the zip through to zip.NewReader, which builds all 10,001 entries.
+func TestOfficeExtRefusesAPrependedZipOverTheCap(t *testing.T) {
+	// 65,541 real headers, declared as 5: archive/zip accepts the count, which it compares modulo 65,536. The declared
+	// count is under the cap, so the walk decides. The real size and offset go into the end record, so the 16-bit count
+	// is the one used.
+	names := make([]string, 0, 65541)
+	for i := 0; i < 65541; i++ {
+		names = append(names, fmt.Sprintf("j%d", i))
+	}
+	z := zipData(t, names)
+	eoc := len(z) - eocdLen
+	// Go's writer put a zip64 record and locator between the directory and the end record. Remove them, so the end
+	// record follows the directory directly, as a 16-bit zip has it.
+	zip64At := int(binary.LittleEndian.Uint64(z[eoc-eocd64LocLen+8 : eoc-eocd64LocLen+16]))
+	realSize := binary.LittleEndian.Uint64(z[zip64At+40 : zip64At+48])
+	realOffset := binary.LittleEndian.Uint64(z[zip64At+48 : zip64At+56])
+	end := append([]byte{}, z[eoc:]...)
+	binary.LittleEndian.PutUint32(end[12:16], uint32(realSize))
+	binary.LittleEndian.PutUint32(end[16:20], uint32(realOffset))
+	binary.LittleEndian.PutUint16(end[10:12], 5)
+	binary.LittleEndian.PutUint16(end[8:10], 5)
+	d := bytes.Join([][]byte{z[:zip64At], end}, nil)
+	data := append(make([]byte, 1000), d...)
+	f, size := openBytes(t, data)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	got := officeExt(f, size)
+	runtime.ReadMemStats(&after)
+	if got != "" {
+		t.Errorf("officeExt over the cap in a prepended zip = %q, want \"\"", got)
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 1<<20 {
+		t.Errorf("officeExt allocated %d bytes for a prepended zip of 65,541 real headers declared as 5", alloc)
+	}
+}
+
+// sec1 item 6, review F5 round 3 (decision 84): a normal office file with data in front of it is still decided.
+func TestOfficeExtDecidesAPrependedOfficeFile(t *testing.T) {
+	data := append(make([]byte, 1000), zipData(t, []string{"word/document.xml"})...)
+	f, size := openBytes(t, data)
+	if got := officeExt(f, size); got != "docx" {
+		t.Errorf("officeExt of a prepended docx = %q, want docx", got)
 	}
 }
 

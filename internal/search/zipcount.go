@@ -51,21 +51,34 @@ func zipEntryCount(r io.ReaderAt, size int64, limit int) (uint64, bool) {
 			endOff = p
 		}
 	}
+	// The declared count sizes archive/zip's allocation for its entries, so a declared count over the cap is refused
+	// before anything is read from the directory (review F5, round 3).
+	if dirRecords > uint64(limit) {
+		return dirRecords, true
+	}
 	if dirSize > maxInt64Unsigned || dirOff > maxInt64Unsigned {
 		return 0, false
 	}
+	// archive/zip's choice of the directory's start is not reproduced: the walk is made from each start it could take,
+	// and the larger count stands. A base above zero gives two starts: base+dirOff, and dirOff itself (base 0).
 	base := endOff - int64(dirSize) - int64(dirOff)
+	starts := []int64{base + int64(dirOff)}
 	if base > 0 {
-		// archive/zip keeps the base only when no header sits at the directory's own offset.
-		if headerAt(r, size, int64(dirOff)) {
-			base = 0
-		}
+		starts = append(starts, int64(dirOff))
 	}
-	start := base + int64(dirOff)
-	if start < 0 || start >= size {
+	var most uint64
+	valid := false
+	for _, start := range starts {
+		if start < 0 || start >= size {
+			continue
+		}
+		valid = true
+		most = max(most, walkHeaders(r, size, start, limit))
+	}
+	if !valid {
 		return 0, false
 	}
-	return walkHeaders(r, size, start, limit), true
+	return most, true
 }
 
 // findEnd is the offset and the 22 bytes of the last end-of-central-directory record, found as archive/zip finds it:
@@ -108,15 +121,6 @@ func zip64End(r io.ReaderAt, eocOff int64) (int64, bool, error) {
 		return 0, false, nil
 	}
 	return int64(binary.LittleEndian.Uint64(loc[8:16])), true, nil
-}
-
-// headerAt reports whether a central directory header parses at off: the fixed part, and its name, extra and comment.
-func headerAt(r io.ReaderAt, size, off int64) bool {
-	if off < 0 || off >= size {
-		return false
-	}
-	br := bufio.NewReaderSize(io.NewSectionReader(r, off, size-off), 1<<12)
-	return readHeader(br)
 }
 
 // walkHeaders counts the headers from start on, stopping at limit+1. A header that is not there (a bad signature, or the
