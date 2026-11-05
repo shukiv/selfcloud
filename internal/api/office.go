@@ -335,7 +335,13 @@ func (s *Server) wopiFail(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	switch {
 	case errors.Is(err, errBadProof), errors.Is(err, errNoDiscovery):
-		s.log.Warn("wopi request refused", "request_id", requestID(r), "reason", err.Error())
+		// A forged request is refused quietly after the first in a window from its address: warn once per address per
+		// window (wopi.refusal, sec1 decision 84), and debug after that, so forged requests cannot fill the log.
+		if s.rateLimit("wopi.refusal", addressKey(r)) == nil {
+			s.log.Warn("wopi request refused", "request_id", requestID(r), "reason", err.Error())
+		} else {
+			s.log.Debug("wopi request refused", "request_id", requestID(r), "reason", err.Error())
+		}
 	case code == apierr.Internal && !errors.Is(err, errNotImplemented) && !locked:
 		s.log.Error("wopi request failed", "request_id", requestID(r), "error", err)
 	}
