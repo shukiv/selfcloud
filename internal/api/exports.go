@@ -504,7 +504,7 @@ func (s *Server) writeConverted(w http.ResponseWriter, r *http.Request, accountI
 	if err := applyRange(h, r, etag, time.Time{}, fi.Size()); err != nil {
 		return err
 	}
-	http.ServeContent(w, r, name, time.Time{}, f)
+	s.serveDownload(w, r, name, time.Time{}, f)
 	s.convertPool.Cache().Use(accountID, d.ID)
 	return nil
 }

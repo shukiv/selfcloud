@@ -336,7 +336,7 @@ func (s *Server) handleGetZip(w http.ResponseWriter, r *http.Request) error {
 	h.Set("Accept-Ranges", "bytes")
 	h.Set("Content-Type", "application/zip")
 	h.Set("Content-Disposition", contentDisposition(dispAttachment, name))
-	http.ServeContent(w, r, name, mod, f)
+	s.serveDownload(w, r, name, mod, f)
 	return nil
 }
 

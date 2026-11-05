@@ -15,6 +15,13 @@ import (
 // the segments small.
 var downloadSegmentBytes int64 = 8 << 20
 
+// serveDownload sends a file as a download, under the progress deadlines of download.timeout and download.min_rate
+// (sec1, decision 84). Every route that sends a file to be downloaded uses it: a single file, a zip, an export.
+func (s *Server) serveDownload(w http.ResponseWriter, r *http.Request, name string, mod time.Time, content io.ReadSeeker) {
+	pw := newProgressWriter(w, s.cfg.Download.Timeout.D(), int64(s.cfg.Download.MinRate))
+	http.ServeContent(pw, r, name, mod, content)
+}
+
 // progressWriter is the response of a download. A copy from the file is sent in segments, each under its own write
 // deadline, through the response's own ReadFrom, so the kernel's sendfile path is used (sec1, decision 84). Any other
 // copy, such as the parts of a multipart range (which come through a pipe), sets the deadline before each chunk.

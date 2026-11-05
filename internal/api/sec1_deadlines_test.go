@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -227,4 +228,97 @@ func (r *readFromRecorder) ReadFrom(src io.Reader) (int64, error) {
 		}
 	}
 	return io.Copy(struct{ io.Writer }{r.ResponseRecorder}, src)
+}
+
+// zipDownload makes a zip of a size-byte random file in a fixture, and serves the server over TCP. It returns the server,
+// the fixture and the zip's ID.
+func zipDownload(t *testing.T, size int, mutate func(*config.Config)) (*httptest.Server, *sharingFixture, string) {
+	t.Helper()
+	fx := zipFixture(t, mutate)
+	big := putNode(t, fx.s, fx.key, fx.fld.ID, "/big.bin", randomText(size))
+	job := createZip(t, fx, nil, big.ID)
+	runZip(t, fx, job.ID)
+	srv := httptest.NewServer(fx.s.Handler())
+	t.Cleanup(srv.Close)
+	return srv, fx, job.Target
+}
+
+// randomText is n bytes of pseudo-random text, so that a zip of it does not shrink to a few bytes.
+func randomText(n int) string {
+	b := make([]byte, n)
+	rand.New(rand.NewSource(1)).Read(b) //nolint:gosec // test data, not a secret
+	return string(b)
+}
+
+// sec1 item 3, review F2 (decision 84): a zip download is held to the same progress deadline as a file. A reader that
+// stops is cut off within about one segment's time, not sent the whole zip.
+func TestZipThatStopsBeingReadIsCutOffWithinASegment(t *testing.T) {
+	setSegment(t, 1<<20)
+	const size = 12 << 20
+	srv, fx, zid := zipDownload(t, size, func(c *config.Config) {
+		c.Download.MinRate = config.ByteSize(1 << 20)
+		c.Download.Timeout = config.Duration(200 * time.Millisecond)
+	})
+	total := getZip(t, fx, nil, zid, nil).Body.Len()
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprintf(conn, "GET /api/v1/zips/%s HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer %s\r\nConnection: close\r\n\r\n", zid, fx.key)
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	time.Sleep(3 * time.Second)
+	if err := conn.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	// Only the body is counted: the headers were read above.
+	n, _ := io.Copy(io.Discard, resp.Body)
+	if n >= int64(total) {
+		t.Errorf("a zip reader that stopped was sent the whole zip (%d of %d bytes): the deadline did not end it", n, total)
+	}
+	if took := time.Since(start); took > 6*time.Second {
+		t.Errorf("the connection ended only after %v, after the reader resumed", took)
+	}
+}
+
+// sec1 item 3, review F2 (decision 84): a slow zip reader above download.min_rate gets the whole zip.
+func TestZipCompletesForASlowReaderAboveTheMinimumRate(t *testing.T) {
+	setSegment(t, 512<<10)
+	const size = 2 << 20
+	srv, fx, zid := zipDownload(t, size, func(c *config.Config) {
+		c.Download.MinRate = config.ByteSize(512 << 10)
+		c.Download.Timeout = config.Duration(200 * time.Millisecond)
+	})
+	total := getZip(t, fx, nil, zid, nil).Body.Len()
+	req, err := http.NewRequest("GET", srv.URL+"/api/v1/zips/"+zid, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+fx.key)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	buf := make([]byte, 64<<10)
+	var n int64
+	for {
+		m, rerr := resp.Body.Read(buf)
+		n += int64(m)
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			t.Fatalf("slow zip reader: read %d bytes, then %v", n, rerr)
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	if n != int64(total) {
+		t.Errorf("slow zip reader got %d bytes, want %d", n, total)
+	}
 }

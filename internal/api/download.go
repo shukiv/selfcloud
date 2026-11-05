@@ -397,8 +397,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, n *store.Node
 	// The preconditions were checked above, so ServeContent's own pass gives the same answer, and
 	// the ranges it sees are valid. Its one plain-text error, 416, cannot happen here.
 	// The copy is sent in segments under deadlines that follow the reader's progress, through sendfile (sec1, decision 84).
-	pw := newProgressWriter(w, s.cfg.Download.Timeout.D(), int64(s.cfg.Download.MinRate))
-	http.ServeContent(pw, r, n.Name, mod, f)
+	s.serveDownload(w, r, n.Name, mod, f)
 	return nil
 }
 
