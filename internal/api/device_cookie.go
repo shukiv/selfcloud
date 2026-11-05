@@ -46,21 +46,17 @@ func (s *Server) deviceMAC(userID, nonce string, issuedMS, expiry int64) (string
 	return base64.RawURLEncoding.EncodeToString(m.Sum(nil)), nil
 }
 
-// setDeviceCookie sets a new device cookie for userID, with a fresh nonce, and the configured lifetime. notBefore is the
-// user's cut-off when the cookie is made just after one (a reset): the cookie is stamped after it, since a cookie at or
-// before the cut-off is void. A zero notBefore is no cut-off.
-func (s *Server) setDeviceCookie(w http.ResponseWriter, userID string, notBefore time.Time) error {
+// setDeviceCookie sets a new device cookie for userID, with a fresh nonce, and the configured lifetime. issuedAt is the
+// time the caller's transaction made the sign-in (or the reset), taken by the caller and not read from the clock here:
+// a cut-off committed after that transaction is later, and voids the cookie (sec1, decision 84, review F9).
+func (s *Server) setDeviceCookie(w http.ResponseWriter, userID string, issuedAt time.Time) error {
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
 		return err
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(raw)
-	now := time.Now()
-	issued := now.UnixMilli()
-	if !notBefore.IsZero() && issued <= notBefore.UnixMilli() {
-		issued = notBefore.UnixMilli() + 1
-	}
-	expiry := now.Add(s.cfg.Sessions.DeviceCookieLifetime.D()).Unix()
+	issued := issuedAt.UnixMilli()
+	expiry := issuedAt.Add(s.cfg.Sessions.DeviceCookieLifetime.D()).Unix()
 	mac, err := s.deviceMAC(userID, nonce, issued, expiry)
 	if err != nil {
 		return err

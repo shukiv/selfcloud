@@ -209,7 +209,7 @@ func (s *Server) handleSetUserPassword(w http.ResponseWriter, r *http.Request) e
 		if err := tx.DeleteUserSessions(ctx, u.ID); err != nil {
 			return err
 		}
-		if err := endUserTokens(ctx, tx, u.AccountID, u.ID); err != nil {
+		if _, err := endUserTokens(ctx, tx, u.AccountID, u.ID); err != nil {
 			return err
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.password_set", u.ID,

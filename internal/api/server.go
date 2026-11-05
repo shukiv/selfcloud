@@ -88,7 +88,10 @@ type Server struct {
 	dropFlight dropFlight
 	// oneFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84, review F3).
 	oneFlight oneRequestFlight
-	pwFails   passwordFails // wrong current passwords, per session, for POST /me/password
+	// afterLoginCommit, when set, runs in a sign-in after its transaction commits and before its device cookie is written.
+	// Production leaves it nil; a test uses it to make a password change land in that gap (sec1, decision 84, review F9).
+	afterLoginCommit func(userID string)
+	pwFails          passwordFails // wrong current passwords, per session, for POST /me/password
 	// origin is public_url's scheme and host. Browsers send it as Origin, and unsafe requests
 	// made with a session must carry it.
 	origin string

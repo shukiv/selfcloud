@@ -313,3 +313,35 @@ func TestDeviceCookieEndsWithADisable(t *testing.T) {
 	wantStatus(t, call(t, s, "PATCH", users, key, map[string]any{"status": "active"}), 200)
 	cookieAcrossEvent(t, s, 53, "ann@example.com", testPassword, dev)
 }
+
+// sec1 item 1, review F9 (decision 84): a password change that commits after a sign-in's transaction, and before its
+// device cookie is written, voids that cookie. The sign-in's cookie is stamped with the time its transaction made the
+// session, so the change's cut-off is later, and the cookie is refused on the next sign-in with the cap spent. The
+// change is made by the hook that runs after the commit (afterLoginCommit), a few milliseconds before the cookie is
+// written. Mutation: stamping the cookie with time.Now() inside setDeviceCookie is later than the cut-off, and fails.
+func TestDeviceCookieIssuedBeforeACommittedChangeIsVoid(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	_, annSess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	const newPassword = "a passphrase changed in the gap"
+	changed := false
+	s.afterLoginCommit = func(string) {
+		if changed {
+			return
+		}
+		changed = true
+		wantStatus(t, callSession(t, s, annSess, "POST", "/api/v1/me/password",
+			map[string]any{"current_password": testPassword, "new_password": newPassword}), 204)
+		// The cookie is written a few milliseconds after the change: a cookie stamped from the clock would be later than
+		// the cut-off, and so trusted. The sleep makes that difference visible at the millisecond the cut-off is kept in.
+		time.Sleep(3 * time.Millisecond)
+	}
+	dev := deviceCookieFrom(t, loginWith(t, s, "10.71.9.1:4000", "ann@example.com", testPassword))
+	if !changed {
+		t.Fatal("the hook did not run: the sign-in made no commit")
+	}
+	spendCap(t, s, "ann@example.com", 71)
+	wantError(t, loginWith(t, s, "10.71.1.1:4000", "ann@example.com", newPassword, dev), 429, apierr.RateLimited)
+}

@@ -298,6 +298,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		stateErr error
 		secret   string
 		sess     *store.Session
+		// issuedAt is the time the sign-in's transaction makes the session: the device cookie is stamped with it, so a
+		// cut-off committed after this transaction is later and voids the cookie (sec1, decision 84, review F9).
+		issuedAt time.Time
 	)
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		// Re-read the user under the write lock. A reset, a disable or a deletion that committed
@@ -345,7 +348,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		short := in.Remember != nil && !*in.Remember
-		secret, sess = s.newSession(r, u, store.Now(), short)
+		issuedAt = store.Now()
+		secret, sess = s.newSession(r, u, issuedAt, short)
 		if err := tx.InsertSession(ctx, sess); err != nil {
 			return err
 		}
@@ -359,7 +363,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if stateErr != nil {
 		return stateErr
 	}
-	if err := s.setDeviceCookie(w, u.ID, time.Time{}); err != nil {
+	if s.afterLoginCommit != nil {
+		s.afterLoginCommit(u.ID)
+	}
+	if err := s.setDeviceCookie(w, u.ID, issuedAt); err != nil {
 		return err
 	}
 	s.writeSignedIn(w, secret, u, sess)
@@ -579,6 +586,8 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		u      *store.User
 		secret string
 		sess   *store.Session
+		// cut is the user's cut-off this reset sets; the device cookie it makes is stamped just after it (review F9).
+		cut time.Time
 	)
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		v, err := tx.VerificationByHash(ctx, auth.HashToken(in.Token))
@@ -631,9 +640,11 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		if err := tx.DeleteUserSessions(ctx, found.ID); err != nil {
 			return err
 		}
-		if err := endUserTokens(ctx, tx, found.AccountID, found.ID); err != nil {
+		c, err := endUserTokens(ctx, tx, found.AccountID, found.ID)
+		if err != nil {
 			return err
 		}
+		cut = c
 		u = found
 		if err := s.endBrowserSession(r, tx); err != nil {
 			return err
@@ -650,12 +661,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return err
 	}
-	// The reset ended the cookies made before it: the new one is stamped after the cut-off the reset made.
-	notBefore, err := s.store.UserTokensNotBefore(r.Context(), u.AccountID, u.ID)
-	if err != nil {
-		return err
-	}
-	if err := s.setDeviceCookie(w, u.ID, notBefore); err != nil {
+	// The reset's own cut-off voids the cookies made before it; the new cookie is stamped a millisecond after it, in the
+	// reset's transaction, and nothing is read after the commit (sec1, decision 84, review F9).
+	if err := s.setDeviceCookie(w, u.ID, cut.Add(time.Millisecond)); err != nil {
 		return err
 	}
 	s.writeSignedIn(w, secret, u, sess)
@@ -1007,7 +1015,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 		if err := tx.DeleteUserSessions(ctx, found.ID); err != nil {
 			return err
 		}
-		if err := endUserTokens(ctx, tx, found.AccountID, found.ID); err != nil {
+		if _, err := endUserTokens(ctx, tx, found.AccountID, found.ID); err != nil {
 			return err
 		}
 		// The new session keeps the choice of the one it replaces (decision 75).
