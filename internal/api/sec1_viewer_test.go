@@ -95,3 +95,33 @@ func TestViewerOpensANoDownloadPDFInlineWithContentURL(t *testing.T) {
 		t.Errorf("viewer's PDF on the content origin: disposition %q, want inline", got.Header().Get("Content-Disposition"))
 	}
 }
+
+// sec1 item 11, review F8 (decision 84): the main-origin refusal of an inline link to a no-download file applies to every
+// caller. An unrestricted caller's inline link, minted with content_url set, points at the content host, so it is not
+// refused and still opens inline there. The account key stands for the owner, who mints the same way.
+func TestUnrestrictedInlineLinkWithContentURLStillOpens(t *testing.T) {
+	t.Parallel()
+	const contentHost = "files.example.test"
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.ContentURL = "https://" + contentHost })
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	f := newFolder(t, s, key, acc.ID, "Docs")
+	pdf := putTyped(t, s, key, f.ID, "doc.pdf", "application/pdf", "%PDF-1.4 test")
+	wantStatus(t, call(t, s, "PATCH", "/api/v1/nodes/"+pdf.ID, key, map[string]any{"no_download": true}), 200)
+
+	rec := call(t, s, "POST", "/api/v1/nodes/"+pdf.ID+"/links", key, map[string]any{"disposition": "inline"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("unrestricted inline link: status %d, want 201: %s", rec.Code, rec.Body)
+	}
+	url := decode[struct {
+		URL string `json:"url"`
+	}](t, rec).URL
+	if !strings.HasPrefix(url, "https://"+contentHost+"/api/v1/links/") {
+		t.Fatalf("link URL = %q, want the content host", url)
+	}
+	got := fromHost(t, s, contentHost, "GET", urlPath(t, url), nil, nil)
+	wantStatus(t, got, 200)
+	if !strings.HasPrefix(got.Header().Get("Content-Disposition"), "inline") {
+		t.Errorf("unrestricted PDF on the content origin: disposition %q, want inline", got.Header().Get("Content-Disposition"))
+	}
+}
