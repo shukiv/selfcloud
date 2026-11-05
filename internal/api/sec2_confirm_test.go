@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -377,34 +376,44 @@ func setAccountStatus(t *testing.T, s *Server, accID, status string) {
 	}
 }
 
-// M1: while an email's cap is spent, its password checks are limited (rate_limit.capped_per_email_per_hour). Past the
-// limit an attempt sends no mail, and its answer is the same.
+// M1, across addresses (round 4): while an email's cap is spent, the email's password checks are bounded by its ceiling
+// (rate_limit.capped_email_per_hour), whichever addresses make them. Past the ceiling no password is checked and no mail
+// is sent, and the answer is the same: the request does one dummy check, as a past-limit request does. Here the ceiling
+// is 2 and the checks come from three addresses, so the third address's right password is not checked. Each job is
+// waited for before the next request: one job in flight per user (round 3).
 func TestCappedEmailHasAHardLimitOnPasswordChecks(t *testing.T) {
 	t.Parallel()
 	rec := &mail.Recorder{}
-	s := newAuthServer(t, rec, func(c *config.Config) { c.RateLimit.CappedPerEmailPerHour = 2 })
+	s := newAuthServer(t, rec, func(c *config.Config) { c.RateLimit.CappedEmailPerHour = 2 })
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	verifiedUser(t, s, key, acc.ID, "ann@example.com")
 	spendCap(t, s, "ann@example.com", 92)
 
-	// One address: the budget is per email and address (round 3), so the three checks come from one address.
-	// Each job is waited for before the next check: one job in flight per user (round 3).
-	first := signInAsked(t, s, "10.92.1.1:4000", "ann@example.com", testPassword)
-	s.bg.Wait()
-	second := signInAsked(t, s, "10.92.1.1:4000", "ann@example.com", testPassword)
-	s.bg.Wait()
-	third := signInAsked(t, s, "10.92.1.1:4000", "ann@example.com", testPassword)
-	s.bg.Wait()
-	for _, r := range []*httptest.ResponseRecorder{first, second, third} {
+	var real, dummy int
+	s.verifyHook = func(isDummy bool) {
+		if isDummy {
+			dummy++
+		} else {
+			real++
+		}
+	}
+	var answers []*httptest.ResponseRecorder
+	for _, addr := range []string{"10.92.1.1:4000", "10.92.2.1:4000", "10.92.3.1:4000"} {
+		answers = append(answers, signInAsked(t, s, addr, "ann@example.com", testPassword))
+		s.bg.Wait()
+	}
+	for _, r := range answers {
 		wantConfirmAnswer(t, r)
 	}
-	if a, b := shapeOf(first), shapeOf(third); a != b {
-		t.Errorf("the answer past the limit differs:\n%s\n---\n%s", a, b)
+	if a, b := shapeOf(answers[0]), shapeOf(answers[2]); a != b {
+		t.Errorf("the answer past the ceiling differs:\n%s\n---\n%s", a, b)
 	}
-	s.bg.Wait()
+	if real != 2 || dummy != 1 {
+		t.Errorf("password checks: %d real and %d dummy, want 2 and 1: the third address is past the ceiling", real, dummy)
+	}
 	if n := len(confirmMailTo(rec, "ann@example.com")); n != 2 {
-		t.Errorf("confirmation mails = %d, want 2 (the third password check is past the limit)", n)
+		t.Errorf("confirmation mails = %d, want 2", n)
 	}
 }
 
@@ -655,9 +664,25 @@ func (g *gatedSender) Send(ctx context.Context, m mail.Message) error {
 	return g.rec.Send(ctx, m)
 }
 
-// Round 3, timing: a miss, a match, a match on two accounts and an admin's right password each write the same number of
-// audit rows inside the request, before the answer. The mail work is queued; the queue is held full here, so a dropped
-// job writes nothing and the count is the request's own (a job that ran would add rows after the answer).
+// requestRows counts the audit rows a sign-in request writes itself: a failed sign-in and a confirmation requested. A
+// confirmation job's rows are other actions, so they are not counted, whether the job ran or not.
+func requestRows(t *testing.T, s *Server) int {
+	t.Helper()
+	db, err := sql.Open("sqlite", s.cfg.Store.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM audit_log WHERE action IN ('user.login_failed', 'user.login_confirm_requested')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// Round 3, timing, round 4 with an accepted job: a miss, a match, a match on two accounts and an admin's right password
+// each write the same number of rows inside the request, before the answer. Two modes: every job dropped (a full queue),
+// and every job accepted. The job's own rows come after the answer and are not counted (requestRows).
 func TestEveryAnswerWritesTheSameRowsBeforeTheAnswer(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
@@ -672,8 +697,7 @@ func TestEveryAnswerWritesTheSameRowsBeforeTheAnswer(t *testing.T) {
 	for i, email := range []string{"miss@example.com", "one@example.com", "two@example.com", "ada@example.com"} {
 		spendCap(t, s, email, 110+i)
 	}
-	s.deviceSlots = make(chan struct{})
-	for _, c := range []struct {
+	cases := []struct {
 		name, email, password string
 		tag                   int
 	}{
@@ -681,11 +705,24 @@ func TestEveryAnswerWritesTheSameRowsBeforeTheAnswer(t *testing.T) {
 		{"a match", "one@example.com", testPassword, 121},
 		{"a match on two accounts", "two@example.com", testPassword, 122},
 		{"an admin's right password", "ada@example.com", testPassword, 123},
-	} {
-		before := auditLogRows(t, s)
-		wantConfirmAnswer(t, signInAsked(t, s, fmt.Sprintf("10.%d.9.9:4000", c.tag), c.email, c.password))
-		if n := auditLogRows(t, s) - before; n != 1 {
-			t.Errorf("%s writes %d audit rows before the answer, want 1", c.name, n)
+	}
+	for _, mode := range []struct {
+		name  string
+		slots int // -1 for a full queue
+		off   int // added to each address, so the two modes use different addresses
+	}{{"dropped jobs", -1, 0}, {"accepted jobs", deviceConfirmSlots, 30}} {
+		if mode.slots < 0 {
+			s.deviceSlots = make(chan struct{})
+		} else {
+			s.deviceSlots = make(chan struct{}, mode.slots)
+		}
+		for _, c := range cases {
+			before := requestRows(t, s)
+			wantConfirmAnswer(t, signInAsked(t, s, fmt.Sprintf("10.%d.9.9:4000", c.tag+mode.off), c.email, c.password))
+			s.bg.Wait()
+			if n := requestRows(t, s) - before; n != 1 {
+				t.Errorf("%s, %s: the request writes %d audit rows before the answer, want 1", mode.name, c.name, n)
+			}
 		}
 	}
 }
@@ -731,7 +768,8 @@ func TestLogoutClearsThePendingConfirmCookie(t *testing.T) {
 	if cleared == nil || cleared.Value != "" || cleared.MaxAge >= 0 {
 		t.Fatalf("logout does not clear the confirmation cookie: %+v", cleared)
 	}
-	// The browser has dropped the cookie, so the link is refused there, as in a browser with no nonce.
+	// The Set-Cookie above is the logout change: it is the assertion that tests logout. The refusal below is a consequence
+	// check only. The test client sends no confirm cookie here, so the nonce check refuses whether or not logout clears it.
 	wantError(t, redeemConfirm(t, s, "10.141.1.1:4000", token), 403, apierr.Forbidden)
 }
 
@@ -842,15 +880,22 @@ func TestAFailedLinkWriteGivesTheMailTokenBackAndLogs(t *testing.T) {
 	acc, key := newAccount(t, s, admin, "Acme")
 	verifiedUser(t, s, key, acc.ID, "ann@example.com")
 	spendCap(t, s, "ann@example.com", 180)
-	calls := 0
-	s.confirmWriteFault = func() error {
-		calls++
-		if calls == 1 {
-			return errors.New("write refused")
-		}
-		return nil
+	// A trigger in the store's own file makes the first link write fail, and is dropped before the second, so the server
+	// needs no test seam for it.
+	db, err := sql.Open("sqlite", s.cfg.Store.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("CREATE TRIGGER refuse_link BEFORE INSERT ON device_confirms BEGIN SELECT RAISE(ABORT, 'write refused'); END"); err != nil {
+		t.Fatal(err)
 	}
 	for i := 1; i <= 4; i++ {
+		if i == 2 {
+			if _, err := db.Exec("DROP TRIGGER refuse_link"); err != nil {
+				t.Fatal(err)
+			}
+		}
 		// Each job is waited for before the next request: one job in flight per user (round 3).
 		wantConfirmAnswer(t, signInAsked(t, s, fmt.Sprintf("10.%d.1.1:4000", 180+i), "ann@example.com", testPassword))
 		s.bg.Wait()

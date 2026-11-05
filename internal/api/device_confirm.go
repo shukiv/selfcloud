@@ -65,6 +65,13 @@ func (s *Server) confirmCookieName() string {
 	return "__Host-selfcloud_confirm"
 }
 
+// countVerify tells the test hook, if one is set, of a password check made for a device confirmation.
+func (s *Server) countVerify(dummy bool) {
+	if s.verifyHook != nil {
+		s.verifyHook(dummy)
+	}
+}
+
 // clockNow is the store's time, in the form the store keeps times: UTC, to the millisecond. Tests move it.
 func (s *Server) clockNow() time.Time {
 	return s.store.Clock().UTC().Truncate(time.Millisecond)
@@ -115,12 +122,19 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 	ctx := r.Context()
 	nonce := s.setConfirmCookie(w, r)
 	short := remember != nil && !*remember
-	// The budget is per email and client address (round 3). An attacker who spends it from its own address does not
-	// stop another address's mail. The address is read as login.ip reads it, so proxy headers are trusted the same way.
-	// The NUL separates the two parts: an address key never holds one.
-	if err := s.rateLimit("login.capped", addressKey(r)+"\x00"+emailKey(email)); err != nil {
-		// Past the limit no password is checked. One dummy check and one audit row, as a miss writes, keep the answer and
-		// its cost the same.
+	// Two budgets are taken together, before any password check (round 4), or neither is taken. The first is per email
+	// and client address (round 3): an attacker who spends it from its own address does not stop another address's mail.
+	// The address is read as login.ip reads it, so proxy headers are trusted the same way. The NUL separates the two parts:
+	// an address key never holds one. The second is the email's ceiling from all addresses together: it bounds the hashing
+	// that many addresses could make, and the price is that an attacker with enough addresses spends it and blocks the real
+	// user's mail for the hour. The device cookie still works meanwhile.
+	if err := s.chargeAll(
+		charge{"login.capped", addressKey(r) + "\x00" + emailKey(email)},
+		charge{"login.capped.email", emailKey(email)},
+	); err != nil {
+		// Past either budget no password is checked. One dummy check and one audit row, as a miss writes, keep the answer
+		// and its cost the same.
+		s.countVerify(true)
 		if err := auth.DummyVerify(ctx, password); err != nil {
 			return err
 		}
@@ -135,6 +149,7 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 	// is audited as a failed sign-in, as a miss is, since no sign-in completes here.
 	var matches []*store.User
 	for _, c := range candidates {
+		s.countVerify(false)
 		ok, err := s.matchPassword(ctx, c.PasswordHash, password)
 		if err != nil {
 			return err
@@ -144,6 +159,7 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 		}
 	}
 	if len(candidates) == 0 {
+		s.countVerify(true)
 		if err := auth.DummyVerify(ctx, password); err != nil {
 			return err
 		}
@@ -203,37 +219,44 @@ func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, 
 	}
 	s.confirmBusy[u.ID] = true
 	s.confirmMu.Unlock()
+	accountID, userID := u.AccountID, u.ID
+	s.bg.Add(1)
+	go func() {
+		defer s.bg.Done()
+		defer func() {
+			s.confirmMu.Lock()
+			delete(s.confirmBusy, userID)
+			s.confirmMu.Unlock()
+			<-s.deviceSlots
+		}()
+		jctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer cancel()
+		s.runConfirmJob(jctx, s.prepareConfirmJob(r, accountID, userID, nonce, short))
+	}()
+}
+
+// prepareConfirmJob makes a confirmation's token, its link values and its audit rows. It runs in the job, not in the
+// request, so the request does no match-only work (round 4). It runs after the answer has gone out, so it reads r only
+// for what the request fixed: the headers and the request's context values (the client address and the request id).
+func (s *Server) prepareConfirmJob(r *http.Request, accountID, userID, nonce string, short bool) *confirmJob {
 	secret, hash := auth.NewToken()
 	details := map[string]any{"purpose": mail.PurposeDeviceConfirm, "method": methodEmail}
 	now := s.clockNow()
 	// The action names are literals at each call, so the audit guards (decision 84) can find them in the source.
-	job := &confirmJob{
-		accountID: u.AccountID,
-		userID:    u.ID,
+	return &confirmJob{
+		accountID: accountID,
+		userID:    userID,
 		nonceHash: auth.HashToken(nonce),
 		hash:      hash,
 		secret:    secret,
 		short:     short,
 		now:       now,
 		expires:   now.Add(s.cfg.Users.DeviceConfirmTTL.D()),
-		failed:    actor(s.auditEntry(r, u.AccountID, "user.login_failed", u.ID, nil), u.ID, "failed"),
-		capped:    actor(s.auditEntry(r, u.AccountID, "user.device_confirm_sent", u.ID, details), u.ID, "capped"),
-		attempt:   actor(s.auditEntry(r, u.AccountID, "user.device_confirm_sent", u.ID, details), u.ID, "attempted"),
-		result:    actor(s.auditEntry(r, u.AccountID, "user.device_confirm_sent", u.ID, details), u.ID, ""),
+		failed:    actor(s.auditEntry(r, accountID, "user.login_failed", userID, nil), userID, "failed"),
+		capped:    actor(s.auditEntry(r, accountID, "user.device_confirm_sent", userID, details), userID, "capped"),
+		attempt:   actor(s.auditEntry(r, accountID, "user.device_confirm_sent", userID, details), userID, "attempted"),
+		result:    actor(s.auditEntry(r, accountID, "user.device_confirm_sent", userID, details), userID, ""),
 	}
-	s.bg.Add(1)
-	go func() {
-		defer s.bg.Done()
-		defer func() {
-			s.confirmMu.Lock()
-			delete(s.confirmBusy, u.ID)
-			s.confirmMu.Unlock()
-			<-s.deviceSlots
-		}()
-		jctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
-		defer cancel()
-		s.runConfirmJob(jctx, job)
-	}()
 }
 
 // actor sets the actor and outcome of an audit entry made for a user's own sign-in attempt.
@@ -291,11 +314,6 @@ func (s *Server) runConfirmJob(ctx context.Context, j *confirmJob) {
 			return tx.InsertAudit(ctx, j.capped)
 		}
 		held = res
-		if s.confirmWriteFault != nil {
-			if err := s.confirmWriteFault(); err != nil {
-				return err
-			}
-		}
 		row := &store.DeviceConfirm{ID: id.New("dcf"), UserID: found.ID, TokenHash: j.hash, NonceHash: j.nonceHash,
 			Short: j.short, ExpiresAt: j.expires, CreatedAt: j.now}
 		if err := tx.InsertDeviceConfirm(ctx, row); err != nil {

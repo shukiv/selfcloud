@@ -197,10 +197,15 @@ type RateLimitConfig struct {
 	// address: one address's tries never use up another address's budget (sec1). Failed sign-ins to an
 	// email from all addresses together are capped at 30 an hour, a fixed limit.
 	PerEmailPerMinute int `yaml:"per_email_per_minute"`
-	// CappedPerEmailPerHour limits the password checks made for one email, from all addresses together, while its cap on
-	// failed sign-ins is spent (sec2, decision 86, round 2 M1). Past it, an attempt is answered without a password check
-	// and sends no mail. At least 1.
+	// CappedPerEmailPerHour limits the password checks made for one email from one client address, while the email's cap
+	// on failed sign-ins is spent (sec2, decision 86, round 2 M1, per address since round 3). Past it, an attempt is
+	// answered without a password check and sends no mail. At least 1.
 	CappedPerEmailPerHour int `yaml:"capped_per_email_per_hour"`
+	// CappedEmailPerHour is the ceiling on password checks for one email from all addresses together, while its cap on
+	// failed sign-ins is spent (round 4). It bounds the hashing an attacker with many addresses can make, and it is the
+	// price of the per-address budget: an attacker with enough addresses spends it and blocks the real user's mail for
+	// the hour. The device cookie still works meanwhile. At least 1.
+	CappedEmailPerHour int `yaml:"capped_email_per_hour"`
 }
 
 // LogConfig controls logging.
@@ -695,6 +700,7 @@ func Defaults() *Config {
 			PerIPPerMinute:        10,
 			PerEmailPerMinute:     5,
 			CappedPerEmailPerHour: 10,
+			CappedEmailPerHour:    100,
 		},
 	}
 }
@@ -903,6 +909,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RateLimit.CappedPerEmailPerHour <= 0 {
 		bad("rate_limit.capped_per_email_per_hour must be at least 1")
+	}
+	if c.RateLimit.CappedEmailPerHour <= 0 {
+		bad("rate_limit.capped_email_per_hour must be at least 1")
 	}
 	if c.RateLimit.PerIPPerMinute <= 0 || c.RateLimit.PerEmailPerMinute <= 0 {
 		bad("rate_limit values must be positive")
