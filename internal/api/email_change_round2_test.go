@@ -70,9 +70,10 @@ func TestEmailRequestsToOneAddressAreBudgeted(t *testing.T) {
 	}
 }
 
-// TestNoticesStopWhenTheOldAddressBudgetIsSpent: changes that alternate between two addresses send each address its notice
-// until mail.target is spent for it (three an hour). Every change still applies; the notices stop.
-func TestNoticesStopWhenTheOldAddressBudgetIsSpent(t *testing.T) {
+// TestNoticeBudgetRefusesTheChangeWhenSpent: with a mailer, changes that alternate between two addresses charge the old
+// address of each change (mail.target, three an hour). The first six changes apply, each with its notice. The seventh would
+// leave victim, whose budget is spent, so it is refused as rate limited before any write, and the address stays victim.
+func TestNoticeBudgetRefusesTheChangeWhenSpent(t *testing.T) {
 	t.Parallel()
 	rec := &mail.Recorder{}
 	s := newAuthServer(t, rec)
@@ -81,12 +82,14 @@ func TestNoticesStopWhenTheOldAddressBudgetIsSpent(t *testing.T) {
 	usr, _ := verifiedUser(t, s, key, acc.ID, "victim@example.com")
 	path := userPath(acc.ID, usr.ID)
 	addresses := []string{"other@example.com", "victim@example.com"}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 6; i++ {
 		wantStatus(t, call(t, s, "PATCH", path, key,
 			map[string]any{"email": addresses[i%2], "verification": "none"}), 200)
 	}
+	wantError(t, call(t, s, "PATCH", path, key,
+		map[string]any{"email": "other@example.com", "verification": "none"}), 429, apierr.RateLimited)
 	if got := emailOf(t, s, key, acc.ID, usr.ID); got.Email != "victim@example.com" {
-		t.Errorf("after ten changes the address is %s, want victim (each change applied)", got.Email)
+		t.Errorf("after the refused seventh change the address is %s, want victim (unchanged)", got.Email)
 	}
 	if n := messagesTo(rec, "victim@example.com"); n != 3 {
 		t.Errorf("%d notices to victim, want 3 (the budget)", n)
@@ -110,8 +113,13 @@ func TestConfirmRefusesAnAddressTakenSinceTheRequest(t *testing.T) {
 	wantStatus(t, call(t, s, "PATCH", userPath(acc.ID, b.ID), key,
 		map[string]any{"email": "taken@example.com", "verification": "none"}), 200)
 	confirm := map[string]any{"token": pending.Verification.Token}
-	wantError(t, call(t, s, "POST", "/api/v1/auth/email-change/confirm", "", confirm), 409, apierr.Conflict)
-	wantError(t, call(t, s, "POST", "/api/v1/auth/email-change/confirm", "", confirm), 409, apierr.Conflict)
+	// The explicit check at confirm time names its own reason, so it is told apart from the same conflict at request time.
+	for i := 0; i < 2; i++ {
+		e := wantError(t, call(t, s, "POST", "/api/v1/auth/email-change/confirm", "", confirm), 409, apierr.Conflict)
+		if e.Details["reason"] != "email_taken" {
+			t.Errorf("confirm %d refused with reason %v, want email_taken", i+1, e.Details["reason"])
+		}
+	}
 	if got := emailOf(t, s, key, acc.ID, a.ID); got.Email != "a@example.com" || got.PendingEmail == nil {
 		t.Errorf("after the refused confirmation a reads %+v, want its old address and the pending one", got)
 	}
@@ -131,8 +139,9 @@ func TestConfirmForADisabledUserIsRefused(t *testing.T) {
 		map[string]any{"token": pending.Verification.Token}), 403, apierr.UserDisabled)
 }
 
-// TestConfirmForADeletedUserIsRefused: a user deleted while a change is pending leaves no link that works: invalid_request.
-func TestConfirmForADeletedUserIsRefused(t *testing.T) {
+// TestConfirmAfterDeleteFailsByCascade: DELETE removes the user's verification rows with the user (a cascade), so the link
+// finds no row and answers invalid_request. The cascade refuses it here, not the confirm's own user lookup.
+func TestConfirmAfterDeleteFailsByCascade(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)

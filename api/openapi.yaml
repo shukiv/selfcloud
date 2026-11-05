@@ -1765,7 +1765,9 @@ paths:
         address stays in use and `pending_email` shows the new one until it is confirmed at
         `POST /api/v1/auth/email-change/confirm`; a newer request replaces a pending one. A change that
         applies voids the user's password-reset and verification links, and sends the old address a
-        notice with no link when a mailer is configured. Sessions and delegated tokens are kept.
+        notice with no link when a mailer is configured. With a mailer, the notice is charged to the mail budgets
+        before the change is written: when they are spent, the change (or its confirmation) is refused with
+        `429 rate_limited` and `Retry-After`, and nothing is written. Sessions and delegated tokens are kept.
 
         Setting `status` to `active` needs a verified user (`409 conflict` otherwise). Setting
         `disabled` ends the user's sessions at once. An account always keeps an active owner,

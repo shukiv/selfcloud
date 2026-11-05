@@ -56,14 +56,21 @@ func (s *Server) checkEmailChange(w http.ResponseWriter, r *http.Request, accID,
 		}
 		return nil, nil
 	}
-	// The one guard for the caller's kind. A member and a delegated token never reach it: managedAccount refuses them first,
-	// as an account they do not manage. So the only caller here that is not an account key or an installation admin is an
-	// owner or a member session, and it is refused for this reason.
+	// The one guard for the caller's kind. An owner's session reaches it, since managedAccount lets an owner manage its
+	// account, and it is refused here. A member is refused by managedAccount as not found. The checks for a delegated token
+	// and for an impersonating session are defence in depth: the route refuses both today (managedAccount, impRefuse), and
+	// these keep a route change from opening the change to them.
 	p := principalOf(r)
 	session := p != nil && p.Kind == auth.KindUser
-	if p == nil || (p.Kind != auth.KindAccountKey && p.Kind != auth.KindAdminKey && !session) || (session && p.Role != auth.RoleAdmin) {
+	if p == nil || p.Token != nil || (p.Kind != auth.KindAccountKey && p.Kind != auth.KindAdminKey && !session) ||
+		(session && p.Role != auth.RoleAdmin) {
 		return nil, apierr.New(apierr.Forbidden, "only an account key or an installation admin may change a user's email").
 			With("reason", reasonEmailCaller)
+	}
+	if session {
+		if err := requireAdminSession(p); err != nil {
+			return nil, err
+		}
 	}
 	// An installation admin, by its key or its session, reaches every account. A changed address followed by a password
 	// reset by mail is a way into the account, as a reset link is (decision 41), so admin.tenant_access gates it. An
@@ -118,12 +125,21 @@ func (s *Server) changeEmail(ctx context.Context, r *http.Request, tx *store.Tx,
 	u.UpdatedAt = now
 	if req.method == methodNone {
 		old := u.Email
+		// With a mailer the notice to the old address is charged here, before any write: a spent budget refuses the change
+		// with 429 and it does not apply. The notice is sent after the commit and is not charged again (decision 89).
+		if s.mailer != nil {
+			if err := s.checkMailBudget(u.AccountID, old); err != nil {
+				return nil, err
+			}
+		}
 		u.Email, u.EmailKey, u.PendingEmail = req.email, req.key, ""
 		// Create with none makes its user active and verified (users.go handleCreateUser). A none change of a user who never
 		// verified does the same: the caller vouches for the address, as it may for create (decision 89).
+		details := map[string]any{"email": u.Email, "verification": methodNone}
 		if u.Status == store.UserPending {
 			at := now
 			u.Status, u.VerifiedAt = store.UserActive, &at
+			details["activated"] = true
 		}
 		if err := writeEmailTx(ctx, tx, u); err != nil {
 			return nil, err
@@ -131,8 +147,7 @@ func (s *Server) changeEmail(ctx context.Context, r *http.Request, tx *store.Tx,
 		if err := voidAddressTokens(ctx, tx, u.ID); err != nil {
 			return nil, err
 		}
-		if err := tx.InsertAudit(ctx, s.auditEntry(r, u.AccountID, "user.email_changed", u.ID,
-			map[string]any{"email": u.Email, "verification": methodNone})); err != nil {
+		if err := tx.InsertAudit(ctx, s.auditEntry(r, u.AccountID, "user.email_changed", u.ID, details)); err != nil {
 			return nil, err
 		}
 		return &emailEffect{applied: true, oldAddress: old}, nil
@@ -199,8 +214,9 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 		if found.Status == store.UserDisabled {
 			return apierr.New(apierr.UserDisabled, "the user is disabled")
 		}
-		// The account's own state is checked as the account's routes check it: a suspended account takes no change, and an
-		// account being deleted takes none either (writableAccount, decision 89).
+		// A suspended account is refused by the session and key rules in auth.go, so the check here is a second refusal for the
+		// same account. An account being deleted takes no change, which is the refusal writableAccount gives it for writes
+		// (decision 89).
 		if found.AccountID != "" {
 			acc, err := tx.Account(ctx, found.AccountID)
 			if err != nil {
@@ -218,9 +234,16 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 			return errBadLink
 		}
 		if _, err := tx.UserByEmail(ctx, found.AccountID, emailKey(found.PendingEmail)); err == nil {
-			return apierr.New(apierr.Conflict, "a user with this email already exists in the account")
+			return apierr.New(apierr.Conflict, "a user with this email already exists in the account").With("reason", "email_taken")
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return err
+		}
+		// With a mailer the notice to the old address is charged before any write, as for verification none: a spent budget
+		// refuses the confirmation with 429, and the link is not used up (decision 89).
+		if s.mailer != nil {
+			if err := s.checkMailBudget(found.AccountID, found.Email); err != nil {
+				return err
+			}
 		}
 		at := store.Now()
 		old = found.Email
@@ -254,14 +277,10 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 }
 
 // noticeEmailChange tells oldAddress that the address of u was changed. It carries no link and names neither address. It
-// is not audited of its own: the change is, as user.email_changed, and the notice is only its courtesy. The notice is
-// charged to the mail budgets as other mail is (mail.account and mail.target, decision 89): when they are spent the
-// notice is skipped and logged, and the change still applies. A failed send is logged and does not undo the change.
+// is not audited of its own: the change is, as user.email_changed, and the notice is only its courtesy. The notice was
+// charged to the mail budgets (mail.account and mail.target) before the change was written, so a change whose notice could
+// not be charged was refused and never reaches here (decision 89). A failed send is logged and does not undo the change.
 func (s *Server) noticeEmailChange(ctx context.Context, r *http.Request, u *store.User, oldAddress string) {
-	if err := s.checkMailBudget(u.AccountID, oldAddress); err != nil {
-		s.log.Warn("the notice of an email change is not sent: the mail budget is spent", "request_id", requestID(r))
-		return
-	}
 	subject, body, err := s.templates.Render(mail.PurposeEmailChanged, u.Locale, struct{}{})
 	if err != nil {
 		s.log.Error("cannot render the notice of an email change", "request_id", requestID(r), "error", err)
