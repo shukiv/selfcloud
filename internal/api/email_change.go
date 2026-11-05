@@ -45,7 +45,7 @@ type emailEffect struct {
 	target     *store.User
 	// notice is the charge of the old address's notice, held until the transaction commits; a failure after the charge
 	// refunds it.
-	notice chargeHold
+	notice *chargeHold
 }
 
 // checkEmailChange decides whether the caller may change the address of user usr of accID, and how it is proved, before
@@ -149,7 +149,7 @@ func (s *Server) changeEmail(ctx context.Context, r *http.Request, tx *store.Tx,
 		// The notice is charged last, after the change's own writes. A refusal returns an error, so the transaction rolls
 		// back and nothing applies (429, decision 89). A failure after this point gives the tokens back through the effect
 		// (refund in handleUpdateUser). The notice is sent after the commit, without a second charge.
-		var notice chargeHold
+		var notice *chargeHold
 		if s.mailer != nil {
 			h, err := s.reserveNotice(u.AccountID, old)
 			if err != nil {
@@ -199,7 +199,7 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 	var (
 		u    *store.User
 		old  string
-		held chargeHold // the notice's charge, given back if the write fails
+		held *chargeHold // the notice's charge, given back if the write fails
 	)
 	// A confirmation that does not commit gives back its notice's charge, by an error or by a panic (decision 89).
 	committed := false

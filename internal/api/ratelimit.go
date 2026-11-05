@@ -113,10 +113,12 @@ func (s *Server) chargeAll(charges ...charge) error {
 type chargeHold struct {
 	at  time.Time
 	res []*rate.Reservation
+	// spent is set once the hold is refunded, so a second refund of the same charge restores nothing.
+	spent bool
 }
 
 // reserveAll is chargeAll that returns the tokens it kept. A caller that does not apply what it charged for calls refund.
-func (s *Server) reserveAll(charges ...charge) (chargeHold, error) {
+func (s *Server) reserveAll(charges ...charge) (*chargeHold, error) {
 	now := s.limitClock()
 	var held []*rate.Reservation
 	for _, c := range charges {
@@ -125,17 +127,22 @@ func (s *Server) reserveAll(charges ...charge) (chargeHold, error) {
 			for _, h := range held {
 				h.CancelAt(now)
 			}
-			return chargeHold{}, err
+			return nil, err
 		}
 		held = append(held, res)
 	}
-	return chargeHold{at: now, res: held}, nil
+	return &chargeHold{at: now, res: held}, nil
 }
 
 // refund gives back the tokens of a charge whose change did not apply, so a failed change spends nothing. It cancels at
-// the time of the charge. A zero hold is a no-op.
-func (s *Server) refund(h chargeHold) {
+// the time of the charge. A refund is made once: rate.CancelAt has no guard against a second call, which would restore the
+// tokens again, so the hold is marked spent. A nil hold is a no-op.
+func (s *Server) refund(h *chargeHold) {
+	if h == nil || h.spent {
+		return
+	}
 	for _, r := range h.res {
 		r.CancelAt(h.at)
 	}
+	h.spent = true
 }
