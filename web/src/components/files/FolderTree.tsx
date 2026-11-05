@@ -294,6 +294,8 @@ export default function FolderTree(props: FolderTreeProps) {
   const propsRef = useRef(props);
   // latestRef is the state this tree last sent, so two changes in one tick build on each other, not on the last render's props.
   const latestRef = useRef<TreeState>(props.state);
+  // seenStateRef is the parent's state the last render was given: latestRef moves only when a new one comes in.
+  const seenStateRef = useRef<TreeState>(props.state);
   const alive = useRef(false);
   const revealQueued = useRef(false);
   const navRef = useRef<HTMLElement | null>(null);
@@ -320,7 +322,12 @@ export default function FolderTree(props: FolderTreeProps) {
     wayRef.current = way;
     tabRef.current = tabKey;
     propsRef.current = props;
-    latestRef.current = props.state;
+    // latestRef takes a state only when the parent sends a new one. A render that carries the state the tree sent earlier (before the parent
+    // has applied it) must not take the tree back to that state: the next change builds on what the tree last sent (decision 88, review L5).
+    if (props.state !== seenStateRef.current) {
+      seenStateRef.current = props.state;
+      latestRef.current = props.state;
+    }
   });
   // A change of place starts its hold (decision 88): a folder the person closed by hand on the way stays closed for that place, and the next
   // change of place reveals again. The change renders again at once, so the failed reads already shown are quiet in that render.

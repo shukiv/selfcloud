@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_TREE, MAX_EXPANDED, parseTree, readTree, withExpanded, writeTree } from "./treeState";
+import { DEFAULT_TREE, MAX_EXPANDED, parseTree, readTree, touchExpanded, withExpanded, writeTree } from "./treeState";
 
 afterEach(() => {
   localStorage.clear();
@@ -42,6 +42,36 @@ describe("the tree's saved state", () => {
     expect(big.expanded).toHaveLength(MAX_EXPANDED);
     expect(big.expanded).not.toContain("f0");
     expect(big.expanded).toContain(`f${MAX_EXPANDED + 4}`);
+  });
+
+  // Decision 88 (review L1): the cap forgets by last use. A folder the place passes through moves to the end, so the folder that was
+  // opened first and not passed through since is the one forgotten.
+  it("moves the folders a place passes through to the end, so the cap forgets by last use", () => {
+    let s = DEFAULT_TREE;
+    for (let i = 0; i < MAX_EXPANDED; i++) s = withExpanded(s, `f${i}`, true);
+    s = touchExpanded(s, ["f0"]);
+    expect(s.expanded.at(-1)).toBe("f0");
+    s = withExpanded(s, "new", true);
+    expect(s.expanded).toContain("f0");
+    expect(s.expanded).not.toContain("f1");
+    expect(s.expanded).toHaveLength(MAX_EXPANDED);
+  });
+
+  it("returns the same state when no open folder is passed through", () => {
+    const s = withExpanded(withExpanded(DEFAULT_TREE, "a", true), "b", true);
+    expect(touchExpanded(s, ["b"])).toBe(s);
+    expect(touchExpanded(s, ["gone"])).toBe(s);
+  });
+
+  // The folders on the way that the reveal keeps (decision 88, H1) are not forgotten by the cap, even when they are the oldest.
+  it("keeps the folders the way keeps, and forgets others", () => {
+    let s = DEFAULT_TREE;
+    for (let i = 0; i < MAX_EXPANDED; i++) s = withExpanded(s, `f${i}`, true);
+    s = withExpanded(s, "new", true, ["f0", "f1"]);
+    expect(s.expanded).toContain("f0");
+    expect(s.expanded).toContain("f1");
+    expect(s.expanded).not.toContain("f2");
+    expect(s.expanded).toHaveLength(MAX_EXPANDED);
   });
 
   // Decision 69: the state moved to a new key, so the open folders saved before (which the tree used to reveal on its own) are

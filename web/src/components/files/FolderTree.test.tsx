@@ -9,7 +9,7 @@ import { resetUserStores } from "../../lib/store";
 import { ApiError } from "../../lib/apiError";
 import { session, type Session } from "../../lib/session";
 import type { FolderAccess, Node } from "../../lib/files/types";
-import { DEFAULT_TREE, type TreeState } from "../../lib/files/treeState";
+import { DEFAULT_TREE, MAX_EXPANDED, type TreeState } from "../../lib/files/treeState";
 import { SIDEBAR, type Sidebar } from "../../theme/tokens";
 import { sidebarRow } from "../../theme/sidebarRow";
 import { theme as antdTheme } from "antd";
@@ -408,6 +408,53 @@ describe("the folder tree opens the way to the place (decision 88)", () => {
     expect(latest.expanded).toHaveLength(way.length);
     // One change per folder opened: a loop would send more changes than the way has folders.
     expect(changes).toBeLessThanOrEqual(way.length + 2);
+  });
+
+  // Decision 88 (review L1): the saved cap forgets by last use. The place passes through Team A, which moves it to the end of the list,
+  // so when the list is full and another folder is opened by hand, the folder opened longest ago that the place did not pass through
+  // is the one forgotten. Without the move (touchExpanded in the reveal), Team A, opened first, is the one forgotten.
+  it("the cap forgets the folder least used, not the one opened first: a folder the place passes through is kept", async () => {
+    const others = Array.from({ length: MAX_EXPANDED - 1 }, (_, i) => `old_${i}`);
+    const { rerender } = render(<Harness folder="fld_a" chain={["nod_two"]} start={{ expanded: ["fld_a", ...others] }} />);
+    await waitFor(() => expect(latest.expanded.at(-1)).toBe("fld_a"));
+    // Another place, whose way does not pass through Team A. Docs, in Team A's branch, is opened by hand: the list is full.
+    rerender(<Harness folder="fld_me" chain={[]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Expand Docs" }));
+    expect(latest.expanded).toContain("fld_a");
+    expect(latest.expanded).toContain("nod_one");
+    expect(latest.expanded).not.toContain("old_0");
+    expect(latest.expanded).toHaveLength(MAX_EXPANDED);
+  });
+
+  // Decision 88 (review L5): a render that carries a state the tree sent earlier, before the parent has applied it, must not take the tree
+  // back to that state. A change made next (here, a click) builds on the state the tree last sent, so the folder the reveal just opened is kept.
+  it("a click before the parent applies a reveal keeps the folder the reveal opened", async () => {
+    const sent: TreeState[] = [];
+    const qc = createQueryClient();
+    const start: TreeState = { expanded: ["fld_a"] };
+    const Deferred = ({ state }: { state: TreeState }) => (
+      <QueryClientProvider client={qc}>
+        <FolderTree
+          spaces={[space("fld_a", "Team A"), space("fld_me", "Mine", { kind: "personal" })]}
+          folder="fld_a"
+          chain={["nod_one", "nod_deep"]}
+          marking
+          state={state}
+          onChange={(n) => {
+            sent.push(n);
+          }}
+          onOpen={onOpen}
+          coarse={false}
+        />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(<Deferred state={start} />);
+    // The reveal opens Docs, on the way. The parent does not apply it: its state is still the start.
+    await waitFor(() => expect(sent.at(-1)?.expanded).toEqual(["fld_a", "nod_one"]));
+    // A render with the state the parent still holds (the same object), then a click before the parent has applied the reveal.
+    rerender(<Deferred state={start} />);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Team A" }));
+    expect(sent.at(-1)?.expanded).toEqual(["nod_one"]);
   });
 
   // A hand close holds until the place changes, across a remount of the tree (the rail, the drawer, a breakpoint).
