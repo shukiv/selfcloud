@@ -67,7 +67,7 @@ const EDITOR_PATH = '/browser/42745e44dd/cool.html';
 // openAsEditor calls the WOPI host the way an editor does: CheckFileInfo with the token in the query, then a LOCK when the
 // caller may write. It returns what it saw, and nothing of the token.
 async function openAsEditor(privateKey, token, wopiSrc) {
-  const call = async (method, headers) => {
+  const call = async (method, headers, payload) => {
     const target = new URL(wopiSrc);
     target.searchParams.set('access_token', token);
     const signed = target.toString();
@@ -76,10 +76,11 @@ async function openAsEditor(privateKey, token, wopiSrc) {
     return fetch(signed, {
       method,
       headers: { 'X-WOPI-Timestamp': String(ticks), 'X-WOPI-Proof': proof, ...headers },
+      body: payload,
     });
   };
   const info = await call('GET', {});
-  if (!info.ok) return { name: '', userCanWrite: false, locked: false, checkStatus: info.status };
+  if (!info.ok) return { name: '', userCanWrite: false, locked: false, checkStatus: info.status, userInfo: '', userInfoStatus: 0 };
   const body = await info.json();
   const writable = body.UserCanWrite === true;
   let locked = false;
@@ -87,7 +88,43 @@ async function openAsEditor(privateKey, token, wopiSrc) {
     const lock = await call('POST', { 'X-WOPI-Override': 'LOCK', 'X-WOPI-Lock': 'fake-editor-lock' });
     locked = lock.status === 200;
   }
-  return { name: body.BaseFileName ?? '', userCanWrite: writable, locked, checkStatus: info.status };
+  // PutUserInfo: a host that says it supports it is given the editor's string, which it keeps for this person (decision 87).
+  // userInfo is what the host held before this open, so a check can see the string of an earlier open.
+  let userInfoStatus = 0;
+  if (body.SupportsUserInfo === true) {
+    userInfoStatus = (await call('POST', { 'X-WOPI-Override': 'PUT_USER_INFO' }, 'fake-user-info')).status;
+  }
+  return {
+    name: body.BaseFileName ?? '',
+    userCanWrite: writable,
+    locked,
+    checkStatus: info.status,
+    userInfo: typeof body.UserInfo === 'string' ? body.UserInfo : '',
+    userInfoStatus,
+  };
+}
+
+// saveAsAsEditor makes the copy the way Collabora does once the person has picked its name: PutRelativeFile on the file the
+// editor holds, with the name as a suggested target (UTF-7, where a plus sign is written +-; the e2e names are ASCII). It
+// answers the status and the Name the host gives the copy.
+async function saveAsAsEditor(privateKey, editor, filename) {
+  const target = new URL(editor.wopiSrc);
+  target.searchParams.set('access_token', editor.token);
+  const signed = target.toString();
+  const ticks = BigInt(Date.now()) * 10000n + DOT_NET_EPOCH_TICKS;
+  const proof = signProof(privateKey, editor.token, signed, ticks);
+  const res = await fetch(signed, {
+    method: 'POST',
+    headers: {
+      'X-WOPI-Timestamp': String(ticks),
+      'X-WOPI-Proof': proof,
+      'X-WOPI-Override': 'PUT_RELATIVE',
+      'X-WOPI-SuggestedTarget': filename.replace(/\+/g, '+-'),
+    },
+    body: 'a copy made by the fake editor',
+  });
+  const answer = res.ok ? await res.json() : {};
+  return { status: res.status, name: answer.Name ?? '' };
 }
 
 // editorPage is the page the fake shows in the frame. It has no token in it: the token was only in the POST body.
@@ -98,13 +135,31 @@ function editorPage({ name, userCanWrite, locked }) {
 <p id="fake-editor-file">${esc(name)}</p>
 <p id="fake-editor-write">${userCanWrite ? 'editable' : 'read only'}</p>
 <p id="fake-editor-lock">${locked ? 'locked' : 'not locked'}</p>
+<button id="fake-editor-saveas" type="button">Save as</button>
 <button id="fake-editor-close" type="button">Close</button>
 <script>
-  // The loading status, then the close button, are the two messages the page sends its parent.
-  window.parent.postMessage(JSON.stringify({ MessageId: 'App_LoadingStatus', Values: { Status: 'Document_Loaded' } }), '*');
-  document.getElementById('fake-editor-close').addEventListener('click', () => {
-    window.parent.postMessage(JSON.stringify({ MessageId: 'UI_Close', Values: {} }), '*');
+  // The postMessage channel as Collabora opens it (decision 87): the editor says it is Initialized, waits for the host's
+  // Host_PostmessageReady, and then says the document is loaded. Save As asks the host for the copy's name (UI_SaveAs); the
+  // host answers Action_SaveAs with the name, and the editor makes the copy through the host (the fake server does that).
+  const post = (msg) => window.parent.postMessage(JSON.stringify(msg), '*');
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window.parent) return;
+    const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
+    if (msg.MessageId === 'Host_PostmessageReady') post({ MessageId: 'App_LoadingStatus', Values: { Status: 'Document_Loaded' } });
+    if (msg.MessageId === 'Action_SaveAs') {
+      fetch('/fake/save-as', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: msg.Values.Filename }) });
+    }
   });
+  document.getElementById('fake-editor-saveas').addEventListener('click', () => post({ MessageId: 'UI_SaveAs', Values: {} }));
+  // The run asks for Save As through the fake (requestSaveAs): the page polls for that, and then acts as the button does, since
+  // the run cannot click inside this frame, which is another origin.
+  setInterval(() => {
+    fetch('/fake/command', { cache: 'no-store' }).then((r) => r.json()).then((c) => {
+      if (c.command === 'save-as') post({ MessageId: 'UI_SaveAs', Values: {} });
+    }).catch(() => {});
+  }, 200);
+  document.getElementById('fake-editor-close').addEventListener('click', () => post({ MessageId: 'UI_Close', Values: {} }));
+  post({ MessageId: 'App_LoadingStatus', Values: { Status: 'Initialized' } });
 </script></body></html>`;
 }
 
@@ -150,6 +205,12 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
   const hits = [];
   // editor is what each opening of the editor page saw: the file, whether it may write, whether it took the lock.
   const editor = [];
+  // saves is each Save As the fake made: the name the person chose, and the host's status and the copy's name.
+  const saves = [];
+  // lastEditor is the token and WOPI address of the editor the fake opened last; Save As posts through them.
+  let lastEditor = null;
+  // pendingCommand is what the open editor page is asked to do next (GET /fake/command takes it).
+  let pendingCommand = null;
   let refusing = false;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -173,8 +234,36 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
       const wopiSrc = url.searchParams.get('WOPISrc') ?? '';
       const seen = await openAsEditor(privateKey, token, wopiSrc);
       editor.push({ ...seen, actionHadToken: url.search.includes('access_token') });
+      lastEditor = { token, wopiSrc };
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(editorPage(seen));
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/fake/command') {
+      const command = pendingCommand;
+      pendingCommand = null;
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ command }));
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/fake/save-as') {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      let filename = '';
+      try {
+        filename = String(JSON.parse(Buffer.concat(chunks).toString('utf8')).filename ?? '');
+      } catch {
+        filename = '';
+      }
+      if (lastEditor === null || filename === '') {
+        res.writeHead(400);
+        res.end();
+        return;
+      }
+      const answer = await saveAsAsEditor(privateKey, lastEditor, filename);
+      saves.push({ filename, ...answer });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(answer));
       return;
     }
     const m = /^\/cool\/convert-to\/([a-z0-9]{1,8})$/.exec(url.pathname);
@@ -217,6 +306,11 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
     certFile,
     hits,
     editor,
+    saves,
+    // requestSaveAs asks the open editor page to press Save as (the dialog then asks the person for the copy's name).
+    requestSaveAs() {
+      pendingCommand = 'save-as';
+    },
     refuse(on) {
       refusing = on;
     },

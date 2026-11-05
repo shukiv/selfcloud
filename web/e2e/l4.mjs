@@ -6,7 +6,8 @@
 // in the form's body and never in the address. Back returns to the folder. A member with the viewer role gets "Open in viewer",
 // read only, with no lock. A text file gets no editor entry. The file's lock shows as a mark in the list and as "Being edited"
 // in Details; an owner (a manager) ends the editing session through the confirmation, and the editor's next save is refused.
-// Hebrew, and a phone at 390 px, are checked for the editor page. The folder and files are removed, and the language, the
+// Save As (slice l5, decision 87) is checked too: the editor asks for a name, and the copy is made beside the file through the
+// host. Hebrew, and a phone at 390 px, are checked for the editor page. The folder and files are removed, and the language, the
 // viewport and the signed-in person are put back, in a finally.
 import { mkdir } from 'node:fs/promises';
 import { setLanguage, setTheme, shot, sleep } from './media.mjs';
@@ -108,6 +109,28 @@ export async function l4Checks(h, { page, base, accountKey, teamA, teamB, fake, 
     check(!/access_token|sct_/.test(address), 'the editor page address carries no token');
     await page.waitFor(`!document.querySelector('[data-testid="office-editor"] [role="status"]')`, 20000).catch(() => {});
     await snap('editor-page.png');
+    // PutUserInfo (decision 87): the host accepted the editor's string on the open, and it answers the editor's CheckFileInfo.
+    check(seen && seen.userInfoStatus === 200, `the host accepted PutUserInfo on the open (status ${seen ? seen.userInfoStatus : 'none'})`);
+
+    // Save As (decision 87): the editor asks for the copy's name (UI_SaveAs), the dialog takes the name, the page sends it back
+    // (Action_SaveAs), and the fake makes the copy through the host (PutRelativeFile). The copy is beside the file, under the name
+    // typed with the file's extension, and the editor keeps the file it has open.
+    const copyBase = `copy-${suffix}`;
+    const savesBefore = fake.saves.length;
+    fake.requestSaveAs();
+    await page.waitFor(`!!document.querySelector('.ant-modal input[aria-label="File name"]')`, 15000);
+    await page.evaluate(`(() => { const i = document.querySelector('.ant-modal input[aria-label="File name"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${q(copyBase)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await page.waitFor(`[...document.querySelectorAll('.ant-modal button')].some((b) => b.textContent.trim() === 'Save copy' && !b.disabled)`, 10000);
+    await snap('save-as-dialog.png');
+    await page.evaluate(`[...document.querySelectorAll('.ant-modal button')].find((b) => b.textContent.trim() === 'Save copy').click()`);
+    for (let i = 0; i < 150 && fake.saves.length === savesBefore; i++) await new Promise((r) => setTimeout(r, 100));
+    const saved = fake.saves[fake.saves.length - 1];
+    check(saved && saved.status === 200 && saved.name === `${copyBase}.docx`, `Save As made the copy under the name typed, with the extension (${JSON.stringify(saved ?? null)})`);
+    await page.waitFor(`!document.querySelector('.ant-modal')`, 10000).catch(() => {});
+    const afterSave = await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=${encodeURIComponent(`/${folderName}`)}`, accountKey);
+    check((afterSave.items ?? []).some((n) => n.name === `${copyBase}.docx`), 'the copy is in the folder beside the file');
+    check(await page.evaluate(`!!document.querySelector('[data-testid="office-editor"]')?.innerText.includes(${q(docxName.replace(/\.docx$/, ''))})`), 'the editor page still shows the file it has open');
+    await snap('save-as-done.png');
 
     // Back returns to the folder the file was opened from.
     await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Back').click()`);
@@ -121,6 +144,9 @@ export async function l4Checks(h, { page, base, accountKey, teamA, teamB, fake, 
     await navigateTo(page, `/edit/${docxID}?mode=edit&from=${encodeURIComponent(`/files/${teamA}/${folderID}`)}`);
     await page.waitFor(`!!document.querySelector('iframe[name="selfcloud-office-editor"]')`, 15000);
     await sleep(400);
+    // The host returns the person's UserInfo on the next open, to that person (the stored string is the fake's).
+    for (let i = 0; i < 150 && fake.editor.length < 2; i++) await new Promise((r) => setTimeout(r, 100));
+    check(fake.editor[fake.editor.length - 1]?.userInfo === 'fake-user-info', 'the next open of the file returns the UserInfo to the same person');
     const overflow = await page.evaluate(`document.documentElement.scrollWidth > window.innerWidth`);
     check(!overflow, 'the editor page has no sideways scroll at 390 px in Hebrew');
     await snap('editor-phone-he.png');

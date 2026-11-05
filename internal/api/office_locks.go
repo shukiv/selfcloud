@@ -446,8 +446,9 @@ func (s *Server) handleWOPIPutFile(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
-// handleWOPIOverride answers POST /wopi/files/{nod}. It carries the lock operations by X-WOPI-Override. RenameFile
-// (slice l4), UnlockAndRelock and the other overrides are not implemented: the request is checked, then answered 501.
+// handleWOPIOverride answers POST /wopi/files/{nod}. It carries the lock operations by X-WOPI-Override (UnlockAndRelock is a
+// LOCK with X-WOPI-OldLock), RenameFile (slice l4), PutRelativeFile (Save As) and PutUserInfo (decision 87). An override
+// this host does not have is checked, then answered 501.
 func (s *Server) handleWOPIOverride(w http.ResponseWriter, r *http.Request) error {
 	switch r.Header.Get("X-WOPI-Override") {
 	case "LOCK":
@@ -460,6 +461,10 @@ func (s *Server) handleWOPIOverride(w http.ResponseWriter, r *http.Request) erro
 		return s.handleWOPIUnlock(w, r)
 	case "RENAME_FILE":
 		return s.handleWOPIRename(w, r)
+	case "PUT_RELATIVE":
+		return s.handleWOPIPutRelative(w, r)
+	case "PUT_USER_INFO":
+		return s.handleWOPIPutUserInfo(w, r)
 	}
 	if _, err := s.wopiRequest(w, r); err != nil {
 		s.wopiFail(w, r, err)

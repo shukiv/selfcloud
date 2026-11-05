@@ -834,15 +834,16 @@ func (v *revokeOnRead) Read(p []byte) (int, error) {
 	return v.r.Read(p)
 }
 
-// TestWOPIUnimplementedOverridesAnswer501: the lock operations and RenameFile are implemented (office_locks_test.go, office_rename_test.go). The
-// overrides left (PUT_RELATIVE, PUT_USER_INFO) are checked and answered 501.
+// TestWOPIUnimplementedOverridesAnswer501: the lock operations, RenameFile, PutRelativeFile (Save As) and PutUserInfo are
+// implemented (office_locks_test.go, office_rename_test.go, office_saveas_test.go, office_userinfo_test.go). An override
+// the host does not have is checked and answered 501. The name used here is not a WOPI override; it stands for any.
 func TestWOPIUnimplementedOverridesAnswer501(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
 	tok := fx.openToken(t, "edit")
 	var logs bytes.Buffer
 	fx.s.log = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	for _, o := range []string{"PUT_USER_INFO", "PUT_RELATIVE"} {
+	for _, o := range []string{"NOT_A_WOPI_OVERRIDE"} {
 		wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, nil,
 			map[string]string{"X-WOPI-Override": o}), 501)
 	}

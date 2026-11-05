@@ -117,3 +117,35 @@ export function buildEditorForm(doc: Document, actionURL: string, token: string,
   form.append(tok, ttl);
   return form;
 }
+
+// SaveAsAsk is the name the Save As dialog starts from: the file's name without its extension, and the extension, which the
+// copy keeps unless the person types another.
+export interface SaveAsAsk {
+  base: string;
+  ext: string;
+}
+
+// saveAsSuggestion splits a file's name for the Save As dialog. A name with no dot, or a dot first, has no extension.
+export function saveAsSuggestion(name: string): SaveAsAsk {
+  const i = name.lastIndexOf(".");
+  return i > 0 ? { base: name.slice(0, i), ext: name.slice(i) } : { base: name, ext: "" };
+}
+
+// saveAsNameOk says a typed name may be sent: not empty after trimming, and no slash or backslash, which a file name cannot hold.
+export function saveAsNameOk(typed: string): boolean {
+  const v = typed.trim();
+  return v !== "" && !/[\\/]/.test(v);
+}
+
+// saveAsFilename is the name sent in Action_SaveAs: the typed name, with the original extension added unless it is there.
+export function saveAsFilename(typed: string, ext: string): string {
+  const v = typed.trim();
+  return ext !== "" && v.toLowerCase().endsWith(ext.toLowerCase()) ? v : v + ext;
+}
+
+// editorMessage is a message the host sends to the editor. It is sent as JSON text, as Collabora reads it.
+export function editorMessage(id: string, values?: Record<string, unknown>): string {
+  const msg: { MessageId: string; SendTime: number; Values?: Record<string, unknown> } = { MessageId: id, SendTime: Date.now() };
+  if (values !== undefined) msg.Values = values;
+  return JSON.stringify(msg);
+}

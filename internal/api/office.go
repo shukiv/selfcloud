@@ -385,6 +385,8 @@ func (s *Server) handleWOPICheckFileInfo(w http.ResponseWriter, r *http.Request)
 			friendly = v
 		}
 	}
+	// Save As (PutRelativeFile) is open to a caller who may add a file to the directory and whose source is not no-download
+	// (decision 87). The answer says so, so the editor offers it only where the host takes it.
 	info := map[string]any{
 		"BaseFileName":            n.Name,
 		"OwnerId":                 n.OwnerID,
@@ -394,10 +396,12 @@ func (s *Server) handleWOPICheckFileInfo(w http.ResponseWriter, r *http.Request)
 		"Version":                 unquoteETag(n.ETag),
 		"UserCanWrite":            write,
 		"ReadOnly":                !write,
-		"UserCanNotWriteRelative": true,
+		"UserCanNotWriteRelative": !s.saveAsAllowed(r.Context(), g.p, n, g.restricted),
 		"SupportsUpdate":          true,
 		"SupportsLocks":           true,
 		"SupportsGetLock":         true,
+		// PutUserInfo (decision 87): the person's own string, returned only to that person.
+		"SupportsUserInfo": true,
 		// A rename is RenameFile (office_rename.go): the editor may rename while it may write; the lock rule decides the
 		// rest, per call.
 		"SupportsRename":   true,
@@ -406,6 +410,17 @@ func (s *Server) handleWOPICheckFileInfo(w http.ResponseWriter, r *http.Request)
 		"DisableExport":    g.restricted,
 		"DisableCopy":      g.restricted,
 		"LastModifiedTime": n.ModifiedAt.UTC().Format(wopiTimeFormat),
+	}
+	// The user's own UserInfo (PutUserInfo, decision 87) goes to that user only, and only when one is stored.
+	if g.p.UserID != "" {
+		v, err := s.store.WOPIUserInfo(r.Context(), g.p.UserID)
+		switch {
+		case err == nil && v != "":
+			info["UserInfo"] = v
+		case err != nil && !errors.Is(err, store.ErrNotFound):
+			s.wopiFail(w, r, err)
+			return nil
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

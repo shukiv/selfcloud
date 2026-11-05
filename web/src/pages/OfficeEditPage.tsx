@@ -6,7 +6,7 @@
 // origin and its own frame; its close button returns to the place the file was opened from.
 
 import { ArrowLeft, Pencil, BookOpen } from "lucide-react";
-import { Alert, Spin } from "antd";
+import { Alert, Input, Modal, Spin } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import IconButton from "../components/IconButton";
@@ -20,12 +20,17 @@ import { statNode } from "../lib/files/api";
 import {
   EDITOR_FRAME,
   type EditorMode,
+  type SaveAsAsk,
   buildEditorForm,
+  editorMessage,
   editorOrigin,
   isTrustedEditorMessage,
   officeEdit,
   parseEditorMessage,
   readEditorPath,
+  saveAsFilename,
+  saveAsNameOk,
+  saveAsSuggestion,
 } from "../lib/files/editor";
 import NotFoundPage from "./NotFoundPage";
 
@@ -76,6 +81,9 @@ export default function OfficeEditPage() {
   const { mode, from } = readEditorPath(location.search);
   const [state, setState] = useState<State>({ status: "opening" });
   const [loaded, setLoaded] = useState(false);
+  // saveAs is the Save As dialog while it is open: the file's name split for it, and the name the person has typed.
+  const [saveAs, setSaveAs] = useState<SaveAsAsk | null>(null);
+  const [saveAsName, setSaveAsName] = useState("");
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const holderRef = useRef<HTMLDivElement | null>(null);
   // pending is the form built for the editor, until it is posted. It is cleared after the post.
@@ -133,11 +141,33 @@ export default function OfficeEditPage() {
       const msg = parseEditorMessage(ev.data);
       if (msg === null) return;
       if (msg.id === "UI_Close") back();
+      // Collabora's postMessage channel opens when the host answers its Initialized status with Host_PostmessageReady.
+      // The reply goes to the editor's own origin only, never to "*".
+      if (msg.id === "App_LoadingStatus" && msg.values?.Status === "Initialized") {
+        frameRef.current?.contentWindow?.postMessage(JSON.stringify({ MessageId: "Host_PostmessageReady" }), origin);
+      }
       if (msg.id === "App_LoadingStatus" && msg.values?.Status === "Document_Loaded") setLoaded(true);
+      // Save As: the editor asks for the copy's name, the person types it, and confirmSaveAs sends it back (Action_SaveAs).
+      if (msg.id === "UI_SaveAs" && state.status === "ready") {
+        const ask = saveAsSuggestion(state.name);
+        setSaveAsName(ask.base);
+        setSaveAs(ask);
+      }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [origin, from, state]);
+
+  // confirmSaveAs sends the copy's name to the editor, which makes the copy with PutRelativeFile. The dialog closes; the
+  // editor keeps the file it has open.
+  const confirmSaveAs = () => {
+    if (saveAs === null || origin === null || !saveAsNameOk(saveAsName)) return;
+    frameRef.current?.contentWindow?.postMessage(
+      editorMessage("Action_SaveAs", { Filename: saveAsFilename(saveAsName, saveAs.ext) }),
+      origin,
+    );
+    setSaveAs(null);
+  };
 
   if (!on || !valid) return <NotFoundPage />;
 
@@ -179,6 +209,29 @@ export default function OfficeEditPage() {
           title={t("files.editor.frame")}
           style={{ flex: "1 1 auto", width: "100%", minHeight: 0, border: 0 }}
         />
+      )}
+      {saveAs !== null && (
+        <Modal
+          open
+          destroyOnClose
+          maskClosable={false}
+          title={t("files.editor.saveAsTitle")}
+          okText={t("files.editor.saveAsOk")}
+          cancelText={t("common.cancel")}
+          okButtonProps={{ disabled: !saveAsNameOk(saveAsName) }}
+          onOk={confirmSaveAs}
+          onCancel={() => setSaveAs(null)}
+        >
+          <Input
+            autoFocus
+            aria-label={t("files.editor.saveAsName")}
+            value={saveAsName}
+            addonAfter={saveAs.ext !== "" ? saveAs.ext : undefined}
+            onChange={(e) => setSaveAsName(e.target.value)}
+            onPressEnter={confirmSaveAs}
+          />
+          {saveAsName !== "" && !saveAsNameOk(saveAsName) && <p role="alert">{t("files.editor.saveAsInvalid")}</p>}
+        </Modal>
       )}
     </div>
   );

@@ -218,7 +218,7 @@ come **before** k.
 | q | Search by name with filters and label values (built in parts q1 and q2, decision 40); content text (built as q3, decision 46); the web page (q4, decision 54, built) and optional OCR (a later slice) | Large |
 | r | Comments, mentions, notifications, the activity pane and who-viewed built (r1 to r5, r7a, r7b, decisions 39, 43, 50, 51, 55 and 57); the comment webhook (r6) planned; the bell, notifications page and notification settings built (r7b, decision 57) | Medium |
 | s | Thumbnails (built in part, s1 and s4a: images from the API and the grid's tiles), document previews, conversions and export, zip download (built, s2 and s4a) | Medium |
-| l | WOPI host for Collabora (built in parts l1 to l3; the interface button, Rename (l4) and the README example are not built) | Medium |
+| l | WOPI host for Collabora (built in parts l1 to l5, decisions 31, 32, 73 and 87: the editor, locks, Rename, Save As and user info; the live run against Collabora is not done) | Medium |
 | j | Webhooks (built, j1 to j4) | Small |
 | t | Changes feed, file picker, WebDAV, installable web app | Medium |
 | u | Admin: audit viewer and export, sharing policies, retention and hold, ClamAV, limits | Medium |

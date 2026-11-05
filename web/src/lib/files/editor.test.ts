@@ -4,13 +4,51 @@ import { describe, expect, it } from "vitest";
 import {
   buildEditorForm,
   editorEntry,
+  editorMessage,
   editorOrigin,
   editorPath,
   isTrustedEditorMessage,
   parseEditorMessage,
   readEditorPath,
   safeFrom,
+  saveAsFilename,
+  saveAsNameOk,
+  saveAsSuggestion,
 } from "./editor";
+
+describe("Save As: the copy's name", () => {
+  it("starts from the file's name without its extension, and keeps the extension", () => {
+    expect(saveAsSuggestion("letter.docx")).toEqual({ base: "letter", ext: ".docx" });
+    expect(saveAsSuggestion("archive.tar.gz")).toEqual({ base: "archive.tar", ext: ".gz" });
+    expect(saveAsSuggestion("README")).toEqual({ base: "README", ext: "" });
+    expect(saveAsSuggestion(".hidden")).toEqual({ base: ".hidden", ext: "" });
+  });
+
+  it("refuses an empty name and a name with a slash or a backslash", () => {
+    expect(saveAsNameOk("copy")).toBe(true);
+    expect(saveAsNameOk("  copy  ")).toBe(true);
+    expect(saveAsNameOk("")).toBe(false);
+    expect(saveAsNameOk("   ")).toBe(false);
+    expect(saveAsNameOk("a/b")).toBe(false);
+    expect(saveAsNameOk("a\\b")).toBe(false);
+  });
+
+  it("adds the original extension unless the typed name already ends with it", () => {
+    expect(saveAsFilename("copy", ".docx")).toBe("copy.docx");
+    expect(saveAsFilename("  copy  ", ".docx")).toBe("copy.docx");
+    expect(saveAsFilename("copy.DOCX", ".docx")).toBe("copy.DOCX");
+    expect(saveAsFilename("copy.pdf", ".docx")).toBe("copy.pdf.docx");
+    expect(saveAsFilename("copy", "")).toBe("copy");
+  });
+
+  it("sends Action_SaveAs as JSON text with the id and the values", () => {
+    const msg = JSON.parse(editorMessage("Action_SaveAs", { Filename: "copy.docx" }));
+    expect(msg.MessageId).toBe("Action_SaveAs");
+    expect(msg.Values).toEqual({ Filename: "copy.docx" });
+    expect(typeof msg.SendTime).toBe("number");
+    expect(JSON.parse(editorMessage("Host_PostmessageReady")).Values).toBeUndefined();
+  });
+});
 
 describe("the editor's address", () => {
   it("names the file and the mode, and carries the folder the file was opened from", () => {
