@@ -238,8 +238,8 @@ func (s *Server) mailManagers(ctx context.Context, p *auth.Principal, n *store.N
 			users = append(users, u)
 		}
 	}
-	actor := mailText(s.actorName(ctx, p))
-	item := mailText(itemName(n, f))
+	actor := mail.Name(s.actorName(ctx, p))
+	item := mail.Name(itemName(n, f))
 	link := s.nodeLink(n.ID)
 	note := cleanNote(req.Message)
 	// The requester's own bucket is charged once per request. Over its budget, the request mails nobody.
@@ -521,8 +521,8 @@ func (s *Server) mailDecision(ctx context.Context, p *auth.Principal, n *store.N
 	if reason != "" {
 		return
 	}
-	actor := mailText(s.actorName(ctx, p))
-	name := mailText(itemName(n, f))
+	actor := mail.Name(s.actorName(ctx, p))
+	name := mail.Name(itemName(n, f))
 	link := s.nodeLink(n.ID)
 	approved := req.Status == store.RequestApproved
 	// A request that came through a shortcut never names the target to the requester. A denial names nothing and links
@@ -532,7 +532,7 @@ func (s *Server) mailDecision(ctx context.Context, p *auth.Principal, n *store.N
 		name, link = "", ""
 		if approved {
 			if sc, ok := s.shortcutForDecision(ctx, n.AccountID, req); ok {
-				name, link = mailText(sc.Name), s.nodeLink(sc.ID)
+				name, link = mail.Name(sc.Name), s.nodeLink(sc.ID)
 			}
 		}
 	} else if !approved {

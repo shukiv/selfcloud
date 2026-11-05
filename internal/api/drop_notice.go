@@ -115,7 +115,7 @@ func (s *Server) dropMail(ctx context.Context, l *store.ShareLink, count int) (t
 		return "", "", "", false
 	}
 	subject, body, err = s.templates.Render(mail.PurposeDrop, u.Locale, dropData{Count: count,
-		Folder: mailText(itemName(n, f)), Link: s.nodeLink(n.ID)})
+		Folder: mail.Name(itemName(n, f)), Link: s.nodeLink(n.ID)})
 	if err != nil {
 		s.log.Error("cannot render mail", "purpose", mail.PurposeDrop, "error", err)
 		return "", "", "", false

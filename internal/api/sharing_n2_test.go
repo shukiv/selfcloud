@@ -829,7 +829,8 @@ func TestShareMailUsesRecipientLocale(t *testing.T) {
 	if len(msgs) != 1 || msgs[0].To != heidi.Email {
 		t.Fatalf("mail = %+v, want one to heidi", msgs)
 	}
-	data := shareData{Actor: fx.acc.Name, Item: "file.txt", Role: mail.RoleLabel("he", "viewer"), Link: fx.s.nodeLink(fx.deep.ID)}
+	// The item name goes through mail.Name (sec1, decision 84): the dot gets an unlinkable non-joiner before it.
+	data := shareData{Actor: fx.acc.Name, Item: mail.Name("file.txt"), Role: mail.RoleLabel("he", "viewer"), Link: fx.s.nodeLink(fx.deep.ID)}
 	want, _, err := fx.s.templates.Render("share", "he", data)
 	if err != nil {
 		t.Fatal(err)
@@ -905,15 +906,6 @@ func TestGrantsAliasSendsNoMail(t *testing.T) {
 		map[string]any{"level": "write"}), 200)
 	if len(fx.sent(t)) != base {
 		t.Errorf("the grants route sent %d mails", len(fx.sent(t))-base)
-	}
-}
-
-// TestMailTextReplacesLineBreaks: mailText turns every kind of line break into a space, so no value can
-// start a header.
-func TestMailTextReplacesLineBreaks(t *testing.T) {
-	t.Parallel()
-	if got, want := mailText("a\r\nBcc: x@example.com\ny\rz"), "a Bcc: x@example.com y z"; got != want {
-		t.Errorf("mailText = %q, want %q", got, want)
 	}
 }
 

@@ -44,12 +44,6 @@ type decisionData struct {
 // package does the work, so every user-written note meets the same rule.
 func cleanNote(s string) string { return mail.CleanBody(s) }
 
-// mailText makes a value safe for a mail line: a line break in a node name or an actor's name would
-// start a header, so every break becomes a space. The mail sender refuses a subject with a break as well.
-func mailText(v string) string {
-	return strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(v)
-}
-
 // itemName is the name a mail shows for a node: a folder's root takes the folder's name.
 func itemName(n *store.Node, f *store.Folder) string {
 	if n.IsRoot() && f != nil {
@@ -92,8 +86,8 @@ func (s *Server) shareMail(ctx context.Context, p *auth.Principal, n *store.Node
 	if reason != "" {
 		return shareNotice{Reason: reason}
 	}
-	actor := mailText(s.actorName(ctx, p))
-	item := mailText(itemName(n, f))
+	actor := mail.Name(s.actorName(ctx, p))
+	item := mail.Name(itemName(n, f))
 	link := s.nodeLink(n.ID)
 	note := cleanNote(message)
 	return s.sendEach(ctx, p, users, func(u *store.User) error { return s.shareBudget(n.AccountID, u.Email) },
