@@ -326,7 +326,7 @@ func (w *Worker) readPlain(f *os.File, j store.TextJob, res *store.TextResult) {
 // the entries of the container, not by the name. OLE2 files are not decided here. An unknown container is "".
 func officeExt(f *os.File, size int64) string {
 	// The cap is read from the end record before zip.NewReader builds an entry for each record (sec1, decision 84, F5).
-	if n, ok := zipEntryCount(f, size); !ok || n > maxOfficeEntries {
+	if n, ok := zipEntryCount(f, size, maxOfficeEntries); !ok || n > maxOfficeEntries {
 		return ""
 	}
 	zr, err := zip.NewReader(f, size)

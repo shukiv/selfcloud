@@ -4,6 +4,7 @@ package search
 
 import (
 	"archive/zip"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -92,7 +93,7 @@ func TestOfficeExtRefusesOverTheCapBeforeBuildingTheEntries(t *testing.T) {
 // refused by the same count, and a file that is not a zip has none.
 func TestZipEntryCountReadsZip64AndRejectsOthers(t *testing.T) {
 	f, size := zipWith(t, zip64Names(70000), "")
-	n, ok := zipEntryCount(f, size)
+	n, ok := zipEntryCount(f, size, 1<<20)
 	if !ok || n != 70000 {
 		t.Errorf("zipEntryCount of a zip64 zip = %d, %v; want 70000, true", n, ok)
 	}
@@ -105,8 +106,79 @@ func TestZipEntryCountReadsZip64AndRejectsOthers(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if _, ok := zipEntryCount(p, 16); ok {
+	if _, ok := zipEntryCount(p, 16, 10); ok {
 		t.Errorf("zipEntryCount of a file that is not a zip reported a count")
+	}
+}
+
+// sec1 item 6, review F5 (decision 84, the bypass found on review): a zip whose end record declares 100 entries, but whose
+// central directory really holds 65,636 (100 + 65,536), passed the declared count and then made zip.NewReader build all
+// 65,636, since archive/zip reads headers until one fails and checks only the count modulo 65,536. The walk counts the
+// real headers before zip.NewReader, so this zip is refused, and the heap allocated while it is refused stays under 1 MiB.
+// Mutation: walking to the declared count instead passes this zip and fails the allocation check.
+func TestOfficeExtRefusesADeclaredCountThatHidesRealHeaders(t *testing.T) {
+	names := zip64Names(65636)
+	f, size := zipWith(t, names, "")
+	// The end record is the last 22 bytes (no comment). Its 16-bit entry count sits at offset 10: declare 100.
+	path := f.Name()
+	data := make([]byte, size)
+	if _, err := f.ReadAt(data, 0); err != nil {
+		t.Fatal(err)
+	}
+	eoc := len(data) - eocdLen
+	if binary.LittleEndian.Uint32(data[eoc:eoc+4]) != eocdSig {
+		t.Fatal("the zip does not end in an end record")
+	}
+	// Go's writer marks the directory's size and offset as 0xFFFFFFFF for a zip this big, which sends the reader to the
+	// zip64 record. Copy the real size and offset into the end record, so the declared count is the 16-bit one.
+	zip64At := binary.LittleEndian.Uint64(data[eoc-20+8 : eoc-20+16])
+	if binary.LittleEndian.Uint32(data[zip64At:zip64At+4]) != eocd64Sig {
+		t.Fatal("no zip64 end record")
+	}
+	realSize := binary.LittleEndian.Uint64(data[zip64At+40 : zip64At+48])
+	realOffset := binary.LittleEndian.Uint64(data[zip64At+48 : zip64At+56])
+	binary.LittleEndian.PutUint16(data[eoc+10:eoc+12], 100)
+	binary.LittleEndian.PutUint16(data[eoc+8:eoc+10], 100)
+	binary.LittleEndian.PutUint32(data[eoc+12:eoc+16], uint32(realSize))
+	binary.LittleEndian.PutUint32(data[eoc+16:eoc+20], uint32(realOffset))
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	got := officeExt(f, size)
+	runtime.ReadMemStats(&after)
+	if got != "" {
+		t.Errorf("officeExt over a hidden count = %q, want \"\"", got)
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 1<<20 {
+		t.Errorf("officeExt allocated %d bytes for a zip whose real headers are 65,636 and declared 100", alloc)
+	}
+}
+
+// sec1 item 6, review F5 (decision 84): a zip64 zip over the cap is refused before its entries are built, as the
+// zip with a 16-bit count is.
+func TestOfficeExtRefusesAZip64OverTheCapBeforeBuildingTheEntries(t *testing.T) {
+	f, size := zipWith(t, zip64Names(70000), "")
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	got := officeExt(f, size)
+	runtime.ReadMemStats(&after)
+	if got != "" {
+		t.Errorf("officeExt over the zip64 cap = %q, want \"\"", got)
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 1<<20 {
+		t.Errorf("officeExt allocated %d bytes for a refused zip64 of 70,000 entries", alloc)
 	}
 }
 
