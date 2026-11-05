@@ -133,6 +133,25 @@ describe("the new tenant dialog", () => {
   });
 });
 
+// A link for the first owner, made from an admin's session, needs the admin's password (decision 84): the prompt opens on
+// Create tenant, and the tenant is sent only with the password confirmed.
+describe("a link for the first owner needs the admin's password", () => {
+  it("asks for the password before anything is sent, then sends it with the tenant", async () => {
+    adminWith({ tenantAccess: true, mailConfigured: false });
+    const { calls } = stubFetch(() => ({ status: 201, body: { ...account(), owner: undefined } }));
+    const onCreated = vi.fn();
+    render(<NewTenant onClose={vi.fn()} onCreated={onCreated} />);
+    fill();
+    setField("new-tenant-limit", "5");
+    fireEvent.click(screen.getByRole("button", { name: "Create tenant" }));
+    expect(calls).toEqual([]);
+    fireEvent.change(document.getElementById("new-tenant-admin") as HTMLInputElement, { target: { value: "admin-pass-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    expect(calls[0].body).toMatchObject({ admin_password: "admin-pass-1", owner: { verification: "link" } });
+  });
+});
+
 describe("the new tenant dialog while the tenant is being created", () => {
   // The request may still create the tenant, so the dialog stays open until the answer comes (guard: busy on the dialog).
   // A busy form can be cancelled: it closes at once, and its request is aborted (busyCancel.test.tsx checks the abort).

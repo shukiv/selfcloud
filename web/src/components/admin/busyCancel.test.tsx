@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
 import type { ReactNode } from "react";
@@ -10,11 +10,13 @@ import { session, type Session } from "../../lib/session";
 import NewKey from "./NewKey";
 import NewTenant from "./NewTenant";
 
+// The admin's session, with mail configured so the new tenant's owner gets an email invitation (no password needed).
 function signedAs(): Session {
   return {
     user: { id: "usr_admin", email: "admin@example.com", display_name: "Admin", role: "admin", locale: "en", status: "active" },
     csrf: "csrf-admin",
     publicLinks: false,
+    mailConfigured: true,
   } as unknown as Session;
 }
 
@@ -54,10 +56,14 @@ describe("cancelling a busy admin dialog", () => {
     const signals = hanging();
     const onClose = vi.fn();
     render(wrap(<NewKey account="acc_1" onClose={onClose} onCreated={vi.fn()} />));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "ci" } });
+    fireEvent.change(screen.getByLabelText("Key name"), { target: { value: "ci" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
+    // The key is sent once the admin's password is confirmed in the prompt on top (decision 84).
+    fireEvent.change(document.getElementById("new-key-admin") as HTMLInputElement, { target: { value: "admin-pass-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(signals).toHaveLength(1));
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    // Cancel on the key form, the first dialog, aborts the request and closes both dialogs.
+    fireEvent.click(within(screen.getAllByRole("dialog")[0]).getByRole("button", { name: "Cancel" }));
     expect(signals[0].aborted).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(1);
   });

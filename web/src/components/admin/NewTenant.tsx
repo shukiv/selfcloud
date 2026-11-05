@@ -8,6 +8,7 @@ import { useFlight } from "../../lib/flight";
 import { session, sessionChanged } from "../../lib/session";
 import { useStore } from "../../lib/store";
 import { createAccount, type NewAccount } from "../../lib/manage/api";
+import AdminPassword from "./AdminPassword";
 import { failureText } from "../../lib/manage/failure";
 import { limitBytes, type LimitUnit } from "../../lib/quota";
 import type { Account, PersonReply } from "../../lib/manage/types";
@@ -56,6 +57,8 @@ export default function NewTenant({
   const [externalId, setExternalId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // pending is the tenant waiting for the admin's password, when its first owner gets a link.
+  const [pending, setPending] = useState<NewAccount | null>(null);
 
   const nameOk = name.trim() !== "";
   const emailOk = EMAIL.test(email.trim());
@@ -80,6 +83,12 @@ export default function NewTenant({
       owner: { email: email.trim(), display_name: ownerName.trim(), verification: via },
     };
     if (externalId.trim() !== "") body.external_id = externalId.trim();
+    // A link for the first owner, from an admin's session, is made only with the admin's password (decision 84): the
+    // prompt asks for it, and the tenant is sent with it.
+    if (via === "link") {
+      setPending(body);
+      return;
+    }
     void guard(async () => {
       const changed = sessionChanged();
       setBusy(true);
@@ -96,6 +105,19 @@ export default function NewTenant({
         setBusy(false);
       }
     });
+  };
+
+  // confirmLink sends the tenant with the admin's password. A refusal reaches the prompt, which stays open.
+  const confirmLink = async (body: NewAccount, adminPassword: string) => {
+    const changed = sessionChanged();
+    try {
+      const created = await createAccount({ ...body, admin_password: adminPassword }, flight.start());
+      if (changed()) return;
+      setPending(null);
+      onCreated(created, created.owner);
+    } finally {
+      flight.end();
+    }
   };
 
   return (
@@ -196,6 +218,16 @@ export default function NewTenant({
           </Button>
         </div>
       </form>
+      {pending !== null && (
+        <AdminPassword
+          id="new-tenant-admin"
+          title={t("admin.confirm.title")}
+          what={t("tenant.new.passwordWhat")}
+          submitLabel={t("admin.confirm.submit")}
+          onConfirm={(adminPassword) => confirmLink(pending, adminPassword)}
+          onClose={() => setPending(null)}
+        />
+      )}
     </Modal>
   );
 }

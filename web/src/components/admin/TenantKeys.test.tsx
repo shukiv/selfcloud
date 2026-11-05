@@ -28,6 +28,46 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
+// Making a key from an admin's session needs the admin's own password (decision 84). The prompt is the sign-in-as dialog,
+// which opens on Create key; the key is sent only once the password is confirmed.
+function fillKeyAndCreate(name = "CI") {
+  fireEvent.click(screen.getByRole("button", { name: "New key" }));
+  fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: name } });
+  fireEvent.click(screen.getByRole("button", { name: "Create key" }));
+}
+
+function confirmWith(password: string) {
+  fireEvent.change(document.getElementById("new-key-admin") as HTMLInputElement, { target: { value: password } });
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+}
+
+describe("a new key needs the admin's password", () => {
+  it("asks for the password before anything is sent, then sends it with the key", async () => {
+    const { calls } = stubFetch((c: Call) => {
+      if (c.method === "POST") return { status: 201, body: { ...key({ id: "key_2", name: "CI" }), key: SECRET } };
+      return { status: 200, body: { items: [] } };
+    });
+    renderKeys();
+    await screen.findByText("No API keys yet.");
+    fillKeyAndCreate();
+    expect(document.getElementById("new-key-admin")).toBeTruthy();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    confirmWith("admin-pass-1");
+    await screen.findByDisplayValue(SECRET);
+    expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({ name: "CI", admin_password: "admin-pass-1" });
+  });
+
+  it("a wrong password is refused in the prompt, and no key is shown", async () => {
+    stubFetch((c: Call) => (c.method === "POST" ? fail(403, "forbidden") : { status: 200, body: { items: [] } }));
+    renderKeys();
+    await screen.findByText("No API keys yet.");
+    fillKeyAndCreate();
+    confirmWith("not the admin password");
+    expect(await screen.findByText("Your admin password is not correct.")).toBeTruthy();
+    expect(document.getElementById("new-key-once-value")).toBeNull();
+  });
+});
+
 describe("the new key dialog's name is not an ambiguous Name", () => {
   it("labels the field Key name", async () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
@@ -55,6 +95,7 @@ describe("API keys of a tenant", () => {
     fireEvent.click(screen.getByRole("button", { name: "New key" }));
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "Deploy" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
+    confirmWith("admin-pass-1");
     expect(((await screen.findByDisplayValue(SECRET)) as HTMLInputElement).id).toBe("new-key-once-value");
     expect(JSON.stringify(qc.getQueryCache().getAll().map((q) => q.state.data))).not.toContain(SECRET);
     fireEvent.click(screen.getByRole("button", { name: "I have copied it" }));
@@ -72,6 +113,7 @@ describe("API keys of a tenant", () => {
     fireEvent.click(screen.getByRole("button", { name: "New key" }));
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "CI" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
+    confirmWith("admin-pass-1");
     await screen.findByDisplayValue(SECRET);
     act(() => session.set(signedAs("admin", "admin_2")));
     await waitFor(() => expect(screen.queryByDisplayValue(SECRET)).toBeNull());
@@ -170,8 +212,11 @@ describe("the new key dialog while a key is being created", () => {
     fireEvent.click(screen.getByRole("button", { name: "New key" }));
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "Deploy" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
+    confirmWith("admin-pass-1");
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    // The key form is the first dialog; the password prompt is on top of it. Cancel on the key form closes both at once.
+    fireEvent.click(within(screen.getAllByRole("dialog")[0]).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(document.getElementById("new-key-name")).toBeNull());
+    expect(calls.find((c) => c.method === "POST")?.signal?.aborted).toBe(true);
   });
 });

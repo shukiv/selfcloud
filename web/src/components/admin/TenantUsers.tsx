@@ -13,6 +13,7 @@ import { queryKey } from "../../lib/query";
 import { sessionChanged, session } from "../../lib/session";
 import { useStore } from "../../lib/store";
 import type { Person } from "../../lib/manage/types";
+import AdminPassword from "./AdminPassword";
 import ShowOnce from "./ShowOnce";
 import { useOnSessionChange } from "./hooks";
 import StatusTag from "./StatusTag";
@@ -42,6 +43,7 @@ export default function TenantUsers({ account }: { account: string }) {
   const [link, setLink] = useState<OnceLink | null>(null);
   const [resetFor, setResetFor] = useState<Person | null>(null);
   const [signInFor, setSignInFor] = useState<Person | null>(null);
+  const [linkFor, setLinkFor] = useState<Person | null>(null);
   // tenant_access and mail_configured are sent to an installation admin's own session only.
   const me = useStore(session);
   const tenantAccess = me?.tenantAccess === true;
@@ -50,6 +52,7 @@ export default function TenantUsers({ account }: { account: string }) {
     setLink(null);
     setResetFor(null);
     setSignInFor(null);
+    setLinkFor(null);
   });
   const q = useInfiniteQuery({
     queryKey: queryKey("tenant-users", account),
@@ -61,7 +64,7 @@ export default function TenantUsers({ account }: { account: string }) {
   const people: Person[] = q.data?.pages.flatMap((p) => p.items) ?? [];
   const firstFailed = q.isError && q.data === undefined;
 
-  const resend = async (p: Person, method: "email" | "link") => {
+  const resend = async (p: Person) => {
     if (inFlight.current) return;
     inFlight.current = true;
     const changed = sessionChanged();
@@ -69,19 +72,29 @@ export default function TenantUsers({ account }: { account: string }) {
     setActionError(null);
     setNotice(null);
     try {
-      const reply = await resendVerification(account, p.id, method);
+      const reply = await resendVerification(account, p.id, "email");
       if (changed()) return;
-      if (method === "link" && reply.verification?.url) {
-        setLink({ id: "owner-link", url: reply.verification.url, title: t("tenant.users.linkTitle", { name: personLabel(p) }) });
-      } else {
-        setNotice(reply.verification?.sent === false ? t("people.mailNotSent") : t("people.mailSent"));
-      }
+      setNotice(reply.verification?.sent === false ? t("people.mailNotSent") : t("people.mailSent"));
     } catch (err) {
       if (changed()) return;
       setActionError(failureText(err, lang));
     } finally {
       inFlight.current = false;
       setBusy(null);
+    }
+  };
+
+  // newLink asks the admin's password, then makes the link. The password goes with the request only; a refusal reaches the
+  // prompt, which stays open (decision 84).
+  const newLink = async (p: Person, adminPassword: string) => {
+    const changed = sessionChanged();
+    const reply = await resendVerification(account, p.id, "link", adminPassword);
+    if (changed()) return;
+    setLinkFor(null);
+    if (reply.verification?.url) {
+      setLink({ id: "owner-link", url: reply.verification.url, title: t("tenant.users.linkTitle", { name: personLabel(p) }) });
+    } else {
+      setNotice(t("people.mailSent"));
     }
   };
 
@@ -123,10 +136,10 @@ export default function TenantUsers({ account }: { account: string }) {
                 {(canResend || canNewLink || canReset || canSignIn) && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {canResend && (
-                      <IconButton label={`${t("tenant.users.resend")}: ${personLabel(p)}`} tip={t("tenant.users.resend")} disabled={busy === p.id} onClick={() => void resend(p, "email")} icon={<Send className="icon-dir" size={18} aria-hidden="true" focusable="false" />} />
+                      <IconButton label={`${t("tenant.users.resend")}: ${personLabel(p)}`} tip={t("tenant.users.resend")} disabled={busy === p.id} onClick={() => void resend(p)} icon={<Send className="icon-dir" size={18} aria-hidden="true" focusable="false" />} />
                     )}
                     {canNewLink && (
-                      <IconButton label={`${t("tenant.users.newLink")}: ${personLabel(p)}`} tip={t("tenant.users.newLink")} disabled={busy === p.id} onClick={() => void resend(p, "link")} icon={<Link size={18} aria-hidden="true" focusable="false" />} />
+                      <IconButton label={`${t("tenant.users.newLink")}: ${personLabel(p)}`} tip={t("tenant.users.newLink")} disabled={busy === p.id} onClick={() => setLinkFor(p)} icon={<Link size={18} aria-hidden="true" focusable="false" />} />
                     )}
                     {canReset && (
                       <IconButton label={`${t("tenant.users.reset")}: ${personLabel(p)}`} tip={t("tenant.users.reset")} disabled={busy === p.id} onClick={() => setResetFor(p)} icon={<KeyRound size={18} aria-hidden="true" focusable="false" />} />
@@ -170,6 +183,16 @@ export default function TenantUsers({ account }: { account: string }) {
         )}
         {signInFor !== null && <SignInAs accountID={account} person={signInFor} onClose={() => setSignInFor(null)} />}
       </Suspense>
+      {linkFor !== null && (
+        <AdminPassword
+          id="owner-link-admin"
+          title={t("admin.confirm.title")}
+          what={t("tenant.users.linkPasswordWhat", { name: personLabel(linkFor) })}
+          submitLabel={t("admin.confirm.submit")}
+          onConfirm={(adminPassword) => newLink(linkFor, adminPassword)}
+          onClose={() => setLinkFor(null)}
+        />
+      )}
 
       {link !== null && (
         <ShowOnce

@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { session } from "../../lib/session";
+import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import { account, signedAs, usage, LINK } from "../../test/adminFixtures";
 import TenantsPage from "./TenantsPage";
@@ -209,6 +209,11 @@ describe("suspend", () => {
 });
 
 describe("the owner link of a new tenant", () => {
+  // The link needs tenant access (decision 41), and the admin's password for the prompt that asks for it (decision 84).
+  beforeEach(() => {
+    session.set({ ...signedAs("admin"), tenantAccess: true, mailConfigured: true } as Session);
+  });
+
   it("is shown once, is kept nowhere but the dialog, and is gone when it closes (guard: ShowOnce state only)", async () => {
     const { qc } = (() => {
       stubFetch((c) => {
@@ -228,6 +233,8 @@ describe("the owner link of a new tenant", () => {
     setField("new-tenant-limit", "5");
     fireEvent.click(screen.getByRole("radio", { name: /link/i }));
     fireEvent.click(screen.getByRole("button", { name: "Create tenant" }));
+    setField("new-tenant-admin", "admin-pass-1");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     const shown = (await screen.findByDisplayValue(LINK)) as HTMLInputElement;
     expect(shown.id).toBe("tenant-link-value");
     expect(JSON.stringify(qc.getQueryCache().getAll().map((q) => q.state.data))).not.toContain("SECRET-ONE-TIME-VALUE");
@@ -252,6 +259,8 @@ describe("the owner link of a new tenant", () => {
     setField("new-tenant-limit", "5");
     fireEvent.click(screen.getByRole("radio", { name: /link/i }));
     fireEvent.click(screen.getByRole("button", { name: "Create tenant" }));
+    setField("new-tenant-admin", "admin-pass-1");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await screen.findByDisplayValue(LINK);
     act(() => {
       session.set(signedAs("admin", "admin_2"));

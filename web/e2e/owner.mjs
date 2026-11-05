@@ -209,7 +209,15 @@ export async function p1MemberChecks(page, h, { dir, writeFile, randomBytes, joi
 
 // adminChecks is the installation admin's tenant pages, end to end: a new tenant whose first owner gets a link shown
 // once, and an API key for it shown once. The key then works for the API, and is gone from the page once its dialog closes.
-export async function adminChecks(page, h, { base, adminKey, TENANT }) {
+// confirmAdminPassword types the admin's password into the prompt that a link or a new key asks for, and presses its
+// Confirm (decision 84). The prompt is the dialog on top, so its form is found by its input.
+async function confirmAdminPassword(h, page, inputId, password) {
+  await page.waitFor(`!!document.getElementById('${inputId}')`);
+  await h.setInput(page, inputId, password);
+  await h.clickOn(page, `form:has(#${inputId}) button[type="submit"]`);
+}
+
+export async function adminChecks(page, h, { base, adminKey, adminPassword, TENANT }) {
   await page.waitFor(`location.pathname === '/admin/tenants' && [...document.querySelectorAll('span')].some((s) => s.textContent.trim() === 'Admin')`);
   h.check(true, 'an admin lands on the tenants list, under the Admin badge');
 
@@ -221,6 +229,7 @@ export async function adminChecks(page, h, { base, adminKey, TENANT }) {
   await h.setInput(page, 'new-tenant-limit', '5');
   await h.clickOn(page, `input[name="how"][value="link"]`);
   await dialogSubmit(h, page);
+  await confirmAdminPassword(h, page, 'new-tenant-admin', adminPassword);
   await page.waitFor(`!!document.getElementById('tenant-link-value') || !!document.querySelector('[role="dialog"] .ant-alert-error')`);
   const createdError = await page.evaluate(`document.querySelector('[role="dialog"] .ant-alert-error')?.textContent ?? ''`);
   if (createdError) throw new Error(`the tenant was not created: ${createdError}`);
@@ -238,6 +247,7 @@ export async function adminChecks(page, h, { base, adminKey, TENANT }) {
   await page.waitFor(`!!document.getElementById('new-key-name')`);
   await h.setInput(page, 'new-key-name', 'CI');
   await dialogSubmit(h, page);
+  await confirmAdminPassword(h, page, 'new-key-admin', adminPassword);
   await page.waitFor(`!!document.getElementById('new-key-once-value')`);
   const secret = await page.evaluate(`document.getElementById('new-key-once-value').value`);
   h.check(secret.length >= 20, 'the new API key is shown in its dialog');

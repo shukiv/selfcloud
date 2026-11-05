@@ -601,6 +601,9 @@ async function main() {
       `  smtp_port: ${sink.port}`,
       '  smtp_tls: "none"',
       '  from: "Selfcloud <drive@example.com>"',
+      // The admin's link for a new tenant's owner needs admin.tenant_access (decision 41); adminChecks makes one.
+      'admin:',
+      '  tenant_access: true',
       // Document previews and exports go to the fake converter (decision 37).
       'office:',
       '  enabled: true',
@@ -898,7 +901,7 @@ async function main() {
     await p4.p4OwnerChecks(page, h, { api, base, accountKey, teamA, reportID: p4ids.reportID });
     await signOut(page);
     await signIn(page, ADMIN);
-    await owner.adminChecks(page, h, { base, adminKey, TENANT });
+    await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
     await signOut(page);
     await signIn(page, MEMBER);
     await owner.memberNotFound(page, h);

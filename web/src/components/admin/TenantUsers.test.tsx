@@ -32,6 +32,23 @@ describe("people of a tenant", () => {
     expect(screen.queryByText("No people yet.")).toBeNull();
   });
 
+  // A new link to an admin's session needs the admin's own password (decision 84). The prompt opens on New link, and the
+  // request is sent only once the password is confirmed.
+  it("a new link asks for the admin's password first, then sends it", async () => {
+    const { calls } = stubFetch((c: Call) => {
+      if (c.url.includes("/verification")) return { status: 200, body: { ...pendingOwner, verification: { method: "link", url: LINK } } };
+      return { status: 200, body: { items: [pendingOwner] } };
+    });
+    renderUsers();
+    await screen.findByText("Owen");
+    fireEvent.click(screen.getByRole("button", { name: /New link/ }));
+    expect(calls.some((c) => c.url.includes("/verification"))).toBe(false);
+    fireEvent.change(document.getElementById("owner-link-admin") as HTMLInputElement, { target: { value: "admin-pass-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await screen.findByDisplayValue(LINK);
+    expect(calls.find((c) => c.url.includes("/verification"))?.body).toEqual({ method: "link", admin_password: "admin-pass-1" });
+  });
+
   it("a new invitation link is shown once and the link is gone when the dialog closes", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/verification")) return { status: 200, body: { ...pendingOwner, verification: { method: "link", url: LINK } } };
@@ -40,6 +57,8 @@ describe("people of a tenant", () => {
     const qc = renderUsers();
     await screen.findByText("Owen");
     fireEvent.click(screen.getByRole("button", { name: /New link/ }));
+    fireEvent.change(document.getElementById("owner-link-admin") as HTMLInputElement, { target: { value: "admin-pass-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await screen.findByDisplayValue(LINK);
     expect(JSON.stringify(qc.getQueryCache().getAll().map((q) => q.state.data))).not.toContain("SECRET-ONE-TIME-VALUE");
     fireEvent.click(screen.getByRole("button", { name: "I have copied it" }));
@@ -54,6 +73,8 @@ describe("people of a tenant", () => {
     renderUsers();
     await screen.findByText("Owen");
     fireEvent.click(screen.getByRole("button", { name: /New link/ }));
+    fireEvent.change(document.getElementById("owner-link-admin") as HTMLInputElement, { target: { value: "admin-pass-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await screen.findByDisplayValue(LINK);
     act(() => session.set(signedAs("admin", "admin_2")));
     await waitFor(() => expect(screen.queryByDisplayValue(LINK)).toBeNull());

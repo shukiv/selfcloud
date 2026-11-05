@@ -50,6 +50,8 @@ export interface NewAccount {
   quota_bytes: number;
   external_id?: string;
   owner: { email: string; display_name?: string; locale?: string; verification: 'email' | 'link' };
+  // admin_password is sent with a link for the first owner, from an installation admin's session (decision 84).
+  admin_password?: string;
 }
 
 // The calls a dialog makes take an optional signal: a cancelled dialog aborts its write (see lib/flight.ts).
@@ -78,7 +80,9 @@ export function listKeys(id: string): Promise<{ items: ApiKey[] }> {
   return api<{ items: ApiKey[] }>('GET', `${acc(id)}/keys`);
 }
 
-export function createKey(id: string, body: { name: string; expires_at?: string }, signal?: AbortSignal): Promise<NewKey> {
+// createKey makes an API key. From an installation admin's session the admin's own password is sent for the check (decision
+// 84); the server refuses the key without it.
+export function createKey(id: string, body: { name: string; expires_at?: string; admin_password: string }, signal?: AbortSignal): Promise<NewKey> {
   return api<NewKey>('POST', `${acc(id)}/keys`, { body, signal });
 }
 
@@ -151,8 +155,11 @@ export function removePerson(
   })}`, { signal });
 }
 
-export function resendVerification(id: string, usr: string, method: 'email' | 'link'): Promise<PersonReply> {
-  return api<PersonReply>('POST', `${acc(id)}/users/${usr}/verification`, { body: { method } });
+// resendVerification sends a pending owner's invitation again. A new link from an admin's session needs the admin's own
+// password for the check (decision 84), so it is sent with method "link"; the email needs none.
+export function resendVerification(id: string, usr: string, method: 'email' | 'link', adminPassword?: string): Promise<PersonReply> {
+  const body = adminPassword === undefined ? { method } : { method, admin_password: adminPassword };
+  return api<PersonReply>('POST', `${acc(id)}/users/${usr}/verification`, { body });
 }
 
 export function sendPasswordReset(id: string, usr: string): Promise<PersonReply> {
