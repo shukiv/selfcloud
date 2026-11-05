@@ -218,11 +218,15 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     await sleep(300);
     await page.send('Page.navigate', { url: base + '/trash' });
     await page.waitFor(`location.pathname === '/trash'`, 15000);
-    await sleep(500);
+    // The trash is read after the page loads; wait for its row, not a fixed time, so the checks below measure a drawn row (gate
+    // stvl1 e2e-4 measured before the row came, and found no button).
+    const restoreSel = '.trash-item button[aria-label^="Restore:"]';
+    await page.waitFor(`!!document.querySelector(${JSON.stringify(restoreSel)})`, 15000);
     const sideways = await page.evaluate(`document.documentElement.scrollWidth - window.innerWidth`);
     check(sideways <= 0, `the trash has no sideways scroll at 390 px (${sideways} px over)`);
     await setPhone(page, true);
-    await sleep(300);
+    // The finger's sizes apply on the next render; the check below reads what is there after the wait, met or not.
+    await page.waitFor(`(() => { const b = document.querySelector(${JSON.stringify(restoreSel)}); return !!b && Math.round(b.getBoundingClientRect().height) === 44; })()`, 5000).catch(() => undefined);
     const coarse = await iconState(page, '.trash-item button[aria-label^="Restore:"]');
     check(coarse && coarse.h === 44 && coarse.w === 44, `on a finger the Restore icon is 44 px (${JSON.stringify(coarse)})`);
     await snap('ic2-phone-390.png');
