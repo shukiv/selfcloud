@@ -1,0 +1,10 @@
+Subject: Confirme este navegador
+
+Alguém iniciou sessão com a sua palavra-passe a partir de um navegador que não conhecemos.
+
+Se foi você, abra esta ligação nesse navegador para entrar:
+
+{{.URL}}
+
+A ligação funciona uma só vez e expira a {{.ExpiresAt}}.
+Se não foi você, não abra a ligação. Mude a sua palavra-passe.

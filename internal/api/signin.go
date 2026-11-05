@@ -257,6 +257,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if deviceHold == nil {
 		res, err := s.limits["login.failed"].reserve(key, now)
 		if err != nil {
+			// With a mailer, the browser is confirmed by email instead of refused (sec2, decision 86). Without one there is
+			// no link, so the refusal stays (sec1, decision 84).
+			if s.mailer != nil {
+				return s.confirmByEmail(w, r, candidates, in.Password, in.Remember)
+			}
 			return apierr.New(apierr.RateLimited, "too many failed sign-ins to this email; use Forgot password, "+
 				"or sign in from a device you have used before")
 		}
@@ -394,11 +399,19 @@ func (s *Server) matchPassword(ctx context.Context, hash, password string) (bool
 // failedLogin answers a sign-in whose password matched no one. It is audited against the account
 // when exactly one user has that email.
 func (s *Server) failedLogin(r *http.Request, candidates []*store.User) error {
+	if err := s.auditFailedLogin(r, candidates); err != nil {
+		return err
+	}
+	return apierr.New(apierr.Unauthenticated, "wrong email or password")
+}
+
+// auditFailedLogin writes the audit entry of a sign-in whose password matched no one.
+func (s *Server) auditFailedLogin(r *http.Request, candidates []*store.User) error {
 	accountID, actor := "", ""
 	if len(candidates) == 1 {
 		accountID, actor = candidates[0].AccountID, candidates[0].ID
 	}
-	err := s.store.Write(r.Context(), func(tx *store.Tx) error {
+	return s.store.Write(r.Context(), func(tx *store.Tx) error {
 		e := s.auditEntry(r, accountID, "user.login_failed", actor, nil)
 		e.ActorKind, e.ActorID, e.Outcome = string(auth.KindUser), actor, "failed"
 		if actor == "" {
@@ -406,10 +419,6 @@ func (s *Server) failedLogin(r *http.Request, candidates []*store.User) error {
 		}
 		return tx.InsertAudit(r.Context(), e)
 	})
-	if err != nil {
-		return err
-	}
-	return apierr.New(apierr.Unauthenticated, "wrong email or password")
 }
 
 // accountChoice answers a sign-in whose email is in several accounts, and whose password

@@ -106,6 +106,12 @@ type UsersConfig struct {
 	// SignInURLTemplate builds the sign-in link, with {public_url} and {token} replaced. The token
 	// goes in the fragment, so it never reaches a server log or a Referer.
 	SignInURLTemplate string `yaml:"sign_in_url_template"`
+	// DeviceConfirmTTL is how long the link that confirms a new browser works, after the email's sign-in cap is spent
+	// (sec2, decision 86). At most 30 minutes.
+	DeviceConfirmTTL Duration `yaml:"device_confirm_ttl"`
+	// DeviceConfirmURLTemplate builds that confirmation link, with {public_url} and {token} replaced. The token goes in
+	// the fragment, as the other links' do.
+	DeviceConfirmURLTemplate string `yaml:"device_confirm_url_template"`
 }
 
 // AdminConfig controls what an installation admin may do to tenant users (decision 41).
@@ -661,12 +667,14 @@ func Defaults() *Config {
 			MaxDiskSharePercent:   50,
 		},
 		Users: UsersConfig{
-			VerificationTTL:   Duration(72 * time.Hour),
-			ResetTTL:          Duration(time.Hour),
-			VerifyURLTemplate: "{public_url}/verify#token={token}",
-			ResetURLTemplate:  "{public_url}/reset#token={token}",
-			SignInLinkTTL:     Duration(60 * time.Second),
-			SignInURLTemplate: "{public_url}/sign-in#token={token}",
+			VerificationTTL:          Duration(72 * time.Hour),
+			ResetTTL:                 Duration(time.Hour),
+			VerifyURLTemplate:        "{public_url}/verify#token={token}",
+			ResetURLTemplate:         "{public_url}/reset#token={token}",
+			SignInLinkTTL:            Duration(60 * time.Second),
+			SignInURLTemplate:        "{public_url}/sign-in#token={token}",
+			DeviceConfirmTTL:         Duration(15 * time.Minute),
+			DeviceConfirmURLTemplate: "{public_url}/confirm-device#token={token}",
 		},
 		Download: DownloadConfig{Timeout: Duration(30 * time.Second), MinRate: ByteSize(64 << 10)},
 		Sessions: SessionsConfig{
@@ -850,19 +858,28 @@ func (c *Config) Validate() error {
 	if c.Users.SignInLinkTTL <= 0 || c.Users.SignInLinkTTL > Duration(10*time.Minute) {
 		bad("users.sign_in_link_ttl must be positive and at most 10m")
 	}
+	if c.Users.DeviceConfirmTTL <= 0 || c.Users.DeviceConfirmTTL > Duration(30*time.Minute) {
+		bad("users.device_confirm_ttl must be positive and at most 30m")
+	}
 	for name, tmpl := range map[string]string{
-		"users.verify_url_template":  c.Users.VerifyURLTemplate,
-		"users.reset_url_template":   c.Users.ResetURLTemplate,
-		"users.sign_in_url_template": c.Users.SignInURLTemplate,
+		"users.verify_url_template":         c.Users.VerifyURLTemplate,
+		"users.reset_url_template":          c.Users.ResetURLTemplate,
+		"users.sign_in_url_template":        c.Users.SignInURLTemplate,
+		"users.device_confirm_url_template": c.Users.DeviceConfirmURLTemplate,
 	} {
 		if !strings.Contains(tmpl, "{token}") {
 			bad("%s must contain {token}", name)
 		}
 	}
-	// A sign-in link signs a browser in, so its token must stay in the fragment, which never reaches a
-	// server, a proxy's log or a Referer header.
-	if i := strings.Index(c.Users.SignInURLTemplate, "{token}"); i >= 0 && !strings.Contains(c.Users.SignInURLTemplate[:i], "#") {
-		bad("users.sign_in_url_template must carry {token} in the fragment, after #")
+	// A sign-in link signs a browser in, and so does a device confirmation, so their tokens must stay in the fragment,
+	// which never reaches a server, a proxy's log or a Referer header.
+	for name, tmpl := range map[string]string{
+		"users.sign_in_url_template":        c.Users.SignInURLTemplate,
+		"users.device_confirm_url_template": c.Users.DeviceConfirmURLTemplate,
+	} {
+		if i := strings.Index(tmpl, "{token}"); i >= 0 && !strings.Contains(tmpl[:i], "#") {
+			bad("%s must carry {token} in the fragment, after #", name)
+		}
 	}
 	if c.Sessions.IdleTimeout <= 0 || c.Sessions.MaxAge <= 0 {
 		bad("sessions.idle_timeout and sessions.max_age must be positive")

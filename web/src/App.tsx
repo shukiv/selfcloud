@@ -23,6 +23,7 @@ import AuthLayout from "./components/AuthLayout";
 import LoginPage from "./pages/LoginPage";
 import ForgotPage from "./pages/ForgotPage";
 import ResetPage from "./pages/ResetPage";
+import ConfirmDevicePage from "./pages/ConfirmDevicePage";
 import VerifyPage from "./pages/VerifyPage";
 import SignInPage from "./pages/SignInPage";
 import NotFoundPage from "./pages/NotFoundPage";
@@ -58,11 +59,11 @@ const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 // The views are the address's pages, read the way the Svelte build reads them, so both interfaces
 // agree on what an address means.
 type View =
-  | "login" | "verify" | "reset" | "forgot" | "sign-in" | "share-link"
+  | "login" | "verify" | "reset" | "confirm-device" | "forgot" | "sign-in" | "share-link"
   | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
   | "edit" | "manage" | "admin" | "change-password" | "notfound";
 
-const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "forgot", "sign-in", "share-link"];
+const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
 const DRIVE_VIEWS: View[] = ["files", "node", "edit", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications"];
@@ -78,6 +79,7 @@ export function viewFor(path: string): View {
     case "/login": return "login";
     case "/verify": return "verify";
     case "/reset": return "reset";
+    case "/confirm-device": return "confirm-device";
     case "/forgot": return "forgot";
     case "/sign-in": return "sign-in";
     case "/s": return "share-link";
@@ -206,6 +208,7 @@ function Public({ view }: { view: View }) {
     case "login": return <LoginPage />;
     case "verify": return <VerifyPage />;
     case "reset": return <ResetPage />;
+    case "confirm-device": return <ConfirmDevicePage />;
     case "forgot": return <ForgotPage />;
     case "sign-in": return <SignInPage />;
     case "share-link":

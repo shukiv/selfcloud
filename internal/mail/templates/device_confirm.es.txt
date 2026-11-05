@@ -1,0 +1,10 @@
+Subject: Confirma este navegador
+
+Alguien ha iniciado sesión con tu contraseña desde un navegador que no conocemos.
+
+Si fuiste tú, abre este enlace en ese navegador para entrar:
+
+{{.URL}}
+
+El enlace funciona una sola vez y caduca el {{.ExpiresAt}}.
+Si no fuiste tú, no abras el enlace. Cambia tu contraseña.

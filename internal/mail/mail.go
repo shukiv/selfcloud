@@ -38,6 +38,7 @@ const (
 	PurposeDrop           = "drop"
 	PurposeComment        = "comment"
 	PurposeDigest         = "digest"
+	PurposeDeviceConfirm  = "device_confirm"
 )
 
 // Purposes lists every purpose. Every one needs an English template, and the filename pattern for
@@ -51,6 +52,7 @@ var Purposes = []string{
 	PurposeDrop,
 	PurposeComment,
 	PurposeDigest,
+	PurposeDeviceConfirm,
 }
 
 // ReadSecretFile returns the contents of a file holding a secret, without the final line break.

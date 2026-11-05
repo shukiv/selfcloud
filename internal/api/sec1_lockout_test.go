@@ -64,7 +64,8 @@ func TestGuessingOneEmailFromManyAddressesIsBounded(t *testing.T) {
 
 	for _, email := range []string{"ann@example.com", "nobody@example.com"} {
 		spendCap(t, s, email, 30)
-		wantError(t, loginWith(t, s, "192.0.2.90:4000", email, "wrong password here"), 429, apierr.RateLimited)
+		// With the cap spent, a sign-in with a mailer gets the confirmation answer (sec2, decision 86), not a refusal.
+		wantStatus(t, loginWith(t, s, "192.0.2.90:4000", email, "wrong password here"), 202)
 	}
 }
 
@@ -126,7 +127,7 @@ func TestDeviceCookieSignsInWhileTheCapIsSpent(t *testing.T) {
 
 			dev := deviceCookieFrom(t, loginWith(t, s, "10.9.0.1:4000", "ann@example.com", testPassword))
 			spendCap(t, s, "ann@example.com", 30+tc.tag)
-			wantError(t, loginWith(t, s, "10.9.0.2:4000", "ann@example.com", "wrong password here"), 429, apierr.RateLimited)
+			wantStatus(t, loginWith(t, s, "10.9.0.2:4000", "ann@example.com", "wrong password here"), 202)
 
 			wantStatus(t, loginWith(t, s, "10.9.0.3:4000", "ann@example.com", testPassword, dev), 200)
 		})
@@ -137,7 +138,9 @@ func TestDeviceCookieSignsInWhileTheCapIsSpent(t *testing.T) {
 // is the same for an unknown email, and it points the person at Forgot password.
 func TestNoDeviceCookieIsRefusedWhileTheCapIsSpent(t *testing.T) {
 	t.Parallel()
-	s := newAuthServer(t, &mail.Recorder{})
+	// Without a mailer there is no confirmation link, so the refusal stays (sec2, decision 86). With a mailer the answer
+	// is the confirmation one: see sec2_confirm_test.go.
+	s := newAuthServer(t, nil)
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	verifiedUser(t, s, key, acc.ID, "ann@example.com")
@@ -174,8 +177,9 @@ func TestForgedOtherUsersAndExpiredDeviceCookiesAreNotTrusted(t *testing.T) {
 	}
 
 	spendCap(t, s, "ann@example.com", 50)
-	wantError(t, loginWith(t, s, "10.8.1.1:4000", "ann@example.com", testPassword, &forged), 429, apierr.RateLimited)
-	wantError(t, loginWith(t, s, "10.8.1.2:4000", "ann@example.com", testPassword, bobCookie), 429, apierr.RateLimited)
+	// An untrusted cookie gets the confirmation answer, not a sign-in (sec2, decision 86).
+	wantStatus(t, loginWith(t, s, "10.8.1.1:4000", "ann@example.com", testPassword, &forged), 202)
+	wantStatus(t, loginWith(t, s, "10.8.1.2:4000", "ann@example.com", testPassword, bobCookie), 202)
 	// Positive control: the genuine cookie for ann is trusted while the cap is spent.
 	wantStatus(t, loginWith(t, s, "10.8.1.3:4000", "ann@example.com", testPassword, annCookie), 200)
 
@@ -187,7 +191,7 @@ func TestForgedOtherUsersAndExpiredDeviceCookiesAreNotTrusted(t *testing.T) {
 	old := deviceCookieFrom(t, loginWith(t, short, "10.8.2.1:4000", "ann@example.com", testPassword))
 	time.Sleep(2 * time.Second)
 	spendCap(t, short, "ann@example.com", 51)
-	wantError(t, loginWith(t, short, "10.8.2.2:4000", "ann@example.com", testPassword, old), 429, apierr.RateLimited)
+	wantStatus(t, loginWith(t, short, "10.8.2.2:4000", "ann@example.com", testPassword, old), 202)
 }
 
 // sec1 item 1 (decision 84): a device cookie has a budget of its own. When it has failed too often, it stops being
@@ -207,7 +211,7 @@ func TestDeviceCookieThatFailsItsOwnBudgetStopsBeingTrusted(t *testing.T) {
 		wantError(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", "wrong password here", dev), 401, apierr.Unauthenticated)
 	}
 	// The device has spent its budget, so the cap applies, and the right password is refused.
-	wantError(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", testPassword, dev), 429, apierr.RateLimited)
+	wantStatus(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", testPassword, dev), 202)
 }
 
 // sec1 item 5 (decision 84): a password reset is not refused by the cap, and a successful reset sets a device cookie
@@ -248,7 +252,7 @@ func cookieAcrossEvent(t *testing.T, s *Server, tag int, email, newPassword stri
 	time.Sleep(2 * time.Millisecond)
 	fresh := deviceCookieFrom(t, loginWith(t, s, fmt.Sprintf("10.%d.2.1:4000", tag), email, newPassword))
 	spendCap(t, s, email, tag)
-	wantError(t, loginWith(t, s, fmt.Sprintf("10.%d.1.1:4000", tag), email, newPassword, dev), 429, apierr.RateLimited)
+	wantStatus(t, loginWith(t, s, fmt.Sprintf("10.%d.1.1:4000", tag), email, newPassword, dev), 202)
 	wantStatus(t, loginWith(t, s, fmt.Sprintf("10.%d.3.1:4000", tag), email, newPassword, fresh), 200)
 }
 
@@ -343,5 +347,5 @@ func TestDeviceCookieIssuedBeforeACommittedChangeIsVoid(t *testing.T) {
 		t.Fatal("the hook did not run: the sign-in made no commit")
 	}
 	spendCap(t, s, "ann@example.com", 71)
-	wantError(t, loginWith(t, s, "10.71.1.1:4000", "ann@example.com", newPassword, dev), 429, apierr.RateLimited)
+	wantStatus(t, loginWith(t, s, "10.71.1.1:4000", "ann@example.com", newPassword, dev), 202)
 }

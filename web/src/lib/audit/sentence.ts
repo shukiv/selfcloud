@@ -372,6 +372,16 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
       return { key: 'audit.user.logout', params: { actor } };
     case 'user.sign_in_link':
       return { key: 'audit.user.sign_in_link', params: { actor, target } };
+    // A confirmation mail that was not sent (over its cap, or refused by the mailer) says so (sec2, decision 86).
+    case 'user.device_confirm_sent':
+      return {
+        key: entry.outcome === 'capped' || entry.outcome === 'failed'
+          ? 'audit.user.device_confirm_not_sent'
+          : 'audit.user.device_confirm_sent',
+        params: { actor },
+      };
+    case 'user.device_confirmed':
+      return { key: 'audit.user.device_confirmed', params: { actor } };
     case 'user.tokens_revoke':
       return { key: 'audit.user.tokens_revoke', params: { actor, target } };
     case 'webhook.create':

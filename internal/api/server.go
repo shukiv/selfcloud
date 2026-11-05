@@ -365,6 +365,10 @@ func New(opts Options) (*Server, error) {
 			// Sign-in links: made by an account key, per account; redeemed per client address, as login is.
 			"signlink.create": newLimiter(60),
 			"signlink.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
+			// Device confirmations (sec2, decision 86): a link is redeemed per client address, and a user gets at most
+			// deviceConfirmMailCap confirmation mails in deviceConfirmMailWindow. Fixed, as the mail limits are.
+			"device.confirm.ip": newLimiter(cfg.RateLimit.PerIPPerMinute),
+			"mail.device.user":  newLimiterRate(deviceConfirmMailCap, deviceConfirmMailWindow),
 			// Verification and reset mail: per account, and per address it goes to. Links returned
 			// to a key are not mail and are not counted.
 			"mail.account": newLimiterRate(30, time.Hour),
@@ -611,6 +615,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/auth/password/forgot", handle: s.handleForgotPassword, sameSite: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/auth/password/reset", handle: s.handleResetPassword, sameSite: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/auth/sign-in-link", handle: s.handleRedeemSignInLink, sameSite: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/device-confirm", handle: s.handleDeviceConfirm, sameSite: true, imp: impRefuse},
 		// Go back ends an impersonation and restores the admin's session. It checks its own CSRF token, because the
 		// impersonation may be past its hour, and a route that required a live session could not run then.
 		{method: http.MethodPost, path: "/api/v1/auth/impersonation/end", handle: s.handleEndImpersonation, sameSite: true, imp: impAllow},

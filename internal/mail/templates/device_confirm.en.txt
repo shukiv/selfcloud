@@ -1,0 +1,10 @@
+Subject: Confirm this browser
+
+Someone signed in with your password from a browser we do not know.
+
+If it was you, open this link in that browser to sign in:
+
+{{.URL}}
+
+The link works once and expires at {{.ExpiresAt}}.
+If it was not you, do not open the link. Change your password.

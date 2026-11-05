@@ -1,0 +1,10 @@
+Subject: Confirmez ce navigateur
+
+Quelqu'un s'est connecté avec votre mot de passe depuis un navigateur que nous ne connaissons pas.
+
+Si c'était vous, ouvrez ce lien dans ce navigateur pour vous connecter :
+
+{{.URL}}
+
+Le lien ne fonctionne qu'une fois et expire le {{.ExpiresAt}}.
+Si ce n'était pas vous, n'ouvrez pas le lien. Changez votre mot de passe.

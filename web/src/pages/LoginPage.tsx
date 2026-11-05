@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Button, Checkbox, Input, Radio, Typography } from "antd";
 import { ApiError } from "../lib/api";
-import { establish, signIn } from "../lib/auth";
+import { establish, isConfirmByEmail, signIn } from "../lib/auth";
 import { keepChoice, saveKeepChoice } from "../lib/signin";
 import { errorMessage, type Message } from "../lib/errors";
 import { go } from "../lib/router";
@@ -28,6 +28,9 @@ export default function LoginPage() {
   const [accounts, setAccounts] = useState<AccountChoice[] | null>(null);
   const [account, setAccount] = useState("");
   const [busy, setBusy] = useState(false);
+  // confirm is set when the server holds the sign-in until the browser is confirmed by a link mailed to the person
+  // (sec2, decision 86). The page says so and offers the way back to the form; it shows no error.
+  const [confirm, setConfirm] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -49,10 +52,14 @@ export default function LoginPage() {
     // address then no longer carries the next the person came from.
     const next = new URLSearchParams(window.location.search).get("next");
     try {
-      const signed = await signIn(email.trim(), password, account || undefined, keep);
-      await establish(signed);
+      const answer = await signIn(email.trim(), password, account || undefined, keep);
+      if (isConfirmByEmail(answer)) {
+        setConfirm(true);
+        return;
+      }
+      await establish(answer);
       // One navigation, to the place the person is going: the gate does not have to move the page on a second time.
-      go(afterSignIn(next, signed.user), { replace: true });
+      go(afterSignIn(next, answer.user), { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && Array.isArray(err.details.accounts)) {
         const choices = err.details.accounts as AccountChoice[];
@@ -64,6 +71,18 @@ export default function LoginPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (confirm) {
+    return (
+      <AuthLayout>
+        <h1 style={{ marginTop: 0, fontSize: 24 }}>{t("login.confirm.title")}</h1>
+        <p>{t("login.confirm.body")}</p>
+        <Button block onClick={() => setConfirm(false)}>
+          {t("login.confirm.back")}
+        </Button>
+      </AuthLayout>
+    );
   }
 
   return (

@@ -135,6 +135,7 @@ type Result struct {
 	Sessions       int64 // expired sessions removed
 	Verifications  int64 // expired or used verification and reset tokens removed
 	SignInLinks    int64 // expired or used sign-in links removed
+	DeviceConfirms int64 // expired or used device confirmations removed (sec2, decision 86)
 	WOPISessions   int64 // office editing sessions past their end removed
 	Locks          int   // office editing locks past their expiry removed and audited (decision 32)
 	TempRemoved    int   // abandoned temporary upload files removed
@@ -193,9 +194,10 @@ func (w *Sweeper) Run(ctx context.Context) {
 		case err != nil && ctx.Err() == nil:
 			w.log.Error("housekeeping", "error", err)
 		case err == nil && (res.Removed > 0 || res.Orphaned > 0 || res.Sessions > 0 || res.Verifications > 0 ||
-			res.SignInLinks > 0):
+			res.SignInLinks > 0 || res.DeviceConfirms > 0):
 			w.log.Info("housekeeping", "orphaned", res.Orphaned, "removed", res.Removed, "failed", res.Failed,
-				"sessions", res.Sessions, "verifications", res.Verifications, "sign_in_links", res.SignInLinks)
+				"sessions", res.Sessions, "verifications", res.Verifications, "sign_in_links", res.SignInLinks,
+				"device_confirms", res.DeviceConfirms)
 		}
 		select {
 		case <-ctx.Done():
@@ -337,6 +339,9 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 			return err
 		}
 		if res.SignInLinks, err = tx.DeleteSpentSignInLinks(ctx, now); err != nil {
+			return err
+		}
+		if res.DeviceConfirms, err = tx.DeleteSpentDeviceConfirms(ctx, now); err != nil {
 			return err
 		}
 		if res.WOPISessions, err = tx.DeleteEndedWOPISessions(ctx, now); err != nil {

@@ -2113,6 +2113,14 @@ paths:
         conflict` with `details.accounts` listing them; send the same request again with
         `account` set. No match gives `unauthenticated`. Rate-limited per client address and
         per email.
+
+        When the email's cap on failed sign-ins is spent (30 an hour), and the browser holds no
+        trusted device cookie, a server that can send mail does not refuse. Every attempt gets
+        `202` with `{"confirm": "email"}`, whatever the password, and the same headers and body.
+        A right password also mails the user a single-use link (decision 86); the attempt sets a
+        short-lived `selfcloud_confirm` cookie, and the link signs in only the browser that holds
+        it, through `POST /api/v1/auth/device-confirm`. A server without mail keeps the refusal:
+        `429 rate_limited`.
       security: []
       requestBody:
         required: true
@@ -2127,6 +2135,60 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SignedIn" }
+        "202":
+          description: |
+            The browser is to be confirmed by email. The body is `{"confirm": "email"}` whatever the
+            password was. Nothing is signed in. The attempt sets the `selfcloud_confirm` cookie.
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [confirm]
+                properties:
+                  confirm: { type: string, enum: [email] }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/device-confirm:
+    post:
+      tags: [Auth]
+      operationId: confirmDevice
+      summary: Confirm a new browser from its link (decision 86)
+      description: |
+        Completes the link mailed after a sign-in was held for the browser (see `POST
+        /api/v1/auth/login`). In the browser that asked, the link signs the user in as a
+        password sign-in does, with a session of the choice the attempt made, and sets the device
+        cookie. The link is single use and expires after `users.device_confirm_ttl` (15 minutes by
+        default). A password change, reset, admin set-password or disable after the mail voids it.
+        An unknown, used, expired or voided link gets `invalid_request`. In another browser, which
+        does not hold the `selfcloud_confirm` cookie of the attempt, the answer is `403 forbidden`
+        with `details.reason` `other_browser`: nothing is signed in and the link is not used up.
+        Rate-limited per client address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: The token from the link's fragment. }
+      responses:
+        "200":
+          description: Signed in. The session cookie and the device cookie are set; the confirmation cookie is ended.
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignedIn" }
+        "403":
+          description: |
+            Another browser than the one that asked. `details.reason` is `other_browser`. Nothing changed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/auth/logout:

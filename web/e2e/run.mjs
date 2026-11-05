@@ -49,6 +49,7 @@ import { ksChecks } from './ks.mjs';
 import { fu3aChecks } from './fu3a.mjs';
 import { fu3bChecks } from './fu3b.mjs';
 import { fu5Checks } from './fu5.mjs';
+import { sec2Checks } from './sec2.mjs';
 import { stChecks } from './st.mjs';
 import { pickMenuEntry } from './menu.mjs';
 
@@ -641,6 +642,8 @@ async function main() {
   let ic2Browser = null;
   // ksBrowser is the sign-in box's own browser, while its checks run (see the ks call).
   let ksBrowser = null;
+  // sec2Browser is the new-browser confirmation's own browser, while its checks run (see the sec2 call).
+  let sec2Browser = null;
   let page = null;
   let passed = false;
   try {
@@ -777,7 +780,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb or pwa runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb, pwa or sec2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -902,6 +905,23 @@ async function main() {
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x6')) await x6Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('pwa')) await pwaChecks(h, { page, base, brand: { name: BRAND.name, accentUpper: BRAND.accent.toUpperCase(), member: MEMBER }, check, wsUrl: launched.wsUrl });
+    // The new-browser confirmation (sec2, decision 86): its own user, its own browser with its own profile. It comes after the
+    // sections above, which hold no sign-ins for its user, and before the full run's own checks.
+    if (!only || onlySet.has('sec2')) {
+      const sec2Launch = await launchBrowser(await findBrowser(), join(dir, 'sec2-profile'));
+      sec2Browser = sec2Launch.proc;
+      const sec2Page = new Page(sec2Launch.wsUrl);
+      sec2Page.base = base;
+      try {
+        await sec2Page.start(EXPECTED);
+        await sec2Checks(h, { page: sec2Page, base, sink, accountID, accountKey });
+        check(sec2Page.errors.length === 0, `the new browser's page has no console errors or policy violations (${sec2Page.errors.join(' | ') || 'none'})`);
+      } finally {
+        sec2Page.close();
+        sec2Browser.kill();
+        sec2Browser = null;
+      }
+    }
     if (only) {
       console.log(`only ${only}: passed`);
       passed = true;
@@ -967,6 +987,7 @@ async function main() {
     l1Browser?.kill();
     ic2Browser?.kill();
     ksBrowser?.kill();
+    sec2Browser?.kill();
     server.kill();
     await fake.close();
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {

@@ -49,13 +49,27 @@ export async function loadMe(): Promise<Me | null> {
   }
 }
 
+// SignInAnswer is the session, or, while the email's cap on failed sign-ins is spent from a browser this server does not
+// know, the confirmation (sec2, decision 86): the browser must be confirmed by a link mailed to the person.
+export type SignInAnswer = SignedIn | { confirm: 'email' };
+
+// isConfirmByEmail reports whether a sign-in answer waits for the browser to be confirmed by email.
+export function isConfirmByEmail(answer: SignInAnswer): answer is { confirm: 'email' } {
+  return 'confirm' in answer;
+}
+
 // signIn checks the password. remember is the "Keep me signed in" box (decision 75): false makes a session the browser
 // does not keep. Left out, the session is kept, as API clients have always had it.
-export function signIn(email: string, password: string, account?: string, remember?: boolean): Promise<SignedIn> {
+export function signIn(email: string, password: string, account?: string, remember?: boolean): Promise<SignInAnswer> {
   const body: Record<string, string | boolean> = { email, password };
   if (account) body.account = account;
   if (remember !== undefined) body.remember = remember;
-  return api<SignedIn>('POST', '/api/v1/auth/login', { body, noRedirect: true });
+  return api<SignInAnswer>('POST', '/api/v1/auth/login', { body, noRedirect: true });
+}
+
+// confirmDevice redeems a device confirmation link in the browser that asked for it, and signs that browser in.
+export function confirmDevice(token: string): Promise<SignedIn> {
+  return api<SignedIn>('POST', '/api/v1/auth/device-confirm', { body: { token }, noRedirect: true });
 }
 
 // establish stores a new session from a sign-in answer, then loads the account around it.
