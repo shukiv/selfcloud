@@ -1001,6 +1001,8 @@
   "admins.new.email": "דואר אלקטרוני",
   "admins.new.name": "שם",
   "admins.new.send": "שליחת הזמנה",
+  "admins.new.how": "איך המנהל ייכנס",
+  "admins.new.noMail": "שליחת דואר אינה מוגדרת בשרת הזה. אז אפשר להוסיף מנהל רק בפקודת השרת: selfcloud admin create-admin",
   "admins.added": "המנהל נוסף.",
   "admins.remove": "הסרה",
   "admins.removed": "{name} הוסר מתפקיד מנהל.",

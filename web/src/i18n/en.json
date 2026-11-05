@@ -1001,6 +1001,8 @@
   "admins.new.email": "Email",
   "admins.new.name": "Name",
   "admins.new.send": "Send invitation",
+  "admins.new.how": "How the admin gets in",
+  "admins.new.noMail": "Mail is not set up on this server. An admin can then only be added with the server command: selfcloud admin create-admin",
   "admins.added": "The admin was added.",
   "admins.remove": "Remove",
   "admins.removed": "{name} was removed as an admin.",

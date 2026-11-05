@@ -2,7 +2,7 @@
 import { UserMinus } from "lucide-react";
 import IconButton from "../../components/IconButton";
 
-import { App, Alert, Button, Input, Modal, Radio } from "antd";
+import { App, Alert, Button, Input, Modal } from "antd";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -17,7 +17,6 @@ import { personLabel, statusTone } from "../../lib/manage/people";
 import type { Person, PersonReply } from "../../lib/manage/types";
 import NotFoundPage from "../NotFoundPage";
 import Confirm from "../../components/Confirm";
-import ShowOnce from "../../components/admin/ShowOnce";
 import StatusTag from "../../components/admin/StatusTag";
 import { field, form as formStyle, foot, list, more, muted, pageTitle, row, rowMain, rowTitle, toolbar } from "../../components/admin/adminStyles";
 import { useGuard, useOnSessionChange } from "../../components/admin/hooks";
@@ -39,22 +38,22 @@ function AdminsView() {
   const guard = useGuard();
   const request = useFlight();
   const { message } = App.useApp();
+  // mail_configured is sent to an installation admin's own session. A new admin can only be invited by email: the server
+  // refuses a link to an admin's session for anyone but a pending owner (decision 41).
+  const mailConfigured = useStore(session)?.mailConfigured === true;
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [how, setHow] = useState<"email" | "link">("email");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Person | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
-  const [secret, setSecret] = useState<{ url: string; who: string } | null>(null);
   const adminsKey = queryKey("admins");
 
-  // The form and the secret belong to the person who opened them: a change of person clears both.
+  // The form belongs to the person who opened it: a change of person closes it.
   useOnSessionChange(() => {
-    setSecret(null);
     setCreating(false);
   });
 
@@ -81,22 +80,18 @@ function AdminsView() {
   const add = (e: FormEvent) => {
     e.preventDefault();
     const address = email.trim();
-    if (!EMAIL.test(address)) return;
+    if (!EMAIL.test(address) || !mailConfigured) return;
     void guard(async () => {
       const changed = sessionChanged();
       setBusy(true);
       setFormError(null);
       try {
-        const reply: PersonReply = await createAdmin({ email: address, display_name: name.trim(), verification: how }, request.start());
+        const reply: PersonReply = await createAdmin({ email: address, display_name: name.trim(), verification: "email" }, request.start());
         if (changed()) return;
         setCreating(false);
         setEmail("");
         setName("");
-        if (reply.verification?.url) {
-          setSecret({ url: reply.verification.url, who: personLabel(reply) });
-        } else {
-          setNotice(reply.verification?.sent === false ? t("people.mailNotSent") : t("admins.added"));
-        }
+        setNotice(reply.verification?.sent === false ? t("people.mailNotSent") : t("admins.added"));
         void refresh();
       } catch (err) {
         if (changed()) return;
@@ -220,37 +215,22 @@ function AdminsView() {
               <Input id="admin-name" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <fieldset style={{ display: "grid", gap: 8, margin: 0, padding: 0, border: 0 }}>
-              <legend>{t("tenant.new.how")}</legend>
-              <Radio.Group
-                name="admin-how"
-                value={how}
-                onChange={(e) => setHow(e.target.value as "email" | "link")}
-                options={[
-                  { value: "email", label: t("tenant.new.howEmail") },
-                  { value: "link", label: t("tenant.new.howLink") },
-                ]}
-              />
+              <legend>{t("admins.new.how")}</legend>
+              {mailConfigured ? (
+                <p style={{ margin: 0 }}>{t("tenant.new.howEmail")}</p>
+              ) : (
+                <Alert type="info" showIcon role="status" message={t("admins.new.noMail")} />
+              )}
             </fieldset>
             {formError !== null && <Alert type="error" showIcon role="alert" message={formError} />}
             <div style={foot}>
               <Button onClick={cancelForm}>{t("common.cancel")}</Button>
-              <Button type="primary" htmlType="submit" loading={busy} disabled={busy || !emailOk}>
+              <Button type="primary" htmlType="submit" loading={busy} disabled={busy || !emailOk || !mailConfigured}>
                 {t("admins.new.send")}
               </Button>
             </div>
           </form>
         </Modal>
-      )}
-
-      {secret !== null && (
-        <ShowOnce
-          id="admin-link"
-          title={t("admins.linkTitle", { name: secret.who })}
-          label={t("tenant.new.linkLabel")}
-          value={secret.url}
-          warning={t("tenant.new.linkWarning")}
-          onClosed={() => setSecret(null)}
-        />
       )}
 
       {removing !== null && (

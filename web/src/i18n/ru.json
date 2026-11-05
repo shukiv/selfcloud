@@ -1001,6 +1001,8 @@
   "admins.new.email": "Эл. почта",
   "admins.new.name": "Имя",
   "admins.new.send": "Отправить приглашение",
+  "admins.new.how": "Как администратор войдёт",
+  "admins.new.noMail": "Почта на этом сервере не настроена. Тогда администратора можно добавить только командой сервера: selfcloud admin create-admin",
   "admins.added": "Администратор добавлен.",
   "admins.remove": "Удалить",
   "admins.removed": "{name} больше не администратор.",

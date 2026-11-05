@@ -90,7 +90,8 @@ export function listAdmins(cursor?: string): Promise<Page<Person>> {
   return api<Page<Person>>('GET', `/api/v1/admins${query({ cursor, limit: PAGE_SIZE })}`);
 }
 
-export function createAdmin(body: { email: string; display_name?: string; verification: 'email' | 'link' }, signal?: AbortSignal): Promise<PersonReply> {
+// createAdmin invites a new admin by email. The server refuses a link to an admin's session (decision 41).
+export function createAdmin(body: { email: string; display_name?: string; verification: 'email' }, signal?: AbortSignal): Promise<PersonReply> {
   return api<PersonReply>('POST', '/api/v1/admins', { body, signal });
 }
 

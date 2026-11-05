@@ -1001,6 +1001,8 @@
   "admins.new.email": "البريد الإلكتروني",
   "admins.new.name": "الاسم",
   "admins.new.send": "إرسال الدعوة",
+  "admins.new.how": "كيف يدخل المدير",
+  "admins.new.noMail": "البريد غير مُعدّ على هذا الخادم. عندها لا يمكن إضافة مدير إلا بأمر الخادم: selfcloud admin create-admin",
   "admins.added": "تمت إضافة المدير.",
   "admins.remove": "إزالة",
   "admins.removed": "لم يعد {name} مديرًا.",

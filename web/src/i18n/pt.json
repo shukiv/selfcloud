@@ -1001,6 +1001,8 @@
   "admins.new.email": "Correio eletrónico",
   "admins.new.name": "Nome",
   "admins.new.send": "Enviar convite",
+  "admins.new.how": "Como entra o administrador",
+  "admins.new.noMail": "O correio não está configurado neste servidor. Um administrador só pode ser adicionado com o comando do servidor: selfcloud admin create-admin",
   "admins.added": "O administrador foi adicionado.",
   "admins.remove": "Remover",
   "admins.removed": "{name} deixou de ser administrador.",

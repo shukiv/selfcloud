@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { session } from "../../lib/session";
+import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import { LINK, person, signedAs } from "../../test/adminFixtures";
 import AdminsPage from "./AdminsPage";
@@ -39,8 +39,54 @@ function hangingAdmins(signals: AbortSignal[]) {
   };
 }
 
-beforeEach(() => session.set(signedAs("admin")));
+// The admin's session as the server sends it: mail_configured says whether mail can carry an invitation to a new admin.
+const adminSession = (mailConfigured: boolean) => ({ ...signedAs("admin"), mailConfigured }) as Session;
+
+beforeEach(() => session.set(adminSession(true)));
 afterEach(() => session.set(null));
+
+// openNew opens the new admin dialog once the list has loaded.
+async function openNew() {
+  await screen.findByRole("list", { name: "Admins" });
+  fireEvent.click(screen.getByRole("button", { name: "New admin" }));
+}
+
+describe("the new admin dialog offers only what the server accepts for an admin (decision 41)", () => {
+  // A link to a new admin is refused to an admin's session (linkAllowed takes only a pending owner), so the dialog offers
+  // the email invitation only. The question says who gets in: the admin, not the owner.
+  it("offers no link, and says how the admin gets in", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [person()] } }));
+    renderAdmins();
+    await openNew();
+    expect(screen.getByText("How the admin gets in")).toBeTruthy();
+    expect(screen.queryByText("How the owner gets in")).toBeNull();
+    expect(screen.queryByRole("radio", { name: /link/i })).toBeNull();
+    expect(screen.queryByText("Show me a link to pass on")).toBeNull();
+  });
+
+  it("sends the invitation by email", async () => {
+    const { calls } = stubFetch((c: Call) => (c.method === "POST" ? { status: 201, body: { ...person({ id: "usr_2" }), verification: { method: "email", sent: true } } } : { status: 200, body: { items: [person()] } }));
+    renderAdmins();
+    await openNew();
+    fireEvent.change(document.getElementById("admin-email") as HTMLInputElement, { target: { value: "bo@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ email: "bo@example.com", display_name: "", verification: "email" });
+  });
+
+  // Without mail the server can send no email, and an admin's session may not take a link: the admin can only be made
+  // with the server command. The dialog says so, and sends nothing.
+  it("with mail not configured, says an admin can only be added with the server command, and sends nothing", async () => {
+    session.set(adminSession(false));
+    const { calls } = stubFetch(() => ({ status: 200, body: { items: [person()] } }));
+    renderAdmins();
+    await openNew();
+    fireEvent.change(document.getElementById("admin-email") as HTMLInputElement, { target: { value: "bo@example.com" } });
+    expect(screen.getByRole("dialog").textContent).toContain("selfcloud admin create-admin");
+    expect((screen.getByRole("button", { name: "Send invitation" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(calls.filter((c) => c.method === "POST")).toEqual([]);
+  });
+});
 
 describe("who sees the admins page", () => {
   it.each(["owner", "member"] as const)("a %s sees the not-found view and no request is sent", async (role) => {
@@ -94,37 +140,19 @@ describe("the admins list", () => {
     vi.unstubAllGlobals();
   });
 
-  it("an invitation link for a new admin is shown once and is gone when it closes", async () => {
+  // The invitation is by email, so the answer carries no link: the page shows the notice and keeps no secret.
+  it("an invitation by email closes the form and shows no link", async () => {
     stubFetch((c: Call) => {
-      if (c.method === "POST") return { status: 201, body: { ...person({ id: "usr_2", email: "bo@example.com", display_name: "Bo" }), verification: { method: "link", url: LINK } } };
+      if (c.method === "POST") return { status: 201, body: { ...person({ id: "usr_2", email: "bo@example.com", display_name: "Bo" }), verification: { method: "email", sent: true } } };
       return { status: 200, body: { items: [person()] } };
     });
-    const qc = renderAdmins();
-    await screen.findByRole("list", { name: "Admins" });
-    fireEvent.click(screen.getByRole("button", { name: "New admin" }));
-    fireEvent.change(document.getElementById("admin-email") as HTMLInputElement, { target: { value: "bo@example.com" } });
-    fireEvent.click(screen.getByRole("radio", { name: /link/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
-    await screen.findByDisplayValue(LINK);
-    expect(JSON.stringify(qc.getQueryCache().getAll().map((q) => q.state.data))).not.toContain("SECRET-ONE-TIME-VALUE");
-    fireEvent.click(screen.getByRole("button", { name: "I have copied it" }));
-    await waitFor(() => expect(screen.queryByDisplayValue(LINK)).toBeNull());
-  });
-
-  it("a session change clears the link (guard: useOnSessionChange)", async () => {
-    stubFetch((c: Call) => {
-      if (c.method === "POST") return { status: 201, body: { ...person({ id: "usr_2", email: "bo@example.com" }), verification: { method: "link", url: LINK } } };
-      return { status: 200, body: { items: [] } };
-    });
     renderAdmins();
-    await screen.findByText(/No admins|Ana Admin|admin/i, { exact: false }).catch(() => undefined);
-    fireEvent.click(screen.getByRole("button", { name: "New admin" }));
+    await openNew();
     fireEvent.change(document.getElementById("admin-email") as HTMLInputElement, { target: { value: "bo@example.com" } });
-    fireEvent.click(screen.getByRole("radio", { name: /link/i }));
     fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
-    await screen.findByDisplayValue(LINK);
-    act(() => session.set(signedAs("admin", "admin_2")));
-    await waitFor(() => expect(screen.queryByDisplayValue(LINK)).toBeNull());
+    await waitFor(() => expect(document.getElementById("admin-email")).toBeNull());
+    expect(document.body.textContent).not.toContain("#token=");
+    expect(screen.queryByRole("button", { name: "I have copied it" })).toBeNull();
   });
 
   it("removal asks first; a double click sends one request; a refused one keeps the dialog (guard: useGuard, removeError)", async () => {
