@@ -145,7 +145,9 @@ func saveAsPrincipal(p *auth.Principal) *auth.Principal {
 // its node scope is cleared, since the copy is another node. The copy's token takes its permission from this role (decision
 // 87), so a lifted cap never reaches it.
 func copyPrincipal(p *auth.Principal) *auth.Principal {
-	if p.Token == nil {
+	// A token minted by a delegated key is never lifted, whatever the write refuses earlier: returned as it is, its node
+	// scope still refuses the copy (decision 87, the defence in depth of the round 3 review).
+	if p.Token == nil || p.Token.MintedBy != "" {
 		return p
 	}
 	scope := *p.Token
@@ -373,7 +375,13 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 		if !offered {
 			return errSaveAsNotAuthorized
 		}
-		dec, err := saveAsDecide(ctx, tx, saveAsPrincipal(p), src.node, requested, suggested, overwrite, src.writable)
+		// The name comes from the source as this write reads it, not from the name it had before the body arrived, so a
+		// source renamed during the upload gives a copy named from its new name (the round 3 nit).
+		inWrite, inWriteSuggested, err := saveAsNames(src.node.Name, rel, sug)
+		if err != nil {
+			return err
+		}
+		dec, err := saveAsDecide(ctx, tx, saveAsPrincipal(p), src.node, inWrite, inWriteSuggested, overwrite, src.writable)
 		if err != nil {
 			return err
 		}
