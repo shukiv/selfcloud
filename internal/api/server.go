@@ -342,10 +342,13 @@ func New(opts Options) (*Server, error) {
 			// Failed sign-ins from one device cookie, an hour wide: the budget a trusted device has of its own
 			// (sec1, decision 84). Keyed on the cookie's nonce.
 			"login.device": newLimiterRate(10, time.Hour),
-			"forgot.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),
-			"forgot.email": newLimiter(cfg.RateLimit.PerEmailPerMinute),
-			"verify.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),
-			"reset.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
+			// One-request writes (a new small file, a replaced small file, a WOPI save), per caller: a body can be large,
+			// so each caller has a minute's worth of them (sec1, decision 84).
+			oneRequestWriteRate: newLimiter(60),
+			"forgot.ip":         newLimiter(cfg.RateLimit.PerIPPerMinute),
+			"forgot.email":      newLimiter(cfg.RateLimit.PerEmailPerMinute),
+			"verify.ip":         newLimiter(cfg.RateLimit.PerIPPerMinute),
+			"reset.ip":          newLimiter(cfg.RateLimit.PerIPPerMinute),
 			// Changing a password checks the current one, so a stolen session could guess it.
 			// These limits are fixed: they guard a password, not a configurable flow.
 			"changepw.user": newLimiter(5),

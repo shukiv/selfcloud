@@ -389,12 +389,28 @@ func nameConflict(existing *store.Node) error {
 		With("id", existing.ID)
 }
 
+// oneRequestWriteRate is the limiter of one-request writes, per caller (server.go sets its size).
+const oneRequestWriteRate = "write.one_request"
+
 // writeBlob streams the request body into a new blob. It refuses, before writing, a body that
 // declares itself larger than limit, and it stops writing at limit. The body must arrive within a
 // deadline that grows with the cap, so a stalled client cannot hold a write open.
-func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID string, limit int64) (blob.Committed, error) {
+//
+// Before any byte is read, the write is rate limited per caller and checked against the disk and the quota, as an
+// upload is (sec1, decision 84). replaces is the size of the file the body replaces, 0 for a new file: only the growth
+// counts against the quota.
+func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID string, limit, replaces int64) (blob.Committed, error) {
 	if r.ContentLength > limit {
 		return blob.Committed{}, tooLarge(limit)
+	}
+	p := principalOf(r)
+	if p != nil {
+		if err := s.rateLimit(oneRequestWriteRate, string(p.Kind)+":"+p.ID); err != nil {
+			return blob.Committed{}, err
+		}
+	}
+	if err := s.checkOneRequestRoom(r.Context(), p, accountID, r.ContentLength, replaces); err != nil {
+		return blob.Committed{}, err
 	}
 	s.setBodyDeadline(w, limit)
 	wr, err := s.blobs.Create(r.Context(), accountID, limit)
@@ -409,6 +425,26 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 		return blob.Committed{}, apierr.Wrap(apierr.InvalidRequest, "the request body could not be read", err)
 	}
 	return wr.Commit()
+}
+
+// checkOneRequestRoom refuses a one-request write the disk cannot hold, and one whose declared growth is more than the
+// account's quota, before its body is read. The disk rule is the upload rule with the body as the bytes to hold: the
+// free space less storage.min_free, which is what tus checks (diskUsable and checkDisk). An unknown length counts as
+// one byte. The quota is checked on Content-Length, and the write's own check still runs in its transaction.
+func (s *Server) checkOneRequestRoom(ctx context.Context, p *auth.Principal, accountID string, length, replaces int64) error {
+	usable, ok, err := s.diskUsable()
+	if err != nil {
+		return err
+	}
+	if ok {
+		if err := s.checkDisk(usable, 0, max(length, 1), false); err != nil {
+			return err
+		}
+	}
+	if p != nil && length > replaces {
+		return s.precheckSaveQuota(ctx, p, accountID, length-replaces)
+	}
+	return nil
 }
 
 // setBodyDeadline sets the time a request body may take to arrive: upload.body_timeout plus one
@@ -821,7 +857,7 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 	if err := s.checkFreeName(ctx, p, f, dirs, leaf, parents, ifNoneMatch != ""); err != nil {
 		return err
 	}
-	c, err := s.writeBlob(w, r, f.AccountID, int64(s.cfg.Upload.MaxSmallFileSize))
+	c, err := s.writeBlob(w, r, f.AccountID, int64(s.cfg.Upload.MaxSmallFileSize), 0)
 	if err != nil {
 		return err
 	}
@@ -1145,7 +1181,7 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 	if n.ETag != ifMatch {
 		return apierr.New(apierr.PreconditionFailed, "the file changed since it was read; read it again")
 	}
-	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Upload.MaxSmallFileSize))
+	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Upload.MaxSmallFileSize), n.Size)
 	if err != nil {
 		return err
 	}

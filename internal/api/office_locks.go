@@ -397,7 +397,7 @@ func (s *Server) handleWOPIPutFile(w http.ResponseWriter, r *http.Request) error
 			}
 		}
 	}
-	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Office.MaxFileBytes))
+	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Office.MaxFileBytes), n.Size)
 	if err != nil {
 		s.wopiFail(w, r, err)
 		return nil
