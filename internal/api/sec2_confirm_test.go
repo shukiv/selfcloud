@@ -700,7 +700,7 @@ func TestAuditSourceSharesNothingWithThePrincipal(t *testing.T) {
 	p := &auth.Principal{Kind: auth.KindUser, ID: "u1",
 		Token: &auth.TokenScope{Folders: []string{"f1"}, Audience: "api"},
 		Link:  &auth.LinkScope{Node: "n1", Role: "viewer"}}
-	cp := copyPrincipal(p)
+	cp := clonePrincipal(p)
 	p.ID = "changed"
 	p.Token.Folders[0] = "changed"
 	p.Token.Audience = "changed"

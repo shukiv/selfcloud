@@ -281,15 +281,15 @@ func auditSourceOf(r *http.Request) auditSource {
 	src := auditSource{userAgent: r.UserAgent()}
 	if info := infoFrom(r.Context()); info != nil {
 		src.ip = info.ip
-		src.principal = copyPrincipal(info.principal)
+		src.principal = clonePrincipal(info.principal)
 	}
 	return src
 }
 
-// copyPrincipal returns a copy of p that shares no pointer or slice with it: the principal, its token scope (including
+// clonePrincipal returns a deep value copy of p that shares nothing with it: the principal, its token scope (including
 // the folder list) and its link scope are each copied by value. A later change to the request's principal does not reach
 // the copy.
-func copyPrincipal(p *auth.Principal) *auth.Principal {
+func clonePrincipal(p *auth.Principal) *auth.Principal {
 	if p == nil {
 		return nil
 	}
