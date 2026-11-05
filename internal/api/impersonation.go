@@ -93,6 +93,7 @@ const (
 	waySignInAs      = "sign_in_as"
 	wayTypedPassword = "typed_password"
 	wayResetLink     = "reset_link"
+	wayCreateKey     = "create_key"
 )
 
 // confirmAdminPassword checks the admin's own password for a sign-in-as or a typed password. A wrong one is

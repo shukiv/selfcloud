@@ -165,19 +165,25 @@ func (s *Server) checkCSRF(r *http.Request, sess *store.Session) error {
 // past its maximum age).
 func (s *Server) touchSession(ctx context.Context, sess *store.Session, now time.Time) error {
 	return s.store.Write(ctx, func(tx *store.Tx) error {
-		return tx.TouchSession(ctx, sess.IDHash, now, s.sessionExpiry(sess.CreatedAt, now, sess.Short))
+		return tx.TouchSession(ctx, sess.IDHash, now, s.sessionExpiry(sess.CreatedAt, now, sess.Short, sess.AccountID == ""))
 	})
 }
 
 // sessionExpiry returns when a session that began at created, and was last used at now, ends. A session the browser
 // did not keep (short) ends sessions.short_idle_timeout after its last use; a kept one, sessions.idle_timeout.
-func (s *Server) sessionExpiry(created, now time.Time, short bool) time.Time {
+func (s *Server) sessionExpiry(created, now time.Time, short, admin bool) time.Time {
 	idleFor := s.cfg.Sessions.IdleTimeout.D()
 	if short {
 		idleFor = s.cfg.Sessions.ShortIdle().D()
 	}
+	maxAge := s.cfg.Sessions.MaxAge.D()
+	// An installation admin's session is shorter: admin_idle_timeout and admin_max_age (sec1, decision 84).
+	if admin {
+		idleFor = min(idleFor, s.cfg.Sessions.AdminIdleTimeout.D())
+		maxAge = min(maxAge, s.cfg.Sessions.AdminMaxAge.D())
+	}
 	idle := now.Add(idleFor)
-	if abs := created.Add(s.cfg.Sessions.MaxAge.D()); abs.Before(idle) {
+	if abs := created.Add(maxAge); abs.Before(idle) {
 		return abs
 	}
 	return idle

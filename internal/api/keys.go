@@ -34,8 +34,9 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var in struct {
-		Name      string     `json:"name"`
-		ExpiresAt *time.Time `json:"expires_at"`
+		Name          string     `json:"name"`
+		ExpiresAt     *time.Time `json:"expires_at"`
+		AdminPassword string     `json:"admin_password"` // an admin session must give its password again (sec1, decision 84)
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -43,6 +44,13 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) error {
 	name, err := cleanLabel("name", in.Name, 100)
 	if err != nil {
 		return err
+	}
+	// A key is made for the account by an admin session only with the admin's own password, as sign-in-as asks for it.
+	// An installation admin's key is a key, not a session, and keeps working without one.
+	if p := principalOf(r); p != nil && p.Kind == auth.KindUser {
+		if err := s.confirmAdminPassword(w, r, p, sessionOf(r), wayCreateKey, "", r.PathValue("acc"), in.AdminPassword); err != nil {
+			return err
+		}
 	}
 	now := store.Now()
 	if in.ExpiresAt != nil {

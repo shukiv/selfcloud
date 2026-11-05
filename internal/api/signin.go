@@ -51,7 +51,7 @@ func (s *Server) newSession(r *http.Request, u *store.User, now time.Time, short
 	csrf, _ := auth.NewToken()
 	info := infoFrom(r.Context())
 	sess := &store.Session{IDHash: hash, UserID: u.ID, AccountID: u.AccountID, CSRFToken: csrf,
-		CreatedAt: now, LastSeenAt: now, ExpiresAt: s.sessionExpiry(now, now, short), Short: short,
+		CreatedAt: now, LastSeenAt: now, ExpiresAt: s.sessionExpiry(now, now, short, u.AccountID == ""), Short: short,
 		UserAgent: truncate(r.UserAgent(), 256)}
 	if info != nil && info.ip.IsValid() {
 		sess.IP = info.ip.String()

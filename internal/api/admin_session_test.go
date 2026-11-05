@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
@@ -13,9 +14,26 @@ import (
 // ask for a link to set up a user who has never verified, but never "none". A link for a password
 // reset is refused while admin.tenant_access is off, with its reason; when it is on, the link is
 // allowed (TestResetLinkWhenAllowedClearsTheFlag). Owner and member sessions may only use email.
-func TestAdminSessionLinkRules(t *testing.T) {
+// A password reset as a link from an admin session is refused while admin.tenant_access is off, and says why (sec1,
+// decision 84, the same gate as the owner's link).
+func TestAdminSessionResetLinkNeedsTenantAccess(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	_, adminSess := newAdminUser(t, s, admin, "ann@example.com")
+	acc, key := newAccount(t, s, admin, "Acme")
+	active, _ := verifiedUser(t, s, key, acc.ID, "active@example.com")
+	e := wantError(t, callSession(t, s, adminSess, "POST", "/api/v1/accounts/"+acc.ID+"/users/"+active.ID+"/password-reset",
+		map[string]any{"method": "link"}), 403, apierr.Forbidden)
+	if e.Details["reason"] != reasonTenantAccessOff {
+		t.Errorf("reset link refused with reason %v, want %s", e.Details["reason"], reasonTenantAccessOff)
+	}
+}
+
+func TestAdminSessionLinkRules(t *testing.T) {
+	t.Parallel()
+	// The admin's link for a pending owner needs admin.tenant_access (sec1, decision 84), so the test turns it on.
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.Admin.TenantAccess = true })
 	admin := adminKey(t, s)
 	_, adminSess := newAdminUser(t, s, admin, "ann@example.com")
 	users := func(acc string) string { return "/api/v1/accounts/" + acc + "/users" }
@@ -44,13 +62,8 @@ func TestAdminSessionLinkRules(t *testing.T) {
 	wantError(t, callSession(t, s, adminSess, "POST", users(acc.ID)+"/"+acc.Owner.ID+"/verification",
 		map[string]any{"method": "none"}), 403, apierr.Forbidden)
 
-	// A password reset as a link is refused while admin.tenant_access is off, and says why.
+	// A password reset as a link is refused while admin.tenant_access is off: see TestAdminSessionResetLinkNeedsTenantAccess.
 	active, _ := verifiedUser(t, s, adminKeyAccount(t, s, admin, acc.ID), acc.ID, "active@example.com")
-	e := wantError(t, callSession(t, s, adminSess, "POST", users(acc.ID)+"/"+active.ID+"/password-reset",
-		map[string]any{"method": "link"}), 403, apierr.Forbidden)
-	if e.Details["reason"] != reasonTenantAccessOff {
-		t.Errorf("reset link refused with reason %v, want %s", e.Details["reason"], reasonTenantAccessOff)
-	}
 
 	// Email still works for a reset, and the answer carries no token.
 	reset := callSession(t, s, adminSess, "POST", users(acc.ID)+"/"+active.ID+"/password-reset",

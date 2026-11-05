@@ -92,6 +92,13 @@ func (s *Server) checkVerificationMethod(r *http.Request, method string, t linkT
 		if p != nil && p.Kind == auth.KindUser && p.Role == auth.RoleAdmin && t.reset {
 			return s.tenantAccessGate()
 		}
+		// An admin session's link for a pending owner is an admin's way in, so admin.tenant_access gates it like the
+		// other ways (sec1, decision 84).
+		if p != nil && p.Kind == auth.KindUser && p.Role == auth.RoleAdmin && linkAllowed(p, t) {
+			if err := s.tenantAccessGate(); err != nil {
+				return err
+			}
+		}
 		if !linkAllowed(p, t) {
 			return apierr.New(apierr.Forbidden, "only an API key may use this method; use email")
 		}
