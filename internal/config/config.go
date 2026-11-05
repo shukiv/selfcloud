@@ -40,6 +40,10 @@ type Config struct {
 	Listen string `yaml:"listen"`
 	// MetricsListen, when set, serves /metrics on its own address instead of Listen.
 	MetricsListen string `yaml:"metrics_listen"`
+	// MetricsOnMain serves /metrics on the main listener. It is off by default, since /metrics shows storage totals,
+	// route counts and the webhook queue to anyone who can reach the listener (sec1, decision 84). It has no effect
+	// when metrics_listen is set, which serves /metrics on its own address.
+	MetricsOnMain bool `yaml:"metrics_on_main"`
 	// PublicURL is the address clients reach this server at. Links, upload locations and
 	// emails are built from it.
 	PublicURL string `yaml:"public_url"`

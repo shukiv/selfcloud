@@ -750,7 +750,8 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/uploads/{upl}/commit", handle: s.handleCommitUpload, auth: true, imp: impAllow},
 	}
 	rs = append(rs, route{method: http.MethodGet, path: logoPath, handle: s.handleLogo, imp: impAllow})
-	if s.cfg.MetricsListen == "" {
+	// /metrics is on the main listener only with metrics_on_main, and never when metrics_listen serves it (sec1, decision 84).
+	if s.cfg.MetricsListen == "" && s.cfg.MetricsOnMain {
 		rs = append(rs, route{method: http.MethodGet, path: "/metrics", handle: s.handleMetrics, imp: impAllow})
 	}
 	return rs

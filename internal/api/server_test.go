@@ -217,7 +217,7 @@ func TestSpecServed(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	t.Parallel()
-	s := newTestServer(t)
+	s := newTestServer(t, func(c *config.Config) { c.MetricsOnMain = true })
 	do(t, s.Handler(), "GET", "/api/v1/info")
 	rec := do(t, s.Handler(), "GET", "/metrics")
 	want := `selfcloud_http_requests_total{method="GET",route="GET /api/v1/info",status="200"} 1`
