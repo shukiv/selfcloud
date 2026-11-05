@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it, vi } from "vitest";
-import { keepInView } from "./menuScroll";
+import { followTarget, keepInView } from "./menuScroll";
 
 // box is a scrolling menu whose visible part is 100 to 300 on the page; item is drawn at itemTop.
 function fakes(itemTop: number, itemHeight = 40, scrollTop = 0) {
@@ -34,5 +34,38 @@ describe("keepInView", () => {
     const { box, item } = fakes(150, 40, 10);
     keepInView(box, item);
     expect(box.scrollTop).toBe(10);
+  });
+});
+
+// The sidebar's region as the shell draws it: the folder tree, then the menu. The tree marks the current place on its treeitem,
+// which also holds the open folders under it.
+function region(current: "team" | "menu" | "none") {
+  const box = document.createElement("div");
+  box.innerHTML = `
+    <ul role="tree">
+      <li role="treeitem" ${current === "team" ? 'aria-current="location"' : ""}>
+        <div class="tree-row">Team A</div>
+        <ul role="group"><li role="treeitem"><div class="tree-row">D1 Projects</div></li></ul>
+      </li>
+    </ul>
+    <ul class="shell-menu"><li class="ant-menu-item ${current === "menu" ? "ant-menu-item-selected" : ""}">Starred</li></ul>`;
+  return box;
+}
+
+describe("followTarget", () => {
+  // Gate stfu4r1: keeping the whole treeitem in view scrolled to the bottom of Team A's open folders, so Team A's own row and the
+  // folders under it went off the top of the sidebar (decision 81).
+  it("is the current place's own row, not the open folders under it", () => {
+    const box = region("team");
+    expect(followTarget(box)).toBe(box.querySelector('[aria-current="location"] > .tree-row'));
+  });
+
+  it("is the menu's selected item itself", () => {
+    const box = region("menu");
+    expect(followTarget(box)).toBe(box.querySelector(".ant-menu-item-selected"));
+  });
+
+  it("is nothing when no place is current", () => {
+    expect(followTarget(region("none"))).toBeNull();
   });
 });
