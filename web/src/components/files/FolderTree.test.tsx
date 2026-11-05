@@ -4,7 +4,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createQueryClient } from "../../lib/query";
+import { createQueryClient, queryKey } from "../../lib/query";
+import { resetUserStores } from "../../lib/store";
 import { ApiError } from "../../lib/apiError";
 import { session, type Session } from "../../lib/session";
 import type { FolderAccess, Node } from "../../lib/files/types";
@@ -45,6 +46,10 @@ const dir = (id: string, name: string, role: Node["role"] = "editor"): Node => (
 });
 
 let latest: TreeState = DEFAULT_TREE;
+// changes counts the states the tree sends its parent: a loop shows as a count that does not stop.
+let changes = 0;
+// client is the query client of the mounted harness, for tests that refetch a folder.
+let client: ReturnType<typeof createQueryClient> | null = null;
 const onOpen = vi.fn();
 
 // Harness keeps the state the way the page does: it is the parent's, and changes come back through onChange.
@@ -65,10 +70,11 @@ function Harness({
 }) {
   const [state, setState] = useState(start);
   // One client for the whole mount, as the app has: a rerender with a new place must not forget what was read.
-  const [client] = useState(createQueryClient);
+  const [qc] = useState(createQueryClient);
+  client = qc;
   latest = state;
   return (
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={qc}>
       <FolderTree
         spaces={[space("fld_a", "Team A"), space("fld_me", "Mine", { kind: "personal" })]}
         folder={folder}
@@ -76,6 +82,7 @@ function Harness({
         chain={chain}
         state={state}
         onChange={(n) => {
+          changes += 1;
           latest = n;
           setState(n);
         }}
@@ -91,6 +98,9 @@ function Harness({
 beforeEach(() => {
   vi.clearAllMocks();
   latest = DEFAULT_TREE;
+  changes = 0;
+  // The reveal's hold and the failures already announced are kept in the user's stores: each test starts with none.
+  resetUserStores();
   session.set({ user: { id: "u1", email: "a@example.com", display_name: "A", role: "member", locale: "en", status: "active" }, account: null, csrf: "t", publicLinks: false } as Session);
   api.childrenPage.mockImplementation(async (folder: string, d: string | null) => {
     if (folder === "fld_a" && d === null) return { items: [dir("nod_one", "Docs"), dir("nod_two", "Pics", "viewer")], next_cursor: undefined };
@@ -148,21 +158,28 @@ describe("the folder tree", () => {
 
   // Decision 69, review fix 8: the place changes after the tree is mounted: no folder on its way opens, and a row is marked only
   // when it is on screen.
-  it("a place changed after mount opens none of the folders on its way, and marks nothing when none of the way is on screen", async () => {
-    const { rerender } = render(<Harness folder="fld_a" />);
+  // Decision 88: a place changed after mount opens the way to it. A place whose folder is not in the tree (no space or top folder
+  // is shown for it) opens nothing and marks nothing, so that rule of decision 69 is kept.
+  it("a place changed after mount opens the way to it (decision 88); a place outside the tree opens nothing and marks nothing", async () => {
+    const { rerender, unmount } = render(<Harness folder="fld_a" />);
     expect(screen.getByRole("treeitem", { name: "Team A" }).getAttribute("aria-current")).toBe("location");
-    rerender(<Harness folder="fld_deep" chain={["nod_one", "nod_deep"]} />);
-    // The space row is not on the way (only the folders below its root are), and nothing on the way is shown: nothing is marked.
-    expect(screen.getByRole("treeitem", { name: "Team A" }).getAttribute("aria-current")).toBeNull();
+    rerender(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} />);
+    expect(await screen.findByRole("treeitem", { name: "Deep" })).toBeTruthy();
+    expect(latest.expanded).toEqual(["fld_a", "nod_one"]);
+    unmount();
+    // A fresh mount for a place outside the tree: nothing is read, opened or marked.
+    render(<Harness folder="fld_deep" chain={["nod_one", "nod_deep"]} />);
+    await new Promise((r) => setTimeout(r, 20));
     expect(document.querySelector('[aria-current="location"]')).toBeNull();
     expect(screen.queryByRole("treeitem", { name: "Deep" })).toBeNull();
     expect(screen.queryByText("Docs")).toBeNull();
     expect(latest.expanded).toEqual([]);
-    expect(api.childrenPage).not.toHaveBeenCalled();
+    expect(api.childrenPage).toHaveBeenCalledTimes(2);
   });
 
-  it("marks the deepest folder on the way that is on screen, once the branches above it are open", async () => {
-    render(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} start={{ expanded: ["fld_a", "nod_one"] }} />);
+  // The start is folded: the reveal opens the branches above the place, and the place's own row is then the mark.
+  it("marks the place's own row once the branches above it are read, and no row above it", async () => {
+    render(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} />);
     const deep = await screen.findByRole("treeitem", { name: "Deep" });
     expect(deep.getAttribute("aria-current")).toBe("location");
     expect(screen.getByRole("treeitem", { name: "Docs" }).getAttribute("aria-current")).toBeNull();
@@ -302,13 +319,15 @@ describe("the folder tree opens the way to the place (decision 88)", () => {
     expect(latest.expanded).toEqual(["fld_a", "nod_one", "nod_deep"]);
   });
 
-  it("opens nothing when the place is a space's own root, as landing on My files", async () => {
+  it("opens nothing when the place is a space's own root, as landing on My files, and the next deep place opens its way", async () => {
     threeDeep();
-    render(<Harness folder="fld_me" chain={[]} />);
+    const { rerender } = render(<Harness folder="fld_me" chain={[]} />);
     expect(screen.getByRole("treeitem", { name: "My files" }).getAttribute("aria-current")).toBe("location");
     await new Promise((r) => setTimeout(r, 0));
     expect(api.childrenPage).not.toHaveBeenCalled();
     expect(latest.expanded).toEqual([]);
+    rerender(<Harness folder="fld_a" chain={deep} />);
+    expect(await screen.findByRole("treeitem", { name: "Third" })).toBeTruthy();
   });
 
   it("stops the way when the place changes while it is read: the old way is not opened, and the new place is marked", async () => {
@@ -360,6 +379,73 @@ describe("the folder tree opens the way to the place (decision 88)", () => {
     expect(screen.getByRole("treeitem", { name: "Docs" }).getAttribute("aria-current")).toBeNull();
     expect(screen.queryByRole("treeitem", { name: "Third" })).toBeNull();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
+    // The root, then the folder that failed, which the client retries once: no other read.
+    expect(reads()).toEqual([null, "nod_one", "nod_one"]);
+  });
+
+  // A way longer than the saved cap (60 folders) is opened and kept: every folder on it is open once the reveal settles, and the
+  // reveal makes one change per folder, not a loop.
+  it("opens a way of 70 folders, keeps all of them open, and the reveal makes one change per folder", async () => {
+    const depth = 70;
+    api.childrenPage.mockImplementation(async (folder: string, d: string | null) => {
+      if (folder === "fld_a" && d === null) return { items: [dir("nod_1", "F1")], next_cursor: undefined };
+      const i = Number(String(d).slice(4));
+      return { items: i < depth ? [dir(`nod_${i + 1}`, `F${i + 1}`)] : [], next_cursor: undefined };
+    });
+    const chain = Array.from({ length: depth }, (_, i) => `nod_${i + 1}`);
+    render(<Harness folder="fld_a" chain={chain} />);
+    expect(await screen.findByRole("treeitem", { name: `F${depth}` }, { timeout: 8000 })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: `F${depth}` }).getAttribute("aria-current")).toBe("location");
+    const way = ["fld_a", ...chain.slice(0, -1)];
+    expect(latest.expanded).toEqual(expect.arrayContaining(way));
+    expect(latest.expanded).toHaveLength(way.length);
+    expect(changes).toBeLessThanOrEqual(way.length + 2);
+  });
+
+  // A hand close holds until the place changes, across a remount of the tree (the rail, the drawer, a breakpoint).
+  it("a folder closed by hand on the way stays closed when the tree is mounted again for the same place", async () => {
+    const first = render(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} />);
+    expect(await screen.findByText("Deep")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Docs" }));
+    expect(screen.queryByText("Deep")).toBeNull();
+    first.unmount();
+    render(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} start={latest} />);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("Deep")).toBeNull();
+    expect(latest.expanded).not.toContain("nod_one");
+    expect(screen.getByRole("treeitem", { name: "Docs" }).getAttribute("aria-current")).toBe("location");
+  });
+
+  // A failed read on the way is announced once. A later change of place shows the same failure quietly, with its Try again.
+  it("announces a failed read on the way once, and shows it without an alert on a later change of place", async () => {
+    api.childrenPage.mockImplementation(async (folder: string, d: string | null) => {
+      if (folder === "fld_a" && d === null) return { items: [dir("nod_one", "Docs"), dir("nod_two", "Pics", "viewer")], next_cursor: undefined };
+      if (d === "nod_one") throw new ApiError(500, "internal", {}, 0);
+      return { items: [], next_cursor: undefined };
+    });
+    const { rerender } = render(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} />);
+    await screen.findByRole("alert", undefined, { timeout: 8000 });
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    rerender(<Harness folder="fld_a" chain={["nod_two"]} />);
+    await waitFor(() => expect(screen.getByRole("treeitem", { name: "Pics" }).getAttribute("aria-current")).toBe("location"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText(/could not be loaded/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    rerender(<Harness folder="fld_a" chain={["nod_one", "nod_deep"]} />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  // A refetch that fails keeps the folder's children on screen, so the folder is still a row on the way and can take the mark.
+  it("a folder whose refetch fails keeps its children, and its row stays the mark", async () => {
+    render(<Harness folder="fld_a" chain={["nod_one", "nod_gone"]} />);
+    expect(await screen.findByRole("treeitem", { name: "Docs" })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: "Docs" }).getAttribute("aria-current")).toBe("location");
+    api.childrenPage.mockRejectedValue(new ApiError(500, "internal", {}, 0));
+    await client?.invalidateQueries({ queryKey: queryKey("tree", "fld_a", "nod_one") });
+    await screen.findByRole("alert", undefined, { timeout: 8000 });
+    expect(screen.getByText("Deep")).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: "Docs" }).getAttribute("aria-current")).toBe("location");
   });
 });
 

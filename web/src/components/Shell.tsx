@@ -222,16 +222,26 @@ export default function Shell({ children }: { children: ReactNode }) {
   }, [location.pathname]);
   // The sidebar's middle (the folder tree and the menu) scrolls inside the sider. When the address moves to a place below the
   // fold, its row is brought into view inside that scroll area alone, so the page does not move.
+  // The last time the person scrolled the sidebar's area (a wheel, a touch or a key in it), in milliseconds.
+  const scrolledAt = useRef(0);
   useEffect(() => {
     const follow = () => {
+      // A person who scrolled the area within the last second keeps their position: a mark that moves then is not followed (decision 88).
+      if (Date.now() - scrolledAt.current < 1000) return;
       const region = document.querySelector<HTMLElement>(".shell-scroll");
       const item = region ? followTarget(region) : null;
       if (region && item) keepInView(region, item);
     };
     follow();
+    // The area is the sider's, or on a phone the drawer's, which exists only once the drawer has been opened: the effect runs again when it opens.
     const region = document.querySelector<HTMLElement>(".shell-scroll");
     if (!region) return;
     const observers: { disconnect: () => void }[] = [];
+    const scrolled = () => {
+      scrolledAt.current = Date.now();
+    };
+    const pointer = ["wheel", "touchstart", "keydown"] as const;
+    for (const type of pointer) region.addEventListener(type, scrolled, { passive: true });
     // The region's height is settled by the sider's flex column after the first paint, so the scroll follows each resize of the box.
     if (typeof ResizeObserver !== "undefined") {
       const resize = new ResizeObserver(follow);
@@ -245,8 +255,11 @@ export default function Shell({ children }: { children: ReactNode }) {
       mark.observe(region, { subtree: true, attributes: true, attributeFilter: ["aria-current"] });
       observers.push(mark);
     }
-    return () => observers.forEach((o) => o.disconnect());
-  }, [location.pathname, collapsed, isMobile]);
+    return () => {
+      for (const type of pointer) region.removeEventListener(type, scrolled);
+      observers.forEach((o) => o.disconnect());
+    };
+  }, [location.pathname, collapsed, isMobile, navOpen]);
   useEffect(() => {
     if (admin) return;
     const stale = sessionChanged();

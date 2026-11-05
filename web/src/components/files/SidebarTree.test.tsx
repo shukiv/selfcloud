@@ -6,8 +6,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../../lib/session";
+import { resetUserStores } from "../../lib/store";
 import { setLang } from "../../lib/i18n";
 import { ThemeProvider } from "../../theme/theme";
 import { Direction } from "../../App";
@@ -490,5 +491,131 @@ describe("the folder tree in the sidebar", () => {
     } finally {
       brand.set({ name: "Selfcloud", accent: DEFAULT_ACCENT, logo_url: null });
     }
+  });
+});
+
+// The sidebar's scroll follow (decision 88): when the mark moves to a row below the fold of the scroll area, the area scrolls to it, and
+// the page does not. jsdom has no layout, so the rects are given: the scroll area is 100 px tall, and the row that carries aria-current
+// (its tree row) sits at 150 to 190 px. A scroll position is kept as a plain value, because jsdom does not scroll.
+function fakeLayout() {
+  const original = Element.prototype.getBoundingClientRect;
+  const box = (top: number, bottom: number) => ({ top, bottom, width: 200, height: bottom - top, x: 0, y: top, toJSON() {} }) as DOMRect;
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    if (this.classList.contains("shell-scroll")) return box(0, 100);
+    if (this.classList.contains("tree-row") && this.parentElement?.getAttribute("aria-current") === "location") return box(150, 190);
+    return box(0, 0);
+  };
+  return () => {
+    Element.prototype.getBoundingClientRect = original;
+  };
+}
+function ownScroll(el: HTMLElement) {
+  let value = 0;
+  Object.defineProperty(el, "scrollTop", { configurable: true, get: () => value, set: (v: number) => { value = v; } });
+  return () => value;
+}
+// narrowWindow is a phone-width window: no breakpoint matches, so the sidebar is the drawer.
+function narrowWindow() {
+  const plain = window.matchMedia;
+  window.matchMedia = (query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }) as MediaQueryList;
+  return () => {
+    window.matchMedia = plain;
+  };
+}
+
+describe("the sidebar's scroll follow (decision 88)", () => {
+  let restore = () => {};
+  let unlayout = () => {};
+  beforeEach(async () => {
+    window.localStorage.clear();
+    await setLang("en");
+    resetUserStores();
+    folders.set([]);
+    hiddenFolders.set([]);
+    treePlace.set(null);
+    mocks.childrenPage.mockReset().mockResolvedValue({ items: [], next_cursor: undefined });
+    mocks.loadHiddenFolders.mockReset().mockResolvedValue([]);
+    restore = wide(true);
+  });
+  afterEach(() => {
+    unlayout();
+    unlayout = () => {};
+    restore();
+    cleanup();
+  });
+
+  // The mark moves to the place's row once its folder is read: the area scrolls to it by the amount the row is below the fold, and the page
+  // does not move. This test fails when the observer on aria-current is removed from the shell.
+  it("scrolls the sidebar's area to the mark when it moves below the fold, and does not scroll the page", async () => {
+    signIn("member");
+    folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    mocks.childrenPage.mockImplementation(async (...args: unknown[]) => ({ items: args[1] === null ? [dir("nod_docs", "Docs", "fld_p")] : [], next_cursor: undefined }));
+    unlayout = fakeLayout();
+    treePlace.set({ folder: "fld_p", chain: ["nod_docs"] });
+    renderShell("/files/fld_p/nod_docs");
+    const region = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".shell-scroll");
+      if (!el) throw new Error("no sidebar area yet");
+      return el;
+    });
+    const scrolled = ownScroll(region);
+    await waitFor(() => expect(region.querySelector('[data-tree-key="nod_docs"][aria-current="location"]')).not.toBeNull());
+    expect(scrolled()).toBe(90);
+    expect(document.scrollingElement?.scrollTop ?? 0).toBe(0);
+  });
+
+  // A person who has scrolled the sidebar within the last second keeps that position: a mark that moves then is not followed. A mark
+  // that moves a second later is.
+  it("does not pull the sidebar's area while the person has scrolled it within the last second", async () => {
+    signIn("member");
+    folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    mocks.childrenPage.mockResolvedValue({ items: [dir("nod_docs", "Docs", "fld_p"), dir("nod_pics", "Pics", "fld_p")], next_cursor: undefined });
+    window.localStorage.setItem("selfcloud.tree.v2.u1", JSON.stringify({ expanded: ["fld_p"] }));
+    unlayout = fakeLayout();
+    renderShell("/starred");
+    const region = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".shell-scroll");
+      if (!el) throw new Error("no sidebar area yet");
+      return el;
+    });
+    const scrolled = ownScroll(region);
+    const row = (key: string) => region.querySelector<HTMLElement>(`[data-tree-key="${key}"]`);
+    await waitFor(() => expect(row("nod_docs")).not.toBeNull());
+    await waitFor(() => expect(row("nod_pics")).not.toBeNull());
+    // The person scrolls the area, which takes it to the top.
+    fireEvent.wheel(region);
+    row("nod_docs")!.setAttribute("aria-current", "location");
+    // The observer runs after the change, so the check waits for it: a held follow leaves the position where the person put it.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(scrolled()).toBe(0);
+    // Later than a second, the same mark moved to a row below the fold is followed.
+    row("nod_docs")!.removeAttribute("aria-current");
+    const later = Date.now() + 5000;
+    const now = vi.spyOn(Date, "now").mockReturnValue(later);
+    row("nod_pics")!.setAttribute("aria-current", "location");
+    await waitFor(() => expect(scrolled()).toBe(90));
+    now.mockRestore();
+  });
+
+  // A phone: the drawer's first opening attaches the follow to the drawer's own area, so the mark's row is in view on the first opening.
+  it("on a phone, the drawer's first opening keeps the mark's row in view", async () => {
+    restore();
+    const unphone = narrowWindow();
+    signIn("member");
+    folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    mocks.childrenPage.mockImplementation(async (...args: unknown[]) => ({ items: args[1] === null ? [dir("nod_docs", "Docs", "fld_p")] : [], next_cursor: undefined }));
+    unlayout = fakeLayout();
+    treePlace.set({ folder: "fld_p", chain: ["nod_docs"] });
+    renderShell("/files/fld_p/nod_docs");
+    fireEvent.click(screen.getByTestId("nav-open"));
+    const region = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".ant-drawer-open .shell-scroll");
+      if (!el) throw new Error("no drawer area yet");
+      return el;
+    });
+    const scrolled = ownScroll(region);
+    await waitFor(() => expect(region.querySelector('[data-tree-key="nod_docs"][aria-current="location"]')).not.toBeNull());
+    expect(scrolled()).toBe(90);
+    unphone();
   });
 });

@@ -46,8 +46,29 @@ export function writeTree(user: string, state: TreeState): void {
   }
 }
 
-// withExpanded opens or closes one folder. An opened one goes to the end of the list, as the most recent.
-export function withExpanded(state: TreeState, id: string, on: boolean): TreeState {
-  const rest = state.expanded.filter((x) => x !== id);
-  return { ...state, expanded: on ? [...rest, id].slice(-MAX_EXPANDED) : rest };
+// withExpanded opens or closes one folder. An opened one goes to the end of the list, as the most recent. Over the cap, the folders
+// forgotten first are the ones least used that are not in keep: keep is the way being revealed (decision 88), which stays open whole, even
+// past the cap. The folder opened now is never the one forgotten.
+export function withExpanded(state: TreeState, id: string, on: boolean, keep: readonly string[] = []): TreeState {
+  const list = state.expanded.filter((x) => x !== id);
+  if (on) list.push(id);
+  if (on) {
+    let i = 0;
+    while (list.length > MAX_EXPANDED && i < list.length - 1) {
+      if (keep.includes(list[i])) i += 1;
+      else list.splice(i, 1);
+    }
+  }
+  return { ...state, expanded: list };
+}
+
+// touchExpanded moves the folders in ids that are open to the end of the list, in the order given, so the cap forgets the folders the
+// place has not passed through for longest: the cap is by last use, not by first open (decision 88). It returns the same state when
+// nothing moves.
+export function touchExpanded(state: TreeState, ids: readonly string[]): TreeState {
+  const open = ids.filter((id) => state.expanded.includes(id));
+  if (open.length === 0) return state;
+  const next = [...state.expanded.filter((x) => !open.includes(x)), ...open];
+  if (next.every((x, i) => x === state.expanded[i])) return state;
+  return { ...state, expanded: next };
 }

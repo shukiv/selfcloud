@@ -10,7 +10,8 @@ import { queryKey } from "../../lib/query";
 import { childrenPage } from "../../lib/files/api";
 import { fileErrorText } from "../../lib/files/fileErrors";
 import { loadDirs } from "../../lib/files/treeLoad";
-import { withExpanded, type TreeState } from "../../lib/files/treeState";
+import { touchExpanded, withExpanded, type TreeState } from "../../lib/files/treeState";
+import { clearFailure, closedFor, currentSerial, failureSeenIn, holdClose, holdOpen, noteFailure, startPlace } from "../../lib/files/treeHold";
 import { currentMark } from "../../theme/currentMark";
 import { sidebarRow } from "../../theme/sidebarRow";
 import type { FolderAccess } from "../../lib/files/types";
@@ -51,7 +52,9 @@ interface Ctx extends FolderTreeProps {
   currentKey: string | null;
   tabKey: string;
   setTabKey: (k: string) => void;
-  // setOpen opens or closes a folder by the person's hand (the arrow and the keys), and a close on the way ends the reveal.
+  // serial counts the changes of place (treeHold): a failed read is shown with its alert only in the visit it was first shown in.
+  serial: number;
+  // setOpen opens or closes a folder by the person's hand (the arrow and the keys). A close of a folder on the way holds for the place.
   setOpen: (key: string, on: boolean) => void;
 }
 
@@ -79,6 +82,14 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
     // Told once per answer: the callback is read through the context when the answer arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gone]);
+  // A failed read is announced once (decision 88): its alert is shown in the visit to the place it was first shown in, and a later change of
+  // place shows the same failure quietly, with its Try again. A read that succeeds, or Try again, makes the next failure new.
+  useEffect(() => {
+    if (q.isError) noteFailure(key, ctx.serial);
+    else if (q.isSuccess) clearFailure(key);
+  }, [q.status, key, ctx.serial]);
+  const seenIn = failureSeenIn(key);
+  const announce = q.isError && !unreachable && (seenIn === undefined || seenIn === ctx.serial);
   const dirs = q.data?.dirs ?? [];
   // Until it has been read a folder may have folders in it; once read with none, it has no arrow.
   const hasKids = !unreachable && (q.data === undefined || dirs.length > 0 || q.data.capped);
@@ -108,7 +119,8 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
       aria-current={current ? "location" : undefined}
       data-tree-key={key}
       // A folder whose read failed is not the mark while another row on screen is (decision 88): the mark falls to the deepest row that read.
-      data-failed={q.isError ? "" : undefined}
+      // A folder with its children still on screen (a refetch that failed) is still a row that read.
+      data-failed={q.isError && q.data === undefined ? "" : undefined}
       // A row is named by its own folder: the name of the subtree under it would read every folder and arrow inside.
       aria-label={name}
       tabIndex={ctx.tabKey === key ? 0 : -1}
@@ -183,10 +195,17 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
           )}
           {q.isError && !unreachable && (
             <li role="none" style={{ listStyle: "none", paddingInlineStart: level * 14 + 8 }}>
-              <div role="alert" style={{ color: side ? side.text : token.colorError, fontSize: token.fontSizeSM }}>
+              <div role={announce ? "alert" : undefined} style={{ color: side ? side.text : token.colorError, fontSize: token.fontSizeSM }}>
                 {t("files.tree.failed")} <bdi>{fileErrorText(q.error, lang)}</bdi>
               </div>
-              <Button size="small" onClick={() => void q.refetch()} style={ctx.coarse ? { minBlockSize: 44 } : undefined}>
+              <Button
+                size="small"
+                onClick={() => {
+                  clearFailure(key);
+                  void q.refetch();
+                }}
+                style={ctx.coarse ? { minBlockSize: 44 } : undefined}
+              >
                 {t("files.retry")}
               </Button>
             </li>
@@ -262,43 +281,93 @@ export default function FolderTree(props: FolderTreeProps) {
   const { t } = useT();
   const { spaces, folder, chain, marking, top } = props;
   // The place's mark (decisions 69 and 88): the folder shown, or else the nearest folder on the way to it that is on screen and has not
-  // failed to read. The places on the way, deepest first, are read here; settleTab picks the first one that is eligible.
+  // failed to read. The places on the way, deepest first, are read in settleTab; the first one that is eligible is the mark.
   const wanted = marking && folder ? [...[...chain].reverse(), folder] : [];
-  const wantedRef = useRef<string[]>(wanted);
-  wantedRef.current = wanted;
   // The way (decision 88): the folders that open so the folder shown is on screen, from the space's root down, or from the top folder
-  // the person was given. The folder shown is not on it: it is marked, not opened.
-  // A space's own root has no way: it is the folder shown, and a place with no chain is that root.
+  // the person was given. The folder shown is not on it: it is marked, not opened. A space's own root has no way.
   const way = marking && folder && chain.length > 0 ? (top ? chain.slice(0, -1) : [folder, ...chain.slice(0, -1)]) : [];
-  const wayRef = useRef<string[]>(way);
-  wayRef.current = way;
-  // The reveal is for one place at a time: it starts when the place changes, and a close of a folder on the way by hand ends it, so the
-  // next change of place reveals again. propsRef is the last render's props, read by the observer's callbacks.
   const placeText = marking && folder ? [folder, ...chain, top?.id ?? ""].join("|") : "";
-  const placeRef = useRef<string | null>(null);
-  const revealRef = useRef<string | null>(null);
-  if (placeText !== placeRef.current) {
-    placeRef.current = placeText;
-    revealRef.current = placeText === "" ? null : placeText;
-  }
+  // The refs the reveal and the observer read. They are written in effects, never during render (a render React discards must not move them).
+  const wantedRef = useRef<string[]>([]);
+  const wayRef = useRef<string[]>([]);
+  const placeRef = useRef("");
   const propsRef = useRef(props);
-  propsRef.current = props;
-  const [currentKey, setCurrentKey] = useState<string | null>(null);
+  // latestRef is the state this tree last sent, so two changes in one tick build on each other, not on the last render's props.
+  const latestRef = useRef<TreeState>(props.state);
+  const alive = useRef(false);
+  const revealQueued = useRef(false);
+  const navRef = useRef<HTMLElement | null>(null);
   const currentRef = useRef<string | null>(null);
+  const [currentKey, setCurrentKey] = useState<string | null>(null);
+  // bump renders the tree again when the place changes, so the rows read the new visit at once.
+  const [, bump] = useState(0);
   // The tree is one tab stop, and it is always on a row that is rendered: the place's row when it is shown, else the first row.
   // It is checked after each change of the tree, including a branch that opens, closes or loses its rows (the observer).
   const [tabKey, setTabKey] = useState<string>(spaces[0]?.id ?? "");
+  const tabRef = useRef(tabKey);
   useEffect(() => {
     if (currentKey !== null) setTabKey(currentKey);
   }, [currentKey]);
-  const navRef = useRef<HTMLElement | null>(null);
-  const tabRef = useRef(tabKey);
-  tabRef.current = tabKey;
-  // setOpen is the person's own open or close. A close of a folder on the way ends the reveal (the mark then falls back to the nearest row on
-  // screen until the next change of place).
+  // The layout effects below run in this order, after each render: the alive flag and the refs first, then the place's hold, then the settle.
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  useLayoutEffect(() => {
+    wantedRef.current = wanted;
+    wayRef.current = way;
+    tabRef.current = tabKey;
+    propsRef.current = props;
+    latestRef.current = props.state;
+  });
+  // A change of place starts its hold (decision 88): a folder the person closed by hand on the way stays closed for that place, and the next
+  // change of place reveals again. The change renders again at once, so the failed reads already shown are quiet in that render.
+  useLayoutEffect(() => {
+    if (placeRef.current === placeText) return;
+    placeRef.current = placeText;
+    if (startPlace(placeText)) bump((n) => n + 1);
+  }, [placeText]);
+  // commit sends a new state to the parent and keeps it here for the next change in the same tick.
+  const commit = (next: TreeState) => {
+    latestRef.current = next;
+    propsRef.current.onChange(next);
+  };
+  // setOpen is the person's own open or close. A close of a folder on the way holds for the place; an open of one releases it.
   const setOpen = (key: string, on: boolean) => {
-    if (!on && wayRef.current.includes(key)) revealRef.current = null;
-    propsRef.current.onChange(withExpanded(propsRef.current.state, key, on));
+    if (wayRef.current.includes(key)) {
+      if (on) holdOpen(placeRef.current, key);
+      else holdClose(placeRef.current, key);
+    }
+    commit(withExpanded(latestRef.current, key, on, wayRef.current));
+  };
+  // reveal opens, by one step, the first folder on the way that is shown and not open (decision 88). A folder below it is shown only once the
+  // one above has been read, so the way is read top down, once each. A folder the person closed by hand for this place stops the reveal, and a
+  // folder that is not shown stops it too. Each step is one update made in a microtask, not a nested update inside a commit, so a way of any
+  // length settles (the update depth limit of React counts nested commits). The way is pinned while it is revealed, so the saved cap does not
+  // forget it, and the folders the place passes through are touched so the cap forgets by last use.
+  const reveal = () => {
+    revealQueued.current = false;
+    if (!alive.current || placeRef.current === "") return;
+    const way = wayRef.current;
+    const rows = new Set(Array.from(navRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? []).map((r) => r.dataset.treeKey ?? ""));
+    const closed = closedFor(placeRef.current);
+    const state = touchExpanded(latestRef.current, way);
+    for (const k of way) {
+      if (!rows.has(k)) break;
+      if (!state.expanded.includes(k)) {
+        if (closed.includes(k)) break;
+        commit(withExpanded(state, k, true, way));
+        return;
+      }
+    }
+    if (state !== latestRef.current) commit(state);
+  };
+  const schedule = () => {
+    if (revealQueued.current) return;
+    revealQueued.current = true;
+    queueMicrotask(reveal);
   };
   const settleTab = () => {
     const rows = new Map(
@@ -314,18 +383,7 @@ export default function FolderTree(props: FolderTreeProps) {
       currentRef.current = mark;
       setCurrentKey(mark);
     }
-    // The reveal (decision 88): the first folder on the way that is shown and not open is opened. A folder under it is shown only once the
-    // one above has been read, so the way is read top down, one folder at a time, and each is read once. A folder that is not shown stops
-    // the reveal here: nothing below it is opened, and a failed read shows its own error and stops the way.
-    if (revealRef.current !== null) {
-      for (const k of wayRef.current) {
-        if (!rows.has(k)) break;
-        if (!propsRef.current.state.expanded.includes(k)) {
-          propsRef.current.onChange(withExpanded(propsRef.current.state, k, true));
-          break;
-        }
-      }
-    }
+    if (wayRef.current.length > 0) schedule();
     const keys = Array.from(rows.keys());
     if (keys.length === 0) return;
     const next = keys.includes(tabRef.current) ? tabRef.current : (mark ?? keys[0]);
@@ -342,7 +400,7 @@ export default function FolderTree(props: FolderTreeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // The mark is shown only while the tree marks (the files pages): leaving them takes it off at once, whatever the last read of it said.
-  const ctx: Ctx = { ...props, currentKey: marking ? currentKey : null, tabKey, setTabKey, setOpen };
+  const ctx: Ctx = { ...props, currentKey: marking ? currentKey : null, tabKey, setTabKey, setOpen, serial: currentSerial() };
   // A file dragged from the desktop onto the tree is not taken and does not open in the browser: an upload is made from the
   // listing, where the drop is read (FilesPage), so the tree only stops the browser's own navigation.
   const fileDrag = (e: DragEvent<HTMLElement>) => {
