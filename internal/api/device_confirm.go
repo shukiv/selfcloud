@@ -291,7 +291,10 @@ func usableNow(ctx context.Context, tx *store.Tx, u *store.User) (bool, error) {
 // cap (round 2 L1). The limit is in memory, as the other limits are.
 func (s *Server) runConfirmJob(ctx context.Context, j *confirmJob) {
 	var (
-		held   *rate.Reservation
+		held *rate.Reservation
+		// heldAt is the time the token was reserved at. A refund must use it: rate.CancelAt restores nothing when the
+		// time is later than the reservation's, so a fresh clock read would lose the token (round 8).
+		heldAt time.Time
 		target *store.User
 	)
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
@@ -310,11 +313,12 @@ func (s *Server) runConfirmJob(ctx context.Context, j *confirmJob) {
 			return tx.InsertAudit(ctx, j.failed)
 		}
 		// The cap counts the address, not each account that matched (round 2 L4).
-		res, err := s.limits["mail.device.address"].reserve(emailKey(found.Email), s.limitClock())
+		at := s.limitClock()
+		res, err := s.limits["mail.device.address"].reserve(emailKey(found.Email), at)
 		if err != nil {
 			return tx.InsertAudit(ctx, j.capped)
 		}
-		held = res
+		held, heldAt = res, at
 		row := &store.DeviceConfirm{ID: id.New("dcf"), UserID: found.ID, TokenHash: j.hash, NonceHash: j.nonceHash,
 			Short: j.short, ExpiresAt: j.expires, CreatedAt: j.now}
 		if err := tx.InsertDeviceConfirm(ctx, row); err != nil {
@@ -328,7 +332,7 @@ func (s *Server) runConfirmJob(ctx context.Context, j *confirmJob) {
 	})
 	if err != nil {
 		if held != nil {
-			held.CancelAt(s.limitClock())
+			held.CancelAt(heldAt)
 		}
 		s.log.Error("cannot write the device confirmation", "user", j.userID, "error", err)
 		return

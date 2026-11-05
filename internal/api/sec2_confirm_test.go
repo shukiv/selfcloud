@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -926,6 +927,13 @@ func TestAFailedLinkWriteGivesTheMailTokenBackAndLogs(t *testing.T) {
 	acc, key := newAccount(t, s, admin, "Acme")
 	verifiedUser(t, s, key, acc.ID, "ann@example.com")
 	spendCap(t, s, "ann@example.com", 180)
+	// The clock steps two seconds on every read, so a refund that reads the clock again is at a later time than its
+	// reservation. A later time restores nothing (rate.CancelAt), so the refund must use the reservation's own time
+	// (round 8). The frozen clock of the other tests would hide that.
+	var reads atomic.Int64
+	s.limitClock = func() time.Time {
+		return frozenLimitInstant.Add(time.Duration(reads.Add(1)) * 2 * time.Second)
+	}
 	// A trigger in the store's own file makes the first link write fail, and is dropped before the second, so the server
 	// needs no test seam for it.
 	db, err := sql.Open("sqlite", s.cfg.Store.Path)
