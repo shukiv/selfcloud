@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -30,6 +31,8 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	if mt != "application/json" {
 		return apierr.New(apierr.InvalidRequest, "the body must be JSON (Content-Type: application/json)")
 	}
+	// The body must arrive within jsonBodyTimeout, so a client that stalls mid-body ends here (sec1, decision 84).
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(jsonBodyTimeout))
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {

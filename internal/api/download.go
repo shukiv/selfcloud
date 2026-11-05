@@ -396,7 +396,8 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, n *store.Node
 	h.Set("Content-Disposition", contentDisposition(disp, n.Name))
 	// The preconditions were checked above, so ServeContent's own pass gives the same answer, and
 	// the ranges it sees are valid. Its one plain-text error, 416, cannot happen here.
-	http.ServeContent(w, r, n.Name, mod, f)
+	// Each write moves the deadline on, so a reader that stops ends the response (sec1, decision 84).
+	http.ServeContent(newWriteDeadlineWriter(w, downloadWriteTimeout), r, n.Name, mod, f)
 	return nil
 }
 
