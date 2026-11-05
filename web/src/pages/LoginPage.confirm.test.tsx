@@ -46,7 +46,8 @@ describe("LoginPage: the browser is confirmed by email (decision 86)", () => {
     submitSignIn();
 
     await screen.findByRole("heading", { name: "Check your email" });
-    expect(screen.getByText(/we've emailed you a link to confirm this browser/)).toBeTruthy();
+    expect(screen.getByText(/we sent a link to the address/)).toBeTruthy();
+    expect(screen.getByText(/use Forgot password/)).toBeTruthy();
     // No session is set: the answer names none.
     expect(mocks.establish).not.toHaveBeenCalled();
     // No error is shown.

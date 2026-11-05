@@ -197,6 +197,10 @@ type RateLimitConfig struct {
 	// address: one address's tries never use up another address's budget (sec1). Failed sign-ins to an
 	// email from all addresses together are capped at 30 an hour, a fixed limit.
 	PerEmailPerMinute int `yaml:"per_email_per_minute"`
+	// CappedPerEmailPerHour limits the password checks made for one email, from all addresses together, while its cap on
+	// failed sign-ins is spent (sec2, decision 86, round 2 M1). Past it, an attempt is answered without a password check
+	// and sends no mail. At least 1.
+	CappedPerEmailPerHour int `yaml:"capped_per_email_per_hour"`
 }
 
 // LogConfig controls logging.
@@ -688,8 +692,9 @@ func Defaults() *Config {
 		Office: OfficeConfig{LockMinutes: 30, MaxFileBytes: 50 * MiB, TokenMinutes: 600},
 		Mail:   MailConfig{SMTPPort: 587, SMTPTLS: "starttls"},
 		RateLimit: RateLimitConfig{
-			PerIPPerMinute:    10,
-			PerEmailPerMinute: 5,
+			PerIPPerMinute:        10,
+			PerEmailPerMinute:     5,
+			CappedPerEmailPerHour: 10,
 		},
 	}
 }
@@ -895,6 +900,9 @@ func (c *Config) Validate() error {
 	}
 	if s := c.Sessions.ShortIdleTimeout; s < 0 || s > c.Sessions.IdleTimeout {
 		bad("sessions.short_idle_timeout must be unset or positive, and not more than sessions.idle_timeout")
+	}
+	if c.RateLimit.CappedPerEmailPerHour <= 0 {
+		bad("rate_limit.capped_per_email_per_hour must be at least 1")
 	}
 	if c.RateLimit.PerIPPerMinute <= 0 || c.RateLimit.PerEmailPerMinute <= 0 {
 		bad("rate_limit values must be positive")

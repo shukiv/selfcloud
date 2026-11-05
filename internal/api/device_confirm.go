@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/id"
@@ -22,24 +24,50 @@ import (
 // the user. The attempt sets a nonce cookie in its browser, and the link signs in only the browser that holds that
 // nonce.
 
-// deviceConfirmMailCap is how many confirmation mails one user gets in deviceConfirmMailWindow. Over it, no mail is sent,
-// and the answer is the same.
 const (
+	// deviceConfirmMailCap is how many confirmation mails one address gets in deviceConfirmMailWindow. Over it, no mail
+	// is sent, and the answer is the same.
 	deviceConfirmMailCap    = 3
 	deviceConfirmMailWindow = 15 * time.Minute
+	// deviceConfirmSlots bounds the confirmation mails being written or sent at once (round 2 M2). When every slot is
+	// busy a job is dropped and logged; the answer is the same.
+	deviceConfirmSlots = 8
 )
+
+// cappedRefusal is the sec1 refusal of a sign-in whose email's cap is spent and which gets no confirmation mail: an
+// installation admin's, or any sign-in when no mailer is configured.
+const cappedRefusal = "too many failed sign-ins to this email; use Forgot password, " +
+	"or sign in from a device you have used before"
 
 // deviceConfirmAnswer is the answer to a sign-in that waits for the browser to be confirmed by email.
 type deviceConfirmAnswer struct {
 	Confirm string `json:"confirm"`
 }
 
-// confirmCookieName is the nonce cookie's name. It has the __Host- prefix when the session cookie does (https only).
+// confirmJob is the work for one matched user, prepared while the request is still in hand. It holds no request, so it
+// runs after the answer has gone out.
+type confirmJob struct {
+	accountID, userID string
+	nonceHash, hash   []byte
+	secret            string
+	short             bool
+	now, expires      time.Time
+	failed, capped    *store.AuditEntry
+	attempt, result   *store.AuditEntry
+}
+
+// confirmCookieName is the nonce cookie's name. The __Host- prefix follows Secure: it is used over https, where the
+// cookie is Secure, and plain http keeps the plain name, as it cannot carry a Secure cookie.
 func (s *Server) confirmCookieName() string {
 	if s.sessionCookie == "selfcloud_session" {
 		return "selfcloud_confirm"
 	}
 	return "__Host-selfcloud_confirm"
+}
+
+// clockNow is the store's time, in the form the store keeps times: UTC, to the millisecond. Tests move it.
+func (s *Server) clockNow() time.Time {
+	return s.store.Clock().UTC().Truncate(time.Millisecond)
 }
 
 // setConfirmCookie sets the nonce cookie on the attempt's answer, and returns its value. A browser that already holds a
@@ -80,19 +108,35 @@ func (s *Server) clearConfirmCookie(w http.ResponseWriter) {
 }
 
 // confirmByEmail answers a sign-in whose email's cap is spent, from a browser with no trusted device, when a mail can be
-// sent. The answer is the same whatever the password: 202 with the confirmation. Only a user whose password matches gets
-// a mail, and only if the user can sign in and is under the mail cap.
-func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidates []*store.User, password string,
+// sent. The answer is 202 with the confirmation whatever the password, admins included (round 2 M3). Past the per-email limit on password checks (login.capped) no password is checked and no
+// mail is sent. Otherwise a matching password queues its mail, and the answer does not wait for it.
+func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidates []*store.User, email, password string,
 	remember *bool) error {
 	ctx := r.Context()
 	nonce := s.setConfirmCookie(w, r)
+	short := remember != nil && !*remember
+	if err := s.rateLimit("login.capped", emailKey(email)); err != nil {
+		// Past the limit no password is checked. One dummy check and one audit row, as a miss writes, keep the answer and
+		// its cost the same.
+		if err := auth.DummyVerify(ctx, password); err != nil {
+			return err
+		}
+		if err := s.auditFailedLogin(r, candidates); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusAccepted, deviceConfirmAnswer{Confirm: methodEmail})
+		return nil
+	}
+	// An installation admin's password is checked as anyone's is, but an admin is never mailed a link (round 2 M3): a
+	// link would tell the attacker the address is an admin's, and nothing else in the answer does. Its right password
+	// is audited as a failed sign-in, as a miss is, since no sign-in completes here.
 	var matches []*store.User
 	for _, c := range candidates {
 		ok, err := s.matchPassword(ctx, c.PasswordHash, password)
 		if err != nil {
 			return err
 		}
-		if ok {
+		if ok && c.AccountID != "" {
 			matches = append(matches, c)
 		}
 	}
@@ -101,21 +145,63 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 			return err
 		}
 	}
-	// A password that matched none of them is audited as a failed sign-in, as a refused one is. It is one write, as a
-	// matching password's is, so the two take about the same time.
+	// A password that matched none of them is audited as a failed sign-in, in one synchronous write. A matching password
+	// writes nothing here: its work is queued, so its answer does not wait for the write (round 2 M2). The one-write
+	// difference that remains is stated in decision 86.
 	if len(matches) == 0 {
 		if err := s.auditFailedLogin(r, candidates); err != nil {
 			return err
 		}
 	}
-	short := remember != nil && !*remember
 	for _, u := range matches {
-		if err := s.confirmBrowserMail(r, u, nonce, short); err != nil {
-			return err
-		}
+		s.queueConfirmMail(r, u, nonce, short)
 	}
 	writeJSON(w, http.StatusAccepted, deviceConfirmAnswer{Confirm: methodEmail})
 	return nil
+}
+
+// queueConfirmMail prepares the link and its audit rows for a matched user and hands them to a bounded background job.
+// When no slot is free the job is dropped and logged, and nothing is written: the answer is the same.
+func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, short bool) {
+	ctx := r.Context()
+	select {
+	case s.deviceSlots <- struct{}{}:
+	default:
+		s.log.Warn("device confirmation mail dropped: every slot is busy", "user", u.ID)
+		return
+	}
+	secret, hash := auth.NewToken()
+	details := map[string]any{"purpose": mail.PurposeDeviceConfirm, "method": methodEmail}
+	now := s.clockNow()
+	// The action names are literals at each call, so the audit guards (decision 84) can find them in the source.
+	job := &confirmJob{
+		accountID: u.AccountID,
+		userID:    u.ID,
+		nonceHash: auth.HashToken(nonce),
+		hash:      hash,
+		secret:    secret,
+		short:     short,
+		now:       now,
+		expires:   now.Add(s.cfg.Users.DeviceConfirmTTL.D()),
+		failed:    actor(s.auditEntry(r, u.AccountID, "user.login_failed", u.ID, nil), u.ID, "failed"),
+		capped:    actor(s.auditEntry(r, u.AccountID, "user.device_confirm_sent", u.ID, details), u.ID, "capped"),
+		attempt:   actor(s.auditEntry(r, u.AccountID, "user.device_confirm_sent", u.ID, details), u.ID, "attempted"),
+		result:    actor(s.auditEntry(r, u.AccountID, "user.device_confirm_sent", u.ID, details), u.ID, ""),
+	}
+	s.bg.Add(1)
+	go func() {
+		defer s.bg.Done()
+		defer func() { <-s.deviceSlots }()
+		jctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer cancel()
+		s.runConfirmJob(jctx, job)
+	}()
+}
+
+// actor sets the actor and outcome of an audit entry made for a user's own sign-in attempt.
+func actor(e *store.AuditEntry, userID, outcome string) *store.AuditEntry {
+	e.ActorKind, e.ActorID, e.Outcome = string(auth.KindUser), userID, outcome
+	return e
 }
 
 // usableNow reports whether a user may sign in now: active, and in an account that is not suspended or being deleted.
@@ -137,21 +223,17 @@ func usableNow(ctx context.Context, tx *store.Tx, u *store.User) (bool, error) {
 	return acc.Status == store.AccountActive, nil
 }
 
-// confirmBrowserMail makes the confirmation link for a user whose password matched, and mails it in the background, as a
-// reset does. The link row and its attempted audit entry are written before the mail leaves, so no mail goes out
-// without a row. A user who cannot sign in, or who is over the mail cap, gets no link: the answer is the same.
-func (s *Server) confirmBrowserMail(r *http.Request, u *store.User, nonce string, short bool) error {
-	ctx := r.Context()
-	secret, hash := auth.NewToken()
-	now := store.Now()
-	expires := now.Add(s.cfg.Users.DeviceConfirmTTL.D())
+// runConfirmJob writes the link for a matched user and mails it. The link row and its attempted audit entry are written
+// before the mail leaves, so no mail goes out without a row. A user who cannot sign in, or who is over the per-address
+// mail cap, gets no link. The mail's token is given back when the write fails, so a failed write spends nothing from the
+// cap (round 2 L1). The limit is in memory, as the other limits are.
+func (s *Server) runConfirmJob(ctx context.Context, j *confirmJob) {
 	var (
+		held   *rate.Reservation
 		target *store.User
-		it     *issuedToken
-		result *store.AuditEntry
 	)
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
-		found, err := tx.User(ctx, u.AccountID, u.ID)
+		found, err := tx.User(ctx, j.accountID, j.userID)
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
 		}
@@ -163,54 +245,45 @@ func (s *Server) confirmBrowserMail(r *http.Request, u *store.User, nonce string
 			return err
 		}
 		if !ok {
-			e := s.auditEntry(r, found.AccountID, "user.login_failed", found.ID, nil)
-			e.ActorKind, e.ActorID, e.Outcome = string(auth.KindUser), found.ID, "failed"
-			return tx.InsertAudit(ctx, e)
+			return tx.InsertAudit(ctx, j.failed)
 		}
-		details := map[string]any{"purpose": mail.PurposeDeviceConfirm, "method": methodEmail}
-		if s.chargeAll(charge{"mail.device.user", found.ID}) != nil {
-			e := s.auditEntry(r, found.AccountID, "user.device_confirm_sent", found.ID, details)
-			e.ActorKind, e.ActorID, e.Outcome = string(auth.KindUser), found.ID, "capped"
-			return tx.InsertAudit(ctx, e)
+		// The cap counts the address, not each account that matched (round 2 L4).
+		res, err := s.limits["mail.device.address"].reserve(emailKey(found.Email), s.limitClock())
+		if err != nil {
+			return tx.InsertAudit(ctx, j.capped)
 		}
-		row := &store.DeviceConfirm{ID: id.New("dcf"), UserID: found.ID, TokenHash: hash, NonceHash: auth.HashToken(nonce),
-			Short: short, ExpiresAt: expires, CreatedAt: now}
+		held = res
+		row := &store.DeviceConfirm{ID: id.New("dcf"), UserID: found.ID, TokenHash: j.hash, NonceHash: j.nonceHash,
+			Short: j.short, ExpiresAt: j.expires, CreatedAt: j.now}
 		if err := tx.InsertDeviceConfirm(ctx, row); err != nil {
 			return err
 		}
-		attempt := s.auditEntry(r, found.AccountID, "user.device_confirm_sent", found.ID, details)
-		attempt.ActorKind, attempt.ActorID, attempt.Outcome = string(auth.KindUser), found.ID, "attempted"
-		if err := tx.InsertAudit(ctx, attempt); err != nil {
+		if err := tx.InsertAudit(ctx, j.attempt); err != nil {
 			return err
 		}
 		target = found
-		it = &issuedToken{purpose: mail.PurposeDeviceConfirm, token: secret,
-			link: s.tokenLink(s.cfg.Users.DeviceConfirmURLTemplate, secret), expires: expires}
-		result = s.auditEntry(r, found.AccountID, "user.device_confirm_sent", found.ID, details)
-		result.ActorKind, result.ActorID = string(auth.KindUser), found.ID
 		return nil
 	})
 	if err != nil {
-		return err
-	}
-	if target == nil || it == nil {
-		return nil
-	}
-	s.bg.Add(1)
-	go func() {
-		defer s.bg.Done()
-		mctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
-		defer cancel()
-		result.Outcome = "ok"
-		if err := s.sendToken(mctx, target, it); err != nil {
-			result.Outcome = "failed"
-			s.log.Warn("cannot send device confirmation mail", "user", target.ID, "error", err)
+		if held != nil {
+			held.CancelAt(s.limitClock())
 		}
-		if err := s.store.Write(mctx, func(tx *store.Tx) error { return tx.InsertAudit(mctx, result) }); err != nil {
-			s.log.Error("cannot audit the device confirmation mail's result", "user", target.ID, "error", err)
-		}
-	}()
-	return nil
+		s.log.Error("cannot write the device confirmation", "user", j.userID, "error", err)
+		return
+	}
+	if target == nil {
+		return
+	}
+	it := &issuedToken{purpose: mail.PurposeDeviceConfirm, token: j.secret,
+		link: s.tokenLink(s.cfg.Users.DeviceConfirmURLTemplate, j.secret), expires: j.expires}
+	j.result.Outcome = "ok"
+	if err := s.sendToken(ctx, target, it); err != nil {
+		j.result.Outcome = "failed"
+		s.log.Warn("cannot send device confirmation mail", "user", target.ID, "error", err)
+	}
+	if err := s.store.Write(ctx, func(tx *store.Tx) error { return tx.InsertAudit(ctx, j.result) }); err != nil {
+		s.log.Error("cannot audit the device confirmation mail's result", "user", target.ID, "error", err)
+	}
 }
 
 // handleDeviceConfirm completes a device confirmation link. In the browser that asked, it signs the user in as a sign-in
@@ -235,7 +308,7 @@ func (s *Server) handleDeviceConfirm(w http.ResponseWriter, r *http.Request) err
 		nonceHash = auth.HashToken(c.Value)
 	}
 	ctx := r.Context()
-	now := time.Now()
+	now := s.clockNow()
 	var (
 		stateErr error
 		u        *store.User
@@ -301,7 +374,7 @@ func (s *Server) handleDeviceConfirm(w http.ResponseWriter, r *http.Request) err
 			e.ActorKind, e.ActorID, e.Outcome = string(auth.KindUser), found.ID, "failed"
 			return tx.InsertAudit(ctx, e)
 		}
-		issuedAt = store.Now()
+		issuedAt = s.clockNow()
 		if err := tx.UseDeviceConfirm(ctx, c.ID, issuedAt); errors.Is(err, store.ErrNotFound) {
 			return errBadLink
 		} else if err != nil {

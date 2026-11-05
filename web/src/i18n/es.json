@@ -56,7 +56,7 @@
   "forgot.sent": "Si existe una cuenta con este correo, hemos enviado un enlace.",
   "forgot.back": "Volver a iniciar sesión",
   "login.confirm.title": "Revisa tu correo",
-  "login.confirm.body": "Si la contraseña es correcta, te hemos enviado un enlace para confirmar este navegador. Ábrelo en este navegador para entrar.",
+  "login.confirm.body": "Si este navegador se puede confirmar, hemos enviado un enlace a la dirección. Ábrelo en este navegador para entrar. Si no llega ningún enlace, espera un poco o usa «¿Olvidaste la contraseña?».",
   "login.confirm.back": "Volver al formulario de entrada",
   "confirmDevice.title": "Confirma este navegador",
   "confirmDevice.body": "Confirma este navegador para entrar aquí. Abre este enlace solo en el navegador desde el que pediste entrar.",

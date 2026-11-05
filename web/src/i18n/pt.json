@@ -56,7 +56,7 @@
   "forgot.sent": "Se existir uma conta com este correio eletrónico, enviámos uma ligação.",
   "forgot.back": "Voltar a iniciar sessão",
   "login.confirm.title": "Verifique o seu e-mail",
-  "login.confirm.body": "Se a palavra-passe estiver certa, enviámos-lhe uma ligação para confirmar este navegador. Abra-a neste navegador para entrar.",
+  "login.confirm.body": "Se este navegador puder ser confirmado, enviámos uma ligação para o endereço. Abra-a neste navegador para entrar. Se a ligação não chegar, aguarde um pouco ou use «Esqueceu a palavra-passe».",
   "login.confirm.back": "Voltar ao formulário de entrada",
   "confirmDevice.title": "Confirme este navegador",
   "confirmDevice.body": "Confirme este navegador para entrar aqui. Abra esta ligação só no navegador a partir do qual pediu para entrar.",

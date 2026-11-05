@@ -56,7 +56,7 @@
   "forgot.sent": "If an account exists for this email, we sent a link.",
   "forgot.back": "Back to sign in",
   "login.confirm.title": "Check your email",
-  "login.confirm.body": "If the password is right, we've emailed you a link to confirm this browser. Open it in this browser to sign in.",
+  "login.confirm.body": "If this browser can be confirmed, we sent a link to the address. Open it in this browser to sign in. If no link arrives, wait a while, or use Forgot password.",
   "login.confirm.back": "Back to the sign-in form",
   "confirmDevice.title": "Confirm this browser",
   "confirmDevice.body": "Confirm this browser to sign in here. Open this link only in the browser where you asked to sign in.",

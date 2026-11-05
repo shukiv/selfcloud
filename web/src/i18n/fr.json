@@ -56,7 +56,7 @@
   "forgot.sent": "Si un compte existe pour cette adresse, nous avons envoyé un lien.",
   "forgot.back": "Retour à la connexion",
   "login.confirm.title": "Vérifiez votre courrier",
-  "login.confirm.body": "Si le mot de passe est bon, nous vous avons envoyé un lien pour confirmer ce navigateur. Ouvrez-le dans ce navigateur pour vous connecter.",
+  "login.confirm.body": "Si ce navigateur peut être confirmé, nous avons envoyé un lien à l'adresse. Ouvrez-le dans ce navigateur pour vous connecter. Si aucun lien n'arrive, attendez un peu ou utilisez « Mot de passe oublié ».",
   "login.confirm.back": "Retour au formulaire de connexion",
   "confirmDevice.title": "Confirmer ce navigateur",
   "confirmDevice.body": "Confirmez ce navigateur pour vous connecter ici. N'ouvrez ce lien que dans le navigateur depuis lequel vous avez demandé à vous connecter.",

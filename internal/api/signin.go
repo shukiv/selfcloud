@@ -260,10 +260,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 			// With a mailer, the browser is confirmed by email instead of refused (sec2, decision 86). Without one there is
 			// no link, so the refusal stays (sec1, decision 84).
 			if s.mailer != nil {
-				return s.confirmByEmail(w, r, candidates, in.Password, in.Remember)
+				return s.confirmByEmail(w, r, candidates, email, in.Password, in.Remember)
 			}
-			return apierr.New(apierr.RateLimited, "too many failed sign-ins to this email; use Forgot password, "+
-				"or sign in from a device you have used before")
+			return apierr.New(apierr.RateLimited, cappedRefusal)
 		}
 		failedHold = res
 	}

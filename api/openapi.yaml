@@ -2120,7 +2120,8 @@ paths:
         A right password also mails the user a single-use link (decision 86); the attempt sets a
         short-lived `selfcloud_confirm` cookie, and the link signs in only the browser that holds
         it, through `POST /api/v1/auth/device-confirm`. A server without mail keeps the refusal:
-        `429 rate_limited`.
+        `429 rate_limited`. An installation admin's email gets the same `202`, whatever the password,
+        and no mail is sent to it (decision 86, round 2 M3).
       security: []
       requestBody:
         required: true

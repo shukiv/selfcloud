@@ -82,6 +82,8 @@ type Server struct {
 	limits     map[string]*limiter // rate limiters by "endpoint.dimension"
 	// limitClock is the time the rate limiters read. Production keeps time.Now; tests freeze it.
 	limitClock func() time.Time
+	// deviceSlots bounds the device confirmation mails in flight (sec2, decision 86, round 2 M2).
+	deviceSlots chan struct{}
 	// sessionClock is the time the web sessions read. Production keeps time.Now; tests move it.
 	sessionClock func() time.Time
 	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (round 2, item 1).
@@ -312,6 +314,7 @@ func New(opts Options) (*Server, error) {
 	}
 	s := &Server{
 		limitClock:    time.Now,
+		deviceSlots:   make(chan struct{}, deviceConfirmSlots),
 		sessionClock:  time.Now,
 		cfg:           cfg,
 		log:           log,
@@ -367,8 +370,11 @@ func New(opts Options) (*Server, error) {
 			"signlink.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
 			// Device confirmations (sec2, decision 86): a link is redeemed per client address, and a user gets at most
 			// deviceConfirmMailCap confirmation mails in deviceConfirmMailWindow. Fixed, as the mail limits are.
-			"device.confirm.ip": newLimiter(cfg.RateLimit.PerIPPerMinute),
-			"mail.device.user":  newLimiterRate(deviceConfirmMailCap, deviceConfirmMailWindow),
+			"device.confirm.ip":   newLimiter(cfg.RateLimit.PerIPPerMinute),
+			"mail.device.address": newLimiterRate(deviceConfirmMailCap, deviceConfirmMailWindow),
+			// Password checks for one email while its failed-sign-in cap is spent, from all addresses together (round 2 M1).
+			// The setting is rate_limit.capped_per_email_per_hour.
+			"login.capped": newLimiterRate(cfg.RateLimit.CappedPerEmailPerHour, time.Hour),
 			// Verification and reset mail: per account, and per address it goes to. Links returned
 			// to a key are not mail and are not counted.
 			"mail.account": newLimiterRate(30, time.Hour),
