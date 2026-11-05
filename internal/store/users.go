@@ -64,15 +64,20 @@ type User struct {
 const userCols = `id, account_id, external_id, email, email_key, display_name, locale, role, status,
 	password_hash, verified_at, created_at, updated_at, quota_bytes, must_change_password, pending_email`
 
+// userSelectCols is userCols for reads, with the end of the newest live email-change link as pending_until. A pending
+// address is shown only while its link is live (decision 89): scanUser drops it once the link has expired.
+const userSelectCols = userCols + `, (SELECT MAX(v.expires_at) FROM verifications v WHERE v.user_id = users.id
+	AND v.purpose = 'email_change' AND v.used_at IS NULL) AS pending_until`
+
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var acc, ext, pw, pending sql.NullString
-	var verified sql.NullInt64
+	var verified, until sql.NullInt64
 	var created, updated int64
 	var quota sql.NullInt64
 	var mustChange int64
 	err := row.Scan(&u.ID, &acc, &ext, &u.Email, &u.EmailKey, &u.DisplayName, &u.Locale,
-		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota, &mustChange, &pending)
+		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota, &mustChange, &pending, &until)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -81,7 +86,9 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	}
 	u.AccountID = acc.String
 	u.ExternalID = ext.String
-	u.PendingEmail = pending.String
+	if pending.Valid && until.Valid && until.Int64 > millis(Now()) {
+		u.PendingEmail = pending.String
+	}
 	u.PasswordHash = pw.String
 	u.VerifiedAt = fromNullMillis(verified)
 	u.CreatedAt = fromMillis(created)
@@ -95,7 +102,7 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 }
 
 func getUser(ctx context.Context, q querier, where string, args ...any) (*User, error) {
-	return scanUser(q.QueryRowContext(ctx, "SELECT "+userCols+" FROM users WHERE "+where, args...))
+	return scanUser(q.QueryRowContext(ctx, "SELECT "+userSelectCols+" FROM users WHERE "+where, args...))
 }
 
 // accountClause is the WHERE condition that selects the rows of accountID. An empty accountID
@@ -175,7 +182,7 @@ func (tx *Tx) UserByExternalID(ctx context.Context, accountID, externalID string
 // any account, AdminScope only the installation admins, and any other value only in that
 // account. It is the one lookup that crosses accounts, and it exists for sign-in only.
 func (s *Store) FindUsersByEmail(ctx context.Context, emailKey, scope string, limit int) ([]*User, error) {
-	query := "SELECT " + userCols + " FROM users WHERE email_key = ?"
+	query := "SELECT " + userSelectCols + " FROM users WHERE email_key = ?"
 	args := []any{emailKey}
 	switch scope {
 	case "":
@@ -222,7 +229,7 @@ func (s *Store) Users(ctx context.Context, accountID string, f UserFilter, p Pag
 		args = append(args, ms, parts[1])
 	}
 	args = append(args, p.Limit+1)
-	out, err := s.queryUsers(ctx, "SELECT "+userCols+" FROM users WHERE "+strings.Join(where, " AND ")+
+	out, err := s.queryUsers(ctx, "SELECT "+userSelectCols+" FROM users WHERE "+strings.Join(where, " AND ")+
 		" ORDER BY created_at, id LIMIT ?", args)
 	if err != nil {
 		return nil, "", err

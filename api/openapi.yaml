@@ -7415,7 +7415,7 @@ components:
           format: email
           description: |
             The new address a change of email waits for, until it is confirmed (decision 89). Null when there
-            is none. `email` is still the address that signs in.
+            is none, or when its confirmation link has expired. `email` is still the address that signs in.
         display_name: { type: string }
         locale: { type: string, example: en }
         role:

@@ -56,29 +56,19 @@ func (s *Server) checkEmailChange(w http.ResponseWriter, r *http.Request, accID,
 		}
 		return nil, nil
 	}
+	// The one guard for the caller's kind. A member and a delegated token never reach it: managedAccount refuses them first,
+	// as an account they do not manage. So the only caller here that is not an account key or an installation admin is an
+	// owner or a member session, and it is refused for this reason.
 	p := principalOf(r)
-	if p == nil || p.Token != nil || (p.Kind != auth.KindAccountKey && p.Kind != auth.KindAdminKey && p.Kind != auth.KindUser) {
+	session := p != nil && p.Kind == auth.KindUser
+	if p == nil || (p.Kind != auth.KindAccountKey && p.Kind != auth.KindAdminKey && !session) || (session && p.Role != auth.RoleAdmin) {
 		return nil, apierr.New(apierr.Forbidden, "only an account key or an installation admin may change a user's email").
 			With("reason", reasonEmailCaller)
 	}
 	// An installation admin, by its key or its session, reaches every account. A changed address followed by a password
-	// reset by mail is a way into the account, as a reset link is (decision 41), so admin.tenant_access gates it for a key
-	// too. An account key is not gated: it may already mint sign-in links for its own users.
-	if p.Kind == auth.KindAdminKey {
-		if err := s.tenantAccessGate(); err != nil {
-			return nil, err
-		}
-	}
-	session := p.Kind == auth.KindUser
-	if session {
-		if p.Role != auth.RoleAdmin {
-			return nil, apierr.New(apierr.Forbidden, "only an account key or an installation admin may change a user's email").
-				With("reason", reasonEmailCaller)
-		}
-		if err := requireAdminSession(p); err != nil {
-			return nil, err
-		}
-		// A changed address followed by a password reset is a way in, as a reset link is, so admin.tenant_access gates it.
+	// reset by mail is a way into the account, as a reset link is (decision 41), so admin.tenant_access gates it. An
+	// account key is not gated: it may already mint sign-in links for its own users.
+	if p.Kind == auth.KindAdminKey || session {
 		if err := s.tenantAccessGate(); err != nil {
 			return nil, err
 		}
@@ -129,6 +119,12 @@ func (s *Server) changeEmail(ctx context.Context, r *http.Request, tx *store.Tx,
 	if req.method == methodNone {
 		old := u.Email
 		u.Email, u.EmailKey, u.PendingEmail = req.email, req.key, ""
+		// Create with none makes its user active and verified (users.go handleCreateUser). A none change of a user who never
+		// verified does the same: the caller vouches for the address, as it may for create (decision 89).
+		if u.Status == store.UserPending {
+			at := now
+			u.Status, u.VerifiedAt = store.UserActive, &at
+		}
 		if err := writeEmailTx(ctx, tx, u); err != nil {
 			return nil, err
 		}
@@ -203,6 +199,20 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 		if found.Status == store.UserDisabled {
 			return apierr.New(apierr.UserDisabled, "the user is disabled")
 		}
+		// The account's own state is checked as the account's routes check it: a suspended account takes no change, and an
+		// account being deleted takes none either (writableAccount, decision 89).
+		if found.AccountID != "" {
+			acc, err := tx.Account(ctx, found.AccountID)
+			if err != nil {
+				return err
+			}
+			switch acc.Status {
+			case store.AccountSuspended:
+				return apierr.New(apierr.AccountSuspended, "the account is suspended")
+			case store.AccountDeleting:
+				return apierr.New(apierr.Conflict, "the account is being deleted")
+			}
+		}
 		// A link whose change was replaced or applied has no pending address to apply.
 		if found.PendingEmail == "" {
 			return errBadLink
@@ -244,9 +254,14 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 }
 
 // noticeEmailChange tells oldAddress that the address of u was changed. It carries no link and names neither address. It
-// is not audited of its own: the change is, as user.email_changed, and the notice is only its courtesy. A failed send is
-// logged and does not undo the change.
+// is not audited of its own: the change is, as user.email_changed, and the notice is only its courtesy. The notice is
+// charged to the mail budgets as other mail is (mail.account and mail.target, decision 89): when they are spent the
+// notice is skipped and logged, and the change still applies. A failed send is logged and does not undo the change.
 func (s *Server) noticeEmailChange(ctx context.Context, r *http.Request, u *store.User, oldAddress string) {
+	if err := s.checkMailBudget(u.AccountID, oldAddress); err != nil {
+		s.log.Warn("the notice of an email change is not sent: the mail budget is spent", "request_id", requestID(r))
+		return
+	}
 	subject, body, err := s.templates.Render(mail.PurposeEmailChanged, u.Locale, struct{}{})
 	if err != nil {
 		s.log.Error("cannot render the notice of an email change", "request_id", requestID(r), "error", err)

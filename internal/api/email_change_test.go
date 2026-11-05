@@ -170,13 +170,14 @@ func TestOwnersMembersAndTokensCannotChangeEmail(t *testing.T) {
 	body := map[string]any{"email": "taken-over@example.com", "verification": "none"}
 	path := userPath(acc.ID, member.ID)
 
-	wantError(t, callSession(t, s, ownerSess, "PATCH", path, body), 403, apierr.Forbidden)
-	if rec := callSession(t, s, memberSess, "PATCH", path, body); rec.Code != 403 && rec.Code != 404 {
-		t.Errorf("member session answered %d, want a refusal", rec.Code)
+	// An owner reaches the owner guard of checkEmailChange and is refused for its reason.
+	e := wantError(t, callSession(t, s, ownerSess, "PATCH", path, body), 403, apierr.Forbidden)
+	if e.Details["reason"] != reasonEmailCaller {
+		t.Errorf("owner refused with reason %v, want %s", e.Details["reason"], reasonEmailCaller)
 	}
-	if rec := call(t, s, "PATCH", path, tok, body); rec.Code != 403 && rec.Code != 404 {
-		t.Errorf("delegated token answered %d, want a refusal", rec.Code)
-	}
+	// A member and a delegated token never reach that guard: managedAccount refuses an account they do not manage.
+	wantError(t, callSession(t, s, memberSess, "PATCH", path, body), 404, apierr.NotFound)
+	wantError(t, call(t, s, "PATCH", path, tok, body), 404, apierr.NotFound)
 	if got := emailOf(t, s, key, acc.ID, member.ID); got.Email != "member@example.com" || got.PendingEmail != nil {
 		t.Errorf("a refused change moved the address: %+v", got)
 	}
