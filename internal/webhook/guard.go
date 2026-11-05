@@ -35,12 +35,10 @@ var denied4 = prefixes(
 // inside the block (6to4) is checked as the IPv4 address it embeds.
 var globalUnicast = netip.MustParsePrefix("2000::/3")
 
-// denied6 is the part of globalUnicast that is not public: Teredo, the benchmarking and ORCHID blocks, documentation.
+// denied6 is the part of globalUnicast that is not public: the special-purpose blocks inside 2001::/23 (Teredo and the
+// others there, all of it denied whole, sec1), the benchmarking and ORCHID blocks, documentation.
 var denied6 = prefixes(
-	"2001::/32",     // Teredo tunnelling (RFC 4380)
-	"2001:2::/48",   // benchmarking
-	"2001:10::/28",  // ORCHID (deprecated)
-	"2001:20::/28",  // ORCHIDv2
+	"2001::/23",     // special-purpose: Teredo (RFC 4380) and the other 2001:0000::/23 blocks
 	"2001:db8::/32", // documentation
 	"3fff::/20",     // documentation (RFC 9637)
 )

@@ -48,6 +48,8 @@ func TestDenyTableRestOfIPv6AndSIIT(t *testing.T) {
 		"64:ff9b::808:808",  // NAT64 of 8.8.8.8: outside 2000::/3, so denied
 		"100::1",            // discard prefix
 		"2001::1",           // Teredo (2001::/32)
+		"2001:1::1",         // 2001:1::/32, the PTB anycast block, inside 2001::/23 (sec1)
+		"2001:3::1",         // 2001:3::/32, AMT, inside 2001::/23 (sec1)
 		"2001:2::1",         // benchmarking (2001:2::/48)
 		"2001:10::1",        // ORCHID (2001:10::/28)
 		"2001:20::1",        // ORCHIDv2 (2001:20::/28)
