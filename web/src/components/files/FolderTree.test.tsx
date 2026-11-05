@@ -394,11 +394,19 @@ describe("the folder tree opens the way to the place (decision 88)", () => {
     });
     const chain = Array.from({ length: depth }, (_, i) => `nod_${i + 1}`);
     render(<Harness folder="fld_a" chain={chain} />);
-    expect(await screen.findByRole("treeitem", { name: `F${depth}` }, { timeout: 8000 })).toBeTruthy();
-    expect(screen.getByRole("treeitem", { name: `F${depth}` }).getAttribute("aria-current")).toBe("location");
     const way = ["fld_a", ...chain.slice(0, -1)];
-    expect(latest.expanded).toEqual(expect.arrayContaining(way));
+    // The reads resolve at once (microtasks, no timers), so the wait is for the condition itself: every folder on the way is open and read,
+    // and the viewed folder is marked. The timeout is generous and does not decide the result; a loop would never meet the condition.
+    await waitFor(
+      () => {
+        expect(latest.expanded).toEqual(expect.arrayContaining(way));
+        expect(reads()).toHaveLength(way.length);
+        expect(screen.getByRole("treeitem", { name: `F${depth}` }).getAttribute("aria-current")).toBe("location");
+      },
+      { timeout: 30_000 },
+    );
     expect(latest.expanded).toHaveLength(way.length);
+    // One change per folder opened: a loop would send more changes than the way has folders.
     expect(changes).toBeLessThanOrEqual(way.length + 2);
   });
 
