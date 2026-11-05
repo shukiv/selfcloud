@@ -336,6 +336,9 @@ func New(opts Options) (*Server, error) {
 		limits: map[string]*limiter{
 			"login.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
 			"login.email":  newLimiter(cfg.RateLimit.PerEmailPerMinute),
+			// Failed sign-ins to one email from any address, an hour wide (sec1, decision 84). Fixed: it bounds
+			// guessing across addresses, which the per-address limit above does not.
+			"login.failed": newLimiterRate(30, time.Hour),
 			"forgot.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),
 			"forgot.email": newLimiter(cfg.RateLimit.PerEmailPerMinute),
 			"verify.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),

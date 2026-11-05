@@ -164,7 +164,9 @@ func (m MailConfig) Configured() bool { return m.SMTPHost != "" && m.From != "" 
 type RateLimitConfig struct {
 	// PerIPPerMinute limits each client address. Verification and reset are limited only this way.
 	PerIPPerMinute int `yaml:"per_ip_per_minute"`
-	// PerEmailPerMinute limits each email address at sign-in and password-reset requests.
+	// PerEmailPerMinute limits each email address at sign-in and password-reset requests, per client
+	// address: one address's tries never use up another address's budget (sec1). Failed sign-ins to an
+	// email from all addresses together are capped at 30 an hour, a fixed limit.
 	PerEmailPerMinute int `yaml:"per_email_per_minute"`
 }
 

@@ -234,7 +234,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if err := s.rateLimit("login.ip", addressKey(r)); err != nil {
 		return err
 	}
-	if err := s.rateLimit("login.email", key); err != nil {
+	if err := s.rateLimit("login.email", emailAddressKey(r, email)); err != nil {
+		return err
+	}
+	// The loose cap on failed sign-ins to this email, from any address. It is taken before the
+	// password check, and given back when the password matches, so only failures count (sec1).
+	now := s.limitClock()
+	failed, err := s.limits["login.failed"].reserve(key, now)
+	if err != nil {
 		return err
 	}
 	ctx := r.Context()
@@ -251,6 +258,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		if ok {
 			matches = append(matches, c)
 		}
+	}
+	if len(matches) > 0 {
+		failed.CancelAt(now)
 	}
 	if len(candidates) == 0 {
 		if err := auth.DummyVerify(ctx, in.Password); err != nil {
@@ -332,6 +342,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.writeSignedIn(w, secret, u, sess)
 	return nil
+}
+
+// emailAddressKey is the key of the per-email sign-in and reset limits: the email and the client
+// address. One address's tries use up only its own budget for the email, so a guesser elsewhere
+// cannot lock the user out (sec1, decision 84). The address never contains "|", so the key is
+// unambiguous.
+func emailAddressKey(r *http.Request, email string) string {
+	return emailKey(email) + "|" + addressKey(r)
 }
 
 // matchPassword verifies password against a stored hash. A user with no password yet, which
@@ -429,7 +447,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) er
 	if err := s.rateLimit("forgot.ip", addressKey(r)); err != nil {
 		return err
 	}
-	if err := s.rateLimit("forgot.email", emailKey(email)); err != nil {
+	if err := s.rateLimit("forgot.email", emailAddressKey(r, email)); err != nil {
 		return err
 	}
 	ctx := r.Context()
