@@ -51,6 +51,15 @@ async function openNew() {
   fireEvent.click(screen.getByRole("button", { name: "New admin" }));
 }
 
+describe("the new admin dialog's name is not an ambiguous Name", () => {
+  it("labels the field Admin's name", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [person()] } }));
+    renderAdmins();
+    await openNew();
+    expect(document.querySelector('label[for="admin-name"]')?.textContent).toBe("Admin's name");
+  });
+});
+
 describe("the new admin dialog offers only what the server accepts for an admin (decision 41)", () => {
   // A link to a new admin is refused to an admin's session (linkAllowed takes only a pending owner), so the dialog offers
   // the email invitation only. The question says who gets in: the admin, not the owner.

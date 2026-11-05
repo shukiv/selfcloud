@@ -31,6 +31,27 @@ function fill() {
   setField("new-tenant-owner-email", "owen@example.com");
 }
 
+// The two name fields are told apart: the tenant's name, and the first owner's name, which sits under a divider of its own.
+describe("the two name fields and the first owner's group", () => {
+  it("labels the tenant's name and the owner's name differently (English)", () => {
+    render(<NewTenant onClose={vi.fn()} onCreated={vi.fn()} />);
+    const tenant = document.querySelector('label[for="new-tenant-name"]')?.textContent;
+    const owner = document.querySelector('label[for="new-tenant-owner-name"]')?.textContent;
+    expect(tenant).toBe("Tenant name");
+    expect(owner).toBe("Owner's name");
+    expect(tenant).not.toBe(owner);
+  });
+
+  it("sets the first owner's fields apart under a divider headed First owner", () => {
+    render(<NewTenant onClose={vi.fn()} onCreated={vi.fn()} />);
+    const divider = document.querySelector(".ant-divider");
+    expect(divider?.textContent).toBe("First owner");
+    const group = screen.getByRole("group", { name: "First owner" });
+    expect(group.contains(document.getElementById("new-tenant-owner-email"))).toBe(true);
+    expect(group.contains(document.getElementById("new-tenant-owner-name"))).toBe(true);
+  });
+});
+
 // The owner's ways in: the server takes email only with mail, and a link to an admin's session only with tenant access.
 describe("the owner's ways in follow the installation's switches (decision 41)", () => {
   it("with mail only, offers the email invitation and no link", () => {

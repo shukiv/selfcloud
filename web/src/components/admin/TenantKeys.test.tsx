@@ -28,6 +28,15 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
+describe("the new key dialog's name is not an ambiguous Name", () => {
+  it("labels the field Key name", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderKeys();
+    fireEvent.click(await screen.findByRole("button", { name: "New key" }));
+    expect(document.querySelector('label[for="new-key-name"]')?.textContent).toBe("Key name");
+  });
+});
+
 describe("API keys of a tenant", () => {
   it("a failed first load shows the error and no empty state (guard: firstFailed)", async () => {
     stubFetch(() => fail(500, "internal"));

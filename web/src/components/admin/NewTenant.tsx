@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { App, Alert, Button, Checkbox, Collapse, Input, Modal, Radio, Select } from "antd";
+import { App, Alert, Button, Checkbox, Collapse, Divider, Input, Modal, Radio, Select } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -143,8 +143,11 @@ export default function NewTenant({
           </Checkbox>
         </fieldset>
 
-        <fieldset style={fieldset}>
-          <legend>{t("tenant.new.owner")}</legend>
+        <fieldset style={fieldset} aria-labelledby="new-tenant-owner-title">
+          {/* The first owner's fields sit under their own divider, so they are not read as the tenant's. */}
+          <Divider orientation="left" orientationMargin={0}>
+            <span id="new-tenant-owner-title">{t("tenant.new.owner")}</span>
+          </Divider>
           <div style={field}>
             <label htmlFor="new-tenant-owner-email">{t("tenant.new.ownerEmail")}</label>
             <Input id="new-tenant-owner-email" type="email" autoComplete="off" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} />
