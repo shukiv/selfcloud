@@ -134,12 +134,13 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	var in struct {
-		Email        string `json:"email"`
-		DisplayName  string `json:"display_name"`
-		Locale       string `json:"locale"`
-		Role         string `json:"role"`
-		ExternalID   string `json:"external_id"`
-		Verification string `json:"verification"`
+		Email         string `json:"email"`
+		DisplayName   string `json:"display_name"`
+		Locale        string `json:"locale"`
+		Role          string `json:"role"`
+		ExternalID    string `json:"external_id"`
+		Verification  string `json:"verification"`
+		AdminPassword string `json:"admin_password"` // an admin session's link to a pending owner needs it (sec1, F4)
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -168,6 +169,11 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) error 
 	}
 	if err := s.checkVerificationMethod(r, in.Verification, linkTarget{role: role, status: store.UserPending}); err != nil {
 		return err
+	}
+	if p := principalOf(r); in.Verification == methodLink && p != nil && p.Kind == auth.KindUser {
+		if err := s.confirmAdminPassword(w, r, p, sessionOf(r), wayOwnerLink, "", acc.ID, in.AdminPassword); err != nil {
+			return err
+		}
 	}
 
 	ctx := r.Context()

@@ -52,6 +52,27 @@ func TestAdminSessionOwnerLinkNeedsThePassword(t *testing.T) {
 	_ = acc
 }
 
+// sec1 item 12, review F4 (decision 84): an admin session that asks for a link to a new pending owner through the user
+// create route needs the admin's password, as the owner link at account create and the resend do. Without it the
+// link is refused; with it the owner is created.
+func TestAdminSessionCreateUserOwnerLinkNeedsThePassword(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.Admin.TenantAccess = true })
+	admin := adminKey(t, s)
+	_, adminSess := newAdminUser(t, s, admin, "ann@example.com")
+	created := callSession(t, s, adminSess, "POST", "/api/v1/accounts", map[string]any{"name": "Acme",
+		"admin_password": testPassword, "owner": map[string]any{"email": "owner@example.com", "verification": "email"}})
+	wantStatus(t, created, 201)
+	acc := decode[accountResponse](t, created)
+	users := "/api/v1/accounts/" + acc.ID + "/users"
+	newOwner := map[string]any{"email": "new@example.com", "role": "owner", "verification": "link"}
+
+	wantError(t, callSession(t, s, adminSess, "POST", users, newOwner), 403, apierr.Forbidden)
+	withPassword := map[string]any{"email": "new@example.com", "role": "owner", "verification": "link",
+		"admin_password": testPassword}
+	wantStatus(t, callSession(t, s, adminSess, "POST", users, withPassword), 201)
+}
+
 // sec1 item 12 (decision 84): an admin session makes an account key only with the admin's own password. A wrong or
 // missing one is refused, and the right one makes the key.
 func TestAdminSessionKeyNeedsThePassword(t *testing.T) {
