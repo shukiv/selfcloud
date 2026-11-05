@@ -102,6 +102,12 @@ const (
 // current password: the fifth in a row ends the admin's session. A refused attempt is never a sign-in or a set password.
 func (s *Server) confirmAdminPassword(w http.ResponseWriter, r *http.Request, p *auth.Principal, sess *store.Session,
 	way, target, accountID, password string) error {
+	// The wrong passwords are counted per signed-in session. A delegated token has none, so it is refused here rather
+	// than counted under an empty key or dereferenced (sec1, decision 84, review F7).
+	if sess == nil {
+		return apierr.New(apierr.Forbidden, "this needs a signed-in session; a delegated token cannot confirm the admin's password").
+			With("reason", "session_required")
+	}
 	ctx := r.Context()
 	admin, err := s.store.User(ctx, "", p.ID)
 	if errors.Is(err, store.ErrNotFound) {

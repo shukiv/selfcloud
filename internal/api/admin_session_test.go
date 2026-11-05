@@ -83,11 +83,11 @@ func TestAdminSessionLinkRules(t *testing.T) {
 		map[string]any{"email": "second@example.com", "verification": "email"}), 201)
 
 	// A pending member is invited by its owner, so an admin session gets email only for it; an
-	// owner made by the admin session may still get a link.
+	// owner made by the admin session may still get a link, with the admin's password (sec1, F4).
 	wantError(t, callSession(t, s, adminSess, "POST", users(acc.ID),
 		map[string]any{"email": "member@example.com", "verification": "link"}), 403, apierr.Forbidden)
 	wantStatus(t, callSession(t, s, adminSess, "POST", users(acc.ID),
-		map[string]any{"email": "owner2@example.com", "role": "owner", "verification": "link"}), 201)
+		map[string]any{"email": "owner2@example.com", "role": "owner", "verification": "link", "admin_password": testPassword}), 201)
 }
 
 // adminKeyAccount returns an account key for acc, made with the admin key.

@@ -3,10 +3,13 @@
 package api
 
 import (
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/mail"
 )
@@ -71,6 +74,34 @@ func TestAdminSessionCreateUserOwnerLinkNeedsThePassword(t *testing.T) {
 	withPassword := map[string]any{"email": "new@example.com", "role": "owner", "verification": "link",
 		"admin_password": testPassword}
 	wantStatus(t, callSession(t, s, adminSess, "POST", users, withPassword), 201)
+}
+
+// sec1 item 12, review F7 (decision 84): the admin's password is confirmed per signed-in session. A delegated token has
+// no session, so with no session confirmAdminPassword refuses at once, with a message that says a signed-in session is
+// needed. It does not count the failures under an empty key, and five wrong passwords answer 403, never 500.
+// No legitimate flow sends a token here: each route that confirms the password requires a session.
+func TestConfirmAdminPasswordNeedsASession(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	adminUser, _ := newAdminUser(t, s, admin, "ann@example.com")
+	acc, _ := newAccount(t, s, admin, "Acme")
+	p := &auth.Principal{Kind: auth.KindUser, ID: adminUser.ID, UserID: adminUser.ID, Role: auth.RoleAdmin}
+	r := httptest.NewRequest("POST", "/api/v1/accounts/"+acc.ID+"/keys", nil)
+
+	err := s.confirmAdminPassword(httptest.NewRecorder(), r, p, nil, wayCreateKey, "", acc.ID, testPassword)
+	if err == nil {
+		t.Fatal("a delegated token with the right password was taken as the admin's confirmation")
+	}
+	if !strings.Contains(err.Error(), "signed-in session") {
+		t.Errorf("the refusal does not say a signed-in session is needed: %v", err)
+	}
+	for i := 0; i < 5; i++ {
+		err := s.confirmAdminPassword(httptest.NewRecorder(), r, p, nil, wayCreateKey, "", acc.ID, "wrong password")
+		if e := apierr.From(err); e != nil && e.Code == apierr.Internal {
+			t.Fatalf("wrong password %d with no session: %v", i+1, err)
+		}
+	}
 }
 
 // sec1 item 12 (decision 84): an admin session makes an account key only with the admin's own password. A wrong or
