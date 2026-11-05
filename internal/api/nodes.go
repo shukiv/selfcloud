@@ -392,9 +392,6 @@ func nameConflict(existing *store.Node) error {
 // oneRequestWriteRate is the limiter of large or unsized one-request writes, per caller (server.go sets its size).
 const oneRequestWriteRate = "write.one_request"
 
-// oneRequestLargeBytes is the body size above which a one-request write is rate limited.
-const oneRequestLargeBytes = 1 << 20
-
 // writeBlob streams the request body into a new blob. It refuses, before writing, a body that
 // declares itself larger than limit, and it stops writing at limit. The body must arrive within a
 // deadline that grows with the cap, so a stalled client cannot hold a write open.
@@ -407,9 +404,9 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 		return blob.Committed{}, tooLarge(limit)
 	}
 	p := principalOf(r)
-	// Only large or unsized bodies are rate limited: the review's concern is large bodies filling the disk. A small
-	// write is bounded by the quota and the disk already (sec1, decision 84).
-	if p != nil && (r.ContentLength < 0 || r.ContentLength > oneRequestLargeBytes) {
+	// Every one-request write is rate limited per caller, large or small (sec1, decision 84, review F6): a small write
+	// still takes the disk and the quota's time, and a caller's writes are one budget.
+	if p != nil {
 		if err := s.rateLimit(oneRequestWriteRate, string(p.Kind)+":"+p.ID); err != nil {
 			return blob.Committed{}, err
 		}

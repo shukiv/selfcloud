@@ -156,26 +156,19 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
-// sec1 item 2 (decision 84): one-request writes are rate limited per caller, so parallel large bodies cannot fill the
-// disk for every tenant. The 61st small write in a minute from one caller is refused.
+// sec1 item 2, review F6 and F3 (decision 84): every one-request write is rate limited per caller at 300 a minute, large
+// or small, so the 301st write in a minute from one caller is refused, and an earlier one is not. Small bodies are
+// used, so the test stays quick; the limit does not depend on the size.
 func TestOneRequestWritesAreRateLimitedPerCaller(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	fld := folderOf(t, s, key, acc.ID)
-	// Large bodies (over 1 MiB) are limited to 60 a minute per caller.
-	big := strings.Repeat("x", (1<<20)+1)
-	for i := 1; i <= 60; i++ {
-		if rec := rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q(fmt.Sprintf("/f%d.bin", i)), key, big, nil); rec.Code >= 300 {
+	for i := 1; i <= 300; i++ {
+		if rec := rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q(fmt.Sprintf("/s%d.txt", i)), key, "x", nil); rec.Code >= 300 {
 			t.Fatalf("write %d: status %d, want success before the limit", i, rec.Code)
 		}
 	}
-	wantError(t, rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q("/f61.bin"), key, big, nil), 429, apierr.RateLimited)
-	// Small writes are not limited here: the quota and the disk bound them.
-	for i := 1; i <= 100; i++ {
-		if rec := rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q(fmt.Sprintf("/s%d.txt", i)), key, "x", nil); rec.Code >= 300 {
-			t.Fatalf("small write %d: status %d, want success", i, rec.Code)
-		}
-	}
+	wantError(t, rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q("/s301.txt"), key, "x", nil), 429, apierr.RateLimited)
 }

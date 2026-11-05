@@ -351,7 +351,7 @@ func New(opts Options) (*Server, error) {
 			// Warnings for refused /wopi requests, per client address: one a minute (sec1, decision 84).
 			"wopi.refusal": newLimiter(1),
 			// One-request writes (see oneRequestWriteRate).
-			oneRequestWriteRate: newLimiter(60),
+			oneRequestWriteRate: newLimiter(300),
 			// Changing a password checks the current one, so a stolen session could guess it.
 			// These limits are fixed: they guard a password, not a configurable flow.
 			"changepw.user": newLimiter(5),

@@ -24,6 +24,10 @@ func TestNameSearchPastUnreadableMatchesWithinTheDeadline(t *testing.T) {
 		t.Skip("a deadline in real time means nothing under the race detector")
 	}
 	fx := newContentFixture(t, func(c *config.Config) { c.Search.Timeout = config.Duration(2 * time.Second) })
+	// The seeding below makes 1,540 one-request writes from one caller, over the 300 a minute of write.one_request (sec1,
+	// decision 84). The limit has its own test (TestOneRequestWritesAreRateLimitedPerCaller); this test is about the
+	// search deadline, so its seeding gets a larger limiter.
+	fx.s.limits[oneRequestWriteRate] = newLimiter(1 << 20)
 	hidden := newFolder(t, fx.s, fx.key, fx.acc.ID, "Hidden")
 	for i := range 1500 {
 		putTyped(t, fx.s, fx.key, hidden.ID, "budget hidden "+strconv.Itoa(i)+".txt", "text/plain", "x")

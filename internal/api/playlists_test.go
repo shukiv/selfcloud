@@ -481,6 +481,9 @@ func TestPlaylistReadCost(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
 	fx.setPerm(t, fx.a.ID, fx.ann.ID, "viewer")
+	// The seeding makes 500 one-request writes from one caller, over the 300 a minute of write.one_request (sec1,
+	// decision 84). This test measures the read; the limit has its own test.
+	fx.s.limits[oneRequestWriteRate] = newLimiter(1 << 20)
 	pls := plCreate(t, fx, fx.annSess, "Largest")
 	nodes := make([]string, 0, maxPlaylistEntries)
 	for i := 0; i < maxPlaylistEntries; i++ {
