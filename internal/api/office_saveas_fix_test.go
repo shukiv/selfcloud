@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shukiv/selfcloud/internal/auth"
 )
 
 // hookReader runs once, before its first read. A test uses it to change the source while the body is still arriving, and
@@ -267,4 +269,52 @@ func TestWOPIPutUserInfoRefusedForDelegatedToken(t *testing.T) {
 	view := fx.openToken(t, "view")
 	wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), view, strings.NewReader("mine"),
 		map[string]string{"X-WOPI-Override": "PUT_USER_INFO"}), 200)
+}
+
+// TestCopyPrincipalNeverLiftsADelegatedToken: copyPrincipal clears the node scope of a browser-origin token only. A token
+// minted by a delegated key keeps its scope, so a later reorder of the write cannot widen it (decision 87, round 3).
+func TestCopyPrincipalNeverLiftsADelegatedToken(t *testing.T) {
+	t.Parallel()
+	delegated := &auth.Principal{Kind: auth.KindUser, ID: "usr_test", AccountID: "acc_test", UserID: "usr_test",
+		Token: &auth.TokenScope{Node: "nod_source", Write: true, MintedBy: "key_test"}}
+	if got := copyPrincipal(delegated).Token.Node; got != "nod_source" {
+		t.Errorf("copyPrincipal cleared the node scope of a delegated token: Node = %q, want nod_source", got)
+	}
+	browser := &auth.Principal{Kind: auth.KindUser, ID: "usr_test", AccountID: "acc_test", UserID: "usr_test",
+		Token: &auth.TokenScope{Node: "nod_source", Write: true}}
+	if got := copyPrincipal(browser).Token.Node; got != "" {
+		t.Errorf("copyPrincipal kept the node scope of a browser token: Node = %q, want none", got)
+	}
+}
+
+// TestWOPISaveAsOverwriteOfATrashedNameIsFree: trashing a file frees its name (the store gives the name key to the trash), so
+// an overwrite of that name finds no file to replace and makes the copy under the name. The trashed file is not touched.
+// The round 3 review took this for a 409 case; the store's rule makes it a plain free name, so this pins that behaviour.
+func TestWOPISaveAsOverwriteOfATrashedNameIsFree(t *testing.T) {
+	t.Parallel()
+	fx, tok := saveAsFixture(t)
+	busy := putNode(t, fx.s, fx.key, fx.fld.ID, "/busy.docx", "busy")
+	fx.grant(t, busy.ID, fx.ann.ID, "editor")
+	wantStatus2xx(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+busy.ID, fx.key, nil))
+	out := saveAsAnswer(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, strings.NewReader("x"), saveAsHdr("busy.docx", "", true)))
+	if out["Name"] != "busy.docx" {
+		t.Errorf("Name = %q, want busy.docx", out["Name"])
+	}
+	if got := rootChildren(t, fx)["busy.docx"]; got.ID == busy.ID {
+		t.Error("the trashed file was overwritten")
+	}
+}
+
+// TestWOPISaveAsNamesTheCopyFromTheSourceAsItIsWritten: the source is renamed while the copy's body arrives. The copy takes its
+// suggested name from the source's name as the write reads it (the round 3 nit), so it is named from the new name.
+func TestWOPISaveAsNamesTheCopyFromTheSourceAsItIsWritten(t *testing.T) {
+	t.Parallel()
+	fx, tok := saveAsFixture(t)
+	body := &hookReader{r: strings.NewReader("copy"), once: func() {
+		wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/nodes/"+fx.doc.ID, fx.key, map[string]any{"name": "renamed.docx"}), 200)
+	}}
+	out := saveAsAnswer(t, wopiCallSized(t, fx, nodeRoute(fx.doc.ID), tok, body, 4, saveAsHdr("", ".txt", false)))
+	if out["Name"] != "renamed.txt" {
+		t.Errorf("Name = %q, want renamed.txt, the source's name as it was written", out["Name"])
+	}
 }
