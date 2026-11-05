@@ -225,8 +225,10 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     const sideways = await page.evaluate(`document.documentElement.scrollWidth - window.innerWidth`);
     check(sideways <= 0, `the trash has no sideways scroll at 390 px (${sideways} px over)`);
     await setPhone(page, true);
-    // The finger's sizes apply on the next render; the check below reads what is there after the wait, met or not.
-    await page.waitFor(`(() => { const b = document.querySelector(${JSON.stringify(restoreSel)}); return !!b && Math.round(b.getBoundingClientRect().height) === 44; })()`, 5000).catch(() => undefined);
+    // The finger's sizes apply on the next render, and the button grows to them through its transition: wait for the exact
+    // size the check asserts, not a rounded one (gate fu5a read 43.97 px mid-transition). The check reads what is there after
+    // the wait, met or not.
+    await page.waitFor(`(() => { const b = document.querySelector(${JSON.stringify(restoreSel)}); if (!b) return false; const r = b.getBoundingClientRect(); return r.height === 44 && r.width === 44; })()`, 5000).catch(() => undefined);
     const coarse = await iconState(page, '.trash-item button[aria-label^="Restore:"]');
     check(coarse && coarse.h === 44 && coarse.w === 44, `on a finger the Restore icon is 44 px (${JSON.stringify(coarse)})`);
     await snap('ic2-phone-390.png');
