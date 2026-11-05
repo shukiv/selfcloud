@@ -664,6 +664,34 @@ func (g *gatedSender) Send(ctx context.Context, m mail.Message) error {
 	return g.rec.Send(ctx, m)
 }
 
+// Round 5: when the email ceiling refuses a request, the address budget the request took first is given back (chargeAll
+// cancels it), so the address keeps its token. The ceiling here is one, spent by the first address; the second address
+// is refused by it, and its own budget must still hold its one token.
+func TestAnEmailCeilingRefusalGivesBackTheAddressBudget(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {
+		c.RateLimit.CappedPerEmailPerHour = 1
+		c.RateLimit.CappedEmailPerHour = 1
+	})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	spendCap(t, s, "ann@example.com", 200)
+
+	wantConfirmAnswer(t, signInAsked(t, s, "10.201.1.1:4000", "ann@example.com", "wrong password here"))
+	wantConfirmAnswer(t, signInAsked(t, s, "10.202.1.1:4000", "ann@example.com", "wrong password here"))
+
+	// The address key is the address and the lowercased email, joined by a NUL (addressKey, round 3).
+	b := s.limits["login.capped"].buckets["10.202.1.1\x00ann@example.com"]
+	if b == nil {
+		t.Fatal("the second address's budget was never taken, so the refusal path did not run")
+	}
+	// Read at the limiter's clock, which the tests freeze: time.Now would refill the bucket and hide the refund.
+	if got := b.lim.TokensAt(s.limitClock()); got < 0.5 {
+		t.Errorf("address budget holds %.2f tokens after the ceiling refused, want 1: the refusal must give it back", got)
+	}
+}
+
 // requestRows counts the audit rows a sign-in request writes itself: a failed sign-in and a confirmation requested. A
 // confirmation job's rows are other actions, so they are not counted, whether the job ran or not.
 func requestRows(t *testing.T, s *Server) int {

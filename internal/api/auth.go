@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -269,29 +270,49 @@ func (s *Server) managedAccount(r *http.Request) (*store.Account, error) {
 // auditEntry describes an action by the request's caller, for the audit log.
 // folders, when given, are the folders the entry is about; an entry about a personal folder is
 // private to its user (store.AuditEntry.Folders).
+// auditSource is what an audit entry takes from a request: the user agent, the client address and the principal. A
+// background job copies it before its goroutine starts, so the job never reads the request (round 5).
+type auditSource struct {
+	userAgent string
+	ip        netip.Addr
+	principal *auth.Principal
+}
+
+// auditSourceOf copies what an audit entry takes from r.
+func auditSourceOf(r *http.Request) auditSource {
+	src := auditSource{userAgent: r.UserAgent()}
+	if info := infoFrom(r.Context()); info != nil {
+		src.ip, src.principal = info.ip, info.principal
+	}
+	return src
+}
+
 func (s *Server) auditEntry(r *http.Request, accountID, action, target string, details map[string]any, folders ...string) *store.AuditEntry {
+	return s.auditEntryFrom(auditSourceOf(r), accountID, action, target, details, folders...)
+}
+
+// auditEntryFrom makes an audit entry from a source copied out of a request.
+func (s *Server) auditEntryFrom(src auditSource, accountID, action, target string, details map[string]any, folders ...string) *store.AuditEntry {
 	e := &store.AuditEntry{
 		Folders:   folders,
 		Time:      store.Now(),
 		AccountID: accountID,
 		Action:    action,
 		Target:    target,
-		UserAgent: truncate(r.UserAgent(), 256),
+		UserAgent: truncate(src.userAgent, 256),
 		Details:   details,
 	}
-	if info := infoFrom(r.Context()); info != nil {
-		if info.ip.IsValid() {
-			e.IP = info.ip.String()
-		}
-		if p := info.principal; p != nil {
-			e.ActorKind, e.ActorID = string(p.Kind), p.ID
-			e.Details = delegated(p, details)
-			if p.Impersonator != "" {
-				// An entry made while impersonating names the admin, and is not private to a personal folder, so the
-				// tenant's owner can read it (decision 41; the owner's rule for these entries is in decision 41).
-				e.Folders = nil
-				e.Details = impersonated(p, e.Details)
-			}
+	if src.ip.IsValid() {
+		e.IP = src.ip.String()
+	}
+	if p := src.principal; p != nil {
+		e.ActorKind, e.ActorID = string(p.Kind), p.ID
+		e.Details = delegated(p, details)
+		if p.Impersonator != "" {
+			// An entry made while impersonating names the admin, and is not private to a personal folder, so the
+			// tenant's owner can read it (decision 41; the owner's rule for these entries is in decision 41).
+			e.Folders = nil
+			e.Details = impersonated(p, e.Details)
 		}
 	}
 	return e

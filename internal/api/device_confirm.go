@@ -203,7 +203,6 @@ func (s *Server) auditConfirmRequested(r *http.Request, matches []*store.User) e
 // is in flight per user (round 3): a second for the same user is dropped as a duplicate, with the same answer, so one
 // caller cannot hold every slot through slow sends.
 func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, short bool) {
-	ctx := r.Context()
 	select {
 	case s.deviceSlots <- struct{}{}:
 	default:
@@ -219,6 +218,9 @@ func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, 
 	}
 	s.confirmBusy[u.ID] = true
 	s.confirmMu.Unlock()
+	// The job gets what it needs from the request now, as a plain value, and never reads the request (round 5). Its
+	// context is detached from the request's too: nothing in the job reads a request value through it.
+	src := auditSourceOf(r)
 	accountID, userID := u.AccountID, u.ID
 	s.bg.Add(1)
 	go func() {
@@ -229,16 +231,15 @@ func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, 
 			s.confirmMu.Unlock()
 			<-s.deviceSlots
 		}()
-		jctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		jctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		s.runConfirmJob(jctx, s.prepareConfirmJob(r, accountID, userID, nonce, short))
+		s.runConfirmJob(jctx, s.prepareConfirmJob(src, accountID, userID, nonce, short))
 	}()
 }
 
 // prepareConfirmJob makes a confirmation's token, its link values and its audit rows. It runs in the job, not in the
-// request, so the request does no match-only work (round 4). It runs after the answer has gone out, so it reads r only
-// for what the request fixed: the headers and the request's context values (the client address and the request id).
-func (s *Server) prepareConfirmJob(r *http.Request, accountID, userID, nonce string, short bool) *confirmJob {
+// request, so the request does no match-only work (round 4). It takes the copied request source, not the request.
+func (s *Server) prepareConfirmJob(src auditSource, accountID, userID, nonce string, short bool) *confirmJob {
 	secret, hash := auth.NewToken()
 	details := map[string]any{"purpose": mail.PurposeDeviceConfirm, "method": methodEmail}
 	now := s.clockNow()
@@ -252,10 +253,10 @@ func (s *Server) prepareConfirmJob(r *http.Request, accountID, userID, nonce str
 		short:     short,
 		now:       now,
 		expires:   now.Add(s.cfg.Users.DeviceConfirmTTL.D()),
-		failed:    actor(s.auditEntry(r, accountID, "user.login_failed", userID, nil), userID, "failed"),
-		capped:    actor(s.auditEntry(r, accountID, "user.device_confirm_sent", userID, details), userID, "capped"),
-		attempt:   actor(s.auditEntry(r, accountID, "user.device_confirm_sent", userID, details), userID, "attempted"),
-		result:    actor(s.auditEntry(r, accountID, "user.device_confirm_sent", userID, details), userID, ""),
+		failed:    actor(s.auditEntryFrom(src, accountID, "user.login_failed", userID, nil), userID, "failed"),
+		capped:    actor(s.auditEntryFrom(src, accountID, "user.device_confirm_sent", userID, details), userID, "capped"),
+		attempt:   actor(s.auditEntryFrom(src, accountID, "user.device_confirm_sent", userID, details), userID, "attempted"),
+		result:    actor(s.auditEntryFrom(src, accountID, "user.device_confirm_sent", userID, details), userID, ""),
 	}
 }
 
