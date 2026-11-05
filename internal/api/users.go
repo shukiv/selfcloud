@@ -675,7 +675,8 @@ func (s *Server) handleSendVerification(w http.ResponseWriter, r *http.Request) 
 		return err
 	}
 	var in struct {
-		Method string `json:"method"`
+		Method        string `json:"method"`
+		AdminPassword string `json:"admin_password"` // an admin session's link needs the admin's password (sec1, decision 84)
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -689,6 +690,12 @@ func (s *Server) handleSendVerification(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := s.checkVerificationMethod(r, in.Method, target); err != nil {
 		return err
+	}
+	if p := principalOf(r); in.Method == methodLink && p != nil && p.Kind == auth.KindUser {
+		if err := s.confirmAdminPassword(w, r, p, sessionOf(r), wayOwnerLink, r.PathValue("usr"), acc.ID,
+			in.AdminPassword); err != nil {
+			return err
+		}
 	}
 	ctx := r.Context()
 	now := store.Now()

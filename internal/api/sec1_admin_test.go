@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
+	"github.com/shukiv/selfcloud/internal/mail"
 )
 
 // sec1 item 12 (decision 84): an installation admin's session ends sooner than a user's: at admin_idle_timeout unused
@@ -21,6 +23,33 @@ func TestAdminSessionEndsSoonerThanAUsersSession(t *testing.T) {
 	if got, want := s.sessionExpiry(now, now, false, false), now.Add(168*time.Hour); !got.Equal(want) {
 		t.Errorf("user session expiry = %v, want %v (the user idle timeout)", got, want)
 	}
+}
+
+// sec1 item 12 (decision 84): an admin session's link for a pending owner needs the admin's password, on the route that
+// makes the account and on the route that sends the link again. Wrong or missing is refused as sign-in-as refuses.
+func TestAdminSessionOwnerLinkNeedsThePassword(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.Admin.TenantAccess = true })
+	admin := adminKey(t, s)
+	_, adminSess := newAdminUser(t, s, admin, "ann@example.com")
+
+	wantError(t, callSession(t, s, adminSess, "POST", "/api/v1/accounts", map[string]any{"name": "Acme",
+		"owner": map[string]any{"email": "owner@example.com", "verification": "link"}}), 403, apierr.Forbidden)
+	created := callSession(t, s, adminSess, "POST", "/api/v1/accounts", map[string]any{"name": "Acme",
+		"admin_password": testPassword, "owner": map[string]any{"email": "owner@example.com", "verification": "link"}})
+	wantStatus(t, created, 201)
+	acc := decode[accountResponse](t, created)
+
+	// A second pending owner of another account, sent a link again from the admin session.
+	other := callSession(t, s, adminSess, "POST", "/api/v1/accounts", map[string]any{"name": "Beta",
+		"admin_password": testPassword, "owner": map[string]any{"email": "boss@example.com", "verification": "email"}})
+	wantStatus(t, other, 201)
+	ob := decode[accountResponse](t, other)
+	resend := "/api/v1/accounts/" + ob.ID + "/users/" + ob.Owner.ID + "/verification"
+	wantError(t, callSession(t, s, adminSess, "POST", resend, map[string]any{"method": "link"}), 403, apierr.Forbidden)
+	wantStatus(t, callSession(t, s, adminSess, "POST", resend,
+		map[string]any{"method": "link", "admin_password": testPassword}), 200)
+	_ = acc
 }
 
 // sec1 item 12 (decision 84): an admin session makes an account key only with the admin's own password. A wrong or

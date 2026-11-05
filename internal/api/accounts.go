@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
 )
@@ -64,13 +65,19 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	var in struct {
-		Name       string      `json:"name"`
-		ExternalID string      `json:"external_id"`
-		QuotaBytes int64       `json:"quota_bytes"`
-		Owner      *ownerInput `json:"owner"`
+		Name          string      `json:"name"`
+		ExternalID    string      `json:"external_id"`
+		QuotaBytes    int64       `json:"quota_bytes"`
+		Owner         *ownerInput `json:"owner"`
+		AdminPassword string      `json:"admin_password"` // an admin session's owner link needs the admin's password (sec1)
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
+	}
+	if p := principalOf(r); in.Owner != nil && in.Owner.Verification == methodLink && p != nil && p.Kind == auth.KindUser {
+		if err := s.confirmAdminPassword(w, r, p, sessionOf(r), wayOwnerLink, "", "", in.AdminPassword); err != nil {
+			return err
+		}
 	}
 	name, err := cleanLabel("name", in.Name, 200)
 	if err != nil {

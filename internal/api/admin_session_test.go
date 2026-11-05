@@ -40,7 +40,7 @@ func TestAdminSessionLinkRules(t *testing.T) {
 
 	// A new tenant with an owner, made by the admin session with a link: the owner gets a token.
 	created := callSession(t, s, adminSess, "POST", "/api/v1/accounts", map[string]any{"name": "Acme",
-		"owner": map[string]any{"email": "owner@example.com", "verification": "link"}})
+		"admin_password": testPassword, "owner": map[string]any{"email": "owner@example.com", "verification": "link"}})
 	wantStatus(t, created, 201)
 	acc := decode[accountResponse](t, created)
 	if acc.Owner == nil || acc.Owner.Verification == nil || acc.Owner.Verification.Token == "" ||
@@ -50,7 +50,7 @@ func TestAdminSessionLinkRules(t *testing.T) {
 
 	// The owner is pending. Resending it a link from the admin session works, since it is pending.
 	resend := callSession(t, s, adminSess, "POST", users(acc.ID)+"/"+acc.Owner.ID+"/verification",
-		map[string]any{"method": "link"})
+		map[string]any{"method": "link", "admin_password": testPassword})
 	wantStatus(t, resend, 200)
 	if got := decode[userResponse](t, resend); got.Verification == nil || got.Verification.Token == "" {
 		t.Errorf("resend to pending gave no token: %+v", got)
