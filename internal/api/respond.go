@@ -41,8 +41,15 @@ type errorDetail struct {
 	RequestID string         `json:"request_id,omitempty"`
 }
 
+// writeJSON answers with v as JSON. An answer is not cached and not sniffed (sec1, decision 84), unless the handler
+// set its own Cache-Control first: the icon, asset and signed-content routes do, and keep it.
 func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
+	h := w.Header()
+	h.Set("Content-Type", "application/json")
+	if h.Get("Cache-Control") == "" {
+		h.Set("Cache-Control", "no-store")
+	}
+	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v) // the client may have gone; nothing useful to do
 }
