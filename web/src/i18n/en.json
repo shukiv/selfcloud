@@ -112,6 +112,8 @@
   "files.loadingMore": "Loading more…",
   "files.sortNote": "Sorted across the whole folder.",
   "files.empty": "This folder is empty.",
+  "files.emptyMouse": "Drag files here from your computer, or use Upload files.",
+  "files.emptyTouch": "Tap Upload files to add files from this device.",
   "files.toolbar": "Folder actions",
   "files.selection.label": "Selection actions",
   "files.view.label": "View",

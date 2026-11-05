@@ -112,6 +112,8 @@
   "files.loadingMore": "Chargement…",
   "files.sortNote": "Trié sur tout le dossier.",
   "files.empty": "Ce dossier est vide.",
+  "files.emptyMouse": "Glissez des fichiers ici depuis votre ordinateur, ou utilisez Envoyer des fichiers.",
+  "files.emptyTouch": "Touchez Envoyer des fichiers pour ajouter des fichiers depuis cet appareil.",
   "files.toolbar": "Actions du dossier",
   "files.selection.label": "Actions sur la sélection",
   "files.view.label": "Affichage",

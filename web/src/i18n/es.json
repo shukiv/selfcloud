@@ -112,6 +112,8 @@
   "files.loadingMore": "Cargando más…",
   "files.sortNote": "Ordenado en toda la carpeta.",
   "files.empty": "Esta carpeta está vacía.",
+  "files.emptyMouse": "Arrastra archivos aquí desde tu equipo, o usa Subir archivos.",
+  "files.emptyTouch": "Toca Subir archivos para añadir archivos desde este dispositivo.",
   "files.toolbar": "Acciones de la carpeta",
   "files.selection.label": "Acciones de la selección",
   "files.view.label": "Vista",

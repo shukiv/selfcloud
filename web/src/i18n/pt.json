@@ -112,6 +112,8 @@
   "files.loadingMore": "A carregar mais…",
   "files.sortNote": "Ordenado em toda a pasta.",
   "files.empty": "Esta pasta está vazia.",
+  "files.emptyMouse": "Arraste ficheiros para aqui a partir do seu computador, ou use Carregar ficheiros.",
+  "files.emptyTouch": "Toque em Carregar ficheiros para adicionar ficheiros deste dispositivo.",
   "files.toolbar": "Ações da pasta",
   "files.selection.label": "Ações da seleção",
   "files.view.label": "Vista",

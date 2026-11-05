@@ -112,6 +112,8 @@
   "files.loadingMore": "טוענים עוד…",
   "files.sortNote": "המיון חל על כל התיקייה.",
   "files.empty": "התיקייה ריקה.",
+  "files.emptyMouse": "גררו קבצים לכאן מהמחשב, או השתמשו ב‏העלו קבצים.",
+  "files.emptyTouch": "הקישו על העלו קבצים כדי להוסיף קבצים מהמכשיר הזה.",
   "files.toolbar": "פעולות בתיקייה",
   "files.selection.label": "פעולות על הבחירה",
   "files.view.label": "תצוגה",

@@ -1394,6 +1394,12 @@ export default function FilesPage() {
     if (skipped > 0) void message.warning(t("files.upload.noPath"));
   }
 
+  // openFilePicker is the one path to the page's file picker: the New menu's Upload files and the empty folder's button both call it,
+  // so both open the same input, whose change goes to onFilesPicked and then queueFiles (decision 85).
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
   function onFilesPicked(e: ChangeEvent<HTMLInputElement>) {
     const input = e.currentTarget;
     if (input.files) queueFiles(fromFileList(input.files));
@@ -1763,7 +1769,7 @@ export default function FilesPage() {
   // and a paste. Both follow the toolbar's rules.
   const newActs: BarAct[] = [
     { key: "newFolder", label: t("files.act.newFolder"), icon: <FolderPlus {...ic} />, group: 1, section: "first", hidden: !canMakeFolder, fits: true, enabled: true, run: openNewFolder },
-    { key: "upload", label: t("files.act.upload"), icon: <Upload {...ic} />, group: 1, section: "first", hidden: !canUploadHere, fits: true, enabled: true, run: () => fileInputRef.current?.click() },
+    { key: "upload", label: t("files.act.upload"), icon: <Upload {...ic} />, group: 1, section: "first", hidden: !canUploadHere, fits: true, enabled: true, run: openFilePicker },
     { key: "uploadFolder", label: t("files.act.uploadFolder"), icon: <FolderUp {...ic} />, group: 1, section: "first", hidden: !canUploadFolder, fits: true, enabled: true, run: () => folderInputRef.current?.click() },
   ];
   const hasMedia = items.some(isPlayable);
@@ -2075,9 +2081,26 @@ export default function FilesPage() {
 
           <div>
             {sorted.length === 0 ? (
-              <p role="status" style={{ padding: "32px 16px", textAlign: "center", color: token.colorTextSecondary, border: `1px dashed ${token.colorBorder}`, borderRadius: token.borderRadiusLG }}>
-                {t("files.empty")}
-              </p>
+              // An empty folder shows no box while it is read or busy: the box is for the folder shown, never the one left behind (decision 85).
+              busy ? null : canUploadHere ? (
+                // Decision 85: the box says how to add files, and its one button is the New menu's Upload files (openFilePicker).
+                // A drop on the box is a drop on the section, so it queues the files the same way (queueFiles).
+                <div
+                  data-testid="empty-folder"
+                  style={{ padding: "32px 16px", textAlign: "center", color: token.colorTextSecondary, border: `1px dashed ${token.colorBorder}`, borderRadius: token.borderRadiusLG, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}
+                >
+                  <Upload size={32} aria-hidden="true" color={token.colorTextTertiary} />
+                  <h2 style={{ margin: 0, fontSize: token.fontSizeLG, fontWeight: 600, color: token.colorText }}>{t("files.empty")}</h2>
+                  <p style={{ margin: 0 }}>{coarse ? t("files.emptyTouch") : t("files.emptyMouse")}</p>
+                  <Button type="primary" icon={<Upload {...ic} />} onClick={openFilePicker} style={{ marginTop: 8, ...touchSize }}>
+                    {t("files.act.upload")}
+                  </Button>
+                </div>
+              ) : (
+                <p role="status" style={{ padding: "32px 16px", textAlign: "center", color: token.colorTextSecondary, border: `1px dashed ${token.colorBorder}`, borderRadius: token.borderRadiusLG }}>
+                  {t("files.empty")}
+                </p>
+              )
             ) : (
               <>
                 {/* The rows of the last read stay while the next is read: the area is busy, and its rows cannot be used (fu3b). */}

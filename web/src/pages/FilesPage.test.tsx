@@ -2409,3 +2409,93 @@ describe("the list while the next folder is read (fu3b)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+// Decision 85 (fu5): an empty folder a person can add to shows how to add files, with the page's own Upload files.
+describe("an empty folder says how to add files (decision 85)", () => {
+  const dt = (files: File[]) => ({ types: ["Files"], files, items: [], dropEffect: "none" });
+  const stubPointer = (coarse: boolean) =>
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(pointer: coarse)" ? coarse : query === "(min-width: 1000px)" || query === "(min-width: 360px)",
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("an empty folder a person can add to shows the heading, the mouse instruction and the Upload files button", async () => {
+    stubPointer(false);
+    api.childrenPage.mockResolvedValue({ items: [], next_cursor: undefined });
+    renderAt(FOLDER);
+    const box = await screen.findByTestId("empty-folder");
+    expect(within(box).getByRole("heading", { name: translate("en", "files.empty") })).toBeTruthy();
+    expect(within(box).getByText(translate("en", "files.emptyMouse"))).toBeTruthy();
+    expect(within(box).queryByText(translate("en", "files.emptyTouch"))).toBeNull();
+    expect(within(box).getByRole("button", { name: "Upload files" })).toBeTruthy();
+  });
+
+  it("on a finger the instruction says to tap Upload, and the mouse instruction is not shown", async () => {
+    stubPointer(true);
+    api.childrenPage.mockResolvedValue({ items: [], next_cursor: undefined });
+    renderAt(FOLDER);
+    const box = await screen.findByTestId("empty-folder");
+    expect(within(box).getByText(translate("en", "files.emptyTouch"))).toBeTruthy();
+    expect(within(box).queryByText(translate("en", "files.emptyMouse"))).toBeNull();
+  });
+
+  it("the Upload files button opens the same picker and queue as the New menu's Upload files", async () => {
+    stubPointer(false);
+    api.childrenPage.mockResolvedValue({ items: [], next_cursor: undefined });
+    renderAt(FOLDER);
+    const box = await screen.findByTestId("empty-folder");
+    const clicked: HTMLElement[] = [];
+    const original = HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
+      if (this.type === "file") clicked.push(this);
+      return original.call(this);
+    };
+    try {
+      fireEvent.click(within(box).getByRole("button", { name: "Upload files" }));
+      expect(clicked).toHaveLength(1);
+      expect(clicked[0]).toBeInstanceOf(HTMLInputElement);
+      expect((clicked[0] as HTMLInputElement).multiple).toBe(true);
+      // The New menu's own entry opens the picker on the same input.
+      fireEvent.click(screen.getByRole("button", { name: "New" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Upload files" }));
+      expect(clicked).toHaveLength(2);
+      expect(clicked[1]).toBe(clicked[0]);
+    } finally {
+      HTMLInputElement.prototype.click = original;
+    }
+  });
+
+  it("a folder a person can only read shows the plain text and no button", async () => {
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByText(translate("en", "files.empty"));
+    expect(screen.queryByTestId("empty-folder")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Upload files" })).toBeNull();
+  });
+
+  it("while the folder is loading there is no box, and the box is not shown for a folder still being read", async () => {
+    api.childrenPage.mockReturnValue(new Promise(() => undefined));
+    renderAt(FOLDER);
+    await waitFor(() => expect(document.querySelector(".ant-skeleton")).not.toBeNull());
+    expect(screen.queryByTestId("empty-folder")).toBeNull();
+    expect(screen.queryByText(translate("en", "files.empty"))).toBeNull();
+  });
+
+  it("a drop on the box queues the files, as a drop on the page does", async () => {
+    stubPointer(false);
+    api.childrenPage.mockResolvedValue({ items: [], next_cursor: undefined });
+    renderAt(FOLDER);
+    const box = await screen.findByTestId("empty-folder");
+    const file = new File(["x"], "desk.txt", { type: "text/plain" });
+    fireEvent.dragEnter(box, { dataTransfer: dt([file]) });
+    expect(screen.getByText(translate("en", "files.drop.here"))).toBeTruthy();
+    fireEvent.drop(box, { dataTransfer: dt([file]) });
+    await waitFor(() => expect(uploadsMock.add).toHaveBeenCalled());
+  });
+});

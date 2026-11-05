@@ -6,6 +6,7 @@
 // previous one, marked busy, until the next is read). The sampler starts before the action, so each frame counts, and it stops
 // on the listing's own rows, not on a count of frames. Each case runs three times, so one lucky frame does not pass a flake.
 // The folder and its files are removed before the section ends.
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { launchBrowser, Page } from './cdp.mjs';
 import { sleep } from './media.mjs';
@@ -163,13 +164,87 @@ export async function fu3bChecks(h, { base, accountKey, teamA, dir, browserBinar
     // Hebrew its columns sit over the body's.
     await layoutChecks(h, page, { base, teamA, aID, navigateTo, rowAppears, suffix });
 
-    await touchChecks(h, { base, teamA, aID, dir, browserBinary, MEMBER, suffix, signIn, navigateTo, rowAppears, EXPECTED });
+    // Decision 85: an empty folder's box, its button and a file chosen through the page's picker.
+    await emptyChecks(h, page, { base, accountKey, teamA, root, suffix, dir, navigateTo, rowAppears });
+
+    await touchChecks(h, { base, accountKey, teamA, aID, root, dir, browserBinary, MEMBER, suffix, signIn, navigateTo, rowAppears, EXPECTED });
   } finally {
     page.close();
     launch.proc.kill();
     // The folder and its files go, with the account's own key: the section leaves nothing behind.
     if (rootID) await api(base, 'DELETE', `/api/v1/nodes/${rootID}?permanent=true`, accountKey).catch(() => undefined);
   }
+}
+
+// EMPTY_READ reads an empty folder's box as the screen draws it: its heading, its instruction, its button and the button's size,
+// whether the box is in the window, whether the page scrolls sideways, and the page's direction (decision 85).
+const EMPTY_READ = `(() => {
+  const box = document.querySelector('[data-testid="empty-folder"]');
+  if (!box) return null;
+  const r = box.getBoundingClientRect();
+  const btn = box.querySelector('button');
+  const b = btn.getBoundingClientRect();
+  return {
+    heading: box.querySelector('h2')?.textContent.trim() ?? null,
+    instruction: box.querySelector('p')?.textContent.trim() ?? null,
+    button: btn.textContent.trim(),
+    buttonH: Math.round(b.height),
+    buttonW: Math.round(b.width),
+    inView: r.left >= 0 && r.right <= window.innerWidth,
+    sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    dir: document.documentElement.dir,
+    width: window.innerWidth,
+  };
+})()`;
+
+// PICKER_HOOK counts the clicks on the page's file inputs and does not open the native picker, which a headless browser cannot
+// show. The chosen files go in through DOM.setFileInputFiles afterwards, so the change event is the real one.
+const PICKER_HOOK = `(() => {
+  window.__fu5picks = 0;
+  const original = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function () {
+    if (this.type === 'file') { window.__fu5picks++; return; }
+    return original.call(this);
+  };
+  return true;
+})()`;
+
+// emptyChecks (decision 85): an empty folder I can add to shows its box with the heading, the mouse instruction and Upload files;
+// Hebrew reads right to left in the same box; the button opens the page's one picker, and a file chosen through CDP lands in the
+// folder, after which the box is gone. The folder is removed with the section's root.
+async function emptyChecks(h, page, { base, accountKey, teamA, root, suffix, dir, navigateTo, rowAppears }) {
+  const { check, api } = h;
+  const emptyID = (await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: `${root}/empty-${suffix}`, parents: false })).id;
+  await navigateTo(page, `/files/${teamA}/${emptyID}`);
+  await page.waitFor(`!!document.querySelector('[data-testid="empty-folder"]')`, 15000);
+  const en = await page.evaluate(EMPTY_READ);
+  check(
+    en.heading === 'This folder is empty.' && en.instruction === 'Drag files here from your computer, or use Upload files.' && en.button === 'Upload files',
+    `an empty folder shows its box: the heading, the mouse instruction and an Upload files button (${JSON.stringify(en)})`,
+  );
+
+  await page.send('Page.navigate', { url: `${base}/files/${teamA}/${emptyID}?lang=he` });
+  await page.waitFor(`!!document.querySelector('[data-testid="empty-folder"]') && document.documentElement.dir === 'rtl'`, 15000);
+  const he = await page.evaluate(EMPTY_READ);
+  check(
+    he.heading === 'התיקייה ריקה.' && he.button === 'העלו קבצים' && !he.sideways && he.inView,
+    `in Hebrew the empty folder's box reads right to left, with its button, in the window (${JSON.stringify(he)})`,
+  );
+
+  await page.send('Page.navigate', { url: `${base}/files/${teamA}/${emptyID}?lang=en` });
+  await page.waitFor(`!!document.querySelector('[data-testid="empty-folder"]') && document.documentElement.dir === 'ltr'`, 15000);
+  await page.evaluate(PICKER_HOOK);
+  await page.evaluate(`(() => { document.querySelector('[data-testid="empty-folder"] button').click(); return true; })()`);
+  const picks = await page.evaluate(`window.__fu5picks`);
+  check(picks === 1, `the empty folder's Upload files button opens the page's picker once (${picks} clicks on a file input)`);
+
+  const name = `picked-${suffix}.txt`;
+  const file = join(dir, name);
+  await writeFile(file, 'picked\n');
+  await page.setFiles(`[data-testid="browser-toolbar"] input[type=file]:not([webkitdirectory])`, [file]);
+  await rowAppears(page, name);
+  await page.waitFor(`!document.querySelector('[data-testid="empty-folder"]')`, 10000);
+  check(true, 'a file chosen in the empty folder\'s picker lands in the folder, and the box is gone once it has a file');
 }
 
 // layoutChecks reads the pinned header at phone width with a selection (the selection bar is the toolbar's taller form), then the
@@ -201,8 +276,8 @@ async function layoutChecks(h, page, { base, teamA, aID, navigateTo, rowAppears,
 // touchChecks runs the list in two more browsers: a finger's (touch, no hover: the coarse pointer) and a hybrid one (a mouse and a
 // touch screen). The finger checks the 44 px More button and the list with no hover icons. (A 200 px window's menu check is not here:
 // the root menu opens under the pinned header at that height; see decision 77.)
-async function touchChecks(h, { base, teamA, aID, dir, browserBinary, MEMBER, suffix, signIn, navigateTo, rowAppears, EXPECTED }) {
-  const { check } = h;
+async function touchChecks(h, { base, accountKey, teamA, aID, root, dir, browserBinary, MEMBER, suffix, signIn, navigateTo, rowAppears, EXPECTED }) {
+  const { check, api } = h;
   const centre = (page, selector) =>
     page.evaluate(`(() => { const el = document.querySelector(${q(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   const moreSel = `.files-list tr[data-id][aria-label="file-39-${suffix}.txt"] button[aria-haspopup="menu"]`;
@@ -228,6 +303,25 @@ async function touchChecks(h, { base, teamA, aID, dir, browserBinary, MEMBER, su
     check(size && size.h >= 44 && size.w >= 44, `on a finger the row's More button is 44 px (${JSON.stringify(size)})`);
     const icons = await fp.evaluate(`document.querySelectorAll('.files-list .row-acts').length`);
     check(icons === 0, `on a finger the list draws no hover icons (${icons} row-acts groups)`);
+
+    // Decision 85 on a finger at phone width (390 px): the empty folder's box says to tap Upload files, its button is 44 px, the
+    // box is in the window, and the page does not scroll sideways; then Hebrew, which reads right to left in the same box.
+    const emptyID = (await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: `${root}/empty-finger-${suffix}`, parents: false })).id;
+    await fp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 740, deviceScaleFactor: 1, mobile: false });
+    await navigateTo(fp, `/files/${teamA}/${emptyID}`);
+    await fp.waitFor(`!!document.querySelector('[data-testid="empty-folder"]')`, 15000);
+    const fe = await fp.evaluate(EMPTY_READ);
+    check(
+      fe.instruction === 'Tap Upload files to add files from this device.' && fe.buttonH >= 44 && fe.inView && !fe.sideways && fe.width === 390,
+      `on a finger at 390 px the empty folder says to tap Upload files, its button is 44 px tall, the box is in the window, and there is no sideways scroll (${JSON.stringify(fe)})`,
+    );
+    await fp.send('Page.navigate', { url: `${base}/files/${teamA}/${emptyID}?lang=he` });
+    await fp.waitFor(`!!document.querySelector('[data-testid="empty-folder"]') && document.documentElement.dir === 'rtl'`, 15000);
+    const fh = await fp.evaluate(EMPTY_READ);
+    check(
+      fh.heading === 'התיקייה ריקה.' && fh.button === 'העלו קבצים' && fh.inView && !fh.sideways,
+      `in Hebrew at 390 px on a finger the empty folder reads right to left, its box in the window and no sideways scroll (${JSON.stringify(fh)})`,
+    );
   } finally {
     fp.close();
     finger.proc.kill();
