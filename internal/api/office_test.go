@@ -836,7 +836,8 @@ func (v *revokeOnRead) Read(p []byte) (int, error) {
 
 // TestWOPIUnimplementedOverridesAnswer501: the lock operations, RenameFile, PutRelativeFile (Save As) and PutUserInfo are
 // implemented (office_locks_test.go, office_rename_test.go, office_saveas_test.go, office_userinfo_test.go). An override
-// the host does not have is checked and answered 501. The name used here is not a WOPI override; it stands for any.
+// the host does not have is checked and answered 501. No real WOPI override is left unimplemented (decision 87), so the name
+// used here is made up: it stands for any override the host does not have.
 func TestWOPIUnimplementedOverridesAnswer501(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)

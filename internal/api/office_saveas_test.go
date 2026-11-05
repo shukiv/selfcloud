@@ -125,12 +125,12 @@ func TestWOPIPutRelativeLockedTargetAnswers409WithTheLock(t *testing.T) {
 	fx.grant(t, busy.ID, fx.ann.ID, "editor")
 	btok := decode[officeJSON](t, fx.open(t, fx.annSess, busy.ID, "edit")).Token
 	fx.lockNodeFor(t, busy.ID, btok, "editor-busy")
-	for _, overwrite := range []bool{false, true} {
-		rec := fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, strings.NewReader("x"), saveAsHdr("busy.docx", "", overwrite))
-		wantStatus(t, rec, 409)
-		if got := rec.Header().Get("X-WOPI-Lock"); got != "editor-busy" {
-			t.Errorf("overwrite=%v: X-WOPI-Lock = %q, want editor-busy", overwrite, got)
-		}
+	// Without overwrite the taken name answers with a free name before any lock is looked at; see
+	// TestWOPISaveAsExactNameTakenWithoutOverwriteSaysTheFreeName. With overwrite the lock is the answer.
+	rec := fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, strings.NewReader("x"), saveAsHdr("busy.docx", "", true))
+	wantStatus(t, rec, 409)
+	if got := rec.Header().Get("X-WOPI-Lock"); got != "editor-busy" {
+		t.Errorf("overwrite: X-WOPI-Lock = %q, want editor-busy", got)
 	}
 	if body := call(t, fx.s, "GET", "/api/v1/nodes/"+busy.ID+"/content", fx.key, nil).Body.String(); body != "busy" {
 		t.Errorf("a locked target changed to %q", body)
@@ -189,7 +189,7 @@ func TestWOPIPutRelativeNeedsContributorOnTheDirectory(t *testing.T) {
 		t.Errorf("UserCanNotWriteRelative = %v for a caller with no right to add files, want true", info["UserCanNotWriteRelative"])
 	}
 	wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, strings.NewReader("x"),
-		saveAsHdr("", ".txt", false)), 404)
+		saveAsHdr("", ".txt", false)), 501)
 	if _, ok := rootChildren(t, fx)["letter.txt"]; ok {
 		t.Error("a refused Save As made a file")
 	}
@@ -209,7 +209,7 @@ func TestWOPIPutRelativeNoDownloadSourceIsRefused(t *testing.T) {
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/nodes/"+fx.doc.ID, fx.key, map[string]any{"no_download": true}), 200)
 	fx.grant(t, fx.doc.ID, fx.ann.ID, "viewer")
 	view := decode[officeJSON](t, fx.open(t, fx.annSess, fx.doc.ID, "view")).Token
-	wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), view, strings.NewReader("x"), saveAsHdr("", ".txt", false)), 404)
+	wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), view, strings.NewReader("x"), saveAsHdr("", ".txt", false)), 501)
 	if info := decodeInfo(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), view, nil, nil)); info["UserCanNotWriteRelative"] != true {
 		t.Errorf("UserCanNotWriteRelative = %v for a viewer of a no-download file, want true", info["UserCanNotWriteRelative"])
 	}
@@ -223,27 +223,32 @@ func TestWOPIPutRelativeNoDownloadSourceIsRefused(t *testing.T) {
 // office limit, and the account quota. Each refusal leaves the folder as it was.
 func TestWOPIPutRelativeRefusesBeforeAnyByteLands(t *testing.T) {
 	t.Parallel()
-	before := func(fx *officeFixture) int { return len(rootChildren(t, fx)) }
+	// state is what a refused copy must leave as it was: the folder's entries, and the account's files in the blob store.
+	state := func(fx *officeFixture) [2]int { return [2]int{len(rootChildren(t, fx)), saveAsBlobFiles(t, fx)} }
 	t.Run("size", func(t *testing.T) {
 		t.Parallel()
 		// The file is opened under the default limit; the limit is lowered after, since the open itself is limited too.
 		fx, tok := saveAsFixture(t)
 		fx.s.cfg.Office.MaxFileBytes = 4
-		n := before(fx)
+		n := state(fx)
 		rec := fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, strings.NewReader("too long for four bytes"),
 			saveAsHdr("", ".txt", false))
 		wantStatus(t, rec, 413)
-		if before(fx) != n {
-			t.Error("an over-limit copy made a file")
+		if state(fx) != n {
+			t.Errorf("an over-limit copy changed the folder or the blob store: %v, was %v", state(fx), n)
 		}
 	})
 	t.Run("declared size", func(t *testing.T) {
 		t.Parallel()
 		fx, tok := saveAsFixture(t)
 		fx.s.cfg.Office.MaxFileBytes = 4
+		n := state(fx)
 		hdr := saveAsHdr("", ".txt", false)
 		hdr["X-WOPI-Size"] = "5000"
 		wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, strings.NewReader("x"), hdr), 413)
+		if state(fx) != n {
+			t.Errorf("a copy refused by its declared size changed the folder or the blob store: %v, was %v", state(fx), n)
+		}
 	})
 	t.Run("quota", func(t *testing.T) {
 		t.Parallel()
@@ -251,11 +256,11 @@ func TestWOPIPutRelativeRefusesBeforeAnyByteLands(t *testing.T) {
 		// The account holds the 5 bytes of letter.docx; a 6-byte copy would make 11 of the 10 allowed.
 		wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID, fx.admin,
 			map[string]any{"quota_bytes": 10}), 200)
-		n := before(fx)
+		n := state(fx)
 		wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID), tok, strings.NewReader("six by"),
 			saveAsHdr("", ".txt", false)), 413)
-		if before(fx) != n {
-			t.Error("a copy over the quota made a file")
+		if state(fx) != n {
+			t.Errorf("a copy over the quota changed the folder or the blob store: %v, was %v", state(fx), n)
 		}
 	})
 }
