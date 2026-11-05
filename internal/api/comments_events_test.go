@@ -108,12 +108,12 @@ func TestCommentCreatedPayloadIsIDsOnly(t *testing.T) {
 	seen := len(outboxOf(t, fx.s, fx.acc.ID))
 	c := fx.say(t, fx.annSess, fx.file, "pineapple body text")
 	ev := wantOneEvent(t, fx, seen, "comment.created")
-	wantKeys(t, ev.Data, "comment", "reply_to", "node", "folder", "author", "mentions")
-	if ev.Data["comment"] != c.ID || ev.Data["node"] != fx.file || ev.Data["folder"] != fx.fld.ID {
+	wantKeys(t, ev.Data, "id", "reply_to_id", "node_id", "folder_id", "author_id", "mentions")
+	if ev.Data["id"] != c.ID || ev.Data["node_id"] != fx.file || ev.Data["folder_id"] != fx.fld.ID {
 		t.Fatalf("payload IDs = %v, want comment %s, node %s, folder %s", ev.Data, c.ID, fx.file, fx.fld.ID)
 	}
-	if ev.Data["author"] != fx.ann.ID || ev.Data["reply_to"] != nil || ev.Data["mentions"] != float64(0) {
-		t.Fatalf("payload = %v, want author %s, reply_to null, mentions 0", ev.Data, fx.ann.ID)
+	if ev.Data["author_id"] != fx.ann.ID || ev.Data["reply_to_id"] != nil || ev.Data["mentions"] != float64(0) {
+		t.Fatalf("payload = %v, want author_id %s, reply_to_id null, mentions 0", ev.Data, fx.ann.ID)
 	}
 	noCommentText(t, ev.Raw, "pineapple", "Ann Secretname", "ann@example.com")
 }
@@ -127,8 +127,8 @@ func TestCommentReplyCarriesReplyTo(t *testing.T) {
 	seen := len(outboxOf(t, fx.s, fx.acc.ID))
 	r := fx.reply(t, fx.annSess, fx.file, parent.ID, "a reply")
 	ev := wantOneEvent(t, fx, seen, "comment.created")
-	if ev.Data["comment"] != r.ID || ev.Data["reply_to"] != parent.ID {
-		t.Fatalf("reply payload = %v, want comment %s and reply_to %s", ev.Data, r.ID, parent.ID)
+	if ev.Data["id"] != r.ID || ev.Data["reply_to_id"] != parent.ID {
+		t.Fatalf("reply payload = %v, want id %s and reply_to_id %s", ev.Data, r.ID, parent.ID)
 	}
 }
 
@@ -163,8 +163,8 @@ func TestCommentEditedQueuesUpdated(t *testing.T) {
 	rec := callSession(t, fx.s, fx.annSess, "PATCH", "/api/v1/comments/"+c.ID, map[string]any{"body": "final words"})
 	wantStatus(t, rec, 200)
 	ev := wantOneEvent(t, fx, seen, "comment.updated")
-	wantKeys(t, ev.Data, "comment", "reply_to", "node", "folder", "author", "mentions")
-	if ev.Data["comment"] != c.ID || ev.Data["author"] != fx.ann.ID || ev.Data["mentions"] != float64(0) {
+	wantKeys(t, ev.Data, "id", "reply_to_id", "node_id", "folder_id", "author_id", "mentions")
+	if ev.Data["id"] != c.ID || ev.Data["author_id"] != fx.ann.ID || ev.Data["mentions"] != float64(0) {
 		t.Fatalf("edit payload = %v, want comment %s by %s", ev.Data, c.ID, fx.ann.ID)
 	}
 	noCommentText(t, ev.Raw, "final words", "draft text")
@@ -180,8 +180,8 @@ func TestCommentDeletedQueuesDeleted(t *testing.T) {
 	seen := len(outboxOf(t, fx.s, fx.acc.ID))
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "DELETE", "/api/v1/comments/"+leaf.ID, nil), 204)
 	ev := wantOneEvent(t, fx, seen, "comment.deleted")
-	wantKeys(t, ev.Data, "comment", "reply_to", "node", "folder", "author", "mentions", "tombstone")
-	if ev.Data["comment"] != leaf.ID || ev.Data["tombstone"] != false {
+	wantKeys(t, ev.Data, "id", "reply_to_id", "node_id", "folder_id", "author_id", "mentions", "tombstone")
+	if ev.Data["id"] != leaf.ID || ev.Data["tombstone"] != false {
 		t.Fatalf("leaf delete payload = %v, want comment %s, tombstone false", ev.Data, leaf.ID)
 	}
 
@@ -190,7 +190,7 @@ func TestCommentDeletedQueuesDeleted(t *testing.T) {
 	seen = len(outboxOf(t, fx.s, fx.acc.ID))
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "DELETE", "/api/v1/comments/"+parent.ID, nil), 204)
 	ev = wantOneEvent(t, fx, seen, "comment.deleted")
-	if ev.Data["comment"] != parent.ID || ev.Data["tombstone"] != true {
+	if ev.Data["id"] != parent.ID || ev.Data["tombstone"] != true {
 		t.Fatalf("tombstone delete payload = %v, want comment %s, tombstone true", ev.Data, parent.ID)
 	}
 }
@@ -207,9 +207,9 @@ func TestManagerDeleteNamesTheActor(t *testing.T) {
 	seen := len(outboxOf(t, fx.s, fx.acc.ID))
 	wantStatus(t, callSession(t, fx.s, danSess, "DELETE", "/api/v1/comments/"+c.ID, nil), 204)
 	ev := wantOneEvent(t, fx, seen, "comment.deleted")
-	wantKeys(t, ev.Data, "comment", "reply_to", "node", "folder", "author", "actor", "mentions", "tombstone")
-	if ev.Data["author"] != fx.ann.ID || ev.Data["actor"] != dan.ID {
-		t.Fatalf("payload author %v actor %v, want %s and %s", ev.Data["author"], ev.Data["actor"], fx.ann.ID, dan.ID)
+	wantKeys(t, ev.Data, "id", "reply_to_id", "node_id", "folder_id", "author_id", "actor_id", "mentions", "tombstone")
+	if ev.Data["author_id"] != fx.ann.ID || ev.Data["actor_id"] != dan.ID {
+		t.Fatalf("payload author %v actor %v, want %s and %s", ev.Data["author_id"], ev.Data["actor_id"], fx.ann.ID, dan.ID)
 	}
 	noCommentText(t, ev.Raw, "ann's words", "dan@example.com")
 }
@@ -228,8 +228,8 @@ func TestResolveThenReopenQueueTwoEvents(t *testing.T) {
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "POST", "/api/v1/comments/"+c.ID+"/resolve",
 		map[string]any{"resolved": true}), 200)
 	ev := wantOneEvent(t, fx, seen, "comment.resolved")
-	wantKeys(t, ev.Data, "comment", "reply_to", "node", "folder", "author", "mentions")
-	if ev.Data["comment"] != c.ID {
+	wantKeys(t, ev.Data, "id", "reply_to_id", "node_id", "folder_id", "author_id", "mentions")
+	if ev.Data["id"] != c.ID {
 		t.Fatalf("resolved payload = %v, want comment %s", ev.Data, c.ID)
 	}
 
@@ -237,7 +237,7 @@ func TestResolveThenReopenQueueTwoEvents(t *testing.T) {
 	wantStatus(t, callSession(t, fx.s, danSess, "POST", "/api/v1/comments/"+c.ID+"/resolve",
 		map[string]any{"resolved": false}), 200)
 	ev = wantOneEvent(t, fx, seen, "comment.reopened")
-	if ev.Data["comment"] != c.ID || ev.Data["author"] != fx.ann.ID || ev.Data["actor"] != dan.ID {
+	if ev.Data["id"] != c.ID || ev.Data["author_id"] != fx.ann.ID || ev.Data["actor_id"] != dan.ID {
 		t.Fatalf("reopen payload = %v, want comment %s, author %s, actor %s", ev.Data, c.ID, fx.ann.ID, dan.ID)
 	}
 	noCommentText(t, ev.Raw, "to resolve")

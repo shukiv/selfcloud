@@ -44,18 +44,19 @@ type Quota struct {
 	LimitBytes int64  `json:"limit_bytes"` // the limit the share is taken of
 }
 
-// Comment is the data of a comment event (decision 83): the comment's ID, the comment it replies to (null for a top-level
-// comment), its node and the node's folder, its author, and the actor when someone other than the author made the change
-// (absent for the author's own change). Mentions is how many people the change named. It holds IDs and a count, never the
-// text, a name or an address. Author is null once the author's user is deleted.
+// Comment is the data of a comment event (decision 83). Its own ID is id, as in the other payloads; the node and the
+// folder are node_id and folder_id, since the event is about the comment. reply_to_id is the comment it replies to (null
+// for a top-level comment). author_id is the author, null once the author's user is deleted. actor_id is the user who made
+// the change, and it is absent when that is the author. mentions is how many people the change named. It holds IDs and a
+// count, never the text, a name or an address.
 type Comment struct {
-	Comment  string  `json:"comment"`
-	ReplyTo  *string `json:"reply_to"`
-	Node     string  `json:"node"`
-	Folder   string  `json:"folder"`
-	Author   *string `json:"author"`
-	Actor    *string `json:"actor,omitempty"`
-	Mentions int     `json:"mentions"`
+	ID        string  `json:"id"`
+	ReplyToID *string `json:"reply_to_id"`
+	NodeID    string  `json:"node_id"`
+	FolderID  string  `json:"folder_id"`
+	AuthorID  *string `json:"author_id"`
+	ActorID   *string `json:"actor_id,omitempty"`
+	Mentions  int     `json:"mentions"`
 }
 
 // CommentDeleted is the data of comment.deleted: the comment, and whether the delete left a tombstone that holds its

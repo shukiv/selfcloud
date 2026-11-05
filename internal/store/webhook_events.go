@@ -378,18 +378,18 @@ func FolderEvent(n *Node) webhook.Folder {
 // change, and it is named only when it is not c's author, so the author's own change carries no actor. mentions is the
 // number of people the change named. The data holds IDs and a count only: never the body, a name or an address.
 func CommentEvent(c *Comment, folderID, actor string, mentions int) webhook.Comment {
-	out := webhook.Comment{Comment: c.ID, Node: c.NodeID, Folder: folderID, Mentions: mentions}
+	out := webhook.Comment{ID: c.ID, NodeID: c.NodeID, FolderID: folderID, Mentions: mentions}
 	if c.ParentID != "" {
 		parent := c.ParentID
-		out.ReplyTo = &parent
+		out.ReplyToID = &parent
 	}
 	if c.AuthorID != "" {
 		author := c.AuthorID
-		out.Author = &author
+		out.AuthorID = &author
 	}
 	if actor != "" && actor != c.AuthorID {
 		by := actor
-		out.Actor = &by
+		out.ActorID = &by
 	}
 	return out
 }

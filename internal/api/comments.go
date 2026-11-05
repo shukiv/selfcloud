@@ -608,15 +608,16 @@ func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) err
 				return err
 			}
 		}
+		now := store.Now()
 		if tombstone {
-			err = tx.TombstoneComment(ctx, p.AccountID, cid, store.Now())
+			err = tx.TombstoneComment(ctx, p.AccountID, cid, now)
 		} else {
 			err = tx.RemoveComment(ctx, c)
 		}
 		if err != nil {
 			return err
 		}
-		if err := tx.EmitEvent(ctx, p.AccountID, "comment.deleted", store.Now(), webhook.CommentDeleted{
+		if err := tx.EmitEvent(ctx, p.AccountID, "comment.deleted", now, webhook.CommentDeleted{
 			Comment:   store.CommentEvent(c, n.FolderID, p.UserID, 0),
 			Tombstone: tombstone,
 		}); err != nil {

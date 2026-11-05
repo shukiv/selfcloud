@@ -5212,7 +5212,8 @@ webhooks:
       summary: A comment or a reply was added to a file or a folder
       description: |
         The data is WebhookCommentData: the comment's ID, the comment it replies to (null for a top-level comment), its
-        node and folder, its author, and the number of people it named. It holds no text, no name and no address.
+        node and folder, its author, and the number of people it named. It holds no text, no name and no address. The exact
+        fields are in WebhookCommentData: id, reply_to_id, node_id, folder_id, author_id, actor_id, mentions.
       requestBody:
         content:
           application/json:
@@ -5239,7 +5240,7 @@ webhooks:
       summary: A comment was deleted by its author or a manager
       description: |
         The data is WebhookCommentData with tombstone: true when the comment stayed as a tombstone because it has replies
-        (decision 39), and false when it was removed. actor is set when the deleter is not the author.
+        (decision 39), and false when it was removed. actor_id is set when the deleter is not the author.
       requestBody:
         content:
           application/json:
@@ -5252,7 +5253,7 @@ webhooks:
       operationId: commentResolvedEvent
       summary: A top-level comment was marked resolved
       description: |
-        The data is WebhookCommentData. actor is set when the resolver is not the author.
+        The data is WebhookCommentData. actor_id is set when the resolver is not the author.
       requestBody:
         content:
           application/json:
@@ -5265,7 +5266,7 @@ webhooks:
       operationId: commentReopenedEvent
       summary: A resolved top-level comment was opened again
       description: |
-        The data is WebhookCommentData. actor is set when the person who reopened it is not the author.
+        The data is WebhookCommentData. actor_id is set when the person who reopened it is not the author.
       requestBody:
         content:
           application/json:
@@ -5625,18 +5626,19 @@ components:
     WebhookCommentData:
       description: |
         The data of comment.created, comment.updated, comment.deleted, comment.resolved and comment.reopened (decision 83).
-        IDs and a count only: never the comment's text, an author's name or address, or a mentioned person's name. author
-        is null once the author's user is deleted, and reply_to is null for a top-level comment. actor is the user who made
-        the change, and it is absent when that is the author. tombstone is present on comment.deleted only.
+        IDs and a count only: never the comment's text, an author's name or address, or a mentioned person's name. The
+        comment's own ID is id, as in the other payloads; node_id and folder_id name the comment's place. author_id is
+        null once the author's user is deleted, and reply_to_id is null for a top-level comment. actor_id is the user who
+        made the change, and it is absent when that is the author. tombstone is present on comment.deleted only.
       type: object
-      required: [comment, reply_to, node, folder, author, mentions]
+      required: [id, reply_to_id, node_id, folder_id, author_id, mentions]
       properties:
-        comment: { type: string, example: cmt_5m2k8x1v0c3d9q7r4t6w8y0z2a }
-        reply_to: { type: [string, "null"], example: cmt_5m2k8x1v0c3d9q7r4t6w8y0z2b }
-        node: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
-        folder: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
-        author: { type: [string, "null"], example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
-        actor: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2b }
+        id: { type: string, example: cmt_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        reply_to_id: { type: [string, "null"], example: cmt_5m2k8x1v0c3d9q7r4t6w8y0z2b }
+        node_id: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        folder_id: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        author_id: { type: [string, "null"], example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        actor_id: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2b }
         mentions: { type: integer, minimum: 0, maximum: 10 }
         tombstone: { type: boolean }
     WebhookFolderData:
