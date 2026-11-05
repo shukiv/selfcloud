@@ -359,7 +359,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if stateErr != nil {
 		return stateErr
 	}
-	if err := s.setDeviceCookie(w, u.ID); err != nil {
+	if err := s.setDeviceCookie(w, u.ID, time.Time{}); err != nil {
 		return err
 	}
 	s.writeSignedIn(w, secret, u, sess)
@@ -650,7 +650,12 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return err
 	}
-	if err := s.setDeviceCookie(w, u.ID); err != nil {
+	// The reset ended the cookies made before it: the new one is stamped after the cut-off the reset made.
+	notBefore, err := s.store.UserTokensNotBefore(r.Context(), u.AccountID, u.ID)
+	if err != nil {
+		return err
+	}
+	if err := s.setDeviceCookie(w, u.ID, notBefore); err != nil {
 		return err
 	}
 	s.writeSignedIn(w, secret, u, sess)

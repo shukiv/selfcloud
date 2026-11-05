@@ -236,3 +236,80 @@ func TestResetWorksWhileTheCapIsSpentAndSetsADeviceCookie(t *testing.T) {
 
 	wantStatus(t, loginWith(t, s, "10.11.0.3:4000", "ann@example.com", newPassword, dev), 200)
 }
+
+// cookieAcrossEvent is the check for review F9 (decision 84). A device cookie made before an event (a password change or
+// reset, an admin's set-password, or a disable) stops working after it: with the email's cap spent, the old cookie is
+// refused, while a cookie made after the event is trusted. The event is run by the caller; newPassword is the password
+// the user has after it.
+func cookieAcrossEvent(t *testing.T, s *Server, tag int, email, newPassword string, dev *http.Cookie) {
+	t.Helper()
+	// Before the cap is spent, a fresh sign-in from a new device makes the cookie that must keep working. It comes a
+	// millisecond after the event: a cookie in the cut-off's own millisecond is void (the cut-off is in milliseconds).
+	time.Sleep(2 * time.Millisecond)
+	fresh := deviceCookieFrom(t, loginWith(t, s, fmt.Sprintf("10.%d.2.1:4000", tag), email, newPassword))
+	spendCap(t, s, email, tag)
+	wantError(t, loginWith(t, s, fmt.Sprintf("10.%d.1.1:4000", tag), email, newPassword, dev), 429, apierr.RateLimited)
+	wantStatus(t, loginWith(t, s, fmt.Sprintf("10.%d.3.1:4000", tag), email, newPassword, fresh), 200)
+}
+
+// sec1 item 1, review F9 (decision 84): a password change ends the device cookies made before it.
+func TestDeviceCookieEndsWithAPasswordChange(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	_, annSess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	dev := deviceCookieFrom(t, loginWith(t, s, "10.50.9.1:4000", "ann@example.com", testPassword))
+	const newPassword = "a changed passphrase here"
+	wantStatus(t, callSession(t, s, annSess, "POST", "/api/v1/me/password",
+		map[string]any{"current_password": testPassword, "new_password": newPassword}), 204)
+	cookieAcrossEvent(t, s, 50, "ann@example.com", newPassword, dev)
+}
+
+// sec1 item 1, review F9 (decision 84): a reset ends the device cookies made before it.
+func TestDeviceCookieEndsWithAReset(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	dev := deviceCookieFrom(t, loginWith(t, s, "10.51.9.1:4000", "ann@example.com", testPassword))
+	wantStatus(t, remoteCall(t, s, "POST", "/api/v1/auth/password/forgot", "10.51.8.1:4000",
+		map[string]any{"email": "ann@example.com"}), 202)
+	s.bg.Wait()
+	if n := len(rec.Messages()); n != 1 {
+		t.Fatalf("reset mails = %d, want 1", n)
+	}
+	const newPassword = "a reset passphrase here"
+	wantStatus(t, postFrom(t, s, "10.51.8.2:4000", "/api/v1/auth/password/reset",
+		map[string]any{"token": tokenFromMail(t, rec.Messages()[0]), "password": newPassword}), 200)
+	cookieAcrossEvent(t, s, 51, "ann@example.com", newPassword, dev)
+}
+
+// sec1 item 1, review F9 (decision 84): an admin's set-password (the typed password) ends the device cookies made before it.
+func TestDeviceCookieEndsWithAnAdminsTypedPassword(t *testing.T) {
+	t.Parallel()
+	fx := newImpFix(t, true)
+	dev := deviceCookieFrom(t, loginWith(t, fx.s, "10.52.9.1:4000", "member@example.com", testPassword))
+	const newPassword = "a typed passphrase here"
+	wantStatus(t, callSession(t, fx.s, fx.adminSess, "POST",
+		"/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.member.ID+"/password",
+		map[string]any{"password": newPassword, "admin_password": testPassword}), 204)
+	cookieAcrossEvent(t, fx.s, 52, "member@example.com", newPassword, dev)
+}
+
+// sec1 item 1, review F9 (decision 84): a disable ends the device cookies made before it, and they stay dead when the user
+// is enabled again.
+func TestDeviceCookieEndsWithADisable(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	ann, _ := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	dev := deviceCookieFrom(t, loginWith(t, s, "10.53.9.1:4000", "ann@example.com", testPassword))
+	users := "/api/v1/accounts/" + acc.ID + "/users/" + ann.ID
+	wantStatus(t, call(t, s, "PATCH", users, key, map[string]any{"status": "disabled"}), 200)
+	wantStatus(t, call(t, s, "PATCH", users, key, map[string]any{"status": "active"}), 200)
+	cookieAcrossEvent(t, s, 53, "ann@example.com", testPassword, dev)
+}

@@ -403,6 +403,26 @@ func (s *Store) PeopleCounts(ctx context.Context, accountID string) (active, pen
 	return active, pending, rows.Err()
 }
 
+// UserTokensNotBefore is the user's cut-off for delegated tokens and device cookies (sec1, decision 84): what was issued at
+// or before it no longer counts. The zero time means no cut-off. It is moved by a password change or reset, an admin's
+// set-password, and a disable (RevokeUserTokens). It returns ErrNotFound when accountID has no such user.
+func (s *Store) UserTokensNotBefore(ctx context.Context, accountID, id string) (time.Time, error) {
+	clause, cargs := accountClause(accountID)
+	var ms int64
+	err := s.r.QueryRowContext(ctx, "SELECT tokens_not_before FROM users WHERE id = ? AND "+clause,
+		append([]any{id}, cargs...)...).Scan(&ms)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, ErrNotFound
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	if ms == 0 {
+		return time.Time{}, nil
+	}
+	return fromMillis(ms), nil
+}
+
 // RevokeUserTokens ends every delegated token of user id issued up to now. The user's cut-off moves
 // to now, or stays where it is when it is already later, so it only moves forward: a revoke that
 // commits after a later one keeps the later cut-off. It reads and writes inside tx and returns the
