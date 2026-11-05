@@ -348,6 +348,14 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 		out    *store.User
 		effect *emailEffect
 	)
+	// A change that does not commit gives back its notice's charge, by an error or by a panic, so a failed change spends
+	// nothing (decision 89). The commit disarms it.
+	committed := false
+	defer func() {
+		if !committed && effect != nil {
+			s.refund(effect.notice)
+		}
+	}()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		u, err := tx.User(ctx, acc.ID, r.PathValue("usr"))
 		if errors.Is(err, store.ErrNotFound) {
@@ -447,12 +455,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.update", u.ID, changed))
 	})
 	if err != nil {
-		// A change that did not commit gives back its notice's charge, so a failed change spends nothing (decision 89).
-		if effect != nil {
-			s.refund(effect.notice)
-		}
 		return err
 	}
+	committed = true
 	if effect != nil && effect.applied && s.mailer != nil {
 		s.noticeEmailChange(ctx, r, out, effect.oldAddress)
 	}

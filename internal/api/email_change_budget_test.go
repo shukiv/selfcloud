@@ -5,6 +5,7 @@ package api
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/mail"
@@ -104,6 +105,40 @@ func TestFailedChangesSpendNoNoticeBudget(t *testing.T) {
 	}
 	if got := emailOf(t, s, key, acc.ID, usr.ID); got.Email != "a@example.com" {
 		t.Fatalf("a failed change moved the address to %s", got.Email)
+	}
+	wantStatus(t, call(t, s, "PATCH", path, key,
+		map[string]any{"email": "new@example.com", "verification": "none"}), 200)
+	if got := emailOf(t, s, key, acc.ID, usr.ID); got.Email != "new@example.com" {
+		t.Errorf("the valid change did not apply: the address is %s", got.Email)
+	}
+	if n := messagesTo(rec, "a@example.com"); n != 1 {
+		t.Errorf("%d notices to the old address, want 1", n)
+	}
+}
+
+// TestFailedChangesRefundAtTheirReservationTime: the clock moves two seconds on every read, as the wall clock does between a
+// charge and its refund in production. A refund cancels at the time its charge was made, so rate.CancelAt restores the
+// tokens. Three changes that fail on an external_id conflict then leave the budget whole, and a valid change applies with
+// its notice. Refunding at a later time restores nothing, so the valid change is refused (red on 59cc0ec).
+func TestFailedChangesRefundAtTheirReservationTime(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	tick := frozenLimitInstant
+	s.limitClock = func() time.Time {
+		now := tick
+		tick = tick.Add(2 * time.Second)
+		return now
+	}
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	usr, _ := verifiedUser(t, s, key, acc.ID, "a@example.com")
+	other, _ := verifiedUser(t, s, key, acc.ID, "b@example.com")
+	wantStatus(t, call(t, s, "PATCH", userPath(acc.ID, other.ID), key, map[string]any{"external_id": "ext-1"}), 200)
+	path := userPath(acc.ID, usr.ID)
+	for i := 0; i < 3; i++ {
+		wantError(t, call(t, s, "PATCH", path, key,
+			map[string]any{"email": "new@example.com", "verification": "none", "external_id": "ext-1"}), 409, apierr.Conflict)
 	}
 	wantStatus(t, call(t, s, "PATCH", path, key,
 		map[string]any{"email": "new@example.com", "verification": "none"}), 200)

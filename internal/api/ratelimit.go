@@ -107,31 +107,35 @@ func (s *Server) chargeAll(charges ...charge) error {
 	return err
 }
 
-// chargeHold is the tokens a charge kept, so a caller whose change fails after the charge can give them back.
-type chargeHold []*rate.Reservation
+// chargeHold is the tokens a charge kept, and the time they were reserved at. rate.Reservation.CancelAt restores a token
+// only when it is called no later than the time the reservation was made, so a refund cancels at at, not at the time
+// of the refund.
+type chargeHold struct {
+	at  time.Time
+	res []*rate.Reservation
+}
 
 // reserveAll is chargeAll that returns the tokens it kept. A caller that does not apply what it charged for calls refund.
 func (s *Server) reserveAll(charges ...charge) (chargeHold, error) {
 	now := s.limitClock()
-	var held chargeHold
+	var held []*rate.Reservation
 	for _, c := range charges {
 		res, err := s.limits[c.name].reserve(c.key, now)
 		if err != nil {
 			for _, h := range held {
 				h.CancelAt(now)
 			}
-			return nil, err
+			return chargeHold{}, err
 		}
 		held = append(held, res)
 	}
-	return held, nil
+	return chargeHold{at: now, res: held}, nil
 }
 
-// refund gives back the tokens of a charge whose change did not apply, so a failed change spends nothing. A nil hold is a
-// no-op.
+// refund gives back the tokens of a charge whose change did not apply, so a failed change spends nothing. It cancels at
+// the time of the charge. A zero hold is a no-op.
 func (s *Server) refund(h chargeHold) {
-	now := s.limitClock()
-	for _, r := range h {
-		r.CancelAt(now)
+	for _, r := range h.res {
+		r.CancelAt(h.at)
 	}
 }

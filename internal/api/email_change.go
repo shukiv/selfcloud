@@ -201,6 +201,13 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 		old  string
 		held chargeHold // the notice's charge, given back if the write fails
 	)
+	// A confirmation that does not commit gives back its notice's charge, by an error or by a panic (decision 89).
+	committed := false
+	defer func() {
+		if !committed {
+			s.refund(held)
+		}
+	}()
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
 		v, err := tx.VerificationByHash(ctx, auth.HashToken(in.Token))
 		if errors.Is(err, store.ErrNotFound) {
@@ -277,9 +284,9 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 		return tx.InsertAudit(ctx, e)
 	})
 	if err != nil {
-		s.refund(held)
 		return err
 	}
+	committed = true
 	if s.mailer != nil {
 		s.noticeEmailChange(ctx, r, u, old)
 	}
