@@ -425,7 +425,9 @@ export default function Listing(p: ListingProps) {
           </span>
         ),
         render: (_v, n) => (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0, maxWidth: "100%" }}>
+          // verticalAlign middle: the line box does not take the baseline of the icon or of the checkbox, which swap on hover
+          // (decision 85, fu5). Without it the name moved 0.75 px up on a hovered row.
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
             {coarse ? (
               <Icon kind={kindOf(n)} size={22} colour={n.color} node={n} />
             ) : (

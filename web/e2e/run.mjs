@@ -48,6 +48,7 @@ import { l4Checks } from './l4.mjs';
 import { ksChecks } from './ks.mjs';
 import { fu3aChecks } from './fu3a.mjs';
 import { fu3bChecks } from './fu3b.mjs';
+import { fu5Checks } from './fu5.mjs';
 import { stChecks } from './st.mjs';
 import { pickMenuEntry } from './menu.mjs';
 
@@ -817,6 +818,22 @@ async function main() {
         l1Page.close();
         l1Browser.kill();
         l1Browser = null;
+      }
+    }
+    // Slice fu5 (decision 85, the hover fault): the list's rows do not move on hover. Its own browser with a mouse, signed in as the member.
+    if (!only || onlySet.has('fu5')) {
+      const fu5Launch = await launchBrowser(await findBrowser(), join(dir, 'fu5-profile'), { mouse: true });
+      const fu5Page = new Page(fu5Launch.wsUrl);
+      fu5Page.base = base;
+      try {
+        await fu5Page.start(EXPECTED);
+        await fu5Page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+        await signIn(fu5Page, MEMBER);
+        await fu5Checks(h, { page: fu5Page, base, accountKey, teamA });
+        check(fu5Page.errors.length === 0, `the hover check's browser has no console errors or policy violations (${fu5Page.errors.join(' | ') || 'none'})`);
+      } finally {
+        fu5Page.close();
+        fu5Launch.proc.kill();
       }
     }
     // Slice ic2 runs in its own browser with a mouse too (the tooltips open on hover), signed in as the owner for the trash.
