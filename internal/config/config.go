@@ -84,6 +84,7 @@ type Config struct {
 	Office    OfficeConfig    `yaml:"office"`
 	Users     UsersConfig     `yaml:"users"`
 	Sessions  SessionsConfig  `yaml:"sessions"`
+	Download  DownloadConfig  `yaml:"download"`
 	Admin     AdminConfig     `yaml:"admin"`
 	Mail      MailConfig      `yaml:"mail"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
@@ -115,6 +116,16 @@ type AdminConfig struct {
 	// Off by default. It does not turn off the reset email, which reaches the user. An admin can
 	// already reach a tenant's files by creating an audited account key, whatever this is set to.
 	TenantAccess bool `yaml:"tenant_access"`
+}
+
+// DownloadConfig bounds how long a download may take to be read (sec1, decision 84). A download's write deadline is
+// timeout plus its bytes divided by min_rate, set once before the copy, so a reader that stops is cut off and a reader
+// that keeps up at min_rate is not.
+type DownloadConfig struct {
+	// Timeout is the base time a download may take, whatever its size.
+	Timeout Duration `yaml:"timeout"`
+	// MinRate is the slowest rate, in bytes a second, at which a reader is expected to take a download.
+	MinRate ByteSize `yaml:"min_rate"`
 }
 
 // SessionsConfig controls web sessions.
@@ -657,6 +668,7 @@ func Defaults() *Config {
 			SignInLinkTTL:     Duration(60 * time.Second),
 			SignInURLTemplate: "{public_url}/sign-in#token={token}",
 		},
+		Download: DownloadConfig{Timeout: Duration(30 * time.Second), MinRate: ByteSize(64 << 10)},
 		Sessions: SessionsConfig{
 			IdleTimeout:          Duration(168 * time.Hour),
 			MaxAge:               Duration(720 * time.Hour),
@@ -854,6 +866,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Sessions.IdleTimeout <= 0 || c.Sessions.MaxAge <= 0 {
 		bad("sessions.idle_timeout and sessions.max_age must be positive")
+	}
+	if c.Download.Timeout <= 0 || c.Download.MinRate <= 0 {
+		bad("download.timeout and download.min_rate must be positive")
 	}
 	if c.Sessions.DeviceCookieLifetime <= 0 {
 		bad("sessions.device_cookie_lifetime must be positive")

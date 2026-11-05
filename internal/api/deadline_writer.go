@@ -11,13 +11,10 @@ import (
 // rather than held open. Tests shorten it.
 var jsonBodyTimeout = 15 * time.Second
 
-// downloadWriteTimeout is how long a download may wait for its reader to take the next write (sec1, decision 84). Each
-// write moves the deadline on, so a reader that keeps reading is not cut off, and one that stops is.
-const downloadWriteTimeout = 30 * time.Second
-
-// writeDeadlineWriter moves the write deadline of its response on for every write. It deliberately has no ReadFrom: a
-// sendfile copy of a large file would run under one deadline and be cut off from a slow reader, so every chunk goes
-// through Write. That gives up the kernel's sendfile path for downloads (sec1, decision 84).
+// writeDeadlineWriter moves the write deadline of its response on for every write. It is for a response whose length is
+// not known up front (a streamed zip or export), which cannot be sent with one deadline and does not use sendfile
+// anyway. A download, whose length is known, sets one deadline before its copy instead (sec1, decision 84). No response
+// streams today: every body is served from a file of known length (zips and exports included), so nothing uses this yet.
 type writeDeadlineWriter struct {
 	http.ResponseWriter
 	timeout time.Duration
