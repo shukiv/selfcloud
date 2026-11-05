@@ -423,7 +423,7 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	if restricted && !s.inlineAllowed(r, n, disp == dispInline) {
+	if restricted && !s.linkInlineAllowed(n, disp == dispInline) {
 		return errDownloadRestricted()
 	}
 	// A signed-in person who mints a link counts as a view (decision 51): the web interface opens files through signed

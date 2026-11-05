@@ -39,6 +39,21 @@ func (s *Server) inlineAllowed(r *http.Request, n *store.Node, wantInline bool) 
 	return ok
 }
 
+// linkInlineAllowed is inlineAllowed for a signed link, which is served on the content origin when content_url is set,
+// and on the main origin otherwise. A restricted viewer's inline link is judged where it will be served: on the content
+// origin any type may be inline under the sandbox policy (sec1, decision 84, item 11). Before, the link was judged on
+// the main origin, where content_url forbids every inline type, so a viewer could not open a PDF at all.
+func (s *Server) linkInlineAllowed(n *store.Node, wantInline bool) bool {
+	if !wantInline {
+		return false
+	}
+	if s.cfg.ContentURL != "" {
+		return true
+	}
+	_, ok := safeInlineType(n.MimeType)
+	return ok
+}
+
 // noDownloadReader is what the no-download checks read: the store, or a write transaction.
 type noDownloadReader interface {
 	NoDownloadApplies(ctx context.Context, accountID, nodeID string) (bool, error)
