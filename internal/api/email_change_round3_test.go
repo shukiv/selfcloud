@@ -12,28 +12,22 @@ import (
 )
 
 // TestConfirmIsRefusedWhenTheOldAddressBudgetIsSpent: with a mailer, confirming a link change charges the notice to the old
-// address. Here that address's budget is spent first, so the confirmation is refused as rate limited before any write: the
-// address stays, the pending address stays, and the link is not used up, so a second try is refused the same way.
+// address's notice budget (mail.notice, keyed by account and address). The account spends that budget itself: three
+// changes away from k and back, each leaving k, charge k three times. Then a confirmation whose notice goes to k is refused
+// as rate limited before it applies: the address stays, the pending address stays, and the link is not used up, so a second
+// try is refused the same way. Other accounts' mail to k does not spend this budget (TestAnotherAccountsMailDoesNotBlock...).
 func TestConfirmIsRefusedWhenTheOldAddressBudgetIsSpent(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
-	a, _ := verifiedUser(t, s, key, acc.ID, "a@example.com")
-	b, _ := verifiedUser(t, s, key, acc.ID, "b@example.com")
-	// b asks for k@example.com by email until mail.target for k is spent. The address is free, so nothing else is refused.
-	spent := false
-	for i := 0; i < 10 && !spent; i++ {
-		spent = call(t, s, "PATCH", userPath(acc.ID, b.ID), key,
-			map[string]any{"email": "k@example.com", "verification": "email"}).Code == 429
+	a, _ := verifiedUser(t, s, key, acc.ID, "k@example.com")
+	path := userPath(acc.ID, a.ID)
+	for _, away := range []string{"x1@example.com", "x2@example.com", "x3@example.com"} {
+		wantStatus(t, call(t, s, "PATCH", path, key, map[string]any{"email": away, "verification": "none"}), 200)
+		wantStatus(t, call(t, s, "PATCH", path, key, map[string]any{"email": "k@example.com", "verification": "none"}), 200)
 	}
-	if !spent {
-		t.Fatal("mail.target for k was never spent")
-	}
-	// a moves to k with none. Its notice is charged to a, not k, so the change applies.
-	wantStatus(t, call(t, s, "PATCH", userPath(acc.ID, a.ID), key,
-		map[string]any{"email": "k@example.com", "verification": "none"}), 200)
-	pending := decode[userAnswer](t, call(t, s, "PATCH", userPath(acc.ID, a.ID), key,
+	pending := decode[userAnswer](t, call(t, s, "PATCH", path, key,
 		map[string]any{"email": "p@example.com", "verification": "link"}))
 	confirm := map[string]any{"token": pending.Verification.Token}
 	for i := 0; i < 2; i++ {

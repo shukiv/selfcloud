@@ -43,6 +43,9 @@ type emailEffect struct {
 	oldAddress string
 	issued     *issuedToken
 	target     *store.User
+	// notice is the charge of the old address's notice, held until the transaction commits; a failure after the charge
+	// refunds it.
+	notice chargeHold
 }
 
 // checkEmailChange decides whether the caller may change the address of user usr of accID, and how it is proved, before
@@ -125,13 +128,6 @@ func (s *Server) changeEmail(ctx context.Context, r *http.Request, tx *store.Tx,
 	u.UpdatedAt = now
 	if req.method == methodNone {
 		old := u.Email
-		// With a mailer the notice to the old address is charged here, before any write: a spent budget refuses the change
-		// with 429 and it does not apply. The notice is sent after the commit and is not charged again (decision 89).
-		if s.mailer != nil {
-			if err := s.checkMailBudget(u.AccountID, old); err != nil {
-				return nil, err
-			}
-		}
 		u.Email, u.EmailKey, u.PendingEmail = req.email, req.key, ""
 		// Create with none makes its user active and verified (users.go handleCreateUser). A none change of a user who never
 		// verified does the same: the caller vouches for the address, as it may for create (decision 89).
@@ -150,7 +146,18 @@ func (s *Server) changeEmail(ctx context.Context, r *http.Request, tx *store.Tx,
 		if err := tx.InsertAudit(ctx, s.auditEntry(r, u.AccountID, "user.email_changed", u.ID, details)); err != nil {
 			return nil, err
 		}
-		return &emailEffect{applied: true, oldAddress: old}, nil
+		// The notice is charged last, after the change's own writes. A refusal returns an error, so the transaction rolls
+		// back and nothing applies (429, decision 89). A failure after this point gives the tokens back through the effect
+		// (refund in handleUpdateUser). The notice is sent after the commit, without a second charge.
+		var notice chargeHold
+		if s.mailer != nil {
+			h, err := s.reserveNotice(u.AccountID, old)
+			if err != nil {
+				return nil, err
+			}
+			notice = h
+		}
+		return &emailEffect{applied: true, oldAddress: old, notice: notice}, nil
 	}
 	u.PendingEmail = req.email
 	if err := writeEmailTx(ctx, tx, u); err != nil {
@@ -190,8 +197,9 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 	ctx := r.Context()
 	now := time.Now()
 	var (
-		u   *store.User
-		old string
+		u    *store.User
+		old  string
+		held chargeHold // the notice's charge, given back if the write fails
 	)
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
 		v, err := tx.VerificationByHash(ctx, auth.HashToken(in.Token))
@@ -238,13 +246,6 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		// With a mailer the notice to the old address is charged before any write, as for verification none: a spent budget
-		// refuses the confirmation with 429, and the link is not used up (decision 89).
-		if s.mailer != nil {
-			if err := s.checkMailBudget(found.AccountID, found.Email); err != nil {
-				return err
-			}
-		}
 		at := store.Now()
 		old = found.Email
 		found.Email, found.EmailKey, found.PendingEmail = found.PendingEmail, emailKey(found.PendingEmail), ""
@@ -260,6 +261,15 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 		if err := voidAddressTokens(ctx, tx, found.ID); err != nil {
 			return err
 		}
+		// The notice is charged after the change's own writes, as for verification none: a refusal rolls the transaction back
+		// (429, and the link is not used up). A failure after this point gives the tokens back (refund below, decision 89).
+		if s.mailer != nil {
+			h, err := s.reserveNotice(found.AccountID, old)
+			if err != nil {
+				return err
+			}
+			held = h
+		}
 		u = found
 		e := s.auditEntry(r, found.AccountID, "user.email_changed", found.ID,
 			map[string]any{"email": found.Email, "verification": "confirmation"})
@@ -267,6 +277,7 @@ func (s *Server) handleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 		return tx.InsertAudit(ctx, e)
 	})
 	if err != nil {
+		s.refund(held)
 		return err
 	}
 	if s.mailer != nil {

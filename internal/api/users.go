@@ -447,6 +447,10 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 		return tx.InsertAudit(ctx, s.auditEntry(r, acc.ID, "user.update", u.ID, changed))
 	})
 	if err != nil {
+		// A change that did not commit gives back its notice's charge, so a failed change spends nothing (decision 89).
+		if effect != nil {
+			s.refund(effect.notice)
+		}
 		return err
 	}
 	if effect != nil && effect.applied && s.mailer != nil {

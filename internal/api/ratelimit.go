@@ -103,17 +103,35 @@ type charge struct {
 // chargeAll takes one token from each named bucket, or from none. If any bucket is empty, the tokens
 // already taken are given back, so a refused request spends nothing from the others.
 func (s *Server) chargeAll(charges ...charge) error {
+	_, err := s.reserveAll(charges...)
+	return err
+}
+
+// chargeHold is the tokens a charge kept, so a caller whose change fails after the charge can give them back.
+type chargeHold []*rate.Reservation
+
+// reserveAll is chargeAll that returns the tokens it kept. A caller that does not apply what it charged for calls refund.
+func (s *Server) reserveAll(charges ...charge) (chargeHold, error) {
 	now := s.limitClock()
-	var held []*rate.Reservation
+	var held chargeHold
 	for _, c := range charges {
 		res, err := s.limits[c.name].reserve(c.key, now)
 		if err != nil {
 			for _, h := range held {
 				h.CancelAt(now)
 			}
-			return err
+			return nil, err
 		}
 		held = append(held, res)
 	}
-	return nil
+	return held, nil
+}
+
+// refund gives back the tokens of a charge whose change did not apply, so a failed change spends nothing. A nil hold is a
+// no-op.
+func (s *Server) refund(h chargeHold) {
+	now := s.limitClock()
+	for _, r := range h {
+		r.CancelAt(now)
+	}
 }

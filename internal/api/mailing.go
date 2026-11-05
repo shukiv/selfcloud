@@ -204,6 +204,13 @@ func (s *Server) checkMailBudget(accountID, address string) error {
 	return s.chargeAll(charge{"mail.account", accountID}, charge{"mail.target", emailKey(address)})
 }
 
+// reserveNotice charges the notice to the old address of an account's change of address: the account's notice budget and the
+// one for that address (mail.notice.account and mail.notice, decision 89). Neither is shared with other mail, so another tenant
+// or an anonymous caller cannot spend them. The tokens are returned, so the caller can refund them if the change fails.
+func (s *Server) reserveNotice(accountID, oldAddress string) (chargeHold, error) {
+	return s.reserveAll(charge{"mail.notice.account", accountID}, charge{"mail.notice", accountID + "|" + emailKey(oldAddress)})
+}
+
 // addressKey is the rate-limit key for a request's client address, used by every limit and lockout that counts one
 // address. An IPv6 client counts by its /64, since a host holds the whole /64 and could otherwise change address at
 // will; an IPv4 client counts by its address (fu2, decision 74).

@@ -389,6 +389,11 @@ func New(opts Options) (*Server, error) {
 			// to a key are not mail and are not counted.
 			"mail.account": newLimiterRate(30, time.Hour),
 			"mail.target":  newLimiterRate(3, time.Hour),
+			// The notice of an address change is charged to these two and to no shared bucket (decision 89). Only this
+			// account's own changes spend them, keyed by account and by the old address, so no other tenant or anonymous
+			// caller can block the change by spending mail to that address.
+			"mail.notice.account": newLimiterRate(30, time.Hour),
+			"mail.notice":         newLimiterRate(3, time.Hour),
 			// Forgot-password mail is requested by anyone, so it has buckets of its own. Invitations
 			// and resends never draw on these, and these never draw on the buckets above.
 			"mail.forgot.target":  newLimiterRate(3, time.Hour),
