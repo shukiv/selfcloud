@@ -85,6 +85,66 @@ func TestOneRequestWriteIsRefusedByQuotaBeforeItIsWritten(t *testing.T) {
 	}
 }
 
+// chunkedWrite posts a body with no Content-Length (chunked), counting its reads.
+func chunkedWrite(t *testing.T, s *Server, key, fld, name string, size int) (*httptest.ResponseRecorder, *countingReader) {
+	t.Helper()
+	body := &countingReader{r: strings.NewReader(strings.Repeat("x", size))}
+	req := httptest.NewRequest("POST", "/api/v1/folders/"+fld+"/files?"+q(name), body)
+	req.ContentLength = -1
+	req.Header.Set("Authorization", "Bearer "+key)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	return rec, body
+}
+
+// sec1 item 2, gap found in review (decision 84): a body with no Content-Length is counted as the cap, since it may
+// be as large as the cap. With the disk holding less than the cap, it is refused before any of it is read, though one
+// byte would fit.
+func TestChunkedWriteIsCheckedAgainstTheCap(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	fld := folderOf(t, s, key, acc.ID)
+	free, err := s.freeBytes(s.cfg.DataDir)
+	if err != nil {
+		t.Skipf("free space cannot be read here: %v", err)
+	}
+	// Leave 1 KiB promised by the disk: far less than the cap, far more than the 100-byte body.
+	s.cfg.Storage.MinFree = config.ByteSize(int64(free) - 1024)
+	before := countBlobFiles(t, s.cfg.DataDir)
+
+	rec, body := chunkedWrite(t, s, key, fld, "/chunked.txt", 100)
+	wantStatus(t, rec, http.StatusInsufficientStorage)
+	if body.reads != 0 {
+		t.Errorf("the chunked body was read %d times before the disk refused it", body.reads)
+	}
+	if after := countBlobFiles(t, s.cfg.DataDir); after != before {
+		t.Errorf("blob files went from %d to %d", before, after)
+	}
+}
+
+// sec1 item 2, gap found in review (decision 84): a chunked body over the account's remaining quota is refused before
+// any byte is read. The unsized body is counted as the cap, which is over the 10-byte quota here.
+func TestChunkedWriteIsCheckedAgainstTheQuota(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	wantStatus(t, call(t, s, "PATCH", "/api/v1/accounts/"+acc.ID, admin, map[string]any{"quota_bytes": 10}), 200)
+	fld := folderOf(t, s, key, acc.ID)
+	before := countBlobFiles(t, s.cfg.DataDir)
+
+	rec, body := chunkedWrite(t, s, key, fld, "/chunked.bin", 100)
+	wantStatus(t, rec, http.StatusInsufficientStorage)
+	if body.reads != 0 {
+		t.Errorf("the chunked body was read %d times before the quota refused it", body.reads)
+	}
+	if after := countBlobFiles(t, s.cfg.DataDir); after != before {
+		t.Errorf("blob files went from %d to %d", before, after)
+	}
+}
+
 // countingReader counts the reads made of its body.
 type countingReader struct {
 	r     io.Reader

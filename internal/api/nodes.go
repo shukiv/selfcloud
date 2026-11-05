@@ -409,7 +409,7 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 			return blob.Committed{}, err
 		}
 	}
-	if err := s.checkOneRequestRoom(r.Context(), p, accountID, r.ContentLength, replaces); err != nil {
+	if err := s.checkOneRequestRoom(r.Context(), p, accountID, r.ContentLength, replaces, limit); err != nil {
 		return blob.Committed{}, err
 	}
 	s.setBodyDeadline(w, limit)
@@ -427,11 +427,15 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 	return wr.Commit()
 }
 
-// checkOneRequestRoom refuses a one-request write the disk cannot hold, and one whose declared growth is more than the
-// account's quota, before its body is read. The disk rule is the upload rule with the body as the bytes to hold: the
-// free space less storage.min_free, which is what tus checks (diskUsable and checkDisk). An unknown length counts as
-// one byte. The quota is checked on Content-Length, and the write's own check still runs in its transaction.
-func (s *Server) checkOneRequestRoom(ctx context.Context, p *auth.Principal, accountID string, length, replaces int64) error {
+// checkOneRequestRoom refuses a one-request write the disk cannot hold, and one whose growth is more than the account's
+// quota, before its body is read. The disk rule is the upload rule with the body as the bytes to hold: the free space
+// less storage.min_free, which is what tus checks (diskUsable and checkDisk). A body with no Content-Length (chunked)
+// may be as large as the cap, so it is counted as limit; the blob writer stops at limit, so the write cannot pass what
+// was checked. The quota is checked on the same length, and the write's own check still runs in its transaction.
+func (s *Server) checkOneRequestRoom(ctx context.Context, p *auth.Principal, accountID string, length, replaces, limit int64) error {
+	if length < 0 {
+		length = limit
+	}
 	usable, ok, err := s.diskUsable()
 	if err != nil {
 		return err
