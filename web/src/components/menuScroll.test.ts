@@ -40,16 +40,17 @@ describe("keepInView", () => {
 // The sidebar's region as the shell draws it: the folder tree, then the menu. The tree marks the current place on its treeitem,
 // which also holds the open folders under it.
 function region(current: "team" | "menu" | "none") {
-  const box = document.createElement("div");
-  box.innerHTML = `
-    <ul role="tree">
-      <li role="treeitem" ${current === "team" ? 'aria-current="location"' : ""}>
-        <div class="tree-row">Team A</div>
-        <ul role="group"><li role="treeitem"><div class="tree-row">D1 Projects</div></li></ul>
-      </li>
-    </ul>
-    <ul class="shell-menu"><li class="ant-menu-item ${current === "menu" ? "ant-menu-item-selected" : ""}">Starred</li></ul>`;
-  return box;
+  const el = (tag: string, attrs: Record<string, string>, ...kids: (Node | string)[]) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    e.append(...kids);
+    return e;
+  };
+  const folder = el("li", { role: "treeitem" }, el("div", { class: "tree-row" }, "D1 Projects"));
+  const team = el("li", { role: "treeitem" }, el("div", { class: "tree-row" }, "Team A"), el("ul", { role: "group" }, folder));
+  if (current === "team") team.setAttribute("aria-current", "location");
+  const starred = el("li", { class: current === "menu" ? "ant-menu-item ant-menu-item-selected" : "ant-menu-item" }, "Starred");
+  return el("div", {}, el("ul", { role: "tree" }, team), el("ul", { class: "shell-menu" }, starred));
 }
 
 describe("followTarget", () => {
