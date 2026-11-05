@@ -105,10 +105,10 @@ var webhookAuditNoEvent = map[string]string{
 	"account.quota_warning":   "the quota-warning level is a setting, not a change of usage: the quota.warning event is the report",
 	"node.lock":               "an editor takes a lock: a lock is not a change to the file, and the edits the editor saves are node.write",
 	"node.unlock":             "an editor or the sweep ends a lock: a lock is not a change to the file",
-	"comment.create":          "comments are not on the event list in r1 and r2; r6 decides whether comment.created is an opt-in event (decision 39)",
-	"comment.edit":            "comments are not on the event list in r1 and r2; r6 decides (decision 39)",
-	"comment.delete":          "comments are not on the event list in r1 and r2; r6 decides (decision 39)",
-	"comment.resolve":         "comments are not on the event list in r1 and r2; r6 decides (decision 39)",
+	"comment.create":          "the comment route emits comment.created in its own transaction (store.CommentEvent, decision 83), not from this map",
+	"comment.edit":            "the comment route emits comment.updated in its own transaction (store.CommentEvent, decision 83), not from this map",
+	"comment.delete":          "the comment route emits comment.deleted in its own transaction (store.CommentEvent, decision 83), not from this map",
+	"comment.resolve":         "the comment route emits comment.resolved or comment.reopened in its own transaction (decision 83), not from this map",
 	"account.comments_policy": "the comment switch is an account setting, not a change to a file (decision 39)",
 }
 

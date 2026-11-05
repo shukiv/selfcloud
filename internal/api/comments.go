@@ -17,6 +17,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/webhook"
 )
 
 // Comments (design section 14, slice r, decision 39): a comment on a file or a folder, and one level of replies. Reading
@@ -443,6 +444,10 @@ func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) err
 			return err
 		}
 		created = c
+		if err := tx.EmitEvent(ctx, p.AccountID, "comment.created", c.CreatedAt,
+			store.CommentEvent(c, n.FolderID, p.UserID, len(userIDs))); err != nil {
+			return err
+		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, p.AccountID, "comment.create", nodeID,
 			map[string]any{"comment": c.ID, "reply": in.ParentID != "", "mentions": len(userIDs)}, n.FolderID))
 	})
@@ -516,7 +521,12 @@ func (s *Server) handleEditComment(w http.ResponseWriter, r *http.Request) error
 		if c.AuthorID != p.UserID {
 			return apierr.New(apierr.Forbidden, "only the author may edit a comment").With("reason", "author")
 		}
-		if err := tx.UpdateCommentBody(ctx, p.AccountID, cid, body, store.Now()); err != nil {
+		now := store.Now()
+		if err := tx.UpdateCommentBody(ctx, p.AccountID, cid, body, now); err != nil {
+			return err
+		}
+		if err := tx.EmitEvent(ctx, p.AccountID, "comment.updated", now,
+			store.CommentEvent(c, n.FolderID, p.UserID, 0)); err != nil {
 			return err
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, p.AccountID, "comment.edit", c.NodeID,
@@ -606,6 +616,12 @@ func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) err
 		if err != nil {
 			return err
 		}
+		if err := tx.EmitEvent(ctx, p.AccountID, "comment.deleted", store.Now(), webhook.CommentDeleted{
+			Comment:   store.CommentEvent(c, n.FolderID, p.UserID, 0),
+			Tombstone: tombstone,
+		}); err != nil {
+			return err
+		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, p.AccountID, "comment.delete", c.NodeID,
 			map[string]any{"comment": cid, "tombstone": tombstone}, n.FolderID))
 	})
@@ -659,7 +675,15 @@ func (s *Server) handleResolveComment(w http.ResponseWriter, r *http.Request) er
 		if *in.Resolved {
 			by = p.UserID
 		}
-		if err := tx.SetResolved(ctx, p.AccountID, cid, by, store.Now()); err != nil {
+		now := store.Now()
+		if err := tx.SetResolved(ctx, p.AccountID, cid, by, now); err != nil {
+			return err
+		}
+		typ := "comment.reopened"
+		if *in.Resolved {
+			typ = "comment.resolved"
+		}
+		if err := tx.EmitEvent(ctx, p.AccountID, typ, now, store.CommentEvent(c, n.FolderID, p.UserID, 0)); err != nil {
 			return err
 		}
 		return tx.InsertAudit(ctx, s.auditEntry(r, p.AccountID, "comment.resolve", c.NodeID,

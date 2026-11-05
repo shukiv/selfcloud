@@ -374,6 +374,26 @@ func FolderEvent(n *Node) webhook.Folder {
 	return webhook.Folder{ID: n.ID, FolderID: n.FolderID, Kind: KindDir, ParentID: n.ParentID, Subtree: true}
 }
 
+// CommentEvent is the data of a comment event for c, which sits in folderID (decision 83). actor is the user who made the
+// change, and it is named only when it is not c's author, so the author's own change carries no actor. mentions is the
+// number of people the change named. The data holds IDs and a count only: never the body, a name or an address.
+func CommentEvent(c *Comment, folderID, actor string, mentions int) webhook.Comment {
+	out := webhook.Comment{Comment: c.ID, Node: c.NodeID, Folder: folderID, Mentions: mentions}
+	if c.ParentID != "" {
+		parent := c.ParentID
+		out.ReplyTo = &parent
+	}
+	if c.AuthorID != "" {
+		author := c.AuthorID
+		out.Author = &author
+	}
+	if actor != "" && actor != c.AuthorID {
+		by := actor
+		out.Actor = &by
+	}
+	return out
+}
+
 // impersonatedKey marks a context whose events come from a write made while impersonating.
 type impersonatedKey struct{}
 

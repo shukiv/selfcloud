@@ -44,6 +44,27 @@ type Quota struct {
 	LimitBytes int64  `json:"limit_bytes"` // the limit the share is taken of
 }
 
+// Comment is the data of a comment event (decision 83): the comment's ID, the comment it replies to (null for a top-level
+// comment), its node and the node's folder, its author, and the actor when someone other than the author made the change
+// (absent for the author's own change). Mentions is how many people the change named. It holds IDs and a count, never the
+// text, a name or an address. Author is null once the author's user is deleted.
+type Comment struct {
+	Comment  string  `json:"comment"`
+	ReplyTo  *string `json:"reply_to"`
+	Node     string  `json:"node"`
+	Folder   string  `json:"folder"`
+	Author   *string `json:"author"`
+	Actor    *string `json:"actor,omitempty"`
+	Mentions int     `json:"mentions"`
+}
+
+// CommentDeleted is the data of comment.deleted: the comment, and whether the delete left a tombstone that holds its
+// replies' thread (decision 39).
+type CommentDeleted struct {
+	Comment
+	Tombstone bool `json:"tombstone"`
+}
+
 // User is the data of a user event: the user's ID and its external ID. No email address and no name.
 type User struct {
 	ID         string  `json:"id"`

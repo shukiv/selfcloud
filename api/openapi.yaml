@@ -5205,6 +5205,73 @@ webhooks:
             schema: { $ref: "#/components/schemas/WebhookEvent" }
       responses:
         "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  comment.created:
+    post:
+      tags: [Webhooks]
+      operationId: commentCreatedEvent
+      summary: A comment or a reply was added to a file or a folder
+      description: |
+        The data is WebhookCommentData: the comment's ID, the comment it replies to (null for a top-level comment), its
+        node and folder, its author, and the number of people it named. It holds no text, no name and no address.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  comment.updated:
+    post:
+      tags: [Webhooks]
+      operationId: commentUpdatedEvent
+      summary: A comment's text was edited by its author
+      description: |
+        The data is WebhookCommentData. An edit names no one new, so its mentions count is 0.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  comment.deleted:
+    post:
+      tags: [Webhooks]
+      operationId: commentDeletedEvent
+      summary: A comment was deleted by its author or a manager
+      description: |
+        The data is WebhookCommentData with tombstone: true when the comment stayed as a tombstone because it has replies
+        (decision 39), and false when it was removed. actor is set when the deleter is not the author.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  comment.resolved:
+    post:
+      tags: [Webhooks]
+      operationId: commentResolvedEvent
+      summary: A top-level comment was marked resolved
+      description: |
+        The data is WebhookCommentData. actor is set when the resolver is not the author.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  comment.reopened:
+    post:
+      tags: [Webhooks]
+      operationId: commentReopenedEvent
+      summary: A resolved top-level comment was opened again
+      description: |
+        The data is WebhookCommentData. actor is set when the person who reopened it is not the author.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
   user.created:
     post:
       tags: [Webhooks]
@@ -5529,7 +5596,7 @@ components:
         id: { type: string, example: evt_5m2k8x1v0c3d9q7r4t6w8y0z2a }
         type:
           type: string
-          enum: [file.created, file.updated, file.moved, file.deleted, file.restored, upload.completed, user.created, user.verified, quota.warning, quota.exceeded, webhook.test]
+          enum: [file.created, file.updated, file.moved, file.deleted, file.restored, upload.completed, user.created, user.verified, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened]
         time: { type: string, format: date-time }
         account:
           type: object
@@ -5543,6 +5610,7 @@ components:
             - $ref: "#/components/schemas/WebhookFolderData"
             - $ref: "#/components/schemas/WebhookUserData"
             - $ref: "#/components/schemas/WebhookUploadCompletedData"
+            - $ref: "#/components/schemas/WebhookCommentData"
     WebhookFileData:
       description: The file or shortcut as the change left it. Never its contents, a link, or a shortcut's target.
       type: object
@@ -5554,6 +5622,23 @@ components:
         size: { type: integer, format: int64 }
         name: { type: string, description: The name in Unicode NFC. }
         parent_id: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2b }
+    WebhookCommentData:
+      description: |
+        The data of comment.created, comment.updated, comment.deleted, comment.resolved and comment.reopened (decision 83).
+        IDs and a count only: never the comment's text, an author's name or address, or a mentioned person's name. author
+        is null once the author's user is deleted, and reply_to is null for a top-level comment. actor is the user who made
+        the change, and it is absent when that is the author. tombstone is present on comment.deleted only.
+      type: object
+      required: [comment, reply_to, node, folder, author, mentions]
+      properties:
+        comment: { type: string, example: cmt_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        reply_to: { type: [string, "null"], example: cmt_5m2k8x1v0c3d9q7r4t6w8y0z2b }
+        node: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        folder: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        author: { type: [string, "null"], example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        actor: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2b }
+        mentions: { type: integer, minimum: 0, maximum: 10 }
+        tombstone: { type: boolean }
     WebhookFolderData:
       description: |
         The folder a change touched when the change was too large to report file by file: more than 1,000 files, more
@@ -6646,7 +6731,7 @@ components:
         description: { type: [string, "null"], maxLength: 200 }
         events:
           type: array
-          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test] }
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened] }
         state: { type: string, enum: [active, paused, disabled] }
         disabled_reason: { type: [string, "null"], enum: [failing, overflow, secret_unreadable, null] }
         consecutive_failures: { type: integer }
@@ -6675,7 +6760,7 @@ components:
           type: array
           minItems: 1
           uniqueItems: false
-          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test] }
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened] }
         description: { type: string, maxLength: 200 }
 
     WebhookUpdate:
@@ -6686,7 +6771,7 @@ components:
         events:
           type: array
           minItems: 1
-          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test] }
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened] }
         description: { type: string, maxLength: 200, description: Empty clears it. }
         state: { type: string, enum: [active, paused], description: A disabled endpoint cannot be set to active alone. }
 
