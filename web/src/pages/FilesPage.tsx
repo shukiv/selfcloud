@@ -2081,8 +2081,8 @@ export default function FilesPage() {
 
           <div>
             {sorted.length === 0 ? (
-              // An empty folder shows no box while it is read or busy: the box is for the folder shown, never the one left behind (decision 85).
-              busy ? null : canUploadHere ? (
+              // The box needs canUploadHere, which is false while the place is busy (decision 77): the text shows as before then.
+              canUploadHere ? (
                 // Decision 85: the box says how to add files, and its one button is the New menu's Upload files (openFilePicker).
                 // A drop on the box is a drop on the section, so it queues the files the same way (queueFiles).
                 <div

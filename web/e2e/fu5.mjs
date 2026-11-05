@@ -96,7 +96,6 @@ const rowsOf = (rest) => Object.keys(rest.rows);
 // measureCombo runs the rest state, then each row hovered in turn, with the sampler on: each row's hover is read in every frame from
 // the move until three frames after the icons are drawn. It returns the diffs found, and the frames read.
 async function measureCombo(h, page, label, names) {
-  const { check } = h;
   // The pointer goes to the empty space beside the list, so no row is hovered for the rest state.
   const away = await page.evaluate(`(() => { const s = document.querySelector('section.browser'); const b = s.getBoundingClientRect(); return { x: b.right - 4, y: b.bottom - 4 }; })()`);
   await moveTo(page, away);
@@ -158,11 +157,14 @@ export async function fu5Checks(h, { page, base, accountKey, teamA }) {
   const { check, api, rawPut, navigateTo, rowAppears } = h;
   const suffix = Date.now().toString(36);
   const folderName = `fu5 hover ${suffix}`;
-  const names = [`fu5-alpha-${suffix}.txt`, `fu5-beta-${suffix}.txt`, `fu5-gamma-${suffix}.txt`];
+  // A folder row and three files: the owner's screenshot had a folder, whose icon and enabled icons differ from a file's.
+  const subName = `fu5-sub-${suffix}`;
+  const names = [subName, `fu5-alpha-${suffix}.txt`, `fu5-beta-${suffix}.txt`, `fu5-gamma-${suffix}.txt`];
   const made = await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: `/${folderName}`, parents: false });
   const results = [];
   try {
-    for (const name of names) await rawPut(base, `/api/v1/folders/${teamA}/files?path=${encodeURIComponent(`/${folderName}/${name}`)}`, accountKey, `${name}\n`);
+    await api(base, 'POST', `/api/v1/folders/${teamA}/directories`, accountKey, { path: `/${folderName}/${subName}`, parents: false });
+    for (const name of names.slice(1)) await rawPut(base, `/api/v1/folders/${teamA}/files?path=${encodeURIComponent(`/${folderName}/${name}`)}`, accountKey, `${name}\n`);
     await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     for (const [theme, lang] of [
       ['Light', 'English'],

@@ -2487,6 +2487,23 @@ describe("an empty folder says how to add files (decision 85)", () => {
     expect(screen.queryByText(translate("en", "files.empty"))).toBeNull();
   });
 
+  it("while the next folder is read, the empty folder shown before gets no box (decision 77's busy place)", async () => {
+    stubPointer(false);
+    api.childrenPage.mockImplementation(async (_f: string, dir: string | null) => {
+      if (dir === null) return { items: [], next_cursor: undefined };
+      return new Promise(() => undefined);
+    });
+    const { router } = renderAt(FOLDER);
+    await screen.findByTestId("empty-folder");
+    await act(async () => {
+      await router.navigate(`${FOLDER}/nod_bbbbbbbb`);
+    });
+    // The place is busy: the text the page had before stays, and no box is offered until the next folder is read.
+    await screen.findByText(translate("en", "files.empty"));
+    expect(screen.queryByTestId("empty-folder")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Upload files" })).toBeNull();
+  });
+
   it("a drop on the box queues the files, as a drop on the page does", async () => {
     stubPointer(false);
     api.childrenPage.mockResolvedValue({ items: [], next_cursor: undefined });
