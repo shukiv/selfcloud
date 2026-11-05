@@ -547,8 +547,10 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
 
   await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
   await page.waitFor(`document.querySelectorAll('.ant-table-thead th').length === 3`, 10000);
-  const overflow = await page.evaluate(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
-  check(overflow <= 0, `at phone width the listing keeps the name and the size, and the page does not scroll sideways (overflow ${overflow}px)`);
+  // The widths go into the message, so a failure says whether the phone width had applied (gate fu5c e2e-4: 818 px).
+  const pw = await page.evaluate(`(() => { const d = document.documentElement; const t = document.querySelector('.files-list table, .ant-table table'); return { overflow: d.scrollWidth - d.clientWidth, inner: innerWidth, scroll: d.scrollWidth, client: d.clientWidth, table: t ? Math.round(t.getBoundingClientRect().width) : null, drawer: !!document.querySelector('.ant-drawer-open'), cols: document.querySelectorAll('.ant-table-thead th').length }; })()`);
+  const overflow = pw.overflow;
+  check(overflow <= 0, `at phone width the listing keeps the name and the size, and the page does not scroll sideways (overflow ${overflow}px${overflow > 0 ? `; ${JSON.stringify(pw)}` : ''})`);
   await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 }
 
