@@ -14,6 +14,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -389,8 +390,15 @@ func nameConflict(existing *store.Node) error {
 		With("id", existing.ID)
 }
 
-// oneRequestWriteRate is the limiter of large or unsized one-request writes, per caller (server.go sets its size).
+// oneRequestWriteRate is the limiter of every one-request write, per caller (server.go sets its size: 300 a minute).
 const oneRequestWriteRate = "write.one_request"
+
+// oneRequestLargeRate is the limiter of large or unsized one-request writes, per caller (server.go sets it: 60 a minute,
+// as upload.create). A large write takes both limiters.
+const oneRequestLargeRate = "write.one_request_large"
+
+// oneRequestLargeBytes is the body size above which a one-request write also takes oneRequestLargeRate.
+const oneRequestLargeBytes = 1 << 20
 
 // writeBlob streams the request body into a new blob. It refuses, before writing, a body that
 // declares itself larger than limit, and it stops writing at limit. The body must arrive within a
@@ -404,16 +412,26 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 		return blob.Committed{}, tooLarge(limit)
 	}
 	p := principalOf(r)
-	// Every one-request write is rate limited per caller, large or small (sec1, decision 84, review F6): a small write
-	// still takes the disk and the quota's time, and a caller's writes are one budget.
+	// Every one-request write takes the write.one_request limiter, large or small (sec1, decision 84, review F6). A large
+	// or unsized body also takes write.one_request_large, which is the old 60 a minute, so a large write charges both.
 	if p != nil {
-		if err := s.rateLimit(oneRequestWriteRate, string(p.Kind)+":"+p.ID); err != nil {
+		key := string(p.Kind) + ":" + p.ID
+		if err := s.rateLimit(oneRequestWriteRate, key); err != nil {
 			return blob.Committed{}, err
 		}
+		if r.ContentLength < 0 || r.ContentLength > oneRequestLargeBytes {
+			if err := s.rateLimit(oneRequestLargeRate, key); err != nil {
+				return blob.Committed{}, err
+			}
+		}
 	}
-	if err := s.checkOneRequestRoom(r.Context(), p, accountID, r.ContentLength, replaces, limit); err != nil {
+	// The bytes are reserved while the body arrives, so writes that run together cannot each pass the disk check
+	// against the same free space (review F3). The reservation is released when the write ends, success or not.
+	release, err := s.reserveOneRequest(r.Context(), p, accountID, r.ContentLength, replaces, limit)
+	if err != nil {
 		return blob.Committed{}, err
 	}
+	defer release()
 	s.setBodyDeadline(w, limit)
 	wr, err := s.blobs.Create(r.Context(), accountID, limit)
 	if err != nil {
@@ -429,28 +447,63 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 	return wr.Commit()
 }
 
-// checkOneRequestRoom refuses a one-request write the disk cannot hold, and one whose growth is more than the account's
-// quota, before its body is read. The disk rule is the upload rule with the body as the bytes to hold: the free space
-// less storage.min_free, which is what tus checks (diskUsable and checkDisk). A body with no Content-Length (chunked)
-// may be as large as the cap, so it is counted as limit; the blob writer stops at limit, so the write cannot pass what
-// was checked. The quota is checked on the same length, and the write's own check still runs in its transaction.
-func (s *Server) checkOneRequestRoom(ctx context.Context, p *auth.Principal, accountID string, length, replaces, limit int64) error {
+// oneRequestFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84, review F3).
+type oneRequestFlight struct {
+	mu    sync.Mutex
+	bytes int64
+}
+
+// reserveOneRequest refuses a one-request write the disk cannot hold, and one whose growth is more than the account's
+// quota, before its body is read, and reserves its bytes until the returned func is called. The disk rule is the upload
+// rule with the body as the bytes to hold: the free space less storage.min_free, which is what tus checks (diskUsable
+// and checkDisk). The bytes already reserved by other one-request writes in flight count too, and so do the unwritten
+// bytes of open uploads, so concurrent writes cannot each pass against the same free space. A body with no
+// Content-Length (chunked) may be as large as the cap, so it is reserved as limit; the blob writer stops at limit, so
+// the write cannot pass what was reserved. The quota is checked on the same length, and the write's own check still runs
+// in its transaction.
+func (s *Server) reserveOneRequest(ctx context.Context, p *auth.Principal, accountID string, length, replaces, limit int64) (func(), error) {
 	if length < 0 {
 		length = limit
 	}
-	usable, ok, err := s.diskUsable()
+	release, err := s.reserveOneRequestDisk(ctx, accountID, length)
 	if err != nil {
-		return err
-	}
-	if ok {
-		if err := s.checkDisk(usable, 0, max(length, 1), false); err != nil {
-			return err
-		}
+		return nil, err
 	}
 	if p != nil && length > replaces {
-		return s.precheckSaveQuota(ctx, p, accountID, length-replaces)
+		if err := s.precheckSaveQuota(ctx, p, accountID, length-replaces); err != nil {
+			release()
+			return nil, err
+		}
 	}
-	return nil
+	return release, nil
+}
+
+// reserveOneRequestDisk checks the disk for a body of length bytes, with the one-request bytes in flight and the
+// unwritten bytes of open uploads, and on success adds the body to the bytes in flight. The check and the reservation
+// are one step under the flight lock.
+func (s *Server) reserveOneRequestDisk(ctx context.Context, accountID string, length int64) (func(), error) {
+	f := &s.oneFlight
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	usable, ok, err := s.diskUsable()
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		_, unwritten, err := s.store.UnwrittenBytes(ctx, accountID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.checkDisk(usable, 0, f.bytes+unwritten+max(length, 1), false); err != nil {
+			return nil, err
+		}
+	}
+	f.bytes += length
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.bytes -= length
+	}, nil
 }
 
 // setBodyDeadline sets the time a request body may take to arrive: upload.body_timeout plus one

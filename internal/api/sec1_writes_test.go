@@ -11,7 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/config"
@@ -171,4 +173,119 @@ func TestOneRequestWritesAreRateLimitedPerCaller(t *testing.T) {
 		}
 	}
 	wantError(t, rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q("/s301.txt"), key, "x", nil), 429, apierr.RateLimited)
+}
+
+// gatedReader blocks its first read until the gate is open, and says so when that read starts. A one-request write is
+// checked before its body is read, so a write that is waiting here has been checked and accepted.
+type gatedReader struct {
+	r         io.Reader
+	started   chan<- struct{}
+	gate      <-chan struct{}
+	signalled bool
+}
+
+func (g *gatedReader) Read(p []byte) (int, error) {
+	if !g.signalled {
+		g.signalled = true
+		g.started <- struct{}{}
+		<-g.gate
+	}
+	return g.r.Read(p)
+}
+
+// sec1 item 2, review F3 (decision 84): one-request writes reserve their bytes while they are in flight, so writes that
+// run together cannot each pass against the same free space. Four writes of 16 MiB see 40 MiB above storage.min_free.
+// Each waits in its body until the test lets it go, so every write has been checked before any byte arrives. At least
+// one must be refused before its body is read, and at most two may be accepted (2 x 16 MiB fits, 3 do not).
+func TestConcurrentOneRequestWritesCannotOverrunTheDisk(t *testing.T) {
+	t.Parallel()
+	const writeSize = 16 << 20
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.Storage.MinFree = config.ByteSize(64 << 20) })
+	s.freeBytes = func(string) (uint64, error) { return 64<<20 + 40<<20, nil }
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	fld := folderOf(t, s, key, acc.ID)
+
+	gate := make(chan struct{})
+	var open sync.Once
+	letGo := func() { open.Do(func() { close(gate) }) }
+	t.Cleanup(letGo)
+
+	started := make(chan struct{}, 4)
+	done := make(chan int, 4)
+	for i := 1; i <= 4; i++ {
+		body := &gatedReader{r: strings.NewReader(strings.Repeat("x", writeSize)), started: started, gate: gate}
+		req := httptest.NewRequest("POST", "/api/v1/folders/"+fld+"/files?"+q(fmt.Sprintf("/w%d.bin", i)), body)
+		req.ContentLength = writeSize
+		req.Header.Set("Authorization", "Bearer "+key)
+		go func() {
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			done <- rec.Code
+		}()
+	}
+
+	// Each write either is refused at once, or is waiting in its body. Wait until all four are one or the other.
+	var codes []int
+	waiting := 0
+	timeout := time.After(20 * time.Second)
+	for waiting+len(codes) < 4 {
+		select {
+		case <-started:
+			waiting++
+		case code := <-done:
+			codes = append(codes, code)
+		case <-timeout:
+			t.Fatalf("the writes did not settle: %d waiting, %d answered", waiting, len(codes))
+		}
+	}
+	refusedBeforeBytes := 0
+	for _, c := range codes {
+		if c == http.StatusInsufficientStorage {
+			refusedBeforeBytes++
+		}
+	}
+	if refusedBeforeBytes < 1 {
+		t.Errorf("all four writes were checked against the same free space and accepted: %d waiting in their bodies", waiting)
+	}
+
+	letGo()
+	for len(codes) < 4 {
+		select {
+		case code := <-done:
+			codes = append(codes, code)
+		case <-timeout:
+			t.Fatalf("the accepted writes did not finish: %d answered", len(codes))
+		}
+	}
+	accepted := 0
+	for _, c := range codes {
+		if c == http.StatusCreated {
+			accepted++
+		}
+	}
+	if accepted > 2 {
+		t.Errorf("%d writes of %d bytes were accepted into %d bytes above storage.min_free", accepted, writeSize, 40<<20)
+	}
+}
+
+// sec1 item 2, review (decision 84): a large one-request write takes two limiters: write.one_request (300 a minute, every
+// write) and write.one_request_large (60 a minute, as upload.create). The 61st large write in a minute from one caller is
+// refused, and a small write from the same caller still passes.
+func TestLargeOneRequestWritesAreLimitedAt60(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	fld := folderOf(t, s, key, acc.ID)
+	big := strings.Repeat("x", (1<<20)+1)
+	for i := 1; i <= 60; i++ {
+		if rec := rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q(fmt.Sprintf("/f%d.bin", i)), key, big, nil); rec.Code >= 300 {
+			t.Fatalf("large write %d: status %d, want success before the limit", i, rec.Code)
+		}
+	}
+	wantError(t, rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q("/f61.bin"), key, big, nil), 429, apierr.RateLimited)
+	if rec := rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q("/small.txt"), key, "x", nil); rec.Code >= 300 {
+		t.Fatalf("small write after the large limit: status %d, want success", rec.Code)
+	}
 }

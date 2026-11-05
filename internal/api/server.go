@@ -86,7 +86,9 @@ type Server struct {
 	sessionClock func() time.Time
 	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (round 2, item 1).
 	dropFlight dropFlight
-	pwFails    passwordFails // wrong current passwords, per session, for POST /me/password
+	// oneFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84, review F3).
+	oneFlight oneRequestFlight
+	pwFails   passwordFails // wrong current passwords, per session, for POST /me/password
 	// origin is public_url's scheme and host. Browsers send it as Origin, and unsafe requests
 	// made with a session must carry it.
 	origin string
@@ -350,8 +352,9 @@ func New(opts Options) (*Server, error) {
 			"reset.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
 			// Warnings for refused /wopi requests, per client address: one a minute (sec1, decision 84).
 			"wopi.refusal": newLimiter(1),
-			// One-request writes (see oneRequestWriteRate).
+			// One-request writes (see oneRequestWriteRate): every one, and large or unsized ones again (oneRequestLargeRate).
 			oneRequestWriteRate: newLimiter(300),
+			oneRequestLargeRate: newLimiter(60),
 			// Changing a password checks the current one, so a stolen session could guess it.
 			// These limits are fixed: they guard a password, not a configurable flow.
 			"changepw.user": newLimiter(5),
