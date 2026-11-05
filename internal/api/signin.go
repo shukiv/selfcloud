@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/store"
@@ -237,17 +239,28 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if err := s.rateLimit("login.email", emailAddressKey(r, email)); err != nil {
 		return err
 	}
-	// The loose cap on failed sign-ins to this email, from any address. It is taken before the
-	// password check, and given back when the password matches, so only failures count (sec1).
-	now := s.limitClock()
-	failed, err := s.limits["login.failed"].reserve(key, now)
-	if err != nil {
-		return err
-	}
 	ctx := r.Context()
+	now := s.limitClock()
 	candidates, err := s.store.FindUsersByEmail(ctx, key, loginScope(in.Account), maxLoginCandidates)
 	if err != nil {
 		return err
+	}
+	// A device the user signed in from before (a valid device cookie) is not refused by the email's cap. It spends its
+	// own small budget instead, and the budget is taken before the check and given back on a match, so only failures
+	// count. Without a trusted device, the email's cap on failed sign-ins applies (sec1, decision 84).
+	var deviceHold, failedHold *rate.Reservation
+	if nonce, ok := s.trustedDevice(r, candidates); ok {
+		if res, err := s.limits["login.device"].reserve(nonce, now); err == nil {
+			deviceHold = res
+		}
+	}
+	if deviceHold == nil {
+		res, err := s.limits["login.failed"].reserve(key, now)
+		if err != nil {
+			return apierr.New(apierr.RateLimited, "too many failed sign-ins to this email; use Forgot password, "+
+				"or sign in from a device you have used before")
+		}
+		failedHold = res
 	}
 	var matches []*store.User
 	for _, c := range candidates {
@@ -260,7 +273,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if len(matches) > 0 {
-		failed.CancelAt(now)
+		// The password matched: the budgets are given back, so a correct sign-in spends none of them.
+		if deviceHold != nil {
+			deviceHold.CancelAt(now)
+		}
+		if failedHold != nil {
+			failedHold.CancelAt(now)
+		}
 	}
 	if len(candidates) == 0 {
 		if err := auth.DummyVerify(ctx, in.Password); err != nil {
@@ -339,6 +358,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	}
 	if stateErr != nil {
 		return stateErr
+	}
+	if err := s.setDeviceCookie(w, u.ID); err != nil {
+		return err
 	}
 	s.writeSignedIn(w, secret, u, sess)
 	return nil
@@ -623,6 +645,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		return tx.InsertAudit(ctx, e)
 	})
 	if err != nil {
+		return err
+	}
+	if err := s.setDeviceCookie(w, u.ID); err != nil {
 		return err
 	}
 	s.writeSignedIn(w, secret, u, sess)

@@ -122,6 +122,9 @@ type SessionsConfig struct {
 	// ShortIdleTimeout ends a session the browser did not keep ("Keep me signed in" unticked) after this long unused.
 	// Zero means unset: ShortIdle then gives the shorter of 12 hours and IdleTimeout.
 	ShortIdleTimeout Duration `yaml:"short_idle_timeout"`
+	// DeviceCookieLifetime is how long the device cookie a successful sign-in or password reset sets lasts. A
+	// sign-in from a device with a valid cookie is not refused by the email's failed-sign-in cap (sec1, decision 84).
+	DeviceCookieLifetime Duration `yaml:"device_cookie_lifetime"`
 }
 
 // defaultShortIdle is the longest a session the browser did not keep may go unused, when the setting is unset.
@@ -646,8 +649,9 @@ func Defaults() *Config {
 			SignInURLTemplate: "{public_url}/sign-in#token={token}",
 		},
 		Sessions: SessionsConfig{
-			IdleTimeout: Duration(168 * time.Hour),
-			MaxAge:      Duration(720 * time.Hour),
+			IdleTimeout:          Duration(168 * time.Hour),
+			MaxAge:               Duration(720 * time.Hour),
+			DeviceCookieLifetime: Duration(4320 * time.Hour),
 		},
 		UI:     UIConfig{Enabled: true, Brand: BrandConfig{Name: "Selfcloud", Accent: "#053D8E"}},
 		Office: OfficeConfig{LockMinutes: 30, MaxFileBytes: 50 * MiB, TokenMinutes: 600},
@@ -839,6 +843,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Sessions.IdleTimeout <= 0 || c.Sessions.MaxAge <= 0 {
 		bad("sessions.idle_timeout and sessions.max_age must be positive")
+	}
+	if c.Sessions.DeviceCookieLifetime <= 0 {
+		bad("sessions.device_cookie_lifetime must be positive")
 	}
 	if s := c.Sessions.ShortIdleTimeout; s < 0 || s > c.Sessions.IdleTimeout {
 		bad("sessions.short_idle_timeout must be unset or positive, and not more than sessions.idle_timeout")

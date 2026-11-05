@@ -339,6 +339,9 @@ func New(opts Options) (*Server, error) {
 			// Failed sign-ins to one email from any address, an hour wide (sec1, decision 84). Fixed: it bounds
 			// guessing across addresses, which the per-address limit above does not.
 			"login.failed": newLimiterRate(30, time.Hour),
+			// Failed sign-ins from one device cookie, an hour wide: the budget a trusted device has of its own
+			// (sec1, decision 84). Keyed on the cookie's nonce.
+			"login.device": newLimiterRate(10, time.Hour),
 			"forgot.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),
 			"forgot.email": newLimiter(cfg.RateLimit.PerEmailPerMinute),
 			"verify.ip":    newLimiter(cfg.RateLimit.PerIPPerMinute),
