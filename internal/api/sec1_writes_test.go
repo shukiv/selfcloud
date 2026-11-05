@@ -289,3 +289,78 @@ func TestLargeOneRequestWritesAreLimitedAt60(t *testing.T) {
 		t.Fatalf("small write after the large limit: status %d, want success", rec.Code)
 	}
 }
+
+// sec1 item 2, review (decision 84): one account's one-request writes in flight count against its own share of the disk
+// (upload.max_disk_share_percent), as tus and drop pieces do, so one account cannot take the pool and refuse every other
+// account. The disk has 40 MiB above storage.min_free and the share is 50%, so 20 MiB. Account A's first 16 MiB write
+// waits in its body; its second is refused with scope "account" before its body is read, and account B's write still
+// passes.
+func TestOneRequestWritesHoldTheAccountShareOfTheDisk(t *testing.T) {
+	t.Parallel()
+	const writeSize = 16 << 20
+	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) { c.Storage.MinFree = config.ByteSize(64 << 20) })
+	s.freeBytes = func(string) (uint64, error) { return 64<<20 + 40<<20, nil }
+	admin := adminKey(t, s)
+	accA, keyA := newAccount(t, s, admin, "Acme")
+	accB, keyB := newAccount(t, s, admin, "Beta")
+	fldA := folderOf(t, s, keyA, accA.ID)
+	fldB := folderOf(t, s, keyB, accB.ID)
+
+	gate := make(chan struct{})
+	var open sync.Once
+	letGo := func() { open.Do(func() { close(gate) }) }
+	t.Cleanup(letGo)
+	started := make(chan struct{}, 4)
+	start := func(key, fld, name string) <-chan *httptest.ResponseRecorder {
+		body := &gatedReader{r: strings.NewReader(strings.Repeat("x", writeSize)), started: started, gate: gate}
+		req := httptest.NewRequest("POST", "/api/v1/folders/"+fld+"/files?"+q(name), body)
+		req.ContentLength = writeSize
+		req.Header.Set("Authorization", "Bearer "+key)
+		out := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			out <- rec
+		}()
+		return out
+	}
+	timeout := 20 * time.Second
+
+	a1 := start(keyA, fldA, "/a1.bin")
+	select {
+	case <-started:
+	case <-time.After(timeout):
+		t.Fatal("account A's first write did not reach its body")
+	}
+	a2 := start(keyA, fldA, "/a2.bin")
+	select {
+	case rec := <-a2:
+		wantStatus(t, rec, http.StatusInsufficientStorage)
+		if !strings.Contains(rec.Body.String(), `"scope":"account"`) {
+			t.Errorf("account A's second write was refused, but not for its share: %s", rec.Body.String())
+		}
+	case <-started:
+		t.Fatal("account A's second write was checked as accepted: it waits in its body")
+	case <-time.After(timeout):
+		t.Fatal("account A's second write was not answered")
+	}
+
+	b1 := start(keyB, fldB, "/b1.bin")
+	select {
+	case <-started:
+	case rec := <-b1:
+		t.Fatalf("account B's write was refused while A holds only its share: %d %s", rec.Code, rec.Body.String())
+	case <-time.After(timeout):
+		t.Fatal("account B's write was not checked")
+	}
+
+	letGo()
+	for name, ch := range map[string]<-chan *httptest.ResponseRecorder{"A's first": a1, "B's": b1} {
+		select {
+		case rec := <-ch:
+			wantStatus(t, rec, http.StatusCreated)
+		case <-time.After(timeout):
+			t.Fatalf("%s write did not finish", name)
+		}
+	}
+}

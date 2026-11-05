@@ -447,10 +447,12 @@ func (s *Server) writeBlob(w http.ResponseWriter, r *http.Request, accountID str
 	return wr.Commit()
 }
 
-// oneRequestFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84, review F3).
+// oneRequestFlight counts the bytes of one-request writes whose bodies are still arriving (sec1, decision 84, review F3),
+// in total and per account, as dropFlight does. An account's entry is deleted at zero.
 type oneRequestFlight struct {
-	mu    sync.Mutex
-	bytes int64
+	mu        sync.Mutex
+	total     int64
+	byAccount map[string]int64
 }
 
 // reserveOneRequest refuses a one-request write the disk cannot hold, and one whose growth is more than the account's
@@ -478,9 +480,11 @@ func (s *Server) reserveOneRequest(ctx context.Context, p *auth.Principal, accou
 	return release, nil
 }
 
-// reserveOneRequestDisk checks the disk for a body of length bytes, with the one-request bytes in flight and the
-// unwritten bytes of open uploads, and on success adds the body to the bytes in flight. The check and the reservation
-// are one step under the flight lock.
+// reserveOneRequestDisk checks the disk for a body of length bytes, and on success adds the body to the bytes in flight.
+// The check is the upload rule: the whole pool must hold what every open upload and every one-request write in flight
+// still needs, and the account's own share (upload.max_disk_share_percent) caps what it holds, counting its unwritten
+// upload bytes and its one-request bytes in flight. So one account's concurrent writes cannot take the pool and refuse
+// every other account. The check and the reservation are one step under the flight lock.
 func (s *Server) reserveOneRequestDisk(ctx context.Context, accountID string, length int64) (func(), error) {
 	f := &s.oneFlight
 	f.mu.Lock()
@@ -489,20 +493,28 @@ func (s *Server) reserveOneRequestDisk(ctx context.Context, accountID string, le
 	if err != nil {
 		return nil, err
 	}
+	need := max(length, 1)
 	if ok {
-		_, unwritten, err := s.store.UnwrittenBytes(ctx, accountID)
+		mine, unwritten, err := s.store.UnwrittenBytes(ctx, accountID)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.checkDisk(usable, 0, f.bytes+unwritten+max(length, 1), false); err != nil {
+		if err := s.checkDisk(usable, mine+f.byAccount[accountID]+need, unwritten+f.total+need, true); err != nil {
 			return nil, err
 		}
 	}
-	f.bytes += length
+	if f.byAccount == nil {
+		f.byAccount = map[string]int64{}
+	}
+	f.total += length
+	f.byAccount[accountID] += length
 	return func() {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		f.bytes -= length
+		f.total -= length
+		if f.byAccount[accountID] -= length; f.byAccount[accountID] == 0 {
+			delete(f.byAccount, accountID)
+		}
 	}, nil
 }
 
