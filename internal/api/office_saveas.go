@@ -13,11 +13,15 @@ package api
 // by itself; a target that is locked answers 409 with X-WOPI-Lock; a target the caller may not overwrite answers 501, as
 // the specification says.
 //
-// The copy goes in the source's directory and needs the upload rule: contributor on that directory. A no-download source
-// is not copied, since a copy is a download; CheckFileInfo says so with UserCanNotWriteRelative. The copy's body goes
-// through writeBlob, the one-request write path (decision 84), so the disk, the quota and office.max_file_bytes refuse it
-// before its bytes land. The new file is audited as node.create, which reports file.created; an overwrite is replaceContent,
-// which reports file.updated.
+// Who may Save As is one rule, saveAsOffered, and CheckFileInfo, the handler's refusal and the write's own re-check all read
+// it (decision 87). It is never offered to a token minted by a delegated key, since the WOPI token keeps none of that key's
+// own cap, and never for a no-download source, since a copy is a download. Otherwise the caller must be allowed to add a
+// file to the source's directory (contributor), and a refusal is 501 with UserCanNotWriteRelative true. A browser view token
+// may make a new copy; an overwrite needs the source token to be writable, and a view token that asks for one gets 501.
+//
+// The copy goes in the source's directory. Its body goes through writeBlob, the one-request write path (decision 84), so
+// the disk, the quota and office.max_file_bytes refuse it before its bytes land. The new file is audited as node.create,
+// which reports file.created; an overwrite is replaceContent, which reports file.updated.
 
 import (
 	"context"
@@ -43,8 +47,31 @@ import (
 // write, so the decision is made again on the state the write sees.
 type saveAsReader interface {
 	accessReader
+	noDownloadReader
 	Child(ctx context.Context, accountID, parentID, key string) (*store.Node, error)
 	LiveLock(ctx context.Context, accountID, nodeID string) (*store.WOPILock, error)
+}
+
+// saveAsSource is the source file of a PutRelativeFile as the write reads it: the node, whether the token may write it (its
+// role is editor or more), and whether the no-download rule binds the caller.
+type saveAsSource struct {
+	node       *store.Node
+	writable   bool
+	restricted bool
+}
+
+// saveAsSourceOf reads the source as rd sees it. A node that is gone, in the trash, or not reached by the caller is not
+// found, so the write refuses a source that changed while its body arrived.
+func saveAsSourceOf(ctx context.Context, rd saveAsReader, p *auth.Principal, nodeID string) (*saveAsSource, error) {
+	n, role, err := nodeAccessWith(ctx, rd, p, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	restricted, err := downloadRestrictedIn(ctx, rd, n, role)
+	if err != nil {
+		return nil, err
+	}
+	return &saveAsSource{node: n, writable: store.RoleRank(role) >= store.RoleRank(store.RoleEditor), restricted: restricted}, nil
 }
 
 // saveAsConflict is a name the caller asked for that a file already has, without overwrite: 409 with valid in
@@ -61,7 +88,6 @@ var errSaveAsNotAuthorized = errors.New("wopi: the caller may not overwrite the 
 // saveAsDecision is where the copy lands: its directory, its name, and the file it replaces, when it replaces one.
 type saveAsDecision struct {
 	parent  *store.Node
-	role    string // the caller's role on the directory, which decides the mode of the new file's token
 	name    string
 	key     string
 	replace *store.Node
@@ -98,12 +124,13 @@ func saveAsNames(source, relative, suggestedHdr string) (string, bool, error) {
 	return name, true, nil
 }
 
-// saveAsPrincipal is the caller as the directory check reads it. A WOPI token names one file, so its scope reaches only that
-// file; a copy needs the person's right on the file's folder, and the token's folder list still bounds it. The write cap is
-// lifted for the check, since Save As is offered from the read-only view too (the specification's example), and the copy's
-// own token decides whether the copy can be edited. Any other caller is returned as it is.
+// saveAsPrincipal is the caller as the directory check and the new copy's check read it, for a browser-origin token. A WOPI
+// token names one file, so its node scope is lifted: a copy needs the person's right on the file's folder, and the token's
+// folder list still bounds it. The write cap is lifted too, since a copy is offered from the read-only view (the
+// specification's example); an overwrite is refused separately, for a token that is not writable. A delegated token keeps
+// its scope, though saveAsOffered never offers Save As to one.
 func saveAsPrincipal(p *auth.Principal) *auth.Principal {
-	if p.Token == nil {
+	if p.Token == nil || p.Token.MintedBy != "" {
 		return p
 	}
 	scope := *p.Token
@@ -114,23 +141,33 @@ func saveAsPrincipal(p *auth.Principal) *auth.Principal {
 	return &cp
 }
 
+// copyPrincipal is the caller as the new copy's own role is read: the token's folder list and its write cap stand, and only
+// its node scope is cleared, since the copy is another node. The copy's token takes its permission from this role (decision
+// 87), so a lifted cap never reaches it.
+func copyPrincipal(p *auth.Principal) *auth.Principal {
+	if p.Token == nil {
+		return p
+	}
+	scope := *p.Token
+	scope.Node = ""
+	cp := *p
+	cp.Token = &scope
+	return &cp
+}
+
 // saveAsDecide decides where a copy named requested goes, or which file it replaces. The directory must take a file from
 // the caller (contributor). A name that is free is taken as it is; a suggested name that is taken gets the first free
-// "name (n).ext"; an exact name that is taken is refused in this order: a live lock answers 409 with the lock, a file the
-// caller may not overwrite answers 501, and otherwise a taken name answers 409 with a free name, unless overwrite is set,
-// which replaces the file.
+// "name (n).ext". An exact name that is taken, without overwrite, answers 409 with a free name, before any lock is looked
+// at. With overwrite, a source that is not writable answers 501; then a live lock answers 409 with the lock; then a file the
+// caller may not edit answers 501, and otherwise the file is replaced.
 func saveAsDecide(ctx context.Context, rd saveAsReader, p *auth.Principal, src *store.Node,
-	requested string, suggested, overwrite bool) (*saveAsDecision, error) {
+	requested string, suggested, overwrite, writable bool) (*saveAsDecision, error) {
 	parent, err := requireNodeRole(ctx, rd, p, src.ParentID, store.RoleContributor)
 	if err != nil {
 		return nil, err
 	}
 	if parent.Kind != store.KindDir {
 		return nil, notFound("parent")
-	}
-	_, role, err := nodeAccessWith(ctx, rd, p, parent.ID)
-	if err != nil {
-		return nil, err
 	}
 	name, key, err := names.Clean(requested)
 	if err != nil {
@@ -141,21 +178,14 @@ func saveAsDecide(ctx context.Context, rd saveAsReader, p *auth.Principal, src *
 		return nil, err
 	}
 	if taken == nil {
-		return &saveAsDecision{parent: parent, role: role, name: name, key: key}, nil
+		return &saveAsDecision{parent: parent, name: name, key: key}, nil
 	}
 	if suggested {
 		name, key, err = saveAsFreeName(ctx, rd, src.AccountID, parent.ID, name)
 		if err != nil {
 			return nil, err
 		}
-		return &saveAsDecision{parent: parent, role: role, name: name, key: key}, nil
-	}
-	live, err := liveLockOf(ctx, rd, src.AccountID, taken.ID)
-	if err != nil {
-		return nil, err
-	}
-	if live != nil {
-		return nil, &store.LockedError{Current: live.LockID, Reason: "the target file is locked by an editor"}
+		return &saveAsDecision{parent: parent, name: name, key: key}, nil
 	}
 	if !overwrite || taken.Kind != store.KindFile {
 		valid, _, err := saveAsFreeName(ctx, rd, src.AccountID, parent.ID, name)
@@ -164,11 +194,24 @@ func saveAsDecide(ctx context.Context, rd saveAsReader, p *auth.Principal, src *
 		}
 		return nil, &saveAsConflict{valid: valid}
 	}
-	cur, err := requireNodeRole(ctx, rd, p, taken.ID, store.RoleEditor)
-	if err != nil {
+	if !writable {
 		return nil, errSaveAsNotAuthorized
 	}
-	return &saveAsDecision{parent: parent, role: role, name: name, key: key, replace: cur}, nil
+	live, err := liveLockOf(ctx, rd, src.AccountID, taken.ID)
+	if err != nil {
+		return nil, err
+	}
+	if live != nil {
+		return nil, &store.LockedError{Current: live.LockID, Reason: "the target file is locked by an editor"}
+	}
+	cur, err := requireNodeRole(ctx, rd, p, taken.ID, store.RoleEditor)
+	if err != nil {
+		if apierr.From(err).Code == apierr.Internal {
+			return nil, err
+		}
+		return nil, errSaveAsNotAuthorized
+	}
+	return &saveAsDecision{parent: parent, name: name, key: key, replace: cur}, nil
 }
 
 // saveAsFreeName is the first "base (n).ext" free in the directory parentID, for a name taken there. It follows
@@ -192,7 +235,9 @@ func saveAsFreeName(ctx context.Context, rd saveAsReader, accountID, parentID, n
 			return cand, key, nil
 		}
 	}
-	return "", "", apierr.New(apierr.Conflict, "no free name was found for the copy")
+	// A suggested target never answers 409 (the specification), so exhausting the names is a server answer, with the reason
+	// logged by wopiFail. It is not realistic, since a thousand names of one base must all be taken.
+	return "", "", apierr.New(apierr.Internal, "no free name was found for the copy: all 1000 suggested names are taken")
 }
 
 // saveAsFail answers a PutRelativeFile that failed: a taken name with a free name, an overwrite the caller may not make,
@@ -221,17 +266,25 @@ func (s *Server) saveAsFail(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
-// saveAsAllowed is the UserCanNotWriteRelative answer for a caller: a copy is allowed when the caller may add a file to
-// the source's directory and the source is not no-download, since a copy is a download.
-func (s *Server) saveAsAllowed(ctx context.Context, p *auth.Principal, n *store.Node, restricted bool) bool {
+// saveAsOffered is the one Save As rule (decision 87): whether the caller may make a copy of the file n. It is false for a
+// token minted by a delegated key, for a no-download file (a copy is a download), and for a caller who may not add a file
+// to the file's directory. CheckFileInfo says UserCanNotWriteRelative when it is false, and PUT_RELATIVE answers 501 then.
+// A caller the directory does not reach is refused as the others are, and any other failure is returned.
+func saveAsOffered(ctx context.Context, rd saveAsReader, p *auth.Principal, n *store.Node, restricted bool) (bool, error) {
+	if p == nil || (p.Token != nil && p.Token.MintedBy != "") {
+		return false, nil
+	}
 	if restricted || n.ParentID == "" {
-		return false
+		return false, nil
 	}
-	_, role, err := nodeAccessWith(ctx, s.store, saveAsPrincipal(p), n.ParentID)
+	_, role, err := nodeAccessWith(ctx, rd, saveAsPrincipal(p), n.ParentID)
 	if err != nil {
-		return false
+		if apierr.From(err).Code == apierr.Internal {
+			return false, err
+		}
+		return false, nil
 	}
-	return store.RoleRank(role) >= store.RoleRank(store.RoleContributor)
+	return store.RoleRank(role) >= store.RoleRank(store.RoleContributor), nil
 }
 
 // handleWOPIPutRelative makes the copy and answers its name and its WOPI address. The decision is made before the body
@@ -248,9 +301,15 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 		s.wopiFail(w, r, notFound("node"))
 		return nil
 	}
-	if g.restricted {
-		// A copy is a download, and the file is no-download for this caller (decision 20).
-		s.wopiFail(w, r, apierr.New(apierr.Forbidden, "a no-download file cannot be saved as a copy"))
+	// The refusal is the one CheckFileInfo states: UserCanNotWriteRelative true is a 501 (the specification). That covers a
+	// delegated token, a no-download file (a copy is a download, decision 20) and a caller who may not add files there.
+	offered, err := saveAsOffered(r.Context(), s.store, g.p, g.node, g.restricted)
+	if err != nil {
+		s.wopiFail(w, r, err)
+		return nil
+	}
+	if !offered {
+		s.saveAsFail(w, r, errSaveAsNotAuthorized)
 		return nil
 	}
 	rel, sug := r.Header.Get("X-WOPI-RelativeTarget"), r.Header.Get("X-WOPI-SuggestedTarget")
@@ -278,18 +337,15 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 	}
 	ctx := r.Context()
 	p := g.p
-	person := saveAsPrincipal(p)
 	acc := g.node.AccountID
-	pre, err := saveAsDecide(ctx, s.store, person, g.node, requested, suggested, overwrite)
-	if err != nil {
+	if _, err := saveAsDecide(ctx, s.store, saveAsPrincipal(p), g.node, requested, suggested, overwrite, g.writable()); err != nil {
 		s.saveAsFail(w, r, err)
 		return nil
 	}
-	replaces := int64(0)
-	if pre.replace != nil {
-		replaces = pre.replace.Size
-	}
-	c, err := s.writeBlob(w, r, acc, limit, replaces)
+	// The quota is checked on the whole new size, with replaces 0: an overwrite is refused while the file is locked, so the
+	// transaction charges all of the new bytes (replaceContent) and keeps the old content as a version. A pre-check that
+	// subtracted the old size would pass a write the transaction refuses (decision 87, L1).
+	c, err := s.writeBlob(w, r, acc, limit, 0)
 	if err != nil {
 		s.wopiFail(w, r, err)
 		return nil
@@ -300,11 +356,24 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 	sid := id.New("wps")
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		_, pl, err := s.authenticateWOPI(ctx, tx, g.token, s.store.Clock())
+		// Everything is decided again on the state this write sees (decision 87, L2): the token, the source (gone or
+		// trashed is 404, and the copy's directory is the source's parent as read now), the rule, and the target.
+		p, pl, err := s.authenticateWOPI(ctx, tx, g.token, s.store.Clock())
 		if err != nil {
 			return err
 		}
-		dec, err := saveAsDecide(ctx, tx, person, g.node, requested, suggested, overwrite)
+		src, err := saveAsSourceOf(ctx, tx, p, g.node.ID)
+		if err != nil {
+			return err
+		}
+		offered, err := saveAsOffered(ctx, tx, p, src.node, src.restricted)
+		if err != nil {
+			return err
+		}
+		if !offered {
+			return errSaveAsNotAuthorized
+		}
+		dec, err := saveAsDecide(ctx, tx, saveAsPrincipal(p), src.node, requested, suggested, overwrite, src.writable)
 		if err != nil {
 			return err
 		}
@@ -356,9 +425,14 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 		if pl.ExpiresAt > 0 && time.UnixMilli(pl.ExpiresAt).Before(expires) {
 			expires = time.UnixMilli(pl.ExpiresAt)
 		}
-		// The copy's token may write when the caller may edit the directory's files, as an open of an editable file would.
+		// The copy's token may write when the caller may edit the copy itself, as an open of an editable file would. The role
+		// is read on the copy's own node (the new file, or the file it replaced), never the directory's (decision 87, L4).
+		_, cr, err := nodeAccessWith(ctx, tx, copyPrincipal(p), out.ID)
+		if err != nil {
+			return err
+		}
 		perm, role := permRead, "read"
-		if store.RoleRank(dec.role) >= store.RoleRank(store.RoleEditor) {
+		if store.RoleRank(cr) >= store.RoleRank(store.RoleEditor) {
 			perm, role = permWrite, "write"
 		}
 		token, err = s.wopiTokens.sign(tokenPayload{

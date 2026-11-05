@@ -22,8 +22,9 @@ import (
 // wopiUserInfoMax is the longest UserInfo the host keeps, in bytes.
 const wopiUserInfoMax = 1024
 
-// handleWOPIPutUserInfo stores the body as the caller's UserInfo. Any valid token for the file may send it, read-only ones
-// too: the string is the person's own, not the file's.
+// handleWOPIPutUserInfo stores the body as the caller's UserInfo. A browser-origin token may send it, read-only ones too: the
+// string is the person's own, not the file's. A token minted by a delegated key may not, since the key is not the person
+// (decision 87): that answer is 501, as the other operations this host refuses for a caller.
 func (s *Server) handleWOPIPutUserInfo(w http.ResponseWriter, r *http.Request) error {
 	g, err := s.wopiRequest(w, r)
 	if err != nil {
@@ -33,6 +34,14 @@ func (s *Server) handleWOPIPutUserInfo(w http.ResponseWriter, r *http.Request) e
 	if g.p.UserID == "" {
 		// Only a person opens the editor (decision 31), so a token without a user has no UserInfo to keep.
 		s.wopiFail(w, r, notFound("node"))
+		return nil
+	}
+	if g.p.Token != nil && g.p.Token.MintedBy != "" {
+		if info := infoFrom(r.Context()); info != nil {
+			info.clientFault = true
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNotImplemented)
 		return nil
 	}
 	// One byte more than the limit is read, so a longer body is seen as longer without reading the rest of it.

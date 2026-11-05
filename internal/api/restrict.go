@@ -22,10 +22,16 @@ func errDownloadRestricted() error {
 // account key, may always download. It deters, and does not secure: a viewer can still see the
 // contents inline, and a file it has seen can be copied by other means.
 func (s *Server) downloadRestricted(ctx context.Context, n *store.Node, role string) (bool, error) {
+	return downloadRestrictedIn(ctx, s.store, n, role)
+}
+
+// downloadRestrictedIn is downloadRestricted read from rd. A write that must decide on the state it sees (Save As,
+// decision 87) reads the rule from its transaction.
+func downloadRestrictedIn(ctx context.Context, rd noDownloadReader, n *store.Node, role string) (bool, error) {
 	if store.RoleRank(role) > store.RoleRank(store.RoleCommenter) {
 		return false, nil
 	}
-	return s.store.NoDownloadApplies(ctx, n.AccountID, n.ID)
+	return rd.NoDownloadApplies(ctx, n.AccountID, n.ID)
 }
 
 // inlineAllowed reports whether a content response for n may be inline. A restricted caller may take

@@ -385,8 +385,13 @@ func (s *Server) handleWOPICheckFileInfo(w http.ResponseWriter, r *http.Request)
 			friendly = v
 		}
 	}
-	// Save As (PutRelativeFile) is open to a caller who may add a file to the directory and whose source is not no-download
-	// (decision 87). The answer says so, so the editor offers it only where the host takes it.
+	// Save As (PutRelativeFile) is open to a caller the one rule allows (saveAsOffered, decision 87). The answer says so, so the
+	// editor offers it only where the host takes it, and a refusal is the 501 that PUT_RELATIVE answers.
+	offered, err := saveAsOffered(r.Context(), s.store, g.p, n, g.restricted)
+	if err != nil {
+		s.wopiFail(w, r, err)
+		return nil
+	}
 	info := map[string]any{
 		"BaseFileName":            n.Name,
 		"OwnerId":                 n.OwnerID,
@@ -396,7 +401,7 @@ func (s *Server) handleWOPICheckFileInfo(w http.ResponseWriter, r *http.Request)
 		"Version":                 unquoteETag(n.ETag),
 		"UserCanWrite":            write,
 		"ReadOnly":                !write,
-		"UserCanNotWriteRelative": !s.saveAsAllowed(r.Context(), g.p, n, g.restricted),
+		"UserCanNotWriteRelative": !offered,
 		"SupportsUpdate":          true,
 		"SupportsLocks":           true,
 		"SupportsGetLock":         true,
