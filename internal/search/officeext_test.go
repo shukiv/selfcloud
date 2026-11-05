@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -62,6 +63,60 @@ func TestOfficeExtRefusesAZipOverTheEntryCap(t *testing.T) {
 	if got := officeExt(f, size); got != "" {
 		t.Errorf("officeExt over the cap = %q, want \"\" (not decided)", got)
 	}
+}
+
+// sec1 item 6, review F5 (decision 84): the entry cap is read from the central directory's record before the container is
+// parsed. zip.NewReader builds an entry for each record (about 200 bytes an entry, so 4 MB for these 20,000), and the cap
+// of 10,000 must refuse the zip before that cost. The heap allocated while officeExt refuses it stays under 1 MiB. The
+// test is not parallel: it reads the process's allocation counter.
+func TestOfficeExtRefusesOverTheCapBeforeBuildingTheEntries(t *testing.T) {
+	names := make([]string, 0, 20000)
+	for i := 0; i < 20000; i++ {
+		names = append(names, fmt.Sprintf("junk/%d.bin", i))
+	}
+	f, size := zipWith(t, names, "")
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	got := officeExt(f, size)
+	runtime.ReadMemStats(&after)
+	if got != "" {
+		t.Errorf("officeExt over the cap = %q, want \"\"", got)
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 1<<20 {
+		t.Errorf("officeExt allocated %d bytes for a refused zip of 20,000 entries; the cap should refuse it before the entries are built", alloc)
+	}
+}
+
+// sec1 item 6, review F5 (decision 84): the entry count is read for a zip64 container too, so a zip64 zip over the cap is
+// refused by the same count, and a file that is not a zip has none.
+func TestZipEntryCountReadsZip64AndRejectsOthers(t *testing.T) {
+	f, size := zipWith(t, zip64Names(70000), "")
+	n, ok := zipEntryCount(f, size)
+	if !ok || n != 70000 {
+		t.Errorf("zipEntryCount of a zip64 zip = %d, %v; want 70000, true", n, ok)
+	}
+	path := filepath.Join(t.TempDir(), "plain.txt")
+	if err := os.WriteFile(path, []byte("not a zip at all"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if _, ok := zipEntryCount(p, 16); ok {
+		t.Errorf("zipEntryCount of a file that is not a zip reported a count")
+	}
+}
+
+// zip64Names is n entry names. A zip with more than 65,534 entries is written with a zip64 directory end.
+func zip64Names(n int) []string {
+	names := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		names = append(names, fmt.Sprintf("e%d", i))
+	}
+	return names
 }
 
 // sec1 item 6 (decision 84): a zip under the cap is still decided, with the entry the document type is read from
