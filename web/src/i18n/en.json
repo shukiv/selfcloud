@@ -876,6 +876,7 @@
   "audit.user.device_confirm_sent": "{actor} was sent a link to confirm a new browser.",
   "audit.user.device_confirm_not_sent": "{actor} asked to confirm a new browser, and no link was sent.",
   "audit.user.device_confirmed": "{actor} confirmed a new browser.",
+  "audit.user.login_confirm_requested": "{actor} asked for a link to confirm a new browser; the sign-in cap was spent.",
   "audit.user.tokens_revoke": "{actor} ended every access token of {target}.",
   "audit.webhook.create": "{actor} added a webhook for {url}.",
   "audit.webhook.delete": "{actor} removed the webhook for {url}.",

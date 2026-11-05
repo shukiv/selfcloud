@@ -876,6 +876,7 @@
   "audit.user.device_confirm_sent": "أُرسل إلى {actor} رابط لتأكيد متصفح جديد.",
   "audit.user.device_confirm_not_sent": "طلب {actor} تأكيد متصفح جديد، ولم يُرسل أي رابط.",
   "audit.user.device_confirmed": "أكّد {actor} متصفحاً جديداً.",
+  "audit.user.login_confirm_requested": "طلب {actor} رابط تأكيد لمتصفح جديد؛ كان حدّ تسجيل الدخول قد استُنفد.",
   "audit.user.tokens_revoke": "ألغى {actor} كل رموز الوصول الخاصة بـ {target}.",
   "audit.webhook.create": "أضاف {actor} webhook لـ {url}.",
   "audit.webhook.delete": "أزال {actor} الـ webhook الخاص بـ {url}.",

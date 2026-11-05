@@ -51,8 +51,9 @@ var webhookAuditNoEvent = map[string]string{
 	"user.login_failed":    "sign-in activity is not on the event list",
 
 	// The device confirmation (sec2, decision 86) is sign-in activity too; a blank line keeps this block's alignment apart.
-	"user.device_confirm_sent": "sign-in activity is not on the event list (sec2, decision 86)",
-	"user.device_confirmed":    "sign-in activity is not on the event list (sec2, decision 86)",
+	"user.device_confirm_sent":     "sign-in activity is not on the event list (sec2, decision 86)",
+	"user.device_confirmed":        "sign-in activity is not on the event list (sec2, decision 86)",
+	"user.login_confirm_requested": "sign-in activity is not on the event list (sec2, decision 86, round 3)",
 
 	"user.password_reset":     "password changes are not on the event list",
 	"user.password_set":       "password changes are not on the event list",

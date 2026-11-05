@@ -3,12 +3,17 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -276,13 +281,15 @@ func TestConfirmMailCapSendsNoFourthMail(t *testing.T) {
 
 	first := signInAsked(t, s, "10.86.1.1:4000", "ann@example.com", testPassword)
 	wantStatus(t, first, 202)
+	// Each attempt's job is waited for before the next: one job in flight per user (round 3).
+	s.bg.Wait()
 	for i := 2; i <= 4; i++ {
 		r := signInAsked(t, s, fmt.Sprintf("10.86.1.%d:4000", i), "ann@example.com", testPassword)
 		if a, b := shapeOf(first), shapeOf(r); a != b {
 			t.Fatalf("attempt %d answers differently:\n%s\n---\n%s", i, a, b)
 		}
+		s.bg.Wait()
 	}
-	s.bg.Wait()
 	if n := len(confirmMailTo(rec, "ann@example.com")); n != 3 {
 		t.Errorf("confirmation mails = %d, want 3 in the window", n)
 	}
@@ -381,9 +388,14 @@ func TestCappedEmailHasAHardLimitOnPasswordChecks(t *testing.T) {
 	verifiedUser(t, s, key, acc.ID, "ann@example.com")
 	spendCap(t, s, "ann@example.com", 92)
 
+	// One address: the budget is per email and address (round 3), so the three checks come from one address.
+	// Each job is waited for before the next check: one job in flight per user (round 3).
 	first := signInAsked(t, s, "10.92.1.1:4000", "ann@example.com", testPassword)
-	second := signInAsked(t, s, "10.92.1.2:4000", "ann@example.com", testPassword)
-	third := signInAsked(t, s, "10.92.1.3:4000", "ann@example.com", testPassword)
+	s.bg.Wait()
+	second := signInAsked(t, s, "10.92.1.1:4000", "ann@example.com", testPassword)
+	s.bg.Wait()
+	third := signInAsked(t, s, "10.92.1.1:4000", "ann@example.com", testPassword)
+	s.bg.Wait()
 	for _, r := range []*httptest.ResponseRecorder{first, second, third} {
 		wantConfirmAnswer(t, r)
 	}
@@ -408,8 +420,9 @@ func TestCappedRightAndWrongPasswordsAnswerTheSameBytes(t *testing.T) {
 	spendCap(t, s, "ann@example.com", 90)
 
 	within := signInAsked(t, s, "10.90.1.1:4000", "ann@example.com", testPassword) // the one check the limit allows
-	overWrong := signInAsked(t, s, "10.90.1.2:4000", "ann@example.com", "wrong password here")
-	overRight := signInAsked(t, s, "10.90.1.3:4000", "ann@example.com", testPassword)
+	// The same address: the budget is per email and address (round 3), so these two are past the limit.
+	overWrong := signInAsked(t, s, "10.90.1.1:4000", "ann@example.com", "wrong password here")
+	overRight := signInAsked(t, s, "10.90.1.1:4000", "ann@example.com", testPassword)
 	for _, r := range []*httptest.ResponseRecorder{within, overWrong, overRight} {
 		wantConfirmAnswer(t, r)
 	}
@@ -587,10 +600,265 @@ func TestConfirmMailCapCountsTheAddressAcrossAccounts(t *testing.T) {
 	spendCap(t, s, "ann@example.com", 99)
 
 	for i := 1; i <= 4; i++ {
+		// Each attempt's jobs are waited for before the next: one job in flight per user (round 3).
 		wantConfirmAnswer(t, signInAsked(t, s, fmt.Sprintf("10.99.1.%d:4000", i), "ann@example.com", testPassword))
+		s.bg.Wait()
 	}
-	s.bg.Wait()
 	if n := len(confirmMailTo(rec, "ann@example.com")); n != 3 {
 		t.Errorf("confirmation mails = %d, want 3 to the address in the window", n)
+	}
+}
+
+// auditLogRows counts the rows of the audit log, read through the store's file, so a count taken around one request is
+// the request's own writes.
+func auditLogRows(t *testing.T, s *Server) int {
+	t.Helper()
+	db, err := sql.Open("sqlite", s.cfg.Store.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM audit_log").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// lockedBuffer collects log lines written from several goroutines.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// gatedSender records mail as mail.Recorder does, but a send waits until gate is closed, so a test can hold a job in
+// flight.
+type gatedSender struct {
+	rec  *mail.Recorder
+	gate chan struct{}
+}
+
+func (g *gatedSender) Send(ctx context.Context, m mail.Message) error {
+	<-g.gate
+	return g.rec.Send(ctx, m)
+}
+
+// Round 3, timing: a miss, a match, a match on two accounts and an admin's right password each write the same number of
+// audit rows inside the request, before the answer. The mail work is queued; the queue is held full here, so a dropped
+// job writes nothing and the count is the request's own (a job that ran would add rows after the answer).
+func TestEveryAnswerWritesTheSameRowsBeforeTheAnswer(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	accA, keyA := newAccount(t, s, admin, "Acme")
+	accB, keyB := newAccount(t, s, admin, "Beta")
+	verifiedUser(t, s, keyA, accA.ID, "miss@example.com")
+	verifiedUser(t, s, keyA, accA.ID, "one@example.com")
+	verifiedUser(t, s, keyA, accA.ID, "two@example.com")
+	verifiedUser(t, s, keyB, accB.ID, "two@example.com")
+	newAdminUser(t, s, admin, "ada@example.com")
+	for i, email := range []string{"miss@example.com", "one@example.com", "two@example.com", "ada@example.com"} {
+		spendCap(t, s, email, 110+i)
+	}
+	s.deviceSlots = make(chan struct{})
+	for _, c := range []struct {
+		name, email, password string
+		tag                   int
+	}{
+		{"a miss", "miss@example.com", "wrong password here", 120},
+		{"a match", "one@example.com", testPassword, 121},
+		{"a match on two accounts", "two@example.com", testPassword, 122},
+		{"an admin's right password", "ada@example.com", testPassword, 123},
+	} {
+		before := auditLogRows(t, s)
+		wantConfirmAnswer(t, signInAsked(t, s, fmt.Sprintf("10.%d.9.9:4000", c.tag), c.email, c.password))
+		if n := auditLogRows(t, s) - before; n != 1 {
+			t.Errorf("%s writes %d audit rows before the answer, want 1", c.name, n)
+		}
+	}
+}
+
+// Round 3, login.capped is per email and client address. An attacker who spends the budget from its own address does
+// not stop the real user's mail from another address: in the capped state the answers are the same, so a guess there
+// gives the attacker nothing, and the limit only bounds password hashing.
+func TestAnAttackersCappedBudgetDoesNotBlockTheRealUsersMail(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec, func(c *config.Config) { c.RateLimit.CappedPerEmailPerHour = 2 })
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	spendCap(t, s, "ann@example.com", 130)
+	for i := 0; i < 3; i++ {
+		wantConfirmAnswer(t, signInAsked(t, s, "10.131.1.1:4000", "ann@example.com", "wrong password here"))
+	}
+	wantConfirmAnswer(t, signInAsked(t, s, "10.132.1.1:4000", "ann@example.com", testPassword))
+	s.bg.Wait()
+	if n := len(confirmMailTo(rec, "ann@example.com")); n != 1 {
+		t.Errorf("mails = %d, want 1: the real user's address has a budget of its own", n)
+	}
+}
+
+// Round 3: logout clears the pending confirmation cookie, so a link mailed to this browser cannot be redeemed in it after
+// sign-out. Without the clearing, the cookie would live on for its fifteen minutes.
+func TestLogoutClearsThePendingConfirmCookie(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	_, sess := verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	spendCap(t, s, "ann@example.com", 140)
+	wantConfirmAnswer(t, signInAsked(t, s, "10.141.1.1:4000", "ann@example.com", testPassword))
+	s.bg.Wait()
+	token := tokenFromMail(t, confirmMailTo(rec, "ann@example.com")[0])
+
+	out := callSession(t, s, sess, "POST", "/api/v1/auth/logout", nil)
+	wantStatus(t, out, 204)
+	cleared := answerCookie(out, s.confirmCookieName())
+	if cleared == nil || cleared.Value != "" || cleared.MaxAge >= 0 {
+		t.Fatalf("logout does not clear the confirmation cookie: %+v", cleared)
+	}
+	// The browser has dropped the cookie, so the link is refused there, as in a browser with no nonce.
+	wantError(t, redeemConfirm(t, s, "10.141.1.1:4000", token), 403, apierr.Forbidden)
+}
+
+// Round 3: at most one confirmation job is in flight per user. A second matching request while the first is still
+// sending is dropped as a duplicate: the same answer, a log line, and no second mail. Once the first has finished, the
+// next request for the user is queued again.
+func TestOneConfirmationJobIsInFlightPerUser(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	gate := make(chan struct{})
+	s := newAuthServer(t, &gatedSender{rec: rec, gate: gate})
+	var logs lockedBuffer
+	s.log = slog.New(slog.NewTextHandler(&logs, nil))
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	spendCap(t, s, "ann@example.com", 150)
+
+	first := signInAsked(t, s, "10.151.1.1:4000", "ann@example.com", testPassword)
+	second := signInAsked(t, s, "10.152.1.1:4000", "ann@example.com", testPassword)
+	wantConfirmAnswer(t, first)
+	wantConfirmAnswer(t, second)
+	if a, b := shapeOf(first), shapeOf(second); a != b {
+		t.Errorf("answers differ while a job is in flight:\n%s\n---\n%s", a, b)
+	}
+	close(gate)
+	s.bg.Wait()
+	if n := len(confirmMailTo(rec, "ann@example.com")); n != 1 {
+		t.Fatalf("mails = %d, want 1: the second request is a duplicate", n)
+	}
+	if !strings.Contains(logs.String(), "already in flight") {
+		t.Errorf("no log line for the duplicate:\n%s", logs.String())
+	}
+	wantConfirmAnswer(t, signInAsked(t, s, "10.153.1.1:4000", "ann@example.com", testPassword))
+	s.bg.Wait()
+	if n := len(confirmMailTo(rec, "ann@example.com")); n != 2 {
+		t.Errorf("mails after the first job finished = %d, want 2", n)
+	}
+}
+
+// Round 3: with every slot busy, the confirmation is dropped and logged, and the answer is the same as a miss's.
+func TestAFullQueueDropsTheMailWithTheSameAnswer(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	var logs lockedBuffer
+	s.log = slog.New(slog.NewTextHandler(&logs, nil))
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	spendCap(t, s, "ann@example.com", 160)
+	s.deviceSlots = make(chan struct{}) // every slot is busy
+	dropped := signInAsked(t, s, "10.161.1.1:4000", "ann@example.com", testPassword)
+	miss := signInAsked(t, s, "10.162.1.1:4000", "ann@example.com", "wrong password here")
+	wantConfirmAnswer(t, dropped)
+	wantConfirmAnswer(t, miss)
+	if a, b := shapeOf(dropped), shapeOf(miss); a != b {
+		t.Errorf("a dropped mail's answer differs from a miss's:\n%s\n---\n%s", a, b)
+	}
+	s.bg.Wait()
+	if n := len(confirmMailTo(rec, "ann@example.com")); n != 0 {
+		t.Errorf("mails = %d, want none with no slot free", n)
+	}
+	if !strings.Contains(logs.String(), "dropped") {
+		t.Errorf("no log line for the dropped mail:\n%s", logs.String())
+	}
+}
+
+// Round 3: shutdown waits for in-flight confirmation jobs (Serve waits on the background group). A job still sending
+// when the wait starts is finished before the wait returns.
+func TestTheBackgroundWaitCoversAnInFlightConfirmationMail(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	gate := make(chan struct{})
+	s := newAuthServer(t, &gatedSender{rec: rec, gate: gate})
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	spendCap(t, s, "ann@example.com", 170)
+	wantConfirmAnswer(t, signInAsked(t, s, "10.171.1.1:4000", "ann@example.com", testPassword))
+	done := make(chan struct{})
+	go func() {
+		s.bg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("the wait returned while the mail was still being sent")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(gate)
+	<-done
+	if n := len(confirmMailTo(rec, "ann@example.com")); n != 1 {
+		t.Errorf("mails = %d, want the in-flight mail sent before the wait returned", n)
+	}
+}
+
+// Round 3, the write-error path and the L1 refund: when a job's link write fails, the job logs the failure and sends no
+// mail, and the mail token it took is given back, so the failed write spends nothing from the address's cap of three
+// mails in fifteen minutes. Here the first of four confirmations fails; the three after it must all be mailed.
+func TestAFailedLinkWriteGivesTheMailTokenBackAndLogs(t *testing.T) {
+	t.Parallel()
+	rec := &mail.Recorder{}
+	s := newAuthServer(t, rec)
+	var logs lockedBuffer
+	s.log = slog.New(slog.NewTextHandler(&logs, nil))
+	admin := adminKey(t, s)
+	acc, key := newAccount(t, s, admin, "Acme")
+	verifiedUser(t, s, key, acc.ID, "ann@example.com")
+	spendCap(t, s, "ann@example.com", 180)
+	calls := 0
+	s.confirmWriteFault = func() error {
+		calls++
+		if calls == 1 {
+			return errors.New("write refused")
+		}
+		return nil
+	}
+	for i := 1; i <= 4; i++ {
+		// Each job is waited for before the next request: one job in flight per user (round 3).
+		wantConfirmAnswer(t, signInAsked(t, s, fmt.Sprintf("10.%d.1.1:4000", 180+i), "ann@example.com", testPassword))
+		s.bg.Wait()
+	}
+	if n := len(confirmMailTo(rec, "ann@example.com")); n != 3 {
+		t.Errorf("mails = %d, want 3: the failed write's token must be given back", n)
+	}
+	if !strings.Contains(logs.String(), "cannot write the device confirmation") {
+		t.Errorf("no log line for the failed write:\n%s", logs.String())
 	}
 }

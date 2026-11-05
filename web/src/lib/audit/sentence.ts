@@ -382,6 +382,8 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
       };
     case 'user.device_confirmed':
       return { key: 'audit.user.device_confirmed', params: { actor } };
+    case 'user.login_confirm_requested':
+      return { key: 'audit.user.login_confirm_requested', params: { actor } };
     case 'user.tokens_revoke':
       return { key: 'audit.user.tokens_revoke', params: { actor, target } };
     case 'webhook.create':

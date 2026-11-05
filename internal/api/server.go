@@ -84,6 +84,12 @@ type Server struct {
 	limitClock func() time.Time
 	// deviceSlots bounds the device confirmation mails in flight (sec2, decision 86, round 2 M2).
 	deviceSlots chan struct{}
+	// confirmBusy names the users with a confirmation job in flight, at most one each (round 3). confirmMu guards it.
+	confirmMu   sync.Mutex
+	confirmBusy map[string]bool
+	// confirmWriteFault, when set, is returned from a confirmation job's write before its link row is made. A test uses it
+	// to fail the write; production leaves it nil.
+	confirmWriteFault func() error
 	// sessionClock is the time the web sessions read. Production keeps time.Now; tests move it.
 	sessionClock func() time.Time
 	// dropFlight counts the bytes of drop pieces whose bodies are still arriving (round 2, item 1).
@@ -315,6 +321,7 @@ func New(opts Options) (*Server, error) {
 	s := &Server{
 		limitClock:    time.Now,
 		deviceSlots:   make(chan struct{}, deviceConfirmSlots),
+		confirmBusy:   map[string]bool{},
 		sessionClock:  time.Now,
 		cfg:           cfg,
 		log:           log,
@@ -372,7 +379,8 @@ func New(opts Options) (*Server, error) {
 			// deviceConfirmMailCap confirmation mails in deviceConfirmMailWindow. Fixed, as the mail limits are.
 			"device.confirm.ip":   newLimiter(cfg.RateLimit.PerIPPerMinute),
 			"mail.device.address": newLimiterRate(deviceConfirmMailCap, deviceConfirmMailWindow),
-			// Password checks for one email while its failed-sign-in cap is spent, from all addresses together (round 2 M1).
+			// Password checks for one email from one client address while the email's failed-sign-in cap is spent (round 2 M1,
+			// per address since round 3).
 			// The setting is rate_limit.capped_per_email_per_hour.
 			"login.capped": newLimiterRate(cfg.RateLimit.CappedPerEmailPerHour, time.Hour),
 			// Verification and reset mail: per account, and per address it goes to. Links returned

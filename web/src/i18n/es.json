@@ -876,6 +876,7 @@
   "audit.user.device_confirm_sent": "Se envió a {actor} un enlace para confirmar un navegador nuevo.",
   "audit.user.device_confirm_not_sent": "{actor} pidió confirmar un navegador nuevo, y no se envió ningún enlace.",
   "audit.user.device_confirmed": "{actor} confirmó un navegador nuevo.",
+  "audit.user.login_confirm_requested": "{actor} pidió un enlace para confirmar un navegador nuevo; se había agotado el límite de inicios de sesión.",
   "audit.user.tokens_revoke": "{actor} terminó todos los tokens de acceso de {target}.",
   "audit.webhook.create": "{actor} añadió un webhook para {url}.",
   "audit.webhook.delete": "{actor} eliminó el webhook de {url}.",

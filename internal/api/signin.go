@@ -465,6 +465,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.pwFails.clear(sess.IDHash)
 	s.clearSessionCookie(w)
+	// A pending confirmation link cannot be redeemed in this browser after sign-out (round 3).
+	s.clearConfirmCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

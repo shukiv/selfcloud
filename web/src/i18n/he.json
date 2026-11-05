@@ -876,6 +876,7 @@
   "audit.user.device_confirm_sent": "נשלח ל‑{actor} קישור לאישור דפדפן חדש.",
   "audit.user.device_confirm_not_sent": "{actor} ביקש לאשר דפדפן חדש, ולא נשלח קישור.",
   "audit.user.device_confirmed": "{actor} אישר דפדפן חדש.",
+  "audit.user.login_confirm_requested": "{actor} ביקש קישור לאישור דפדפן חדש; מכסת ההתחברות נוצלה.",
   "audit.user.tokens_revoke": "{actor} ביטל את כל אסימוני הגישה של {target}.",
   "audit.webhook.create": "{actor} הוסיף webhook עבור {url}.",
   "audit.webhook.delete": "{actor} הסיר את ה-webhook של {url}.",

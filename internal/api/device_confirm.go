@@ -115,7 +115,10 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 	ctx := r.Context()
 	nonce := s.setConfirmCookie(w, r)
 	short := remember != nil && !*remember
-	if err := s.rateLimit("login.capped", emailKey(email)); err != nil {
+	// The budget is per email and client address (round 3). An attacker who spends it from its own address does not
+	// stop another address's mail. The address is read as login.ip reads it, so proxy headers are trusted the same way.
+	// The NUL separates the two parts: an address key never holds one.
+	if err := s.rateLimit("login.capped", addressKey(r)+"\x00"+emailKey(email)); err != nil {
 		// Past the limit no password is checked. One dummy check and one audit row, as a miss writes, keep the answer and
 		// its cost the same.
 		if err := auth.DummyVerify(ctx, password); err != nil {
@@ -145,13 +148,15 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 			return err
 		}
 	}
-	// A password that matched none of them is audited as a failed sign-in, in one synchronous write. A matching password
-	// writes nothing here: its work is queued, so its answer does not wait for the write (round 2 M2). The one-write
-	// difference that remains is stated in decision 86.
+	// Every answer writes exactly one audit row inside the request, before the answer (round 3): a miss as a failed
+	// sign-in, a match as a confirmation requested, whatever the number of matched accounts. The mail work is queued and
+	// is not in the request, so no path waits for a mail. Both writes are one transaction with one row.
 	if len(matches) == 0 {
 		if err := s.auditFailedLogin(r, candidates); err != nil {
 			return err
 		}
+	} else if err := s.auditConfirmRequested(r, matches); err != nil {
+		return err
 	}
 	for _, u := range matches {
 		s.queueConfirmMail(r, u, nonce, short)
@@ -160,8 +165,27 @@ func (s *Server) confirmByEmail(w http.ResponseWriter, r *http.Request, candidat
 	return nil
 }
 
+// auditConfirmRequested writes the one synchronous audit row of a sign-in whose password matched, so that it costs what a
+// miss costs (round 3). The row names the account when exactly one account matched, as a miss's does.
+func (s *Server) auditConfirmRequested(r *http.Request, matches []*store.User) error {
+	accountID, actor := "", ""
+	if len(matches) == 1 {
+		accountID, actor = matches[0].AccountID, matches[0].ID
+	}
+	return s.store.Write(r.Context(), func(tx *store.Tx) error {
+		e := s.auditEntry(r, accountID, "user.login_confirm_requested", actor, nil)
+		e.ActorKind, e.ActorID, e.Outcome = string(auth.KindUser), actor, "requested"
+		if actor == "" {
+			e.ActorKind = "anonymous"
+		}
+		return tx.InsertAudit(r.Context(), e)
+	})
+}
+
 // queueConfirmMail prepares the link and its audit rows for a matched user and hands them to a bounded background job.
-// When no slot is free the job is dropped and logged, and nothing is written: the answer is the same.
+// When no slot is free the job is dropped and logged, and nothing is written: the answer is the same. At most one job
+// is in flight per user (round 3): a second for the same user is dropped as a duplicate, with the same answer, so one
+// caller cannot hold every slot through slow sends.
 func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, short bool) {
 	ctx := r.Context()
 	select {
@@ -170,6 +194,15 @@ func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, 
 		s.log.Warn("device confirmation mail dropped: every slot is busy", "user", u.ID)
 		return
 	}
+	s.confirmMu.Lock()
+	if s.confirmBusy[u.ID] {
+		s.confirmMu.Unlock()
+		<-s.deviceSlots
+		s.log.Warn("device confirmation mail dropped: one is already in flight for this user", "user", u.ID)
+		return
+	}
+	s.confirmBusy[u.ID] = true
+	s.confirmMu.Unlock()
 	secret, hash := auth.NewToken()
 	details := map[string]any{"purpose": mail.PurposeDeviceConfirm, "method": methodEmail}
 	now := s.clockNow()
@@ -191,7 +224,12 @@ func (s *Server) queueConfirmMail(r *http.Request, u *store.User, nonce string, 
 	s.bg.Add(1)
 	go func() {
 		defer s.bg.Done()
-		defer func() { <-s.deviceSlots }()
+		defer func() {
+			s.confirmMu.Lock()
+			delete(s.confirmBusy, u.ID)
+			s.confirmMu.Unlock()
+			<-s.deviceSlots
+		}()
 		jctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 		defer cancel()
 		s.runConfirmJob(jctx, job)
@@ -253,6 +291,11 @@ func (s *Server) runConfirmJob(ctx context.Context, j *confirmJob) {
 			return tx.InsertAudit(ctx, j.capped)
 		}
 		held = res
+		if s.confirmWriteFault != nil {
+			if err := s.confirmWriteFault(); err != nil {
+				return err
+			}
+		}
 		row := &store.DeviceConfirm{ID: id.New("dcf"), UserID: found.ID, TokenHash: j.hash, NonceHash: j.nonceHash,
 			Short: j.short, ExpiresAt: j.expires, CreatedAt: j.now}
 		if err := tx.InsertDeviceConfirm(ctx, row); err != nil {

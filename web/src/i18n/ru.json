@@ -876,6 +876,7 @@
   "audit.user.device_confirm_sent": "{actor} отправлена ссылка для подтверждения нового браузера.",
   "audit.user.device_confirm_not_sent": "{actor} запросил(а) подтверждение нового браузера, ссылка не отправлялась.",
   "audit.user.device_confirmed": "{actor} подтвердил(а) новый браузер.",
+  "audit.user.login_confirm_requested": "{actor} запросил(а) ссылку для подтверждения нового браузера; лимит входов был исчерпан.",
   "audit.user.tokens_revoke": "{actor} отозвал(а) все токены доступа {target}.",
   "audit.webhook.create": "{actor} добавил(а) вебхук для {url}.",
   "audit.webhook.delete": "{actor} удалил(а) вебхук для {url}.",

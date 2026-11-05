@@ -876,6 +876,7 @@
   "audit.user.device_confirm_sent": "Un lien pour confirmer un nouveau navigateur a été envoyé à {actor}.",
   "audit.user.device_confirm_not_sent": "{actor} a demandé à confirmer un nouveau navigateur, et aucun lien n'a été envoyé.",
   "audit.user.device_confirmed": "{actor} a confirmé un nouveau navigateur.",
+  "audit.user.login_confirm_requested": "{actor} a demandé un lien pour confirmer un nouveau navigateur ; la limite de connexions était atteinte.",
   "audit.user.tokens_revoke": "{actor} a mis fin à tous les jetons d’accès de {target}.",
   "audit.webhook.create": "{actor} a ajouté un webhook pour {url}.",
   "audit.webhook.delete": "{actor} a supprimé le webhook pour {url}.",
