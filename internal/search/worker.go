@@ -326,14 +326,29 @@ func (w *Worker) readPlain(f *os.File, j store.TextJob, res *store.TextResult) {
 // the entries of the container, not by the name. OLE2 files are not decided here. An unknown container is "".
 func officeExt(f *os.File, size int64) string {
 	zr, err := zip.NewReader(f, size)
-	if err != nil {
+	if err != nil || len(zr.File) > maxOfficeEntries {
 		return ""
 	}
-	entries := make(map[string]*zip.File, len(zr.File))
+	// The names are read in one pass that keeps no entry: mimetype stops it, since its content decides, and the three
+	// document names are only flags (sec1, decision 84). A map of every entry cost memory with the entry count.
+	var mimetype *zip.File
+	var docx, xlsx, pptx bool
 	for _, e := range zr.File {
-		entries[e.Name] = e
+		switch e.Name {
+		case "mimetype":
+			mimetype = e
+		case "word/document.xml":
+			docx = true
+		case "xl/workbook.xml":
+			xlsx = true
+		case "ppt/presentation.xml":
+			pptx = true
+		}
+		if mimetype != nil {
+			break
+		}
 	}
-	if m, ok := entries["mimetype"]; ok {
+	if m := mimetype; m != nil {
 		rc, err := m.Open()
 		if err != nil {
 			return ""
@@ -354,15 +369,19 @@ func officeExt(f *os.File, size int64) string {
 		return ""
 	}
 	switch {
-	case entries["word/document.xml"] != nil:
+	case docx:
 		return "docx"
-	case entries["xl/workbook.xml"] != nil:
+	case xlsx:
 		return "xlsx"
-	case entries["ppt/presentation.xml"] != nil:
+	case pptx:
 		return "pptx"
 	}
 	return ""
 }
+
+// maxOfficeEntries is the most entries of a container officeExt decides. A real document has far fewer; a container
+// with more is left undecided, and its text is not extracted (sec1, decision 84).
+const maxOfficeEntries = 10000
 
 // convert sends a document to the converter for plain text, and classifies its answer. It returns true when the
 // converter could not be reached. A conversion whose output is over the text limit is a success: the writer stops the
