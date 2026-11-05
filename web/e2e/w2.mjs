@@ -164,9 +164,14 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
   const manyURL = await urlOf(teamA, '/w2', 'many');
   const roURL = await urlOf(teamB, '/', 'w2');
 
+  // A wait that times out says what the page showed instead: its rows, its status lines and its busy marks (gate fu5b e2e-1
+  // timed out here once, with no clue to the cause).
   const open = async (url, view, wait) => {
     await page.goto(url);
-    await page.waitFor(`!!document.querySelector(${q(itemSel(wait))})`, 20000);
+    await page.waitFor(`!!document.querySelector(${q(itemSel(wait))})`, 20000).catch(async (err) => {
+      const seen = await page.evaluate(`JSON.stringify({ rows: [...document.querySelectorAll('[role="row"][aria-label], [role="option"][aria-label]')].slice(0, 8).map((r) => r.getAttribute('aria-label')), status: [...document.querySelectorAll('[role="status"], [role="alert"], .ant-message-notice, .ant-result')].map((s) => s.textContent.trim().slice(0, 80)), busy: document.querySelectorAll('[aria-busy="true"]').length, empty: !!document.querySelector('[data-testid="empty-folder"]'), title: document.title })`).catch((e) => `unreadable: ${e.message}`);
+      throw new Error(`${err.message.slice(0, 120)}; ${seen}`);
+    });
     await setView(page, view);
     await clearSelection(page);
   };
