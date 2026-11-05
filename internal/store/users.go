@@ -26,10 +26,12 @@ const (
 // It cannot clash with an account ID, which always carries the acc_ prefix.
 const AdminScope = "admin"
 
-// Verification purposes.
+// Verification purposes. PurposeEmailChange is a confirmation of a new address (decision 89); its
+// token names the address through users.pending_email.
 const (
-	PurposeVerify = "verify"
-	PurposeReset  = "reset"
+	PurposeVerify      = "verify"
+	PurposeReset       = "reset"
+	PurposeEmailChange = "email_change"
 )
 
 // User is a person who may sign in. A member or owner belongs to one account; an installation
@@ -54,20 +56,23 @@ type User struct {
 	// MustChangePassword is set by an installation admin's typed password (decision 41). Until the
 	// user changes it, the user reaches only the change-password route and GET /me.
 	MustChangePassword bool
+	// PendingEmail is the address a change of email is waiting to have confirmed (decision 89). "" when
+	// there is none. The address in Email stays in use until it is confirmed.
+	PendingEmail string
 }
 
 const userCols = `id, account_id, external_id, email, email_key, display_name, locale, role, status,
-	password_hash, verified_at, created_at, updated_at, quota_bytes, must_change_password`
+	password_hash, verified_at, created_at, updated_at, quota_bytes, must_change_password, pending_email`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
-	var acc, ext, pw sql.NullString
+	var acc, ext, pw, pending sql.NullString
 	var verified sql.NullInt64
 	var created, updated int64
 	var quota sql.NullInt64
 	var mustChange int64
 	err := row.Scan(&u.ID, &acc, &ext, &u.Email, &u.EmailKey, &u.DisplayName, &u.Locale,
-		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota, &mustChange)
+		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota, &mustChange, &pending)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -76,6 +81,7 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	}
 	u.AccountID = acc.String
 	u.ExternalID = ext.String
+	u.PendingEmail = pending.String
 	u.PasswordHash = pw.String
 	u.VerifiedAt = fromNullMillis(verified)
 	u.CreatedAt = fromMillis(created)
@@ -251,10 +257,10 @@ func (s *Store) queryUsers(ctx context.Context, query string, args []any) ([]*Us
 // account.
 func (tx *Tx) InsertUser(ctx context.Context, u *User) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO users (`+userCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.ID, nullString(u.AccountID), nullString(u.ExternalID), u.Email, u.EmailKey, u.DisplayName, u.Locale,
 		u.Role, u.Status, nullString(u.PasswordHash), nullMillis(u.VerifiedAt), millis(u.CreatedAt),
-		millis(u.UpdatedAt), nullInt(u.QuotaBytes), boolInt(u.MustChangePassword))
+		millis(u.UpdatedAt), nullInt(u.QuotaBytes), boolInt(u.MustChangePassword), nullString(u.PendingEmail))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -289,6 +295,20 @@ func (tx *Tx) UpdateUser(ctx context.Context, u *User) error {
 		return err
 	}
 	return tx.deleteUserQuotaMarks(ctx, u.ID)
+}
+
+// WriteUserEmail writes the address of u, its lowercased key, and its pending address (decision 89). It is the only
+// write of the email columns: UpdateUser leaves them alone. It returns ErrNotFound if the user is not in the account,
+// and ErrConflict if the address is taken in the account (or among the installation admins).
+func (tx *Tx) WriteUserEmail(ctx context.Context, u *User) error {
+	clause, cargs := accountClause(u.AccountID)
+	args := append([]any{u.Email, u.EmailKey, nullString(u.PendingEmail), millis(u.UpdatedAt), u.ID}, cargs...)
+	err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE users SET email = ?, email_key = ?, pending_email = ?,
+		updated_at = ? WHERE id = ? AND `+clause, args...))
+	if isUniqueViolation(err) {
+		return ErrConflict
+	}
+	return err
 }
 
 // DeleteUser removes a user of accountID ("" for an admin), with its sessions and tokens. It returns ErrNotFound

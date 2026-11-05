@@ -1,0 +1,5 @@
+Subject: The email address of your account was changed
+
+The email address of your account was changed. This address no longer signs in to it.
+
+If you did not expect this change, contact the administrator of the service that manages your account as soon as you can.

@@ -194,8 +194,8 @@ func TestUpdateUser(t *testing.T) {
 	pending := decode[userResponse](t, call(t, s, "POST", base, key,
 		map[string]any{"email": "ann@example.com", "verification": "link"}))
 
-	// The email cannot change.
-	wantError(t, call(t, s, "PATCH", base+"/"+pending.ID, key, map[string]any{"email": "new@example.com"}),
+	// The email changes only through its own rules (decision 89); a malformed one is refused.
+	wantError(t, call(t, s, "PATCH", base+"/"+pending.ID, key, map[string]any{"email": "not an address"}),
 		400, apierr.InvalidRequest)
 	// A user who never verified cannot be activated.
 	wantError(t, call(t, s, "PATCH", base+"/"+pending.ID, key, map[string]any{"status": "active"}),

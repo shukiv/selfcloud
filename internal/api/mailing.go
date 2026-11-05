@@ -116,8 +116,12 @@ func (s *Server) checkVerificationMethod(r *http.Request, method string, t linkT
 // tokens of that purpose, so only the newest one works.
 func (s *Server) issueToken(ctx context.Context, tx *store.Tx, u *store.User, purpose string, now time.Time) (*issuedToken, error) {
 	ttl, tmpl := s.cfg.Users.VerificationTTL.D(), s.cfg.Users.VerifyURLTemplate
-	if purpose == store.PurposeReset {
+	switch purpose {
+	case store.PurposeReset:
 		ttl, tmpl = s.cfg.Users.ResetTTL.D(), s.cfg.Users.ResetURLTemplate
+	case store.PurposeEmailChange:
+		// A confirmation of a new address lives as long as a verification does (decision 89).
+		tmpl = s.cfg.Users.EmailChangeURLTemplate
 	}
 	if err := tx.DeleteVerifications(ctx, u.ID, purpose, ""); err != nil {
 		return nil, err

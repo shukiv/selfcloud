@@ -1,0 +1,8 @@
+Subject: Confirm your new email address
+
+Open this link to confirm the new email address for your account:
+
+{{.URL}}
+
+The link works once and expires at {{.ExpiresAt}}.
+If you did not ask for this change, ignore this message. Your address stays the same until you confirm.

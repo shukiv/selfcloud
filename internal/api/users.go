@@ -33,6 +33,9 @@ type userJSON struct {
 	QuotaBytes *int64    `json:"quota_bytes"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+	// PendingEmail is the new address a change of email waits for, until it is confirmed: null when there is none
+	// (decision 89). The address in Email is still the one that signs in.
+	PendingEmail *string `json:"pending_email"`
 }
 
 func toUserJSON(u *store.User) userJSON {
@@ -40,6 +43,9 @@ func toUserJSON(u *store.User) userJSON {
 		Status: u.Status, VerifiedAt: u.VerifiedAt, QuotaBytes: u.QuotaBytes, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt}
 	if u.ExternalID != "" {
 		out.ExternalID = &u.ExternalID
+	}
+	if u.PendingEmail != "" {
+		out.PendingEmail = &u.PendingEmail
 	}
 	return out
 }
@@ -302,8 +308,9 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// handleUpdateUser changes the fields given. The email cannot change: it is refused as an unknown
-// field. Activating a user requires that the user verified; disabling one ends its sessions.
+// handleUpdateUser changes the fields given. Activating a user requires that the user verified; disabling one ends
+// its sessions. An email changes only by an account key or an installation admin, and only as decision 89 says: at
+// once with verification none, or after the new address is confirmed with email or link (checkEmailChange).
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error {
 	acc, err := s.writableAccount(r)
 	if err != nil {
@@ -318,6 +325,11 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 		// QuotaBytes is the user's own limit on its My files: null follows the account's default, 0 is no limit.
 		// It is read raw, so an absent field is told apart from null.
 		QuotaBytes json.RawMessage `json:"quota_bytes"`
+		// Email is the user's new address; Verification says how it is proved, and AdminPassword is an admin session's
+		// own password, which such a session must give (decision 89).
+		Email         *string `json:"email"`
+		Verification  string  `json:"verification"`
+		AdminPassword string  `json:"admin_password"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
@@ -326,9 +338,16 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
+	change, err := s.checkEmailChange(w, r, acc.ID, r.PathValue("usr"), in.Email, in.Verification, in.AdminPassword)
+	if err != nil {
+		return err
+	}
 	ctx := r.Context()
 	now := store.Now()
-	var out *store.User
+	var (
+		out    *store.User
+		effect *emailEffect
+	)
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		u, err := tx.User(ctx, acc.ID, r.PathValue("usr"))
 		if errors.Is(err, store.ErrNotFound) {
@@ -413,6 +432,11 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 				return err
 			}
 		}
+		if change != nil {
+			if effect, err = s.changeEmail(ctx, r, tx, u, change, now); err != nil {
+				return err
+			}
+		}
 		u.UpdatedAt = now
 		if err := tx.UpdateUser(ctx, u); errors.Is(err, store.ErrConflict) {
 			return apierr.New(apierr.Conflict, "another user in the account has this external_id")
@@ -425,7 +449,14 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toUserDetailJSON(out, acc))
+	if effect != nil && effect.applied && s.mailer != nil {
+		s.noticeEmailChange(ctx, r, out, effect.oldAddress)
+	}
+	resp := userDetailResponse{userDetailJSON: toUserDetailJSON(out, acc)}
+	if effect != nil && effect.issued != nil {
+		resp.Verification = s.deliver(ctx, r, effect.target, effect.issued, change.method)
+	}
+	writeJSON(w, http.StatusOK, resp)
 	return nil
 }
 

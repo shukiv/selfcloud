@@ -44,6 +44,9 @@ var wantFields = map[string][]string{
 	PurposeDigest:  {"Actor", "Count", "Item", "Link"},
 	// The device confirmation mail says what happened with no name, address, password or agent in it (sec2, decision 86).
 	PurposeDeviceConfirm: {"ExpiresAt", "URL"},
+
+	PurposeEmailChange:  {"ExpiresAt", "URL"},
+	PurposeEmailChanged: {},
 }
 
 // mailData carries every field any purpose uses, so one value can render each template.

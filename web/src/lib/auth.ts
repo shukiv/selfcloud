@@ -85,6 +85,11 @@ export function verifyAccount(token: string, password: string, confirm = false):
   return api<SignedIn>('POST', '/api/v1/auth/verify', { body, noRedirect: true });
 }
 
+// confirmEmailChange confirms a user's new address with the token its link carries (decision 89). It signs no one in.
+export function confirmEmailChange(token: string): Promise<unknown> {
+  return api<unknown>('POST', '/api/v1/auth/email-change/confirm', { body: { token }, noRedirect: true });
+}
+
 // signInWithLink redeems a sign-in link: the server starts a session and answers the path to open. confirm
 // is sent only when true: it accepts the switch to the link's user from a browser signed in as another.
 export function signInWithLink(token: string, confirm = false): Promise<SignedInLink> {

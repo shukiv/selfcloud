@@ -1,0 +1,8 @@
+Subject: Confirme su nueva dirección de correo
+
+Abra este enlace para confirmar la nueva dirección de correo de su cuenta:
+
+{{.URL}}
+
+El enlace funciona una sola vez y caduca el {{.ExpiresAt}}.
+Si no pidió este cambio, ignore este mensaje. Su dirección seguirá igual hasta que la confirme.

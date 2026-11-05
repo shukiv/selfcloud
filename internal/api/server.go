@@ -632,6 +632,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/auth/password/reset", handle: s.handleResetPassword, sameSite: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/auth/sign-in-link", handle: s.handleRedeemSignInLink, sameSite: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/auth/device-confirm", handle: s.handleDeviceConfirm, sameSite: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/email-change/confirm", handle: s.handleConfirmEmailChange, sameSite: true, imp: impRefuse},
 		// Go back ends an impersonation and restores the admin's session. It checks its own CSRF token, because the
 		// impersonation may be past its hour, and a route that required a live session could not run then.
 		{method: http.MethodPost, path: "/api/v1/auth/impersonation/end", handle: s.handleEndImpersonation, sameSite: true, imp: impAllow},

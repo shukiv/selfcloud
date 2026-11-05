@@ -22,8 +22,9 @@ func TestDefaultMailLinksOpenAPage(t *testing.T) {
 	}
 	cfg := config.Defaults()
 	for name, tmpl := range map[string]string{
-		"verify": cfg.Users.VerifyURLTemplate,
-		"reset":  cfg.Users.ResetURLTemplate,
+		"verify":       cfg.Users.VerifyURLTemplate,
+		"reset":        cfg.Users.ResetURLTemplate,
+		"email change": cfg.Users.EmailChangeURLTemplate,
 	} {
 		raw := strings.NewReplacer("{public_url}", cfg.PublicURL, "{token}", "x").Replace(tmpl)
 		u, err := url.Parse(raw)

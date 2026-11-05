@@ -1,0 +1,5 @@
+Subject: O endereço de e-mail da sua conta foi alterado
+
+O endereço de e-mail da sua conta foi alterado. Este endereço já não permite iniciar sessão nela.
+
+Se não esperava esta alteração, contacte o quanto antes o administrador do serviço que gere a sua conta.

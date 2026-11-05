@@ -1,0 +1,5 @@
+Subject: L'adresse e-mail de votre compte a été modifiée
+
+L'adresse e-mail de votre compte a été modifiée. Cette adresse ne permet plus de vous connecter à ce compte.
+
+Si vous n'attendiez pas ce changement, contactez dès que possible l'administrateur du service qui gère votre compte.

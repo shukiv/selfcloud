@@ -38,6 +38,7 @@ var webhookAuditNoEvent = map[string]string{
 	"upload.expire":        "an upload expired is not on the event list",
 	"user.files_moved":     "emitted per moved file by users.go, from the move itself; this entry is the summary",
 	"user.update":          "user fields are not on the event list",
+	"user.email_changed":   "an address is not on the event list, and the user event list has no user.updated (decision 89)",
 	"user.delete":          "deleting a user is not on the event list; its files are purged, which reports nothing",
 	"user.logout":          "sign-in activity is not on the event list",
 	"user.password_change": "sign-in activity is not on the event list",

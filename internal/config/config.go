@@ -101,6 +101,8 @@ type UsersConfig struct {
 	VerifyURLTemplate string `yaml:"verify_url_template"`
 	// ResetURLTemplate builds the password-reset link, with the same placeholders.
 	ResetURLTemplate string `yaml:"reset_url_template"`
+	// EmailChangeURLTemplate builds the link that confirms a new address (decision 89), with the same placeholders.
+	EmailChangeURLTemplate string `yaml:"email_change_url_template"`
 	// SignInLinkTTL is how long a sign-in link works. At most 10 minutes.
 	SignInLinkTTL Duration `yaml:"sign_in_link_ttl"`
 	// SignInURLTemplate builds the sign-in link, with {public_url} and {token} replaced. The token
@@ -680,6 +682,7 @@ func Defaults() *Config {
 			ResetTTL:                 Duration(time.Hour),
 			VerifyURLTemplate:        "{public_url}/verify#token={token}",
 			ResetURLTemplate:         "{public_url}/reset#token={token}",
+			EmailChangeURLTemplate:   "{public_url}/email-change#token={token}",
 			SignInLinkTTL:            Duration(60 * time.Second),
 			SignInURLTemplate:        "{public_url}/sign-in#token={token}",
 			DeviceConfirmTTL:         Duration(15 * time.Minute),
@@ -875,6 +878,7 @@ func (c *Config) Validate() error {
 	for name, tmpl := range map[string]string{
 		"users.verify_url_template":         c.Users.VerifyURLTemplate,
 		"users.reset_url_template":          c.Users.ResetURLTemplate,
+		"users.email_change_url_template":   c.Users.EmailChangeURLTemplate,
 		"users.sign_in_url_template":        c.Users.SignInURLTemplate,
 		"users.device_confirm_url_template": c.Users.DeviceConfirmURLTemplate,
 	} {

@@ -1,0 +1,8 @@
+Subject: Confirmez votre nouvelle adresse e-mail
+
+Ouvrez ce lien pour confirmer la nouvelle adresse e-mail de votre compte :
+
+{{.URL}}
+
+Le lien ne fonctionne qu'une fois et expire le {{.ExpiresAt}}.
+Si vous n'avez pas demandé ce changement, ignorez ce message. Votre adresse reste la même tant que vous ne l'avez pas confirmée.

@@ -1752,7 +1752,21 @@ paths:
       operationId: updateUser
       summary: Change a user
       description: |
-        Only the fields given change. The email address cannot change; sending it is refused.
+        Only the fields given change. The email address changes for an account key, and for an
+        installation admin's key or session only while `admin.tenant_access` is on (`403 forbidden`,
+        with `details.reason` `tenant_access_off`, otherwise). An installation admin's session also
+        needs its own `admin_password`. Never an account owner, a member or a delegated token (those get
+        `403 forbidden`, or `404 not_found` where the account is not theirs to manage). The new address must not be used by another user of the account (`409 conflict`);
+        a malformed one is `400 invalid_request`; the user's own address is a no-op.
+
+        `verification` says how the new address is proved, as on user create. `none` (the default for a
+        key, and not allowed for a session) changes the address at once. `email` mails a confirmation to
+        the new address, and `link` returns the confirmation link to the caller. With either, the old
+        address stays in use and `pending_email` shows the new one until it is confirmed at
+        `POST /api/v1/auth/email-change/confirm`; a newer request replaces a pending one. A change that
+        applies voids the user's password-reset and verification links, and sends the old address a
+        notice with no link when a mailer is configured. Sessions and delegated tokens are kept.
+
         Setting `status` to `active` needs a verified user (`409 conflict` otherwise). Setting
         `disabled` ends the user's sessions at once. An account always keeps an active owner,
         whoever the caller, the account key included: demoting or disabling the last active owner
@@ -1765,10 +1779,10 @@ paths:
             schema: { $ref: "#/components/schemas/UserUpdate" }
       responses:
         "200":
-          description: The changed user.
+          description: The changed user, with the confirmation made for a change of email when one was.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/UserDetail" }
+              schema: { $ref: "#/components/schemas/UserDetailWithVerification" }
         default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [Users]
@@ -2057,6 +2071,37 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SignedIn" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/email-change/confirm:
+    post:
+      tags: [Auth]
+      operationId: confirmEmailChange
+      summary: Confirm a new email address
+      description: |
+        Makes the pending address of a user the address that signs in (decision 89), and the old one
+        stops working. The link works once. The old address is sent a notice with no link when a mailer
+        is configured. An unknown, used, expired or replaced link, or a link whose change has since been
+        applied, gets `invalid_request`; a disabled user gets `user_disabled`; an address another user of
+        the account now has gets `conflict`. The answer is the user, and it does not sign anyone in.
+        Rate-limited per client address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              additionalProperties: false
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: The user, with the new address.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/auth/sign-in-link:
@@ -7358,13 +7403,19 @@ components:
 
     User:
       type: object
-      required: [id, external_id, email, display_name, locale, role, status, verified_at, quota_bytes, created_at, updated_at]
+      required: [id, external_id, email, pending_email, display_name, locale, role, status, verified_at, quota_bytes, created_at, updated_at]
       properties:
         id: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
         external_id:
           type: [string, "null"]
           description: The client's own reference; unique within the account.
         email: { type: string, format: email }
+        pending_email:
+          type: [string, "null"]
+          format: email
+          description: |
+            The new address a change of email waits for, until it is confirmed (decision 89). Null when there
+            is none. `email` is still the address that signs in.
         display_name: { type: string }
         locale: { type: string, example: en }
         role:
@@ -7393,6 +7444,14 @@ components:
               format: int64
               description: The limit that applies, its own or the account's default. Null means no limit.
 
+    UserDetailWithVerification:
+      description: "A user as PATCH answers it: with the limit that applies, and the verification made for an email change."
+      allOf:
+        - $ref: "#/components/schemas/UserDetail"
+        - type: object
+          properties:
+            verification: { $ref: "#/components/schemas/Verification" }
+
     UserCreate:
       type: object
       required: [email, verification]
@@ -7419,6 +7478,18 @@ components:
       type: object
       additionalProperties: false
       properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: The new address. See the operation for who may change it, and how it is proved.
+        verification:
+          type: string
+          enum: [email, link, none]
+          description: How the new address is proved. Needed with `email`. Keys default to `none`, sessions to `email`.
+        admin_password:
+          type: string
+          description: An installation admin's own password, in an admin's session that changes an email.
         display_name: { type: string, maxLength: 200 }
         locale:
           type: string

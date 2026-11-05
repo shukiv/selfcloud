@@ -39,6 +39,10 @@ const (
 	PurposeComment        = "comment"
 	PurposeDigest         = "digest"
 	PurposeDeviceConfirm  = "device_confirm"
+	// PurposeEmailChange is the confirmation sent to a new address; PurposeEmailChanged is the notice sent to the old
+	// one once the change applies, which carries no link (decision 89).
+	PurposeEmailChange  = "email_change"
+	PurposeEmailChanged = "email_changed"
 )
 
 // Purposes lists every purpose. Every one needs an English template, and the filename pattern for
@@ -53,6 +57,8 @@ var Purposes = []string{
 	PurposeComment,
 	PurposeDigest,
 	PurposeDeviceConfirm,
+	PurposeEmailChange,
+	PurposeEmailChanged,
 }
 
 // ReadSecretFile returns the contents of a file holding a secret, without the final line break.
