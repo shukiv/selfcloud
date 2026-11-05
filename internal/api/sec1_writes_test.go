@@ -164,10 +164,18 @@ func TestOneRequestWritesAreRateLimitedPerCaller(t *testing.T) {
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	fld := folderOf(t, s, key, acc.ID)
+	// Large bodies (over 1 MiB) are limited to 60 a minute per caller.
+	big := strings.Repeat("x", (1<<20)+1)
 	for i := 1; i <= 60; i++ {
-		if rec := rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q(fmt.Sprintf("/f%d.txt", i)), key, "x", nil); rec.Code >= 300 {
+		if rec := rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q(fmt.Sprintf("/f%d.bin", i)), key, big, nil); rec.Code >= 300 {
 			t.Fatalf("write %d: status %d, want success before the limit", i, rec.Code)
 		}
 	}
-	wantError(t, rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q("/f61.txt"), key, "x", nil), 429, apierr.RateLimited)
+	wantError(t, rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q("/f61.bin"), key, big, nil), 429, apierr.RateLimited)
+	// Small writes are not limited here: the quota and the disk bound them.
+	for i := 1; i <= 100; i++ {
+		if rec := rawCall(t, s, "POST", "/api/v1/folders/"+fld+"/files?"+q(fmt.Sprintf("/s%d.txt", i)), key, "x", nil); rec.Code >= 300 {
+			t.Fatalf("small write %d: status %d, want success", i, rec.Code)
+		}
+	}
 }

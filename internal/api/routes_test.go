@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shukiv/selfcloud/internal/config"
+
 	"go.yaml.in/yaml/v3"
 
 	apispec "github.com/shukiv/selfcloud/api"
@@ -39,7 +41,8 @@ var httpMethods = []string{"get", "put", "post", "delete", "options", "head", "p
 func TestRoutesMatchSpec(t *testing.T) {
 	t.Parallel()
 	doc := loadSpec(t)
-	s := newTestServer(t)
+	// /metrics is documented, and served only with metrics_on_main (sec1, decision 84), so the server here serves it.
+	s := newTestServer(t, func(c *config.Config) { c.MetricsOnMain = true })
 	routed := map[string]bool{}
 	for _, rt := range s.routes() {
 		method := strings.ToLower(rt.method)
