@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
-import { keepInView } from "./menuScroll";
+import { followTarget, keepInView } from "./menuScroll";
 import { Alert as AntdAlert, App, Button, Checkbox, ConfigProvider, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
 import { Clock, FolderOpen, Inbox, Share2, Star, Tags, Trash2, HardDrive, Settings, Building2, Users, Menu as MenuIcon, ChevronsLeft, ChevronsRight, UserRound, Ellipsis } from "lucide-react";
@@ -225,7 +225,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   useEffect(() => {
     const follow = () => {
       const region = document.querySelector<HTMLElement>(".shell-scroll");
-      const item = region?.querySelector<HTMLElement>('.ant-menu-item-selected, [aria-current="location"]');
+      const item = region ? followTarget(region) : null;
       if (region && item) keepInView(region, item);
     };
     follow();

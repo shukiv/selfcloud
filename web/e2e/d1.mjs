@@ -42,10 +42,24 @@ async function centreOf(page, selector, timeout = 10000) {
   }
 }
 
+// settledCentreOf is centreOf read again until two reads 150 ms apart agree. The sidebar can still scroll on its own after the
+// page moved (the shell keeps the current place in view when its region resizes), and a drag aimed at the first read then lands
+// on another row (gate stfu4r1, d1 in run 5; decision 81). rounds is how many reads it took, for the DIAG below.
+async function settledCentreOf(page, selector) {
+  let p = await centreOf(page, selector);
+  for (let rounds = 1; rounds <= 8; rounds++) {
+    await sleep(150);
+    const next = await centreOf(page, selector);
+    if (Math.abs(next.x - p.x) < 1 && Math.abs(next.y - p.y) < 1) return { ...next, rounds };
+    p = next;
+  }
+  return { ...p, rounds: 9 };
+}
+
 // dragOnto presses on one element, glides to another, reads the drop state while the button is down, then lets go.
 async function dragOnto(page, fromSel, toSel) {
   const a = await centreOf(page, fromSel);
-  const b = await centreOf(page, toSel);
+  const b = await settledCentreOf(page, toSel);
   // What the press lands on, and the sidebar's scroll, before the drag (for the DIAG below).
   const sideScroll = `(() => { const s = [...document.querySelectorAll('.shell-sider *')].find((e) => e.scrollHeight > e.clientHeight + 1 && getComputedStyle(e).overflowY !== 'visible'); return s ? Math.round(s.scrollTop) : null; })()`;
   const before = await page.evaluate(`({ press: (() => { const at = document.elementFromPoint(${a.x}, ${a.y}); const row = at?.closest('[data-id]'); return at ? at.tagName.toLowerCase() + (row ? ' in row ' + (row.getAttribute('aria-label') ?? '') : '') : null; })(), side: ${sideScroll} })`);
@@ -60,7 +74,7 @@ async function dragOnto(page, fromSel, toSel) {
   // A drop state other than ok once in a full run (gate stfu4c, 1 of 5; d1 alone 5 of 5 ok): say what the pointer was over.
   if (state !== 'ok') {
     const seen = await page.evaluate(`(() => { const t = document.querySelector(${q(toSel)}); const r = t?.getBoundingClientRect(); const at = document.elementFromPoint(${b.x}, ${b.y}); return { target: r ? [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)] : null, point: [${Math.round(b.x)}, ${Math.round(b.y)}], at: at ? at.tagName.toLowerCase() + '.' + String(at.className).split(' ')[0] + (at.closest('[data-drop-name]') ? ' in ' + at.closest('[data-drop-name]').dataset.dropName : '') : null, dragging: !!document.querySelector('[data-drop-state]'), scrollY: Math.round(scrollY), side: ${sideScroll}, selection: String(getSelection() ?? '').slice(0, 40) }; })()`);
-    console.log(`DIAG d1 drag: ${JSON.stringify({ ...seen, before })}`);
+    console.log(`DIAG d1 drag: ${JSON.stringify({ ...seen, before, rounds: b.rounds })}`);
   }
   await mouse(page, 'mouseReleased', b.x, b.y);
   await sleep(300);
