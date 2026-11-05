@@ -394,6 +394,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 				if err := tx.DeleteUserSessions(ctx, u.ID); err != nil {
 					return err
 				}
+				if err := endUserTokens(ctx, tx, u.AccountID, u.ID); err != nil {
+					return err
+				}
 			default:
 				return apierr.New(apierr.InvalidRequest, "status must be active or disabled")
 			}

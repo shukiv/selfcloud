@@ -631,6 +631,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		if err := tx.DeleteUserSessions(ctx, found.ID); err != nil {
 			return err
 		}
+		if err := endUserTokens(ctx, tx, found.AccountID, found.ID); err != nil {
+			return err
+		}
 		u = found
 		if err := s.endBrowserSession(r, tx); err != nil {
 			return err
@@ -997,6 +1000,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 			return err
 		}
 		if err := tx.DeleteUserSessions(ctx, found.ID); err != nil {
+			return err
+		}
+		if err := endUserTokens(ctx, tx, found.AccountID, found.ID); err != nil {
 			return err
 		}
 		// The new session keeps the choice of the one it replaces (decision 75).

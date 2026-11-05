@@ -686,6 +686,18 @@ func userPrincipal(accID string, u *store.User) *auth.Principal {
 	return &auth.Principal{Kind: auth.KindUser, ID: u.ID, AccountID: accID, UserID: u.ID, Role: u.Role}
 }
 
+// endUserTokens ends a user's delegated tokens and editing sessions, as handleRevokeUserTokens does. A password reset,
+// a password change, an admin's password set and a disable call it, so a token does not outlive the password or the
+// status it was issued under (sec1, decision 84).
+func endUserTokens(ctx context.Context, tx *store.Tx, accountID, userID string) error {
+	cut, err := tx.RevokeUserTokens(ctx, accountID, userID, store.Now())
+	if err != nil {
+		return err
+	}
+	_, err = tx.RevokeWOPISessions(ctx, accountID, userID, cut)
+	return err
+}
+
 // handleRevokeUserTokens ends every delegated token of one user of the account, issued up to now. The
 // user's sessions and the account's other tokens are not affected. The cut-off only moves forward, as for
 // the account-wide revoke. The account key or a person who manages the account may do this, as they may
