@@ -369,6 +369,8 @@
   "shareTarget.change": "Cambiar el lugar",
   "shareTarget.cancel": "Cancelar",
   "shareTarget.upload": "Subir",
+  "shareTarget.notice": "Estos archivos llegaron desde otra app. Revisa el nombre, el tamaño y el tipo de cada uno y luego elige Subir para guardarlos. No se sube nada hasta entonces.",
+  "shareTarget.unknownType": "tipo desconocido",
   "files.versions.title": "Versiones",
   "files.versions.current": "Versión actual",
   "files.versions.restored": "Restaurada. La versión reemplazada queda en el historial.",

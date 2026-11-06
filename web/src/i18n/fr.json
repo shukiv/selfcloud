@@ -369,6 +369,8 @@
   "shareTarget.change": "Changer d'emplacement",
   "shareTarget.cancel": "Annuler",
   "shareTarget.upload": "Envoyer",
+  "shareTarget.notice": "Ces fichiers viennent d'une autre application. Vérifiez le nom, la taille et le type de chacun, puis choisissez Envoyer pour les enregistrer. Rien n'est envoyé avant.",
+  "shareTarget.unknownType": "type inconnu",
   "files.versions.title": "Versions",
   "files.versions.current": "Version actuelle",
   "files.versions.restored": "Restaurée. La version remplacée est conservée dans l’historique.",

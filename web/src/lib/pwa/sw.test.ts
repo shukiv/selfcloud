@@ -23,6 +23,8 @@ interface Req {
   headers: { has(name: string): boolean };
   // formData is the body of a form post, as the browser reads it for the worker (decision 82).
   formData?: () => Promise<FormData>;
+  // referrer is the page that made the request: "" when the browser sent none, as the system share sheet does.
+  referrer?: string;
 }
 
 interface Res {
@@ -53,7 +55,10 @@ function request(url: string, opts: { method?: string; mode?: string; destinatio
 }
 
 // shareRequest is the share sheet's form post: a navigation to the share target with the files in a multipart form.
-function shareRequest(files: File[], opts: { url?: string; mode?: string; method?: string } = {}): Req {
+function shareRequest(
+  files: File[],
+  opts: { url?: string; mode?: string; method?: string; referrer?: string } = {},
+): Req {
   const form = new FormData();
   for (const f of files) form.append("files", f);
   return {
@@ -63,6 +68,7 @@ function shareRequest(files: File[], opts: { url?: string; mode?: string; method
       destination: "document",
     }),
     formData: async () => form,
+    referrer: opts.referrer ?? "",
   };
 }
 
@@ -538,12 +544,52 @@ describe("the share target (decision 82)", () => {
     }
   });
 
-  it("a second share replaces the first, and the first id gets nothing", async () => {
+  it("a second share does not replace one still held: the held files stay, and the second is not kept", async () => {
     const w = load();
-    const first = idOf((await w.fetch(shareRequest([file("old.txt", "1")])))!);
-    const second = idOf((await w.fetch(shareRequest([file("new.txt", "2")])))!);
-    expect(await take(w, first)).toEqual([]);
-    expect((await take(w, second)).map((f) => f.name)).toEqual(["new.txt"]);
+    const first = idOf((await w.fetch(shareRequest([file("held.txt", "1")])))!);
+    const second = await w.fetch(shareRequest([file("new.txt", "2")]));
+    expect(second?.status).toBe(303);
+    expect(second?.headers.get("location")).toBe(absolute("/share"));
+    expect((await take(w, first)).map((f) => f.name)).toEqual(["held.txt"]);
+    expect(await take(w, second ? idOf(second) : "")).toEqual([]);
+  });
+
+  it("a second share is free to be held once the first has been handed over", async () => {
+    const w = load();
+    const first = idOf((await w.fetch(shareRequest([file("a.txt", "1")])))!);
+    await take(w, first);
+    const second = idOf((await w.fetch(shareRequest([file("b.txt", "2")])))!);
+    expect((await take(w, second)).map((f) => f.name)).toEqual(["b.txt"]);
+  });
+
+  it("refuses a share whose referrer is another site: 303 to the share page, nothing held", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "https://evil.test/attack.html" }));
+    expect(res?.status).toBe(303);
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+    let ended = false;
+    void Promise.all(w.held()).then(() => (ended = true));
+    await flush();
+    expect(ended).toBe(true);
+    expect(await take(w, "0".repeat(32))).toEqual([]);
+  });
+
+  it("refuses a referrer that is not a web address, as another site", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "not a url" }));
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+  });
+
+  it("accepts a share with no referrer, as the system share sheet sends it", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f]{32}$/);
+  });
+
+  it("accepts a share from this site's own page, the referrer being this origin", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: absolute("/files") }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f]{32}$/);
   });
 
   it("a hand-over with the wrong id gets nothing and keeps the files for the right id", async () => {

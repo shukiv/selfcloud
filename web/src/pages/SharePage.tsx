@@ -126,6 +126,7 @@ export default function SharePage() {
 
       {phase === "ready" && (
         <>
+          <Alert type="warning" showIcon message={t("shareTarget.notice")} style={{ marginBlockEnd: 12 }} />
           <List
             size="small"
             dataSource={files}
@@ -133,6 +134,9 @@ export default function SharePage() {
               <List.Item key={`${i}-${f.name}`} style={{ gap: 12 }}>
                 <span dir="auto" style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
                   {f.name}
+                </span>
+                <span dir="auto" style={{ opacity: 0.75, overflowWrap: "anywhere" }}>
+                  {f.type || t("shareTarget.unknownType")}
                 </span>
                 <span style={{ whiteSpace: "nowrap", opacity: 0.75 }}>{formatBytes(f.size, lang)}</span>
               </List.Item>

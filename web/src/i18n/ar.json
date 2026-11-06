@@ -369,6 +369,8 @@
   "shareTarget.change": "تغيير المكان",
   "shareTarget.cancel": "إلغاء",
   "shareTarget.upload": "رفع",
+  "shareTarget.notice": "هذه الملفات وصلت من تطبيق آخر. تحقق من اسم كل ملف وحجمه ونوعه، ثم اختر رفع لحفظها. لا يُرفع شيء قبل ذلك.",
+  "shareTarget.unknownType": "نوع غير معروف",
   "files.versions.title": "الإصدارات",
   "files.versions.current": "الإصدار الحالي",
   "files.versions.restored": "تمت الاستعادة. الإصدار الذي استُبدل محفوظ في السجل.",

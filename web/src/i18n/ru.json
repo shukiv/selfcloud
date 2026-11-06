@@ -369,6 +369,8 @@
   "shareTarget.change": "Сменить место",
   "shareTarget.cancel": "Отмена",
   "shareTarget.upload": "Загрузить",
+  "shareTarget.notice": "Эти файлы пришли из другого приложения. Проверьте имя, размер и тип каждого и выберите «Загрузить», чтобы сохранить их. До этого ничего не загружается.",
+  "shareTarget.unknownType": "неизвестный тип",
   "files.versions.title": "Версии",
   "files.versions.current": "Текущая версия",
   "files.versions.restored": "Восстановлено. Заменённая версия сохранена в истории.",

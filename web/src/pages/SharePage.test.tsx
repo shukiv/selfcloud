@@ -97,6 +97,14 @@ describe("SharePage", () => {
     screen.getByText(formatBytes(2048, "en"));
   });
 
+  it("says the files came from another app, shows each one's type, and queues nothing before Upload", async () => {
+    takeShare.mockResolvedValue([new File(["abc"], "a.txt", { type: "text/plain" })]);
+    renderAt("abc");
+    await screen.findByText(/came from another app/);
+    screen.getByText("text/plain");
+    expect(add).not.toHaveBeenCalled();
+  });
+
   it("starts with My files as the place the files are saved to", async () => {
     takeShare.mockResolvedValue([new File(["abc"], "a.txt")]);
     renderAt("abc");

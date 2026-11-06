@@ -369,6 +369,8 @@
   "shareTarget.change": "שינוי המיקום",
   "shareTarget.cancel": "ביטול",
   "shareTarget.upload": "העלאה",
+  "shareTarget.notice": "הקבצים האלה הגיעו מאפליקציה אחרת. בדקו את השם, הגודל והסוג של כל אחד, ואז בחרו בהעלאה כדי לשמור אותם. עד אז לא מועלה דבר.",
+  "shareTarget.unknownType": "סוג לא ידוע",
   "files.versions.title": "גרסאות",
   "files.versions.current": "הגרסה הנוכחית",
   "files.versions.restored": "שוחזרה. הגרסה שהוחלפה נשמרת בהיסטוריה.",

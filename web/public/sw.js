@@ -149,9 +149,9 @@ function dropShare() {
   release();
 }
 
-// holdShare keeps the files under a fresh random id, replacing any share not yet handed over, and returns the id.
+// holdShare keeps the files under a fresh random id and returns the id. The caller checks that nothing is held: a share that is
+// still held is never replaced by a second one (decision 82).
 function holdShare(files, release) {
-  dropShare();
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   const id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
@@ -160,8 +160,27 @@ function holdShare(files, release) {
   return id;
 }
 
-// receiveShare answers the share sheet's post with 303 to the share page, under the id of the files it holds. With no file it
-// holds nothing and sends the person to the page without an id. Its wait ends when the files are handed over or dropped.
+// fromAnotherSite reports whether a share post came from a page of another site. The system share sheet sends no referrer, so an
+// empty one is accepted. A referrer that is not a web address of this origin is refused. This is defence in depth only: a page
+// can send no referrer at all, so the Share page also asks the person to confirm before anything is saved.
+function fromAnotherSite(request) {
+  const referrer = request.referrer;
+  if (!referrer) return false;
+  try {
+    return new URL(referrer).origin !== self.location.origin;
+  } catch {
+    return true;
+  }
+}
+
+// refusedShare answers a share the worker will not keep: 303 to the share page, with no id and nothing held.
+function refusedShare() {
+  return Response.redirect(new URL(SHARE_PAGE, self.location.origin).href, 303);
+}
+
+// receiveShare answers the share sheet's post with 303 to the share page, under the id of the files it holds. With no file, or
+// while a share is still held, it holds nothing and sends the person to the page without an id: a held share is never replaced.
+// Its wait ends when the files are handed over or dropped.
 async function receiveShare(request, release) {
   let files = [];
   try {
@@ -170,12 +189,11 @@ async function receiveShare(request, release) {
   } catch {
     files = [];
   }
-  const page = new URL(SHARE_PAGE, self.location.origin);
-  if (files.length === 0) {
-    dropShare();
+  if (files.length === 0 || held !== null) {
     release();
-    return Response.redirect(page.href, 303);
+    return refusedShare();
   }
+  const page = new URL(SHARE_PAGE, self.location.origin);
   page.search = '?id=' + holdShare(files, release);
   return Response.redirect(page.href, 303);
 }
@@ -197,6 +215,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (request.method === 'POST') {
     if (isShare(request, url)) {
+      if (fromAnotherSite(request)) {
+        event.respondWith(refusedShare());
+        return;
+      }
       // The wait is opened before the answer, so the worker stays alive until the page takes the files.
       let release;
       event.waitUntil(new Promise((resolve) => (release = resolve)));
