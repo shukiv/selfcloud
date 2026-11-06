@@ -22,6 +22,12 @@ const (
 	maxInt64Unsigned = 1<<63 - 1
 )
 
+// ZipEntryCount is zipEntryCount for the import of an archive (decision 92): the same count, with the same refusal, so an
+// archive's entries are counted before archive/zip builds one entry for each header.
+func ZipEntryCount(r io.ReaderAt, size int64, limit int) (uint64, bool) {
+	return zipEntryCount(r, size, limit)
+}
+
 // zipEntryCount is the number of central directory headers the zip really holds, counted as archive/zip counts them:
 // from the directory's offset, headers are read until one fails, so the declared count is not trusted. The count stops
 // at limit+1, and the walk keeps no entry, only a buffered reader and the fixed part of one header, so its cost does not
