@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -118,7 +119,7 @@ func TestZipNamesAreNormalisedAndClashKeysMatch(t *testing.T) {
 	nfd := "Cafe\u0301/note.txt"
 	data := zipOf(t, map[string]string{nfd: "x"}, []string{nfd})
 	var got []Entry
-	if err := Walk(bytes.NewReader(data), int64(len(data)), Zip, 0, func(e Entry, _ io.Reader) error {
+	if err := Walk(context.Background(), bytes.NewReader(data), int64(len(data)), Zip, 0, func(e Entry, _ io.Reader) error {
 		got = append(got, e)
 		return nil
 	}); err != nil {
@@ -279,7 +280,7 @@ func TestZipWalkReturnsFoldersAndFilesInOrder(t *testing.T) {
 	}
 	var seen []string
 	var bodies []string
-	if err := Walk(bytes.NewReader(data), int64(len(data)), Zip, 1, func(e Entry, body io.Reader) error {
+	if err := Walk(context.Background(), bytes.NewReader(data), int64(len(data)), Zip, 1, func(e Entry, body io.Reader) error {
 		seen = append(seen, e.Path)
 		if body != nil {
 			b, err := io.ReadAll(body)
@@ -314,7 +315,7 @@ func TestTarGzWalk(t *testing.T) {
 		t.Fatalf("summary = %+v", sum)
 	}
 	var got []string
-	if err := Walk(bytes.NewReader(data), int64(len(data)), TarGz, 0, func(e Entry, body io.Reader) error {
+	if err := Walk(context.Background(), bytes.NewReader(data), int64(len(data)), TarGz, 0, func(e Entry, body io.Reader) error {
 		if body != nil {
 			b, _ := io.ReadAll(body)
 			got = append(got, e.Path+"="+string(b))

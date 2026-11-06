@@ -41,6 +41,9 @@ const (
 	importCleanupBatch = 2000
 	// importYieldAfter is how long one run stages entries before it yields its turn to the other jobs of the pool.
 	importYieldAfter = 30 * time.Second
+	// importWindowMax caps a turn's window (importWindow). A deep .tar.gz has a long reach, and an uncapped window would hold
+	// one of the pool's workers for many minutes (round 10, pool fairness).
+	importWindowMax = 10 * time.Minute
 )
 
 // errImportStopped means the import was paused or cancelled while a run worked on it. Nothing the run did after the
@@ -352,16 +355,19 @@ func (s *Server) openImportArchive(im *store.Import) (*os.File, int64, error) {
 	return f, st.Size(), nil
 }
 
-// importStage writes the archive's entries into the staging folder, from the cursor on. It returns when every entry is
-// written (the phase moves to publish), when the time budget is used (jobs.ErrYield), or with errImportStopped or a pause.
 // importWindow is how long a turn may stage entries after it reaches its first new entry: base, or twice the time the walk
-// took to reach that entry, if that is longer. A gzipped tar is read from its start to reach an entry, so the reach is the
-// cost of a re-read; the window keeps that re-read to about a third of a turn and the number of turns small (round 9).
+// took to reach that entry if that is longer, and never more than importWindowMax. A gzipped tar is read from its start to
+// reach an entry, so the reach is the cost of a re-read; below the cap the window keeps that re-read to about a third of a
+// turn (round 9). Above the cap the re-read's share of a turn rises, at most about half at a 10 minute reach (round 10).
 func importWindow(reach, base time.Duration) time.Duration {
-	if w := 2 * reach; w > base {
-		return w
+	w := 2 * reach
+	if w < base {
+		w = base
 	}
-	return base
+	if w > importWindowMax {
+		w = importWindowMax
+	}
+	return w
 }
 
 // importTime is the clock of a turn's window: the wall clock, unless a test sets importNow.
@@ -392,7 +398,7 @@ func (s *Server) importStage(ctx context.Context, impID string, p *auth.Principa
 	start := cur.Cursor
 	var until time.Time
 	staged := 0
-	err = imports.Walk(f, size, imports.Format(cur.ArchiveFormat), int(cur.Cursor), func(e imports.Entry, body io.Reader) error {
+	err = imports.Walk(ctx, f, size, imports.Format(cur.ArchiveFormat), int(cur.Cursor), func(e imports.Entry, body io.Reader) error {
 		if int64(e.Index) > start {
 			if until.IsZero() {
 				first := s.importTime()

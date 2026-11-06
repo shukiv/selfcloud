@@ -39,8 +39,9 @@ func tarGzFiles(t *testing.T, names []string) []byte {
 	return buf.Bytes()
 }
 
-// turnClock is the clock of one turn in a test: its first reading is the turn's start, its second is the time the walk
-// reaches the first new entry, and every later reading is later.
+// turnClock is the clock of one turn in a test. It counts the importTime() calls of importStage in order: the first is the
+// turn's start, the second is the time the walk reaches the first new entry, and every later call returns later. So an
+// added importTime() call in importStage shifts the script, and the script must be updated with it (round 10).
 func turnClock(start, reached, later time.Time) func() time.Time {
 	n := 0
 	return func() time.Time {
@@ -111,6 +112,9 @@ func TestImportWindowIsTheBaseOrTwiceTheReach(t *testing.T) {
 		{"no reach gives the base", 0, base},
 		{"a reach of 10 s under a base of 30 s gives the base", 10 * time.Second, base},
 		{"a reach of 40 s gives twice the reach", 40 * time.Second, 80 * time.Second},
+		{"twice the reach equal to the base gives the base", 15 * time.Second, base},
+		{"a reach of 10 min is capped at 10 min (pool fairness, round 10)", 10 * time.Minute, 10 * time.Minute},
+		{"a reach of 40 min is capped at 10 min", 40 * time.Minute, 10 * time.Minute},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -453,8 +454,9 @@ func zipSizes(f *zip.File, archive int64) (int64, int64, error) {
 
 // Walk calls fn for each entry of the archive after the first skip entries, in archive order, with a reader of the
 // entry's bytes for a file (nil for a folder). fn reads what it needs; Walk goes on after fn returns. The entries are
-// those Scan counted, so Index matches the scan.
-func Walk(r io.ReaderAt, size int64, f Format, skip int, fn func(e Entry, body io.Reader) error) error {
+// those Scan counted, so Index matches the scan. The skip reads the entries before the cursor, and it checks ctx at every
+// entry: a cancelled ctx returns ctx's error, and it is never reported as a refusal of the archive (round 10).
+func Walk(ctx context.Context, r io.ReaderAt, size int64, f Format, skip int, fn func(e Entry, body io.Reader) error) error {
 	if f == Zip {
 		zr, err := zip.NewReader(r, size)
 		if err != nil {
@@ -462,6 +464,9 @@ func Walk(r io.ReaderAt, size int64, f Format, skip int, fn func(e Entry, body i
 		}
 		i := 0
 		for _, zf := range zr.File {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			usz, pck, err := zipSizes(zf, size)
 			if err != nil {
 				return err
@@ -500,11 +505,17 @@ func Walk(r io.ReaderAt, size int64, f Format, skip int, fn func(e Entry, body i
 	defer closeFn()
 	i := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		h, err := tr.Next()
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
+			if cerr := ctx.Err(); cerr != nil {
+				return cerr
+			}
 			return refuse(apierr.UnsupportedMedia, "the tar archive is not valid", "")
 		}
 		e, ok, err := entryOfTar(h)
