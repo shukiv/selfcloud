@@ -3,7 +3,7 @@
 // New documents (decision 91): the New menu's Document, Spreadsheet and Presentation make a blank file in the folder shown
 // and open it in the office editor (decision 72), in the same tab. The file is named by the server. A failure is reported and
 // nothing is opened.
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { App } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLang } from '../i18n';
@@ -50,24 +50,37 @@ export async function openNewDocument(o: OpenNewDocument): Promise<void> {
 export const createdDocument = writable<{ branch: Branch; at: number } | null>(null);
 
 // useNewDocument is the action the New menus call: it makes a document of kind in the place the New actions act on (the
-// place the files page shows) and opens it in the editor, in this tab. Both the sidebar's New and the toolbar's New use it.
+// place the files page shows, when the page is the one the place is for: placeForRoute) and opens it in the editor, in this
+// tab. Both the sidebar's New and the toolbar's New use it. A pick is ignored while another is still being made (L1), and
+// the editor opens only if the page is still where the pick was made (L2): a page the person has left is not taken to the
+// editor, and the new file is still listed where it was made.
 export function useNewDocument(): (kind: DocumentKind) => void {
   const navigate = useNavigate();
   const location = useLocation();
   const { message } = App.useApp();
   const lang = useLang();
+  const pending = useRef(false);
+  const where = useRef('');
+  where.current = location.pathname + location.search;
   return useCallback(
     (kind: DocumentKind) => {
+      if (pending.current) return;
       const place = placeForRoute(get(newPlace), location.pathname);
       if (!place?.nodeID) return;
       const branch = { folder: place.where.folder, dir: place.where.dirID };
+      const from = location.pathname + location.search;
+      pending.current = true;
       void openNewDocument({
         nodeID: place.nodeID,
         kind,
-        from: location.pathname + location.search,
-        navigate: (to) => navigate(to),
+        from,
+        navigate: (to) => {
+          if (where.current === from) navigate(to);
+        },
         onCreated: () => createdDocument.set({ branch, at: Date.now() }),
         onError: (err) => void message.error(fileErrorText(err, lang)),
+      }).finally(() => {
+        pending.current = false;
       });
     },
     [navigate, location.pathname, location.search, message, lang],

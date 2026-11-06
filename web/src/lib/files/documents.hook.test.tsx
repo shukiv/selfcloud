@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { render, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, render, fireEvent, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { App as AntApp } from "antd";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -73,5 +73,55 @@ describe("a place built the way FilesPage builds it is used on its own directory
     render(<RouterProvider router={router} />);
     fireEvent.click(screen.getByText("pick"));
     await waitFor(() => expect(createDocument).toHaveBeenCalledWith(dirB, "docx"));
+  });
+});
+
+// deferred returns a promise and the function that settles it, so a test decides when the server answers.
+function deferred() {
+  let resolve!: (v: unknown) => void;
+  const promise = new Promise((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+describe("a pick while a document is being made (L1, L2)", () => {
+  beforeEach(() => {
+    vi.mocked(createDocument).mockReset();
+    newPlace.set(null);
+  });
+
+  it("L1: a second pick while the first is pending makes nothing", async () => {
+    const d = deferred();
+    vi.mocked(createDocument).mockReturnValue(d.promise as never);
+    newPlace.set(placeOf(folderB, dirB));
+    const router = createMemoryRouter(
+      [{ path: "*", element: <AntApp><Pick /></AntApp> }],
+      { initialEntries: [`/files/${folderB}/${dirB}`] },
+    );
+    render(<RouterProvider router={router} />);
+    fireEvent.click(screen.getByText("pick"));
+    fireEvent.click(screen.getByText("pick"));
+    await waitFor(() => expect(createDocument).toHaveBeenCalled());
+    expect(vi.mocked(createDocument).mock.calls.length).toBe(1);
+    d.resolve({ id: "nod_new", name: "Untitled document.docx" });
+  });
+
+  it("L2: the editor is not opened when the page has moved on before the file exists", async () => {
+    const d = deferred();
+    vi.mocked(createDocument).mockReturnValue(d.promise as never);
+    newPlace.set(placeOf(folderB, dirB));
+    const start = `/files/${folderB}/${dirB}`;
+    const router = createMemoryRouter(
+      [{ path: "*", element: <AntApp><Pick /></AntApp> }],
+      { initialEntries: [start] },
+    );
+    render(<RouterProvider router={router} />);
+    fireEvent.click(screen.getByText("pick"));
+    await waitFor(() => expect(createDocument).toHaveBeenCalled());
+    await act(async () => {
+      await router.navigate("/files/fld_elsewhere1");
+    });
+    d.resolve({ id: "nod_new", name: "Untitled document.docx" });
+    await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
+    expect(router.state.location.pathname).toBe("/files/fld_elsewhere1");
   });
 });
