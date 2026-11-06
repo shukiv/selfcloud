@@ -169,7 +169,14 @@ export async function l4Checks(h, { page, base, accountKey, teamA, teamB, fake, 
 
     // ---- The viewer, on Team B: Open in viewer, read only, no lock.
     await navigateTo(page, `/files/${teamB}`);
-    await rowAppears(page, viewName);
+    // A timeout here logs what the page shows, so a missing row can be told from a slow listing.
+    await rowAppears(page, viewName).catch(async (err) => {
+      const shown = await page.evaluate(
+        `JSON.stringify({ url: location.pathname + location.search, rows: [...document.querySelectorAll('[role="row"]')].map((r) => r.getAttribute('aria-label')).slice(0, 40), alerts: [...document.querySelectorAll('[role="alert"], .ant-message-notice, .ant-empty')].map((a) => a.innerText.trim()).slice(0, 5), text: document.body.innerText.slice(0, 600) })`,
+      );
+      console.error(`l4 viewer listing diagnostic: ${shown}`);
+      throw err;
+    });
     const menuView = await rowMenu(page, viewName);
     check(menuView.includes('Open in viewer') && !menuView.includes('Open in editor'), `a viewer's menu offers Open in viewer only (${menuView.join(', ')})`);
     await pickMenuItem(page, 'Open in viewer');
