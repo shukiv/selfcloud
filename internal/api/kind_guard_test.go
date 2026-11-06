@@ -38,7 +38,21 @@ var nodeKindSite = regexp.MustCompile(`(?:\.Kind|\bkind|\bKind)\s*(?:==|!=|<>|=)
 // Slice x4 added two in playlists.go, each reviewed: the read marks an entry unavailable unless the node is a file (a
 // folder or a shortcut fails closed), and the add refuses a node that is not a file with the same not_found as a missing
 // one. Neither decides access; reachRoles runs first in both. Decision 58 records them.
+// Round 6 reviewed the import's node-kind comparisons (decision 92), one reason per site. Each one accepts only a directory
+// and refuses or skips anything else, so a kind added later fails closed. imports.go handleCreateImport: the parent an
+// import is aimed at must be a directory of the folder, else invalid_request; access is requireNodeRole, which runs first.
+// import_job.go importMakeDir: an earlier import's directory is reused only when it is a directory of the target folder
+// under the expected parent; any other kind is not reused, and a new directory is made. import_job.go checkReusedDirs: a
+// reused directory must be a directory of the target folder, else target_moved. import_job.go importPublish: the target
+// directory must be a directory of the target folder, else target_moved. Neither import check decides access.
 var reviewedNodeKindSites = map[string]int{
+	// The import's own item kinds (store/imports.go), and StagedCounts, are reviewed in the store's guard (round 6): the
+	// item kinds are import_items.kind, not a node's, and StagedCounts counts files of the staging folder, which holds
+	// only the files and directories an import writes.
+	"internal/api/imports.go":    1,
+	"internal/api/import_job.go": 3,
+	"internal/store/imports.go":  5,
+
 	"internal/api/access.go":          2,
 	"internal/api/playlists.go":       2,
 	"internal/api/access_requests.go": 1,

@@ -149,6 +149,7 @@ var unscopedNodeReads = map[string]struct {
 	"search_text.go":        {3, "content search (decision 46): the backfill reads the blob IDs of file nodes account-wide to queue a content row per blob, the check counts them the same way, and the result write asks whether a node or a version of the account still names the blob. A staged node names its blob, so its blob is queued, but the content query excludes staged folders, and the read here returns no node to a caller"},
 	"search_index.go":       {1, "the largest rowid of the nodes table (NodeRowIDMax, decision 40): one number, read by a copy to bound the rowid range it queues. It reveals no node, and the range is read through a folder ID, so a staged folder is never a search item"},
 	"trash.go":              {2, "trash listing and expiry over trashed_at: a staged node is never trashed (a copy never copies a trashed node, and a trashed source fails the copy), so no staged node matches"},
+	"imports.go":            {2, "blob existence checks (round 6): DropBlob and CleanupStagedBatch's blob delete keep a blob while NOT EXISTS (SELECT 1 FROM nodes WHERE nodes.blob_id = blobs.id) finds a node of any account that names it. The read returns no node and can only keep a blob, never remove one a node names; a staged node holds its blob, so the blob stays until the node is gone"},
 }
 
 // TestAccountWideNodeReadsAreClassified fails when a read of nodes that is not scoped by an ID appears, moves or goes in

@@ -102,7 +102,7 @@ func childSegmentSQL(order ChildSort, after bool) string {
 	if order.Desc {
 		dir = "DESC"
 	}
-	query := nodeSelect + " WHERE n.account_id = ? AND n.parent_id = ? AND n.trashed_at IS NULL AND n.kind = ?"
+	query := nodeSelect + " WHERE n.account_id = ? AND n.parent_id = ? AND n.trashed_at IS NULL AND n.kind = ?" + sameFolderAsParent
 	if after {
 		if order.Key == SortName {
 			// The planner uses a range on a column with a collation, but not a row value that includes one. So the

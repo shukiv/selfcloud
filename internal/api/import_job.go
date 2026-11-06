@@ -838,7 +838,7 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 					return err
 				}
 			}
-			if err := tx.SetStagedParent(ctx, im.AccountID, n.ID, parent.ID, plan.name, plan.key, now); err != nil {
+			if err := tx.SetStagedParent(ctx, im.AccountID, im.StagingFolderID, n.ID, parent.ID, plan.name, plan.key, now); err != nil {
 				return err
 			}
 		}

@@ -232,6 +232,17 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../store/versions.go UpdateVersion UPDATE versions":               {1, lockGuarded, "a version's label or keep flag: history, refused while the file is open"},
 	"../store/webhook_quota.go SetQuotaWarningPercent UPDATE accounts": {1, lockFree, "the quota warning percent: no file changes"},
 	"../store/webhook_quota.go syncQuotaWatch UPDATE accounts":         {1, lockFree, "the quota warning mark: no file changes"},
+
+	// Round 6 reviewed the import's node writes (decision 92), one reason per site. Each one is limited to the import's
+	// staging folder, or creates a node in it, so a staged node is changed by its import only, and a live node is never
+	// changed by one. The writes into the target folder are MoveStagedTree and SetStagedParent, at the publish only.
+	"../api/import_job.go InsertNodeNoIndex":                   {2, lockAdds, "importMakeDir's directory and importFileEntry's file: each is inserted in the import's staging folder, which no lock can hold; the parent may be a directory the import reused, so Children and ChildrenSorted list a child only in its parent's folder (sameFolderAsParent), and a staged entry is not listed until its publish"},
+	"../store/imports.go CleanupStagedBatch DELETE FROM nodes": {1, lockFree, "the staging folder's own staged nodes: account_id and folder_id = the import's staging folder, and the IDs come from that folder's rows; a staged node is in no folder a caller reaches, so no lock is over it"},
+	"../store/imports.go DeleteFolder":                         {1, lockGuarded, "EndImportsAt ends an import aimed into a folder being deleted by deleting its staging folder: DeleteFolder's guardFolder refuses it while a file in that folder is open, and no editor reaches a staged node, so it passes; the outer delete's own guard already ran"},
+	"../store/imports.go DropStaging DELETE FROM folders":      {1, lockFree, "the staging folder's row, by account_id, id and staged = 1: a folder that holds no node a caller can reach, so nothing is refused or reported"},
+	"../store/imports.go DropStaging DELETE FROM nodes":        {1, lockFree, "the staging root, by account_id, folder_id = the staging folder and id: a staged node, which reports nothing"},
+	"../store/imports.go MoveStagedTree UPDATE nodes":          {1, lockAdds, "the publish moves the staged nodes of the staging folder (account_id and folder_id) into the target folder: they are new to it, so no lock is over them, and changes no node already there; the publish's counts are reported in import.finish"},
+	"../store/imports.go SetStagedParent UPDATE nodes":         {1, lockAdds, "the publish places a staged top under its parent, by account_id, folder_id = the staging folder and id: a staged node gains its place and name, and no node already in a folder changes (round 6: before, it was matched by ID alone)"},
 }
 
 // webhookAuditCalls maps the names of helpers that take an audit action to the position of the action

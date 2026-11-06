@@ -170,8 +170,14 @@ func (tx *Tx) Child(ctx context.Context, accountID, parentID, key string) (*Node
 }
 
 // Children lists the children of a directory of accountID in name-key order, one page at a time.
+// sameFolderAsParent is the condition that lists a child only in its parent's folder. A child that sits in another folder
+// is a staged entry of an import, which no listing shows (round 6).
+const sameFolderAsParent = " AND n.folder_id = (SELECT p.folder_id FROM nodes p WHERE p.id = n.parent_id)"
+
 func (s *Store) Children(ctx context.Context, accountID, parentID string, p Page) ([]*Node, string, error) {
-	query := nodeSelect + " WHERE n.account_id = ? AND n.parent_id = ? AND n.trashed_at IS NULL"
+	// A child is listed in its parent's folder only. An import stages an entry under a directory it reuses, in the staging
+	// folder, until its publish, so the folder check keeps a staged entry out of the directory's listing (round 6).
+	query := nodeSelect + " WHERE n.account_id = ? AND n.parent_id = ? AND n.trashed_at IS NULL" + sameFolderAsParent
 	args := []any{accountID, parentID}
 	if p.Cursor != "" {
 		parts, err := decodeCursor(p.Cursor, 2)
