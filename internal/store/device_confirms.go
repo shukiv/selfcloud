@@ -67,6 +67,15 @@ func (tx *Tx) UseDeviceConfirm(ctx context.Context, id string, at time.Time) err
 		"UPDATE device_confirms SET used_at = ? WHERE id = ? AND used_at IS NULL", millis(at), id))
 }
 
+// VoidDeviceConfirms ends every open link of a user at at, so that a link mailed before a change of the user's address
+// does not sign in after it (decision 86, L5). The rows stay, as spent links do, until the sweep removes them. It is
+// not an error when the user has no open link.
+func (tx *Tx) VoidDeviceConfirms(ctx context.Context, userID string, at time.Time) error {
+	_, err := tx.q.ExecContext(ctx,
+		"UPDATE device_confirms SET used_at = ? WHERE user_id = ? AND used_at IS NULL", millis(at), userID)
+	return err
+}
+
 // DeleteSpentDeviceConfirms removes device confirmations that expired before now or were used.
 func (tx *Tx) DeleteSpentDeviceConfirms(ctx context.Context, now time.Time) (int64, error) {
 	res, err := tx.q.ExecContext(ctx,
