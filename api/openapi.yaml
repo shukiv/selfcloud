@@ -3253,6 +3253,47 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/v1/nodes/{nod}/documents:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    post:
+      tags: [Office]
+      operationId: createDocument
+      summary: Make a blank Office document in a folder
+      description: |
+        Makes a blank Word (`docx`), Excel (`xlsx`) or PowerPoint (`pptx`) file in the folder or directory
+        `{nod}` (decision 91). `{nod}` must be a folder's root node or a directory. The caller needs
+        contributor on it, and the rights, quota, disk check, audit row (`node.create`, with `via: document`)
+        and webhooks are those of a file upload. The default name is "Untitled document", "Untitled
+        spreadsheet" or "Untitled presentation" in the caller's stored language (English for an account key),
+        with the type's extension. A given `name` gets the extension when it lacks it. A name taken in the
+        folder gets the first free "name (n).ext". The file is a valid OOXML package, opened in the editor
+        with `/api/v1/nodes/{nod}/office`. While office editing is off, the route answers `not_found`.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              additionalProperties: false
+              properties:
+                type: { type: string, enum: [docx, xlsx, pptx] }
+                name: { type: string, description: "Optional; a name the server cleans as any other name is." }
+      responses:
+        "201":
+          description: The new file. Its `Location` is its node's address.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "507": { $ref: "#/components/responses/Error" }
   /wopi/files/{nod}:
     parameters:
       - $ref: "#/components/parameters/nod"
