@@ -4,6 +4,7 @@
 // fast, and it answers a document navigation that the network cannot reach with the offline page. It keeps nothing else: no
 // API answer, no file content, no signed link, no share page, no range answer, nothing from another origin. The build replaces
 // the placeholder below with an identifier of the build (its files' names and contents), so a new build is a new cache. The
+// files of a share from the system share sheet (decision 82) are the one thing it holds, in memory, until the page takes them. The
 // cache of the build before is kept, so a tab that is still on it can load its files; older caches are removed.
 //
 // The rules are in storable(), fallbackAllowed() and the listeners. The unit tests in src/lib/pwa/sw.test.ts load this file in
@@ -26,6 +27,14 @@ const TYPES = ['text/javascript', 'application/javascript', 'text/css', 'font/wo
 // REFUSED are the paths that are never a page the worker answers: the API, the office endpoints, the share pages, the brand
 // files and the manifest. A navigation there goes to the network, and a failed one fails.
 const REFUSED = ['/api', '/wopi', '/s', '/brand', '/manifest'];
+// SHARE_PATH is the share target (decision 82). A form post there, from the system share sheet, is read by the worker and held in
+// memory only: the files are never written to a cache or to storage. The page at SHARE_PAGE takes them once, by message.
+const SHARE_PATH = '/share-target';
+const SHARE_PAGE = '/share';
+// SHARE_LIMIT is how long the held files are kept: five minutes. Chromium ends an event that runs longer ("event dispatched to
+// service workers has a 5 minute timeout in the Chrome implementation", service_worker.mojom in the Chromium source), so the
+// worker's wait for the files cannot outlast it.
+const SHARE_LIMIT = 5 * 60 * 1000;
 
 // storable reports whether a response to request may be cached: a plain 200 GET of one of the build's own files under /assets/,
 // with no query string and no Range header, that was not redirected, was served from the path that was asked for, and has one
@@ -122,10 +131,80 @@ async function navigate(request) {
   }
 }
 
+// isShare reports whether a request is the share sheet's post: a navigation, on this origin, to exactly the share target.
+function isShare(request, url) {
+  return request.mode === 'navigate' && url.origin === self.location.origin && url.pathname === SHARE_PATH;
+}
+
+// held is the share the worker keeps: its id, its files, the timer that drops them and the release of the wait that keeps the
+// worker open for them. It lives in memory only. A new share replaces it; a hand-over, a sign-out and the time limit end it.
+let held = null;
+
+// dropShare forgets the held files, ends their timer and lets the worker's wait end.
+function dropShare() {
+  if (!held) return;
+  clearTimeout(held.timer);
+  const release = held.release;
+  held = null;
+  release();
+}
+
+// holdShare keeps the files under a fresh random id, replacing any share not yet handed over, and returns the id.
+function holdShare(files, release) {
+  dropShare();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  const timer = setTimeout(dropShare, SHARE_LIMIT);
+  held = { id, files, timer, release };
+  return id;
+}
+
+// receiveShare answers the share sheet's post with 303 to the share page, under the id of the files it holds. With no file it
+// holds nothing and sends the person to the page without an id. Its wait ends when the files are handed over or dropped.
+async function receiveShare(request, release) {
+  let files = [];
+  try {
+    const form = await request.formData();
+    files = form.getAll('files').filter((f) => typeof f !== 'string');
+  } catch {
+    files = [];
+  }
+  const page = new URL(SHARE_PAGE, self.location.origin);
+  if (files.length === 0) {
+    dropShare();
+    release();
+    return Response.redirect(page.href, 303);
+  }
+  page.search = '?id=' + holdShare(files, release);
+  return Response.redirect(page.href, 303);
+}
+
+// handOver gives the held files to the page that asked with their id, once. A wrong id gets nothing and keeps the files.
+function handOver(id, port) {
+  if (!port) return;
+  if (!held || typeof id !== 'string' || held.id !== id) {
+    port.postMessage({ files: [] });
+    return;
+  }
+  const files = held.files;
+  dropShare();
+  port.postMessage({ files });
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-  if (request.method !== 'GET') return;
   const url = new URL(request.url);
+  if (request.method === 'POST') {
+    if (isShare(request, url)) {
+      // The wait is opened before the answer, so the worker stays alive until the page takes the files.
+      let release;
+      event.waitUntil(new Promise((resolve) => (release = resolve)));
+      event.respondWith(receiveShare(request, release));
+    }
+    return;
+  }
+  if (request.method !== 'GET') return;
   if (url.origin !== self.location.origin) return;
   if (request.mode === 'navigate') {
     if (fallbackAllowed(request, url)) event.respondWith(navigate(request));
@@ -150,6 +229,8 @@ async function signIn() {
 
 // clearAll removes the app's caches, except the state, and writes the signed-out marker. The page asks for this at sign-out.
 async function clearAll() {
+  // A sign-out also forgets the files of a share that were not handed over (decision 82).
+  dropShare();
   const keys = await caches.keys();
   await Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== STATE).map((k) => caches.delete(k)));
   const state = await caches.open(STATE);
@@ -173,6 +254,15 @@ self.addEventListener('message', (event) => {
   const data = event.data || {};
   if (data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+    return;
+  }
+  // The page takes the held files by id, over the port it sends, and drops them when it refuses or cancels (decision 82).
+  if (data.type === 'SHARE_TAKE') {
+    handOver(data.id, event.ports && event.ports[0]);
+    return;
+  }
+  if (data.type === 'SHARE_DROP') {
+    if (held && held.id === data.id) dropShare();
     return;
   }
   if (data.type !== 'CLEAR_CACHES' && data.type !== 'PRECACHE') return;

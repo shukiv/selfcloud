@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const ORIGIN = "https://drive.test";
 const SHELL = "selfcloud-build1";
@@ -21,6 +21,8 @@ interface Req {
   mode: string;
   destination: string;
   headers: { has(name: string): boolean };
+  // formData is the body of a form post, as the browser reads it for the worker (decision 82).
+  formData?: () => Promise<FormData>;
 }
 
 interface Res {
@@ -50,16 +52,31 @@ function request(url: string, opts: { method?: string; mode?: string; destinatio
   };
 }
 
+// shareRequest is the share sheet's form post: a navigation to the share target with the files in a multipart form.
+function shareRequest(files: File[], opts: { url?: string; mode?: string; method?: string } = {}): Req {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  return {
+    ...request(opts.url ?? "/share-target", {
+      method: opts.method ?? "POST",
+      mode: opts.mode ?? "navigate",
+      destination: "document",
+    }),
+    formData: async () => form,
+  };
+}
+
 // response is an answer as the browser gives it. Its url is where the bytes came from, and redirected is true when the browser
 // followed a redirect to get them; the content type defaults to the type of a script.
 function response(
   status = 200,
   type = "basic",
   body = "app",
-  extra: { url?: string; redirected?: boolean; contentType?: string | null } = {},
+  extra: { url?: string; redirected?: boolean; contentType?: string | null; location?: string } = {},
 ): Res {
   const headers = new Map<string, string>();
   if (extra.contentType !== null) headers.set("content-type", extra.contentType ?? "text/javascript; charset=utf-8");
+  if (extra.location !== undefined) headers.set("location", extra.location);
   const r: Res = {
     status,
     type,
@@ -142,15 +159,25 @@ function load(network: (r: Req) => Promise<Res> = async () => response()) {
       this.url = absolute(url);
     }
   }
+  const Worker = function (body: string) {
+    return response(200, "basic", body);
+  } as unknown as { (body: string): Res; redirect(url: string, status?: number): Res };
+  // redirect is Response.redirect: the answer's status and its location, as the browser gives them.
+  Worker.redirect = (url: string, status = 302) => response(status, "basic", "", { location: url });
+  // fetchWaits are the promises the worker keeps the fetch event open with (waitUntil), so a test can see them settle.
+  const fetchWaits: Promise<unknown>[] = [];
   runInNewContext(SOURCE, {
     self,
     caches,
     fetch: (r: Req) => served(r),
     Request: FakeRequest,
-    Response: function (body: string) {
-      return response(200, "basic", body);
-    },
+    Response: Worker,
     URL,
+    crypto: globalThis.crypto,
+    FormData,
+    File,
+    setTimeout: (fn: () => void, ms: number) => globalThis.setTimeout(fn, ms),
+    clearTimeout: (id: ReturnType<typeof setTimeout>) => globalThis.clearTimeout(id),
   });
   const dispatch = (type: string, event: unknown) => {
     for (const fn of listeners[type] ?? []) fn(event);
@@ -172,12 +199,20 @@ function load(network: (r: Req) => Promise<Res> = async () => response()) {
         respondWith(p: Promise<Res>) {
           answer = p;
         },
+        waitUntil(p: Promise<unknown>) {
+          fetchWaits.push(p);
+        },
       });
       return answer;
     },
+    // held is the fetch event's waitUntil promises: a share keeps the worker open until its files are handed over or dropped.
+    held: () => fetchWaits,
     install: () => waitAll((w) => dispatch("install", { waitUntil: (p: Promise<unknown>) => w.push(p) })),
     activate: () => waitAll((w) => dispatch("activate", { waitUntil: (p: Promise<unknown>) => w.push(p) })),
-    message: (data: unknown) => waitAll((w) => dispatch("message", { data, waitUntil: (p: Promise<unknown>) => w.push(p) })),
+    message: (data: unknown, port?: { postMessage(v: unknown): void }) =>
+      waitAll((w) =>
+        dispatch("message", { data, ports: port ? [port] : [], waitUntil: (p: Promise<unknown>) => w.push(p) }),
+      ),
   };
 }
 
@@ -456,5 +491,127 @@ describe("install, activate and the messages", () => {
     const w = load();
     await w.message({ type: "SKIP_WAITING" });
     expect(w.skips()).toBe(1);
+  });
+});
+
+// The share target (decision 82): a form post from the share sheet to /share-target is held in the worker, under a fresh id,
+// and handed to the page once, by message. The files are never written to a cache or to storage.
+describe("the share target (decision 82)", () => {
+  const FIVE_MINUTES = 5 * 60 * 1000;
+  const file = (name: string, text: string) => new File([text], name, { type: "text/plain" });
+  const idOf = (res: Res) => (res.headers.get("location") ?? "").split("id=")[1] ?? "";
+  // flush lets the pending promises run, without a timer (the tests with fake timers must not wait on one).
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+
+  // take asks the worker for a share's files by its id, as the page does, and returns what came back.
+  async function take(w: ReturnType<typeof load>, id: string): Promise<File[]> {
+    const got: Array<{ files: File[] }> = [];
+    await w.message({ type: "SHARE_TAKE", id }, { postMessage: (v: { files: File[] }) => got.push(v) });
+    return got[0]?.files ?? [];
+  }
+
+  it("answers a share post with 303 to the share page under a fresh random id", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")]));
+    expect(res?.status).toBe(303);
+    // Response.redirect gives the absolute address of the share page, as the browser's Location header does.
+    expect(res?.headers.get("location")).toBe(absolute("/share?id=" + idOf(res!)));
+    expect(idOf(res!)).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("hands the files over once, by message, and then forgets them", async () => {
+    const w = load();
+    const id = idOf((await w.fetch(shareRequest([file("a.txt", "hi"), file("b.txt", "yo")])))!);
+    expect((await take(w, id)).map((f) => f.name)).toEqual(["a.txt", "b.txt"]);
+    expect(await take(w, id)).toEqual([]);
+  });
+
+  it("keeps the files out of every cache, so no cache put happens for a share", async () => {
+    const w = load();
+    const id = idOf((await w.fetch(shareRequest([file("a.txt", "hi")])))!);
+    await take(w, id);
+    for (const c of w.caches.values()) {
+      expect(c.puts).toEqual([]);
+      expect(c.entries.size).toBe(0);
+    }
+  });
+
+  it("a second share replaces the first, and the first id gets nothing", async () => {
+    const w = load();
+    const first = idOf((await w.fetch(shareRequest([file("old.txt", "1")])))!);
+    const second = idOf((await w.fetch(shareRequest([file("new.txt", "2")])))!);
+    expect(await take(w, first)).toEqual([]);
+    expect((await take(w, second)).map((f) => f.name)).toEqual(["new.txt"]);
+  });
+
+  it("a hand-over with the wrong id gets nothing and keeps the files for the right id", async () => {
+    const w = load();
+    const id = idOf((await w.fetch(shareRequest([file("a.txt", "hi")])))!);
+    expect(await take(w, "0".repeat(32))).toEqual([]);
+    expect((await take(w, id)).map((f) => f.name)).toEqual(["a.txt"]);
+  });
+
+  it("keeps the files for five minutes, and drops them at the limit (the worker's wait ends with them)", async () => {
+    vi.useFakeTimers();
+    try {
+      const w = load();
+      const id = idOf((await w.fetch(shareRequest([file("a.txt", "hi")])))!);
+      let ended = false;
+      void Promise.all(w.held()).then(() => (ended = true));
+      vi.advanceTimersByTime(FIVE_MINUTES - 1);
+      await flush();
+      expect(ended).toBe(false);
+      expect((await take(w, id)).map((f) => f.name)).toEqual(["a.txt"]);
+
+      const late = idOf((await w.fetch(shareRequest([file("b.txt", "yo")])))!);
+      vi.advanceTimersByTime(FIVE_MINUTES);
+      await flush();
+      expect(await take(w, late)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the worker open until the files are handed over", async () => {
+    const w = load();
+    const id = idOf((await w.fetch(shareRequest([file("a.txt", "hi")])))!);
+    let ended = false;
+    void Promise.all(w.held()).then(() => (ended = true));
+    await flush();
+    expect(ended).toBe(false);
+    await take(w, id);
+    await flush();
+    expect(ended).toBe(true);
+  });
+
+  it("a sign-out drops the held files", async () => {
+    const w = load();
+    const id = idOf((await w.fetch(shareRequest([file("a.txt", "hi")])))!);
+    await w.message({ type: "CLEAR_CACHES", seq: 1 });
+    expect(await take(w, id)).toEqual([]);
+  });
+
+  it("a share with no files answers 303 to the share page with no id, and holds nothing", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([]));
+    expect(res?.status).toBe(303);
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+    // Nothing is held, so the worker's wait ends at once.
+    let ended = false;
+    void Promise.all(w.held()).then(() => (ended = true));
+    await flush();
+    expect(ended).toBe(true);
+    expect(await take(w, "0".repeat(32))).toEqual([]);
+  });
+
+  it("leaves every other POST and path to the network", async () => {
+    const w = load();
+    expect(w.fetch(shareRequest([file("a.txt", "hi")], { url: "/api/v1/upload" }))).toBeUndefined();
+    expect(w.fetch(shareRequest([file("a.txt", "hi")], { url: "/share-target/x" }))).toBeUndefined();
+    expect(w.fetch(shareRequest([file("a.txt", "hi")], { mode: "same-origin" }))).toBeUndefined();
+    expect(w.fetch(shareRequest([file("a.txt", "hi")], { url: "https://other.test/share-target" }))).toBeUndefined();
+    expect(w.held()).toEqual([]);
   });
 });
