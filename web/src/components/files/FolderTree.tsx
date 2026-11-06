@@ -143,6 +143,11 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
         className={side ? (filled ? "tree-row tree-row-side side-current-full" : current ? "tree-row tree-row-side side-current" : "tree-row tree-row-side") : "tree-row"}
         // A double click (a pointer's gesture) opens a folder with subfolders in the tree, so they show (decision 93), as its arrow does. A
         // double click on the arrow is the arrow's own (it toggles on each click), and an open folder stays open.
+        // The second press of a double click would select the word under the pointer: the row is a control, so that press does not start a
+        // selection (round 3, review item 4). Text elsewhere is selectable as before, and a drag (not a double click) is not touched.
+        onMouseDown={(e) => {
+          if (e.detail > 1) e.preventDefault();
+        }}
         onDoubleClick={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
           if (!hasKids || open) return;
