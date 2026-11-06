@@ -117,10 +117,10 @@ func TestACookieForOneUserDoesNotGuessAnotherUsersPassword(t *testing.T) {
 			s := newAuthServer(t, mailer)
 			admin := adminKey(t, s)
 			annInAccount(t, s, admin, "Acme", testPassword)
-			annInAccount(t, s, admin, "Beta", secondPassword)
-
+			// The cookie is made before the other account exists: a sign-in that tests two users spends an email token.
 			const cookieAddr = "10.30.1.1:4000"
 			dev := deviceCookieFrom(t, loginWith(t, s, cookieAddr, "ann@example.com", testPassword))
+			annInAccount(t, s, admin, "Beta", secondPassword)
 			for i := 0; i < 30; i++ {
 				wantError(t, loginWith(t, s, cookieAddr, "ann@example.com", "wrong password here", dev), 401, apierr.Unauthenticated)
 			}
@@ -152,10 +152,9 @@ func TestWithTheCapSpentTheCookieUserStillSignsIn(t *testing.T) {
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	annInAccount(t, s, admin, "Acme", testPassword)
-	annInAccount(t, s, admin, "Beta", secondPassword)
-
 	const cookieAddr = "10.31.1.1:4000"
 	dev := deviceCookieFrom(t, loginWith(t, s, cookieAddr, "ann@example.com", testPassword))
+	annInAccount(t, s, admin, "Beta", secondPassword)
 	spendCap(t, s, "ann@example.com", 31)
 	wantStatus(t, loginWith(t, s, cookieAddr, "ann@example.com", testPassword, dev), 200)
 }
@@ -179,10 +178,9 @@ func TestWithTheCapSpentTheCookieBrowserGetsNoSessionForTheOtherUser(t *testing.
 			s := newAuthServer(t, mailer)
 			admin := adminKey(t, s)
 			annInAccount(t, s, admin, "Acme", testPassword)
-			annInAccount(t, s, admin, "Beta", secondPassword)
-
 			const cookieAddr = "10.32.1.1:4000"
 			dev := deviceCookieFrom(t, loginWith(t, s, cookieAddr, "ann@example.com", testPassword))
+			annInAccount(t, s, admin, "Beta", secondPassword)
 			spendCap(t, s, "ann@example.com", 32)
 			if tc.mailer {
 				rsp := loginWith(t, s, cookieAddr, "ann@example.com", secondPassword, dev)
@@ -400,11 +398,10 @@ func TestTheCookieUsersFailureWhileCappedIsAudited(t *testing.T) {
 			admin := adminKey(t, s)
 			accA, keyA := newAccount(t, s, admin, "Acme")
 			d := verifiedUserWith(t, s, keyA, accA.ID, "ann@example.com", testPassword)
-			accB, keyB := newAccount(t, s, admin, "Beta")
-			e := verifiedUserWith(t, s, keyB, accB.ID, "ann@example.com", secondPassword)
-
 			const cookieAddr = "10.46.1.1:4000"
 			dev := deviceCookieFrom(t, loginWith(t, s, cookieAddr, "ann@example.com", testPassword))
+			accB, keyB := newAccount(t, s, admin, "Beta")
+			e := verifiedUserWith(t, s, keyB, accB.ID, "ann@example.com", secondPassword)
 			spendCap(t, s, "ann@example.com", 46)
 			beforeA := failedRowsOf(t, s, accA.ID, keyA, d.ID)
 			beforeB := failedRowsOf(t, s, accB.ID, keyB, e.ID)
@@ -429,11 +426,10 @@ func TestACookieNamingAnotherAccountIsNotTrusted(t *testing.T) {
 	s := newAuthServer(t, nil)
 	admin := adminKey(t, s)
 	annInAccount(t, s, admin, "Acme", testPassword)
-	accB, keyB := newAccount(t, s, admin, "Beta")
-	verifiedUserWith(t, s, keyB, accB.ID, "ann@example.com", secondPassword)
-
 	const cookieAddr = "10.47.1.1:4000"
 	dev := deviceCookieFrom(t, loginWith(t, s, cookieAddr, "ann@example.com", testPassword))
+	accB, keyB := newAccount(t, s, admin, "Beta")
+	verifiedUserWith(t, s, keyB, accB.ID, "ann@example.com", secondPassword)
 	// Beta's ann is the only candidate the sign-in narrows to, and the cookie's user is not among them: the cap applies.
 	for i := 0; i < 30; i++ {
 		wantError(t, postFrom(t, s, cookieAddr, "/api/v1/auth/login",
