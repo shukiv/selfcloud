@@ -139,7 +139,8 @@ describe("the folder tree", () => {
   it("opens a folder in the listing when its name is clicked, and does not open it for the arrow", async () => {
     render(<Harness start={{ expanded: ["fld_a"] }} />);
     fireEvent.click(await screen.findByText("Docs"));
-    expect(onOpen).toHaveBeenCalledWith("fld_a", "nod_one");
+    // The third argument says the folder may have subfolders (a phone's drawer waits out a double click for it, decision 93).
+    expect(onOpen).toHaveBeenCalledWith("fld_a", "nod_one", true);
     onOpen.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Expand Docs" }));
     expect(onOpen).not.toHaveBeenCalled();
@@ -589,5 +590,84 @@ describe("the folder tree in the sidebar: the menu row's metrics (decision 81)",
     const style = rowOf("My files")?.getAttribute("style") ?? "";
     expect(style).toContain("min-block-size: 32px");
     expect(style).not.toContain("margin-inline");
+  });
+});
+
+// Decision 93: a double click on a sidebar folder opens it, so its subfolders show; a single click only shows it (decision 88 and the
+// tree's own rules still hold); and the sidebar's group under a space's root carries the tint, one block per root.
+describe("the folder tree's double click and group tint (decision 93)", () => {
+  const rowOf = (name: string) => screen.getByText(name).closest<HTMLElement>(".tree-row");
+  const groups = () => Array.from(document.querySelectorAll<HTMLElement>('ul[role="group"]'));
+
+  it("a double click on a closed folder with subfolders opens it, so its subfolders show, and does not navigate", async () => {
+    render(<Harness folder="fld_zz" colours={SIDEBAR} />);
+    fireEvent.doubleClick(screen.getByText("Team A"));
+    expect(await screen.findByText("Docs")).toBeTruthy();
+    expect(latest.expanded).toContain("fld_a");
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("a single click shows the folder and does not open it", async () => {
+    render(<Harness folder="fld_zz" colours={SIDEBAR} />);
+    fireEvent.click(screen.getByText("Team A"));
+    expect(onOpen).toHaveBeenCalledWith("fld_a", null, true);
+    expect(latest.expanded).not.toContain("fld_a");
+    expect(screen.queryByText("Docs")).toBeNull();
+  });
+
+  it("a double click as the browser sends it (click, click, double click) shows the folder once and leaves it open", async () => {
+    render(<Harness folder="fld_zz" colours={SIDEBAR} />);
+    const name = screen.getByText("Team A");
+    fireEvent.click(name, { detail: 1 });
+    fireEvent.click(name, { detail: 2 });
+    fireEvent.doubleClick(name, { detail: 2 });
+    expect(await screen.findByText("Docs")).toBeTruthy();
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(latest.expanded).toContain("fld_a");
+  });
+
+  it("a double click on a folder that is already open leaves it open", async () => {
+    render(<Harness folder="fld_a" colours={SIDEBAR} start={{ expanded: ["fld_a"] }} />);
+    await screen.findByText("Docs");
+    fireEvent.doubleClick(screen.getByText("Team A"));
+    expect(latest.expanded).toContain("fld_a");
+    expect(screen.getByText("Docs")).toBeTruthy();
+  });
+
+  it("a double click on the arrow does not open the folder by its own", async () => {
+    render(<Harness folder="fld_zz" colours={SIDEBAR} />);
+    fireEvent.doubleClick(screen.getByRole("button", { name: "Expand Team A" }));
+    expect(latest.expanded).not.toContain("fld_a");
+  });
+
+  it("a double click on a folder with no subfolders opens it, finds nothing, and shows nothing more", async () => {
+    render(<Harness folder="fld_zz" colours={SIDEBAR} start={{ expanded: ["fld_a", "nod_one"] }} />);
+    await screen.findByText("Deep");
+    // Until it is read a folder may have subfolders, so its arrow is there; the double click reads it, and with none its arrow goes.
+    fireEvent.doubleClick(screen.getByText("Deep"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Expand Deep|Collapse Deep/ })).toBeNull());
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("the group under a space's root carries the tint, and a nested group does not", async () => {
+    render(<Harness folder="fld_a" colours={SIDEBAR} start={{ expanded: ["fld_a", "nod_one"] }} />);
+    await screen.findByText("Deep");
+    const [root, nested] = groups();
+    expect(root?.dataset.treeGroup).toBe("root");
+    expect(root?.style.getPropertyValue("--sc-group-tint"), "the root group's tint").toBe("#28589E");
+    expect(nested?.dataset.treeGroup).toBeUndefined();
+    expect(nested?.style.getPropertyValue("--sc-group-tint") ?? "").toBe("");
+  });
+
+  it("the sidebar's rows keep the mark on top of the tint: the current folder's row has no background of its own", async () => {
+    render(<Harness folder="nod_one" chain={["nod_one"]} colours={SIDEBAR} start={{ expanded: ["fld_a"] }} />);
+    await screen.findByText("Docs");
+    expect(rowOf("Docs")?.style.background ?? "").toBe("");
+  });
+
+  it("the tint is not drawn outside the sidebar", async () => {
+    render(<Harness folder="fld_a" start={{ expanded: ["fld_a"] }} />);
+    await screen.findByText("Docs");
+    expect(groups()[0]?.dataset.treeGroup).toBeUndefined();
   });
 });

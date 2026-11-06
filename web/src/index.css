@@ -232,6 +232,33 @@ a {
   background: var(--sc-side-hover, rgba(255, 255, 255, 0.1));
 }
 
+/* The group of folders under a space's root (My files, a team space) is a light block behind its rows (decision 93): the tint is set
+   on the group by FolderTree (theme/groupTint.ts), at the menu's inset, with the menu's corner radius. It is painted behind the rows
+   (the rows are positioned, later in the order), so the rows keep their own inset. Nested groups have no tint. */
+.tree-group-root {
+  position: relative;
+}
+.tree-group-root::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline: var(--sc-group-inset, 4px);
+  border-radius: 4px;
+  background: var(--sc-group-tint);
+  pointer-events: none;
+}
+
+/* The breadcrumbs' chevron sits on the centre of the crumb text (decision 93): a flex box centres the icon on the line, where the
+   icon on the baseline sat 2 px high. */
+.ant-breadcrumb .ant-breadcrumb-separator {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+.ant-breadcrumb .ant-breadcrumb-separator svg {
+  display: block;
+}
+
 /* A deeper current folder in the sidebar (decision 69, option B; decision 72): a 3 px bar at the row's start edge, in the sidebar's mark colour. One
    rule for the folder tree's current row and the menu's selected item, so the two look alike; the colour and the text are set by
    currentMark (theme/currentMark.ts). The menu's inline indicator (antd's ::after) is not drawn: the bar replaces it. */

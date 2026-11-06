@@ -44,6 +44,7 @@ import { d3Checks } from './d3.mjs';
 import { l1Checks } from './l1.mjs';
 import { ic2Checks } from './ic2.mjs';
 import { sbChecks } from './sb.mjs';
+import { fu7Checks } from './fu7.mjs';
 import { l4Checks } from './l4.mjs';
 import { ksChecks } from './ks.mjs';
 import { fu3aChecks } from './fu3a.mjs';
@@ -801,6 +802,7 @@ async function main() {
     if (!only || onlySet.has('d1')) await d1Checks(h, { page, base, accountKey, teamA });
     // Slice sb: the sidebar's tree rows have the menu row's metrics (decision 81). It runs on the shared page, after d1.
     if (!only || onlySet.has('sb')) await sbChecks(h, { page, base, accountKey, teamA, accountID, memberID });
+    if (!only || onlySet.has('fu7')) await fu7Checks(h, { page, base, accountKey, teamA, accountID, memberID });
     if (!only || onlySet.has('d2')) await d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID });
     if (!only || onlySet.has('i1')) await i1Checks(h, { page, base, accountKey, teamA, dir });
     // The list's checks need a mouse's hover, which a headless browser has only from its launch (see launchBrowser), and an earlier
