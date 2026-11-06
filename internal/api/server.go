@@ -164,6 +164,8 @@ type Server struct {
 	// a test lowers it.
 	importFault func(stage string) error
 	importYield time.Duration
+	// importNow, when set, is the clock a turn of an import reads for its window (tests only); nil reads the wall clock.
+	importNow func() time.Time
 	// activityCeiling, when set, replaces the most audit rows one activity read looks at (tests only).
 	activityCeiling int
 	// activityWalks, when set, replaces the most distinct people one activity read walks for reach (tests only).

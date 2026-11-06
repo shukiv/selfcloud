@@ -102,7 +102,6 @@ func (s *Server) runImport(ctx context.Context, job *store.Job) error {
 		// The stored failure is the code (round 4, F8); a record from before that carries text, so it is reported as the code too.
 		failure = importCodeError(cur.ErrorCode)
 	}
-	until := time.Now().Add(s.importYield)
 	for {
 		cur, err := s.store.Import(ctx, imp.ID)
 		if err != nil {
@@ -112,7 +111,7 @@ func (s *Server) runImport(ctx context.Context, job *store.Job) error {
 		case store.ImportPhaseScan:
 			err = s.importScan(ctx, cur.ID, p)
 		case store.ImportPhaseStage:
-			err = s.importStage(ctx, cur.ID, p, until)
+			err = s.importStage(ctx, cur.ID, p, s.importYield)
 		case store.ImportPhasePublish:
 			err = s.importPublish(ctx, cur.ID, p)
 		case store.ImportPhaseCleanup:
@@ -355,7 +354,29 @@ func (s *Server) openImportArchive(im *store.Import) (*os.File, int64, error) {
 
 // importStage writes the archive's entries into the staging folder, from the cursor on. It returns when every entry is
 // written (the phase moves to publish), when the time budget is used (jobs.ErrYield), or with errImportStopped or a pause.
-func (s *Server) importStage(ctx context.Context, impID string, p *auth.Principal, until time.Time) error {
+// importWindow is how long a turn may stage entries after it reaches its first new entry: base, or twice the time the walk
+// took to reach that entry, if that is longer. A gzipped tar is read from its start to reach an entry, so the reach is the
+// cost of a re-read; the window keeps that re-read to about a third of a turn and the number of turns small (round 9).
+func importWindow(reach, base time.Duration) time.Duration {
+	if w := 2 * reach; w > base {
+		return w
+	}
+	return base
+}
+
+// importTime is the clock of a turn's window: the wall clock, unless a test sets importNow.
+func (s *Server) importTime() time.Time {
+	if s.importNow != nil {
+		return s.importNow()
+	}
+	return time.Now()
+}
+
+// importStage stages the entries of the archive after its cursor. A turn stages at least one new entry before it may
+// yield, so every turn makes progress whatever a re-read costs; its window starts when the walk reaches the first new
+// entry, and lasts importWindow(reach, base) (round 9). The pause and cancel checkpoints stay as they were.
+func (s *Server) importStage(ctx context.Context, impID string, p *auth.Principal, base time.Duration) error {
+	turnStart := s.importTime()
 	if err := s.importFaultAt("stage"); err != nil {
 		return err
 	}
@@ -369,9 +390,18 @@ func (s *Server) importStage(ctx context.Context, impID string, p *auth.Principa
 	}
 	defer f.Close()
 	start := cur.Cursor
+	var until time.Time
+	staged := 0
 	err = imports.Walk(f, size, imports.Format(cur.ArchiveFormat), int(cur.Cursor), func(e imports.Entry, body io.Reader) error {
-		if int64(e.Index) > start && time.Now().After(until) {
-			return jobs.ErrYield
+		if int64(e.Index) > start {
+			if until.IsZero() {
+				first := s.importTime()
+				until = first.Add(importWindow(first.Sub(turnStart), base))
+			}
+			if staged > 0 && s.importTime().After(until) {
+				return jobs.ErrYield
+			}
+			staged++
 		}
 		if err := s.importFaultAt("entry"); err != nil {
 			return err
