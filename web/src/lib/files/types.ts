@@ -89,6 +89,8 @@ export interface FolderAccess {
   sharing_managers_only: boolean;
   no_download_for_viewers: boolean;
   allow_links: boolean;
+  // The folder's root node: the node a document made at the root goes in (decision 91).
+  root_node_id?: string;
 }
 
 // Permission is a role a user or a group holds on a node, or above it. inherited_from is the ancestor it

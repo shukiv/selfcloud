@@ -23,6 +23,8 @@ export interface Here {
   spaceNoDownload: boolean;
   // path is the directory's path from the folder's root, "/" for the root, or null when unknown.
   path: string | null;
+  // rootNodeID is the folder's root node, when the folder list gave it. A document made at the root goes in it (decision 91).
+  rootNodeID?: string | null;
 }
 
 // joinPath appends a name to a directory path.
@@ -59,6 +61,7 @@ export async function locate(
       reach: [],
       spaceNoDownload: listed?.no_download_for_viewers ?? false,
       path: '/',
+      rootNodeID: listed?.root_node_id ?? null,
     };
   }
 

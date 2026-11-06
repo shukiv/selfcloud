@@ -138,6 +138,12 @@ export function mkdirIn(folder: string, parent: string, name: string): Promise<N
   return api<Node>('POST', `/api/v1/folders/${folder}/directories`, { body: { parent, name } });
 }
 
+// createDocument makes a blank Office document of kind (docx, xlsx or pptx) in the folder's root or the directory nod, a
+// node ID (decision 91). The server names it, and answers the new node.
+export function createDocument(nod: string, kind: 'docx' | 'xlsx' | 'pptx'): Promise<Node> {
+  return api<Node>('POST', `/api/v1/nodes/${nod}/documents`, { body: { type: kind } });
+}
+
 // contentPath is the same-origin download address. It carries no credential: the session cookie sends.
 export function contentPath(nod: string, disposition: 'attachment' | 'inline' = 'attachment'): string {
   return `/api/v1/nodes/${nod}/content?disposition=${disposition}`;

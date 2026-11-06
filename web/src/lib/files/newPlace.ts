@@ -16,6 +16,20 @@ export interface NewPlace {
   canUpload: boolean;
   canUploadFolder: boolean;
   readOnly: boolean;
+  // nodeID is the directory a new document goes in: the directory shown, or the folder's root node (decision 91). Null when
+  // the place has none, such as My files off the files pages.
+  nodeID?: string | null;
+}
+
+// DocKind is a kind of blank Office document the New menu makes (decision 91).
+export type DocKind = 'docx' | 'xlsx' | 'pptx';
+export const DOC_KINDS: DocKind[] = ['docx', 'xlsx', 'pptx'];
+
+// documentKinds is the document kinds the New menu offers in a place: only while office editing is on (officeOn), and only in a
+// place that takes new files (decision 91). A read-only place and a place with no node to hold the file offer none.
+export function documentKinds(p: NewPlace | null, officeOn: boolean): DocKind[] {
+  if (!officeOn || p === null || p.readOnly || !p.canUpload || !p.nodeID) return [];
+  return DOC_KINDS;
 }
 
 // newPlace is the place the files page shows, written by FilesPage and cleared when it is left. null until the place is read.
@@ -23,7 +37,7 @@ export const newPlace = userWritable<NewPlace | null>(null);
 
 // myFilesPlace is the person's own My files root: everything can be added there.
 export function myFilesPlace(personalID: string): NewPlace {
-  return { where: { folder: personalID, dirID: null, path: '/' }, canFolder: true, canUpload: true, canUploadFolder: true, readOnly: false };
+  return { where: { folder: personalID, dirID: null, path: '/' }, canFolder: true, canUpload: true, canUploadFolder: true, readOnly: false, nodeID: null };
 }
 
 // placeOfHere is the place the files page shows, with what the caller may do in it (the page's own rules).
@@ -34,6 +48,7 @@ export function placeOfHere(here: Here, canUpload: boolean, canUploadFolder: boo
     canUpload,
     canUploadFolder,
     readOnly: !canUpload,
+    nodeID: here.dir?.id ?? here.rootNodeID ?? null,
   };
 }
 

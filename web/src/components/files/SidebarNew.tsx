@@ -2,9 +2,9 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { Button, ConfigProvider, Dropdown, Tooltip, type MenuProps } from "antd";
-import { FolderPlus, FolderUp, Plus, Upload } from "lucide-react";
+import { FileSpreadsheet, FileText, FolderPlus, FolderUp, Plus, Presentation, Upload } from "lucide-react";
 import { useT } from "../../lib/i18n";
-import { newEntries, type NewKey, type NewPlace } from "../../lib/files/newPlace";
+import { DOC_KINDS, newEntries, type DocKind, type NewKey, type NewPlace } from "../../lib/files/newPlace";
 import type { UploadWhere } from "../../lib/files/ops";
 import type { Sidebar } from "../../theme/tokens";
 
@@ -20,6 +20,9 @@ export interface SidebarNewProps {
   sidebar: Sidebar;
   onPick: (kind: "files" | "folders", where: UploadWhere) => void;
   onFolder: (where: UploadWhere) => void;
+  // documents are the blank Office documents the menu offers here (documentKinds: none unless office editing is on, decision 91).
+  documents: DocKind[];
+  onDocument: (kind: DocKind) => void;
 }
 
 const ic = { size: 18, strokeWidth: 1.75, "aria-hidden": true } as const;
@@ -27,7 +30,7 @@ const ic = { size: 18, strokeWidth: 1.75, "aria-hidden": true } as const;
 // The raised face: the sidebar's white with its blue word, and a shadow that reads on the blue in light and in dark.
 const RAISED = "0 1px 2px rgba(0, 0, 0, 0.3), 0 3px 8px rgba(0, 0, 0, 0.28)";
 
-export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, onFolder }: SidebarNewProps) {
+export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, onFolder, documents, onDocument }: SidebarNewProps) {
   const { t } = useT();
   const text: Record<NewKey, string> = {
     newFolder: t("files.act.newFolder"),
@@ -39,17 +42,27 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     upload: <Upload {...ic} />,
     uploadFolder: <FolderUp {...ic} />,
   };
+  // The blank documents (decision 91) come after the uploads, behind a divider, each with its icon and its word.
+  const docText: Record<DocKind, string> = { docx: t("files.act.document"), xlsx: t("files.act.spreadsheet"), pptx: t("files.act.presentation") };
+  const docIcons: Record<DocKind, ReactNode> = { docx: <FileText {...ic} />, xlsx: <FileSpreadsheet {...ic} />, pptx: <Presentation {...ic} /> };
+  const docItems: NonNullable<MenuProps["items"]> = DOC_KINDS.filter((k) => documents.includes(k)).map((k) => ({
+    key: `doc-${k}`,
+    label: docText[k],
+    icon: docIcons[k],
+  }));
   const items: MenuProps["items"] = [
     ...(place?.readOnly ? [{ key: "reason", disabled: true, label: t("files.new.readOnly") }, { type: "divider" as const, key: "rule" }] : []),
     ...(place ? newEntries(place) : [])
       .filter((e) => e.visible)
       .map((e) => ({ key: e.key, label: text[e.key], icon: icons[e.key], disabled: !e.enabled })),
+    ...(docItems.length > 0 ? [{ type: "divider" as const, key: "documents" }, ...docItems] : []),
   ];
   const choose = (key: string) => {
     if (!place) return;
     if (key === "newFolder") onFolder(place.where);
     if (key === "upload") onPick("files", place.where);
     if (key === "uploadFolder") onPick("folders", place.where);
+    if (key.startsWith("doc-")) onDocument(key.slice(4) as DocKind);
   };
   const menu = { items, onClick: ({ key }: { key: string }) => choose(key) };
   // A place that is still being read shows the button, disabled.

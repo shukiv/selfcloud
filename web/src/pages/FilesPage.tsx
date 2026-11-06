@@ -34,6 +34,9 @@ import {
   Star,
   Trash2,
   Upload,
+  FileSpreadsheet,
+  FileText,
+  Presentation,
 } from "lucide-react";
 import { useLang, useT, translatePlural } from "../lib/i18n";
 import { useStore, get } from "../lib/store";
@@ -54,7 +57,8 @@ import { makeZip, type ZipPhase } from "../lib/files/zips";
 import { officeConvert } from "../lib/files/convert";
 import { editorEntry, editorPath, officeEdit } from "../lib/files/editor";
 import { nameProblem, nameMessageKey, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
-import { newPlace, placeOfHere, queueInto } from "../lib/files/newPlace";
+import { documentKinds, newPlace, placeOfHere, queueInto } from "../lib/files/newPlace";
+import { useNewDocument } from "../lib/files/documents";
 import { useSidebarDocked } from "../lib/sidebarDocked";
 import { refreshMyStorage } from "../lib/storage/api";
 import { parseFilesPath, filesURL, type FilesRoute } from "../lib/files/route";
@@ -270,6 +274,8 @@ export default function FilesPage() {
   const officeOn = useStore(officeConvert);
   // editorOn is true while the server offers the office editor (decision 72): the menu then offers Open in editor or Open in viewer.
   const editorOn = useStore(officeEdit);
+  // The toolbar's New and the drawer's make blank documents as the sidebar's New does (decision 91).
+  const makeDocument = useNewDocument();
   // viewable is a file the viewer opens: a previewable one, or an office document while its preview is offered.
   const viewable = (n: Node) => previewable(n) || (officeOn && kindOf(n) === "office");
   // room is the space the upload tray covers at the bottom of the page: the last rows are scrolled clear of it.
@@ -1767,10 +1773,18 @@ export default function FilesPage() {
   const panelMore = barActs.filter((a) => !panelKeys.includes(a.key));
   // newActs is the New menu: a folder, and the files or a folder uploaded. spaceActs is the menu of the empty space: the same,
   // and a paste. Both follow the toolbar's rules.
+  // The three blank documents (decision 91): shown only while office editing is on and the folder takes new files.
+  const docKinds = canUploadHere ? documentKinds(shownPlace, editorOn) : [];
+  const docActs: BarAct[] = [
+    { key: "doc-docx", label: t("files.act.document"), icon: <FileText {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("docx"), fits: true, enabled: true, run: () => makeDocument("docx") },
+    { key: "doc-xlsx", label: t("files.act.spreadsheet"), icon: <FileSpreadsheet {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("xlsx"), fits: true, enabled: true, run: () => makeDocument("xlsx") },
+    { key: "doc-pptx", label: t("files.act.presentation"), icon: <Presentation {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("pptx"), fits: true, enabled: true, run: () => makeDocument("pptx") },
+  ];
   const newActs: BarAct[] = [
     { key: "newFolder", label: t("files.act.newFolder"), icon: <FolderPlus {...ic} />, group: 1, section: "first", hidden: !canMakeFolder, fits: true, enabled: true, run: openNewFolder },
     { key: "upload", label: t("files.act.upload"), icon: <Upload {...ic} />, group: 1, section: "first", hidden: !canUploadHere, fits: true, enabled: true, run: openFilePicker },
     { key: "uploadFolder", label: t("files.act.uploadFolder"), icon: <FolderUp {...ic} />, group: 1, section: "first", hidden: !canUploadFolder, fits: true, enabled: true, run: () => folderInputRef.current?.click() },
+    ...docActs,
   ];
   const hasMedia = items.some(isPlayable);
   const spaceActs: BarAct[] = [

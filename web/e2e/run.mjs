@@ -46,6 +46,7 @@ import { ic2Checks } from './ic2.mjs';
 import { sbChecks } from './sb.mjs';
 import { fu7Checks } from './fu7.mjs';
 import { l4Checks } from './l4.mjs';
+import { l6Checks } from './l6.mjs';
 import { ksChecks } from './ks.mjs';
 import { fu3aChecks } from './fu3a.mjs';
 import { fu3bChecks } from './fu3b.mjs';
@@ -781,7 +782,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb, pwa or sec2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb, pwa or sec2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -867,6 +868,9 @@ async function main() {
       await signOut(page);
       await signIn(page, MEMBER);
     }
+    // l6 (decision 91): New -> Document in a team folder makes a blank file and opens it in the editor, in this tab. The member
+    // is an editor on Team A, so a new file there is allowed.
+    if (!only || onlySet.has('l6')) await l6Checks(h, { page, base, accountKey, teamA, fake });
     // The sign-in box's checks (ks) run in their own browser with their own profile, so the first sign-in there is a fresh browser's.
     if (!only || onlySet.has('ks')) {
       const ksLaunch = await launchBrowser(await findBrowser(), join(dir, 'ks-profile'));

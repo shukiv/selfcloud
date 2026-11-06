@@ -3,17 +3,20 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "../../lib/i18n";
-import { myFilesPlace, type NewPlace } from "../../lib/files/newPlace";
+import { myFilesPlace, placeOfHere, type DocKind, type NewPlace } from "../../lib/files/newPlace";
 import { SIDEBAR } from "../../theme/tokens";
 import SidebarNew from "./SidebarNew";
 
 const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true };
 
-function renderNew(place: NewPlace | null, collapsed = false, coarse = false) {
+function renderNew(place: NewPlace | null, collapsed = false, coarse = false, documents: DocKind[] = []) {
   const onPick = vi.fn();
   const onFolder = vi.fn();
-  const utils = render(<SidebarNew place={place} collapsed={collapsed} coarse={coarse} sidebar={SIDEBAR} onPick={onPick} onFolder={onFolder} />);
-  return { ...utils, onPick, onFolder };
+  const onDocument = vi.fn();
+  const utils = render(
+    <SidebarNew place={place} collapsed={collapsed} coarse={coarse} sidebar={SIDEBAR} onPick={onPick} onFolder={onFolder} documents={documents} onDocument={onDocument} />,
+  );
+  return { ...utils, onPick, onFolder, onDocument };
 }
 
 describe("the sidebar's New button", () => {
@@ -46,6 +49,28 @@ describe("the sidebar's New button", () => {
     fireEvent.click(folder);
     expect(onFolder).not.toHaveBeenCalled();
     expect(onPick).not.toHaveBeenCalled();
+  });
+
+  // Decision 91: the blank documents come after the uploads, only when the place offers them (documentKinds). A pick calls
+  // onDocument with its kind, and nothing else.
+  it("adds Document, Spreadsheet and Presentation after the uploads when the place offers them, and a pick names its kind", async () => {
+    const place = placeOfHere({ folder: "fld_t", folderName: "Team", folderRole: "manager", dir: null, dirRole: "manager", trail: [],
+      rootReachable: true, reach: [], spaceNoDownload: false, path: "/", rootNodeID: "nod_root" } as unknown as Parameters<typeof placeOfHere>[0], true, true);
+    const { onDocument } = renderNew(place, false, false, ["docx", "xlsx", "pptx"]);
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    expect(await screen.findByRole("menuitem", { name: "Document" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Spreadsheet" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Presentation" }));
+    expect(onDocument).toHaveBeenCalledWith("pptx");
+  });
+
+  it("shows none of the three when the place offers none", async () => {
+    renderNew(myFilesPlace("fld_mine"), false, false, []);
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    expect(await screen.findByRole("menuitem", { name: "New folder" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Document" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Spreadsheet" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Presentation" })).toBeNull();
   });
 
   // Decision 69: the button is as wide as its text, not the sidebar's width, and it is capped at the sidebar's width so a long
