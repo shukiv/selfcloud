@@ -200,7 +200,9 @@ export default function Shell({ children }: { children: ReactNode }) {
   const foldersInput = useRef<HTMLInputElement | null>(null);
   const pickWhere = useRef<UploadWhere | null>(null);
   const [folderWhere, setFolderWhere] = useState<UploadWhere | null>(null);
-  const newWhere = admin ? null : newPlaceFor(onFiles, shownPlace, personal?.id ?? null);
+  // The place the sidebar's New acts on: on a files page, only the place the page shows (placeForRoute, round 3); null
+  // leaves the button disabled, so an upload or a New folder never goes to a place that is not on screen.
+  const newWhere = admin ? null : newPlaceFor(onFiles, placeForRoute(shownPlace, location.pathname), personal?.id ?? null);
   const [settingsFor, setSettingsFor] = useState<FolderAccess | null>(null);
   // The iPhone instructions are open for the person who opened them: a change of person closes them (iosDialogOpen).
   const [iosFor, setIosFor] = useState<string | null>(null);

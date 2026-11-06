@@ -555,7 +555,7 @@ describe("the sidebar's New (decision 66)", () => {
     mocks.mkdir.mockClear();
   });
 
-  const readOnlyFolder: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
+  const readOnlyFolder: NewPlace = { where: { folder: "fld_tttttttt", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
 
   // Item 7 (fu3b, decision 77): a dialog belongs to the address it was opened at. The sidebar's New folder dialog closes when Back
   // (or any change of address) moves the page, as the files page's own dialogs already do.
@@ -584,6 +584,61 @@ describe("the sidebar's New (decision 66)", () => {
     });
   });
 
+  // Round 3: the sidebar's New takes its place through placeForRoute, as the documents do. A place stored for another folder
+  // (FilesPage writes it after render) is not the place on screen, so the button waits, disabled, and no upload or New folder
+  // can target it.
+  const placeIn = (folder: string, dir: string): NewPlace => ({
+    where: { folder, dirID: dir, path: "/d" },
+    canFolder: true,
+    canUpload: true,
+    canUploadFolder: true,
+    readOnly: false,
+    canEdit: true,
+    nodeID: dir,
+  });
+
+  function renderOnFiles(path: string) {
+    const router = createMemoryRouter([{ path: "*", element: <Shell><p>page body</p></Shell> }], { initialEntries: [path] });
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ThemeProvider>
+          <Direction>
+            <RouterProvider router={router} />
+          </Direction>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("a New place stored for folder A does not feed the sidebar's New while folder B's directory is shown (round 3)", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      folders.set([
+        team("fld_mine", "Mine", { kind: "personal", role: "manager" }),
+        team("fld_aaaaaaaa", "A", { role: "manager" }),
+        team("fld_bbbbbbbb", "B", { role: "manager" }),
+      ]);
+      newPlace.set(placeIn("fld_aaaaaaaa", "nod_aaaaaaaa"));
+      renderOnFiles("/files/fld_bbbbbbbb/nod_bbbbbbbb");
+      const button = await screen.findByRole("button", { name: "New" });
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  it("the sidebar's New is enabled for the place the page shows", async () => {
+    await wideScreen(async () => {
+      signIn("member");
+      folders.set([
+        team("fld_mine", "Mine", { kind: "personal", role: "manager" }),
+        team("fld_bbbbbbbb", "B", { role: "manager" }),
+      ]);
+      newPlace.set(placeIn("fld_bbbbbbbb", "nod_bbbbbbbb"));
+      renderOnFiles("/files/fld_bbbbbbbb/nod_bbbbbbbb");
+      const button = await screen.findByRole("button", { name: "New" });
+      await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    });
+  });
+
   it("off the files pages, New folder makes the folder in My files, from the dialog the sidebar holds", async () => {
     await wideScreen(async () => {
       signIn("member");
@@ -607,7 +662,7 @@ describe("the sidebar's New (decision 66)", () => {
       signIn("member");
       folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
       newPlace.set(readOnlyFolder);
-      renderShell("/files/fld_t");
+      renderShell("/files/fld_tttttttt");
       fireEvent.click(await screen.findByRole("button", { name: "New" }));
       expect(await screen.findByText("You cannot add to this folder.")).toBeTruthy();
       expect((await screen.findByRole("menuitem", { name: "Upload files" })).getAttribute("aria-disabled")).toBe("true");
@@ -619,7 +674,7 @@ describe("the sidebar's New (decision 66)", () => {
     await wideScreen(async () => {
       signIn("member");
       folders.set([team("fld_mine", "Mine", { kind: "personal", role: "manager" })]);
-      renderShell("/files/fld_t");
+      renderShell("/files/fld_tttttttt");
       expect((screen.getByRole("button", { name: "New" }) as HTMLButtonElement).disabled).toBe(true);
     });
   });
