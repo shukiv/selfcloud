@@ -57,7 +57,7 @@ function request(url: string, opts: { method?: string; mode?: string; destinatio
 // shareRequest is the share sheet's form post: a navigation to the share target with the files in a multipart form.
 function shareRequest(
   files: File[],
-  opts: { url?: string; mode?: string; method?: string; referrer?: string } = {},
+  opts: { url?: string; mode?: string; method?: string; referrer?: string; destination?: string } = {},
 ): Req {
   const form = new FormData();
   for (const f of files) form.append("files", f);
@@ -65,7 +65,7 @@ function shareRequest(
     ...request(opts.url ?? "/share-target", {
       method: opts.method ?? "POST",
       mode: opts.mode ?? "navigate",
-      destination: "document",
+      destination: opts.destination ?? "document",
     }),
     formData: async () => form,
     referrer: opts.referrer ?? "",
@@ -503,7 +503,8 @@ describe("install, activate and the messages", () => {
 // The share target (decision 82): a form post from the share sheet to /share-target is held in the worker, under a fresh id,
 // and handed to the page once, by message. The files are never written to a cache or to storage.
 describe("the share target (decision 82)", () => {
-  const FIVE_MINUTES = 5 * 60 * 1000;
+  // SIXTY_SECONDS is how long an unclaimed share is kept: no page has taken it, so it expires at once after a minute (decision 82).
+  const SIXTY_SECONDS = 60 * 1000;
   const file = (name: string, text: string) => new File([text], name, { type: "text/plain" });
   const idOf = (res: Res) => (res.headers.get("location") ?? "").split("id=")[1] ?? "";
   // flush lets the pending promises run, without a timer (the tests with fake timers must not wait on one).
@@ -524,7 +525,7 @@ describe("the share target (decision 82)", () => {
     expect(res?.status).toBe(303);
     // Response.redirect gives the absolute address of the share page, as the browser's Location header does.
     expect(res?.headers.get("location")).toBe(absolute("/share?id=" + idOf(res!)));
-    expect(idOf(res!)).toMatch(/^[0-9a-f]{32}$/);
+    expect(idOf(res!)).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it("hands the files over once, by message, and then forgets them", async () => {
@@ -544,14 +545,37 @@ describe("the share target (decision 82)", () => {
     }
   });
 
-  it("a second share does not replace one still held: the held files stay, and the second is not kept", async () => {
+  it("two shares are held side by side, each under its own id, and each is handed over on its own", async () => {
     const w = load();
-    const first = idOf((await w.fetch(shareRequest([file("held.txt", "1")])))!);
-    const second = await w.fetch(shareRequest([file("new.txt", "2")]));
-    expect(second?.status).toBe(303);
-    expect(second?.headers.get("location")).toBe(absolute("/share"));
-    expect((await take(w, first)).map((f) => f.name)).toEqual(["held.txt"]);
-    expect(await take(w, second ? idOf(second) : "")).toEqual([]);
+    const first = idOf((await w.fetch(shareRequest([file("one.txt", "1")])))!);
+    const second = idOf((await w.fetch(shareRequest([file("two.txt", "2")])))!);
+    expect(first).not.toBe(second);
+    expect((await take(w, second)).map((f) => f.name)).toEqual(["two.txt"]);
+    expect((await take(w, first)).map((f) => f.name)).toEqual(["one.txt"]);
+  });
+
+  it("a fifth share drops the oldest unclaimed one, so the newest four are kept", async () => {
+    const w = load();
+    const ids: string[] = [];
+    for (let i = 1; i <= 5; i++) ids.push(idOf((await w.fetch(shareRequest([file(`f${i}.txt`, "x")])))!));
+    expect(await take(w, ids[0])).toEqual([]);
+    for (let i = 1; i <= 4; i++) expect((await take(w, ids[i])).map((f) => f.name)).toEqual([`f${i + 1}.txt`]);
+  });
+
+  it("a cross-site post with no referrer cannot block a later real share", async () => {
+    const w = load();
+    // A page can send no referrer at all, so this is the post the referrer check cannot see: six of them go in first.
+    for (let i = 0; i < 6; i++) {
+      await w.fetch(shareRequest([file("attack.txt", "x")], { referrer: "" }));
+    }
+    const real = idOf((await w.fetch(shareRequest([file("mine.txt", "hi")])))!);
+    expect((await take(w, real)).map((f) => f.name)).toEqual(["mine.txt"]);
+  });
+
+  it("a share posted into a frame (not a top-level navigation) is left to the network", async () => {
+    const w = load();
+    expect(w.fetch(shareRequest([file("a.txt", "hi")], { destination: "iframe" }))).toBeUndefined();
+    expect(w.held()).toEqual([]);
   });
 
   it("a second share is free to be held once the first has been handed over", async () => {
@@ -583,13 +607,13 @@ describe("the share target (decision 82)", () => {
   it("accepts a share with no referrer, as the system share sheet sends it", async () => {
     const w = load();
     const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "" }));
-    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f]{32}$/);
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
   });
 
   it("accepts a share from this site's own page, the referrer being this origin", async () => {
     const w = load();
     const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: absolute("/files") }));
-    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f]{32}$/);
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
   });
 
   it("a hand-over with the wrong id gets nothing and keeps the files for the right id", async () => {
@@ -599,22 +623,20 @@ describe("the share target (decision 82)", () => {
     expect((await take(w, id)).map((f) => f.name)).toEqual(["a.txt"]);
   });
 
-  it("keeps the files for five minutes, and drops them at the limit (the worker's wait ends with them)", async () => {
+  it("an unclaimed share expires after sixty seconds, and its wait ends with it", async () => {
     vi.useFakeTimers();
     try {
       const w = load();
       const id = idOf((await w.fetch(shareRequest([file("a.txt", "hi")])))!);
       let ended = false;
       void Promise.all(w.held()).then(() => (ended = true));
-      vi.advanceTimersByTime(FIVE_MINUTES - 1);
+      vi.advanceTimersByTime(SIXTY_SECONDS - 1);
       await flush();
       expect(ended).toBe(false);
-      expect((await take(w, id)).map((f) => f.name)).toEqual(["a.txt"]);
-
-      const late = idOf((await w.fetch(shareRequest([file("b.txt", "yo")])))!);
-      vi.advanceTimersByTime(FIVE_MINUTES);
+      vi.advanceTimersByTime(1);
       await flush();
-      expect(await take(w, late)).toEqual([]);
+      expect(ended).toBe(true);
+      expect(await take(w, id)).toEqual([]);
     } finally {
       vi.useRealTimers();
     }

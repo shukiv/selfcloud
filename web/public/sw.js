@@ -31,10 +31,14 @@ const REFUSED = ['/api', '/wopi', '/s', '/brand', '/manifest'];
 // memory only: the files are never written to a cache or to storage. The page at SHARE_PAGE takes them once, by message.
 const SHARE_PATH = '/share-target';
 const SHARE_PAGE = '/share';
-// SHARE_LIMIT is how long the held files are kept: five minutes. Chromium ends an event that runs longer ("event dispatched to
-// service workers has a 5 minute timeout in the Chrome implementation", service_worker.mojom in the Chromium source), so the
-// worker's wait for the files cannot outlast it.
-const SHARE_LIMIT = 5 * 60 * 1000;
+// SHARE_CAP is how many shares the worker holds at once. At the cap a new share drops the oldest one no page has taken, so a
+// share from another site cannot keep a real share out (decision 82, after the review).
+const SHARE_CAP = 4;
+// UNCLAIMED_LIMIT is how long a held share is kept while no page has taken it: sixty seconds. The page takes a share as soon as it
+// opens, so this is the time a share sheet's hand-off has to finish. Chromium ends an event that runs longer than five minutes
+// ("event dispatched to service workers has a 5 minute timeout in the Chrome implementation", service_worker.mojom in the Chromium
+// source), so it is well inside that.
+const UNCLAIMED_LIMIT = 60 * 1000;
 
 // storable reports whether a response to request may be cached: a plain 200 GET of one of the build's own files under /assets/,
 // with no query string and no Range header, that was not redirected, was served from the path that was asked for, and has one
@@ -131,32 +135,36 @@ async function navigate(request) {
   }
 }
 
-// isShare reports whether a request is the share sheet's post: a navigation, on this origin, to exactly the share target.
+// isShare reports whether a request is the share sheet's post: a top-level navigation (not a frame or other embedded request), on
+// this origin, to exactly the share target.
 function isShare(request, url) {
-  return request.mode === 'navigate' && url.origin === self.location.origin && url.pathname === SHARE_PATH;
+  return (
+    request.mode === 'navigate' &&
+    request.destination === 'document' &&
+    url.origin === self.location.origin &&
+    url.pathname === SHARE_PATH
+  );
 }
 
-// held is the share the worker keeps: its id, its files, the timer that drops them and the release of the wait that keeps the
-// worker open for them. It lives in memory only. A new share replaces it; a hand-over, a sign-out and the time limit end it.
-let held = null;
+// shares holds the shares the worker keeps, by id, in memory only. Each holds its files, the timer that expires it and the release
+// of the wait that keeps the worker open for it. A Map keeps insertion order, so its first key is the oldest share.
+const shares = new Map();
 
-// dropShare forgets the held files, ends their timer and lets the worker's wait end.
-function dropShare() {
-  if (!held) return;
-  clearTimeout(held.timer);
-  const release = held.release;
-  held = null;
-  release();
+// endShare forgets one share: its files, its timer, and the wait that kept the worker open for it.
+function endShare(id) {
+  const share = shares.get(id);
+  if (!share) return;
+  clearTimeout(share.timer);
+  shares.delete(id);
+  share.release();
 }
 
-// holdShare keeps the files under a fresh random id and returns the id. The caller checks that nothing is held: a share that is
-// still held is never replaced by a second one (decision 82).
+// holdShare keeps the files under a fresh random id and returns the id. At the cap, the oldest unclaimed share is dropped first.
 function holdShare(files, release) {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  const id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  const timer = setTimeout(dropShare, SHARE_LIMIT);
-  held = { id, files, timer, release };
+  while (shares.size >= SHARE_CAP) endShare(shares.keys().next().value);
+  const id = crypto.randomUUID();
+  const timer = setTimeout(() => endShare(id), UNCLAIMED_LIMIT);
+  shares.set(id, { files, timer, release });
   return id;
 }
 
@@ -178,9 +186,8 @@ function refusedShare() {
   return Response.redirect(new URL(SHARE_PAGE, self.location.origin).href, 303);
 }
 
-// receiveShare answers the share sheet's post with 303 to the share page, under the id of the files it holds. With no file, or
-// while a share is still held, it holds nothing and sends the person to the page without an id: a held share is never replaced.
-// Its wait ends when the files are handed over or dropped.
+// receiveShare answers the share sheet's post with 303 to the share page, under the id of the files it holds. With no file it holds
+// nothing and sends the person to the page without an id. Its wait ends when the files are handed over or expire.
 async function receiveShare(request, release) {
   let files = [];
   try {
@@ -189,7 +196,7 @@ async function receiveShare(request, release) {
   } catch {
     files = [];
   }
-  if (files.length === 0 || held !== null) {
+  if (files.length === 0) {
     release();
     return refusedShare();
   }
@@ -198,15 +205,16 @@ async function receiveShare(request, release) {
   return Response.redirect(page.href, 303);
 }
 
-// handOver gives the held files to the page that asked with their id, once. A wrong id gets nothing and keeps the files.
+// handOver gives the files of one share to the page that asked with its id, once. An unknown id gets nothing and keeps the others.
 function handOver(id, port) {
   if (!port) return;
-  if (!held || typeof id !== 'string' || held.id !== id) {
+  const share = typeof id === 'string' ? shares.get(id) : undefined;
+  if (!share) {
     port.postMessage({ files: [] });
     return;
   }
-  const files = held.files;
-  dropShare();
+  const files = share.files;
+  endShare(id);
   port.postMessage({ files });
 }
 
@@ -251,8 +259,8 @@ async function signIn() {
 
 // clearAll removes the app's caches, except the state, and writes the signed-out marker. The page asks for this at sign-out.
 async function clearAll() {
-  // A sign-out also forgets the files of a share that were not handed over (decision 82).
-  dropShare();
+  // A sign-out also forgets the files of every share that was not handed over (decision 82).
+  for (const id of [...shares.keys()]) endShare(id);
   const keys = await caches.keys();
   await Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== STATE).map((k) => caches.delete(k)));
   const state = await caches.open(STATE);
@@ -278,13 +286,13 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
     return;
   }
-  // The page takes the held files by id, over the port it sends, and drops them when it refuses or cancels (decision 82).
+  // The page takes one share's files by id, over the port it sends, and drops them when it refuses or cancels (decision 82).
   if (data.type === 'SHARE_TAKE') {
     handOver(data.id, event.ports && event.ports[0]);
     return;
   }
   if (data.type === 'SHARE_DROP') {
-    if (held && held.id === data.id) dropShare();
+    if (typeof data.id === 'string') endShare(data.id);
     return;
   }
   if (data.type !== 'CLEAR_CACHES' && data.type !== 'PRECACHE') return;
