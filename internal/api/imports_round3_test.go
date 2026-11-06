@@ -202,8 +202,17 @@ func TestImportPublishDoesNotFloodWebhooks(t *testing.T) {
 	}
 	seen := len(outboxOf(t, fx.s, fx.acc.ID))
 	fx.startOK(t, fx.archive(t, "many.zip", zipArchive(t, entries)), "")
-	if err := fx.runJob(t); err != nil {
-		t.Fatalf("import: %v", err)
+	// A run yields its turn after importYieldAfter; on a slow machine (the race detector) 1100 entries take longer than
+	// one turn, so the job is run again until it ends. The events are counted over all its turns.
+	for turn := 1; ; turn++ {
+		err := fx.runJob(t)
+		if errors.Is(err, jobs.ErrYield) && turn < 100 {
+			continue
+		}
+		if err != nil {
+			t.Fatalf("import, turn %d: %v", turn, err)
+		}
+		break
 	}
 	files := 0
 	for _, ev := range outboxOf(t, fx.s, fx.acc.ID)[seen:] {
