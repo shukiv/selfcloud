@@ -138,6 +138,13 @@ func (s *Server) handleCreateImport(w http.ResponseWriter, r *http.Request) erro
 		return apierr.New(apierr.InvalidRequest, "on_conflict must be fail, rename or replace")
 	}
 	ctx := r.Context()
+	// The archive is held for this request, as the upload routes hold it: a second request for the same archive waits for
+	// this one and answers locked (409), instead of racing it to the store (round 5, F14).
+	release, err := s.takeUploadSlot(w, in.Upload)
+	if err != nil {
+		return err
+	}
+	defer release()
 	// The archive's upload is read first, outside the write: it is a finished file, and its zip headers are read here.
 	up, err := s.store.Upload(ctx, p.AccountID, in.Upload)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && (up.CreatedBy != p.ID || up.Purpose != store.UploadPurposeImport)) {

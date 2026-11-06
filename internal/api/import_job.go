@@ -715,12 +715,27 @@ func (s *Server) importTargetRole(ctx context.Context, tx *store.Tx, im *store.I
 	return err
 }
 
-// checkReusedDirs checks the directory id, and each directory above it up to the target directory, at publish: each must
-// be a directory of the target folder and not trashed. The target directory itself is checked by the caller. seen holds
-// the directories already checked in this write (round 4, N5).
-func checkReusedDirs(ctx context.Context, tx *store.Tx, im *store.Import, id string, seen map[string]bool) error {
-	for id != "" && id != im.ParentID && !seen[id] {
-		n, err := tx.Node(ctx, im.AccountID, id)
+// checkReusedDirs checks that the directory id lies inside the target directory at publish. Each directory from id up to
+// the target must be a directory of the target folder and not trashed, and the walk up must reach the target: a directory
+// moved to the folder's root, or under a sibling of the target, is in the same folder but outside the target, and refused
+// (round 4, N5; round 5, the containment walk). reach holds, for each directory this write has walked, whether its walk
+// reached the target, so a directory is walked once.
+func checkReusedDirs(ctx context.Context, tx *store.Tx, im *store.Import, target, id string, reach map[string]bool) error {
+	var walked []string
+	reached := false
+	for cur := id; ; {
+		if cur == target {
+			reached = true
+			break
+		}
+		if r, known := reach[cur]; known {
+			reached = r
+			break
+		}
+		if cur == "" {
+			break // the walk ended at the folder's root without reaching the target
+		}
+		n, err := tx.Node(ctx, im.AccountID, cur)
 		if err != nil {
 			return err
 		}
@@ -728,8 +743,15 @@ func checkReusedDirs(ctx context.Context, tx *store.Tx, im *store.Import, id str
 			return apierr.New(apierr.Conflict, "a directory the import writes into moved or was removed since the import started").
 				With("reason", "target_moved")
 		}
-		seen[id] = true
-		id = n.ParentID
+		walked = append(walked, cur)
+		cur = n.ParentID
+	}
+	for _, w := range walked {
+		reach[w] = reached
+	}
+	if !reached {
+		return apierr.New(apierr.Conflict, "a directory the import writes into moved or was removed since the import started").
+			With("reason", "target_moved")
 	}
 	return nil
 }
@@ -769,13 +791,22 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 		now := store.Now()
 		// Every directory this import reused is checked, whether or not an entry of it is staged now: a move of the directory
 		// carries the staged entries under it along, so they are no longer tops (round 4, N5).
-		checked := map[string]bool{}
+		// The target is a node: the folder's root when the import names no directory (round 5).
+		target := im.ParentID
+		if target == "" {
+			root, err := tx.RootNode(ctx, im.AccountID, im.FolderID)
+			if err != nil {
+				return err
+			}
+			target = root.ID
+		}
+		reach := map[string]bool{}
 		reused, err := tx.ReusedDirNodes(ctx, im.ID)
 		if err != nil {
 			return err
 		}
 		for _, id := range reused {
-			if err := checkReusedDirs(ctx, tx, im, id, checked); err != nil {
+			if err := checkReusedDirs(ctx, tx, im, target, id, reach); err != nil {
 				return err
 			}
 		}
@@ -788,7 +819,7 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 			if err != nil {
 				return err
 			}
-			if err := checkReusedDirs(ctx, tx, im, parent.ID, checked); err != nil {
+			if err := checkReusedDirs(ctx, tx, im, target, parent.ID, reach); err != nil {
 				return err
 			}
 			plan := &transferPlan{folderID: im.FolderID, parent: parent, name: n.Name, key: n.NameKey}

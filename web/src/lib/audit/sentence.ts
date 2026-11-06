@@ -408,6 +408,19 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
       };
     case 'webhook.rewrap':
       return { key: d?.restored === true ? 'audit.webhook.rewrap.restored' : 'audit.webhook.rewrap', params: {} };
+    // Imports from an archive (decision 92). The row's counts say how it went; the sentence says that it ended.
+    case 'import.start':
+      return { key: 'audit.import.start', params: { actor } };
+    case 'import.finish':
+      return { key: 'audit.import.finish', params: { actor } };
+    case 'import.pause':
+      return { key: 'audit.import.pause', params: { actor } };
+    case 'import.resume':
+      return { key: 'audit.import.resume', params: { actor } };
+    case 'import.cancel':
+      return { key: 'audit.import.cancel', params: { actor } };
+    case 'imports.archive':
+      return { key: flag(d, 'enabled') === false ? 'audit.imports.archive.off' : 'audit.imports.archive.on', params: { actor } };
     default:
       return { key: 'audit.unlisted', params: { actor } };
   }
