@@ -214,7 +214,7 @@ func TestPoisonImportEndsItsCleanup(t *testing.T) {
 	imp := fx.startOK(t, fx.archive(t, "one.zip", zipArchive(t, [][2]string{{"a.txt", "1"}})), "")
 	_ = fx.runJob(t)
 	for i := 0; i < 6; i++ {
-		n, err := fx.s.store.RequeueAbandonedImports(context.Background())
+		n, err := fx.s.requeueImports(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}

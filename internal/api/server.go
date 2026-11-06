@@ -951,6 +951,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
 		ImportRetention:    time.Duration(s.cfg.Imports.JobRetentionDays) * 24 * time.Hour,
 		ImportPausedExpiry: time.Duration(s.cfg.Imports.PausedExpiryDays) * 24 * time.Hour,
+		ImportEnder:        s.endPoisonedImport,
 		UploadMaxLifetime:  s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
 		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(),
 		AuditRetention: time.Duration(s.cfg.Audit.RetentionDays) * 24 * time.Hour,

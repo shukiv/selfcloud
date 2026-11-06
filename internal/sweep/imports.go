@@ -18,7 +18,7 @@ const (
 // the job removes what the import staged and its archive (decision 92). A zero expiry keeps paused imports.
 func (w *Sweeper) expireImports(ctx context.Context, now time.Time, res *Result) error {
 	// An import that lost its job (a race with its end, or a store error in its run) is queued again (round 3, F10).
-	if n, err := w.st.RequeueAbandonedImports(ctx); err != nil {
+	if n, err := w.st.RequeueAbandonedImports(ctx, w.importEnder); err != nil {
 		return err
 	} else if n > 0 {
 		w.log.Info("abandoned imports queued again", "queued", n)

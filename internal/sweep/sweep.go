@@ -55,6 +55,9 @@ type Options struct {
 	// ImportPausedExpiry is imports.paused_expiry_days as a duration: an import paused for longer is cancelled, and what it
 	// staged and its archive are removed. Zero keeps paused imports.
 	ImportPausedExpiry time.Duration
+	// ImportEnder writes the end of an import the sweep fails as a poison one: its audit entry and its event (round 8, R7-3).
+	// Nil writes neither, as in tests of the store.
+	ImportEnder store.ImportEnder
 	// Derived is the cache of derived files (thumbnails). Nil means there are none to sweep, as in tests.
 	Derived *derived.Cache
 	// Zips holds the stored zip downloads (decision 35). Nil means there are none to sweep, as in tests.
@@ -103,6 +106,7 @@ type Sweeper struct {
 	importRetention time.Duration
 	// importPausedExpiry is how long an import may stay paused (imports.paused_expiry_days, decision 92).
 	importPausedExpiry time.Duration
+	importEnder        store.ImportEnder
 	auditPruned        time.Time
 	derived            *derived.Cache
 	zips               *derived.ZipFiles
@@ -135,6 +139,7 @@ func New(o Options) *Sweeper {
 		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, auditRetention: o.AuditRetention,
 		importRetention:    o.ImportRetention,
 		importPausedExpiry: o.ImportPausedExpiry,
+		importEnder:        o.ImportEnder,
 		derived:            o.Derived, zips: o.Zips, log: log,
 		textMax: o.TextMax, capAccount: o.CapAccount, capTotal: o.CapTotal}
 }

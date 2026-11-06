@@ -748,12 +748,15 @@ func checkReusedDirs(ctx context.Context, tx *store.Tx, im *store.Import, target
 			break // the walk ended at the folder's root without reaching the target
 		}
 		n, err := tx.Node(ctx, im.AccountID, cur)
+		if errors.Is(err, store.ErrNotFound) {
+			// A purged directory is not an internal error: the import's target moved away (round 8, R7-4).
+			return importTargetMoved()
+		}
 		if err != nil {
 			return err
 		}
 		if n.FolderID != im.FolderID || n.Kind != store.KindDir || n.TrashedAt != nil {
-			return apierr.New(apierr.Conflict, "a directory the import writes into moved or was removed since the import started").
-				With("reason", "target_moved")
+			return importTargetMoved()
 		}
 		walked = append(walked, cur)
 		cur = n.ParentID
@@ -762,10 +765,15 @@ func checkReusedDirs(ctx context.Context, tx *store.Tx, im *store.Import, target
 		reach[w] = reached
 	}
 	if !reached {
-		return apierr.New(apierr.Conflict, "a directory the import writes into moved or was removed since the import started").
-			With("reason", "target_moved")
+		return importTargetMoved()
 	}
 	return nil
+}
+
+// importTargetMoved is the refusal of a publish whose target, or a directory the import writes into, moved or was removed.
+func importTargetMoved() error {
+	return apierr.New(apierr.Conflict, "a directory the import writes into moved or was removed since the import started").
+		With("reason", "target_moved")
 }
 
 // placeStaged places one staged node under parent, in the caller's write. The directory it goes into must be reached from
@@ -964,6 +972,30 @@ func (s *Server) importFail(ctx context.Context, impID string, p *auth.Principal
 		}
 		return s.importEnd(ctx, tx, p, im, "failed", code, now)
 	})
+}
+
+// requeueImports queues the jobs of the imports that need one, and ends the poison ones (store RequeueAbandonedImports).
+func (s *Server) requeueImports(ctx context.Context) (int, error) {
+	return s.store.RequeueAbandonedImports(ctx, s.endPoisonedImport)
+}
+
+// endPoisonedImport writes the end of an import the store failed as poison: its audit entry and its import.failed (or
+// import.cancelled) event, in the write that cleans it up, as importFail writes them for any other failure. A poison
+// import failed after repeated job failures, so its code is internal (round 8, R7-3).
+func (s *Server) endPoisonedImport(ctx context.Context, tx *store.Tx, im *store.Import) error {
+	p, err := importPrincipal(im)
+	if err != nil {
+		return err
+	}
+	at := store.Now()
+	if im.FinishedAt != nil {
+		at = *im.FinishedAt
+	}
+	if im.State == store.ImportCancelled {
+		return s.importEnd(ctx, tx, p, im, "cancelled", "", at)
+	}
+	s.log.Warn("import failed", "import", im.ID, "error", "poison: its jobs failed repeatedly")
+	return s.importEnd(ctx, tx, p, im, "failed", string(apierr.Internal), at)
 }
 
 // importPauseNow parks a running import for the owner, with the reason. The job then ends; a resume queues it again.

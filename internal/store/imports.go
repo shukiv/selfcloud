@@ -265,11 +265,24 @@ func (tx *Tx) EndImportsAt(ctx context.Context, accountID, folderID, nodeID stri
 	return nil
 }
 
+// stagedFolderOfNode is the condition, on a nodes row, that its folder is a staging folder. Every statement that removes
+// staged nodes adds it, so a live node is not removed through a staging folder ID, even one that is wrong (round 8).
+const stagedFolderOfNode = "EXISTS (SELECT 1 FROM folders f WHERE f.account_id = nodes.account_id AND f.id = nodes.folder_id AND f.staged = 1)"
+
 // removeStaging removes a staging folder with its nodes and its row, in this transaction, and changes no usage. Staged
 // bytes are not in the account's usage until publish, so there is nothing to take off; DeleteFolder would take them off
 // and corrupt the count (round 7, B1). The caller releases the reservations first. The blobs of the removed nodes are no
 // longer referenced, and the orphan sweep removes their files. Only a staged folder is removed: a live one is left alone.
 func (tx *Tx) removeStaging(ctx context.Context, accountID, stagingFolder string) error {
+	// The staged check comes first: a live folder is left alone, search rows included (round 8, R7-1).
+	var staged int
+	if err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM folders WHERE account_id = ? AND id = ? AND staged = 1`,
+		accountID, stagingFolder).Scan(&staged); err != nil {
+		return err
+	}
+	if staged == 0 {
+		return nil
+	}
 	if err := tx.dropSearchFolder(ctx, accountID, stagingFolder); err != nil {
 		return err
 	}
@@ -288,7 +301,7 @@ const importRequeueLimit = 3
 // running one whose job died (a store error in the run), and a cancelled or failed one whose cleanup has not ended. A
 // pause, a resume or a cancel that raced a job's end leaves one of these. It queues at most one batch of 100 a call and
 // returns how many it queued (round 3, F10).
-func (s *Store) RequeueAbandonedImports(ctx context.Context) (int, error) {
+func (s *Store) RequeueAbandonedImports(ctx context.Context, end ImportEnder) (int, error) {
 	var n int
 	err := s.Write(ctx, func(tx *Tx) error {
 		// An import whose jobs have failed importRequeueLimit times is poison: it is failed with a code, and it is not
@@ -330,7 +343,7 @@ func (s *Store) RequeueAbandonedImports(ctx context.Context) (int, error) {
 			return err
 		}
 		for _, pid := range poisonIDs {
-			if err := tx.cleanPoisonImport(ctx, pid, now); err != nil {
+			if err := tx.cleanPoisonImport(ctx, pid, now, end); err != nil {
 				return err
 			}
 		}
@@ -376,10 +389,15 @@ func (s *Store) RequeueAbandonedImports(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// ImportEnder writes the end of an import that the store ends itself, in the caller's write: its audit entry and its
+// event. The API supplies it, since those are written the same way for every end (round 8, R7-3).
+type ImportEnder func(ctx context.Context, tx *Tx, im *Import) error
+
 // cleanPoisonImport ends a failed import the way its normal cleanup does, in the caller's write (round 7, B6): the archive
 // and entry reservations are released once, the staging goes with no usage change, the archive blob is unlinked from the
-// row so the orphan sweep finds it, the sources are dropped, and the row reads done.
-func (tx *Tx) cleanPoisonImport(ctx context.Context, importID string, now time.Time) error {
+// row so the orphan sweep finds it, the sources are dropped, and the row reads done. Its end is written through end, so
+// the owner sees the failure in the audit log and the webhooks as for any other failed import (round 8, R7-3).
+func (tx *Tx) cleanPoisonImport(ctx context.Context, importID string, now time.Time, end ImportEnder) error {
 	im, err := tx.Import(ctx, importID)
 	if err != nil {
 		return err
@@ -407,7 +425,13 @@ func (tx *Tx) cleanPoisonImport(ctx context.Context, importID string, now time.T
 	if im.FinishedAt == nil {
 		im.FinishedAt = &now
 	}
-	return tx.SaveImport(ctx, im, now)
+	if err := tx.SaveImport(ctx, im, now); err != nil {
+		return err
+	}
+	if end == nil {
+		return nil
+	}
+	return end(ctx, tx, im)
 }
 
 // ImportJobUnfinished reports whether a job of an import is queued or running. A resume or a cleanup queues a job only when
@@ -648,7 +672,7 @@ func (tx *Tx) StagedChildren(ctx context.Context, accountID, stagingFolder, pare
 // DropStagedDir removes the placeholder of a reused directory once its entries are merged into the live directory, in this
 // transaction. Its item keeps the live directory as its node, so the import's record names what it wrote into.
 func (tx *Tx) DropStagedDir(ctx context.Context, accountID, stagingFolder, importID, placeholderID, liveID string) error {
-	if _, err := tx.q.ExecContext(ctx, `DELETE FROM nodes WHERE account_id = ? AND folder_id = ? AND id = ?`,
+	if _, err := tx.q.ExecContext(ctx, `DELETE FROM nodes WHERE account_id = ? AND folder_id = ? AND id = ? AND `+stagedFolderOfNode,
 		accountID, stagingFolder, placeholderID); err != nil {
 		return err
 	}
@@ -721,7 +745,7 @@ func (tx *Tx) StagedCounts(ctx context.Context, accountID, stagingFolder string)
 // whether the folder has no nodes left (its root included).
 func (tx *Tx) CleanupStagedBatch(ctx context.Context, accountID, stagingFolder string, limit int) (blobs []string, done bool, err error) {
 	rows, err := tx.q.QueryContext(ctx, `SELECT id, blob_id FROM nodes WHERE account_id = ? AND folder_id = ?
-		AND parent_id IS NOT NULL ORDER BY id LIMIT ?`, accountID, stagingFolder, limit)
+		AND parent_id IS NOT NULL AND `+stagedFolderOfNode+` ORDER BY id LIMIT ?`, accountID, stagingFolder, limit)
 	if err != nil {
 		return nil, false, err
 	}
@@ -748,8 +772,8 @@ func (tx *Tx) CleanupStagedBatch(ctx context.Context, accountID, stagingFolder s
 		if err != nil {
 			return nil, false, err
 		}
-		if _, err := tx.q.ExecContext(ctx, `DELETE FROM nodes WHERE account_id = ? AND folder_id = ? AND id IN
-			(SELECT value FROM json_each(?))`, accountID, stagingFolder, string(b)); err != nil {
+		if _, err := tx.q.ExecContext(ctx, `DELETE FROM nodes WHERE account_id = ? AND folder_id = ? AND `+stagedFolderOfNode+
+			` AND id IN (SELECT value FROM json_each(?))`, accountID, stagingFolder, string(b)); err != nil {
 			return nil, false, err
 		}
 	}
@@ -767,7 +791,7 @@ func (tx *Tx) CleanupStagedBatch(ctx context.Context, accountID, stagingFolder s
 	}
 	var left int
 	if err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM nodes WHERE account_id = ? AND folder_id = ?
-		AND parent_id IS NOT NULL`, accountID, stagingFolder).Scan(&left); err != nil {
+		AND parent_id IS NOT NULL AND `+stagedFolderOfNode, accountID, stagingFolder).Scan(&left); err != nil {
 		return nil, false, err
 	}
 	return blobs, left == 0, nil
@@ -775,7 +799,7 @@ func (tx *Tx) CleanupStagedBatch(ctx context.Context, accountID, stagingFolder s
 
 // DropStaging removes the staging root and the staging folder, once their nodes are gone or moved.
 func (tx *Tx) DropStaging(ctx context.Context, accountID, stagingFolder, rootID string) error {
-	if _, err := tx.q.ExecContext(ctx, `DELETE FROM nodes WHERE account_id = ? AND folder_id = ? AND id = ?`,
+	if _, err := tx.q.ExecContext(ctx, `DELETE FROM nodes WHERE account_id = ? AND folder_id = ? AND id = ? AND `+stagedFolderOfNode,
 		accountID, stagingFolder, rootID); err != nil {
 		return err
 	}

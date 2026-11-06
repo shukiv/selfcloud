@@ -106,7 +106,7 @@ func TestImportResumeReportsOnlyTheCode(t *testing.T) {
 	}
 	assertJobCodeOnly(t, fx, imp.Job)
 	fx.s.importFault = nil
-	n, err := fx.s.store.RequeueAbandonedImports(context.Background())
+	n, err := fx.s.requeueImports(context.Background())
 	if err != nil || n != 1 {
 		t.Fatalf("the sweep queued %d jobs (%v), want 1", n, err)
 	}
@@ -260,7 +260,7 @@ func TestPoisonImportIsNotRequeuedForever(t *testing.T) {
 	_ = fx.runJob(t)
 	requeued := 0
 	for i := 0; i < 6; i++ {
-		n, err := fx.s.store.RequeueAbandonedImports(context.Background())
+		n, err := fx.s.requeueImports(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}

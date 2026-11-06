@@ -233,13 +233,13 @@ func TestAbandonedImportIsQueuedAgain(t *testing.T) {
 	if _, err := fx.s.store.ClaimJobOf(ctx, jobImport); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("a job is queued for the lost import: %v", err)
 	}
-	if n, err := fx.s.store.RequeueAbandonedImports(ctx); err != nil || n != 1 {
+	if n, err := fx.s.requeueImports(ctx); err != nil || n != 1 {
 		t.Fatalf("requeue: %d, %v; want one import queued again", n, err)
 	}
 	if err := fx.runJob(t); err != nil {
 		t.Fatalf("the requeued cleanup: %v", err)
 	}
-	if n, err := fx.s.store.RequeueAbandonedImports(ctx); err != nil || n != 0 {
+	if n, err := fx.s.requeueImports(ctx); err != nil || n != 0 {
 		t.Fatalf("after the cleanup: %d, %v; want nothing to queue", n, err)
 	}
 }
