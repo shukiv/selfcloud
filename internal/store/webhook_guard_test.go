@@ -228,7 +228,7 @@ var nodeWriteSites = map[string]nodeWriteSite{
 
 // webhookAuditCalls maps the names of helpers that take an audit action to the position of the action
 // argument.
-var webhookAuditCalls = map[string]int{"auditEntry": 2, "auditAs": 2, "addUser": 5}
+var webhookAuditCalls = map[string]int{"auditEntry": 2, "auditEntryFrom": 2, "auditAs": 2, "addUser": 5}
 
 // nodeWriterMethods are the store calls that change a node row, a version, a folder or an account, and so are
 // covered by a lock rule.
