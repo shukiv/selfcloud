@@ -286,12 +286,14 @@ func restoreHash(state []byte, offset int64) (hash.Hash, error) {
 
 // uploadDeadline is when an upload expires, given that it was just created, or just written, at now:
 // upload.expiry after now, but never upload.max_lifetime after its creation.
-// uploadDeadlineFor is the expiry of an upload as of now. An import archive that no import has claimed expires
-// imports.unclaimed_expiry_hours after its creation, whatever the uploads' own expiry says (round 3, F1).
+// uploadDeadlineFor is the expiry of an upload written at now. An import archive that no import has claimed expires
+// imports.unclaimed_expiry_hours after its last write, whatever the uploads' own expiry says (round 3, F1; round 4, N3).
 func (s *Server) uploadDeadlineFor(up *store.Upload, now time.Time) time.Time {
 	deadline := s.uploadDeadline(up.CreatedAt, now)
 	if up.Purpose == store.UploadPurposeImport {
-		if claim := up.CreatedAt.Add(time.Duration(s.cfg.Imports.UnclaimedExpiryHours) * time.Hour); claim.Before(deadline) {
+		// The window runs from the last write: now is the write that sets this deadline, so an archive that is still
+		// being written is not cut off after a day from its creation (round 4, N3).
+		if claim := now.Add(time.Duration(s.cfg.Imports.UnclaimedExpiryHours) * time.Hour); claim.Before(deadline) {
 			return claim
 		}
 	}

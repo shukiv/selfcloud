@@ -178,6 +178,10 @@ func (tx *Tx) PurgeNode(ctx context.Context, accountID, id string) (files, bytes
 	if err := tx.guardNode(ctx, accountID, id, ""); err != nil {
 		return 0, 0, err
 	}
+	// The imports aimed under the node end first, so their staging and their reservations go in this write (round 4, N1).
+	if err := tx.EndImportsAt(ctx, accountID, "", id); err != nil {
+		return 0, 0, err
+	}
 	folder, err := tx.NodeFolder(ctx, accountID, id)
 	if err != nil {
 		return 0, 0, err

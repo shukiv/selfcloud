@@ -16,6 +16,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -41,6 +42,8 @@ type Caps struct {
 	MaxRatio   int64 // uncompressed over compressed size, for one zip entry, and for a tar.gz as a whole
 	MaxFile    int64 // the largest file, as upload.max_file_size
 	MaxTotal   int64 // the uncompressed bytes of all the files
+	// MaxPathBytes is the bytes of all the entries' full paths. Zero is no cap; the settings never give zero (round 4, N2).
+	MaxPathBytes int64
 }
 
 // ratioFloor is the compressed size a ratio is measured against when a file packs to less than it, so a tiny file that
@@ -120,7 +123,7 @@ func Scan(r io.ReaderAt, size int64, caps Caps) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	s := &scanner{caps: caps, seen: map[string]bool{}, sum: Summary{Format: f}}
+	s := &scanner{caps: caps, sum: Summary{Format: f}}
 	switch f {
 	case Zip:
 		err = s.zip(r, size)
@@ -130,6 +133,9 @@ func Scan(r io.ReaderAt, size int64, caps Caps) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
+	if err := s.clashes(); err != nil {
+		return Summary{}, err
+	}
 	if f == TarGz && overRatio(s.sum.Bytes, size, caps.MaxRatio) {
 		return Summary{}, refuse(apierr.TooLarge, "the archive expands more than it may", "ratio")
 	}
@@ -137,12 +143,42 @@ func Scan(r io.ReaderAt, size int64, caps Caps) (Summary, error) {
 }
 
 type scanner struct {
-	caps Caps
-	seen map[string]bool // the clash keys of the entries so far, with "d" for a folder and "f" for a file
-	sum  Summary
+	caps      Caps
+	keys      []pathKey // one per entry: the path for the clash check, and whether it is a folder (round 4, N2)
+	pathBytes int64     // the bytes of the keys, held to caps.MaxPathBytes
+	sum       Summary
 }
 
-// add checks one entry against the caps and the names seen so far, and counts it.
+// pathKey is an entry's path as the clash check reads it: its segments joined by NUL, which no name holds, so that the
+// entries under a path sort right after it.
+type pathKey struct {
+	path string
+	dir  bool
+}
+
+// clashes refuses an archive in which one path is both a file and a folder, or is listed twice (round 3, F7). A folder is
+// a folder of the archive whether or not it has an entry of its own, so a file that is a folder's path refuses the archive
+// in either order. The keys are sorted, and the entries under a path follow it at once, so each path is compared with the
+// next one only: the scan keeps one key per entry, not one per folder above it (round 4, N2).
+func (s *scanner) clashes() error {
+	sort.Slice(s.keys, func(i, j int) bool { return s.keys[i].path < s.keys[j].path })
+	for i := 0; i+1 < len(s.keys); i++ {
+		a, b := s.keys[i], s.keys[i+1]
+		if a.path == b.path {
+			// A folder listed twice is harmless. A file listed twice, or a file and a folder with one path, is not.
+			if !(a.dir && b.dir) {
+				return refuse(apierr.InvalidPath, "the archive lists one path twice", "duplicate")
+			}
+			continue
+		}
+		if !a.dir && strings.HasPrefix(b.path, a.path+"\x00") {
+			return refuse(apierr.InvalidPath, "the archive lists one path twice", "duplicate")
+		}
+	}
+	return nil
+}
+
+// add checks one entry against the caps and counts it. Its path is kept for the clash check, within max_path_bytes.
 func (s *scanner) add(e Entry) error {
 	if s.sum.Entries+1 > s.caps.MaxEntries {
 		return refuse(apierr.TooLarge, "the archive holds more entries than it may", "entries")
@@ -150,24 +186,12 @@ func (s *scanner) add(e Entry) error {
 	if len(e.Names) > s.caps.MaxDepth {
 		return refuse(apierr.TooLarge, "an entry sits deeper than the archive may nest", "depth")
 	}
-	// Each folder above the entry is a folder of the archive, whether or not it has an entry of its own: a file of that
-	// path refuses the archive, in either order (round 3, F7).
-	parts := strings.Split(e.Key, "/")
-	for k := 1; k < len(parts); k++ {
-		p := strings.Join(parts[:k], "/")
-		if isDir, ok := s.seen[p]; !ok {
-			s.seen[p] = true
-		} else if !isDir {
-			return refuse(apierr.InvalidPath, "the archive lists one path twice", "duplicate")
-		}
+	// Zero is no cap; the settings never give zero.
+	if s.caps.MaxPathBytes > 0 && s.pathBytes+int64(len(e.Key)) > s.caps.MaxPathBytes {
+		return refuse(apierr.TooLarge, "the archive's paths hold more bytes than it may", "path_bytes")
 	}
-	if prev, ok := s.seen[e.Key]; ok {
-		// A folder listed twice is harmless. A file listed twice, or a file and a folder with one path, is not.
-		if !(prev && e.Dir) {
-			return refuse(apierr.InvalidPath, "the archive lists one path twice", "duplicate")
-		}
-	}
-	s.seen[e.Key] = e.Dir
+	s.pathBytes += int64(len(e.Key))
+	s.keys = append(s.keys, pathKey{path: strings.ReplaceAll(e.Key, "/", "\x00"), dir: e.Dir})
 	if !e.Dir {
 		if e.Size < 0 || e.Packed < 0 {
 			return refuse(apierr.TooLarge, "an entry declares a size no archive can hold", "size")

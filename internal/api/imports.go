@@ -464,7 +464,7 @@ func (s *Server) changeImport(w http.ResponseWriter, r *http.Request, action str
 				// The rights are gone since the import was asked for: it fails here, and its cleanup job removes what it staged.
 				refused = err
 				cur.State, cur.Phase, cur.PauseReason = store.ImportFailed, store.ImportPhaseCleanup, ""
-				cur.ErrorCode, cur.Failure = string(apierr.Forbidden), err.Error()
+				cur.ErrorCode, cur.Failure = string(apierr.Forbidden), string(apierr.Forbidden)
 				if err := tx.InsertAudit(r.Context(), s.auditEntry(r, cur.AccountID, "import.resume", cur.ID,
 					map[string]any{"job": cur.JobID, "state": cur.State}, cur.FolderID)); err != nil {
 					return err

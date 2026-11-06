@@ -211,6 +211,63 @@ func (tx *Tx) ReleaseArchiveReservation(ctx context.Context, im *Import) error {
 		Change: UsageChange{Reserved: -held}})
 }
 
+// EndImportsAt ends the unfinished imports whose target is inside a folder that is being deleted, or under a node that is
+// being purged (the node and its subtree). Each one ends as a cancelled import ends, in the caller's write: its archive
+// reservation and its entry's reservation are released once, and its staging folder goes with its nodes. Its row goes by
+// the cascade when its target goes, so no reservation is left on a folder or an account with no row to release it
+// (round 4, N1). folderID is "" for a purge and nodeID is "" for a folder delete.
+func (tx *Tx) EndImportsAt(ctx context.Context, accountID, folderID, nodeID string) error {
+	rows, err := tx.q.QueryContext(ctx, `SELECT id FROM import_jobs WHERE account_id = ? AND phase <> 'done'
+		AND (folder_id = ? OR parent_id IN (WITH RECURSIVE sub(nid) AS (
+			SELECT id FROM nodes WHERE account_id = ? AND id = ?
+			UNION ALL SELECT c.id FROM nodes c JOIN sub s ON c.parent_id = s.nid WHERE c.account_id = ?)
+			SELECT nid FROM sub))
+		ORDER BY id`, accountID, folderID, accountID, nodeID, accountID)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		im, err := tx.Import(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := tx.ReleaseArchiveReservation(ctx, im); err != nil {
+			return err
+		}
+		if im.ReservedBytes > 0 {
+			if err := tx.AdjustFolders(ctx, accountID, FolderChange{FolderID: im.StagingFolderID,
+				Change: UsageChange{Reserved: -im.ReservedBytes}}); err != nil {
+				return err
+			}
+			im.ReservedBytes = 0
+		}
+		if im.StagingFolderID != "" {
+			if err := tx.DeleteFolder(ctx, accountID, im.StagingFolderID); err != nil && !errors.Is(err, ErrNotFound) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// importRequeueLimit is the number of failed jobs of one import after which the sweep stops queuing it (round 4, N7).
+const importRequeueLimit = 3
+
 // RequeueAbandonedImports queues a job for each import that needs one and has none: a queued import whose job ended, a
 // running one whose job died (a store error in the run), and a cancelled or failed one whose cleanup has not ended. A
 // pause, a resume or a cancel that raced a job's end leaves one of these. It queues at most one batch of 100 a call and
@@ -218,11 +275,23 @@ func (tx *Tx) ReleaseArchiveReservation(ctx context.Context, im *Import) error {
 func (s *Store) RequeueAbandonedImports(ctx context.Context) (int, error) {
 	var n int
 	err := s.Write(ctx, func(tx *Tx) error {
+		// An import whose jobs have failed importRequeueLimit times is poison: it is failed with a code, and it is not
+		// queued again (round 4, N7). Its archive and staging stay until an operator looks at it.
+		now := Now()
+		if _, err := tx.q.ExecContext(ctx, `UPDATE import_jobs SET
+			state = CASE WHEN state IN ('queued', 'running') THEN 'failed' ELSE state END,
+			finished_at = CASE WHEN state IN ('queued', 'running') THEN ? ELSE finished_at END,
+			error_code = CASE WHEN error_code = '' THEN 'internal' ELSE error_code END, updated_at = ?
+			WHERE phase <> 'done' AND (SELECT COUNT(*) FROM jobs j WHERE j.kind = 'import' AND j.target = import_jobs.id
+				AND j.status = 'failed') >= ?`, millis(now), millis(now), importRequeueLimit); err != nil {
+			return err
+		}
 		rows, err := tx.q.QueryContext(ctx, `SELECT i.id, i.account_id FROM import_jobs i
 			WHERE (i.state IN ('queued', 'running') OR (i.state IN ('cancelled', 'failed') AND i.phase <> 'done'))
 			AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.kind = 'import' AND j.target = i.id
 				AND j.status IN ('queued', 'running'))
-			ORDER BY i.updated_at, i.id LIMIT 100`)
+			AND (SELECT COUNT(*) FROM jobs j WHERE j.kind = 'import' AND j.target = i.id AND j.status = 'failed') < ?
+			ORDER BY i.updated_at, i.id LIMIT 100`, importRequeueLimit)
 		if err != nil {
 			return err
 		}
@@ -242,7 +311,6 @@ func (s *Store) RequeueAbandonedImports(ctx context.Context) (int, error) {
 		if err := rows.Err(); err != nil {
 			return err
 		}
-		now := Now()
 		for _, l := range list {
 			job := &Job{ID: id.New("job"), AccountID: l.acc, Kind: "import", Target: l.id, Status: JobQueued,
 				CreatedAt: now, UpdatedAt: now}
@@ -421,6 +489,37 @@ func (tx *Tx) SetImportSwitch(ctx context.Context, accountID string, on bool) er
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO import_switches (account_id, archive) VALUES (?, ?)
 		ON CONFLICT (account_id) DO UPDATE SET archive = excluded.archive`, accountID, boolInt(on))
 	return err
+}
+
+// OtherUnfinishedBytes is the size the user's other unfinished imports still have to stage: the declared size of each one,
+// less the bytes it has already staged, which are in the account's usage. A paused or queued import holds this much of the
+// quota before it is staged, so a scan counts it (round 4, F6).
+func (tx *Tx) OtherUnfinishedBytes(ctx context.Context, accountID, userID, importID string) (int64, error) {
+	var n int64
+	err := tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN declared_bytes > bytes THEN declared_bytes - bytes ELSE 0 END), 0)
+		FROM import_jobs WHERE account_id = ? AND user_id = ? AND id <> ? AND phase <> 'done'
+		AND state IN ('queued', 'running', 'paused')`, accountID, userID, importID).Scan(&n)
+	return n, err
+}
+
+// ReusedDirNodes lists the directories an import reused from an earlier import of the same archive, as the nodes they name
+// (round 4, N5).
+func (tx *Tx) ReusedDirNodes(ctx context.Context, importID string) ([]string, error) {
+	rows, err := tx.q.QueryContext(ctx, `SELECT node_id FROM import_items WHERE import_id = ? AND kind = 'dir'
+		AND state = 'skipped' AND node_id <> '' ORDER BY seq`, importID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // StagedTopLevel returns the staged nodes whose parent is not staged: the staged roots of the import (children of its

@@ -415,6 +415,9 @@ func validateImports(i ImportsConfig, bad func(string, ...any)) {
 	if a.MaxTotalBytes <= 0 {
 		bad("imports.archive.max_total_bytes must be positive")
 	}
+	if a.MaxPathBytes <= 0 {
+		bad("imports.archive.max_path_bytes must be positive")
+	}
 }
 
 // validateSearch checks the search block.
@@ -571,6 +574,9 @@ type ArchiveImportConfig struct {
 	MaxRatio int `yaml:"max_ratio"`
 	// MaxTotalBytes is the most uncompressed bytes all the files of one archive may hold.
 	MaxTotalBytes ByteSize `yaml:"max_total_bytes"`
+	// MaxPathBytes is the most bytes the entries' full paths of one archive may hold, summed over the entries. It bounds the
+	// memory a scan keeps to find the names that clash (round 4, N2).
+	MaxPathBytes ByteSize `yaml:"max_path_bytes"`
 }
 
 // UploadConfig controls uploads.
@@ -741,7 +747,7 @@ func Defaults() *Config {
 		Imports: ImportsConfig{Enabled: true, MaxConcurrentJobs: 2, JobRetentionDays: 30,
 			MaxUnfinishedPerUser: 3, PausedExpiryDays: 14, MaxArchiveUploadsPerUser: 3, UnclaimedExpiryHours: 24,
 			Archive: ArchiveImportConfig{Enabled: true, MaxEntries: 50000, MaxDepth: 32, MaxRatio: 100,
-				MaxTotalBytes: 100 * GiB}},
+				MaxTotalBytes: 100 * GiB, MaxPathBytes: 64 * MiB}},
 		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
 		Trash:    TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
 		Audit:    AuditConfig{RetentionDays: 365},

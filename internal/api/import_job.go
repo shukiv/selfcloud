@@ -66,7 +66,7 @@ func importPrincipal(im *store.Import) (*auth.Principal, error) {
 func (s *Server) importCaps() imports.Caps {
 	a := s.cfg.Imports.Archive
 	return imports.Caps{MaxEntries: a.MaxEntries, MaxDepth: a.MaxDepth, MaxRatio: int64(a.MaxRatio),
-		MaxFile: int64(s.cfg.Upload.MaxFileSize), MaxTotal: int64(a.MaxTotalBytes)}
+		MaxFile: int64(s.cfg.Upload.MaxFileSize), MaxTotal: int64(a.MaxTotalBytes), MaxPathBytes: int64(a.MaxPathBytes)}
 }
 
 // importFaultAt is the fault point of a stage of an import, for the tests. Production never sets importFault.
@@ -99,7 +99,8 @@ func (s *Server) runImport(ctx context.Context, job *store.Job) error {
 	}
 	var failure error
 	if cur.State == store.ImportFailed {
-		failure = errors.New(cur.Failure)
+		// The stored failure is the code (round 4, F8); a record from before that carries text, so it is reported as the code too.
+		failure = importCodeError(cur.ErrorCode)
 	}
 	until := time.Now().Add(s.importYield)
 	for {
@@ -164,7 +165,42 @@ func (s *Server) importJobFailure(impID string, cause error) error {
 		code = string(ae.Code)
 	}
 	s.log.Warn("import failed", "import", impID, "error", cause)
-	return errors.New(code)
+	return importCodeError(code)
+}
+
+// importJobError is the error an import job reports: a failure code and nothing else. A job error that is not one of
+// these is replaced by runImportJob, so no raw error text reaches jobs.error (round 4, F8 and N6).
+type importJobError string
+
+func (e importJobError) Error() string { return string(e) }
+
+// importCodeError is the job error of a failure code; an empty code is internal.
+func importCodeError(code string) error {
+	if code == "" {
+		code = string(apierr.Internal)
+	}
+	return importJobError(code)
+}
+
+// runImportJob is the handler of an import job. A run's error reaches the job only as its code: a store error, a
+// panic or any other text is logged here and reported as internal. A shutdown and a yield pass through unchanged.
+func (s *Server) runImportJob(ctx context.Context, job *store.Job) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("import job panicked", "job", job.ID, "panic", r)
+			err = importCodeError("")
+		}
+	}()
+	err = s.runImport(ctx, job)
+	if err == nil || errors.Is(err, jobs.ErrYield) || ctx.Err() != nil {
+		return err
+	}
+	var code importJobError
+	if errors.As(err, &code) {
+		return err
+	}
+	s.log.Warn("import job failed", "job", job.ID, "error", err)
+	return importCodeError("")
 }
 
 // importClaim makes this run the one of the import: a queued import starts running under this job, a running one (left
@@ -274,6 +310,21 @@ func (s *Server) importScan(ctx context.Context, impID string, p *auth.Principal
 		if err := s.checkUsage(ctx, tx, p, im.AccountID, store.FolderChange{FolderID: im.FolderID,
 			Change: store.UsageChange{Bytes: sum.Bytes, Files: int64(sum.Files)}}); err != nil {
 			return err
+		}
+		// The user's other unfinished imports have not all been staged: what they still have to stage is held too, so
+		// several imports cannot each take the whole headroom (round 4, F6).
+		pending, err := tx.OtherUnfinishedBytes(ctx, im.AccountID, im.UserID, im.ID)
+		if err != nil {
+			return err
+		}
+		if pending > 0 {
+			acc, err := tx.Account(ctx, im.AccountID)
+			if err != nil {
+				return err
+			}
+			if err := s.checkQuota(p, im.AccountID, acc, store.UsageChange{Bytes: sum.Bytes + pending}); err != nil {
+				return err
+			}
 		}
 		im.ArchiveFormat = string(sum.Format)
 		im.Entries = int64(sum.Entries)
@@ -664,6 +715,25 @@ func (s *Server) importTargetRole(ctx context.Context, tx *store.Tx, im *store.I
 	return err
 }
 
+// checkReusedDirs checks the directory id, and each directory above it up to the target directory, at publish: each must
+// be a directory of the target folder and not trashed. The target directory itself is checked by the caller. seen holds
+// the directories already checked in this write (round 4, N5).
+func checkReusedDirs(ctx context.Context, tx *store.Tx, im *store.Import, id string, seen map[string]bool) error {
+	for id != "" && id != im.ParentID && !seen[id] {
+		n, err := tx.Node(ctx, im.AccountID, id)
+		if err != nil {
+			return err
+		}
+		if n.FolderID != im.FolderID || n.Kind != store.KindDir || n.TrashedAt != nil {
+			return apierr.New(apierr.Conflict, "a directory the import writes into moved or was removed since the import started").
+				With("reason", "target_moved")
+		}
+		seen[id] = true
+		id = n.ParentID
+	}
+	return nil
+}
+
 func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Principal) error {
 	if err := s.importFaultAt("publish"); err != nil {
 		return err
@@ -697,6 +767,18 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 			return err
 		}
 		now := store.Now()
+		// Every directory this import reused is checked, whether or not an entry of it is staged now: a move of the directory
+		// carries the staged entries under it along, so they are no longer tops (round 4, N5).
+		checked := map[string]bool{}
+		reused, err := tx.ReusedDirNodes(ctx, im.ID)
+		if err != nil {
+			return err
+		}
+		for _, id := range reused {
+			if err := checkReusedDirs(ctx, tx, im, id, checked); err != nil {
+				return err
+			}
+		}
 		for _, n := range tops {
 			parentID := n.ParentID
 			if parentID == im.StagingRootID {
@@ -704,6 +786,9 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 			}
 			parent, err := tx.Node(ctx, im.AccountID, parentID)
 			if err != nil {
+				return err
+			}
+			if err := checkReusedDirs(ctx, tx, im, parent.ID, checked); err != nil {
 				return err
 			}
 			plan := &transferPlan{folderID: im.FolderID, parent: parent, name: n.Name, key: n.NameKey}
@@ -793,6 +878,9 @@ func (s *Server) importFail(ctx context.Context, impID string, p *auth.Principal
 	if errors.As(cause, &ae) {
 		code = string(ae.Code)
 	}
+	// The record and the job carry the code only. The cause's text can name a server path or a store error, so it goes to
+	// the server log (round 4, F8).
+	s.log.Warn("import failed", "import", impID, "error", cause)
 	return s.store.Write(ctx, func(tx *store.Tx) error {
 		im, err := tx.Import(ctx, impID)
 		if err != nil {
@@ -802,7 +890,7 @@ func (s *Server) importFail(ctx context.Context, impID string, p *auth.Principal
 			return nil
 		}
 		now := store.Now()
-		im.State, im.Phase, im.ErrorCode, im.Failure = store.ImportFailed, store.ImportPhaseCleanup, code, cause.Error()
+		im.State, im.Phase, im.ErrorCode, im.Failure = store.ImportFailed, store.ImportPhaseCleanup, code, code
 		im.FinishedAt = &now
 		if err := tx.SaveImport(ctx, im, now); err != nil {
 			return err

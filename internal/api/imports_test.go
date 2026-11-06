@@ -94,7 +94,7 @@ func (fx *importFixture) runJob(t *testing.T) error {
 	if err != nil {
 		t.Fatalf("no import job is queued: %v", err)
 	}
-	runErr := fx.s.runImport(ctx, job)
+	runErr := fx.s.runImportJob(ctx, job)
 	if errors.Is(runErr, jobs.ErrYield) {
 		if err := fx.s.store.YieldJob(ctx, job.ID); err != nil {
 			t.Fatal(err)

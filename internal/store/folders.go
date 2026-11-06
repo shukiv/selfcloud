@@ -343,6 +343,10 @@ func (tx *Tx) DeleteFolder(ctx context.Context, accountID, folderID string) erro
 	if err := tx.guardFolder(ctx, accountID, folderID); err != nil {
 		return err
 	}
+	// The imports aimed into the folder end first, so their staging and their reservations go in this write (round 4, N1).
+	if err := tx.EndImportsAt(ctx, accountID, folderID, ""); err != nil {
+		return err
+	}
 	var bytes, files, reserved int64
 	err := tx.q.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0), COUNT(*) FROM nodes
 		WHERE folder_id = ? AND account_id = ? AND kind = 'file'`, folderID, accountID).Scan(&bytes, &files)

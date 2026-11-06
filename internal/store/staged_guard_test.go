@@ -82,6 +82,7 @@ var unfilteredFolderReads = map[string]struct {
 	reason string
 }{
 	"audit.go":         {1, "the owner of a personal folder named by a node's folder ID: the node is reached through an ID the caller holds"},
+	"imports.go":       {1, "the owner of the personal folder a publish moves a staged tree into: the folder is the import's target, which is never a staging folder (round 4 classification of a read from round 1)"},
 	"folders.go":       {2, "RootReachedFolders joins the folders of the nodes a permission names: a staging root has no permission, so the join finds none; and the root rank of a folder ID the caller gave"},
 	"nodes.go":         {2, "the personal folder owner of a folder ID the node insert or move names: that folder is the destination, which a request names by ID"},
 	"permissions.go":   {6, "permissions and their nodes: a permission names a node a caller holds, and a staging root or node has no permission"},

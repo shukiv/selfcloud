@@ -486,7 +486,7 @@ func New(opts Options) (*Server, error) {
 	s.jobs.Handle(jobCopyNode, s.runCopyJob)
 	s.jobs.Handle(jobZip, s.runZipJob)
 	s.jobs.Handle(store.SearchJobKind, s.runSearchIndex)
-	s.jobs.Handle(jobImport, s.runImport)
+	s.jobs.Handle(jobImport, s.runImportJob)
 	s.jobs.Pool(jobImport, cfg.Imports.MaxConcurrentJobs)
 	s.copySyncNodes = syncCopyNodes
 	s.copyYield = copyYieldAfter
