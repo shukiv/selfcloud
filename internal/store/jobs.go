@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -72,14 +73,42 @@ func (tx *Tx) InsertJob(ctx context.Context, j *Job) error {
 }
 
 // ClaimJob marks the oldest queued job running and returns it, or ErrNotFound.
-func (s *Store) ClaimJob(ctx context.Context) (*Job, error) {
+func (s *Store) ClaimJob(ctx context.Context) (*Job, error) { return s.claimJob(ctx, "", nil) }
+
+// ClaimJobOf marks the oldest queued job of kind running and returns it, or ErrNotFound. A worker pool of one kind
+// (jobs.Runner.Pool) claims its jobs this way.
+func (s *Store) ClaimJobOf(ctx context.Context, kind string) (*Job, error) {
+	return s.claimJob(ctx, kind, nil)
+}
+
+// ClaimJobExcept is ClaimJob for the jobs of no kind in except: the queue of the shared worker, which leaves the kinds
+// that a pool of its own runs.
+func (s *Store) ClaimJobExcept(ctx context.Context, except []string) (*Job, error) {
+	return s.claimJob(ctx, "", except)
+}
+
+func (s *Store) claimJob(ctx context.Context, kind string, except []string) (*Job, error) {
 	var j *Job
 	err := s.Write(ctx, func(tx *Tx) error {
 		var err error
 		now := millis(Now())
-		j, err = scanJob(tx.q.QueryRowContext(ctx, `UPDATE jobs SET status = 'running', updated_at = ?
-			WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND created_at <= ? ORDER BY created_at, id LIMIT 1)
-			RETURNING `+jobCols, now, now))
+		query := `UPDATE jobs SET status = 'running', updated_at = ?
+			WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND created_at <= ?`
+		args := []any{now, now}
+		if kind != "" {
+			query += ` AND kind = ?`
+			args = append(args, kind)
+		}
+		if len(except) > 0 {
+			b, err := json.Marshal(except)
+			if err != nil {
+				return err
+			}
+			query += ` AND kind NOT IN (SELECT value FROM json_each(?))`
+			args = append(args, string(b))
+		}
+		query += ` ORDER BY created_at, id LIMIT 1) RETURNING ` + jobCols
+		j, err = scanJob(tx.q.QueryRowContext(ctx, query, args...))
 		return err
 	})
 	return j, err

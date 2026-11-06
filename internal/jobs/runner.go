@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package jobs runs background work queued in the store, one job at a time.
+// Package jobs runs background work queued in the store.
 //
-// A job is queued in the same transaction as the change that needs it, so it is never lost.
-// A job left running when the process stops is run again on the next start, so every handler
-// must be safe to repeat.
+// A job is queued in the same transaction as the change that needs it, so it is never lost. A job left running when the
+// process stops is run again on the next start, so every handler must be safe to repeat.
+//
+// Most jobs run one at a time on the shared worker. A kind that must run beside the others (imports, decision 92) gets a
+// pool of its own (Pool): its workers claim only that kind, so a long job of that kind does not hold the shared queue.
 package jobs
 
 import (
@@ -12,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/store"
@@ -43,12 +46,20 @@ func RetryAfter(d time.Duration, err error) error {
 	return &retryError{after: d, err: err}
 }
 
+// pool is a set of workers that run the jobs of one kind. Each worker has its own wake channel, so a wake reaches a
+// worker that is waiting, not only the first one.
+type pool struct {
+	kind  string
+	wakes []chan struct{}
+}
+
 // Runner runs queued jobs.
 type Runner struct {
 	store    *store.Store
 	log      *slog.Logger
 	handlers map[string]Handler
 	wake     chan struct{}
+	pools    []*pool
 }
 
 // New returns a Runner with no handlers.
@@ -59,10 +70,28 @@ func New(st *store.Store, log *slog.Logger) *Runner {
 // Handle registers the handler for a kind of job. Call it before Run.
 func (r *Runner) Handle(kind string, h Handler) { r.handlers[kind] = h }
 
-// Wake tells the runner a job was queued.
+// Pool gives the jobs of kind a pool of workers of their own, apart from the shared worker. Call it before Run.
+func (r *Runner) Pool(kind string, workers int) {
+	p := &pool{kind: kind}
+	for range max(workers, 1) {
+		p.wakes = append(p.wakes, make(chan struct{}, 1))
+	}
+	r.pools = append(r.pools, p)
+}
+
+// Wake tells the runner a job was queued. It wakes the shared worker and every pool's workers.
 func (r *Runner) Wake() {
+	signal(r.wake)
+	for _, p := range r.pools {
+		for _, w := range p.wakes {
+			signal(w)
+		}
+	}
+}
+
+func signal(ch chan struct{}) {
 	select {
-	case r.wake <- struct{}{}:
+	case ch <- struct{}{}:
 	default:
 	}
 }
@@ -74,25 +103,55 @@ func (r *Runner) Run(ctx context.Context) {
 	} else if n > 0 {
 		r.log.Info("requeued interrupted jobs", "count", n)
 	}
+	var wg sync.WaitGroup
+	for _, p := range r.pools {
+		for _, w := range p.wakes {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r.serve(ctx, w, func(ctx context.Context) (*store.Job, error) { return r.store.ClaimJobOf(ctx, p.kind) })
+			}()
+		}
+	}
+	kinds := make([]string, 0, len(r.pools))
+	for _, p := range r.pools {
+		kinds = append(kinds, p.kind)
+	}
+	r.serve(ctx, r.wake, func(ctx context.Context) (*store.Job, error) { return r.store.ClaimJobExcept(ctx, kinds) })
+	wg.Wait()
+}
+
+// serve runs the jobs claim returns, until ctx is cancelled. It drains the queue, then waits for a wake or the poll.
+func (r *Runner) serve(ctx context.Context, wake <-chan struct{}, claim func(context.Context) (*store.Job, error)) {
 	t := time.NewTicker(pollInterval)
 	defer t.Stop()
 	for {
-		if err := r.RunPending(ctx); err != nil && ctx.Err() == nil {
+		if err := r.drain(ctx, claim); err != nil && ctx.Err() == nil {
 			r.log.Error("job queue", "error", err)
 		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-r.wake:
+		case <-wake:
 		case <-t.C:
 		}
 	}
 }
 
-// RunPending runs queued jobs until the queue is empty or ctx is cancelled.
+// RunPending runs queued jobs of the shared worker until its queue is empty or ctx is cancelled. Jobs of a pool are
+// left to the pool.
 func (r *Runner) RunPending(ctx context.Context) error {
+	kinds := make([]string, 0, len(r.pools))
+	for _, p := range r.pools {
+		kinds = append(kinds, p.kind)
+	}
+	return r.drain(ctx, func(ctx context.Context) (*store.Job, error) { return r.store.ClaimJobExcept(ctx, kinds) })
+}
+
+// drain runs the jobs claim returns until it reports the queue empty, or ctx is cancelled.
+func (r *Runner) drain(ctx context.Context, claim func(context.Context) (*store.Job, error)) error {
 	for ctx.Err() == nil {
-		job, err := r.store.ClaimJob(ctx)
+		job, err := claim(ctx)
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
 		}
