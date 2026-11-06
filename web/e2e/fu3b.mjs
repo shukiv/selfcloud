@@ -148,11 +148,19 @@ export async function fu3bChecks(h, { base, accountKey, teamA, dir, browserBinar
     // Item 7, in the same browser: a New folder dialog the sidebar opened does not survive Back to another address.
     await navigateTo(page, '/recent');
     await page.waitFor(`location.pathname === '/recent'`, 15000);
+    // The address bar moves before the router's change is drawn (React Router runs it as a transition), so the shell can still
+    // be showing the folder. A click then opens the dialog at the folder, and the change, drawn after it, closes it. Wait for
+    // the Recent page itself: the files page gone and the page's own title.
+    await page.waitFor(`!document.querySelector('.files-list') && document.title.startsWith('Recent ·')`, 15000);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])')`, 15000);
     await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click(), true`);
     await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].some((i) => i.textContent.trim() === 'New folder')`, 10000);
     await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].find((i) => i.textContent.trim() === 'New folder').click(), true`);
-    await page.waitFor(`!!document.getElementById('newfolder-name')`, 10000);
+    // On a timeout, say what the page showed: the open menus, the dialogs, the messages and the console errors so far.
+    await page.waitFor(`!!document.getElementById('newfolder-name')`, 10000).catch(async (err) => {
+      const seen = await page.evaluate(`JSON.stringify({ path: location.pathname, menus: [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].map((i) => i.textContent.trim()), dialogs: [...document.querySelectorAll('[role="dialog"], .ant-modal')].map((d) => (d.getAttribute('aria-label') || d.textContent || '').trim().slice(0, 80)), messages: [...document.querySelectorAll('.ant-message-notice, .ant-notification-notice, [role="alert"]')].map((m) => m.textContent.trim().slice(0, 120)), active: document.activeElement?.tagName + '#' + (document.activeElement?.id || ''), title: document.title })`).catch((e) => `unreadable: ${e.message}`);
+      throw new Error(`${err.message.slice(0, 120)}; ${seen}; console: ${page.errors.slice(-5).join(' | ') || 'none'}`);
+    });
     await page.evaluate(`history.back(), true`);
     await page.waitFor(`location.pathname.startsWith('/files/${teamA}')`, 15000);
     await page.waitFor(`!document.getElementById('newfolder-name')`, 10000);
