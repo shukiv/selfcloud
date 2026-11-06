@@ -3263,12 +3263,17 @@ paths:
       description: |
         Makes a blank Word (`docx`), Excel (`xlsx`) or PowerPoint (`pptx`) file in the folder or directory
         `{nod}` (decision 91). `{nod}` must be a folder's root node or a directory. The caller needs
-        contributor on it, and the rights, quota, disk check, audit row (`node.create`, with `via: document`)
-        and webhooks are those of a file upload. The default name is "Untitled document", "Untitled
+        editor (or manager) on it, not contributor: the new file opens in the office editor and is saved
+        there. The quota, disk check, audit row (`node.create`, with `via: document`) and webhooks are those
+        of a file upload. While an installation admin is signed in as a user (impersonation), the route is
+        refused with 403 and reason `impersonation`, as the other writes that need the person's own session. The default name is "Untitled document", "Untitled
         spreadsheet" or "Untitled presentation" in the caller's stored language (English for an account key),
         with the type's extension. A given `name` gets the extension when it lacks it. A name taken in the
         folder gets the first free "name (n).ext". The file is a valid OOXML package, opened in the editor
         with `/api/v1/nodes/{nod}/office`. While office editing is off, the route answers `not_found`.
+        A 400 is a body that is not JSON of this shape (an unknown field included), a `type` other than
+        docx, xlsx or pptx, a name that is not a file name (a slash, `.`, `..`, empty or too long), and
+        `{nod}` being a file rather than a folder or a directory.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -3291,7 +3296,6 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
-        "413": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "507": { $ref: "#/components/responses/Error" }
   /wopi/files/{nod}:
