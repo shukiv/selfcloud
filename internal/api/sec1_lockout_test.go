@@ -205,13 +205,44 @@ func TestDeviceCookieThatFailsItsOwnBudgetStopsBeingTrusted(t *testing.T) {
 
 	dev := deviceCookieFrom(t, loginWith(t, s, "10.10.0.1:4000", "ann@example.com", testPassword))
 	spendCap(t, s, "ann@example.com", 60)
-
-	// Wrong passwords from the device, with the cap spent: each gets the cap's answer, the confirmation, as the same guesses
-	// do when another user holds the email (sec3 round 2, decision 90). Each still spends the device's own budget.
-	for i := 0; i < 10; i++ {
-		wantConfirmAnswer(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", "wrong password here", dev))
+	nonce := cookieNonce(t, dev)
+	// tokens is the device budget left for the cookie. Before the first guess there is no bucket yet, and the budget is whole:
+	// the limiter's burst, which is the budget itself.
+	tokens := func() float64 {
+		b := s.limits["login.device"].buckets[nonce]
+		if b == nil {
+			return float64(s.limits["login.device"].burst)
+		}
+		return b.lim.TokensAt(s.limitClock())
 	}
-	// The device has spent its budget, so the cap applies, and the right password is refused.
+	// guess sends a wrong password from the cookie's browser, with the cap spent, and returns how many tokens of the device
+	// budget it took. The answer is the cap's, the confirmation, trusted or not: only the budget shows which it was.
+	guess := func() float64 {
+		before := tokens()
+		wantConfirmAnswer(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", "wrong password here", dev))
+		return before - tokens()
+	}
+	// The cookie is trusted for exactly ten failures: each of the first nine takes one token.
+	for i := 1; i <= 9; i++ {
+		if took := guess(); took < 0.5 || took > 1.5 {
+			t.Fatalf("wrong guess %d took %.2f tokens of the device budget, want 1: the cookie is not trusted", i, took)
+		}
+	}
+	// Nine failures leave one token. D's right password still signs in, and its device hold is given back.
+	before := tokens()
+	wantStatus(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", testPassword, dev), 200)
+	if diff := tokens() - before; diff > 0.5 || diff < -0.5 {
+		t.Errorf("the right password changed the budget by %.2f tokens, want 0: a match gives its hold back", diff)
+	}
+	// The tenth failure is still trusted, and takes the last token.
+	if took := guess(); took < 0.5 || took > 1.5 {
+		t.Fatalf("the tenth wrong guess took %.2f tokens of the device budget, want 1: the budget is smaller than ten", took)
+	}
+	// After the tenth the budget is spent: an eleventh failure takes nothing, so the cookie is no longer a device hold, and the
+	// right password is refused.
+	if took := guess(); took > 0.5 {
+		t.Errorf("the eleventh wrong guess took %.2f tokens, want 0: the cookie is still trusted past its budget", took)
+	}
 	wantConfirmAnswer(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", testPassword, dev))
 }
 
