@@ -17,6 +17,7 @@ const writable: NewPlace = {
   canUpload: true,
   canUploadFolder: true,
   readOnly: false,
+  canEdit: true,
   nodeID: "nod_root",
 };
 
@@ -87,6 +88,7 @@ describe("the place a New document goes in must be the page's own (race, round 2
     canUpload: true,
     canUploadFolder: true,
     readOnly: false,
+    canEdit: true,
     nodeID: dirID ?? "nod_roottttt",
   });
 
@@ -123,3 +125,41 @@ describe("the place a New document goes in must be the page's own (race, round 2
     expect(placeForRoute(null, "/files/fld_tttttttt")).toBeNull();
   });
 });
+
+describe("the New menu offers documents to an editor or a manager only (decision 91, round 2)", () => {
+  const hereWith = (role: string, dirRole: string | null) =>
+    ({
+      folder: "fld_tttttttt",
+      folderName: null,
+      folderRole: role,
+      dir: dirRole === null ? null : { id: "nod_dddddddd", name: "d", kind: "dir" },
+      dirRole: dirRole ?? role,
+      trail: [],
+      rootReachable: true,
+      reach: [],
+      spaceNoDownload: false,
+      path: "/d",
+      rootNodeID: "nod_rootttttt",
+    }) as unknown as Parameters<typeof placeOfHere>[0];
+
+  it.each([
+    ["viewer", true, false],
+    ["commenter", true, false],
+    ["contributor", true, false],
+    ["editor", true, true],
+    ["manager", true, true],
+  ])("a %s of the folder gets documents: %s", (role, canUpload, want) => {
+    const p = placeOfHere(hereWith(role, null), canUpload, canUpload);
+    expect(documentKinds(p, true).length > 0).toBe(want);
+  });
+
+  it("the directory shown decides: an editor of the folder who is only a contributor of the directory gets none", () => {
+    expect(documentKinds(placeOfHere(hereWith("editor", "contributor"), true, true), true)).toEqual([]);
+    expect(documentKinds(placeOfHere(hereWith("contributor", "manager"), true, true), true)).toEqual(["docx", "xlsx", "pptx"]);
+  });
+
+  it("a place that is not an editor's offers none, whatever else it allows", () => {
+    expect(documentKinds({ ...writable, canEdit: false }, true)).toEqual([]);
+  });
+});
+

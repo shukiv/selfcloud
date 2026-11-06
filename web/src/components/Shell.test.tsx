@@ -555,7 +555,7 @@ describe("the sidebar's New (decision 66)", () => {
     mocks.mkdir.mockClear();
   });
 
-  const readOnlyFolder: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true };
+  const readOnlyFolder: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
 
   // Item 7 (fu3b, decision 77): a dialog belongs to the address it was opened at. The sidebar's New folder dialog closes when Back
   // (or any change of address) moves the page, as the files page's own dialogs already do.

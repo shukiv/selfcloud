@@ -42,12 +42,12 @@ describe('which entries the place takes (the toolbar rules)', () => {
   });
 
   it('a directory with no path takes files only: no folder can be made or uploaded there', () => {
-    const p: NewPlace = { where: { folder: 'fld_t', dirID: 'nod_d', path: null }, canFolder: false, canUpload: true, canUploadFolder: false, readOnly: false };
+    const p: NewPlace = { where: { folder: 'fld_t', dirID: 'nod_d', path: null }, canFolder: false, canUpload: true, canUploadFolder: false, readOnly: false, canEdit: true };
     expect(keys(p)).toEqual(['upload:on']);
   });
 
   it('a read-only folder shows every entry disabled, so the reason can show with them, and sends nothing elsewhere', () => {
-    const p: NewPlace = { where: { folder: 'fld_t', dirID: null, path: '/' }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true };
+    const p: NewPlace = { where: { folder: 'fld_t', dirID: null, path: '/' }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
     expect(keys(p)).toEqual(['newFolder:off', 'upload:off', 'uploadFolder:off']);
   });
 });

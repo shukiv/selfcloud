@@ -108,7 +108,7 @@ func (s *Server) handleCreateDocument(w http.ResponseWriter, r *http.Request) er
 	}
 	ctx := r.Context()
 	p := principalOf(r)
-	dir, err := s.nodeOf(r, r.PathValue("nod"), store.RoleContributor)
+	dir, err := s.nodeOf(r, r.PathValue("nod"), store.RoleEditor)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func (s *Server) handleCreateDocument(w http.ResponseWriter, r *http.Request) er
 	var out *store.Node
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
-		parent, err := requireNodeRole(ctx, tx, p, dir.ID, store.RoleContributor)
+		parent, err := requireNodeRole(ctx, tx, p, dir.ID, store.RoleEditor)
 		if err != nil {
 			return err
 		}

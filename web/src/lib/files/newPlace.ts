@@ -6,6 +6,7 @@
 import { userWritable } from '../store';
 import type { Here } from './location';
 import { parseFilesPath } from './route';
+import { atLeast } from './roles';
 import { uploadTargetWhere, type DroppedFile, type UploadWhere } from './ops';
 import { manager } from './uploads';
 
@@ -17,6 +18,9 @@ export interface NewPlace {
   canUpload: boolean;
   canUploadFolder: boolean;
   readOnly: boolean;
+  // canEdit says the person edits where the file goes (an editor or a manager there): only then the New menu offers
+  // documents (decision 91). It is the role on the directory shown, or on the folder at its root.
+  canEdit: boolean;
   // nodeID is the directory a new document goes in: the directory shown, or the folder's root node (decision 91). Null when
   // the place has none, such as My files off the files pages.
   nodeID?: string | null;
@@ -29,7 +33,7 @@ export const DOC_KINDS: DocKind[] = ['docx', 'xlsx', 'pptx'];
 // documentKinds is the document kinds the New menu offers in a place: only while office editing is on (officeOn), and only in a
 // place that takes new files (decision 91). A read-only place and a place with no node to hold the file offer none.
 export function documentKinds(p: NewPlace | null, officeOn: boolean): DocKind[] {
-  if (!officeOn || p === null || p.readOnly || !p.canUpload || !p.nodeID) return [];
+  if (!officeOn || p === null || p.readOnly || !p.canUpload || !p.canEdit || !p.nodeID) return [];
   return DOC_KINDS;
 }
 
@@ -63,7 +67,7 @@ export const newPlace = userWritable<NewPlace | null>(null);
 
 // myFilesPlace is the person's own My files root: everything can be added there.
 export function myFilesPlace(personalID: string): NewPlace {
-  return { where: { folder: personalID, dirID: null, path: '/' }, canFolder: true, canUpload: true, canUploadFolder: true, readOnly: false, nodeID: null };
+  return { where: { folder: personalID, dirID: null, path: '/' }, canFolder: true, canUpload: true, canUploadFolder: true, readOnly: false, canEdit: true, nodeID: null };
 }
 
 // placeOfHere is the place the files page shows, with what the caller may do in it (the page's own rules).
@@ -74,6 +78,7 @@ export function placeOfHere(here: Here, canUpload: boolean, canUploadFolder: boo
     canUpload,
     canUploadFolder,
     readOnly: !canUpload,
+    canEdit: atLeast(here.dir ? here.dirRole : here.folderRole, 'editor'),
     nodeID: here.dir?.id ?? here.rootNodeID ?? null,
   };
 }

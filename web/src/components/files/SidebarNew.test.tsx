@@ -7,7 +7,7 @@ import { myFilesPlace, placeOfHere, type DocKind, type NewPlace } from "../../li
 import { SIDEBAR } from "../../theme/tokens";
 import SidebarNew from "./SidebarNew";
 
-const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true };
+const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
 
 function renderNew(place: NewPlace | null, collapsed = false, coarse = false, documents: DocKind[] = []) {
   const onPick = vi.fn();

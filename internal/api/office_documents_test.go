@@ -179,7 +179,7 @@ func TestNewDocumentTakesTheNextFreeName(t *testing.T) {
 func TestNewDocumentDefaultNameFollowsTheUsersLanguage(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
-	fx.grant(t, fx.fld.RootNodeID, fx.ann.ID, "contributor")
+	fx.grant(t, fx.fld.RootNodeID, fx.ann.ID, "editor")
 	wantStatus(t, callSession(t, fx.s, fx.annSess, "PATCH", "/api/v1/me", map[string]any{"locale": "he"}), 200)
 	got := nodeOf(t, newDocumentAs(t, fx.s, fx.annSess, fx.fld.RootNodeID, map[string]any{"type": "docx"}))
 	if got.Name != "מסמך ללא שם.docx" {
@@ -215,17 +215,29 @@ func TestNewDocumentInASubfolderIsAuditedLikeAnUpload(t *testing.T) {
 }
 
 // A person who may not add files to the folder is refused, and nothing is made.
-func TestNewDocumentNeedsContributorOnTheFolder(t *testing.T) {
+// A new document is made by an editor of the folder or a manager, as a file is edited: a contributor, who may upload but not
+// edit (decision 91), is refused, as a viewer and a commenter are. A person with no grant on the folder is not told it exists.
+func TestNewDocumentNeedsEditorOnTheFolder(t *testing.T) {
 	t.Parallel()
+	for _, c := range []struct {
+		role string
+		want int
+	}{
+		{"viewer", 403},
+		{"commenter", 403},
+		{"contributor", 403},
+		{"editor", 201},
+		{"manager", 201},
+	} {
+		t.Run(c.role, func(t *testing.T) {
+			fx := newOfficeFixture(t)
+			fx.grant(t, fx.fld.RootNodeID, fx.ann.ID, c.role)
+			wantStatus(t, newDocumentAs(t, fx.s, fx.annSess, fx.fld.RootNodeID, map[string]any{"type": "docx"}), c.want)
+		})
+	}
 	fx := newOfficeFixture(t)
-	fx.grant(t, fx.fld.RootNodeID, fx.ann.ID, "viewer")
-	rec := newDocumentAs(t, fx.s, fx.annSess, fx.fld.RootNodeID, map[string]any{"type": "docx"})
-	wantStatus(t, rec, 403)
 	// bob holds nothing on the folder: the folder is not reached, as for any write.
 	wantStatus(t, newDocumentAs(t, fx.s, fx.bobSess, fx.fld.RootNodeID, map[string]any{"type": "docx"}), 404)
-	if _, ok := childNamed(t, fx, "Untitled document.docx"); ok {
-		t.Error("a refused document was made")
-	}
 }
 
 // Over the account's quota the document is refused before anything is written, as an upload is.

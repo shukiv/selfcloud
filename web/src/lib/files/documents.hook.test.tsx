@@ -30,6 +30,7 @@ function placeOf(folder: string, dir: string): NewPlace {
     canUpload: true,
     canUploadFolder: true,
     readOnly: false,
+    canEdit: true,
     nodeID: dir,
   };
 }
