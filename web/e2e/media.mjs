@@ -415,7 +415,9 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await closePreview(page);
     await open('List');
     await tap(page, await point(page, 'Sub'));
-    await sleep(600);
+    // The folder opens when its listing is drawn, which a busy machine can take longer than a fixed pause: wait for the
+    // folder's title (a lost tap still fails, at the end of the wait).
+    await page.waitFor(`document.querySelector('#browser-title')?.textContent === 'Sub'`, 10000).catch(() => undefined);
     const title = await browserTitle(page);
     check(title === 'Sub', `one tap on the folder Sub on a phone opens it (shows ${title || 'nothing'})`);
     await open('Tiles');
