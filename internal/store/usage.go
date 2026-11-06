@@ -220,6 +220,7 @@ func (tx *Tx) RecountAccount(ctx context.Context, accountID string) (before, aft
 		reserved_bytes = (SELECT COALESCE(SUM(CASE WHEN u.visitor_id = '' THEN u.length ELSE u.durable_offset END), 0)
 			FROM uploads u WHERE u.folder_id = folders.id)
 			+ (SELECT COALESCE(SUM(j.reserved_bytes), 0) FROM copy_jobs j WHERE j.staging_folder_id = folders.id)
+			+ (SELECT COALESCE(SUM(i.archive_reserved + i.reserved_bytes), 0) FROM import_jobs i WHERE i.staging_folder_id = folders.id)
 		WHERE account_id = ?`, accountID); err != nil {
 		return before, after, err
 	}
@@ -269,7 +270,8 @@ func (s *Store) UsageTotals(ctx context.Context) (used, reserved int64, err erro
 func (tx *Tx) ReservationTotals(ctx context.Context) (counted, declared int64, err error) {
 	err = tx.q.QueryRowContext(ctx, `SELECT (SELECT COALESCE(SUM(reserved_bytes), 0) FROM accounts),
 		(SELECT COALESCE(SUM(CASE WHEN visitor_id = '' THEN length ELSE durable_offset END), 0) FROM uploads)
-		+ (SELECT COALESCE(SUM(reserved_bytes), 0) FROM copy_jobs)`).Scan(&counted, &declared)
+		+ (SELECT COALESCE(SUM(reserved_bytes), 0) FROM copy_jobs)
+		+ (SELECT COALESCE(SUM(archive_reserved + reserved_bytes), 0) FROM import_jobs)`).Scan(&counted, &declared)
 	return counted, declared, err
 }
 

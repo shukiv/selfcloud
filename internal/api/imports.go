@@ -154,9 +154,13 @@ func (s *Server) handleCreateImport(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 
+	digest, err := importDigest(up)
+	if err != nil {
+		return err
+	}
 	im := &store.Import{ID: id.New("imp"), JobID: id.New("job"), AccountID: p.AccountID, UserID: p.UserID,
 		Source: in.Source, FolderID: in.Folder, OnConflict: in.OnConflict, State: store.ImportQueued,
-		Phase: store.ImportPhaseScan, ArchiveBlobID: up.BlobID, ArchiveSHA256: hexDigestOf(up)}
+		Phase: store.ImportPhaseScan, ArchiveBlobID: up.BlobID, ArchiveSHA256: digest}
 	if probe != nil {
 		im.ArchiveFormat, im.Entries, im.DeclaredBytes = string(probe.Format), int64(probe.Entries), probe.Bytes
 	}
@@ -239,7 +243,13 @@ func (s *Server) handleCreateImport(w http.ResponseWriter, r *http.Request) erro
 		if err := s.blobs.FinishUpload(p.AccountID, up.ID, up.BlobID); err != nil {
 			return apierr.Wrap(apierr.Internal, "the archive could not be kept", err)
 		}
-		if err := tx.DeleteUpload(ctx, p.AccountID, up.ID); err != nil {
+		// The archive's reservation moves from the upload's folder to the staging folder, which holds it until the import
+		// ends. The upload's row goes without a release (round 3, F1).
+		if err := tx.MoveUsage(ctx, p.AccountID, up.FolderID, im.StagingFolderID, store.UsageChange{Reserved: up.Length}); err != nil {
+			return err
+		}
+		im.ArchiveReserved = up.Length
+		if err := tx.DeleteUploadHanded(ctx, p.AccountID, up.ID); err != nil {
 			return err
 		}
 		body, err := marshalPayload(actor)
@@ -272,12 +282,14 @@ func (s *Server) handleCreateImport(w http.ResponseWriter, r *http.Request) erro
 
 // hexDigestOf returns the SHA-256 of a finished upload, from the hash state it kept. The archive's digest names its
 // entries in the import's memory (import_sources), so the same archive gives the same names.
-func hexDigestOf(up *store.Upload) string {
+// importDigest is the archive's SHA-256, for the import record and its dedupe key. An archive whose digest cannot be read
+// is refused: an empty hash would make different archives match one another (round 3, F15).
+func importDigest(up *store.Upload) (string, error) {
 	h, err := restoreHash(up.HashState, up.Length)
 	if err != nil {
-		return ""
+		return "", apierr.Wrap(apierr.Internal, "the archive's digest could not be read", err)
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // marshalActor is the caller as a job and an import record it: the actor the job policies rebuild the caller from.
@@ -437,6 +449,10 @@ func (s *Server) changeImport(w http.ResponseWriter, r *http.Request, action str
 				return importState(cur)
 			}
 			cur.State, cur.PauseReason = store.ImportPaused, ""
+			if err := tx.InsertAudit(r.Context(), s.auditEntry(r, cur.AccountID, "import.pause", cur.ID,
+				map[string]any{"job": cur.JobID, "state": cur.State}, cur.FolderID)); err != nil {
+				return err
+			}
 		case "resume":
 			if cur.State != store.ImportPaused {
 				return importState(cur)
@@ -449,6 +465,10 @@ func (s *Server) changeImport(w http.ResponseWriter, r *http.Request, action str
 				refused = err
 				cur.State, cur.Phase, cur.PauseReason = store.ImportFailed, store.ImportPhaseCleanup, ""
 				cur.ErrorCode, cur.Failure = string(apierr.Forbidden), err.Error()
+				if err := tx.InsertAudit(r.Context(), s.auditEntry(r, cur.AccountID, "import.resume", cur.ID,
+					map[string]any{"job": cur.JobID, "state": cur.State}, cur.FolderID)); err != nil {
+					return err
+				}
 				break
 			}
 			if _, err := tx.UnfinishedImport(r.Context(), cur.AccountID, cur.UserID, cur.Source); err == nil {
@@ -461,16 +481,20 @@ func (s *Server) changeImport(w http.ResponseWriter, r *http.Request, action str
 				return err
 			}
 			cur.State, cur.PauseReason = store.ImportQueued, ""
+			if err := tx.InsertAudit(r.Context(), s.auditEntry(r, cur.AccountID, "import.resume", cur.ID,
+				map[string]any{"job": cur.JobID, "state": cur.State}, cur.FolderID)); err != nil {
+				return err
+			}
 		case "cancel":
 			if cur.State != store.ImportQueued && cur.State != store.ImportRunning && cur.State != store.ImportPaused {
 				return importState(cur)
 			}
 			cur.State, cur.Phase = store.ImportCancelled, store.ImportPhaseCleanup
+			if err := tx.InsertAudit(r.Context(), s.auditEntry(r, cur.AccountID, "import.cancel", cur.ID,
+				map[string]any{"job": cur.JobID, "state": cur.State}, cur.FolderID)); err != nil {
+				return err
+			}
 			cur.PauseReason = ""
-		}
-		if err := tx.InsertAudit(r.Context(), s.auditEntry(r, cur.AccountID, "import."+action, cur.ID,
-			map[string]any{"job": cur.JobID, "state": cur.State}, cur.FolderID)); err != nil {
-			return err
 		}
 		queued, err := tx.ImportJobUnfinished(r.Context(), cur.ID)
 		if err != nil {

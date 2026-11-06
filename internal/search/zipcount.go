@@ -62,6 +62,12 @@ func zipEntryCount(r io.ReaderAt, size int64, limit int) (uint64, bool) {
 	if dirRecords > uint64(limit) {
 		return dirRecords, true
 	}
+	// The directory's bytes are bounded too: archive/zip keeps every header's name, extra and comment in memory, so a
+	// directory of many large headers costs its own size. A legitimate header is well under 4 KiB, so a directory over
+	// limit times 4 KiB cannot hold limit legitimate entries, and it is refused as one more than the cap (round 3, F18).
+	if limit >= 0 && dirSize > uint64(limit)*4096 {
+		return uint64(limit) + 1, true
+	}
 	if dirSize > maxInt64Unsigned || dirOff > maxInt64Unsigned {
 		return 0, false
 	}

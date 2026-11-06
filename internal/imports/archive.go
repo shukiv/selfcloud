@@ -62,6 +62,9 @@ type Entry struct {
 	Dir    bool
 	Size   int64 // the declared uncompressed size of a file; 0 for a folder
 	Packed int64 // the declared compressed size of a zip entry; 0 for a tar entry
+	// Zipped is set for a zip entry, whose size is held to the ratio against Packed. A tar entry has no compressed size of
+	// its own: a tar's ratio is measured on the stream as a whole (round 3, F12).
+	Zipped bool
 }
 
 // Summary is what Scan found: the format and the counts, with the sum of the declared sizes.
@@ -147,6 +150,17 @@ func (s *scanner) add(e Entry) error {
 	if len(e.Names) > s.caps.MaxDepth {
 		return refuse(apierr.TooLarge, "an entry sits deeper than the archive may nest", "depth")
 	}
+	// Each folder above the entry is a folder of the archive, whether or not it has an entry of its own: a file of that
+	// path refuses the archive, in either order (round 3, F7).
+	parts := strings.Split(e.Key, "/")
+	for k := 1; k < len(parts); k++ {
+		p := strings.Join(parts[:k], "/")
+		if isDir, ok := s.seen[p]; !ok {
+			s.seen[p] = true
+		} else if !isDir {
+			return refuse(apierr.InvalidPath, "the archive lists one path twice", "duplicate")
+		}
+	}
 	if prev, ok := s.seen[e.Key]; ok {
 		// A folder listed twice is harmless. A file listed twice, or a file and a folder with one path, is not.
 		if !(prev && e.Dir) {
@@ -161,7 +175,7 @@ func (s *scanner) add(e Entry) error {
 		if e.Size > s.caps.MaxFile {
 			return refuse(apierr.TooLarge, "a file in the archive is larger than the largest file allowed", "file_size")
 		}
-		if overRatio(e.Size, e.Packed, s.caps.MaxRatio) {
+		if e.Zipped && overRatio(e.Size, e.Packed, s.caps.MaxRatio) {
 			return refuse(apierr.TooLarge, "a file in the archive expands more than it may", "ratio")
 		}
 		if e.Size > s.caps.MaxTotal-s.sum.Bytes {
@@ -207,6 +221,7 @@ func (s *scanner) zip(r io.ReaderAt, size int64) error {
 			return refuse(apierr.InvalidPath, "an entry of the archive is encrypted", "")
 		}
 		e.Index = s.sum.Entries + 1
+		e.Zipped = true
 		if err := s.add(e); err != nil {
 			return err
 		}

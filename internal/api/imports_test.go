@@ -198,7 +198,8 @@ func TestImportZipCopiesTheTreeAndAudits(t *testing.T) {
 		t.Fatalf("top level = %v, want notes.txt", top)
 	}
 	actions := strings.Join(fx.auditActions(t), ",")
-	for _, want := range []string{"import.start", "import.finish", "node.create"} {
+	// The copies are one summary, the import.finish row with its counts; no row per file (round 3, F4).
+	for _, want := range []string{"import.start", "import.finish"} {
 		if !strings.Contains(actions, want) {
 			t.Errorf("audit actions %s do not hold %s", actions, want)
 		}
@@ -399,10 +400,11 @@ func TestImportEventCarriesIDsAndCountsOnly(t *testing.T) {
 // import is asked for, and so is a target the caller may not write to (a team space where the caller is not a member).
 func TestImportQuotaAndRightsAreCheckedAtCreation(t *testing.T) {
 	fx := newImportFixture(t)
-	// The photos archive declares 8 bytes of files, so a quota of 4 refuses it.
+	// The archive is small, but its entry declares 2000 bytes: a quota of 100 holds the archive upload and refuses the
+	// declared size at creation (the archive reserves its own length, round 3, F1).
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID, fx.admin,
-		map[string]any{"quota_bytes": 4}), http.StatusOK)
-	rec := fx.start(t, fx.archive(t, "big.zip", zipArchive(t, photosZip)), "")
+		map[string]any{"quota_bytes": 400}), http.StatusOK)
+	rec := fx.start(t, fx.archive(t, "big.zip", zipArchive(t, [][2]string{{"big.bin", strings.Repeat("0", 2000)}})), "")
 	if rec.Code == http.StatusAccepted || !strings.Contains(rec.Body.String(), "quota_exceeded") {
 		t.Fatalf("answer = %d %s, want quota_exceeded refused at creation", rec.Code, rec.Body.String())
 	}

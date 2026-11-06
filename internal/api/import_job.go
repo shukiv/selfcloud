@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -147,11 +148,23 @@ func (s *Server) runImport(ctx context.Context, job *store.Job) error {
 			return nil
 		}
 		// Any other error fails the import: its staged entries are removed in the cleanup phase, and the job reports it.
-		failure = err
+		failure = s.importJobFailure(cur.ID, err)
 		if err := s.importFail(ctx, cur.ID, p, err); err != nil {
 			return err
 		}
 	}
+}
+
+// importJobFailure is the error a failed import's job reports: the API code only. The cause's text, which can hold a
+// server path or a store error, goes to the server log and not to the job record that the user can read (round 3, F8).
+func (s *Server) importJobFailure(impID string, cause error) error {
+	code := string(apierr.Internal)
+	var ae *apierr.Error
+	if errors.As(cause, &ae) {
+		code = string(ae.Code)
+	}
+	s.log.Warn("import failed", "import", impID, "error", cause)
+	return errors.New(code)
 }
 
 // importClaim makes this run the one of the import: a queued import starts running under this job, a running one (left
@@ -450,7 +463,7 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 		return err
 	} else if have == "" {
 		// The disk is checked before the reservation, so a full disk leaves nothing reserved.
-		if err := s.checkDiskNow(ctx, cur.AccountID); err != nil {
+		if err := s.checkDiskNow(ctx, cur.AccountID, e.Size); err != nil {
 			return s.importDiskPause(err)
 		}
 	}
@@ -477,6 +490,10 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 		n, rerr := io.ReadFull(body, buf)
 		if n > 0 {
 			if _, err := w.Write(buf[:n]); err != nil {
+				if errors.Is(err, syscall.ENOSPC) {
+					// The disk filled under the write: a pause, as a full disk is for an entry (round 3, F5).
+					return s.importDiskPause(apierr.New(apierr.StorageFull, "the server's disk is full"))
+				}
 				if errors.Is(err, blob.ErrTooLarge) {
 					return apierr.New(apierr.TooLarge, "a file of the archive is larger than its header says").With("reason", "size")
 				}
@@ -660,6 +677,18 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 			return errImportStopped
 		}
 		// A refusal here fails the import, and its run goes on to the cleanup that removes the staged tree.
+		// The target directory may have moved since staging (a cross-folder move, or a trash): it must still be a
+		// directory of the target folder, and not trashed (round 3, F17).
+		if im.ParentID != "" {
+			dir, err := tx.Node(ctx, im.AccountID, im.ParentID)
+			if err != nil {
+				return err
+			}
+			if dir.FolderID != im.FolderID || dir.Kind != store.KindDir || dir.TrashedAt != nil {
+				return apierr.New(apierr.Conflict, "the target directory moved or was removed since the import started").
+					With("reason", "target_moved")
+			}
+		}
 		if err := s.importTargetRole(ctx, tx, im, p); err != nil {
 			return err
 		}
@@ -710,20 +739,14 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 		if err := tx.MoveStagedTree(ctx, im.AccountID, im.StagingFolderID, im.FolderID, now); err != nil {
 			return err
 		}
+		if err := tx.ReleaseArchiveReservation(ctx, im); err != nil {
+			return err
+		}
 		if err := tx.DropStaging(ctx, im.AccountID, im.StagingFolderID, im.StagingRootID); err != nil {
 			return err
 		}
-		items, err := tx.ImportFileItems(ctx, im.ID)
-		if err != nil {
-			return err
-		}
-		for _, it := range items {
-			details := map[string]any{"kind": store.KindFile, "name": it.Name, "size": it.Bytes, "via": "import",
-				"import": im.ID, "job": im.JobID}
-			if err := tx.InsertAudit(ctx, auditAs(p, im.AccountID, "node.create", it.NodeID, details, im.FolderID)); err != nil {
-				return err
-			}
-		}
+		// One summary, not a row or a webhook event per file (round 3, F4): importEnd records the counts, and
+		// import.completed carries them. A copy of a large tree also reports once, not per file.
 		im.Files, im.Bytes = files, bytes
 		im.State, im.Phase, im.FinishedAt = store.ImportDone, store.ImportPhaseDone, &now
 		if err := tx.SaveImport(ctx, im, now); err != nil {
@@ -815,6 +838,9 @@ func (s *Server) importPauseNow(ctx context.Context, impID, reason string) error
 // writes, their blobs, the staging folder and the archive, and it forgets what the import remembered. A repeat finds
 // what is left and removes it. failure is the error the job reports, if the import failed in this run.
 func (s *Server) importCleanup(ctx context.Context, impID string, p *auth.Principal, failure error) error {
+	if err := s.importFaultAt("cleanup"); err != nil {
+		return err
+	}
 	// The end of a cancelled import is written once: its FinishedAt is set in the write that also writes its event.
 	if err := s.store.Write(ctx, func(tx *store.Tx) error {
 		im, err := tx.Import(ctx, impID)
@@ -882,6 +908,9 @@ func (s *Server) importCleanup(ctx context.Context, impID string, p *auth.Princi
 	if err := s.store.Write(ctx, func(tx *store.Tx) error {
 		im, err := tx.Import(ctx, impID)
 		if err != nil {
+			return err
+		}
+		if err := tx.ReleaseArchiveReservation(ctx, im); err != nil {
 			return err
 		}
 		if err := tx.DropStaging(ctx, im.AccountID, im.StagingFolderID, im.StagingRootID); err != nil {

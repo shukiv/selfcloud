@@ -286,6 +286,18 @@ func restoreHash(state []byte, offset int64) (hash.Hash, error) {
 
 // uploadDeadline is when an upload expires, given that it was just created, or just written, at now:
 // upload.expiry after now, but never upload.max_lifetime after its creation.
+// uploadDeadlineFor is the expiry of an upload as of now. An import archive that no import has claimed expires
+// imports.unclaimed_expiry_hours after its creation, whatever the uploads' own expiry says (round 3, F1).
+func (s *Server) uploadDeadlineFor(up *store.Upload, now time.Time) time.Time {
+	deadline := s.uploadDeadline(up.CreatedAt, now)
+	if up.Purpose == store.UploadPurposeImport {
+		if claim := up.CreatedAt.Add(time.Duration(s.cfg.Imports.UnclaimedExpiryHours) * time.Hour); claim.Before(deadline) {
+			return claim
+		}
+	}
+	return deadline
+}
+
 func (s *Server) uploadDeadline(created, now time.Time) time.Time {
 	idle := now.Add(s.cfg.Upload.Expiry.D())
 	if hard := created.Add(s.cfg.Upload.MaxLifetime.D()); hard.Before(idle) {
@@ -614,7 +626,7 @@ func (s *Server) checkDisk(usable, mine, total int64, creating bool) error {
 
 // checkDiskNow is the install-wide disk check for a piece. It reads the counts outside a transaction;
 // a piece adds no unwritten bytes, so only the install-wide rule applies.
-func (s *Server) checkDiskNow(ctx context.Context, accountID string) error {
+func (s *Server) checkDiskNow(ctx context.Context, accountID string, size int64) error {
 	usable, ok, err := s.diskUsable()
 	if err != nil || !ok {
 		return err
@@ -623,7 +635,9 @@ func (s *Server) checkDiskNow(ctx context.Context, accountID string) error {
 	if err != nil {
 		return err
 	}
-	return s.checkDisk(usable, mine, total, false)
+	// The bytes about to be written count too, so a single entry larger than the usable space is refused before any byte
+	// of it is written (round 3, F5).
+	return s.checkDisk(usable, mine, total+size, false)
 }
 
 // reserveTx reserves an upload's declared length, inside tx, the transaction that inserted it: the
@@ -648,8 +662,16 @@ func (s *Server) reserveTx(ctx context.Context, tx *store.Tx, p *auth.Principal,
 		}
 	}
 	if up.Purpose == store.UploadPurposeImport {
-		// An archive holds its disk, and no quota: an import reserves each file's size when it writes the file (decision 92).
-		return nil
+		// An archive is reserved against the quota like any upload, until its import holds it (round 3, F1). A user holds a
+		// limited number of them, so an unclaimed archive cannot pile up.
+		n, err := tx.CountArchiveUploads(ctx, up.AccountID, p.ID)
+		if err != nil {
+			return err
+		}
+		if n > s.cfg.Imports.MaxArchiveUploadsPerUser {
+			return apierr.New(apierr.Conflict, "too many import archives are waiting; start or cancel an import first").
+				With("reason", "too_many_archives")
+		}
 	}
 	return s.applyUsage(ctx, tx, p, up.AccountID, store.FolderChange{FolderID: up.FolderID,
 		Change: store.UsageChange{Reserved: up.Length}})
@@ -726,6 +748,12 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 			return err
 		}
 	}
+	// An import archive is a signed-in user's: a drop-link visitor or a key cannot send one (round 3, F2).
+	if meta["kind"] == store.UploadPurposeImport {
+		if err := importCaller(p); err != nil {
+			return err
+		}
+	}
 	var (
 		tgt   *uploadTarget
 		state *store.ShareLinkState
@@ -771,6 +799,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 		BlobID: id.New("blb"), CreatedBy: p.ID, CreatedKind: string(p.Kind), CreatedAt: now, UpdatedAt: now,
 		ExpiresAt: s.uploadDeadline(now, now), UploaderName: uploader.name, UploaderEmail: uploader.email,
 		Purpose: uploadPurpose(meta)}
+	up.ExpiresAt = s.uploadDeadlineFor(up, now)
 	if isDrop(p) {
 		up.VisitorID = p.Link.VisitorID
 	}
@@ -955,7 +984,7 @@ func (s *Server) appendChunk(w http.ResponseWriter, r *http.Request, p *auth.Pri
 			return err
 		}
 		defer release()
-	} else if err := s.checkDiskNow(ctx, up.AccountID); err != nil {
+	} else if err := s.checkDiskNow(ctx, up.AccountID, 0); err != nil {
 		return err
 	}
 	h, err := restoreHash(up.HashState, start)
@@ -1025,7 +1054,7 @@ func (s *Server) appendChunk(w http.ResponseWriter, r *http.Request, p *auth.Pri
 		if err != nil {
 			return apierr.Wrap(apierr.Internal, "the hash state could not be saved", err)
 		}
-		expires := s.uploadDeadline(up.CreatedAt, store.Now())
+		expires := s.uploadDeadlineFor(up, store.Now())
 		if err := s.recordPiece(ctx, p, up, f, start, cw.off, state, expires); err != nil {
 			_ = f.Truncate(start) // a failed truncate is repaired before the next piece
 			return dropRefusal(p, err)

@@ -111,10 +111,10 @@ func (tx *Tx) RecordUploadProgress(ctx context.Context, accountID, id string, fr
 //
 // Completion does not come here: it moves the reservation into usage itself (see completeUpload).
 func (tx *Tx) DeleteUpload(ctx context.Context, accountID, id string) error {
-	var folder, purpose string
+	var folder string
 	var length int64
-	err := tx.q.QueryRowContext(ctx, "SELECT folder_id, purpose, CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE account_id = ? AND id = ?",
-		accountID, id).Scan(&folder, &purpose, &length)
+	err := tx.q.QueryRowContext(ctx, "SELECT folder_id, CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE account_id = ? AND id = ?",
+		accountID, id).Scan(&folder, &length)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -125,12 +125,22 @@ func (tx *Tx) DeleteUpload(ctx context.Context, accountID, id string) error {
 		accountID, id)); err != nil {
 		return err
 	}
-	// An import archive reserved no quota (decision 92), so there is nothing of its own to release. Releasing its length
-	// would take another upload's reservation in the same folder.
-	if purpose == UploadPurposeImport {
-		return nil
-	}
 	return tx.AdjustUsage(ctx, accountID, folder, UsageChange{Reserved: -length})
+}
+
+// DeleteUploadHanded deletes an import's archive upload after its reservation moved to the staging folder (round 3, F1):
+// the row goes and nothing is released, because the staging folder holds the length until the import ends.
+func (tx *Tx) DeleteUploadHanded(ctx context.Context, accountID, id string) error {
+	return rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM uploads WHERE account_id = ? AND id = ?", accountID, id))
+}
+
+// CountArchiveUploads counts the import archives a user holds as uploads: the uploads that no import has claimed yet
+// (round 3, F1). The limit on them is imports.max_archive_uploads_per_user.
+func (tx *Tx) CountArchiveUploads(ctx context.Context, accountID, userID string) (int, error) {
+	var n int
+	err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM uploads
+		WHERE account_id = ? AND created_by = ? AND created_kind = 'user' AND purpose = 'import'`, accountID, userID).Scan(&n)
+	return n, err
 }
 
 // ExpiredUploads lists up to limit uploads that have expired by now: their expiry is not after now,

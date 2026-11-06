@@ -61,6 +61,9 @@ type Import struct {
 	DeclaredBytes   int64
 	Cursor          int64 // archive entries finished; a run resumes after this one
 	ReservedBytes   int64 // held against the quota by the entry being written
+	// ArchiveReserved is the archive's length, held against the staging folder's quota from the upload's hand-over until
+	// the import ends (published, failed, cancelled or expired). It is released once, by ReleaseArchiveReservation (F1).
+	ArchiveReserved int64
 	Files           int64
 	Bytes           int64
 	Skipped         int64
@@ -72,7 +75,7 @@ type Import struct {
 
 const importCols = `id, job_id, account_id, user_id, source, folder_id, parent_id, on_conflict, state, phase, pause_reason,
 	error_code, failure, staging_folder_id, staging_root_id, archive_blob_id, archive_sha256, archive_format, entries,
-	declared_bytes, cursor, reserved_bytes, files, bytes, skipped, actor, created_at, updated_at, finished_at`
+	declared_bytes, cursor, reserved_bytes, archive_reserved, files, bytes, skipped, actor, created_at, updated_at, finished_at`
 
 func scanImport(row interface{ Scan(...any) error }) (*Import, error) {
 	var im Import
@@ -82,7 +85,7 @@ func scanImport(row interface{ Scan(...any) error }) (*Import, error) {
 	err := row.Scan(&im.ID, &im.JobID, &im.AccountID, &im.UserID, &im.Source, &im.FolderID, &parent, &im.OnConflict,
 		&im.State, &im.Phase, &im.PauseReason, &im.ErrorCode, &im.Failure, &im.StagingFolderID, &im.StagingRootID,
 		&im.ArchiveBlobID, &im.ArchiveSHA256, &im.ArchiveFormat, &im.Entries, &im.DeclaredBytes, &im.Cursor,
-		&im.ReservedBytes, &im.Files, &im.Bytes, &im.Skipped, &im.Actor, &created, &updated, &finished)
+		&im.ReservedBytes, &im.ArchiveReserved, &im.Files, &im.Bytes, &im.Skipped, &im.Actor, &created, &updated, &finished)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -108,11 +111,11 @@ func (tx *Tx) Import(ctx context.Context, id string) (*Import, error) {
 
 // InsertImport records a new import.
 func (tx *Tx) InsertImport(ctx context.Context, im *Import) error {
-	_, err := tx.q.ExecContext(ctx, "INSERT INTO import_jobs ("+importCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := tx.q.ExecContext(ctx, "INSERT INTO import_jobs ("+importCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		im.ID, im.JobID, im.AccountID, im.UserID, im.Source, im.FolderID, nullString(im.ParentID), im.OnConflict,
 		im.State, im.Phase, im.PauseReason, im.ErrorCode, im.Failure, im.StagingFolderID, im.StagingRootID,
 		im.ArchiveBlobID, im.ArchiveSHA256, im.ArchiveFormat, im.Entries, im.DeclaredBytes, im.Cursor,
-		im.ReservedBytes, im.Files, im.Bytes, im.Skipped, im.Actor, millis(im.CreatedAt), millis(im.UpdatedAt),
+		im.ReservedBytes, im.ArchiveReserved, im.Files, im.Bytes, im.Skipped, im.Actor, millis(im.CreatedAt), millis(im.UpdatedAt),
 		nullMillis(im.FinishedAt))
 	return err
 }
@@ -122,11 +125,11 @@ func (tx *Tx) SaveImport(ctx context.Context, im *Import, at time.Time) error {
 	im.UpdatedAt = at
 	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE import_jobs SET job_id = ?, state = ?, phase = ?, pause_reason = ?,
 		error_code = ?, failure = ?, staging_folder_id = ?, staging_root_id = ?, archive_blob_id = ?, archive_sha256 = ?,
-		archive_format = ?, entries = ?, declared_bytes = ?, cursor = ?, reserved_bytes = ?, files = ?, bytes = ?,
+		archive_format = ?, entries = ?, declared_bytes = ?, cursor = ?, reserved_bytes = ?, archive_reserved = ?, files = ?, bytes = ?,
 		skipped = ?, updated_at = ?, finished_at = ? WHERE id = ?`,
 		im.JobID, im.State, im.Phase, im.PauseReason, im.ErrorCode, im.Failure, im.StagingFolderID, im.StagingRootID,
 		im.ArchiveBlobID, im.ArchiveSHA256, im.ArchiveFormat, im.Entries, im.DeclaredBytes, im.Cursor, im.ReservedBytes,
-		im.Files, im.Bytes, im.Skipped, millis(at), nullMillis(im.FinishedAt), im.ID))
+		im.ArchiveReserved, im.Files, im.Bytes, im.Skipped, millis(at), nullMillis(im.FinishedAt), im.ID))
 }
 
 // UnfinishedImport returns the import of a user from a source that is queued or running, or ErrNotFound. A paused import
@@ -186,6 +189,72 @@ func (s *Store) ExpirePausedImports(ctx context.Context, before time.Time, limit
 			}
 		}
 		n = int64(len(list))
+		return nil
+	})
+	return n, err
+}
+
+// ReleaseArchiveReservation releases the reservation an import holds for its archive, from the staging folder, once: the
+// row's amount goes to zero in the same write, so a second call releases nothing. It runs where the staging folder is
+// dropped, published or cleaned up, while that folder still exists (round 3, F1). im is updated to match the row.
+func (tx *Tx) ReleaseArchiveReservation(ctx context.Context, im *Import) error {
+	held := im.ArchiveReserved
+	im.ArchiveReserved = 0
+	if held == 0 {
+		return nil
+	}
+	if err := rowsAffected(tx.q.ExecContext(ctx, "UPDATE import_jobs SET archive_reserved = 0 WHERE id = ? AND archive_reserved = ?",
+		im.ID, held)); err != nil {
+		return err
+	}
+	return tx.AdjustFolders(ctx, im.AccountID, FolderChange{FolderID: im.StagingFolderID,
+		Change: UsageChange{Reserved: -held}})
+}
+
+// RequeueAbandonedImports queues a job for each import that needs one and has none: a queued import whose job ended, a
+// running one whose job died (a store error in the run), and a cancelled or failed one whose cleanup has not ended. A
+// pause, a resume or a cancel that raced a job's end leaves one of these. It queues at most one batch of 100 a call and
+// returns how many it queued (round 3, F10).
+func (s *Store) RequeueAbandonedImports(ctx context.Context) (int, error) {
+	var n int
+	err := s.Write(ctx, func(tx *Tx) error {
+		rows, err := tx.q.QueryContext(ctx, `SELECT i.id, i.account_id FROM import_jobs i
+			WHERE (i.state IN ('queued', 'running') OR (i.state IN ('cancelled', 'failed') AND i.phase <> 'done'))
+			AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.kind = 'import' AND j.target = i.id
+				AND j.status IN ('queued', 'running'))
+			ORDER BY i.updated_at, i.id LIMIT 100`)
+		if err != nil {
+			return err
+		}
+		type lost struct{ id, acc string }
+		var list []lost
+		for rows.Next() {
+			var l lost
+			if err := rows.Scan(&l.id, &l.acc); err != nil {
+				rows.Close()
+				return err
+			}
+			list = append(list, l)
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		now := Now()
+		for _, l := range list {
+			job := &Job{ID: id.New("job"), AccountID: l.acc, Kind: "import", Target: l.id, Status: JobQueued,
+				CreatedAt: now, UpdatedAt: now}
+			if err := tx.InsertJob(ctx, job); err != nil {
+				return err
+			}
+			if err := rowsAffected(tx.q.ExecContext(ctx, "UPDATE import_jobs SET job_id = ? WHERE id = ?",
+				job.ID, l.id)); err != nil {
+				return err
+			}
+		}
+		n = len(list)
 		return nil
 	})
 	return n, err
@@ -488,12 +557,14 @@ func (s *Store) PurgeImports(ctx context.Context, before time.Time, limit int) (
 		// The jobs rows of an import are all of those queued for it (a resume queues one), so they go with it.
 		if _, err := tx.q.ExecContext(ctx, `DELETE FROM jobs WHERE kind = 'import' AND status IN ('succeeded', 'failed')
 			AND target IN (SELECT id FROM import_jobs
-			WHERE finished_at IS NOT NULL AND finished_at < ? AND state IN ('done', 'failed', 'cancelled') LIMIT ?)`,
+			WHERE finished_at IS NOT NULL AND finished_at < ? AND state IN ('done', 'failed', 'cancelled')
+			AND phase = 'done' ORDER BY finished_at, id LIMIT ?)`,
 			millis(before), limit); err != nil {
 			return err
 		}
 		res, err := tx.q.ExecContext(ctx, `DELETE FROM import_jobs WHERE id IN (SELECT id FROM import_jobs
-			WHERE finished_at IS NOT NULL AND finished_at < ? AND state IN ('done', 'failed', 'cancelled') LIMIT ?)`,
+			WHERE finished_at IS NOT NULL AND finished_at < ? AND state IN ('done', 'failed', 'cancelled')
+			AND phase = 'done' ORDER BY finished_at, id LIMIT ?)`,
 			millis(before), limit)
 		if err != nil {
 			return err

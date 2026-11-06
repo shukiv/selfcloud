@@ -393,6 +393,12 @@ func validateImports(i ImportsConfig, bad func(string, ...any)) {
 	if i.MaxUnfinishedPerUser < 1 || i.MaxUnfinishedPerUser > 100 {
 		bad("imports.max_unfinished_per_user must be from 1 to 100")
 	}
+	if i.MaxArchiveUploadsPerUser < 1 || i.MaxArchiveUploadsPerUser > 100 {
+		bad("imports.max_archive_uploads_per_user must be from 1 to 100")
+	}
+	if i.UnclaimedExpiryHours < 1 {
+		bad("imports.unclaimed_expiry_hours must be at least 1")
+	}
 	if i.PausedExpiryDays < 1 {
 		bad("imports.paused_expiry_days must be at least 1")
 	}
@@ -539,6 +545,12 @@ type ImportsConfig struct {
 	// MaxUnfinishedPerUser caps the imports a user has queued, running or paused at once. A paused import holds its
 	// archive, so without the cap a user could hold any number of them.
 	MaxUnfinishedPerUser int `yaml:"max_unfinished_per_user"`
+	// MaxArchiveUploadsPerUser caps the import archives a user holds as uploads that no import has claimed yet. Each one
+	// reserves its length against the quota, so the cap bounds what an unclaimed archive can hold (round 3, F1).
+	MaxArchiveUploadsPerUser int `yaml:"max_archive_uploads_per_user"`
+	// UnclaimedExpiryHours is how long an import archive that no import claimed lives after it was uploaded. Its
+	// reservation goes with it (round 3, F1).
+	UnclaimedExpiryHours int `yaml:"unclaimed_expiry_hours"`
 	// PausedExpiryDays is how long an import may stay paused. Then it is cancelled and what it staged is removed.
 	PausedExpiryDays int                 `yaml:"paused_expiry_days"`
 	Archive          ArchiveImportConfig `yaml:"archive"`
@@ -727,7 +739,7 @@ func Defaults() *Config {
 			MaxTextPerAccount: ByteSize(64 << 20), MaxTextTotal: ByteSize(1 << 30)},
 		Copy: CopyConfig{MaxNodes: 50000},
 		Imports: ImportsConfig{Enabled: true, MaxConcurrentJobs: 2, JobRetentionDays: 30,
-			MaxUnfinishedPerUser: 3, PausedExpiryDays: 14,
+			MaxUnfinishedPerUser: 3, PausedExpiryDays: 14, MaxArchiveUploadsPerUser: 3, UnclaimedExpiryHours: 24,
 			Archive: ArchiveImportConfig{Enabled: true, MaxEntries: 50000, MaxDepth: 32, MaxRatio: 100,
 				MaxTotalBytes: 100 * GiB}},
 		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},

@@ -31,6 +31,7 @@ CREATE TABLE import_jobs (
     declared_bytes  INTEGER NOT NULL DEFAULT 0,                   -- the sum of the entries' sizes, as the scan read them
     cursor          INTEGER NOT NULL DEFAULT 0,                   -- how many archive entries are finished (resume point)
     reserved_bytes  INTEGER NOT NULL DEFAULT 0,                   -- held against the quota by the entry being written
+    archive_reserved INTEGER NOT NULL DEFAULT 0 CHECK (archive_reserved >= 0), -- the archive's length, held against the staging folder until the import ends (round 3, F1)
     files           INTEGER NOT NULL DEFAULT 0,
     bytes           INTEGER NOT NULL DEFAULT 0,
     skipped         INTEGER NOT NULL DEFAULT 0,

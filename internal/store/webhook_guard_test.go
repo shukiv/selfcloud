@@ -22,6 +22,14 @@ import (
 // webhookAuditNoEvent is every audit action that writes no event, with the reason. The actions that do
 // write one are in webhookAuditEvents.
 var webhookAuditNoEvent = map[string]string{
+	// Background imports (decision 92, round 3, F19): the audit rows are the record; the outcome is an import.* event.
+	"imports.archive": "the archive source switch is an account setting; no event (decision 92)",
+	"import.start":    "the request is reported as import.started, with the import's IDs and counts",
+	"import.finish":   "the outcome is reported as import.completed, import.failed or import.cancelled",
+	"import.pause":    "a pause by the owner is audited here; the event list has no pause event",
+	"import.resume":   "a resume by the owner is audited here; the event list has no resume event",
+	"import.cancel":   "a cancel is reported as import.cancelled when its cleanup ends",
+
 	"node.purge":           "design: a purge sends nothing more; the trash already reported file.deleted",
 	"node.transfer":        "a move into My files reports file.moved from ownership.go; a change of owner in a team space reports nothing",
 	"node.versions_pruned": "history only; the file's current content does not change",
