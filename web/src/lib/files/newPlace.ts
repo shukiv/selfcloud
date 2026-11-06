@@ -5,6 +5,7 @@
 // person's own My files root, and never to a folder the page did not show.
 import { userWritable } from '../store';
 import type { Here } from './location';
+import { parseFilesPath } from './route';
 import { uploadTargetWhere, type DroppedFile, type UploadWhere } from './ops';
 import { manager } from './uploads';
 
@@ -30,6 +31,31 @@ export const DOC_KINDS: DocKind[] = ['docx', 'xlsx', 'pptx'];
 export function documentKinds(p: NewPlace | null, officeOn: boolean): DocKind[] {
   if (!officeOn || p === null || p.readOnly || !p.canUpload || !p.nodeID) return [];
   return DOC_KINDS;
+}
+
+// placeForRoute is the place the New actions may use on the page at pathname, or null. FilesPage writes newPlace in an effect
+// after it renders, so the stored place can still be the one from the folder or directory before (the race behind decision
+// 91's round 2). A place is used only when it is the one the page at pathname shows:
+//   /files/{fld}         the folder's root: the folder and no directory;
+//   /files/{fld}/{nod}   that directory of the folder;
+//   /n/{nod}             the place whose directory (or folder root node) is that node, so the entries show only where the node is
+//                        the place's own directory;
+//   /files               null: the page redirects to the personal folder's address and shows no place of its own.
+// Anything else, and a null place, gives null: the entries are hidden and nothing is sent.
+export function placeForRoute(p: NewPlace | null, pathname: string): NewPlace | null {
+  if (p === null) return null;
+  const r = parseFilesPath(pathname);
+  if (r === null) return null;
+  switch (r.kind) {
+    case 'folder':
+      return p.where.folder === r.folder && p.where.dirID === null ? p : null;
+    case 'dir':
+      return p.where.folder === r.folder && p.where.dirID === r.dir ? p : null;
+    case 'node':
+      return p.nodeID === r.node ? p : null;
+    default:
+      return null;
+  }
 }
 
 // newPlace is the place the files page shows, written by FilesPage and cleared when it is left. null until the place is read.

@@ -12,7 +12,7 @@ import type { Branch } from '../query';
 import { createDocument } from './api';
 import { editorPath } from './editor';
 import { fileErrorText } from './fileErrors';
-import { newPlace } from './newPlace';
+import { newPlace, placeForRoute } from './newPlace';
 import type { Node } from './types';
 
 export type DocumentKind = 'docx' | 'xlsx' | 'pptx';
@@ -58,7 +58,7 @@ export function useNewDocument(): (kind: DocumentKind) => void {
   const lang = useLang();
   return useCallback(
     (kind: DocumentKind) => {
-      const place = get(newPlace);
+      const place = placeForRoute(get(newPlace), location.pathname);
       if (!place?.nodeID) return;
       const branch = { folder: place.where.folder, dir: place.where.dirID };
       void openNewDocument({

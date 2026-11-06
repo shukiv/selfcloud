@@ -8,7 +8,7 @@ import { api } from "../api";
 import { createDocument } from "./api";
 import { editorPath } from "./editor";
 import { openNewDocument } from "./documents";
-import { documentKinds, myFilesPlace, placeOfHere, type NewPlace } from "./newPlace";
+import { documentKinds, myFilesPlace, placeForRoute, placeOfHere, type NewPlace } from "./newPlace";
 import type { Node } from "./types";
 
 const writable: NewPlace = {
@@ -77,5 +77,49 @@ describe("New documents (decision 91)", () => {
     expect(placeOfHere(here as unknown as Parameters<typeof placeOfHere>[0], true, true).nodeID).toBe("nod_root");
     const inDir = { ...here, dir: { id: "nod_dir", name: "Sub", kind: "dir" } };
     expect(placeOfHere(inDir as unknown as Parameters<typeof placeOfHere>[0], true, true).nodeID).toBe("nod_dir");
+  });
+});
+
+describe("the place a New document goes in must be the page's own (race, round 2)", () => {
+  const shown = (folder: string, dirID: string | null): NewPlace => ({
+    where: { folder, dirID, path: "/" },
+    canFolder: true,
+    canUpload: true,
+    canUploadFolder: true,
+    readOnly: false,
+    nodeID: dirID ?? "nod_roottttt",
+  });
+
+  it("a place from another folder than the route is not used", () => {
+    expect(placeForRoute(shown("fld_otherrrr", null), "/files/fld_tttttttt")).toBeNull();
+    expect(documentKinds(placeForRoute(shown("fld_otherrrr", null), "/files/fld_tttttttt"), true)).toEqual([]);
+  });
+
+  it("a place for another directory of the same folder is not used", () => {
+    expect(placeForRoute(shown("fld_tttttttt", "nod_aaaaaaaa"), "/files/fld_tttttttt/nod_bbbbbbbb")).toBeNull();
+  });
+
+  it("the place of the route shown is used", () => {
+    const p = shown("fld_tttttttt", "nod_bbbbbbbb");
+    expect(placeForRoute(p, "/files/fld_tttttttt/nod_bbbbbbbb")).toBe(p);
+    const root = shown("fld_tttttttt", null);
+    expect(placeForRoute(root, "/files/fld_tttttttt")).toBe(root);
+  });
+
+  it("/files redirects to the personal folder, so no place is used there", () => {
+    expect(placeForRoute(myFilesPlace("fld_minenenn"), "/files")).toBeNull();
+    expect(placeForRoute(myFilesPlace("fld_minenenn"), "/files/fld_tttttttt")).toBeNull();
+  });
+
+  it("/n/{nod} uses only the place whose directory is that node", () => {
+    const p = shown("fld_tttttttt", "nod_bbbbbbbb");
+    expect(placeForRoute(p, "/n/nod_bbbbbbbb")).toBe(p);
+    expect(placeForRoute(p, "/n/nod_otherrrr")).toBeNull();
+    const root = shown("fld_tttttttt", null);
+    expect(placeForRoute(root, "/n/nod_roottttt")).toBe(root);
+  });
+
+  it("a null place gives null", () => {
+    expect(placeForRoute(null, "/files/fld_tttttttt")).toBeNull();
   });
 });

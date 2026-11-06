@@ -57,7 +57,7 @@ import { makeZip, type ZipPhase } from "../lib/files/zips";
 import { officeConvert } from "../lib/files/convert";
 import { editorEntry, editorPath, officeEdit } from "../lib/files/editor";
 import { nameProblem, nameMessageKey, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
-import { documentKinds, newPlace, placeOfHere, queueInto } from "../lib/files/newPlace";
+import { documentKinds, newPlace, placeForRoute, placeOfHere, queueInto } from "../lib/files/newPlace";
 import { createdDocument, useNewDocument } from "../lib/files/documents";
 import { useSidebarDocked } from "../lib/sidebarDocked";
 import { refreshMyStorage } from "../lib/storage/api";
@@ -1784,7 +1784,7 @@ export default function FilesPage() {
   // newActs is the New menu: a folder, and the files or a folder uploaded. spaceActs is the menu of the empty space: the same,
   // and a paste. Both follow the toolbar's rules.
   // The three blank documents (decision 91): shown only while office editing is on and the folder takes new files.
-  const docKinds = canUploadHere ? documentKinds(shownPlace, editorOn) : [];
+  const docKinds = canUploadHere ? documentKinds(placeForRoute(shownPlace, path), editorOn) : [];
   const docActs: BarAct[] = [
     { key: "doc-docx", label: t("files.act.document"), icon: <FileText {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("docx"), fits: true, enabled: true, run: () => makeDocument("docx") },
     { key: "doc-xlsx", label: t("files.act.spreadsheet"), icon: <FileSpreadsheet {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("xlsx"), fits: true, enabled: true, run: () => makeDocument("xlsx") },

@@ -9,10 +9,11 @@ import { setLanguage, setTheme, sleep } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
 
-// pickMenuItem clicks the open menu's entry with this text.
+// pickMenuItem clicks the entry with this text in a dropdown that is open now (antd marks a closed one ant-dropdown-hidden).
 async function pickMenuItem(page, text) {
-  await page.waitFor(`[...document.querySelectorAll('[role="menuitem"]')].some((x) => x.textContent.trim() === ${q(text)})`, 10000);
-  await page.evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find((x) => x.textContent.trim() === ${q(text)}).click()`);
+  const visible = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]')].filter((x) => x.textContent.trim() === ${q(text)})`;
+  await page.waitFor(`${visible}.length > 0`, 10000);
+  await page.evaluate(`${visible}[0].click()`);
 }
 
 // l6Checks runs the section. opts: the member's page (an editor on Team A), the base address, the account key, the team folder
@@ -39,18 +40,23 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
 
     // The sidebar's New menu holds the three documents after the uploads. Document opens the new file in the editor.
     await page.waitFor(`!!document.querySelector('[data-testid="new-button"]') && !document.querySelector('[data-testid="new-button"]').disabled`, 15000);
+    // The fake's record is read from here on: the editor may call CheckFileInfo as soon as the file opens.
+    const before = fake.editor.length;
+    // A dropdown left open by an earlier step would be the one the pick reads: close every open dropdown first.
+    await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
     await page.evaluate(`document.querySelector('[data-testid="new-button"]').click()`);
     await pickMenuItem(page, 'Document');
+    await new Promise((r) => setTimeout(r, 3000));
     await page.waitFor(`location.pathname.startsWith('/edit/')`, 15000);
     newID = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
     const created = await api(base, 'GET', `/api/v1/nodes/${newID}`, accountKey);
     check(created.name === docName && created.kind === 'file', `New -> Document made "${docName}" in the folder (${created.name})`);
-    check(created.folder_id === teamA, 'the new file is in Team A');
+    check(created.folder_id === teamA, `the new file is in Team A (its folder ${created.folder_id}, Team A ${teamA}; the directory ${folderID} is in ${made.folder_id}; the file's parent ${created.parent_id})`);
     const fromEditor = await page.evaluate(`new URLSearchParams(location.search).get('from')`);
     check(fromEditor === `/files/${teamA}/${folderID}`, `the editor's Back goes to the folder the file was made in (${fromEditor})`);
 
     // The editor page loads the frame, and the fake receives CheckFileInfo for the new file under its name.
-    const before = fake.editor.length;
     await page.waitFor(`!!document.querySelector('iframe[name="selfcloud-office-editor"]')`, 15000);
     await page.waitFor(`document.querySelector('[data-testid="office-editor"]')?.innerText.includes(${q(docName.replace(/\.docx$/, ''))})`, 15000);
     check(true, 'the editor page shows "Untitled document" in its top bar');

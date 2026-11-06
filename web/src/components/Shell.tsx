@@ -25,7 +25,7 @@ import { readTree, writeTree, type TreeState } from "../lib/files/treeState";
 import { filesURL } from "../lib/files/route";
 import { treePlace } from "../lib/files/treePlace";
 import { fromFileList, type DroppedFile, type UploadWhere } from "../lib/files/ops";
-import { documentKinds, newPlace, newPlaceFor, queueInto } from "../lib/files/newPlace";
+import { documentKinds, newPlace, newPlaceFor, placeForRoute, queueInto } from "../lib/files/newPlace";
 import { useNewDocument } from "../lib/files/documents";
 import { officeEdit } from "../lib/files/editor";
 import { uploads } from "../lib/files/uploads";
@@ -440,7 +440,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         } as CSSProperties}
       >
         {newShown && <SidebarNew place={newWhere} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} onPick={pick} onFolder={(where) => setFolderWhere(where)}
-          documents={onFiles ? documentKinds(shownPlace, editorOn) : []} onDocument={makeDocument} />}
+          documents={onFiles ? documentKinds(placeForRoute(shownPlace, location.pathname), editorOn) : []} onDocument={makeDocument} />}
         {/* With no New drawn, the gap New leaves stays (10 px, or 6 px on a finger, as New's own top edge), so the first item does not
             touch the top bar (decision 69). */}
         {!newShown && <div aria-hidden="true" data-testid="sidebar-top-gap" style={{ flex: "none", blockSize: coarse ? 6 : 10 }} />}
