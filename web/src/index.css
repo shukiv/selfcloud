@@ -235,12 +235,16 @@ a {
 /* The group of folders under a space's root (My files, a team space) is a light block behind its rows (decision 93): the tint is set
    on the group by FolderTree (theme/groupTint.ts), at the menu's inset, with the menu's corner radius. It is painted behind the rows
    (the rows are positioned, later in the order), so the rows keep their own inset. Nested groups have no tint. */
+/* The group is its own stacking context (isolation), and the tint sits at the bottom of it (z-index -1): the group's error, its capped hint
+   and its loading skeleton are drawn on top of the tint, not under it (round 3, review item 1). */
 .tree-group-root {
   position: relative;
+  isolation: isolate;
 }
 .tree-group-root::before {
   content: "";
   position: absolute;
+  z-index: -1;
   inset-block: 0;
   inset-inline: var(--sc-group-inset, 4px);
   border-radius: 4px;
@@ -1252,6 +1256,12 @@ tr[data-drop-state="refused"] > td {
 [role="treeitem"]:focus-visible > .tree-row {
   outline: 2px solid var(--ant-color-primary);
   outline-offset: -2px;
+}
+/* In the sidebar and its drawer the ring is the sidebar's own text colour: the page's primary colour is the sidebar's blue in the default theme,
+   so a ring in it was lost on the blue and the tint (round 3, review item 3; the rule above is older than decision 93). */
+.shell-sider [role="treeitem"]:focus-visible > .tree-row,
+.ant-drawer [data-testid="folder-tree"] [role="treeitem"]:focus-visible > .tree-row {
+  outline-color: var(--sc-side-text, #ffffff);
 }
 
 /* The file list pins its column header under the toolbar. A scrolling wrapper (the rule above, for narrow tables) would make the
