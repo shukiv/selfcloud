@@ -95,6 +95,14 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `zip.max_disk` | `30GiB` | Disk for all stored zips together, ready and unfinished; a zip that would pass it is refused before it writes. |
 | `zip.max_disk_per_account` | `10GiB` | One account's share of `zip.max_disk`; refused with `storage_full` when its zips would pass it. |
 | `zip.ttl` | `24h` | How long a finished zip is kept after it is made. |
+| `imports.enabled` | `true` | Turns background imports on. Off, no import can be started and the source list is empty. |
+| `imports.max_concurrent_jobs` | `2` | Import jobs that run at once across the installation, each in a worker of its own (1 to 32). |
+| `imports.job_retention_days` | `30` | How long a finished import's record (its state and item rows) is kept. The files it imported stay. |
+| `imports.archive.enabled` | `true` | Turns the archive source (an uploaded zip or tar) on. An account's owner may turn it off for one account. |
+| `imports.archive.max_entries` | `50000` | Most entries (files and folders) one archive may hold. Refused from the headers before anything is written. |
+| `imports.archive.max_depth` | `32` | Deepest folder nesting an archive entry may have. |
+| `imports.archive.max_ratio` | `100` | Most a file may expand: uncompressed over compressed size, per zip entry, and over the whole stream for a tar.gz. |
+| `imports.archive.max_total_bytes` | `100GiB` | Most uncompressed bytes all the files of one archive may hold. Each file is also held to `upload.max_file_size`. |
 | `derived.convert_workers` | `2` | Document conversions (previews and exports) that run through Collabora at once. Needs `office.enabled`. |
 | `derived.convert_queue` | `32` | Document conversions that may wait, over all accounts. A request past it is refused with a retry-later. |
 | `derived.convert_account_queue` | `8` | Places of the conversion queue one account may hold, so one account cannot fill it. At most `derived.convert_queue`. |
