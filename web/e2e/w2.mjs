@@ -298,7 +298,10 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     const lazy = await page.evaluate(`[...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].some((r) => r.dataset.dropName === 'Inner')`);
     check(lazy === false, 'a folder that was not opened has not been read: Inner is not in the tree');
     // Open Beta by its arrow: its folder Inner appears.
-    const arrow = await page.evaluate(`(() => { const r = [...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].find((x) => x.dataset.dropName === 'Beta'); const b = r?.querySelector('button'); if (!b) return null; const bb = b.getBoundingClientRect(); return { x: bb.left + bb.width / 2, y: bb.top + bb.height / 2 }; })()`);
+    // Beta's arrow is scrolled into the sidebar first: the folder shown is kept in view (decision 88), and the folders opened under it can
+    // sit below the fold. The point is the arrow's own, checked with elementFromPoint, so a miss is named here and not by the wait below.
+    const arrow = await page.evaluate(`(() => { const r = [...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].find((x) => x.dataset.dropName === 'Beta'); const b = r?.querySelector('button'); if (!b) return null; b.scrollIntoView({ block: 'nearest', inline: 'nearest' }); const bb = b.getBoundingClientRect(); const x = bb.left + bb.width / 2; const y = bb.top + bb.height / 2; const hit = document.elementFromPoint(x, y); return { x, y, hit: !!hit && (hit === b || b.contains(hit)) }; })()`);
+    check(arrow?.hit === true, `Beta's arrow is at the point the press lands on (${JSON.stringify(arrow)})`);
     check(arrow !== null, 'Beta has an arrow in the tree');
     await click(page, arrow);
     await page.waitFor(`[...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].some((r) => r.dataset.dropName === 'Inner')`, 10000);
