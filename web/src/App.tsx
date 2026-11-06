@@ -43,6 +43,8 @@ const RecentPage = lazy(() => import("./pages/RecentPage"));
 const StoragePage = lazy(() => import("./pages/StoragePage"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+// The share page (decision 82) is the place the share sheet sends files to. Its code stays out of the first load.
+const SharePage = lazy(() => import("./pages/SharePage"));
 const ManageOverviewPage = lazy(() => import("./pages/manage/OverviewPage"));
 const ManagePeoplePage = lazy(() => import("./pages/manage/PeoplePage"));
 const ManageGroupsPage = lazy(() => import("./pages/manage/GroupsPage"));
@@ -62,12 +64,12 @@ const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 type View =
   | "login" | "verify" | "reset" | "confirm-device" | "forgot" | "sign-in" | "share-link" | "email-change"
   | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
-  | "edit" | "manage" | "admin" | "change-password" | "notfound";
+  | "edit" | "manage" | "admin" | "change-password" | "share" | "notfound";
 
 const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link", "email-change"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
-const DRIVE_VIEWS: View[] = ["files", "node", "edit", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications"];
+const DRIVE_VIEWS: View[] = ["files", "node", "edit", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share"];
 
 export function viewFor(path: string): View {
   // The root is My files: the gate sends a person there (or to the admin's home) with a replace, so it is never drawn.
@@ -93,6 +95,7 @@ export function viewFor(path: string): View {
     case "/storage": return "storage";
     case "/search": return "search";
     case "/notifications": return "notifications";
+    case "/share": return "share";
     case "/change-password": return "change-password";
     default: return "notfound";
   }
@@ -323,6 +326,7 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "storage": return <StoragePage />;
     case "search": return <SearchPage />;
     case "notifications": return <NotificationsPage />;
+    case "share": return <SharePage />;
     case "manage":
       if (target === null || target.area !== "manage" || !mayOpen(target, user)) return <NotFoundPage />;
       return manageSection(target.section);

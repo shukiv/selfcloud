@@ -12,6 +12,8 @@ import { useLang, useT } from "../../lib/i18n";
 export interface Destination {
   folder: string;
   dir: string | null;
+  // name is the place's name, given only in the save mode (decision 82), where the page shows it.
+  name?: string;
 }
 
 // Where a tree node stands: a space (dir null) or a directory in one. Kept by key, so the tree can be
@@ -32,14 +34,18 @@ const DIR = (folder: string, dir: string) => `d:${folder}:${dir}`;
 // and directories, lazily, as the tree opens. Places the caller can only view are shown and cannot be chosen:
 // the submit button stays off for them. Only directories are listed. "Load more" reads the next page of the
 // selected place's directories.
+// The save mode (decision 82) is the "Save to" chooser of the share page. It starts at startAt (a space's ID, My files for the
+// share page), and its choice carries the name of the place chosen.
 export default function PickDestination({
   mode,
   spaces,
+  startAt,
   onPick,
   onClose,
 }: {
-  mode: "move" | "copy" | "shortcut";
+  mode: "move" | "copy" | "shortcut" | "save";
   spaces: FolderAccess[];
+  startAt?: string;
   onPick: (dest: Destination) => void;
   onClose: () => void;
 }) {
@@ -53,7 +59,7 @@ export default function PickDestination({
     }
   }
   const [treeData, setTreeData] = useState<TreeDataNode[]>(() => spaces.map((s) => ({ key: SPACE(s.id), title: s.name, isLeaf: false })));
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(startAt ? SPACE(startAt) : null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [, bump] = useState(0);
@@ -61,8 +67,10 @@ export default function PickDestination({
   const place = selected !== null ? places.current.get(selected) : undefined;
   // A shortcut goes in a directory, so a space's root cannot be chosen for it.
   const canPick = place !== undefined && atLeast(place.role, "contributor") && (mode !== "shortcut" || place.dir !== null);
-  const title = mode === "move" ? t("files.pick.move") : mode === "shortcut" ? t("files.pick.shortcut") : t("files.pick.copy");
-  const submit = mode === "move" ? t("files.pick.submitMove") : mode === "shortcut" ? t("files.pick.submitShortcut") : t("files.pick.submitCopy");
+  const title =
+    mode === "move" ? t("files.pick.move") : mode === "shortcut" ? t("files.pick.shortcut") : mode === "save" ? t("files.pick.save") : t("files.pick.copy");
+  const submit =
+    mode === "move" ? t("files.pick.submitMove") : mode === "shortcut" ? t("files.pick.submitShortcut") : mode === "save" ? t("files.pick.submitSave") : t("files.pick.submitCopy");
 
   // loadChildren reads one page of a place's directories. A reset replaces the children, a later page adds to them.
   async function loadChildren(key: string, reset: boolean) {
@@ -109,7 +117,14 @@ export default function PickDestination({
           key="submit"
           type="primary"
           disabled={!canPick}
-          onClick={() => place && onPick({ folder: place.folder, dir: place.dir })}
+          onClick={() =>
+            place &&
+            onPick(
+              mode === "save"
+                ? { folder: place.folder, dir: place.dir, name: titleOf(treeData, selected) }
+                : { folder: place.folder, dir: place.dir },
+            )
+          }
         >
           {submit}
         </Button>,
@@ -155,6 +170,17 @@ function addChildren(tree: TreeDataNode[], key: string, dirs: Node[], folder: st
       return n.children ? { ...n, children: walk(n.children) } : n;
     });
   return walk(tree);
+}
+
+// titleOf is the name of the tree node with key, or "" when there is none.
+function titleOf(tree: TreeDataNode[], key: string | null): string {
+  if (key === null) return "";
+  for (const n of tree) {
+    if (n.key === key) return typeof n.title === "string" ? n.title : "";
+    const inner = n.children ? titleOf(n.children, key) : "";
+    if (inner !== "") return inner;
+  }
+  return "";
 }
 
 // hasChildren says whether the node with key has any directory under it in the tree.
