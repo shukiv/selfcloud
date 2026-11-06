@@ -92,8 +92,12 @@ func (s *Store) claimJob(ctx context.Context, kind string, except []string) (*Jo
 	err := s.Write(ctx, func(tx *Tx) error {
 		var err error
 		now := millis(Now())
+		// An account.delete never overlaps another job of its account, and no other job starts while one runs: the
+		// pools run kinds in parallel, and a parallel write under a deletion would survive it (decision 92).
 		query := `UPDATE jobs SET status = 'running', updated_at = ?
-			WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND created_at <= ?`
+			WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND created_at <= ?
+			AND NOT EXISTS (SELECT 1 FROM jobs j2 WHERE j2.account_id = jobs.account_id AND j2.status = 'running'
+				AND (j2.kind = 'account.delete' OR jobs.kind = 'account.delete'))`
 		args := []any{now, now}
 		if kind != "" {
 			query += ` AND kind = ?`

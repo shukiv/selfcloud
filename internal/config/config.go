@@ -390,6 +390,12 @@ func validateImports(i ImportsConfig, bad func(string, ...any)) {
 	if i.JobRetentionDays < 1 {
 		bad("imports.job_retention_days must be at least 1")
 	}
+	if i.MaxUnfinishedPerUser < 1 || i.MaxUnfinishedPerUser > 100 {
+		bad("imports.max_unfinished_per_user must be from 1 to 100")
+	}
+	if i.PausedExpiryDays < 1 {
+		bad("imports.paused_expiry_days must be at least 1")
+	}
 	a := i.Archive
 	if a.MaxEntries < 1 || a.MaxEntries > 1_000_000 {
 		bad("imports.archive.max_entries must be from 1 to 1000000")
@@ -529,7 +535,12 @@ type ImportsConfig struct {
 	MaxConcurrentJobs int `yaml:"max_concurrent_jobs"`
 	// JobRetentionDays is how long a finished import's job record (its state and item rows) is kept. The sweep removes
 	// older records. The files it imported stay.
-	JobRetentionDays int                 `yaml:"job_retention_days"`
+	JobRetentionDays int `yaml:"job_retention_days"`
+	// MaxUnfinishedPerUser caps the imports a user has queued, running or paused at once. A paused import holds its
+	// archive, so without the cap a user could hold any number of them.
+	MaxUnfinishedPerUser int `yaml:"max_unfinished_per_user"`
+	// PausedExpiryDays is how long an import may stay paused. Then it is cancelled and what it staged is removed.
+	PausedExpiryDays int                 `yaml:"paused_expiry_days"`
 	Archive          ArchiveImportConfig `yaml:"archive"`
 }
 
@@ -716,6 +727,7 @@ func Defaults() *Config {
 			MaxTextPerAccount: ByteSize(64 << 20), MaxTextTotal: ByteSize(1 << 30)},
 		Copy: CopyConfig{MaxNodes: 50000},
 		Imports: ImportsConfig{Enabled: true, MaxConcurrentJobs: 2, JobRetentionDays: 30,
+			MaxUnfinishedPerUser: 3, PausedExpiryDays: 14,
 			Archive: ArchiveImportConfig{Enabled: true, MaxEntries: 50000, MaxDepth: 32, MaxRatio: 100,
 				MaxTotalBytes: 100 * GiB}},
 		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},

@@ -949,8 +949,9 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		TextMax: int64(s.cfg.Search.TextMaxBytes), CapAccount: int64(s.cfg.Search.MaxTextPerAccount),
 		CapTotal: int64(s.cfg.Search.MaxTextTotal),
 		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
-		ImportRetention:   time.Duration(s.cfg.Imports.JobRetentionDays) * 24 * time.Hour,
-		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
+		ImportRetention:    time.Duration(s.cfg.Imports.JobRetentionDays) * 24 * time.Hour,
+		ImportPausedExpiry: time.Duration(s.cfg.Imports.PausedExpiryDays) * 24 * time.Hour,
+		UploadMaxLifetime:  s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
 		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(),
 		AuditRetention: time.Duration(s.cfg.Audit.RetentionDays) * 24 * time.Hour,
 		Derived:        s.derivedPool.Cache(), Zips: s.zipFiles, Logger: s.log})

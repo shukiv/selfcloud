@@ -385,14 +385,21 @@ func importPathKey(names []imports.Name) string {
 	return strings.Join(keys, "/")
 }
 
+// importSourceKey is the key an archive entry is known by in import_sources. It names the archive, the user, the target
+// folder and the target directory, so only the same archive into the same place is deduplicated: another user, or the
+// same archive into another folder or parent, imports the entries again and discloses nothing.
+func importSourceKey(im *store.Import, key string) string {
+	return strings.Join([]string{im.ArchiveSHA256, im.UserID, im.FolderID, im.ParentID, key}, "/")
+}
+
 // importMakeDir makes the folder name under parent, as an item of the import, and returns its node. A folder that an
 // earlier import of the same archive made, still in the target folder under the target directory, is reused: its
 // entries are added to it, and the item says it was skipped.
 func (s *Server) importMakeDir(ctx context.Context, tx *store.Tx, im *store.Import, p *auth.Principal,
 	parent string, name imports.Name, key string) (string, error) {
 	now := store.Now()
-	src := im.ArchiveSHA256 + "/" + key
-	have, err := tx.ImportSourceNode(ctx, im.AccountID, store.SourceArchive, src)
+	src := importSourceKey(im, key)
+	have, err := tx.ImportSourceNode(ctx, im.AccountID, im.FolderID, store.SourceArchive, src)
 	if err != nil {
 		return "", err
 	}
@@ -438,8 +445,8 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 	if err != nil {
 		return err
 	}
-	src := cur.ArchiveSHA256 + "/" + e.Key
-	if have, err := s.store.ImportSourceNode(ctx, cur.AccountID, store.SourceArchive, src); err != nil {
+	src := importSourceKey(cur, e.Key)
+	if have, err := s.store.ImportSourceNode(ctx, cur.AccountID, cur.FolderID, store.SourceArchive, src); err != nil {
 		return err
 	} else if have == "" {
 		// The disk is checked before the reservation, so a full disk leaves nothing reserved.
@@ -453,6 +460,9 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 	}
 	if skip {
 		return nil
+	}
+	if err := s.importFaultAt("reserved"); err != nil {
+		return err
 	}
 	w, err := s.blobs.Create(ctx, cur.AccountID, e.Size)
 	if err != nil {
@@ -484,7 +494,7 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 	if err != nil {
 		return apierr.Wrap(apierr.Internal, "the import could not write a file", err)
 	}
-	return s.store.Write(ctx, func(tx *store.Tx) error {
+	if err := s.store.Write(ctx, func(tx *store.Tx) error {
 		im, err := tx.Import(ctx, impID)
 		if err != nil {
 			return err
@@ -526,7 +536,12 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 		im.Bytes += committed.Size
 		im.Cursor = int64(e.Index)
 		return tx.SaveImport(ctx, im, now)
-	})
+	}); err != nil {
+		// The write failed after the blob was committed: nothing names the blob, so its file is removed here.
+		_ = s.blobs.Remove(cur.AccountID, committed.ID)
+		return err
+	}
+	return nil
 }
 
 // importReserve makes the write that reserves a file's declared size before its bytes are read. It returns skip for a
@@ -541,7 +556,16 @@ func (s *Server) importReserve(ctx context.Context, impID string, p *auth.Princi
 		if im.State != store.ImportRunning {
 			return errImportStopped
 		}
-		have, err := tx.ImportSourceNode(ctx, im.AccountID, store.SourceArchive, src)
+		// A reservation a stopped run left (its entry was not finished) is released first, so the entry is reserved
+		// once, and the record holds the one amount the folder holds.
+		if im.ReservedBytes > 0 {
+			if err := tx.AdjustFolders(ctx, im.AccountID, store.FolderChange{FolderID: im.StagingFolderID,
+				Change: store.UsageChange{Reserved: -im.ReservedBytes}}); err != nil {
+				return err
+			}
+			im.ReservedBytes = 0
+		}
+		have, err := tx.ImportSourceNode(ctx, im.AccountID, im.FolderID, store.SourceArchive, src)
 		if err != nil {
 			return err
 		}
@@ -599,6 +623,30 @@ func (s *Server) importStillRunning(ctx context.Context, impID string) error {
 
 // importPublish moves the staged tree into the target in one write. Each top-level entry is placed under its parent, with
 // the name clash settled by the import's on_conflict, and the audit entry and the completion event are written there too.
+// importTargetRole checks that the user who asked for an import may still write to its target: an editor's role on a team
+// space, a contributor's on a personal folder. The rights may have changed since the import was asked for, so the check
+// is made when the import publishes and again when it resumes (decision 92).
+func (s *Server) importTargetRole(ctx context.Context, tx *store.Tx, im *store.Import, p *auth.Principal) error {
+	folder, err := tx.Folder(ctx, im.AccountID, im.FolderID)
+	if err != nil {
+		return err
+	}
+	parent := im.ParentID
+	if parent == "" {
+		root, err := tx.RootNode(ctx, im.AccountID, im.FolderID)
+		if err != nil {
+			return err
+		}
+		parent = root.ID
+	}
+	role := store.RoleContributor
+	if folder.Kind == store.KindTeam {
+		role = store.RoleEditor
+	}
+	_, err = requireNodeRole(ctx, tx, p, parent, role)
+	return err
+}
+
 func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Principal) error {
 	if err := s.importFaultAt("publish"); err != nil {
 		return err
@@ -610,6 +658,10 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 		}
 		if im.State != store.ImportRunning {
 			return errImportStopped
+		}
+		// A refusal here fails the import, and its run goes on to the cleanup that removes the staged tree.
+		if err := s.importTargetRole(ctx, tx, im, p); err != nil {
+			return err
 		}
 		tops, err := tx.StagedTopLevel(ctx, im.AccountID, im.StagingFolderID)
 		if err != nil {

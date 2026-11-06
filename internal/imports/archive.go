@@ -12,8 +12,10 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"io/fs"
+	"math"
 	"strings"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
@@ -125,7 +127,7 @@ func Scan(r io.ReaderAt, size int64, caps Caps) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	if f == TarGz && s.sum.Bytes > caps.MaxRatio*max(size, ratioFloor) {
+	if f == TarGz && overRatio(s.sum.Bytes, size, caps.MaxRatio) {
 		return Summary{}, refuse(apierr.TooLarge, "the archive expands more than it may", "ratio")
 	}
 	return s.sum, nil
@@ -153,10 +155,13 @@ func (s *scanner) add(e Entry) error {
 	}
 	s.seen[e.Key] = e.Dir
 	if !e.Dir {
+		if e.Size < 0 || e.Packed < 0 {
+			return refuse(apierr.TooLarge, "an entry declares a size no archive can hold", "size")
+		}
 		if e.Size > s.caps.MaxFile {
 			return refuse(apierr.TooLarge, "a file in the archive is larger than the largest file allowed", "file_size")
 		}
-		if e.Size > s.caps.MaxRatio*max(e.Packed, ratioFloor) {
+		if overRatio(e.Size, e.Packed, s.caps.MaxRatio) {
 			return refuse(apierr.TooLarge, "a file in the archive expands more than it may", "ratio")
 		}
 		if e.Size > s.caps.MaxTotal-s.sum.Bytes {
@@ -187,7 +192,11 @@ func (s *scanner) zip(r io.ReaderAt, size int64) error {
 		return refuse(apierr.TooLarge, "the archive holds more entries than it may", "entries")
 	}
 	for _, f := range zr.File {
-		e, err := entryOf(f.Name, f.FileInfo().IsDir(), f.Mode(), int64(f.UncompressedSize64), int64(f.CompressedSize64))
+		usz, pck, err := zipSizes(f, size)
+		if err != nil {
+			return err
+		}
+		e, err := entryOf(f.Name, f.FileInfo().IsDir(), f.Mode(), usz, pck)
 		if err != nil {
 			return err
 		}
@@ -206,13 +215,18 @@ func (s *scanner) zip(r io.ReaderAt, size int64) error {
 }
 
 func (s *scanner) tar(r io.ReaderAt, size int64, f Format) error {
-	tr, closeFn, err := openTar(r, size, f)
+	cr := &countReader{limit: tarLimit(size, s.caps, f)}
+	tr, closeFn, err := openTar(r, size, f, cr)
 	if err != nil {
 		return err
 	}
 	defer closeFn()
+	skipped := 0
 	for {
 		h, err := tr.Next()
+		if cr.over {
+			return refuse(apierr.TooLarge, "the archive expands more than it may", "ratio")
+		}
 		if err == io.EOF {
 			return nil
 		}
@@ -224,6 +238,11 @@ func (s *scanner) tar(r io.ReaderAt, size int64, f Format) error {
 			return err
 		}
 		if !ok {
+			// A header that is not an entry counts too: headers cannot carry what the caps do not see.
+			skipped++
+			if skipped > s.caps.MaxEntries {
+				return refuse(apierr.TooLarge, "the archive holds more entries than it may", "entries")
+			}
 			continue
 		}
 		e.Index = s.sum.Entries + 1
@@ -308,7 +327,9 @@ func cleanPath(raw string, dir bool) ([]Name, error) {
 }
 
 // openTar opens a tar stream of the given format, and returns it with the function that closes its decompression.
-func openTar(r io.ReaderAt, size int64, f Format) (*tar.Reader, func(), error) {
+// The decompressed bytes of a gzip go through cr when it is not nil, so every byte of the stream counts, the headers of
+// entries that are not imported too (decision 92).
+func openTar(r io.ReaderAt, size int64, f Format, cr *countReader) (*tar.Reader, func(), error) {
 	src := io.NewSectionReader(r, 0, size)
 	if f == Tar {
 		return tar.NewReader(src), func() {}, nil
@@ -317,7 +338,78 @@ func openTar(r io.ReaderAt, size int64, f Format) (*tar.Reader, func(), error) {
 	if err != nil {
 		return nil, nil, refuse(apierr.UnsupportedMedia, "the gzip stream is not valid", "")
 	}
-	return tar.NewReader(gz), func() { gz.Close() }, nil
+	var out io.Reader = gz
+	if cr != nil {
+		cr.r = gz
+		out = cr
+	}
+	return tar.NewReader(out), func() { gz.Close() }, nil
+}
+
+// errOverLimit is what a read of a countReader returns past its limit.
+var errOverLimit = errors.New("the archive expands more than it may")
+
+// countReader counts the bytes read through it. Past its limit it sets over and fails the read, so a stream that expands
+// far past the caps is stopped while it is read, not after.
+type countReader struct {
+	r     io.Reader
+	n     int64
+	limit int64
+	over  bool
+}
+
+func (c *countReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	if c.n > c.limit {
+		c.over = true
+		return n, errOverLimit
+	}
+	return n, err
+}
+
+// tarLimit is how many decompressed bytes of a tar stream the caps allow. A gzip may expand to the ratio of its size,
+// and to the total of its files plus a header allowance per entry. A plain tar is not limited: its size is the archive's.
+func tarLimit(size int64, caps Caps, f Format) int64 {
+	if f != TarGz {
+		return math.MaxInt64
+	}
+	limit := int64(math.MaxInt64)
+	if caps.MaxRatio > 0 {
+		base := max(size, ratioFloor)
+		if base <= math.MaxInt64/caps.MaxRatio {
+			limit = caps.MaxRatio * base
+		}
+	}
+	allowance := int64(caps.MaxEntries)*1024 + 1<<20
+	if caps.MaxTotal >= 0 && caps.MaxTotal <= math.MaxInt64-allowance {
+		limit = min(limit, caps.MaxTotal+allowance)
+	}
+	return limit
+}
+
+// overRatio reports whether size is more than ratio times the larger of packed and ratioFloor. It divides rather than
+// multiplies, so a large packed size cannot overflow the product into a small one.
+func overRatio(size, packed, ratio int64) bool {
+	if ratio <= 0 {
+		return size > 0
+	}
+	p := max(packed, ratioFloor)
+	q := size / ratio
+	return q > p || (q == p && size%ratio != 0)
+}
+
+// zipSizes reads the declared sizes of a zip entry as signed numbers, which the caps are checked against. A size above
+// MaxInt64 would read as a negative number and pass every cap, and a compressed size above the archive's own size is not
+// a real entry. Both are refused (decision 92).
+func zipSizes(f *zip.File, archive int64) (int64, int64, error) {
+	if f.UncompressedSize64 > math.MaxInt64 || f.CompressedSize64 > math.MaxInt64 {
+		return 0, 0, refuse(apierr.TooLarge, "an entry of the archive declares a size no archive can hold", "size")
+	}
+	if int64(f.CompressedSize64) > archive {
+		return 0, 0, refuse(apierr.UnsupportedMedia, "the zip's structure is not valid", "packed")
+	}
+	return int64(f.UncompressedSize64), int64(f.CompressedSize64), nil
 }
 
 // Walk calls fn for each entry of the archive after the first skip entries, in archive order, with a reader of the
@@ -331,7 +423,11 @@ func Walk(r io.ReaderAt, size int64, f Format, skip int, fn func(e Entry, body i
 		}
 		i := 0
 		for _, zf := range zr.File {
-			e, err := entryOf(zf.Name, zf.FileInfo().IsDir(), zf.Mode(), int64(zf.UncompressedSize64), int64(zf.CompressedSize64))
+			usz, pck, err := zipSizes(zf, size)
+			if err != nil {
+				return err
+			}
+			e, err := entryOf(zf.Name, zf.FileInfo().IsDir(), zf.Mode(), usz, pck)
 			if err != nil {
 				return err
 			}
@@ -358,7 +454,7 @@ func Walk(r io.ReaderAt, size int64, f Format, skip int, fn func(e Entry, body i
 		}
 		return nil
 	}
-	tr, closeFn, err := openTar(r, size, f)
+	tr, closeFn, err := openTar(r, size, f, nil)
 	if err != nil {
 		return err
 	}

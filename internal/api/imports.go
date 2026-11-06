@@ -186,6 +186,14 @@ func (s *Server) handleCreateImport(w http.ResponseWriter, r *http.Request) erro
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
+		unfinished, err := tx.CountUnfinishedImports(ctx, p.AccountID, p.UserID)
+		if err != nil {
+			return err
+		}
+		if unfinished >= s.cfg.Imports.MaxUnfinishedPerUser {
+			return apierr.New(apierr.Conflict, "too many imports are unfinished; finish, resume or cancel one first").
+				With("reason", "too_many_unfinished")
+		}
 		role := store.RoleContributor
 		if folder.Kind == store.KindTeam {
 			role = store.RoleEditor
@@ -416,6 +424,7 @@ func (s *Server) changeImport(w http.ResponseWriter, r *http.Request, action str
 		return notFound("import")
 	}
 	var job *store.Job
+	var refused error
 	err = s.store.Write(r.Context(), func(tx *store.Tx) error {
 		cur, err := tx.Import(r.Context(), im.ID)
 		if err != nil {
@@ -431,6 +440,16 @@ func (s *Server) changeImport(w http.ResponseWriter, r *http.Request, action str
 		case "resume":
 			if cur.State != store.ImportPaused {
 				return importState(cur)
+			}
+			if err := s.importTargetRole(r.Context(), tx, cur, p); err != nil {
+				if !isForbidden(err) {
+					return err
+				}
+				// The rights are gone since the import was asked for: it fails here, and its cleanup job removes what it staged.
+				refused = err
+				cur.State, cur.Phase, cur.PauseReason = store.ImportFailed, store.ImportPhaseCleanup, ""
+				cur.ErrorCode, cur.Failure = string(apierr.Forbidden), err.Error()
+				break
 			}
 			if _, err := tx.UnfinishedImport(r.Context(), cur.AccountID, cur.UserID, cur.Source); err == nil {
 				return apierr.New(apierr.Conflict, "an import from this source is already running; wait for it or cancel it").
@@ -483,8 +502,17 @@ func (s *Server) changeImport(w http.ResponseWriter, r *http.Request, action str
 	if job != nil {
 		s.jobs.Wake()
 	}
+	if refused != nil {
+		return refused
+	}
 	writeJSON(w, http.StatusOK, toImportJSON(im))
 	return nil
+}
+
+// isForbidden reports whether err is a refusal for the caller's role.
+func isForbidden(err error) bool {
+	var ae *apierr.Error
+	return errors.As(err, &ae) && ae.Code == apierr.Forbidden
 }
 
 // importState refuses an action on an import in the state it is in.

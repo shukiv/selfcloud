@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/shukiv/selfcloud/internal/id"
 )
 
 // Import states (migration 0048, decision 92). A job moves queued -> running -> done. A pause parks it as paused, a
@@ -135,6 +137,60 @@ func (tx *Tx) UnfinishedImport(ctx context.Context, accountID, userID, source st
 		accountID, userID, source))
 }
 
+// CountUnfinishedImports is how many imports of the user are queued, running or paused: the ones not yet finished or
+// cancelled. A paused import holds its archive, so these are capped per user (imports.max_unfinished_per_user).
+func (tx *Tx) CountUnfinishedImports(ctx context.Context, accountID, userID string) (int, error) {
+	var n int
+	err := tx.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM import_jobs WHERE account_id = ? AND user_id = ?
+		AND state IN ('queued', 'running', 'paused')`, accountID, userID).Scan(&n)
+	return n, err
+}
+
+// ExpirePausedImports cancels up to limit imports that have been paused since before, and queues for each the job that
+// removes what it staged and its archive. It returns how many it cancelled (imports.paused_expiry_days).
+func (s *Store) ExpirePausedImports(ctx context.Context, before time.Time, limit int) (int64, error) {
+	var n int64
+	err := s.Write(ctx, func(tx *Tx) error {
+		rows, err := tx.q.QueryContext(ctx, `SELECT id, account_id FROM import_jobs
+			WHERE state = 'paused' AND updated_at < ? ORDER BY updated_at, id LIMIT ?`, millis(before), limit)
+		if err != nil {
+			return err
+		}
+		type paused struct{ id, acc string }
+		var list []paused
+		for rows.Next() {
+			var p paused
+			if err := rows.Scan(&p.id, &p.acc); err != nil {
+				rows.Close()
+				return err
+			}
+			list = append(list, p)
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		now := Now()
+		for _, p := range list {
+			job := &Job{ID: id.New("job"), AccountID: p.acc, Kind: "import", Target: p.id, Status: JobQueued,
+				CreatedAt: now, UpdatedAt: now}
+			if err := tx.InsertJob(ctx, job); err != nil {
+				return err
+			}
+			if err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE import_jobs SET state = 'cancelled', phase = ?,
+				pause_reason = 'expired', job_id = ?, updated_at = ? WHERE id = ? AND state = 'paused'`,
+				ImportPhaseCleanup, job.ID, millis(now), p.id)); err != nil {
+				return err
+			}
+		}
+		n = int64(len(list))
+		return nil
+	})
+	return n, err
+}
+
 // ImportJobUnfinished reports whether a job of an import is queued or running. A resume or a cleanup queues a job only when
 // none is, so one import never has two jobs at once.
 func (tx *Tx) ImportJobUnfinished(ctx context.Context, importID string) (bool, error) {
@@ -225,20 +281,23 @@ func (tx *Tx) ImportDirNode(ctx context.Context, importID, path string) (string,
 
 // ImportSourceNode returns the node an import of a source made for sourceID, when that node is still there (not trashed),
 // or "" when none is. A node that was deleted or trashed does not count: the entry is imported again.
-func (tx *Tx) ImportSourceNode(ctx context.Context, accountID, source, sourceID string) (string, error) {
-	return importSourceNode(ctx, tx.q, accountID, source, sourceID)
+// The match is only ever for a node still in folderID: a node that was moved out of the target is not a match, so the
+// entry is imported again. The key already names the user and the target (api importSourceKey).
+func (tx *Tx) ImportSourceNode(ctx context.Context, accountID, folderID, source, sourceID string) (string, error) {
+	return importSourceNode(ctx, tx.q, accountID, folderID, source, sourceID)
 }
 
 // ImportSourceNode is ImportSourceNode read outside a transaction.
-func (s *Store) ImportSourceNode(ctx context.Context, accountID, source, sourceID string) (string, error) {
-	return importSourceNode(ctx, s.r, accountID, source, sourceID)
+func (s *Store) ImportSourceNode(ctx context.Context, accountID, folderID, source, sourceID string) (string, error) {
+	return importSourceNode(ctx, s.r, accountID, folderID, source, sourceID)
 }
 
-func importSourceNode(ctx context.Context, q querier, accountID, source, sourceID string) (string, error) {
+func importSourceNode(ctx context.Context, q querier, accountID, folderID, source, sourceID string) (string, error) {
 	var nodeID string
 	err := q.QueryRowContext(ctx, `SELECT s.node_id FROM import_sources s JOIN nodes n ON n.account_id = s.account_id
-		AND n.id = s.node_id WHERE s.account_id = ? AND s.source = ? AND s.source_id = ? AND n.trashed_at IS NULL`,
-		accountID, source, sourceID).Scan(&nodeID)
+		AND n.id = s.node_id WHERE s.account_id = ? AND s.source = ? AND s.source_id = ? AND n.trashed_at IS NULL
+		AND n.folder_id = ?`,
+		accountID, source, sourceID, folderID).Scan(&nodeID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}

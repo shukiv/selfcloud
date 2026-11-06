@@ -14,6 +14,20 @@ const (
 	importBatches = 100
 )
 
+// expireImports cancels the imports paused past the expiry. Each is cancelled in the store and its cleanup job queued;
+// the job removes what the import staged and its archive (decision 92). A zero expiry keeps paused imports.
+func (w *Sweeper) expireImports(ctx context.Context, now time.Time, res *Result) error {
+	if w.importPausedExpiry <= 0 {
+		return nil
+	}
+	n, err := w.st.ExpirePausedImports(ctx, now.Add(-w.importPausedExpiry), importBatch)
+	res.ImportsExpired += n
+	if n > 0 {
+		w.log.Info("paused imports expired", "cancelled", n)
+	}
+	return err
+}
+
 // pruneImports removes the records of finished imports (their state and their item rows) that finished before the
 // retention. The files they imported stay, and so does what the imports remember of them. A retention of zero keeps
 // every record.

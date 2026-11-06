@@ -1135,6 +1135,11 @@ const completionTimeout = 30 * time.Second
 // details.state "awaiting_commit", and nothing moves. override, when set, is a new target for the
 // upload (a commit); it is saved in the same transaction.
 func (s *Server) completeUpload(r *http.Request, p *auth.Principal, up *store.Upload, override *uploadTarget) (*store.Node, error) {
+	// Every completion path comes here (creation, PATCH, commit). An import archive is never a file: it becomes one only
+	// as the import's source (decision 92), so a commit of it is refused and nothing is made.
+	if up.Purpose == store.UploadPurposeImport {
+		return nil, apierr.New(apierr.Conflict, "an import archive is not a file").With("reason", "import_archive")
+	}
 	h, err := restoreHash(up.HashState, up.Length)
 	if err != nil {
 		return nil, apierr.Wrap(apierr.Internal, "the upload's state is damaged", err)

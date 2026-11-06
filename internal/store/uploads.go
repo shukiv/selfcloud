@@ -111,10 +111,10 @@ func (tx *Tx) RecordUploadProgress(ctx context.Context, accountID, id string, fr
 //
 // Completion does not come here: it moves the reservation into usage itself (see completeUpload).
 func (tx *Tx) DeleteUpload(ctx context.Context, accountID, id string) error {
-	var folder string
+	var folder, purpose string
 	var length int64
-	err := tx.q.QueryRowContext(ctx, "SELECT folder_id, CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE account_id = ? AND id = ?",
-		accountID, id).Scan(&folder, &length)
+	err := tx.q.QueryRowContext(ctx, "SELECT folder_id, purpose, CASE WHEN visitor_id = '' THEN length ELSE durable_offset END FROM uploads WHERE account_id = ? AND id = ?",
+		accountID, id).Scan(&folder, &purpose, &length)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -124,6 +124,11 @@ func (tx *Tx) DeleteUpload(ctx context.Context, accountID, id string) error {
 	if err := rowsAffected(tx.q.ExecContext(ctx, "DELETE FROM uploads WHERE account_id = ? AND id = ?",
 		accountID, id)); err != nil {
 		return err
+	}
+	// An import archive reserved no quota (decision 92), so there is nothing of its own to release. Releasing its length
+	// would take another upload's reservation in the same folder.
+	if purpose == UploadPurposeImport {
+		return nil
 	}
 	return tx.AdjustUsage(ctx, accountID, folder, UsageChange{Reserved: -length})
 }
