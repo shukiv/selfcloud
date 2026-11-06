@@ -5,11 +5,10 @@
 // nothing is opened.
 import { useCallback } from 'react';
 import { App } from 'antd';
-import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLang } from '../i18n';
-import { get } from '../store';
-import { refreshTree } from '../query';
+import { get, writable } from '../store';
+import type { Branch } from '../query';
 import { createDocument } from './api';
 import { editorPath } from './editor';
 import { fileErrorText } from './fileErrors';
@@ -46,12 +45,15 @@ export async function openNewDocument(o: OpenNewDocument): Promise<void> {
   o.navigate(editorPath(node.id, 'edit', o.from));
 }
 
+// createdDocument records the listing a new document went into, so the page that shows it reads that listing again. FilesPage
+// has the query client (the sidebar does not), and it refreshes the branch when this changes (decision 91).
+export const createdDocument = writable<{ branch: Branch; at: number } | null>(null);
+
 // useNewDocument is the action the New menus call: it makes a document of kind in the place the New actions act on (the
 // place the files page shows) and opens it in the editor, in this tab. Both the sidebar's New and the toolbar's New use it.
 export function useNewDocument(): (kind: DocumentKind) => void {
   const navigate = useNavigate();
   const location = useLocation();
-  const qc = useQueryClient();
   const { message } = App.useApp();
   const lang = useLang();
   return useCallback(
@@ -64,10 +66,10 @@ export function useNewDocument(): (kind: DocumentKind) => void {
         kind,
         from: location.pathname + location.search,
         navigate: (to) => navigate(to),
-        onCreated: () => void refreshTree(qc, [branch]),
+        onCreated: () => createdDocument.set({ branch, at: Date.now() }),
         onError: (err) => void message.error(fileErrorText(err, lang)),
       });
     },
-    [navigate, location.pathname, location.search, qc, message, lang],
+    [navigate, location.pathname, location.search, message, lang],
   );
 }

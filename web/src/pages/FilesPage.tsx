@@ -58,7 +58,7 @@ import { officeConvert } from "../lib/files/convert";
 import { editorEntry, editorPath, officeEdit } from "../lib/files/editor";
 import { nameProblem, nameMessageKey, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
 import { documentKinds, newPlace, placeOfHere, queueInto } from "../lib/files/newPlace";
-import { useNewDocument } from "../lib/files/documents";
+import { createdDocument, useNewDocument } from "../lib/files/documents";
 import { useSidebarDocked } from "../lib/sidebarDocked";
 import { refreshMyStorage } from "../lib/storage/api";
 import { parseFilesPath, filesURL, type FilesRoute } from "../lib/files/route";
@@ -278,6 +278,14 @@ export default function FilesPage() {
   // documents there, as the sidebar's New does (decision 91).
   const shownPlace = useStore(newPlace);
   const makeDocument = useNewDocument();
+  // A document made from New is in its listing: that listing is read again here (decision 91).
+  const createdSeen = useRef(get(createdDocument));
+  const created = useStore(createdDocument);
+  useEffect(() => {
+    if (created === null || created === createdSeen.current) return;
+    createdSeen.current = created;
+    void refreshTree(qc, [created.branch]);
+  }, [created, qc]);
   // viewable is a file the viewer opens: a previewable one, or an office document while its preview is offered.
   const viewable = (n: Node) => previewable(n) || (officeOn && kindOf(n) === "office");
   // room is the space the upload tray covers at the bottom of the page: the last rows are scrolled clear of it.
