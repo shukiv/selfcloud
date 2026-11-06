@@ -274,7 +274,9 @@ export default function FilesPage() {
   const officeOn = useStore(officeConvert);
   // editorOn is true while the server offers the office editor (decision 72): the menu then offers Open in editor or Open in viewer.
   const editorOn = useStore(officeEdit);
-  // The toolbar's New and the drawer's make blank documents as the sidebar's New does (decision 91).
+  // The place the New actions act on, as the sidebar's New reads it (decision 66). The toolbar's New and the drawer's make blank
+  // documents there, as the sidebar's New does (decision 91).
+  const shownPlace = useStore(newPlace);
   const makeDocument = useNewDocument();
   // viewable is a file the viewer opens: a previewable one, or an office document while its preview is offered.
   const viewable = (n: Node) => previewable(n) || (officeOn && kindOf(n) === "office");
