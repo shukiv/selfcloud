@@ -164,6 +164,8 @@ var nodeWriteSites = map[string]nodeWriteSite{
 	"../api/office_rename.go UpdateNodeHeld":                        {1, lockHolder, "WOPI RenameFile: refused unless the lock ID matches the live lock; an unlocked file takes the rename with no holder; reported as node.rename (file.updated)"},
 	"../api/office_locks.go replaceContent":                         {1, lockHolder, "WOPI PutFile: its node.write reports file.updated through the same helper as PUT; the holder is the lock ID"},
 	"../api/office_saveas.go replaceContent":                        {1, lockHolder, "WOPI PutRelativeFile's overwrite (decision 87): a live lock on the target is refused first, so the holder is the empty ID; its node.write reports file.updated"},
+	"../api/office_documents.go newNode":                            {1, lockAdds, "POST /nodes/{nod}/documents: a new blank file, audited as node.create, which reports file.created (decision 91)"},
+	"../api/office_documents.go UpdateNode":                         {1, lockGuarded, "POST /nodes/{nod}/documents: the new file, which no lock can hold yet (as PUT's create of a file), so its content tag and blob are set once"},
 	"../api/office_saveas.go newNode":                               {1, lockAdds, "WOPI PutRelativeFile's copy: a new file, audited as node.create, which reports file.created"},
 	"../api/office_saveas.go UpdateNode":                            {1, lockGuarded, "WOPI PutRelativeFile's new copy, which no lock can hold yet (as PUT's create of a file), so the node's content tag and blob are set once"},
 	"../api/ownership.go ClearSubtreeEditorsCanShare":               {1, lockGuarded, "the editors_can_share flag, which is not in the payload"},

@@ -24,6 +24,7 @@ var allowedWrites = map[string]string{
 	"POST /api/v1/nodes/{nod}/move":                   "file data",
 	"POST /api/v1/nodes/{nod}/copy":                   "file data; the copy job keeps the admin's mark (F5)",
 	"POST /api/v1/nodes/{nod}/shortcuts":              "file data",
+	"POST /api/v1/nodes/{nod}/documents":              "file data: a new blank file, as an upload makes one (decision 91)",
 	"POST /api/v1/nodes/{nod}/exports":                "file data: a derived copy",
 	"POST /api/v1/zips":                               "file data: the zip job keeps the admin's mark (F5)",
 	"DELETE /api/v1/zips/{zip}":                       "the caller's own zip job",

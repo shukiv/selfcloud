@@ -66,6 +66,10 @@ var reviewedNodeKindSites = map[string]int{
 	// Slice l4 added one in office_rename.go: the WOPI RenameFile refuses a folder or a shortcut as not_found, after the
 	// token's read-only check and before the rename. It grants nothing; the token already names a file. Decision 73.
 	"internal/api/office_rename.go": 1,
+	// Slice l6 added two in office_documents.go, each refusing whatever is not a directory: the target of a new document must
+	// be a folder or a directory (a file or a shortcut is invalid_request, which grants nothing; the caller needs contributor on
+	// it either way), checked before the bytes are written and again inside the write. Decision 91.
+	"internal/api/office_documents.go": 2,
 	// Slice l5 added three in office_saveas.go, each reviewed: the copy's directory must be a directory (a file or a
 	// shortcut parent is refused as not_found, which grants nothing); an overwrite replaces a file only (a folder or a
 	// shortcut is taken as a name clash, answered 409 with a free name, never replaced); and the copy's source must be a
