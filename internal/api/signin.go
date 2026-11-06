@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -245,11 +246,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// The holds of a sign-in (decision 90). A device cookie's budget (login.device, 10 an hour per cookie) covers only the
-	// user the cookie names, D: a genuine cookie for D tests D's password under its own budget, and skips the email's cap.
-	// When other users have the email, the cap (login.failed, decision 84) is also taken, because their passwords are
-	// tested too. Every hold taken is spent by a failure and given back by a match. Without a trusted device, or with its
-	// budget spent, D is an ordinary candidate and the whole email is under the cap, as before.
+	// The holds of a sign-in (decision 90, as revised in round 2). A genuine device cookie's budget (login.device, 10 an hour
+	// per cookie) covers only the user the cookie names, D, and D's password alone. With a trusted device the email's hold
+	// (login.failed, decision 84) is taken too, whether or not other users have the email, and it covers every candidate
+	// tested under it. A failure spends each hold taken. A hold is given back at its own time only when every candidate
+	// tested under it matched; the device hold when D matched. Without a trusted device, or with its budget spent, D is an
+	// ordinary candidate and the whole email is under the cap, as before.
 	var deviceUser *store.User
 	var deviceHold, failedHold *rate.Reservation
 	if nonce, d, ok := s.trustedDevice(r, candidates); ok {
@@ -257,24 +259,23 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 			deviceUser, deviceHold = d, res
 		}
 	}
-	// tested is who the password is checked against. capOthers is set only when the cap is spent while D holds the device:
-	// then D alone is tested, and the others get the cap's answer below (decision 90, corners 3 and 4).
+	// tested is who the password is checked against. capSpent is set only when the cap is spent while D holds the device:
+	// then D alone is tested, and the others (possibly none) get the cap's answer below (decision 90, corners 3 and 4).
 	tested := candidates
-	var capOthers []*store.User
-	switch {
-	case deviceUser == nil:
+	capSpent := false
+	var others []*store.User
+	if deviceUser == nil {
 		res, err := s.limits["login.failed"].reserve(key, now)
 		if err != nil {
 			return s.cappedAnswer(w, r, candidates, email, in.Password, in.Remember)
 		}
 		failedHold = res
-	case len(candidates) > 1:
-		if res, err := s.limits["login.failed"].reserve(key, now); err == nil {
-			failedHold = res
-		} else {
-			tested = []*store.User{deviceUser}
-			capOthers = withoutUser(candidates, deviceUser)
-		}
+	} else if res, err := s.limits["login.failed"].reserve(key, now); err == nil {
+		failedHold = res
+	} else {
+		capSpent = true
+		tested = []*store.User{deviceUser}
+		others = withoutUser(candidates, deviceUser)
 	}
 	var matches []*store.User
 	for _, c := range tested {
@@ -286,20 +287,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 			matches = append(matches, c)
 		}
 	}
-	if len(matches) > 0 {
-		// The password matched: every hold is given back at the time it was taken, so a correct sign-in spends none of
-		// them (decision 90, rule 6; a later time would restore nothing, decision 89 (k)).
-		if deviceHold != nil {
-			deviceHold.CancelAt(now)
-		}
-		if failedHold != nil {
-			failedHold.CancelAt(now)
-		}
+	// Each hold is given back at the time it was taken (decision 89 (k); a later time restores nothing). The device hold
+	// covers D alone, so it goes back when D matched. The email's hold goes back only when every candidate tested under it
+	// matched, so a match on one user does not refund a failed test of another (round 2, finding 1).
+	if deviceHold != nil && slices.Contains(matches, deviceUser) {
+		deviceHold.CancelAt(now)
 	}
-	if capOthers != nil && len(matches) == 0 {
-		// The device's user did not match, and the cap is spent: the others get the cap's answer. Their passwords are not
-		// tested here, and the device's budget stays spent by that failure.
-		return s.cappedAnswer(w, r, capOthers, email, in.Password, in.Remember)
+	if failedHold != nil && len(matches) > 0 && len(matches) == len(tested) {
+		failedHold.CancelAt(now)
+	}
+	if capSpent && len(matches) == 0 {
+		// D's failure is audited against D, as a failed sign-in is (round 2, finding 3). The others get the cap's answer,
+		// which writes its own row. Their passwords are not tested here, and the device's budget stays spent by D's failure.
+		if err := s.auditFailedLogin(r, []*store.User{deviceUser}); err != nil {
+			return err
+		}
+		return s.cappedAnswer(w, r, others, email, in.Password, in.Remember)
 	}
 	if len(candidates) == 0 {
 		if err := auth.DummyVerify(ctx, in.Password); err != nil {

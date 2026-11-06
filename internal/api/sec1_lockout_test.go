@@ -206,9 +206,10 @@ func TestDeviceCookieThatFailsItsOwnBudgetStopsBeingTrusted(t *testing.T) {
 	dev := deviceCookieFrom(t, loginWith(t, s, "10.10.0.1:4000", "ann@example.com", testPassword))
 	spendCap(t, s, "ann@example.com", 60)
 
-	// Wrong passwords from the device: each is a failure against the device's own budget.
+	// Wrong passwords from the device, with the cap spent: each gets the cap's answer, the confirmation, as the same guesses
+	// do when another user holds the email (sec3 round 2, decision 90). Each still spends the device's own budget.
 	for i := 0; i < 10; i++ {
-		wantError(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", "wrong password here", dev), 401, apierr.Unauthenticated)
+		wantConfirmAnswer(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", "wrong password here", dev))
 	}
 	// The device has spent its budget, so the cap applies, and the right password is refused.
 	wantConfirmAnswer(t, loginWith(t, s, "10.10.1.1:4000", "ann@example.com", testPassword, dev))
