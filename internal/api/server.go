@@ -790,7 +790,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/office", handle: s.handleOpenOffice, auth: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/unlock", handle: s.handleBreakNodeLock, auth: true, imp: impRefuse},
 		// New documents (decision 91): a blank Word, Excel or PowerPoint file in a folder, with file creation's rights.
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/documents", handle: s.handleCreateDocument, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/documents", handle: s.handleCreateDocument, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/wopi/files/{nod}", handle: s.handleWOPICheckFileInfo, secretPath: true, imp: impAllow},
 		{method: http.MethodGet, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIGetFile, secretPath: true, imp: impAllow},
 		{method: http.MethodPost, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIPutFile, secretPath: true, imp: impAllow},

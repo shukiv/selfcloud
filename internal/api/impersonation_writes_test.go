@@ -6,6 +6,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/mail"
 )
 
@@ -24,7 +25,6 @@ var allowedWrites = map[string]string{
 	"POST /api/v1/nodes/{nod}/move":                   "file data",
 	"POST /api/v1/nodes/{nod}/copy":                   "file data; the copy job keeps the admin's mark (F5)",
 	"POST /api/v1/nodes/{nod}/shortcuts":              "file data",
-	"POST /api/v1/nodes/{nod}/documents":              "file data: a new blank file, as an upload makes one (decision 91)",
 	"POST /api/v1/nodes/{nod}/exports":                "file data: a derived copy",
 	"POST /api/v1/zips":                               "file data: the zip job keeps the admin's mark (F5)",
 	"DELETE /api/v1/zips/{zip}":                       "the caller's own zip job",
@@ -86,5 +86,18 @@ func TestImpersonationAllowedWrites(t *testing.T) {
 		if !found {
 			t.Errorf("%q is in the table but no longer open while impersonating", k)
 		}
+	}
+}
+
+// A new document is refused while an installation admin is signed in as a user (decision 91, round 2): it is made as the
+// person and opens the office editor, which the impersonation does not reach, so the route is refused with the reason
+// the other refused writes give. The refusal comes before the folder is read.
+func TestImpersonatedDocumentRefused(t *testing.T) {
+	t.Parallel()
+	fx := newImpFix(t, true)
+	imp, _ := fx.signedInAsMember(t)
+	e := wantError(t, callSession(t, fx.s, imp, "POST", "/api/v1/nodes/nod_none/documents", map[string]any{"type": "docx"}), 403, apierr.Forbidden)
+	if e.Details["reason"] != reasonImpersonation {
+		t.Errorf("reason %v, want %s", e.Details["reason"], reasonImpersonation)
 	}
 }

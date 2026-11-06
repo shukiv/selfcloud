@@ -31,9 +31,10 @@ export type DocKind = 'docx' | 'xlsx' | 'pptx';
 export const DOC_KINDS: DocKind[] = ['docx', 'xlsx', 'pptx'];
 
 // documentKinds is the document kinds the New menu offers in a place: only while office editing is on (officeOn), and only in a
-// place that takes new files (decision 91). A read-only place and a place with no node to hold the file offer none.
-export function documentKinds(p: NewPlace | null, officeOn: boolean): DocKind[] {
-  if (!officeOn || p === null || p.readOnly || !p.canUpload || !p.canEdit || !p.nodeID) return [];
+// place that takes new files (decision 91). A read-only place and a place with no node to hold the file offer none, and so does
+// an installation admin signed in as a user (impersonating): the route refuses it there.
+export function documentKinds(p: NewPlace | null, officeOn: boolean, impersonating = false): DocKind[] {
+  if (impersonating || !officeOn || p === null || p.readOnly || !p.canUpload || !p.canEdit || !p.nodeID) return [];
   return DOC_KINDS;
 }
 

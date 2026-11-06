@@ -278,6 +278,7 @@ export default function FilesPage() {
   // documents there, as the sidebar's New does (decision 91).
   const shownPlace = useStore(newPlace);
   const makeDocument = useNewDocument();
+  const impersonating = !!useStore(session)?.impersonation;
   // A document made from New is in its listing: that listing is read again here (decision 91).
   const createdSeen = useRef(get(createdDocument));
   const created = useStore(createdDocument);
@@ -1784,7 +1785,7 @@ export default function FilesPage() {
   // newActs is the New menu: a folder, and the files or a folder uploaded. spaceActs is the menu of the empty space: the same,
   // and a paste. Both follow the toolbar's rules.
   // The three blank documents (decision 91): shown only while office editing is on and the folder takes new files.
-  const docKinds = canUploadHere ? documentKinds(placeForRoute(shownPlace, path), editorOn) : [];
+  const docKinds = canUploadHere ? documentKinds(placeForRoute(shownPlace, path), editorOn, impersonating) : [];
   const docActs: BarAct[] = [
     { key: "doc-docx", label: t("files.act.document"), icon: <FileText {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("docx"), fits: true, enabled: true, run: () => makeDocument("docx") },
     { key: "doc-xlsx", label: t("files.act.spreadsheet"), icon: <FileSpreadsheet {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("xlsx"), fits: true, enabled: true, run: () => makeDocument("xlsx") },
