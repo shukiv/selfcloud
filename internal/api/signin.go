@@ -245,29 +245,39 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// A device the user signed in from before (a valid device cookie) is not refused by the email's cap. It spends its
-	// own small budget instead, and the budget is taken before the check and given back on a match, so only failures
-	// count. Without a trusted device, the email's cap on failed sign-ins applies (sec1, decision 84).
+	// The holds of a sign-in (decision 90). A device cookie's budget (login.device, 10 an hour per cookie) covers only the
+	// user the cookie names, D: a genuine cookie for D tests D's password under its own budget, and skips the email's cap.
+	// When other users have the email, the cap (login.failed, decision 84) is also taken, because their passwords are
+	// tested too. Every hold taken is spent by a failure and given back by a match. Without a trusted device, or with its
+	// budget spent, D is an ordinary candidate and the whole email is under the cap, as before.
+	var deviceUser *store.User
 	var deviceHold, failedHold *rate.Reservation
-	if nonce, ok := s.trustedDevice(r, candidates); ok {
+	if nonce, d, ok := s.trustedDevice(r, candidates); ok {
 		if res, err := s.limits["login.device"].reserve(nonce, now); err == nil {
-			deviceHold = res
+			deviceUser, deviceHold = d, res
 		}
 	}
-	if deviceHold == nil {
+	// tested is who the password is checked against. capOthers is set only when the cap is spent while D holds the device:
+	// then D alone is tested, and the others get the cap's answer below (decision 90, corners 3 and 4).
+	tested := candidates
+	var capOthers []*store.User
+	switch {
+	case deviceUser == nil:
 		res, err := s.limits["login.failed"].reserve(key, now)
 		if err != nil {
-			// With a mailer, the browser is confirmed by email instead of refused (sec2, decision 86). Without one there is
-			// no link, so the refusal stays (sec1, decision 84).
-			if s.mailer != nil {
-				return s.confirmByEmail(w, r, candidates, email, in.Password, in.Remember)
-			}
-			return apierr.New(apierr.RateLimited, cappedRefusal)
+			return s.cappedAnswer(w, r, candidates, email, in.Password, in.Remember)
 		}
 		failedHold = res
+	case len(candidates) > 1:
+		if res, err := s.limits["login.failed"].reserve(key, now); err == nil {
+			failedHold = res
+		} else {
+			tested = []*store.User{deviceUser}
+			capOthers = withoutUser(candidates, deviceUser)
+		}
 	}
 	var matches []*store.User
-	for _, c := range candidates {
+	for _, c := range tested {
 		ok, err := s.matchPassword(ctx, c.PasswordHash, in.Password)
 		if err != nil {
 			return err
@@ -277,13 +287,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if len(matches) > 0 {
-		// The password matched: the budgets are given back, so a correct sign-in spends none of them.
+		// The password matched: every hold is given back at the time it was taken, so a correct sign-in spends none of
+		// them (decision 90, rule 6; a later time would restore nothing, decision 89 (k)).
 		if deviceHold != nil {
 			deviceHold.CancelAt(now)
 		}
 		if failedHold != nil {
 			failedHold.CancelAt(now)
 		}
+	}
+	if capOthers != nil && len(matches) == 0 {
+		// The device's user did not match, and the cap is spent: the others get the cap's answer. Their passwords are not
+		// tested here, and the device's budget stays spent by that failure.
+		return s.cappedAnswer(w, r, capOthers, email, in.Password, in.Remember)
 	}
 	if len(candidates) == 0 {
 		if err := auth.DummyVerify(ctx, in.Password); err != nil {
@@ -375,6 +391,28 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.writeSignedIn(w, secret, u, sess)
 	return nil
+}
+
+// cappedAnswer answers a sign-in whose email's cap is spent, for the candidates the cap covers. With a mailer the browser is
+// confirmed by email instead of refused (sec2, decision 86). Without one there is no link, so the refusal stays (sec1,
+// decision 84).
+func (s *Server) cappedAnswer(w http.ResponseWriter, r *http.Request, candidates []*store.User, email, password string,
+	remember *bool) error {
+	if s.mailer != nil {
+		return s.confirmByEmail(w, r, candidates, email, password, remember)
+	}
+	return apierr.New(apierr.RateLimited, cappedRefusal)
+}
+
+// withoutUser returns users without drop, in their order (decision 90).
+func withoutUser(users []*store.User, drop *store.User) []*store.User {
+	out := make([]*store.User, 0, len(users))
+	for _, u := range users {
+		if u.ID != drop.ID {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // emailAddressKey is the key of the per-email sign-in and reset limits: the email and the client

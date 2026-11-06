@@ -74,29 +74,30 @@ func (s *Server) setDeviceCookie(w http.ResponseWriter, userID string, issuedAt 
 	return nil
 }
 
-// trustedDevice returns the nonce of the request's device cookie when the cookie is genuine, unexpired and for one of
-// the candidate users. The nonce keys the device's own failure budget. Anything else is not trusted.
-func (s *Server) trustedDevice(r *http.Request, candidates []*store.User) (string, bool) {
+// trustedDevice returns the nonce of the request's device cookie, and the candidate user it names, when the cookie is
+// genuine, unexpired and for one of the candidate users. The nonce keys the device's own failure budget, and the user is
+// the one that budget covers (decision 90). Anything else is not trusted.
+func (s *Server) trustedDevice(r *http.Request, candidates []*store.User) (string, *store.User, bool) {
 	c, err := r.Cookie(s.deviceCookieName())
 	if err != nil {
-		return "", false
+		return "", nil, false
 	}
 	parts := strings.Split(c.Value, ".")
 	if len(parts) != 5 {
-		return "", false
+		return "", nil, false
 	}
 	userID, nonce, issuedText, expiryText, mac := parts[0], parts[1], parts[2], parts[3], parts[4]
 	issued, err := strconv.ParseInt(issuedText, 10, 64)
 	if err != nil {
-		return "", false
+		return "", nil, false
 	}
 	expiry, err := strconv.ParseInt(expiryText, 10, 64)
 	if err != nil || time.Now().Unix() >= expiry {
-		return "", false
+		return "", nil, false
 	}
 	want, err := s.deviceMAC(userID, nonce, issued, expiry)
 	if err != nil || !hmac.Equal([]byte(mac), []byte(want)) {
-		return "", false
+		return "", nil, false
 	}
 	for _, u := range candidates {
 		if u.ID != userID {
@@ -107,9 +108,9 @@ func (s *Server) trustedDevice(r *http.Request, candidates []*store.User) (strin
 		// is in milliseconds, as the cookie's issue time is, so a cookie in the same millisecond is void too.
 		cut, err := s.store.UserTokensNotBefore(r.Context(), u.AccountID, u.ID)
 		if err != nil || (!cut.IsZero() && issued <= cut.UnixMilli()) {
-			return "", false
+			return "", nil, false
 		}
-		return nonce, true
+		return nonce, u, true
 	}
-	return "", false
+	return "", nil, false
 }
