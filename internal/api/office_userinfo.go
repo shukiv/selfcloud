@@ -4,7 +4,7 @@ package api
 
 // PutUserInfo (design section 10, decision 87). The editor sends a string about the person it is open for, which the host
 // keeps and returns in CheckFileInfo as UserInfo. The string belongs to the user: it is stored per user, not per file, it
-// is read back only for that user, and the row goes with the user (migration 0045).
+// is read back only for that user, and the row goes with the user (migration 0047).
 //
 // The specification gives the string a limit of 1024 ASCII characters. This host allows 1024 bytes, which is the same for
 // ASCII and stricter for any other text, and the string must be valid UTF-8, since the store holds text. An answer for a
