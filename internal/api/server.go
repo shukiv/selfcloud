@@ -159,6 +159,11 @@ type Server struct {
 	// only). copyHold, when set, receives the writer hold of each write a chunked copy makes (measurement only).
 	copyFault func(stage string) error
 	copyHold  func(phase string, hold time.Duration)
+	// importFault, when set, is called at each stage of an import run (scan, stage, entry, publish, cleanup) and fails the
+	// run when it returns an error (tests only). importYield is how long a run stages entries before it yields its turn;
+	// a test lowers it.
+	importFault func(stage string) error
+	importYield time.Duration
 	// activityCeiling, when set, replaces the most audit rows one activity read looks at (tests only).
 	activityCeiling int
 	// activityWalks, when set, replaces the most distinct people one activity read walks for reach (tests only).
@@ -481,8 +486,11 @@ func New(opts Options) (*Server, error) {
 	s.jobs.Handle(jobCopyNode, s.runCopyJob)
 	s.jobs.Handle(jobZip, s.runZipJob)
 	s.jobs.Handle(store.SearchJobKind, s.runSearchIndex)
+	s.jobs.Handle(jobImport, s.runImport)
+	s.jobs.Pool(jobImport, cfg.Imports.MaxConcurrentJobs)
 	s.copySyncNodes = syncCopyNodes
 	s.copyYield = copyYieldAfter
+	s.importYield = importYieldAfter
 	s.zipYield = zipYieldAfter
 	s.emptyTrashLimit = emptyTrashMax
 	s.trashScanLimit = trashScanMax
@@ -588,6 +596,14 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handleGetQuotaWarning, auth: true, imp: impAllow},
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handleDeleteQuotaWarning, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/imports/sources", handle: s.handleImportSources, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/imports", handle: s.handleCreateImport, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/imports/{imp}", handle: s.handleGetImport, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/imports/{imp}/items", handle: s.handleImportItems, auth: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/imports/{imp}/pause", handle: s.handlePauseImport, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/imports/{imp}/resume", handle: s.handleResumeImport, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/imports/{imp}/cancel", handle: s.handleCancelImport, auth: true, imp: impRefuse},
+		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/imports/archive", handle: s.handleSetArchiveSwitch, auth: true, imp: impRefuse},
 
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/folders", handle: s.handleCreateFolder, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/folders", handle: s.handleListFolders, auth: true, imp: impAllow},
@@ -933,6 +949,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 		TextMax: int64(s.cfg.Search.TextMaxBytes), CapAccount: int64(s.cfg.Search.MaxTextPerAccount),
 		CapTotal: int64(s.cfg.Search.MaxTextTotal),
 		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
+		ImportRetention:   time.Duration(s.cfg.Imports.JobRetentionDays) * 24 * time.Hour,
 		UploadMaxLifetime: s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
 		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(),
 		AuditRetention: time.Duration(s.cfg.Audit.RetentionDays) * 24 * time.Hour,

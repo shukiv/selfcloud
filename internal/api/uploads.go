@@ -647,8 +647,55 @@ func (s *Server) reserveTx(ctx context.Context, tx *store.Tx, p *auth.Principal,
 			return err
 		}
 	}
+	if up.Purpose == store.UploadPurposeImport {
+		// An archive holds its disk, and no quota: an import reserves each file's size when it writes the file (decision 92).
+		return nil
+	}
 	return s.applyUsage(ctx, tx, p, up.AccountID, store.FolderChange{FolderID: up.FolderID,
 		Change: store.UsageChange{Reserved: up.Length}})
+}
+
+// uploadPurpose is the purpose an upload's metadata asks for: an archive for an import, or nothing.
+func uploadPurpose(meta map[string]string) string {
+	if meta["kind"] == store.UploadPurposeImport {
+		return store.UploadPurposeImport
+	}
+	return ""
+}
+
+// importUploadTarget is the target of an archive upload for an import: the caller's own folder, where the upload's row
+// lives until the import takes it. Only a signed-in user may upload an archive, and only while imports are on for the
+// account. The name is kept for the record; the archive never becomes a node, so no clash is settled here.
+func (s *Server) importUploadTarget(ctx context.Context, p *auth.Principal, meta map[string]string) (*uploadTarget, error) {
+	if err := importCaller(p); err != nil {
+		return nil, err
+	}
+	if !s.cfg.Imports.Enabled || !s.cfg.Imports.Archive.Enabled {
+		return nil, apierr.New(apierr.Forbidden, "archive imports are turned off on this server")
+	}
+	on, err := s.store.ImportSwitchOn(ctx, p.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	if !on {
+		return nil, apierr.New(apierr.Forbidden, "archive imports are turned off for this account").With("reason", "account_off")
+	}
+	folder, err := s.store.PersonalFolder(ctx, p.AccountID, p.UserID)
+	if err != nil {
+		return nil, apierr.New(apierr.Forbidden, "the caller has no personal folder to hold the archive")
+	}
+	nameIn, ok := meta["name"]
+	if !ok {
+		nameIn = meta["filename"]
+	}
+	if nameIn == "" {
+		nameIn = "archive"
+	}
+	name, key, err := names.Clean(nameIn)
+	if err != nil {
+		return nil, err
+	}
+	return &uploadTarget{folder: folder.ID, name: name, nameKey: key, onConflict: "rename"}, nil
 }
 
 // handleCreateUpload starts an upload (tus creation). The body may carry the first piece
@@ -685,6 +732,8 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 	)
 	if isDrop(p) {
 		tgt, state, err = s.dropTarget(ctx, p, meta)
+	} else if meta["kind"] == store.UploadPurposeImport {
+		tgt, err = s.importUploadTarget(ctx, p, meta)
 	} else {
 		tgt, err = readTarget(meta)
 	}
@@ -720,7 +769,8 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 		ParentID: tgt.parent, DirPath: tgt.dirPath, Parents: tgt.parents, Name: tgt.name, NameKey: tgt.nameKey,
 		OnConflict: tgt.onConflict, MimeType: mimeOf(tgt.mime, tgt.name), SHA256: tgt.sha, Length: length,
 		BlobID: id.New("blb"), CreatedBy: p.ID, CreatedKind: string(p.Kind), CreatedAt: now, UpdatedAt: now,
-		ExpiresAt: s.uploadDeadline(now, now), UploaderName: uploader.name, UploaderEmail: uploader.email}
+		ExpiresAt: s.uploadDeadline(now, now), UploaderName: uploader.name, UploaderEmail: uploader.email,
+		Purpose: uploadPurpose(meta)}
 	if isDrop(p) {
 		up.VisitorID = p.Link.VisitorID
 	}
@@ -807,7 +857,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 			return s.dropFailedCreation(r, p, up, dropRefusal(p, err))
 		}
 	}
-	if up.DurableOffset == up.Length {
+	if up.DurableOffset == up.Length && up.Purpose != store.UploadPurposeImport {
 		node, err := s.completeUpload(r, p, up, nil)
 		if err != nil {
 			// The upload stays while it waits for a name; the reply names it, and Location says where.
@@ -1054,7 +1104,7 @@ func (s *Server) handlePatchUpload(w http.ResponseWriter, r *http.Request) error
 	} else if r.ContentLength > 0 {
 		return tooLargeUpload(0)
 	}
-	if up.DurableOffset == up.Length {
+	if up.DurableOffset == up.Length && up.Purpose != store.UploadPurposeImport {
 		node, err := s.completeUpload(r, p, up, nil)
 		if err != nil {
 			markAwaiting(w, up, err)

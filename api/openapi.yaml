@@ -1305,6 +1305,240 @@ paths:
               schema: { $ref: "#/components/schemas/Job" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/imports/sources:
+    get:
+      tags: [Imports]
+      operationId: listImportSources
+      summary: List the import sources and whether each is on for the caller's account
+      description: |
+        A signed-in user (session or delegated token). `archive` is an uploaded zip or tar (decision 92). It is on
+        when the installation has `imports.enabled` and `imports.archive.enabled`, and the account's owner has not
+        turned it off (`PUT /accounts/{acc}/imports/archive`).
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The sources.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sources]
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      required: [source, enabled]
+                      properties:
+                        source: { type: string, enum: [archive] }
+                        enabled: { type: boolean }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/imports:
+    post:
+      tags: [Imports]
+      operationId: createImport
+      summary: Start an import of an uploaded archive into a folder
+      description: |
+        The archive is an upload made with `Upload-Metadata` `kind import` (and a name), and it is complete. The
+        caller is the signed-in user who made it. `folder` is the target, and `parent` (a directory of that folder)
+        is where the archive's top level goes; the folder's root is the default. The caller needs write access to the
+        target: contributor on their own folders, editor on a team space. A zip's headers are read now, so a refused
+        archive, or one that does not fit the quota or the disk, is answered here; a tar is read by the job.
+        The import runs in the background (`GET /imports/{imp}` shows its progress). Each file it makes is audited
+        with `via: import` and the import's job, and an `import.started` event is sent to subscribers.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [upload, folder]
+              properties:
+                source: { type: string, enum: [archive], description: "The default is archive." }
+                upload: { type: string, example: upl_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+                folder: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+                parent: { type: string, description: "A directory of the folder; the folder's root when omitted." }
+                on_conflict:
+                  type: string
+                  enum: [fail, rename, replace]
+                  description: "What a name already in the target does. rename (the default) numbers the new one; replace trashes an existing file (a folder is never replaced); fail stops the import."
+      responses:
+        "202":
+          description: The import, queued. Its job is `job`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/imports/{imp}:
+    parameters:
+      - name: imp
+        in: path
+        required: true
+        schema: { type: string, example: imp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    get:
+      tags: [Imports]
+      operationId: getImport
+      summary: Get an import's state and counts
+      description: |
+        Only the user who started the import may read it, or a manager of the team space it went into. Anyone else
+        gets `404 not_found`.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The import.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/imports/{imp}/items:
+    parameters:
+      - name: imp
+        in: path
+        required: true
+        schema: { type: string, example: imp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    get:
+      tags: [Imports]
+      operationId: listImportItems
+      summary: List the items of an import, in the order they were written
+      description: |
+        One item per archive entry that was written or skipped, so a restart keeps each finished entry. A page is
+        keyset-paged: pass the `next` of the last page as `after`. Who may read is as for `GET /imports/{imp}`.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: A page of items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [seq, name, kind, state, bytes]
+                      properties:
+                        seq: { type: integer }
+                        name: { type: string }
+                        kind: { type: string, enum: [file, dir] }
+                        state: { type: string, enum: [done, skipped] }
+                        node: { type: [string, "null"], description: "The node the item made, or reused." }
+                        bytes: { type: integer }
+                        error_code: { type: [string, "null"] }
+                  next: { type: [integer, "null"], description: "The seq to pass as after for the next page; null at the end." }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/imports/{imp}/pause:
+    parameters:
+      - name: imp
+        in: path
+        required: true
+        schema: { type: string, example: imp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    post:
+      tags: [Imports]
+      operationId: pauseImport
+      summary: Pause an import that is queued or running
+      description: The job stops at its next checkpoint, after the entry or piece it is on, and keeps what it finished. Only the user who started the import may pause it.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The import, paused.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/imports/{imp}/resume:
+    parameters:
+      - name: imp
+        in: path
+        required: true
+        schema: { type: string, example: imp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    post:
+      tags: [Imports]
+      operationId: resumeImport
+      summary: Resume a paused import
+      description: |
+        The import is queued again and continues after its last finished entry. A paused import holds no worker, so
+        the user may start another import of the same source. Refused with `409 conflict` while another import of the
+        source is queued or running.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The import, queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/imports/{imp}/cancel:
+    parameters:
+      - name: imp
+        in: path
+        required: true
+        schema: { type: string, example: imp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+    post:
+      tags: [Imports]
+      operationId: cancelImport
+      summary: Cancel an import that has not finished
+      description: |
+        The job removes what the import staged and its archive, and the import is recorded as cancelled. Files that
+        were already published are not removed by a cancel; an import publishes all of its files in one step, so a
+        cancel before the publish leaves nothing behind.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The import, cancelled (its cleanup runs in the job).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/accounts/{acc}/imports/archive:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    put:
+      tags: [Imports]
+      operationId: setArchiveImport
+      summary: Turn the archive import source on or off for the account
+      description: Only the account's owner (or an admin for it) may change it. Off, no archive can be uploaded for an import, and no import can be started.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200":
+          description: The new setting.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [source, enabled]
+                properties:
+                  source: { type: string, enum: [archive] }
+                  enabled: { type: boolean }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/folders:
     get:
       tags: [Folders]
@@ -5371,6 +5605,63 @@ webhooks:
             schema: { $ref: "#/components/schemas/WebhookEvent" }
       responses:
         "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+  import.started:
+    post:
+      tags: [Webhooks]
+      operationId: importStartedEvent
+      summary: An import was started
+      description: |
+        The data is WebhookImport: IDs, the source and counts, and no name. The receiver reads the names through
+        `GET /imports/{imp}` (decision 92).
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+
+  import.completed:
+    post:
+      tags: [Webhooks]
+      operationId: importCompletedEvent
+      summary: An import finished, and its files were published
+      description: |
+        The data is WebhookImport, with the files, bytes and skipped entries it made. No name is in it.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+
+  import.failed:
+    post:
+      tags: [Webhooks]
+      operationId: importFailedEvent
+      summary: An import failed; nothing it staged was published
+      description: |
+        The data is WebhookImport, with error_code, the API code of the failure. No name, and no error text, is in it.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+
+  import.cancelled:
+    post:
+      tags: [Webhooks]
+      operationId: importCancelledEvent
+      summary: An import was cancelled; nothing it staged was published
+      description: |
+        The data is WebhookImport, with the counts the import had when it was cancelled.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "2XX": { description: Any 2xx answer marks the delivery as delivered. }
+
   comment.reopened:
     post:
       tags: [Webhooks]
@@ -5708,7 +5999,7 @@ components:
         id: { type: string, example: evt_5m2k8x1v0c3d9q7r4t6w8y0z2a }
         type:
           type: string
-          enum: [file.created, file.updated, file.moved, file.deleted, file.restored, upload.completed, user.created, user.verified, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened]
+          enum: [file.created, file.updated, file.moved, file.deleted, file.restored, upload.completed, user.created, user.verified, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened, import.started, import.completed, import.failed, import.cancelled]
         time: { type: string, format: date-time }
         account:
           type: object
@@ -5734,6 +6025,22 @@ components:
         size: { type: integer, format: int64 }
         name: { type: string, description: The name in Unicode NFC. }
         parent_id: { type: string, example: nod_5m2k8x1v0c3d9q7r4t6w8y0z2b }
+    WebhookImport:
+      type: object
+      description: |
+        The data of import.started, import.completed, import.failed and import.cancelled (decision 92). IDs, the source
+        and counts only: never a file or folder name, and no error text. error_code is set on import.failed.
+      required: [id, source, folder_id, entries, files, bytes, skipped]
+      properties:
+        id: { type: string, example: imp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        source: { type: string, enum: [archive] }
+        folder_id: { type: string, example: fld_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        entries: { type: integer }
+        files: { type: integer }
+        bytes: { type: integer }
+        skipped: { type: integer }
+        error_code: { type: string }
+
     WebhookCommentData:
       description: |
         The data of comment.created, comment.updated, comment.deleted, comment.resolved and comment.reopened (decision 83).
@@ -6844,7 +7151,7 @@ components:
         description: { type: [string, "null"], maxLength: 200 }
         events:
           type: array
-          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened] }
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened, import.started, import.completed, import.failed, import.cancelled] }
         state: { type: string, enum: [active, paused, disabled] }
         disabled_reason: { type: [string, "null"], enum: [failing, overflow, secret_unreadable, null] }
         consecutive_failures: { type: integer }
@@ -6873,7 +7180,7 @@ components:
           type: array
           minItems: 1
           uniqueItems: false
-          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened] }
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened, import.started, import.completed, import.failed, import.cancelled] }
         description: { type: string, maxLength: 200 }
 
     WebhookUpdate:
@@ -6884,7 +7191,7 @@ components:
         events:
           type: array
           minItems: 1
-          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened] }
+          items: { type: string, enum: [user.created, user.verified, file.created, file.updated, file.deleted, file.moved, file.restored, upload.completed, quota.warning, quota.exceeded, webhook.test, comment.created, comment.updated, comment.deleted, comment.resolved, comment.reopened, import.started, import.completed, import.failed, import.cancelled] }
         description: { type: string, maxLength: 200, description: Empty clears it. }
         state: { type: string, enum: [active, paused], description: A disabled endpoint cannot be set to active alone. }
 
@@ -7400,6 +7707,33 @@ components:
         error: { type: string, description: Why the job failed. The server's own text, for people who read logs; the interface does not show it. }
         error_code: { type: string, description: "For a failed zip job, the API error code of its refusal (too_large, storage_full), or absent." }
         error_reason: { type: string, description: "For a failed zip job, the reason of that refusal (zip_disk, zip_account_disk), or absent." }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+
+    Import:
+      type: object
+      description: |
+        A background import (decision 92). `state` is queued, running, paused, cancelled, done or failed. A paused
+        import has `pause_reason` quota_exceeded or storage_full when the server paused it; a failed one has its
+        `error_code`. The counts are those the job has made so far.
+      required: [id, source, state, folder, parent, on_conflict, entries, declared_bytes, files, bytes, skipped, job, created_at, updated_at, finished_at]
+      properties:
+        id: { type: string, example: imp_5m2k8x1v0c3d9q7r4t6w8y0z2a }
+        source: { type: string, enum: [archive] }
+        state: { type: string, enum: [queued, running, paused, cancelled, done, failed] }
+        pause_reason: { type: string, enum: [quota_exceeded, storage_full] }
+        error_code: { type: string, description: "The API code of the failure, such as invalid_path, too_large, quota_exceeded or conflict." }
+        folder: { type: string }
+        parent: { type: string, description: "The directory the archive's top level goes into." }
+        on_conflict: { type: string, enum: [fail, rename, replace] }
+        format: { type: string, enum: [zip, tar, tar.gz], description: "Known once the job has read the archive's headers." }
+        entries: { type: integer }
+        declared_bytes: { type: integer }
+        files: { type: integer }
+        bytes: { type: integer }
+        skipped: { type: integer, description: "Entries not copied because the import already brought them in." }
+        job: { type: string, description: "The job that runs the import now." }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         finished_at: { type: [string, "null"], format: date-time }
