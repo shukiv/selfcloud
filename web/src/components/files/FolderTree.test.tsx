@@ -139,8 +139,7 @@ describe("the folder tree", () => {
   it("opens a folder in the listing when its name is clicked, and does not open it for the arrow", async () => {
     render(<Harness start={{ expanded: ["fld_a"] }} />);
     fireEvent.click(await screen.findByText("Docs"));
-    // The third argument says the folder may have subfolders (a phone's drawer waits out a double click for it, decision 93).
-    expect(onOpen).toHaveBeenCalledWith("fld_a", "nod_one", true);
+    expect(onOpen).toHaveBeenCalledWith("fld_a", "nod_one");
     onOpen.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Expand Docs" }));
     expect(onOpen).not.toHaveBeenCalled();
@@ -610,7 +609,7 @@ describe("the folder tree's double click and group tint (decision 93)", () => {
   it("a single click shows the folder and does not open it", async () => {
     render(<Harness folder="fld_zz" colours={SIDEBAR} />);
     fireEvent.click(screen.getByText("Team A"));
-    expect(onOpen).toHaveBeenCalledWith("fld_a", null, true);
+    expect(onOpen).toHaveBeenCalledWith("fld_a", null);
     expect(latest.expanded).not.toContain("fld_a");
     expect(screen.queryByText("Docs")).toBeNull();
   });

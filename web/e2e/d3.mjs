@@ -191,7 +191,8 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
       currentHover.color === ONACTIVE && currentHover.background === MARK && noBar(currentHover),
       `on hover the current row keeps its mark colour and bar, and takes the same hover background as any row (${show(currentHover)})`,
     );
-    const otherHover = await hoverStyle(page, '.shell-sider [data-testid="folder-tree"] [role="treeitem"]:not([aria-current]) > .tree-row');
+    // A space's own row, which is outside the tinted group under it (decision 93, round 2): a row inside the group takes the group's hover.
+    const otherHover = await hoverStyle(page, '.shell-sider [data-testid="folder-tree"] [role="tree"] > [role="treeitem"]:not([aria-current]) > .tree-row');
     await snap('d3-hover-other-row-light.png');
     check(otherHover !== null && otherHover.background === HOVER && otherHover.color === TEXT, `on hover another row takes the hover background (${show(otherHover)})`);
     await unhover(page);

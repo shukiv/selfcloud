@@ -55,9 +55,6 @@ const FolderTree = lazy(() => import("./files/FolderTree"));
 
 // Below this width (the antd `lg` breakpoint, 992px) the sidebar is a drawer.
 const SIDE_WIDTH = 264;
-// DOUBLE_CLICK_MS is how long a phone's drawer stays open after a tap on a folder with subfolders, for a double click to land (decision
-// 93). Below the browser's own double click time, so a tap that is not doubled closes the drawer soon after.
-const DOUBLE_CLICK_MS = 400;
 const RAIL_WIDTH = 88;
 // The choice of the rail: "1" when the person folded the sidebar, "0" when it is open.
 const PREF_NAV_RAIL = "selfcloud.navRail";
@@ -159,14 +156,6 @@ export default function Shell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
-  // drawerClose is the timer that closes the phone's drawer after a tap on a folder with subfolders (DOUBLE_CLICK_MS).
-  const drawerClose = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      if (drawerClose.current !== null) window.clearTimeout(drawerClose.current);
-    },
-    [],
-  );
   const [collapsed, setCollapsed] = useState(() => readPref(PREF_NAV_RAIL) === "1");
 
   const admin = isAdmin(me?.user);
@@ -463,25 +452,9 @@ export default function Shell({ children }: { children: ReactNode }) {
                   marking={onFiles && place !== null}
                   state={treeState}
                   onChange={changeTree}
-                  onOpen={(folder, dir, subfolders) => {
-                    // On a phone a folder with subfolders keeps the drawer open for a double click's time (decision 93): the second click
-                    // of a double click reaches its row, which opens it. A single tap closes the drawer after that time.
-                    if (isMobile && subfolders) {
-                      if (drawerClose.current !== null) window.clearTimeout(drawerClose.current);
-                      drawerClose.current = window.setTimeout(() => {
-                        drawerClose.current = null;
-                        setNavOpen(false);
-                      }, DOUBLE_CLICK_MS);
-                    } else {
-                      setNavOpen(false);
-                    }
+                  onOpen={(folder, dir) => {
+                    setNavOpen(false);
                     navigate(filesURL(folder, dir));
-                  }}
-                  onDoubleOpen={() => {
-                    if (drawerClose.current !== null) {
-                      window.clearTimeout(drawerClose.current);
-                      drawerClose.current = null;
-                    }
                   }}
                   coarse={coarse}
                   colours={sidebar}

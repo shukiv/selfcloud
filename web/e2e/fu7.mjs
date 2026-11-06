@@ -8,7 +8,7 @@
 //  3. A double click on a sidebar folder that has subfolders opens it, so its subfolders show, in one navigation (one history push);
 //     on a phone's drawer tree too.
 import { mkdir } from 'node:fs/promises';
-import { dblClick, setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
+import { dblClick, setLanguage, setPhone, setTheme, shot, sleep, tap } from './media.mjs';
 
 const TOL = 1;
 const CONTRAST_MIN = 4.5;
@@ -81,6 +81,57 @@ const treeRow = (page, name, sub) =>
       y: r.top + r.height / 2,
     };
   })()`);
+
+
+// pointOf is the centre of a folder's row in the sidebar (or the drawer), scrolled into view.
+const pointOf = (page, name) =>
+  page.evaluate(`(() => {
+    const row = ${SCOPE}?.querySelector('[data-testid="folder-tree"] [data-drop-name="${name}"]');
+    if (!row) return null;
+    row.scrollIntoView({ block: 'center' });
+    const r = (row.querySelector('bdi') ?? row).getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+
+// hoverRead reads a row's colours while the pointer is over it: the row's own hover background drawn over its group's tint, and the
+// text colour (the current row's mark is its text colour too). Null when the row is not on the screen.
+const hoverRead = (page, name) =>
+  page.evaluate(`(() => {
+    ${RGB_HELPERS}
+    const parse = (s) => { const m = s.match(/[\\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+    const hex = (c) => '#' + [c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+    const row = ${SCOPE}?.querySelector('[data-testid="folder-tree"] [data-drop-name="${name}"]');
+    if (!row) return null;
+    const group = row.closest('[data-tree-group="root"]');
+    const tint = parse(getComputedStyle(group, '::before').backgroundColor);
+    const over = parse(getComputedStyle(row).backgroundColor);
+    const a = over.a;
+    const shown = { r: over.r * a + tint.r * (1 - a), g: over.g * a + tint.g * (1 - a), b: over.b * a + tint.b * (1 - a) };
+    const ink = rgb(getComputedStyle(row.querySelector('bdi')).color);
+    return { hovered: row.matches(':hover'), overlay: getComputedStyle(row).backgroundColor, under: hex(shown), ink: getComputedStyle(row.querySelector('bdi')).color, contrast: cr(ink, shown), current: row.parentElement.getAttribute('aria-current') === 'location' };
+  })()`);
+
+// hoverChecks points the pointer at each row of the groups (a real mouse move over CDP), reads the row as hovered, and requires
+// the text and the current row's mark at 4.5:1 or more on the hover, then moves the pointer away.
+async function hoverChecks(page, check, groups) {
+  for (const g of groups) {
+    for (const r of g.rows) {
+      const at = await pointOf(page, r.name);
+      if (!at) {
+        check(false, `hover: the row "${r.name}" is on the screen`);
+        continue;
+      }
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+      await sleep(150);
+      const h = await hoverRead(page, r.name);
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1270, y: 790 });
+      await sleep(100);
+      const label = `hover, group under ${g.parent}: the row "${r.name}"${r.current ? ' (current, its mark)' : ''}`;
+      check(h !== null && h.hovered, `${label}: the pointer is over the row (${JSON.stringify(h && { hovered: h.hovered })})`);
+      check(h !== null && h.contrast >= CONTRAST_MIN, `${label} reads ${h ? h.contrast.toFixed(2) : 'nothing'}:1 (${h?.ink} on ${h?.under}, background ${h?.overlay}; needs ${CONTRAST_MIN})`);
+    }
+  }
+}
 
 async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }) {
   const { check, api, navigateTo } = h;
@@ -172,13 +223,16 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
   // ---- 2. The tint: under My files (P is the current folder, so its mark is on the tinted row) and under the team space (T is current).
   await navigateTo(page, `/files/${myID}/${pID}`);
   await openMine();
-  await page.waitFor(`!!${SCOPE}?.querySelector('[data-tree-group="root"]')`, 15000);
+  // Not fatal: with no tinted group the checks below say so, one by one.
+  await page.waitFor(`!!${SCOPE}?.querySelector('[data-tree-group="root"]')`, 15000).catch(() => undefined);
   await sleep(300);
   const tintsMine = await groupTints(page);
+  await hoverChecks(page, check, tintsMine ?? []);
   await navigateTo(page, `/files/${teamA}/${tID}`);
   await page.waitFor(`!!${SCOPE}?.querySelector('[data-drop-name="${T}"]')`, 15000);
   await sleep(300);
   const tintsTeam = await groupTints(page);
+  await hoverChecks(page, check, tintsTeam ?? []);
   const all = [...(tintsMine ?? []), ...(tintsTeam ?? [])];
   check(all.length >= 2 && (tintsMine ?? []).length >= 1 && (tintsTeam ?? []).length >= 1, `a tinted group is drawn under My files and under the team space's root (${all.length} groups)`);
   for (const g of all) {
@@ -215,7 +269,8 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
   check(pushes === 1, `the double click navigates once (history pushes ${pushes})`);
   await snap('fu7-dblclick-desktop.png');
 
-  // A double click on the phone's drawer tree too: fold P by its arrow, then double click its name.
+  // On a finger the drawer's arrow (44 px) is the way to open a folder in the tree; a tap on a folder shows it and closes the drawer at once
+  // (decision 93, round 2). A double click is a pointer gesture, so it is checked on the desktop above.
   await setPhone(page, true);
   await size(390, 800, true);
   await navigateTo(page, `/files/${teamA}`);
@@ -225,24 +280,24 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
   await openMine();
   await page.evaluate(`(() => { const b = [...document.querySelectorAll('.ant-drawer-open [data-testid="folder-tree"] button')].find((x) => x.getAttribute('aria-label') === 'Collapse ${P}'); b?.click(); return true; })()`);
   await page.waitFor(`!document.querySelector('.ant-drawer-open [data-drop-name="${C}"]')`, 15000).catch(() => undefined);
-  await sleep(500);
-  const drawerBefore = await treeRow(page, P, C);
-  check(drawerBefore !== null && !drawerBefore.subShown, `on the phone, ${P}'s subfolder is folded before the double click`);
-  if (drawerBefore) {
-    const under = await page.evaluate(`(() => { const e = document.elementFromPoint(${drawerBefore.x}, ${drawerBefore.y}); return { tag: e?.tagName, cls: String(e?.className ?? '').slice(0, 60), text: (e?.textContent ?? '').slice(0, 40), inDrawer: !!e?.closest('.ant-drawer-open') }; })()`);
-    console.log(`INFO on the phone before the double click: under the point ${JSON.stringify(under)}, url ${await page.evaluate('location.pathname')}`);
-    await page.evaluate(`(() => { window.__ev = []; for (const type of ['click', 'dblclick', 'pointerdown']) document.addEventListener(type, (e) => { const el = e.target; window.__ev.push(Math.round(performance.now()) + ' ' + type + ' ' + e.detail + ' ' + el.tagName + ' ' + String(el.textContent ?? '').slice(0, 24) + ' drawer=' + !!el.closest?.('.ant-drawer-open')); }, true); return true; })()`);
-    const beforeTap = await page.evaluate(`(() => { const row = document.querySelector('.ant-drawer-open [data-testid="folder-tree"] [data-drop-name="${P}"]'); const li = row?.parentElement; return { expanded: li?.getAttribute('aria-expanded') ?? null, arrow: row?.querySelector('button')?.getAttribute('aria-label') ?? null, level: li?.getAttribute('aria-level') ?? null }; })()`);
-    console.log(`INFO on the phone, P in the drawer before the tap: ${JSON.stringify(beforeTap)}`);
-    await dblClick(page, { x: drawerBefore.x, y: drawerBefore.y });
-    console.log(`INFO on the phone just after the double click: url ${await page.evaluate('location.pathname')}`);
-    console.log(`INFO on the phone events: ${JSON.stringify(await page.evaluate('window.__ev'))}`);
+  await sleep(300);
+  const arrow = await page.evaluate(`(() => { const b = [...document.querySelectorAll('.ant-drawer-open [data-testid="folder-tree"] button')].find((x) => x.getAttribute('aria-label') === 'Expand ${P}'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, h: r.height }; })()`);
+  check(arrow !== null && arrow.h >= 44 - TOL, `on a finger, the arrow of ${P} is a 44 px target (${arrow?.h})`);
+  if (arrow) {
+    await tap(page, { x: arrow.x, y: arrow.y });
     await page.waitFor(`!!document.querySelector('.ant-drawer-open [data-drop-name="${C}"]')`, 15000).catch(() => undefined);
-    await sleep(400);
-    const drawerAfter = await treeRow(page, P, C);
-    const diag = await page.evaluate(`(() => { const d = document.querySelector('.ant-drawer'); return { cls: d?.className ?? null, pe: d ? getComputedStyle(d).pointerEvents : null, row: !!document.querySelector('[data-drop-name="${P}"]'), expanded: document.querySelector('[data-drop-name="${P}"]')?.parentElement?.getAttribute('aria-expanded') ?? null, url: location.pathname }; })()`);
-    console.log(`INFO on the phone after the double click: ${JSON.stringify(diag)}`);
-    check(drawerAfter !== null && drawerAfter.subShown, `on the phone, a double click on ${P} shows its subfolder ${C}`);
+    await sleep(300);
+    const opened = await treeRow(page, P, C);
+    check(opened !== null && opened.subShown, `on a finger, the arrow opens ${P} in the drawer, so ${C} shows`);
+  }
+  const name = await pointOf(page, P);
+  check(name !== null, `on a finger, ${P}'s name is on the screen in the drawer`);
+  if (name) {
+    await tap(page, name);
+    const closed = await page.waitFor(`!document.querySelector('.ant-drawer-open')`, 1500).then(() => true, () => false);
+    check(closed, `on a finger, a tap on ${P} shows it and closes the drawer at once`);
+    const shown = await page.evaluate(`location.pathname`);
+    check(shown.endsWith(pID), `on a finger, the tap shows ${P} (${shown})`);
   }
   await snap('fu7-dblclick-phone.png');
   await page.evaluate(`document.activeElement?.blur(), true`);

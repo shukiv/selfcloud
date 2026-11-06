@@ -13,7 +13,7 @@ import { loadDirs } from "../../lib/files/treeLoad";
 import { touchExpanded, withExpanded, type TreeState } from "../../lib/files/treeState";
 import { clearFailure, closedFor, currentSerial, failureSeenIn, holdClose, holdOpen, noteFailure, startPlace } from "../../lib/files/treeHold";
 import { currentMark } from "../../theme/currentMark";
-import { groupTint } from "../../theme/groupTint";
+import { groupColours } from "../../theme/groupTint";
 import { sidebarRow } from "../../theme/sidebarRow";
 import type { FolderAccess } from "../../lib/files/types";
 import type { Sidebar } from "../../theme/tokens";
@@ -33,11 +33,8 @@ export interface FolderTreeProps {
   marking: boolean;
   state: TreeState;
   onChange: (next: TreeState) => void;
-  // onOpen shows a folder in the listing (a single click). subfolders says the folder may have subfolders (decision 93): a phone's
-  // drawer keeps open for a double click's time then, so the second click reaches the folder's row.
-  onOpen: (folder: string, dir: string | null, subfolders?: boolean) => void;
-  // onDoubleOpen is told when a double click lands on a folder in the tree, so a drawer that is closing for the first click stays open.
-  onDoubleOpen?: () => void;
+  // onOpen shows a folder in the listing (a single click).
+  onOpen: (folder: string, dir: string | null) => void;
   coarse: boolean;
   // top is the folder the person reaches the place by when the space's own root is not theirs (they were given a folder below
   // it): the tree starts there, in place of the space's root, and only shows what the person can reach.
@@ -116,7 +113,9 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
   const filled = side !== undefined && level === 1 && current;
   const textColour = side ? (filled ? side.onActive : current && mark ? mark.ink : side.text) : undefined;
   // The tint of the group under a space's root (decision 93): only the sidebar's, and only the root's group (id null).
-  const tint = side && id === null ? groupTint(side) : undefined;
+  const colours = side && id === null ? groupColours(side) : undefined;
+  const tint = colours?.tint;
+  const hover = colours?.hover ?? undefined;
   return (
     <li
       role="treeitem"
@@ -142,11 +141,10 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
     >
       <div
         className={side ? (filled ? "tree-row tree-row-side side-current-full" : current ? "tree-row tree-row-side side-current" : "tree-row tree-row-side") : "tree-row"}
-        // A double click opens a folder with subfolders in the tree, so they show (decision 93), as its arrow does. A double click on
-        // the arrow is the arrow's own (it toggles on each click), and an open folder stays open.
+        // A double click (a pointer's gesture) opens a folder with subfolders in the tree, so they show (decision 93), as its arrow does. A
+        // double click on the arrow is the arrow's own (it toggles on each click), and an open folder stays open.
         onDoubleClick={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
-          ctx.onDoubleOpen?.();
           if (!hasKids || open) return;
           ctx.setOpen(key, true);
         }}
@@ -192,7 +190,7 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
             // The second click of a double click shows nothing more: the first click showed the folder, and the double click opens it
             // (decision 93), so the folder is shown once.
             if (e.detail > 1) return;
-            ctx.onOpen(space, id, hasKids);
+            ctx.onOpen(space, id);
           }}
           style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minInlineSize: 0, minBlockSize: link, color: "inherit", textDecoration: "none" }}
         >
@@ -210,7 +208,11 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
           role="group"
           data-tree-group={tint ? "root" : undefined}
           className={tint ? "tree-group-root" : undefined}
-          style={{ margin: 0, padding: 0, ...(tint ? ({ "--sc-group-tint": tint, "--sc-group-inset": `${row?.inline ?? 4}px` } as CSSProperties) : undefined) }}
+          style={{
+            margin: 0,
+            padding: 0,
+            ...(tint ? ({ "--sc-group-tint": tint, "--sc-group-inset": `${row?.inline ?? 4}px`, "--sc-group-hover": hover } as CSSProperties) : undefined),
+          }}
         >
           {q.isPending && (
             <li role="none" aria-busy="true" style={{ listStyle: "none", paddingInlineStart: level * 14 + 8 }}>

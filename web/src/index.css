@@ -247,6 +247,11 @@ a {
   background: var(--sc-group-tint);
   pointer-events: none;
 }
+/* A row in the tinted group takes its hover over the tint (decision 93, round 2): the opposite overlay to the tint, so the text and the mark
+   keep 4.5:1 on it (theme/groupTint.ts). Outside a group the sidebar's own hover applies. */
+.tree-group-root .tree-row-side:hover {
+  background: var(--sc-group-hover, var(--sc-side-hover, rgba(255, 255, 255, 0.1)));
+}
 
 /* The breadcrumbs' chevron sits on the centre of the crumb text (decision 93): a flex box centres the icon on the line, where the
    icon on the baseline sat 2 px high. */
