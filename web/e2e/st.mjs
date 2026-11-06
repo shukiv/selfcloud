@@ -97,7 +97,9 @@ export async function stChecks(h, { page, base, accountKey, accountID, memberID,
     // Light, with a limit of 1 GB.
     await setLimit(h, base, accountKey, accountID, memberID, 1_000_000_000);
     await navigateTo(page, '/storage');
-    await page.waitFor(`!!document.querySelector('.storage-bar')`, 15000);
+    // The bar is drawn at once from the figures an earlier visit left in the store; the page's own read of them can answer
+    // seconds later on a busy machine. The check waits for that read, the limit in the text, and still fails on what it says.
+    await page.waitFor(`/of 1 GB used/.test(document.querySelector('.storage-bar')?.getAttribute('aria-label') ?? '')`, 15000).catch(() => undefined);
     const alt = await meterAlt(page);
     check(alt !== null && /of 1 GB used/.test(alt) && /old versions/.test(alt) && /in the trash/.test(alt) && /free/.test(alt),
       `the meter's text alternative names the limit, the old versions, the trash and the free part (${alt})`);
@@ -147,8 +149,8 @@ export async function stChecks(h, { page, base, accountKey, accountID, memberID,
     await page.waitFor(`location.pathname === '/recent' && !document.querySelector('.storage-bar')`, 15000);
     await navigateTo(page, '/storage');
     await page.waitFor(`location.pathname === '/storage'`, 15000);
-    await page.waitFor(`!!document.querySelector('.storage-bar')`, 15000);
-    await sleep(500);
+    // As above, the page's own read of the figures is what the check waits for: the bar saying no limit.
+    await page.waitFor(`/no limit/.test(document.querySelector('.storage-bar')?.getAttribute('aria-label') ?? '')`, 15000).catch(() => undefined);
     await setTheme(page, 'Dark');
     await page.waitFor(`document.documentElement.dataset.theme === 'dark'`, 10000);
     const darkAlt = await meterAlt(page);
