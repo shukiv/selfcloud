@@ -98,6 +98,8 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `imports.enabled` | `true` | Turns background imports on. Off, no import can be started and the source list is empty. |
 | `imports.max_concurrent_jobs` | `2` | Import jobs that run at once across the installation, each in a worker of its own (1 to 32). |
 | `imports.job_retention_days` | `30` | How long a finished import's record (its state and item rows) is kept. The files it imported stay. |
+| `imports.max_unfinished_per_user` | `3` | Most imports one user may have queued, running or paused at once (1 to 100). A paused import holds its archive. |
+| `imports.paused_expiry_days` | `14` | How long an import may stay paused. Then it is cancelled, and what it staged and its archive are removed. |
 | `imports.archive.enabled` | `true` | Turns the archive source (an uploaded zip or tar) on. An account's owner may turn it off for one account. |
 | `imports.archive.max_entries` | `50000` | Most entries (files and folders) one archive may hold. Refused from the headers before anything is written. |
 | `imports.archive.max_depth` | `32` | Deepest folder nesting an archive entry may have. |
