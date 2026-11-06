@@ -36,11 +36,16 @@ type Upload struct {
 	UploaderName  string
 	UploaderEmail string
 	VisitorID     string
+	// Purpose is UploadPurposeImport for an archive uploaded for an import (decision 92); "" for a file upload.
+	Purpose string
 }
+
+// UploadPurposeImport marks an upload whose completed file is an archive for an import, not a node.
+const UploadPurposeImport = "import"
 
 const uploadCols = `id, account_id, folder_id, parent_id, dir_path, parents, name, name_key, on_conflict,
 	mime_type, sha256, length, durable_offset, hash_state, blob_id, created_by, created_kind,
-	created_at, updated_at, expires_at, uploader_name, uploader_email, visitor_id`
+	created_at, updated_at, expires_at, uploader_name, uploader_email, visitor_id, purpose`
 
 func scanUpload(row interface{ Scan(...any) error }) (*Upload, error) {
 	var u Upload
@@ -50,7 +55,8 @@ func scanUpload(row interface{ Scan(...any) error }) (*Upload, error) {
 	var created, updated, expires int64
 	err := row.Scan(&u.ID, &u.AccountID, &u.FolderID, &parent, &u.DirPath, &parents, &u.Name, &u.NameKey,
 		&u.OnConflict, &u.MimeType, &u.SHA256, &u.Length, &u.DurableOffset, &state, &u.BlobID,
-		&u.CreatedBy, &u.CreatedKind, &created, &updated, &expires, &u.UploaderName, &u.UploaderEmail, &u.VisitorID)
+		&u.CreatedBy, &u.CreatedKind, &created, &updated, &expires, &u.UploaderName, &u.UploaderEmail, &u.VisitorID,
+		&u.Purpose)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -81,11 +87,11 @@ func (tx *Tx) Upload(ctx context.Context, accountID, id string) (*Upload, error)
 // InsertUpload adds an upload.
 func (tx *Tx) InsertUpload(ctx context.Context, u *Upload) error {
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO uploads (`+uploadCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.ID, u.AccountID, u.FolderID, nullString(u.ParentID), u.DirPath, boolInt(u.Parents), u.Name, u.NameKey,
 		u.OnConflict, u.MimeType, u.SHA256, u.Length, u.DurableOffset, u.HashState, u.BlobID, u.CreatedBy,
 		u.CreatedKind, millis(u.CreatedAt), millis(u.UpdatedAt), millis(u.ExpiresAt), u.UploaderName,
-		u.UploaderEmail, u.VisitorID)
+		u.UploaderEmail, u.VisitorID, u.Purpose)
 	return err
 }
 

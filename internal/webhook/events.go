@@ -14,6 +14,7 @@ import (
 var Events = []string{
 	"comment.created", "comment.deleted", "comment.reopened", "comment.resolved", "comment.updated",
 	"file.created", "file.deleted", "file.moved", "file.restored", "file.updated",
+	"import.cancelled", "import.completed", "import.failed", "import.started",
 	"quota.exceeded", "quota.warning",
 	"upload.completed",
 	"user.created", "user.verified",

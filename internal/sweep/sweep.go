@@ -49,6 +49,9 @@ type Options struct {
 	VersionsMaxAge   time.Duration
 	// AuditRetention is audit.retention_days as a duration: an audit entry older than this is removed. Zero keeps every entry.
 	AuditRetention time.Duration
+	// ImportRetention is imports.job_retention_days as a duration: the record of a finished import older than this is
+	// removed. The files it imported stay. Zero keeps every record.
+	ImportRetention time.Duration
 	// Derived is the cache of derived files (thumbnails). Nil means there are none to sweep, as in tests.
 	Derived *derived.Cache
 	// Zips holds the stored zip downloads (decision 35). Nil means there are none to sweep, as in tests.
@@ -93,9 +96,11 @@ type Sweeper struct {
 	versionAge   time.Duration
 	// auditRetention is how long an audit entry is kept; auditPruned is when the entries were last pruned (audit.go).
 	auditRetention time.Duration
-	auditPruned    time.Time
-	derived        *derived.Cache
-	zips           *derived.ZipFiles
+	// importRetention is how long the record of a finished import is kept (imports.job_retention_days, decision 92).
+	importRetention time.Duration
+	auditPruned     time.Time
+	derived         *derived.Cache
+	zips            *derived.ZipFiles
 	// searchChecked is when the search rows were last checked; see searchCheckEvery.
 	searchChecked time.Time
 	// The text caps (see Options).
@@ -123,7 +128,8 @@ func New(o Options) *Sweeper {
 	return &Sweeper{st: o.Store, blobs: o.Blobs, grace: o.DeleteGrace, interval: o.Interval,
 		uploadExpiry: o.UploadExpiry, maxLifetime: o.UploadMaxLifetime, trashKeep: o.TrashRetention,
 		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, auditRetention: o.AuditRetention,
-		derived: o.Derived, zips: o.Zips, log: log,
+		importRetention: o.ImportRetention,
+		derived:         o.Derived, zips: o.Zips, log: log,
 		textMax: o.TextMax, capAccount: o.CapAccount, capTotal: o.CapTotal}
 }
 
@@ -173,6 +179,8 @@ type Result struct {
 	ZipsAbandoned int
 	// AuditPruned is the audit entries past audit.retention_days, removed (decision 48).
 	AuditPruned int64
+	// ImportsPruned is the records of finished imports past imports.job_retention_days, removed (decision 92).
+	ImportsPruned int64
 }
 
 // derivedFailedAge is how long a failed derived row is kept before the sweep clears it.
@@ -317,6 +325,11 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 	// The audit log is pruned hourly. A failure is counted and logged, and the steps after it still run.
 	if err := w.pruneAudit(ctx, now, &res); err != nil {
 		w.log.Error("audit retention", "error", err)
+		res.Failed++
+	}
+	// The records of finished imports are pruned with the same rule: a failure is counted and logged.
+	if err := w.pruneImports(ctx, now, &res); err != nil {
+		w.log.Error("import retention", "error", err)
 		res.Failed++
 	}
 	if res.Versions, err = w.pruneVersions(ctx, now); err != nil {

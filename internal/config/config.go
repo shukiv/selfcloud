@@ -71,6 +71,7 @@ type Config struct {
 	Zip       ZipConfig       `yaml:"zip"`
 	Search    SearchConfig    `yaml:"search"`
 	Copy      CopyConfig      `yaml:"copy"`
+	Imports   ImportsConfig   `yaml:"imports"`
 	Sharing   SharingConfig   `yaml:"sharing"`
 	Trash     TrashConfig     `yaml:"trash"`
 	Audit     AuditConfig     `yaml:"audit"`
@@ -380,6 +381,30 @@ type SearchConfig struct {
 	MaxTextTotal      ByteSize `yaml:"max_text_total"`
 }
 
+// validateImports checks the imports block (decision 92). A zero or negative cap would refuse every archive, so each cap
+// must be positive; the job pool and the retention must be positive too.
+func validateImports(i ImportsConfig, bad func(string, ...any)) {
+	if i.MaxConcurrentJobs < 1 || i.MaxConcurrentJobs > 32 {
+		bad("imports.max_concurrent_jobs must be from 1 to 32")
+	}
+	if i.JobRetentionDays < 1 {
+		bad("imports.job_retention_days must be at least 1")
+	}
+	a := i.Archive
+	if a.MaxEntries < 1 || a.MaxEntries > 1_000_000 {
+		bad("imports.archive.max_entries must be from 1 to 1000000")
+	}
+	if a.MaxDepth < 1 || a.MaxDepth > 256 {
+		bad("imports.archive.max_depth must be from 1 to 256")
+	}
+	if a.MaxRatio < 1 {
+		bad("imports.archive.max_ratio must be at least 1")
+	}
+	if a.MaxTotalBytes <= 0 {
+		bad("imports.archive.max_total_bytes must be positive")
+	}
+}
+
 // validateSearch checks the search block.
 func validateSearch(s SearchConfig, bad func(string, ...any)) {
 	if s.TextMaxBytes < 1024 {
@@ -492,6 +517,37 @@ type BlobsConfig struct {
 	// DeleteGrace is how long an unreferenced blob is kept before its file is removed. It is the
 	// window in which a backup taken before the removal still has the file.
 	DeleteGrace Duration `yaml:"delete_grace"`
+}
+
+// ImportsConfig controls background imports (decision 92). The archive source is the first one; the others are added
+// by later slices, each with its own switch.
+type ImportsConfig struct {
+	// Enabled turns imports on. Off, no import can be started and the source list is empty.
+	Enabled bool `yaml:"enabled"`
+	// MaxConcurrentJobs is how many import jobs run at once, across the installation. Each runs in a worker of its own,
+	// apart from the other background jobs.
+	MaxConcurrentJobs int `yaml:"max_concurrent_jobs"`
+	// JobRetentionDays is how long a finished import's job record (its state and item rows) is kept. The sweep removes
+	// older records. The files it imported stay.
+	JobRetentionDays int                 `yaml:"job_retention_days"`
+	Archive          ArchiveImportConfig `yaml:"archive"`
+}
+
+// ArchiveImportConfig caps what an archive (zip or tar, with gzip for tar) may hold. A cap refused on the archive's
+// headers stops the job before any entry is written; a cap refused on the bytes stops it at that entry, and what was
+// staged is removed. Each cap is checked again as the bytes are written.
+type ArchiveImportConfig struct {
+	// Enabled turns the archive source on for the installation. An account owner may turn it off for one account.
+	Enabled bool `yaml:"enabled"`
+	// MaxEntries is the most entries (files, folders and links) one archive may hold.
+	MaxEntries int `yaml:"max_entries"`
+	// MaxDepth is the most folders an entry may sit below the archive's root.
+	MaxDepth int `yaml:"max_depth"`
+	// MaxRatio is the most a file may expand: its uncompressed size over its compressed size, per zip entry, and over
+	// the whole stream for a tar. A file that expands more is refused, as a zip bomb is.
+	MaxRatio int `yaml:"max_ratio"`
+	// MaxTotalBytes is the most uncompressed bytes all the files of one archive may hold.
+	MaxTotalBytes ByteSize `yaml:"max_total_bytes"`
 }
 
 // UploadConfig controls uploads.
@@ -658,7 +714,10 @@ func Defaults() *Config {
 			Timeout: Duration(2 * time.Second), RatePerMinute: 60,
 			FullTextMaxBytes: ByteSize(50 << 20), TextMaxBytes: ByteSize(1 << 20),
 			MaxTextPerAccount: ByteSize(64 << 20), MaxTextTotal: ByteSize(1 << 30)},
-		Copy:     CopyConfig{MaxNodes: 50000},
+		Copy: CopyConfig{MaxNodes: 50000},
+		Imports: ImportsConfig{Enabled: true, MaxConcurrentJobs: 2, JobRetentionDays: 30,
+			Archive: ArchiveImportConfig{Enabled: true, MaxEntries: 50000, MaxDepth: 32, MaxRatio: 100,
+				MaxTotalBytes: 100 * GiB}},
 		Sharing:  SharingConfig{MaxExpiry: Duration(365 * 24 * time.Hour)},
 		Trash:    TrashConfig{Retention: Duration(30 * 24 * time.Hour)},
 		Audit:    AuditConfig{RetentionDays: 365},
@@ -815,6 +874,7 @@ func (c *Config) Validate() error {
 	if c.Copy.MaxNodes <= 0 {
 		bad("copy.max_nodes must be positive")
 	}
+	validateImports(c.Imports, bad)
 	if c.Sharing.MaxExpiry < 0 {
 		bad("sharing.max_expiry is negative; use 0 for no cap")
 	}
