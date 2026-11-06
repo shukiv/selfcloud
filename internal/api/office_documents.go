@@ -59,6 +59,12 @@ func documentName(lang, kind, given string) (string, string, error) {
 	if name == "" {
 		name = documentNames[lang][kind]
 	}
+	// The given name is checked as a name first, so "." or a name with a slash is refused, not turned into "..docx".
+	if given != "" {
+		if _, _, err := names.Clean(given); err != nil {
+			return "", "", err
+		}
+	}
 	if !strings.HasSuffix(strings.ToLower(name), ext) {
 		name += ext
 	}

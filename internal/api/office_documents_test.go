@@ -278,3 +278,81 @@ func TestNewDocumentRefusesBadInput(t *testing.T) {
 		t.Errorf("the folder has %d children after refusals, want only letter.docx", got)
 	}
 }
+
+// A name is checked as a name given before the type's extension is added, so "." and ".." are refused as they are for any
+// file (round 2): otherwise "." would become "..docx". Every refused name leaves nothing behind.
+func TestNewDocumentRefusesANameAsAFileNameRefuses(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	fx.grant(t, fx.fld.RootNodeID, fx.ann.ID, "editor")
+	root := fx.fld.RootNodeID
+	for _, name := range []string{".", "..", " lead.docx", "trail ", "a\\b", "zero​width", strings.Repeat("a", 300)} {
+		wantStatus(t, newDocumentAs(t, fx.s, fx.annSess, root, map[string]any{"type": "docx", "name": name}), 400)
+	}
+	if n := len(rootChildren(t, fx)); n != 1 {
+		// only the fixture's own letter.docx is there
+		t.Errorf("%d children after refused names, want the fixture's one", n)
+	}
+}
+
+// A name taken by a directory in the folder is taken like a file: the new document is "(1)" of it.
+func TestNewDocumentNameTakenByADirectoryGetsTheNumber(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	fx.grant(t, fx.fld.RootNodeID, fx.ann.ID, "editor")
+	wantStatus(t, callSession(t, fx.s, fx.annSess, "POST", "/api/v1/folders/"+fx.fld.ID+"/directories",
+		map[string]any{"path": "/Untitled document.docx", "parents": false}), 201)
+	got := nodeOf(t, newDocumentAs(t, fx.s, fx.annSess, fx.fld.RootNodeID, map[string]any{"type": "docx"}))
+	if got.Name != "Untitled document (1).docx" || got.Kind != "file" {
+		t.Errorf("named %q (%s), want \"Untitled document (1).docx\" as a file", got.Name, got.Kind)
+	}
+}
+
+// A folder in the trash is not reached: its root answers 404, as for any trashed node.
+func TestNewDocumentInATrashedFolderIsNotFound(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	fx.grant(t, fx.fld.RootNodeID, fx.ann.ID, "editor")
+	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/accounts/"+fx.acc.ID+"/folders/"+fx.fld.ID, fx.key, nil), 204)
+	wantStatus(t, newDocumentAs(t, fx.s, fx.annSess, fx.fld.RootNodeID, map[string]any{"type": "docx"}), 404)
+}
+
+// A token confined to another folder cannot make a document in this one: the folder is not reached (404), as for any write.
+func TestNewDocumentByATokenOfAnotherFolderIsNotFound(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	other := newFolder(t, fx.s, fx.key, fx.acc.ID, "Another team")
+	tok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"folders": []string{other.ID}})
+	wantStatus(t, byCred(t, fx.s, tok)("POST", "/api/v1/nodes/"+fx.fld.RootNodeID+"/documents", map[string]any{"type": "docx"}), 404)
+	if _, ok := childNamed(t, fx, "Untitled document.docx"); ok {
+		t.Error("a token of another folder made a document")
+	}
+}
+
+// An installation admin who is not signed in as a user is refused: the admin holds nothing on the folder, so the folder is
+// not reached, and no file is made.
+func TestNewDocumentByAnAdminIsRefused(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	_, adminSess := newAdminUser(t, fx.s, fx.admin, "ops@example.com")
+	rec := newDocumentAs(t, fx.s, adminSess, fx.fld.RootNodeID, map[string]any{"type": "docx"})
+	if rec.Code == http.StatusCreated {
+		t.Fatalf("an admin made a document: %s", rec.Body.String())
+	}
+	if _, ok := childNamed(t, fx, "Untitled document.docx"); ok {
+		t.Error("an admin's refused document was made")
+	}
+}
+
+// A share-link visitor is refused: the route is not one a link may call, as for file creation (the link's reason).
+func TestNewDocumentRefusesAShareLinkVisitor(t *testing.T) {
+	t.Parallel()
+	fx := newAnyoneFixture(t)
+	root := fx.rootOf(t, fx.fld.ID)
+	_, secret := fx.makeAnyone(t, root, nil)
+	visitor := fx.visitAnyone(t, secret, "")
+	rec := fx.visitor(t, visitor, "POST", "/api/v1/nodes/"+root+"/documents")
+	if e := wantError(t, rec, http.StatusForbidden, "forbidden"); e.Details["reason"] != "link_route" {
+		t.Fatalf("reason %v, want link_route", e.Details["reason"])
+	}
+}
