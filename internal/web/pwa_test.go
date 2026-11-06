@@ -324,3 +324,27 @@ func TestOfflineETagCoversTheBrand(t *testing.T) {
 		t.Errorf("a rename kept the ETag %q", a)
 	}
 }
+
+// TestManifestShareTarget: the share target takes files only, as a POST of multipart/form-data to /share-target, in one
+// field called files that accepts any file (decision 82). No title, text or url member: the manifest carries exactly these.
+// "*/*" is a criterion the W3C Web Share Target Level 2 spec lists for "any file" (its accept algorithm, "If criterion is */*").
+func TestManifestShareTarget(t *testing.T) {
+	h := pwaHandler(t, "Acme", "#053D8E")
+	var m map[string]any
+	if err := json.Unmarshal(get(t, h, http.MethodGet, manifestPath).Body.Bytes(), &m); err != nil {
+		t.Fatalf("manifest is not JSON: %v", err)
+	}
+	want := map[string]any{
+		"action":  "/share-target",
+		"method":  "POST",
+		"enctype": "multipart/form-data",
+		"params": map[string]any{
+			"files": []any{map[string]any{"name": "files", "accept": []any{"*/*"}}},
+		},
+	}
+	wantJSON, _ := json.Marshal(want)
+	gotJSON, _ := json.Marshal(m["share_target"])
+	if string(gotJSON) != string(wantJSON) {
+		t.Errorf("share_target = %s, want %s", gotJSON, wantJSON)
+	}
+}

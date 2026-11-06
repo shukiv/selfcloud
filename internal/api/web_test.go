@@ -3,6 +3,7 @@
 package api
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -268,4 +269,46 @@ func TestAssetPathsAreCleanOrNotFound(t *testing.T) {
 			t.Errorf("%s: redirects to %q", target, loc)
 		}
 	}
+}
+
+// unreadBody fails the test when anything reads it.
+type unreadBody struct{ t *testing.T }
+
+func (b unreadBody) Read(p []byte) (int, error) {
+	b.t.Error("the share target read the request body")
+	return 0, io.EOF
+}
+
+// TestShareTargetAnswers303WithoutReadingTheBody: with no service worker in control, a POST to /share-target (the share
+// sheet's form post, decision 82) gets 303 to /share and its body is never read, so nothing the person shared reaches the
+// server or is kept. A GET gets the same answer.
+func TestShareTargetAnswers303WithoutReadingTheBody(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/share-target", unreadBody{t})
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+	s.Handler().ServeHTTP(rec, req)
+	wantStatus(t, rec, http.StatusSeeOther)
+	if loc := rec.Header().Get("Location"); loc != "/share" {
+		t.Errorf("Location = %q, want /share", loc)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	get := serveRaw(t, s, http.MethodGet, "/share-target")
+	wantStatus(t, get, http.StatusSeeOther)
+	if loc := get.Header().Get("Location"); loc != "/share" {
+		t.Errorf("GET Location = %q, want /share", loc)
+	}
+}
+
+// TestShareTargetWithUIOffIsJSON404: with the web interface off there is no share target, so the POST is the JSON 404 and
+// its body is not read either.
+func TestShareTargetWithUIOffIsJSON404(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, func(c *config.Config) { c.UI.Enabled = false })
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/share-target", unreadBody{t}))
+	wantError(t, rec, http.StatusNotFound, "not_found")
 }

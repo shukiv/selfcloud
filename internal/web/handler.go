@@ -140,6 +140,10 @@ func sharePagePath(p string) bool {
 // Serves reports whether r belongs to the web interface: a GET or HEAD outside the reserved
 // paths, and with no name that starts with a dot.
 func (h *Handler) Serves(r *http.Request) bool {
+	if r.URL.Path == shareTargetPath && (r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodPost) {
+		// The share target answers 303 whatever the method (decision 82); it is checked first, as its path is not reserved.
+		return true
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
@@ -169,6 +173,16 @@ func hidden(p string) bool {
 // ServeHTTP serves the file at the request path. A path with no file gets index.html, so the
 // client-side router can answer it.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == shareTargetPath {
+		// The share target (decision 82). The body is never read: with no service worker in control, nothing the person
+		// shared reaches the server, and the page at /share says so. The answer is the same for every method.
+		hd := w.Header()
+		hd.Set("Location", "/share")
+		hd.Set("Cache-Control", "no-store")
+		hd.Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusSeeOther)
+		return
+	}
 	if UnsafeAssetRequest(r) {
 		hd := w.Header()
 		hd.Set("Content-Security-Policy", h.policy(""))

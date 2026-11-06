@@ -154,6 +154,30 @@ type manifestIcon struct {
 	Purpose string `json:"purpose,omitempty"`
 }
 
+// shareTargetPath is the share target's address: the share sheet's form post lands here (decision 82). The service worker
+// answers the post; with no worker in control the server answers 303 to /share and keeps nothing.
+const shareTargetPath = "/share-target"
+
+// shareTarget is the manifest's share_target (decision 82): files only, a POST of multipart/form-data, one field called
+// files that accepts any file. The W3C Web Share Target spec allows "*/*" in accept.
+type shareTarget struct {
+	Action  string           `json:"action"`
+	Method  string           `json:"method"`
+	Enctype string           `json:"enctype"`
+	Params  shareTargetParam `json:"params"`
+}
+
+// shareTargetParam names the form fields of a share.
+type shareTargetParam struct {
+	Files []shareTargetFile `json:"files"`
+}
+
+// shareTargetFile is one files entry: the field's name and the media types it accepts.
+type shareTargetFile struct {
+	Name   string   `json:"name"`
+	Accept []string `json:"accept"`
+}
+
 // webManifest is the manifest. It is built per request from the brand.
 type webManifest struct {
 	ID              string         `json:"id"`
@@ -165,6 +189,7 @@ type webManifest struct {
 	ThemeColor      string         `json:"theme_color"`
 	BackgroundColor string         `json:"background_color"`
 	Icons           []manifestIcon `json:"icons"`
+	ShareTarget     shareTarget    `json:"share_target"`
 }
 
 // shortName cuts the name to shortNameRunes characters, on a whole character, and drops a trailing space.
@@ -200,6 +225,14 @@ func manifestFor(b brandInfo) webManifest {
 		ThemeColor:      b.hex,
 		BackgroundColor: pageColour,
 		Icons:           icons,
+		ShareTarget: shareTarget{
+			Action:  shareTargetPath,
+			Method:  http.MethodPost,
+			Enctype: "multipart/form-data",
+			Params: shareTargetParam{Files: []shareTargetFile{
+				{Name: "files", Accept: []string{"*/*"}},
+			}},
+		},
 	}
 }
 
