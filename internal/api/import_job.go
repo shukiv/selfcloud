@@ -195,6 +195,11 @@ func (s *Server) runImportJob(ctx context.Context, job *store.Job) (err error) {
 	if err == nil || errors.Is(err, jobs.ErrYield) || ctx.Err() != nil {
 		return err
 	}
+	// The import was removed while the job ran (its target went, and the cascade took the row): there is nothing left
+	// to fail, so the job ends quietly (round 7, B5).
+	if _, gone := s.store.Import(ctx, job.Target); errors.Is(gone, store.ErrNotFound) {
+		return nil
+	}
 	var code importJobError
 	if errors.As(err, &code) {
 		return err
@@ -467,22 +472,25 @@ func (s *Server) importMakeDir(ctx context.Context, tx *store.Tx, im *store.Impo
 	if err != nil {
 		return "", err
 	}
+	// A reused directory gets a placeholder in the staging folder, not the live directory: its entries are staged under the
+	// placeholder, so no staged entry ever has a live parent, where it would clash with itself at publish (round 7, B2).
+	// The placeholder's entries are merged into the live directory at publish. The live directory is reused only when it
+	// is in the target folder under the directory the parent stands for (the target directory, or a reused parent's live
+	// directory).
+	reuses := ""
 	if have != "" {
 		n, err := tx.Node(ctx, im.AccountID, have)
 		if err != nil {
 			return "", err
 		}
-		expected := parent
-		if parent == im.StagingRootID {
-			expected = im.ParentID
-		}
-		if n.Kind == store.KindDir && n.FolderID == im.FolderID && n.ParentID == expected {
-			if err := tx.InsertImportItem(ctx, &store.ImportItem{ImportID: im.ID, Path: key, Name: name.Name,
-				Kind: store.KindDir, State: "skipped", NodeID: have, CreatedAt: now}); err != nil {
+		liveParent := im.ParentID
+		if parent != im.StagingRootID {
+			if liveParent, err = tx.ImportReuses(ctx, im.ID, parent); err != nil {
 				return "", err
 			}
-			im.Skipped++
-			return have, nil
+		}
+		if liveParent != "" && n.Kind == store.KindDir && n.FolderID == im.FolderID && n.ParentID == liveParent {
+			reuses = have
 		}
 	}
 	n := &store.Node{ID: id.New("nod"), AccountID: im.AccountID, FolderID: im.StagingFolderID, ParentID: parent,
@@ -491,11 +499,15 @@ func (s *Server) importMakeDir(ctx context.Context, tx *store.Tx, im *store.Impo
 	if err := tx.InsertNodeNoIndex(ctx, n); err != nil {
 		return "", err
 	}
-	if err := tx.PutImportSource(ctx, im.AccountID, store.SourceArchive, src, n.ID, im.ID); err != nil {
+	state := "done"
+	if reuses != "" {
+		state = "skipped"
+		im.Skipped++
+	} else if err := tx.PutImportSource(ctx, im.AccountID, store.SourceArchive, src, n.ID, im.ID); err != nil {
 		return "", err
 	}
 	if err := tx.InsertImportItem(ctx, &store.ImportItem{ImportID: im.ID, Path: key, Name: name.Name,
-		Kind: store.KindDir, State: "done", NodeID: n.ID, CreatedAt: now}); err != nil {
+		Kind: store.KindDir, State: state, NodeID: n.ID, Reuses: reuses, CreatedAt: now}); err != nil {
 		return "", err
 	}
 	return n.ID, nil
@@ -756,6 +768,33 @@ func checkReusedDirs(ctx context.Context, tx *store.Tx, im *store.Import, target
 	return nil
 }
 
+// placeStaged places one staged node under parent, in the caller's write. The directory it goes into must be reached from
+// the target (checked once per directory through reach). A live node of the same name meets the import's conflict policy,
+// as a top-level entry always did (round 7, B2).
+func placeStaged(ctx context.Context, tx *store.Tx, im *store.Import, p *auth.Principal, target string,
+	reach map[string]bool, parent *store.Node, n *store.Node, now time.Time) error {
+	if err := checkReusedDirs(ctx, tx, im, target, parent.ID, reach); err != nil {
+		return err
+	}
+	plan := &transferPlan{folderID: im.FolderID, parent: parent, name: n.Name, key: n.NameKey}
+	taken, err := nameTakenBy(tx.Child(ctx, im.AccountID, parent.ID, n.NameKey))
+	if err != nil {
+		return err
+	}
+	if taken != nil {
+		if err := applyConflict(ctx, tx, plan, taken, im.OnConflict, n.Kind, ""); err != nil {
+			return err
+		}
+		if err := requireReplaceRole(ctx, tx, p, plan); err != nil {
+			return err
+		}
+		if _, err := applyReplace(ctx, tx, plan, p.ID); err != nil {
+			return err
+		}
+	}
+	return tx.SetStagedParent(ctx, im.AccountID, im.StagingFolderID, n.ID, parent.ID, plan.name, plan.key, now)
+}
+
 func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Principal) error {
 	if err := s.importFaultAt("publish"); err != nil {
 		return err
@@ -784,13 +823,9 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 		if err := s.importTargetRole(ctx, tx, im, p); err != nil {
 			return err
 		}
-		tops, err := tx.StagedTopLevel(ctx, im.AccountID, im.StagingFolderID)
-		if err != nil {
-			return err
-		}
 		now := store.Now()
 		// Every directory this import reused is checked, whether or not an entry of it is staged now: a move of the directory
-		// carries the staged entries under it along, so they are no longer tops (round 4, N5).
+		// carries the staged entries under it along (round 4, N5).
 		// The target is a node: the folder's root when the import names no directory (round 5).
 		target := im.ParentID
 		if target == "" {
@@ -801,44 +836,45 @@ func (s *Server) importPublish(ctx context.Context, impID string, p *auth.Princi
 			target = root.ID
 		}
 		reach := map[string]bool{}
-		reused, err := tx.ReusedDirNodes(ctx, im.ID)
+		reused, err := tx.ReusedDirs(ctx, im.ID)
 		if err != nil {
 			return err
 		}
-		for _, id := range reused {
-			if err := checkReusedDirs(ctx, tx, im, target, id, reach); err != nil {
+		for _, d := range reused {
+			if err := checkReusedDirs(ctx, tx, im, target, d.Live, reach); err != nil {
 				return err
 			}
 		}
+		// The entries staged under a reused directory go into its live directory, deepest directory first, and its
+		// placeholder goes. A child is a staged entry, so the live directory holds no staged entry while this runs (B2).
+		for _, d := range reused {
+			live, err := tx.Node(ctx, im.AccountID, d.Live)
+			if err != nil {
+				return err
+			}
+			kids, err := tx.StagedChildren(ctx, im.AccountID, im.StagingFolderID, d.Placeholder)
+			if err != nil {
+				return err
+			}
+			for _, n := range kids {
+				if err := placeStaged(ctx, tx, im, p, target, reach, live, n, now); err != nil {
+					return err
+				}
+			}
+			if err := tx.DropStagedDir(ctx, im.AccountID, im.StagingFolderID, im.ID, d.Placeholder, d.Live); err != nil {
+				return err
+			}
+		}
+		parent, err := tx.Node(ctx, im.AccountID, target)
+		if err != nil {
+			return err
+		}
+		tops, err := tx.StagedTopLevel(ctx, im.AccountID, im.StagingFolderID, im.StagingRootID)
+		if err != nil {
+			return err
+		}
 		for _, n := range tops {
-			parentID := n.ParentID
-			if parentID == im.StagingRootID {
-				parentID = im.ParentID
-			}
-			parent, err := tx.Node(ctx, im.AccountID, parentID)
-			if err != nil {
-				return err
-			}
-			if err := checkReusedDirs(ctx, tx, im, target, parent.ID, reach); err != nil {
-				return err
-			}
-			plan := &transferPlan{folderID: im.FolderID, parent: parent, name: n.Name, key: n.NameKey}
-			taken, err := nameTakenBy(tx.Child(ctx, im.AccountID, parent.ID, n.NameKey))
-			if err != nil {
-				return err
-			}
-			if taken != nil {
-				if err := applyConflict(ctx, tx, plan, taken, im.OnConflict, n.Kind, ""); err != nil {
-					return err
-				}
-				if err := requireReplaceRole(ctx, tx, p, plan); err != nil {
-					return err
-				}
-				if _, err := applyReplace(ctx, tx, plan, p.ID); err != nil {
-					return err
-				}
-			}
-			if err := tx.SetStagedParent(ctx, im.AccountID, im.StagingFolderID, n.ID, parent.ID, plan.name, plan.key, now); err != nil {
+			if err := placeStaged(ctx, tx, im, p, target, reach, parent, n, now); err != nil {
 				return err
 			}
 		}

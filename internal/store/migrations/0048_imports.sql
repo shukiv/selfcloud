@@ -55,6 +55,7 @@ CREATE TABLE import_items (
     kind       TEXT    NOT NULL CHECK (kind IN ('file', 'dir')),
     state      TEXT    NOT NULL CHECK (state IN ('done', 'skipped')),
     node_id    TEXT    NOT NULL DEFAULT '',
+    reuses     TEXT    NOT NULL DEFAULT '',
     bytes      INTEGER NOT NULL DEFAULT 0,
     error_code TEXT    NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
