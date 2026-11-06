@@ -107,6 +107,7 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `imports.archive.max_depth` | `32` | Deepest folder nesting an archive entry may have. |
 | `imports.archive.max_ratio` | `100` | Most a file may expand: uncompressed over compressed size, per zip entry, and over the whole stream for a tar.gz. |
 | `imports.archive.max_total_bytes` | `100GiB` | Most uncompressed bytes all the files of one archive may hold. Each file is also held to `upload.max_file_size`. |
+| `imports.archive.max_path_bytes` | `64MiB` | Most bytes the full paths of one archive's entries may hold, summed over the entries. It bounds the memory a scan keeps for the names that clash. |
 | `derived.convert_workers` | `2` | Document conversions (previews and exports) that run through Collabora at once. Needs `office.enabled`. |
 | `derived.convert_queue` | `32` | Document conversions that may wait, over all accounts. A request past it is refused with a retry-later. |
 | `derived.convert_account_queue` | `8` | Places of the conversion queue one account may hold, so one account cannot fill it. At most `derived.convert_queue`. |
