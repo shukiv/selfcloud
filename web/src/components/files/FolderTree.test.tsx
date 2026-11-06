@@ -653,7 +653,7 @@ describe("the folder tree's double click and group tint (decision 93)", () => {
     await screen.findByText("Deep");
     const [root, nested] = groups();
     expect(root?.dataset.treeGroup).toBe("root");
-    expect(root?.style.getPropertyValue("--sc-group-tint"), "the root group's tint").toBe("#28589E");
+    expect(root?.style.getPropertyValue("--sc-group-tint"), "the root group's tint").toBe("#174B96");
     expect(nested?.dataset.treeGroup).toBeUndefined();
     expect(nested?.style.getPropertyValue("--sc-group-tint") ?? "").toBe("");
   });
