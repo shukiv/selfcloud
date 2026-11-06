@@ -47,7 +47,6 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
     await page.evaluate(`document.querySelector('[data-testid="new-button"]').click()`);
     await pickMenuItem(page, 'Document');
-    await new Promise((r) => setTimeout(r, 3000));
     await page.waitFor(`location.pathname.startsWith('/edit/')`, 15000);
     newID = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
     const created = await api(base, 'GET', `/api/v1/nodes/${newID}`, accountKey);
@@ -74,6 +73,27 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
     await rowAppears(page, docName);
     check(true, 'Back returns to the folder, which lists "Untitled document.docx"');
+
+    // The page's own New (FilesPage's entry, not the sidebar's) makes the second file in the same folder; the name takes the
+    // first free number. Back lists both files.
+    await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
+    // FilesPage's own New is shown where the sidebar does not hold the New button: a narrow window, as an icon labelled New.
+    await size(400, 800);
+    const pageNew = `[...document.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === 'New' && !b.closest('.shell-sider'))`;
+    await page.waitFor(`!!${pageNew}`, 15000);
+    await page.evaluate(`${pageNew}.click()`);
+    await pickMenuItem(page, 'Document');
+    await page.waitFor(`location.pathname.startsWith('/edit/')`, 15000);
+    const second = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
+    const made2 = await api(base, 'GET', `/api/v1/nodes/${second}`, accountKey);
+    check(made2.name === 'Untitled document (1).docx' && made2.folder_id === teamA, `the page's own New makes "${made2.name}" in Team A (${made2.folder_id})`);
+    await page.waitFor(`!!document.querySelector('button[aria-label="Back"]')`, 15000);
+    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Back').click()`);
+    await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
+    await rowAppears(page, docName);
+    await rowAppears(page, made2.name);
+    check(true, 'the page\'s own New: Back lists both "Untitled document.docx" and "Untitled document (1).docx"');
   } finally {
     await setLanguage(page, 'English').catch(() => {});
     await size(1280, 800).catch(() => {});
