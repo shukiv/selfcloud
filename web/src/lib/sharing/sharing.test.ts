@@ -161,7 +161,16 @@ describe('the people combobox', () => {
     expect(got.status).toBe('ready');
     expect(got.items).toEqual([ann, fin]);
     expect(got.open).toBe(true);
-    expect(got.active).toBe(0);
+    // No option is active until an arrow key is pressed, so Enter right after the focus picks nothing (review L3).
+    expect(got.active).toBe(-1);
+  });
+
+  it('an arrow from no option goes to the first option, and the up arrow to the last', () => {
+    let s = comboReducer(COMBO_START, { type: 'focus' });
+    s = comboReducer(s, list([ann, fin]));
+    expect(s.active).toBe(-1);
+    expect(comboReducer(s, { type: 'move', delta: 1 }).active).toBe(0);
+    expect(comboReducer(s, { type: 'move', delta: -1 }).active).toBe(1);
   });
 
   it('reopens the cached list without a second answer', () => {

@@ -163,5 +163,67 @@ describe("the people combobox", () => {
       await user.click(screen.getByRole("combobox"));
       await waitFor(() => expect(api.searchDirectory.mock.calls.filter((c) => c[0] === "")).toHaveLength(2));
     });
+
+    it("Enter right after the focus picks nothing, and no option is active", async () => {
+      api.searchDirectory.mockResolvedValue({ items: [mate, kim], more: false });
+      const onpick = vi.fn();
+      const submit = vi.fn((e: { preventDefault: () => void }) => e.preventDefault());
+      render(
+        <form onSubmit={submit}>
+          <PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={onpick} />
+        </form>,
+      );
+      const box = screen.getByRole("combobox");
+      fireEvent.focus(box);
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      expect(box.getAttribute("aria-activedescendant")).toBeNull();
+      fireEvent.keyDown(box, { key: "Enter", keyCode: 13 });
+      expect(onpick).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it("an arrow after the focus, then Enter, picks the first option", async () => {
+      api.searchDirectory.mockResolvedValue({ items: [mate, kim], more: false });
+      const onpick = vi.fn();
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={onpick} />);
+      const box = screen.getByRole("combobox");
+      fireEvent.focus(box);
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      fireEvent.keyDown(box, { key: "ArrowDown", keyCode: 40 });
+      fireEvent.keyDown(box, { key: "Enter", keyCode: 13 });
+      expect(onpick).toHaveBeenLastCalledWith(expect.objectContaining({ id: "usr_mate" }));
+    });
+
+    it("a people-only field counts people, not people and groups", async () => {
+      api.searchDirectory.mockResolvedValue({ items: [mate, kim], more: false });
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} kind="user" />);
+      fireEvent.focus(screen.getByRole("combobox"));
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      expect(screen.getByRole("status").textContent).toBe("2 people");
+    });
+
+    it("says Loading while the list loads, and Searching for a search", async () => {
+      api.searchDirectory.mockReturnValue(new Promise(() => {}));
+      const user = userEvent.setup();
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />);
+      fireEvent.focus(screen.getByRole("combobox"));
+      expect(await screen.findByText("Loading…")).toBeTruthy();
+      await user.type(screen.getByRole("combobox"), "ma");
+      expect(await screen.findByText("Searching…")).toBeTruthy();
+    });
+
+    it("Escape closes the list, and a click on the field reopens it", async () => {
+      api.searchDirectory.mockResolvedValue({ items: [mate], more: false });
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />);
+      const box = screen.getByRole("combobox");
+      fireEvent.focus(box);
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      fireEvent.keyDown(box, { key: "Escape", keyCode: 27 });
+      await waitFor(() => expect(screen.queryByText("Mateo Member")).toBeNull());
+      // A bare click event, not user.click: the field keeps its focus, so only the click handler can reopen the list.
+      fireEvent.click(box);
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      expect(api.searchDirectory.mock.calls.filter((c) => c[0] === "")).toHaveLength(1);
+    });
   });
 });

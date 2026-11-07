@@ -540,6 +540,7 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
                   <>
                     <PeopleCombobox
                       id="share-transfer-to"
+                      kind="user"
                       label={t("share.transferTo")}
                       hint={t("share.transferHint")}
                       onpick={(entry) => {

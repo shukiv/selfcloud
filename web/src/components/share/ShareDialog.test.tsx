@@ -303,4 +303,19 @@ describe("the share dialog", () => {
     await pick(user, "role-usr_mate", "Can edit");
     expect(await screen.findByText("You can't change who has access to this item.")).toBeTruthy();
   });
+
+  // Review L2: a transfer goes to a person, so its field lists people only, and a group cannot be picked for it.
+  it("the transfer field searches people only", async () => {
+    const user = userEvent.setup();
+    renderDialog(nodeOf("manager", { owner_id: "usr_ann" }));
+    await screen.findByText("Mateo Member");
+    await user.click(screen.getByRole("button", { name: "Transfer ownership" }));
+    fireEvent.focus(await waitFor(() => {
+      const el = document.getElementById("share-transfer-to");
+      if (!el) throw new Error("no transfer field");
+      return el;
+    }));
+    await waitFor(() => expect(api.searchDirectory).toHaveBeenCalledWith("", "user"));
+    expect(api.searchDirectory.mock.calls.some((c) => c[1] === "all")).toBe(false);
+  });
 });

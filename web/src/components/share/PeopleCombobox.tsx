@@ -16,7 +16,8 @@ import { session } from "../../lib/session";
 // id of the input are the ones the interface has always had (see docs/design.md, section 10).
 //
 // Decision 96: focusing the field, or clicking it, while it holds fewer than two characters opens the account's list
-// (the answer to an empty q, asked once per session). From two characters the search runs as before.
+// (the answer to an empty q, asked once per field mount, so once per opening of the dialog). From two characters the
+// search runs as before. The list opens with no option active, so Enter right after the focus picks nothing.
 export interface PeopleComboboxProps {
   id: string;
   label: string;
@@ -41,7 +42,8 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
   const sess = useStore(session);
   // gen counts the sessions. An answer from an earlier one is dropped, the focus list included.
   const gen = useRef(0);
-  // listAsked is true while the account's list is on its way, so a second focus does not ask again.
+  // listAsked is true from the first ask of the account's list until the session changes, so a second focus or click
+  // in the same mount does not ask again. A failed ask clears it, so the next focus may try again.
   const listAsked = useRef(false);
 
   const search = useMemo(
@@ -63,9 +65,8 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
     dispatch({ type: "clear" });
   }, [sess, search]);
 
-  // loadList asks for the account's list once per session. It is not asked again while the answer is on its way or
-  // after it arrived; a failed ask may be tried again. The ref is set at once, so a focus and a click in one gesture
-  // ask once.
+  // loadList asks for the account's list once per field mount (each opening of the dialog), and again only after a
+  // session change or a failed ask. The ref is set at once, so a focus and a click in one gesture ask once.
   const loadList = () => {
     if (listAsked.current) return;
     listAsked.current = true;
@@ -112,9 +113,11 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
       case "ArrowDown":
       case "ArrowUp": {
         e.preventDefault();
-        // On a closed field under two characters the arrow opens the list and leaves the active option where it is.
-        if (isShort(state.query) && !state.open) {
-          browse();
+        // Under two characters an arrow opens the account's list when it is closed, then moves from no option: the
+        // first option for the down arrow, the last for the up arrow.
+        if (isShort(state.query)) {
+          if (!state.open) browse();
+          dispatch({ type: "move", delta: e.key === "ArrowDown" ? 1 : -1 });
           break;
         }
         dispatch({ type: "open" });
@@ -140,13 +143,15 @@ export default function PeopleCombobox({ id, label, hint, onpick, invalid = fals
   const showList = state.open && state.items.length > 0;
   const statusText =
     state.status === "loading"
-      ? t("share.combo.searching")
+      ? isShort(state.query)
+        ? t("share.combo.loading")
+        : t("share.combo.searching")
       : state.status === "error"
         ? t("share.combo.error")
         : state.status === "ready" && state.items.length === 0 && state.query.trim().length >= MIN_QUERY
           ? t("share.combo.none")
           : showList
-            ? tp("share.combo.count", state.items.length)
+            ? tp(kind === "user" ? "share.combo.people" : "share.combo.count", state.items.length)
             : "";
 
   return (

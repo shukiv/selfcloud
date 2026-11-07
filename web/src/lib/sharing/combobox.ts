@@ -56,7 +56,7 @@ export const COMBO_START: ComboState = {
 function showShort(s: ComboState): ComboState {
   if (s.focus) {
     const items = s.focus.items;
-    return { ...s, open: true, status: 'ready', items, more: s.focus.more, active: items.length > 0 ? 0 : -1 };
+    return { ...s, open: true, status: 'ready', items, more: s.focus.more, active: -1 };
   }
   return { ...s, open: true, status: 'loading', items: [], more: false, active: -1 };
 }
@@ -90,7 +90,7 @@ export function comboReducer(s: ComboState, a: ComboAction): ComboState {
       const focus = { items: a.items, more: a.more };
       if (s.query.trim().length >= MIN_QUERY || !s.browse) return { ...s, focus };
       const items = a.items;
-      return { ...s, focus, status: 'ready', items, more: a.more, active: items.length > 0 ? 0 : -1 };
+      return { ...s, focus, status: 'ready', items, more: a.more, active: -1 };
     }
     case 'listfail': {
       if (s.query.trim().length >= MIN_QUERY || !s.browse) return s;
@@ -99,6 +99,8 @@ export function comboReducer(s: ComboState, a: ComboAction): ComboState {
     case 'move': {
       if (!s.open || s.items.length === 0) return s;
       const n = s.items.length;
+      // From no active option, the first arrow goes to the first option and the up arrow to the last.
+      if (s.active < 0) return { ...s, active: a.delta > 0 ? 0 : n - 1 };
       return { ...s, active: (((s.active + a.delta) % n) + n) % n };
     }
     case 'pick':
