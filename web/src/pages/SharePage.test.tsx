@@ -19,6 +19,14 @@ vi.mock("../lib/pwa/share", () => ({
   forgetShare: (...args: unknown[]) => forgetShare(...args),
 }));
 
+// The page's own strings load in the background (decision 82, round 4). loadText calls the real loader unless a test says otherwise, so
+// the English texts are there as they are in the app; a test can hold the load, or fail it.
+const loadText = vi.fn();
+vi.mock("../lib/share/text", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/share/text")>();
+  return { loadShareText: (l: string) => loadText(l, actual.loadShareText) };
+});
+
 const add = vi.fn();
 vi.mock("../lib/files/uploads", () => ({
   manager: { add: (...args: unknown[]) => add(...args) },
@@ -72,6 +80,8 @@ beforeEach(() => {
   myFolders.mockReset();
   getMe.mockReset();
   childrenPage.mockReset();
+  loadText.mockReset();
+  loadText.mockImplementation((l: string, real: (l: string) => Promise<void>) => real(l));
   myFolders.mockResolvedValue([mine]);
   getMe.mockResolvedValue({ personal_folder_id: PERSONAL });
   session.set({ user: { id: "usr_1", role: "user" }, impersonation: null } as unknown as Session);
@@ -161,5 +171,42 @@ describe("SharePage", () => {
     expect(forgetShare).toHaveBeenCalledWith("abc");
     expect(add).not.toHaveBeenCalled();
     expect((await screen.findByTestId("where")).textContent).toBe("/files");
+  });
+});
+
+// The three states of the page's own strings (decision 82, round 5, M1): loading, failed, and loaded again after Try again.
+describe("the share page's own strings: loading, failing and Try again", () => {
+  it("draws a status, and no raw key, until the strings are in", async () => {
+    loadText.mockImplementationOnce(() => new Promise<void>(() => {}));
+    takeShare.mockResolvedValue([new File(["abc"], "a.txt")]);
+    renderAt("abc");
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(document.body.textContent ?? "").not.toContain("shareTarget.");
+    expect(screen.queryByText("Save shared files")).toBeNull();
+  });
+
+  it("shows the main catalogue's Try again when the load fails, and loads the strings again on Try again", async () => {
+    loadText.mockRejectedValueOnce(new Error("offline"));
+    takeShare.mockResolvedValue([new File(["abc"], "a.txt")]);
+    renderAt("abc");
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Save shared files")).toBeTruthy();
+    expect(loadText).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Something went wrong. Try again.")).toBeNull();
+  });
+
+  it("the retry shows the status while the strings load again, not the failure from before", async () => {
+    let finish: () => void = () => {};
+    loadText.mockRejectedValueOnce(new Error("offline"));
+    loadText.mockImplementationOnce((l: string, real: (l: string) => Promise<void>) => new Promise<void>((resolve) => {
+      finish = () => resolve(real(l));
+    }));
+    takeShare.mockResolvedValue([new File(["abc"], "a.txt")]);
+    renderAt("abc");
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("status")).toBeTruthy();
+    expect(screen.queryByText("Something went wrong. Try again.")).toBeNull();
+    finish();
+    expect(await screen.findByText("Save shared files")).toBeTruthy();
   });
 });

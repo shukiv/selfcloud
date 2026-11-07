@@ -715,6 +715,56 @@ describe("the share target (decision 82)", () => {
     expect(res?.headers.get("location")).toBe(absolute("/share"));
   });
 
+  // Round 5, L2: a blob: or filesystem: referrer is the address it wraps. A page of another site can make a blob that the browser
+  // reports as this referrer, so the inner address is the one that is compared.
+  it("refuses a blob referrer made by another site, with no Origin", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "blob:https://evil.test/0b1c-2d3e" }));
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+  });
+
+  it("accepts a blob referrer made by this site, with no Origin", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "blob:https://drive.test/0b1c-2d3e" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  it("refuses a filesystem referrer of another site, and accepts one of this site", async () => {
+    const w = load();
+    const other = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "filesystem:https://evil.test/temporary/x.html" }));
+    expect(other?.headers.get("location")).toBe(absolute("/share"));
+    const own = await w.fetch(shareRequest([file("b.txt", "hi")], { referrer: "filesystem:https://drive.test/temporary/x.html" }));
+    expect(own?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  // Round 5, L3: a default port is the same origin, an IPv6 literal is an address like any other, and an http:// referrer of another
+  // site is refused as an https one is.
+  it("accepts an Origin of this site written with its default port", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "", origin: "https://drive.test:443" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  it("accepts a referrer of this site written with its default port", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "https://drive.test:443/files" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  it("refuses an IPv6 literal of another site, as a referrer and as an Origin", async () => {
+    const w = load();
+    const byReferrer = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "https://[2001:db8::1]/attack.html" }));
+    expect(byReferrer?.headers.get("location")).toBe(absolute("/share"));
+    const byOrigin = await w.fetch(shareRequest([file("b.txt", "hi")], { referrer: "", origin: "http://[::1]:8080" }));
+    expect(byOrigin?.headers.get("location")).toBe(absolute("/share"));
+  });
+
+  it("refuses an http:// referrer of another site, as it refuses an https one", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "http://evil.test/attack.html" }));
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+  });
+
   it("accepts a post whose Origin is this site", async () => {
     const w = load();
     const res = await w.fetch(shareRequest([file("a.txt", "hi")], { origin: ORIGIN }));

@@ -185,23 +185,30 @@ function webOrigin(value) {
   return null;
 }
 
+// innerAddress returns the address a blob: or filesystem: URL wraps, as text: blob:https://evil.test/uuid wraps https://evil.test/uuid. A
+// page of another site can make such a URL, and the browser reports it as the referrer, so the wrapped address is what is compared
+// (decision 82, round 5, L2). Any other text is returned as it is.
+function innerAddress(value) {
+  return /^(blob|filesystem):/i.test(value) ? value.slice(value.indexOf(':') + 1) : value;
+}
+
 // fromAnotherSite reports whether a share post came from a page of another web site. Two signals are read, and each refuses only a
-// web address of another site (decision 82, rounds 2 to 4).
+// web address of another site (decision 82, rounds 2 to 5).
 // (1) The Origin header. It is what the worker can see of where a post came from (measured in headless Chrome, round 2): a post from a
 // page of another web site carries that site's origin. An Origin that is absent, the string "null" or a non-web scheme (such as an
 // Android app's) is not refused: the system share sheet's own Origin was not measured (round 3, M3).
-// (2) The referrer. An empty referrer is accepted. A referrer that is an http or https address of another site is refused. A referrer
-// with a non-web scheme (an Android app's, or about:client) is accepted, as is one that cannot be read as an address (the check fails
-// open). A page can send no referrer at all, so the Share page also asks the person to confirm before anything is saved, and both
-// signals are defence in depth only.
+// (2) The referrer. An empty referrer is accepted. A referrer that is an http or https address of another site is refused, and so is
+// a blob: or filesystem: referrer that wraps one. A referrer with a non-web scheme (an Android app's, or about:client) is accepted, as
+// is one that cannot be read as an address (the check fails open). A page can send no referrer at all, so the Share page also asks the
+// person to confirm before anything is saved, and both signals are defence in depth only.
 function fromAnotherSite(request) {
-  const here = new URL(self.location.origin).origin;
+  const here = self.location.origin;
   const origin = request.headers && typeof request.headers.get === 'function' ? request.headers.get('origin') : null;
   const fromOrigin = origin ? webOrigin(origin) : null;
   if (fromOrigin !== null && fromOrigin !== here) return true;
   const referrer = request.referrer;
   if (!referrer) return false;
-  const fromReferrer = webOrigin(referrer);
+  const fromReferrer = webOrigin(innerAddress(referrer));
   return fromReferrer !== null && fromReferrer !== here;
 }
 
