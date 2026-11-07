@@ -149,6 +149,91 @@ describe('the people combobox', () => {
   it('clears to the start state', () => {
     expect(comboReducer(typed('an'), { type: 'clear' })).toEqual(COMBO_START);
   });
+
+  // Decision 96: focusing the field under two characters opens the account's list, the answer to an empty q.
+  const list = (items: DirectoryEntry[], more = false) => ({ type: 'listed' as const, items, more });
+
+  it('focus on an empty field opens the list, loading until the answer comes', () => {
+    const s = comboReducer(COMBO_START, { type: 'focus' });
+    expect(s.open).toBe(true);
+    expect(s.status).toBe('loading');
+    const got = comboReducer(s, list([ann, fin]));
+    expect(got.status).toBe('ready');
+    expect(got.items).toEqual([ann, fin]);
+    expect(got.open).toBe(true);
+    expect(got.active).toBe(0);
+  });
+
+  it('reopens the cached list without a second answer', () => {
+    let s = comboReducer(COMBO_START, { type: 'focus' });
+    s = comboReducer(s, list([ann], true));
+    s = comboReducer(s, { type: 'close' });
+    s = comboReducer(s, { type: 'focus' });
+    expect(s.open).toBe(true);
+    expect(s.items).toEqual([ann]);
+    expect(s.more).toBe(true);
+    expect(s.status).toBe('ready');
+  });
+
+  it('shows the list for one character, and searches from two', () => {
+    let s = comboReducer(COMBO_START, { type: 'focus' });
+    s = comboReducer(s, list([ann, fin]));
+    s = typed('a', s);
+    expect(s.open).toBe(true);
+    expect(s.items).toEqual([ann, fin]);
+    s = typed('an', s);
+    expect(s.status).toBe('loading');
+    expect(s.items).toEqual([]);
+  });
+
+  it('shows the focus list again when the query is cleared below two characters', () => {
+    let s = comboReducer(COMBO_START, { type: 'focus' });
+    s = comboReducer(s, list([ann, fin]));
+    s = typed('an', s);
+    s = comboReducer(s, { type: 'results', query: 'an', items: [fin] });
+    s = typed('', s);
+    expect(s.open).toBe(true);
+    expect(s.items).toEqual([ann, fin]);
+  });
+
+  it('drops a late focus answer once two characters are typed', () => {
+    let s = comboReducer(COMBO_START, { type: 'focus' });
+    s = typed('an', s);
+    const late = comboReducer(s, list([ann, fin], true));
+    expect(late.items).toEqual([]);
+    expect(late.status).toBe('loading');
+    expect(late.open).toBe(true);
+  });
+
+  it('a failed focus answer shows an error while the field is short, and not after', () => {
+    let s = comboReducer(COMBO_START, { type: 'focus' });
+    s = comboReducer(s, { type: 'listfail' });
+    expect(s.status).toBe('error');
+    expect(s.items).toEqual([]);
+    const typing = typed('an', comboReducer(COMBO_START, { type: 'focus' }));
+    expect(comboReducer(typing, { type: 'listfail' })).toBe(typing);
+  });
+
+  it('a session change drops the cached list', () => {
+    let s = comboReducer(COMBO_START, { type: 'focus' });
+    s = comboReducer(s, list([ann]));
+    s = comboReducer(s, { type: 'clear' });
+    expect(s.focus).toBeNull();
+    expect(comboReducer(s, { type: 'focus' }).status).toBe('loading');
+  });
+
+  it('a field that was never focused stays closed under two characters, even with a cached list', () => {
+    // A list answered without a focus (as the mention picker's field never asks for one) is not opened by a short query.
+    const s = comboReducer(COMBO_START, list([ann]));
+    expect(typed('a', s).open).toBe(false);
+  });
+
+  it('carries the more flag of a search answer', () => {
+    let s = comboReducer(typed('an'), { type: 'results', query: 'an', items: [ann], more: true });
+    expect(s.more).toBe(true);
+    s = comboReducer(typed('an'), { type: 'results', query: 'an', items: [ann] });
+    expect(s.more).toBe(false);
+  });
 });
 
 describe('debounce', () => {

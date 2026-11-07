@@ -15,12 +15,23 @@ export interface ComboState {
   // active is the index of the option the arrow keys are on, or -1.
   active: number;
   chosen: DirectoryEntry | null;
+  // more is true when the shown answer holds fewer entries than matched (decision 96).
+  more: boolean;
+  // browse is true once the field has been focused. Only then does a query under two characters open the
+  // account's list; the mention picker never sets it, so its short queries stay closed.
+  browse: boolean;
+  // focus is the cached answer to an empty q, the account's list, or null until it arrives. It is dropped with a
+  // session (clear).
+  focus: { items: DirectoryEntry[]; more: boolean } | null;
 }
 
 export type ComboAction =
   | { type: 'type'; query: string }
-  | { type: 'results'; query: string; items: DirectoryEntry[] }
+  | { type: 'results'; query: string; items: DirectoryEntry[]; more?: boolean }
   | { type: 'fail'; query: string }
+  | { type: 'focus' }
+  | { type: 'listed'; items: DirectoryEntry[]; more: boolean }
+  | { type: 'listfail' }
   | { type: 'move'; delta: number }
   | { type: 'pick'; entry: DirectoryEntry }
   | { type: 'choose' }
@@ -28,25 +39,62 @@ export type ComboAction =
   | { type: 'close' }
   | { type: 'clear' };
 
-export const COMBO_START: ComboState = { query: '', open: false, status: 'idle', items: [], active: -1, chosen: null };
+export const COMBO_START: ComboState = {
+  query: '',
+  open: false,
+  status: 'idle',
+  items: [],
+  active: -1,
+  chosen: null,
+  more: false,
+  browse: false,
+  focus: null,
+};
+
+// showShort is the state of a field under MIN_QUERY that has been focused: the cached list when there is one, else
+// a loading status until it arrives.
+function showShort(s: ComboState): ComboState {
+  if (s.focus) {
+    const items = s.focus.items;
+    return { ...s, open: true, status: 'ready', items, more: s.focus.more, active: items.length > 0 ? 0 : -1 };
+  }
+  return { ...s, open: true, status: 'loading', items: [], more: false, active: -1 };
+}
 
 export function comboReducer(s: ComboState, a: ComboAction): ComboState {
   switch (a.type) {
     case 'type': {
       // Typing starts a new search and drops what was chosen before.
       if (a.query.trim().length < MIN_QUERY) {
-        return { ...s, query: a.query, open: false, status: 'idle', items: [], active: -1, chosen: null };
+        if (s.browse) return showShort({ ...s, query: a.query, chosen: null });
+        return { ...s, query: a.query, open: false, status: 'idle', items: [], active: -1, chosen: null, more: false };
       }
-      return { ...s, query: a.query, open: true, status: 'loading', items: [], active: -1, chosen: null };
+      return { ...s, query: a.query, open: true, status: 'loading', items: [], active: -1, chosen: null, more: false };
     }
     case 'results': {
       // An answer to an old query is dropped, so a slow answer cannot overwrite a newer one.
       if (a.query !== s.query) return s;
-      return { ...s, status: 'ready', items: a.items, active: a.items.length > 0 ? 0 : -1 };
+      return { ...s, status: 'ready', items: a.items, more: a.more === true, active: a.items.length > 0 ? 0 : -1 };
     }
     case 'fail': {
       if (a.query !== s.query) return s;
-      return { ...s, status: 'error', items: [], active: -1 };
+      return { ...s, status: 'error', items: [], more: false, active: -1 };
+    }
+    case 'focus': {
+      if (s.query.trim().length >= MIN_QUERY) return { ...s, browse: true };
+      return showShort({ ...s, browse: true });
+    }
+    case 'listed': {
+      // The account's list is cached whatever the query is now. It is shown only while the field holds fewer than two
+      // characters: an answer that lands after two characters were typed is not shown, so the search's status stays.
+      const focus = { items: a.items, more: a.more };
+      if (s.query.trim().length >= MIN_QUERY || !s.browse) return { ...s, focus };
+      const items = a.items;
+      return { ...s, focus, status: 'ready', items, more: a.more, active: items.length > 0 ? 0 : -1 };
+    }
+    case 'listfail': {
+      if (s.query.trim().length >= MIN_QUERY || !s.browse) return s;
+      return { ...s, status: 'error', items: [], more: false, active: -1 };
     }
     case 'move': {
       if (!s.open || s.items.length === 0) return s;

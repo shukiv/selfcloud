@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../../lib/session";
@@ -25,7 +25,8 @@ describe("the people combobox", () => {
     render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />);
     await user.type(screen.getByRole("combobox"), "m");
     await new Promise((r) => setTimeout(r, 400));
-    expect(api.searchDirectory).not.toHaveBeenCalled();
+    // Focus asks for the account's list (decision 96); a single character is not a search.
+    expect(api.searchDirectory).not.toHaveBeenCalledWith("m", "all");
     await user.type(screen.getByRole("combobox"), "a");
     await waitFor(() => expect(api.searchDirectory).toHaveBeenCalledWith("ma", "all"));
   });
@@ -55,5 +56,112 @@ describe("the people combobox", () => {
     expect(onpick).toHaveBeenLastCalledWith(expect.objectContaining({ id: "usr_mate" }));
     await user.type(screen.getByRole("combobox"), "x");
     expect(onpick).toHaveBeenLastCalledWith(null);
+  });
+
+  // Decision 96: the field lists the account's members before anything is typed.
+  describe("the focus list", () => {
+    const mate = { id: "usr_mate", kind: "user", name: "Mateo Member", email: "mateo@example.com" };
+    const kim = { id: "usr_kim", kind: "user", name: "Kim Kept", email: "kim@example.com" };
+
+    it("focus opens the list with the account's answer to an empty query", async () => {
+      api.searchDirectory.mockImplementation(async (q: string) =>
+        q === "" ? { items: [mate, kim], more: false } : { items: [mate], more: false },
+      );
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />);
+      // A focus alone, with no click, opens the list.
+      fireEvent.focus(screen.getByRole("combobox"));
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      expect(screen.getByText("Kim Kept")).toBeTruthy();
+      expect(api.searchDirectory).toHaveBeenCalledWith("", "all");
+      expect(screen.getByRole("combobox").getAttribute("aria-expanded")).toBe("true");
+      expect(screen.getByRole("status").textContent).toBe("2 people and groups");
+    });
+
+    it("ArrowDown on an empty, closed field opens the list", async () => {
+      api.searchDirectory.mockResolvedValue({ items: [mate], more: false });
+      const user = userEvent.setup();
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />);
+      const box = screen.getByRole("combobox");
+      await user.click(box);
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByText("Mateo Member")).toBeNull());
+      fireEvent.keyDown(box, { key: "ArrowDown", keyCode: 40 });
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      expect(api.searchDirectory).toHaveBeenCalledTimes(1);
+    });
+
+    it("the list comes from one answer: clearing back to empty reuses it", async () => {
+      api.searchDirectory.mockImplementation(async (q: string) =>
+        q === "" ? { items: [mate], more: false } : { items: [kim], more: false },
+      );
+      const user = userEvent.setup();
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />);
+      const box = screen.getByRole("combobox");
+      await user.click(box);
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      await user.type(box, "ki");
+      expect(await screen.findByText("Kim Kept")).toBeTruthy();
+      await user.clear(box);
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      expect(api.searchDirectory.mock.calls.filter((c) => c[0] === "")).toHaveLength(1);
+    });
+
+    it("says there are more people, as text and not as an option", async () => {
+      api.searchDirectory.mockResolvedValue({ items: [mate, kim], more: true });
+      const user = userEvent.setup();
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />);
+      await user.click(screen.getByRole("combobox"));
+      expect(await screen.findByText("Type a name to find more people")).toBeTruthy();
+      expect(screen.getAllByRole("option")).toHaveLength(2);
+    });
+
+    it("Escape closes the list and does not reach the dialog", async () => {
+      api.searchDirectory.mockResolvedValue({ items: [mate], more: false });
+      const user = userEvent.setup();
+      const outer = vi.fn();
+      render(
+        <div onKeyDown={outer}>
+          <PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />
+        </div>,
+      );
+      const box = screen.getByRole("combobox");
+      await user.click(box);
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      outer.mockClear();
+      fireEvent.keyDown(box, { key: "Escape", keyCode: 27 });
+      await waitFor(() => expect(screen.queryByText("Mateo Member")).toBeNull());
+      expect(outer).not.toHaveBeenCalled();
+    });
+
+    it("a late focus answer is dropped once two characters are typed", async () => {
+      let answerEmpty: (v: { items: unknown[]; more: boolean }) => void = () => {};
+      api.searchDirectory.mockImplementation((q: string) =>
+        q === ""
+          ? new Promise((resolve) => {
+              answerEmpty = resolve;
+            })
+          : Promise.resolve({ items: [mate], more: false }),
+      );
+      const user = userEvent.setup();
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />);
+      const box = screen.getByRole("combobox");
+      await user.click(box);
+      await user.type(box, "ma");
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      answerEmpty({ items: [{ id: "usr_late", kind: "user", name: "Late Arrival", email: "late@example.com" }], more: false });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(screen.queryByText("Late Arrival")).toBeNull();
+    });
+
+    it("a change of session drops the cached list", async () => {
+      api.searchDirectory.mockResolvedValue({ items: [mate], more: false });
+      const user = userEvent.setup();
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={vi.fn()} />);
+      await user.click(screen.getByRole("combobox"));
+      expect(await screen.findByText("Mateo Member")).toBeTruthy();
+      act(() => session.set({ user: { id: "usr_kim" } } as unknown as Session));
+      await user.click(screen.getByRole("combobox"));
+      await waitFor(() => expect(api.searchDirectory.mock.calls.filter((c) => c[0] === "")).toHaveLength(2));
+    });
   });
 });

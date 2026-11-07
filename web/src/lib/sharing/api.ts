@@ -24,10 +24,14 @@ export function removePermission(nod: string, subject: string): Promise<void> {
   return api<void>('DELETE', `/api/v1/nodes/${nod}/permissions/${subject}`);
 }
 
-// searchDirectory finds people and groups by q, at least two characters after trimming.
-export function searchDirectory(q: string, kind: 'user' | 'group' | 'all'): Promise<{ items: DirectoryEntry[] }> {
+// searchDirectory finds people and groups by q, 0 to 100 characters after trimming. An empty q lists the account
+// (decision 96). more is true when more matched than items holds.
+export function searchDirectory(
+  q: string,
+  kind: 'user' | 'group' | 'all',
+): Promise<{ items: DirectoryEntry[]; more?: boolean }> {
   const params = new URLSearchParams({ q, kind });
-  return api<{ items: DirectoryEntry[] }>('GET', `/api/v1/directory?${params.toString()}`);
+  return api<{ items: DirectoryEntry[]; more?: boolean }>('GET', `/api/v1/directory?${params.toString()}`);
 }
 
 export function sharedWithMe(cursor?: string): Promise<Page<Node>> {
