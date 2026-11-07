@@ -66,7 +66,25 @@ func TestScaleOnGeneratedTree(t *testing.T) {
 			t.Fatalf("clean generated tree reported %d findings", len(r.Findings))
 		}
 	}
-	t.Logf("peak resident memory of the process: %s", peakRSS())
+	// integrity_check holds its own read transaction for as long as it runs; batching does not bound it. Time it alone.
+	cs, err := store.OpenCheck(f.ctx, f.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	snap, err := cs.Begin(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ic := time.Now()
+	ok, problems, err := snap.IntegrityCheck(f.ctx)
+	held := time.Since(ic)
+	snap.Close()
+	if err != nil || !ok {
+		t.Fatalf("integrity_check on the generated database: ok=%v problems=%v err=%v", ok, problems, err)
+	}
+	t.Logf("integrity_check alone (one read transaction): %s", held.Round(time.Millisecond))
+	t.Logf("peak resident memory of the process (high-water mark across all runs above): %s", peakRSS())
 }
 
 // peakRSS returns the process's high-water resident size from /proc, on Linux; elsewhere it says so.
