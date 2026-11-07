@@ -10,7 +10,7 @@ import { accountLabel, initialOf } from "../lib/avatar";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useT, useLang, directionOf, translatePlural } from "../lib/i18n";
 import { splitParts } from "../lib/signin";
-import { MenuHeader, headerPopup } from "./menuHeader";
+import { trailingLabel, useMenuHeaderInks } from "./menuHeader";
 import { useStore } from "../lib/store";
 import { flash, isAdmin, isOwner, session, sessionChanged, sessionKey } from "../lib/session";
 import { failureText } from "../lib/manage/failure";
@@ -518,39 +518,37 @@ export default function Shell({ children }: { children: ReactNode }) {
     );
   };
 
-  // The account's "Signed in as" is the menu's header (decision 95), not an item: its label is the template's own words, and its email
-  // is in a bdi, cut with an ellipsis (with the full address as its title) when long. The menu is named by both, once.
+  // The account's "Signed in as" is the title of the menu's group of items (decision 95), not an item: its label is the template's own
+  // words, and its email is in a bdi, cut with an ellipsis (with the full address as its title) when long. The menu is named by both.
+  // The inks are set here, from menuHeaderInks, because antd paints a group title in its description colour.
   const accountLabelId = useId();
   const accountEmailId = useId();
+  const inks = useMenuHeaderInks();
   const email = me?.user.email ?? "";
-  const signedInLabel = splitParts(t("user.signedInAs"), { name: email })
-    .filter((p) => !p.name)
-    .map((p) => p.text)
-    .join("")
-    .trim();
+  const signedInLabel = trailingLabel(splitParts(t("user.signedInAs"), { name: email }));
   const accountHeader = (
-    <MenuHeader>
-      <span id={accountLabelId} style={{ display: "block", color: token.colorTextSecondary, fontSize: token.fontSizeSM }}>
+    <span style={{ display: "block", boxSizing: "border-box", minInlineSize: 180, maxInlineSize: 280 }}>
+      <span id={accountLabelId} style={{ display: "block", color: inks.label, fontSize: token.fontSizeSM }}>
         {signedInLabel}
       </span>
       <span
         id={accountEmailId}
         className="account-menu-who"
         title={email}
-        style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: token.colorText }}
+        style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: inks.email, fontSize: 14 }}
       >
         <bdi>{email}</bdi>
       </span>
-    </MenuHeader>
+    </span>
   );
-  const userItems: MenuProps["items"] = [
-    // The divider under the header is not a stop for the keyboard: the first item reached is Change password.
-    { type: "divider" },
+  const accountEntries: NonNullable<MenuProps["items"]> = [
     { key: "password", label: t("user.changePassword") },
     ...(offerInstall ? [{ key: "install", label: t("pwa.install") }] : []),
     ...(offerIosInstall ? [{ key: "addHome", label: t("pwa.addToHome") }] : []),
     ...(impersonating ? [] : [{ key: "signout", label: t("user.signOut") }]),
   ];
+  // One group, titled by the header: its title is not a stop for the keyboard, so the first stop is Change password.
+  const userItems: MenuProps["items"] = [{ type: "group", key: "account", label: accountHeader, children: accountEntries }];
 
   // The banner is one line, 48px: the sider is 48px shorter below it, so its foot stays on the screen.
   return (
@@ -706,7 +704,6 @@ export default function Shell({ children }: { children: ReactNode }) {
                     },
                     "aria-labelledby": `${accountLabelId} ${accountEmailId}`,
                   }}
-                  popupRender={headerPopup(accountHeader)}
                   trigger={["click"]}
                 >
                   {/* The account is a round avatar with the first letter of the name (of the email, with no name). Its name and tooltip

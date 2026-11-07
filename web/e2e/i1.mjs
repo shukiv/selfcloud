@@ -12,6 +12,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { accountName, hoverOver, setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
+import { accountKeyboardChecks } from './accountKeys.mjs';
 
 const q = (v) => JSON.stringify(v);
 // The song is a real Ogg file, so the player keeps its controls: a file the browser cannot play shows a message in their place.
@@ -73,14 +74,17 @@ const accountHeaderInfo = (page) => page.evaluate(`(() => {
   const email = document.querySelector(pop + ' .account-menu-who');
   if (!email) return null;
   const label = email.previousElementSibling;
-  const frame = email.parentElement;
+  // The header is the group's title: its focusable parts are counted inside the title, not in the group's items.
+  const frame = email.closest('.ant-dropdown-menu-item-group-title') || email.parentElement;
   const menu = document.querySelector(pop + ' ul[role="menu"]');
   const named = menu ? (menu.getAttribute('aria-labelledby') || '').split(' ').map((id) => (document.getElementById(id) || {}).textContent || '').join(' ') : '';
   return {
     label: getComputedStyle(label).color,
     email: getComputedStyle(email).color,
-    ground: getComputedStyle(frame).backgroundColor,
-    menuGround: menu ? getComputedStyle(menu).backgroundColor : '',
+    ground: menu ? getComputedStyle(menu).backgroundColor : '',
+    groupGround: getComputedStyle(frame).backgroundColor,
+    hidden: !!email.closest('[aria-hidden="true"]'),
+    labelAt: (() => { const r = label.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })(),
     disabledItems: document.querySelectorAll(pop + ' [role="menuitem"][aria-disabled="true"]').length,
     headerFocusable: frame.querySelectorAll('a, button, input, [tabindex]').length,
     bdi: !!email.querySelector('bdi'),
@@ -114,6 +118,8 @@ async function keyPress(page, key, code, vk) {
 
 // checkAccountHeader measures the open account menu's header in the current theme and language.
 async function checkAccountHeader(page, check, where) {
+  // The popup slides in: its header's place is read once it has settled, so the click below lands on the header.
+  await sleep(500);
   const info = await accountHeaderInfo(page);
   if (!info) {
     check(false, `the account menu shows its Signed in as header (${where})`);
@@ -121,9 +127,17 @@ async function checkAccountHeader(page, check, where) {
   }
   const cl = contrastOf(info.label, info.ground);
   const ce = contrastOf(info.email, info.ground);
-  check(cl >= 4.5 && ce >= 4.5 && info.ground === info.menuGround, `the account header reads 4.5:1 or more ${where}: label ${info.label} ${cl.toFixed(2)}:1, email ${info.email} ${ce.toFixed(2)}:1 on ${info.ground}`);
+  check(cl >= 4.5 && ce >= 4.5, `the account header reads 4.5:1 or more ${where}: label ${info.label} ${cl.toFixed(2)}:1, email ${info.email} ${ce.toFixed(2)}:1 on the menu's ground ${info.ground}`);
   check(info.disabledItems === 0 && info.headerFocusable === 0 && info.bdi && info.overflow === 'ellipsis' && info.title === info.text.split(' ').slice(-1)[0], `the account header is not a disabled item, is focusable nowhere, and its email is in a bdi, cut with an ellipsis and titled (${where})`);
-  check(info.named === info.text, `the account menu is named by its header, so it is read once (${where}: "${info.named}")`);
+  check(!info.hidden && info.named === info.text, `the header is not hidden from a screen reader, and the account menu is named by it (${where}: "${info.named}")`);
+  // A click on the header is not a choice: the menu stays open (the group's title is not an item). What is under the point is read
+  // first, so that a closed menu says why (the point may be outside the popup, or on the title's own element).
+  const under = await page.evaluate(`(() => { const el = document.elementFromPoint(${info.labelAt.x}, ${info.labelAt.y}); if (!el) return 'nothing'; const pop = el.closest('.ant-dropdown'); return (el.className || el.tagName) + ' in ' + (pop ? pop.className : 'no popup'); })()`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: info.labelAt.x, y: info.labelAt.y, button: 'left', clickCount: 1 });
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: info.labelAt.x, y: info.labelAt.y, button: 'left', clickCount: 1 });
+  await sleep(400);
+  const stillOpen = await page.evaluate(`!!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) ul[role="menu"]')`);
+  check(stillOpen, `a click on the header leaves the account menu open (${where}; under the point: ${under})`);
 }
 
 // The top bar's icons, and the rest of the bar, as the page draws them.
@@ -268,19 +282,14 @@ export async function i1Checks(h, { page, base, accountKey, teamA, dir }) {
     await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].length > 0`, 10000);
     await snap('i1-account-menu.png');
     check((await openMenuItems(page)).length > 0, 'the account menu opens with its items');
-    await checkAccountHeader(page, check, 'in light, English');
     await closeMenus(page);
-    // Keyboard: the account button takes Enter and the menu opens. The menu's list is then focused, as a keyboard user moves into it,
-    // and the first arrow key lands on the first item, Change password, with the header never a stop on the way.
-    const focusNow = () => page.evaluate(`(() => { const a = document.activeElement; return a ? (a.getAttribute('role') || a.tagName) + ':' + a.textContent.trim() : ''; })()`);
-    await page.evaluate(`document.querySelector(${q(TOP.account)}).focus(), true`);
-    await keyPress(page, 'Enter', 'Enter', 13);
-    await page.waitFor(`!!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]')`, 10000);
-    const firstItem = (await openMenuItems(page))[0];
-    await page.evaluate(`document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) ul[role="menu"]').focus(), true`);
-    await keyPress(page, 'ArrowDown', 'ArrowDown', 40);
-    const reached = await focusNow();
-    check(reached === 'menuitem:Change password' && firstItem === 'Change password', `the menu's first arrow key reaches Change password, before anything else (focus: ${reached})`);
+    // Round 2, H1: real key presses from the top of the page, no script focus (accountKeys.mjs). It runs before any pointer use of
+    // the menu: a mouse click on an item or the header leaves rc-menu's last active item, and the first Tab would reach that item.
+    await accountKeyboardChecks(page, check);
+    await closeMenus(page);
+    await page.evaluate(`document.querySelector(${q(TOP.account)}).click(), true`);
+    await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].length > 0`, 10000);
+    await checkAccountHeader(page, check, 'in light, English');
     await closeMenus(page);
 
     // Dark: the colours hold and the bar is a dark pill.
@@ -354,6 +363,7 @@ export async function i1Checks(h, { page, base, accountKey, teamA, dir }) {
     await page.evaluate(`document.querySelector(${q(TOP.account)}).click(), true`);
     await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].length > 0`, 10000);
     await checkAccountHeader(page, check, 'in Hebrew');
+    await snap('i1-account-menu-he.png');
     await closeMenus(page);
     await setLanguage(page, 'English');
 

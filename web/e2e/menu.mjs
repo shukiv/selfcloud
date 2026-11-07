@@ -67,3 +67,9 @@ export async function hoverMenuTitle(page, title) {
   await new Promise((r) => setTimeout(r, 350));
 }
 
+
+// menuHeaderText is the text of the open menu's header (decision 95): the words the menu is named by, through aria-labelledby. A
+// menu with no header gives ''. The header is not one of the menu's items, so an item list does not carry it.
+// The menu is the open one that carries a name: a language or theme menu that is open at the same time has none, and is skipped.
+export const menuHeaderText = (page) =>
+  page.evaluate(`(() => { const named = [...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) ul[role="menu"][aria-labelledby]')]; if (named.length === 0) return ''; const m = named[named.length - 1]; return (m.getAttribute('aria-labelledby') || '').split(' ').map((id) => (document.getElementById(id) || {}).textContent || '').join(' ').trim(); })()`);

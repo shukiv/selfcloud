@@ -54,7 +54,7 @@ import { fu3bChecks } from './fu3b.mjs';
 import { fu5Checks } from './fu5.mjs';
 import { sec2Checks } from './sec2.mjs';
 import { stChecks } from './st.mjs';
-import { pickMenuEntry } from './menu.mjs';
+import { menuHeaderText, pickMenuEntry } from './menu.mjs';
 import { saveFailure } from './diag.mjs';
 
 const execFileP = promisify(execFile);
@@ -506,7 +506,9 @@ async function fileBrowserChecks(page, { base, dir, teamA, teamB }) {
   const viewerNew = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].map((i) => ({ text: i.textContent.trim(), disabled: i.classList.contains('ant-dropdown-menu-item-disabled') }))`);
   const viewerEntries = viewerNew.filter((i) => ['New folder', 'Upload files', 'Upload folder'].includes(i.text));
   check(viewerEntries.length === 3 && viewerEntries.every((i) => i.disabled), `a viewer of Team B sees New folder, Upload files and Upload folder disabled (${JSON.stringify(viewerNew)})`);
-  check(viewerNew.some((i) => i.text === 'You cannot add to this folder.'), 'the viewer is told why: the folder takes no additions');
+  // Decision 95: the reason is the menu's header, not one of its items.
+  const viewerHeader = await menuHeaderText(page);
+  check(viewerHeader === 'You cannot add to this folder.', `the viewer is told why, in the menu's header: the folder takes no additions (header ${JSON.stringify(viewerHeader)}, items ${JSON.stringify(viewerNew)})`);
   await press(page, 'body', 'Escape');
   await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
 }
@@ -828,12 +830,13 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb, pwa or sec2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb, pwa or sec2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
+    // fb runs the file browser's checks alone (the section that owns the read-only New menu, decision 95); a full run runs them in order.
+    if (!only || onlySet.has('fb')) await fileBrowserChecks(page, { base, dir, teamA, teamB });
     if (!only) {
-      await fileBrowserChecks(page, { base, dir, teamA, teamB });
       await fileBrowserExtraChecks(page, { dir, teamA });
       await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
       await sortChecks(h, { page, base, accountKey, teamA });

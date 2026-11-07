@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../lib/session";
 import { setLang } from "../lib/i18n";
-import { ThemeProvider } from "../theme/theme";
+import { ThemeProvider, antdTokens } from "../theme/theme";
+import { contrast } from "../lib/brand";
 import { Direction } from "../App";
 import type { FolderAccess } from "../lib/files/types";
 import Shell from "./Shell";
@@ -19,7 +21,13 @@ import { newPlace, type NewPlace } from "../lib/files/newPlace";
 import { myStorage } from "../lib/storage/api";
 import { manager } from "../lib/files/uploads";
 import { formatBytes } from "../lib/files/format";
-import { SIDEBAR } from "../theme/tokens";
+import { PALETTE, SIDEBAR } from "../theme/tokens";
+
+// hexOfRgb turns the rgb() string the DOM reports for an inline colour into #RRGGBB, for the contrast function.
+function hexOfRgb(css: string): string {
+  const [r, g, b] = (css.match(/\d+/g) ?? ["0", "0", "0"]).map(Number);
+  return `#${[r, g, b].map((v) => (v ?? 0).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+}
 import { sidebarRow } from "../theme/sidebarRow";
 import { theme as antdTheme } from "antd";
 
@@ -548,6 +556,44 @@ describe("the Requests entry", () => {
     expect(menu.querySelector("[aria-disabled='true']")).toBeNull();
   });
 
+  // Round 2, H1: a real keyboard, not a script. Enter opens the account menu from its button, and Tab moves focus into the menu,
+  // which stays open. (The arrow step is in the browser run: e2e/accountKeys.mjs. jsdom does not move rc-menu's focus on an arrow.)
+  it("keyboard: Enter on the account button opens the menu, and Tab moves focus into it and keeps it open", async () => {
+    signIn("member");
+    renderShell("/files");
+    const trigger = await screen.findByTestId("account-menu");
+    trigger.focus();
+    const user = userEvent.setup();
+    await user.keyboard("{Enter}");
+    const popup = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".ant-dropdown:not(.ant-dropdown-hidden) ul[role='menu']");
+      if (!el) throw new Error("the account menu is not open yet");
+      return el;
+    });
+    await user.tab();
+    expect(document.querySelector(".ant-dropdown:not(.ant-dropdown-hidden) ul[role='menu']")).not.toBeNull();
+    expect(popup.contains(document.activeElement)).toBe(true);
+  });
+
+  // Round 2, M4: the header's drawn colours, read from the DOM in dark, are 4.5:1 or more on the menu's ground (the palette's own
+  // colorBgElevated, which the popup is drawn on). A mutant ink (for example the description colour) fails this.
+  it("in dark, the Signed in as label and email are drawn at 4.5:1 or more on the menu's ground", async () => {
+    window.localStorage.setItem("selfcloud.theme", "dark");
+    signIn("member");
+    renderShell("/files");
+    fireEvent.click(await screen.findByTestId("account-menu"));
+    const email = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".account-menu-who");
+      if (!el) throw new Error("the header is not shown yet");
+      return el;
+    });
+    const ground = antdTokens("dark", PALETTE.dark, SIDEBAR).token?.colorBgElevated ?? "";
+    const label = email.previousElementSibling as HTMLElement;
+    expect(contrast(hexOfRgb(label.style.color), String(ground))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(hexOfRgb(email.style.color), String(ground))).toBeGreaterThanOrEqual(4.5);
+    window.localStorage.removeItem("selfcloud.theme");
+  });
+
   it("the Signed in as header shows the email in a bdi, and cuts a long one with a title", async () => {
     signIn("member");
     renderShell("/files");
@@ -558,6 +604,8 @@ describe("the Requests entry", () => {
       return el;
     });
     expect(email.textContent).toBe("olivia@example.com");
+    // Round 2, H2: the header is in browse mode, not hidden from it (no aria-hidden on or above the email).
+    expect(email.closest("[aria-hidden='true']")).toBeNull();
     expect(email.parentElement?.style.textOverflow).toBe("ellipsis");
     expect(email.parentElement?.title).toBe("olivia@example.com");
   });

@@ -9,9 +9,10 @@
 // The current place (decision 69, option B) has no background: its text reads at 4.5:1 or more on the sidebar, and its bar at 3:1 or
 // more (the sidebar's rule, theme/currentMark.ts); the Storage bar keeps its track, edge and fill.
 // With SELFCLOUD_E2E_SHOTS set (a folder), the run also saves the pictures.
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { onActiveInk, setLanguage, setPhone, setTheme } from './media.mjs';
+import { menuHeaderText } from './menu.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const q = (v) => JSON.stringify(v);
@@ -512,10 +513,27 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     // ---- A folder the member cannot add to: New is disabled there, with the reason, and nothing goes to My files.
     await navigateTo(page, `/files/${teamB}`);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
-    const roItems = await newMenu(page, 'You cannot add to this folder.');
-    check(roItems.some((i) => i.text === 'You cannot add to this folder.') && roItems.filter((i) => i.text !== 'You cannot add to this folder.').every((i) => i.disabled), `in a folder the member cannot add to, the entries are disabled with the reason (${JSON.stringify(roItems)})`);
+    // Decision 95: the reason is the menu's header (what the menu is named by), not an item; the entries stay disabled.
+    const roItems = await newMenu(page, 'New folder');
+    const roReason = await menuHeaderText(page);
+    check(roReason === 'You cannot add to this folder.' && roItems.length > 0 && roItems.every((i) => i.disabled), `in a folder the member cannot add to, the reason is the menu's header and the entries are disabled (header ${JSON.stringify(roReason)}, ${JSON.stringify(roItems)})`);
     await press(page, 'body', 'Escape');
     await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
+
+    // Decision 95, in Hebrew: the reason is the menu's header in the Hebrew words of he.json, and the entries stay disabled.
+    await setLanguage(page, 'עברית');
+    await page.waitFor(`document.documentElement.dir === 'rtl'`, 15000);
+    await navigateTo(page, `/files/${teamB}`);
+    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
+    const roItemsHe = await newMenu(page);
+    await page.waitFor(`!!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) ul[role="menu"][aria-labelledby]')`, 10000);
+    const roReasonHe = await menuHeaderText(page);
+    const heStrings = JSON.parse(await readFile(new URL('../src/i18n/he.json', import.meta.url), 'utf8'));
+    check(roReasonHe === heStrings['files.new.readOnly'] && roItemsHe.length > 0 && roItemsHe.every((i) => i.disabled), `in Hebrew, a folder the member cannot add to names its menu with the reason, and the entries are disabled (header ${JSON.stringify(roReasonHe)})`);
+    await press(page, 'body', 'Escape');
+    await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
+    await setLanguage(page, 'English');
+    await page.waitFor(`document.documentElement.lang === 'en'`, 15000);
 
     // ---- Collapsed: a round New with its name in a tooltip, and the same menu. The place is Team A, which the member can add to.
     await navigateTo(page, `/files/${teamA}`);
