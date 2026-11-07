@@ -382,8 +382,11 @@ export default function FilesPage() {
 
   const placeQ = useQuery({
     queryKey: queryKey("place", path),
-    // A visit reads the place again, whatever the cache holds: a rename or a move elsewhere changes it.
+    // A visit reads the place again, whatever the cache holds: a rename or a move elsewhere changes it. The place is also
+    // read again when the page moves to it from another place, even inside the 30 seconds in which a read is fresh (fu8,
+    // decision 94): a folder renamed by someone else shows its new name.
     refetchOnMount: "always",
+    staleTime: 0,
     queryFn: () => loadPlace(route),
     enabled: signedIn && route !== null && route.kind !== "node",
     // While the next place is looked up, the page keeps the place it showed: its listing stays on screen, busy and inert, and
@@ -424,8 +427,9 @@ export default function FilesPage() {
     // A folder's listing is read again each time the page shows it, even inside the 30 seconds in which a read is fresh
     // (fu8, decision 94): the page keeps the rows it had while the read is on its way.
     staleTime: 0,
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      childrenPage(folderID as string, dirID, pageParam, prefs.sort),
+    // The read is cancelled when the page leaves the folder before it arrives (fu8, decision 94).
+    queryFn: ({ pageParam, signal }: { pageParam: string | undefined; signal: AbortSignal }) =>
+      childrenPage(folderID as string, dirID, pageParam, prefs.sort, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last: Page<Node>) => last.next_cursor,
     enabled: signedIn && here !== null,
@@ -588,6 +592,18 @@ export default function FilesPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, search, path, here, childrenQ.isPending]);
+
+  // A navigation to the address the page already shows (the folder open in the sidebar or the breadcrumbs, the same path again)
+  // is a new visit: the listing is read again once for it (fu8, decision 94). A re-render at the same address reads nothing.
+  // A change of folder reads through the query's own key, so it is not read twice here.
+  const lastVisit = useRef<{ key: string; path: string } | null>(null);
+  useEffect(() => {
+    const prev = lastVisit.current;
+    lastVisit.current = { key: location.key, path: location.pathname };
+    if (prev !== null && prev.key !== location.key && prev.path === location.pathname && here) void childrenQ.refetch();
+    // Only a new key starts a visit; the other values are read when the effect runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
 
   // reload reads the listing again, keeping the place. Selected items that are gone are dropped.
   // The folder tree is read again only for the folder shown and the ones the change named (where items left or came to).

@@ -136,7 +136,7 @@ describe("the folder tree in the sidebar", () => {
     restore();
   });
 
-  it("opens My files on its chevron and reads its folders once, and a click on a folder navigates to it", async () => {
+  it("opens My files on its chevron and reads its folders on opening, and a click on a folder navigates to it", async () => {
     signIn("member");
     folders.set([space("fld_p", "Mine", { kind: "personal", role: "manager" })]);
     mocks.childrenPage.mockResolvedValue({ items: [dir("nod_docs", "Docs", "fld_p")], next_cursor: undefined });
@@ -154,7 +154,8 @@ describe("the folder tree in the sidebar", () => {
     expect(mocks.childrenPage.mock.calls[0].slice(0, 2)).toEqual(["fld_p", null]);
     fireEvent.click(within(myFiles).getByRole("button", { name: "Collapse My files" }));
     fireEvent.click(within(myFiles).getByRole("button", { name: "Expand My files" }));
-    expect(mocks.childrenPage).toHaveBeenCalledTimes(1);
+    // Opened again inside the window, the folder is read again (fu8, decision 94): a close and an open are two visits.
+    await waitFor(() => expect(mocks.childrenPage).toHaveBeenCalledTimes(2));
     fireEvent.click(within(tree).getByText("Docs"));
     await waitFor(() => expect(router.state.location.pathname).toBe("/files/fld_p/nod_docs"));
     restore();

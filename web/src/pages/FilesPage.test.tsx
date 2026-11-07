@@ -34,7 +34,7 @@ const api = vi.hoisted(() => ({
   getJob: vi.fn(),
   serverLimits: vi.fn(),
 }));
-const place = vi.hoisted(() => ({ role: "editor" as Role, noDownload: false }));
+const place = vi.hoisted(() => ({ role: "editor" as Role, noDownload: false, folderName: "Team A" }));
 const uploadsMock = vi.hoisted(() => ({ add: vi.fn(), setChunkSize: vi.fn() }));
 const uploadList = vi.hoisted(() => {
   return { store: null as unknown as { set: (v: unknown[]) => void } };
@@ -50,7 +50,7 @@ vi.mock("../lib/files/location", async (orig) => ({
   ...(await orig<typeof import("../lib/files/location")>()),
   locate: vi.fn(async (folder: string, dirID: string | null) => ({
     folder,
-    folderName: "Team A",
+    folderName: place.folderName,
     folderRole: place.role,
     dir: dirID ? { id: dirID, name: "Reports", kind: "dir", role: place.role } : null,
     dirRole: place.role,
@@ -197,6 +197,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   place.role = "editor";
   place.noDownload = false;
+  place.folderName = "Team A";
   session.set(signedAs("u1"));
   api.getMe.mockResolvedValue({ personal_folder_id: "fld_me" });
   api.serverLimits.mockResolvedValue({ max_chunk_size: 1048576, max_file_size: 1 });
@@ -233,11 +234,11 @@ describe("the listing is sorted by the server (decision 47)", () => {
   it("asks for the new sort from the first page when a column is clicked", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
-    expect(api.childrenPage).toHaveBeenLastCalledWith("fld_aaaaaaaa", null, undefined, { key: "name", dir: "asc" });
+    expect(api.childrenPage).toHaveBeenLastCalledWith("fld_aaaaaaaa", null, undefined, { key: "name", dir: "asc" }, expect.any(AbortSignal));
     api.childrenPage.mockClear();
     fireEvent.click(screen.getByRole("button", { name: /size/i }));
     await waitFor(() => expect(api.childrenPage).toHaveBeenCalled());
-    expect(api.childrenPage).toHaveBeenLastCalledWith("fld_aaaaaaaa", null, undefined, { key: "size", dir: "asc" });
+    expect(api.childrenPage).toHaveBeenLastCalledWith("fld_aaaaaaaa", null, undefined, { key: "size", dir: "asc" }, expect.any(AbortSignal));
   });
 
   it("keeps the rows on screen, with the failure notice, when the first read after a sort change fails", async () => {
@@ -312,6 +313,128 @@ describe("a folder revisited shows what it holds now (fu8)", () => {
       await router.navigate(FOLDER);
     });
     await screen.findByRole("row", { name: "gamma.txt" });
+  });
+
+  it("reads the folder again after the window has passed (31 s), and shows what it holds", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const other = "/files/fld_bbbbbbbb";
+    let aItems = [node("n1", "alpha.txt")];
+    api.childrenPage.mockImplementation(async (folder: string) =>
+      folder === "fld_aaaaaaaa" ? { items: aItems, next_cursor: undefined } : { items: [node("n9", "elsewhere.txt", { folder_id: "fld_bbbbbbbb" })], next_cursor: undefined },
+    );
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await act(async () => {
+      await router.navigate(other);
+    });
+    await screen.findByRole("row", { name: "elsewhere.txt" });
+    aItems = [...aItems, node("n3", "gamma.txt")];
+    vi.setSystemTime(Date.now() + 31_000);
+    api.childrenPage.mockClear();
+    await act(async () => {
+      await router.navigate(FOLDER);
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+    expect(api.childrenPage.mock.calls.filter((c) => c[0] === "fld_aaaaaaaa").length).toBeGreaterThan(0);
+  });
+
+  it("reads the folder again when it is opened from the address it is shown at", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    let aItems = [node("n1", "alpha.txt")];
+    api.childrenPage.mockImplementation(async (folder: string) =>
+      folder === "fld_aaaaaaaa" ? { items: aItems, next_cursor: undefined } : { items: [node("n9", "elsewhere.txt", { folder_id: "fld_bbbbbbbb" })], next_cursor: undefined },
+    );
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    aItems = [...aItems, node("n3", "gamma.txt")];
+    await act(async () => {
+      await router.navigate(FOLDER);
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+  });
+
+  it("does not read the folder again on a plain re-render at the same address", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const before = api.childrenPage.mock.calls.filter((c) => c[0] === "fld_aaaaaaaa").length;
+    fireEvent.click(screen.getByTestId("view-toggle"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(api.childrenPage.mock.calls.filter((c) => c[0] === "fld_aaaaaaaa").length).toBe(before);
+    // The view is kept in the page's preferences: it is put back, so later tests see the list they expect.
+    fireEvent.click(screen.getByTestId("view-toggle"));
+  });
+
+  it("shows a folder's new name when it is revisited after someone else renamed it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const other = "/files/fld_bbbbbbbb";
+    api.childrenPage.mockImplementation(async (folder: string) =>
+      folder === "fld_aaaaaaaa" ? { items: [node("n1", "alpha.txt")], next_cursor: undefined } : { items: [node("n9", "elsewhere.txt", { folder_id: "fld_bbbbbbbb" })], next_cursor: undefined },
+    );
+    const { router } = renderAt(FOLDER);
+    await waitFor(() => expect(document.title).toContain("Team A"));
+    await act(async () => {
+      await router.navigate(other);
+    });
+    await screen.findByRole("row", { name: "elsewhere.txt" });
+    place.folderName = "Team Renamed";
+    await act(async () => {
+      await router.navigate(FOLDER);
+    });
+    await waitFor(() => expect(document.title).toContain("Team Renamed"));
+  });
+
+  it("reads a folder's loaded pages again on a revisit, no more requests than the first visit", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const other = "/files/fld_bbbbbbbb";
+    const pages = new Map<string | undefined, { items: Node[]; next_cursor: string | undefined }>([
+      [undefined, { items: [node("n1", "alpha.txt")], next_cursor: "c1" }],
+      ["c1", { items: [node("n2", "beta.txt")], next_cursor: "c2" }],
+      ["c2", { items: [node("n3", "gamma.txt")], next_cursor: undefined }],
+    ]);
+    api.childrenPage.mockImplementation(async (folder: string, _d: string | null, cursor?: string) =>
+      folder === "fld_aaaaaaaa" ? pages.get(cursor) : { items: [node("n9", "elsewhere.txt", { folder_id: "fld_bbbbbbbb" })], next_cursor: undefined },
+    );
+    const count = () => api.childrenPage.mock.calls.filter((c) => c[0] === "fld_aaaaaaaa").length;
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    await screen.findByRole("row", { name: "beta.txt" });
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    await screen.findByRole("row", { name: "gamma.txt" });
+    const first = count();
+    expect(first).toBe(3);
+    api.childrenPage.mockClear();
+    await act(async () => {
+      await router.navigate(other);
+    });
+    await screen.findByRole("row", { name: "elsewhere.txt" });
+    await act(async () => {
+      await router.navigate(FOLDER);
+    });
+    await waitFor(() => expect(count()).toBe(3));
+    await new Promise((r) => setTimeout(r, 50));
+    const revisit = count();
+    expect(revisit).toBeLessThanOrEqual(first);
+  });
+
+  it("cancels the listing read when the page leaves the folder before the read arrives", async () => {
+    const other = "/files/fld_bbbbbbbb";
+    const seen: Array<AbortSignal | undefined> = [];
+    api.childrenPage.mockImplementation(async (folder: string, _d: string | null, _c: string | undefined, _s: unknown, signal?: AbortSignal) => {
+      if (folder === "fld_aaaaaaaa") {
+        seen.push(signal);
+        return new Promise(() => undefined);
+      }
+      return { items: [node("n9", "elsewhere.txt", { folder_id: "fld_bbbbbbbb" })], next_cursor: undefined };
+    });
+    const { router } = renderAt(FOLDER);
+    await waitFor(() => expect(seen.length).toBeGreaterThan(0));
+    await act(async () => {
+      await router.navigate(other);
+    });
+    await screen.findByRole("row", { name: "elsewhere.txt" });
+    expect(seen[0]?.aborted).toBe(true);
   });
 });
 
@@ -2081,7 +2204,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await act(async () => {
       await router.navigate(SUB);
     });
-    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything(), expect.anything()));
     // The old rows are still there: no frame without a listing. Assistive technology reads the area as busy, and its rows are inert.
     expect(rows("alpha.txt")).not.toBeNull();
     expect(busyFrame()?.getAttribute("aria-busy")).toBe("true");
@@ -2180,7 +2303,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await act(async () => {
       await router.navigate(SUB);
     });
-    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything(), expect.anything()));
     // The change clears the selection made in the folder left. Ctrl+A selects none of the rows shown.
     expect(rows("alpha.txt")?.getAttribute("aria-selected")).toBe("false");
     fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
@@ -2213,7 +2336,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await act(async () => {
       await router.navigate(SUB);
     });
-    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything(), expect.anything()));
     fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50));
@@ -2240,7 +2363,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await act(async () => {
       await router.navigate(SUB);
     });
-    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything(), expect.anything()));
     fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
     fireEvent.keyDown(document.body, { key: "v", ctrlKey: true });
     await waitFor(() => expect(busyNotices()).toBe(1));
@@ -2274,7 +2397,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await act(async () => {
       await router.navigate(SUB);
     });
-    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything(), expect.anything()));
     return { answer };
   }
 
@@ -2357,7 +2480,7 @@ describe("the list while the next folder is read (fu3b)", () => {
       await router.navigate(SUB);
     });
     // The place resolves; the listing does not yet: the page still holds the folder's rows, and the New menu acts on nothing.
-    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything(), expect.anything()));
     expect(get(newPlace)?.canUpload).toBe(false);
     await act(async () => {
       answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
@@ -2377,7 +2500,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await act(async () => {
       await router.navigate(SUB);
     });
-    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything(), expect.anything()));
     await act(async () => {
       answer({ items: [node("n3", "gamma.txt")], next_cursor: undefined });
     });
@@ -2397,7 +2520,7 @@ describe("the list while the next folder is read (fu3b)", () => {
     await act(async () => {
       await router.navigate(SUB);
     });
-    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything()));
+    await waitFor(() => expect(api.childrenPage).toHaveBeenCalledWith("fld_aaaaaaaa", "nod_bbbbbbbb", undefined, expect.anything(), expect.anything()));
     expect(document.querySelector('[role="toolbar"] input[type="file"]')).toBeNull();
     expect(uploadsMock.add).not.toHaveBeenCalled();
     await act(async () => {

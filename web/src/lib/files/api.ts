@@ -45,17 +45,19 @@ export function getMe(): Promise<{ personal_folder_id: string | null }> {
 // childrenPage reads one page of a directory's children. A null dir reads the folder's root. With sort, the server
 // orders the whole directory (folders, then shortcuts, then files, each by the sort), and the cursor is for that sort;
 // without it the server keeps its default order, as API clients always had.
+// signal (fu8) ends the read when the caller no longer wants it, such as a page that has left the folder.
 export async function childrenPage(
   folder: string,
   dir: string | null,
   cursor?: string,
   sort?: { key: SortKey; dir: SortDir },
+  signal?: AbortSignal,
 ): Promise<Page<Node>> {
   needSession();
   const c = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
   const s = sort ? `&sort=${sort.key}&order=${sort.dir}` : '';
-  if (dir) return api<Page<Node>>('GET', `/api/v1/nodes/${dir}/children?limit=${PAGE}${s}${c}`);
-  return api<Page<Node>>('GET', `/api/v1/folders/${folder}/children?path=%2F&limit=${PAGE}${s}${c}`);
+  if (dir) return api<Page<Node>>('GET', `/api/v1/nodes/${dir}/children?limit=${PAGE}${s}${c}`, { signal });
+  return api<Page<Node>>('GET', `/api/v1/folders/${folder}/children?path=%2F&limit=${PAGE}${s}${c}`, { signal });
 }
 
 export async function statNode(nod: string): Promise<Node> {
