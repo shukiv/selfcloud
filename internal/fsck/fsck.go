@@ -107,7 +107,7 @@ type Report struct {
 // holds what was found before it.
 func Run(ctx context.Context, opts Options) (*Report, error) {
 	rep := &Report{DataDir: opts.DataDir, MinAgeSeconds: int64(opts.MinAge / time.Second),
-		VerifyContent: opts.VerifyContent, Repair: opts.Repair, Integrity: "ok",
+		VerifyContent: opts.VerifyContent, Repair: opts.Repair, Integrity: "unchecked",
 		Counts: map[string]int{}, Scanned: map[string]int{}, Findings: []Finding{}}
 	if opts.MinAge < 0 {
 		return rep, errors.New("fsck: the minimum age must not be negative")
@@ -262,6 +262,9 @@ func (c *checker) integrityChecks() error {
 		for _, p := range problems {
 			c.add(Finding{Kind: KindIntegrity, Detail: p})
 		}
+	} else if c.rep.Integrity == "unchecked" {
+		// Only a check that ran and passed says ok; a report that stops before this point stays unchecked.
+		c.rep.Integrity = "ok"
 	}
 	if err := c.openSnap(); err != nil {
 		return err
