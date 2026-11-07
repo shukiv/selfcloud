@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { App, Alert, Button, ConfigProvider, Dropdown, Modal, Skeleton, theme as antdTheme } from "antd";
@@ -604,6 +604,20 @@ export default function FilesPage() {
     // Only a new key starts a visit; the other values are read when the effect runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
+
+  // A visit to a folder that was read before keeps only the first page of what was read (fu8 round 3, decision 94). The read a
+  // revisit starts then costs one request, as a first visit's first page does, and the other pages are read as the person asks
+  // for them. A layout effect runs before the browser paints the new address, so no paint shows the untrimmed revisit.
+  useLayoutEffect(() => {
+    if (folderID === null) return;
+    const key = queryKey("children", folderID, dirID, prefs.sort.key, prefs.sort.dir);
+    const had = qc.getQueryData<InfiniteData<Page<Node>>>(key);
+    if (had && had.pages.length > 1) {
+      qc.setQueryData<InfiniteData<Page<Node>>>(key, { pages: had.pages.slice(0, 1), pageParams: had.pageParams.slice(0, 1) });
+    }
+    // Keyed on the folder, the sort and the address: a plain re-render at the same address trims nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folderID, dirID, prefs.sort.key, prefs.sort.dir, location.key]);
 
   // reload reads the listing again, keeping the place. Selected items that are gone are dropped.
   // The folder tree is read again only for the folder shown and the ones the change named (where items left or came to).

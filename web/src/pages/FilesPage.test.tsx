@@ -384,26 +384,25 @@ describe("a folder revisited shows what it holds now (fu8)", () => {
     await waitFor(() => expect(document.title).toContain("Team Renamed"));
   });
 
-  it("reads a folder's loaded pages again on a revisit, no more requests than the first visit", async () => {
+  it("a revisit reads only the first page, and the rest as the person asks, as a first visit does (six pages)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const other = "/files/fld_bbbbbbbb";
-    const pages = new Map<string | undefined, { items: Node[]; next_cursor: string | undefined }>([
-      [undefined, { items: [node("n1", "alpha.txt")], next_cursor: "c1" }],
-      ["c1", { items: [node("n2", "beta.txt")], next_cursor: "c2" }],
-      ["c2", { items: [node("n3", "gamma.txt")], next_cursor: undefined }],
-    ]);
+    const pages = new Map<string | undefined, { items: Node[]; next_cursor: string | undefined }>();
+    for (let i = 0; i < 6; i++) {
+      pages.set(i === 0 ? undefined : `c${i}`, { items: [node(`n${i}`, `file${i}.txt`)], next_cursor: i < 5 ? `c${i + 1}` : undefined });
+    }
     api.childrenPage.mockImplementation(async (folder: string, _d: string | null, cursor?: string) =>
       folder === "fld_aaaaaaaa" ? pages.get(cursor) : { items: [node("n9", "elsewhere.txt", { folder_id: "fld_bbbbbbbb" })], next_cursor: undefined },
     );
     const count = () => api.childrenPage.mock.calls.filter((c) => c[0] === "fld_aaaaaaaa").length;
     const { router } = renderAt(FOLDER);
-    await screen.findByRole("row", { name: "alpha.txt" });
-    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
-    await screen.findByRole("row", { name: "beta.txt" });
-    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
-    await screen.findByRole("row", { name: "gamma.txt" });
+    await screen.findByRole("row", { name: "file0.txt" });
+    for (let i = 1; i < 6; i++) {
+      fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+      await screen.findByRole("row", { name: `file${i}.txt` });
+    }
     const first = count();
-    expect(first).toBe(3);
+    expect(first).toBe(6);
     api.childrenPage.mockClear();
     await act(async () => {
       await router.navigate(other);
@@ -412,10 +411,16 @@ describe("a folder revisited shows what it holds now (fu8)", () => {
     await act(async () => {
       await router.navigate(FOLDER);
     });
-    await waitFor(() => expect(count()).toBe(3));
+    await screen.findByRole("row", { name: "file0.txt" });
     await new Promise((r) => setTimeout(r, 50));
-    const revisit = count();
-    expect(revisit).toBeLessThanOrEqual(first);
+    // The revisit costs one request for its first page, as a first visit does before anything is loaded.
+    expect(count()).toBe(1);
+    for (let i = 1; i < 6; i++) {
+      fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+      await screen.findByRole("row", { name: `file${i}.txt` });
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    expect(count()).toBe(first);
   });
 
   it("cancels the listing read when the page leaves the folder before the read arrives", async () => {
