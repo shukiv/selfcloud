@@ -380,7 +380,7 @@ func TestRepairMovesTheOrphanAndDeletesNothing(t *testing.T) {
 		t.Fatalf("quarantined contents differ: %v", err)
 	}
 	// The manifest sits in the dated folder, next to blobs/.
-	manifests, _ := filepath.Glob(filepath.Join(q, "*", "manifest-*.json"))
+	manifests, _ := filepath.Glob(filepath.Join(q, "*", "manifest-*.jsonl"))
 	if len(manifests) != 1 {
 		t.Fatalf("manifest files = %v, want one", manifests)
 	}
@@ -544,6 +544,55 @@ func TestIntegrityCheckListsProblemsOnDamagedTail(t *testing.T) {
 	}
 	if listed == 0 {
 		t.Fatalf("integrity failed but no problem was listed by integrity_check (error %v): %+v", err, r.Findings)
+	}
+}
+
+// M3: a repair stopped after its first move leaves a manifest naming exactly the moved files, line by line.
+func TestCancelledRepairManifestNamesTheMovedFiles(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	for i := 0; i < 3; i++ {
+		bid, _ := f.commit([]byte("orphan " + strconv.Itoa(i)))
+		f.age(f.path(bid), 2*time.Hour)
+	}
+	ctx, cancel := context.WithCancel(f.ctx)
+	defer cancel()
+	moves := 0
+	opts := Options{DataDir: f.dir, DBPath: f.dbPath, MinAge: time.Hour, Repair: true,
+		DerivedDir: filepath.Join(f.dir, "derived")}
+	opts.afterMove = func() {
+		moves++
+		if moves == 1 {
+			cancel()
+		}
+	}
+	if _, err := Run(ctx, opts); err == nil {
+		t.Fatal("a repair cancelled after its first move returned no error")
+	}
+	mans, err := filepath.Glob(filepath.Join(f.dir, "quarantine", "*", "manifest-*.jsonl"))
+	if err != nil || len(mans) != 1 {
+		t.Fatalf("manifests = %v (%v), want one", mans, err)
+	}
+	data, err := os.ReadFile(mans[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("manifest has %d lines, want 1 (the one move):\n%s", len(lines), data)
+	}
+	var m struct {
+		Blob string `json:"blob"`
+		To   string `json:"to"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &m); err != nil {
+		t.Fatalf("manifest line is not JSON: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.dir, m.To)); err != nil {
+		t.Fatalf("the manifest names %q, which is not in quarantine: %v", m.To, err)
+	}
+	if got := len(fileSet(t, filepath.Join(f.dir, "quarantine"))); got != 2 { // the moved file and the manifest
+		t.Fatalf("quarantine holds %d files, want 2", got)
 	}
 }
 

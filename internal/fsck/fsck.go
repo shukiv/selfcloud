@@ -42,6 +42,9 @@ type Options struct {
 	VerifyContent bool          // hash the contents against the rows
 	Repair        bool          // move orphan blobs to quarantine
 	DerivedDir    string        // the derived directory; "" means DataDir/derived (the server's default)
+
+	// afterMove, when set, runs after each blob is moved into quarantine. Tests use it to stop a repair between moves.
+	afterMove func()
 }
 
 // Finding kinds.
@@ -616,21 +619,35 @@ func (c *checker) stillMissing(snap *store.Snapshot, cand candidate) (bool, erro
 
 // repair moves each orphan blob into the quarantine folder, once a fresh snapshot says no row names it and it is old
 // enough. It renames and never deletes. A manifest lists what moved.
+// movedEntry is one line of the manifest: a blob moved into quarantine.
+type movedEntry struct {
+	Account  string    `json:"account"`
+	Blob     string    `json:"blob"`
+	From     string    `json:"from"`
+	To       string    `json:"to"`
+	Size     int64     `json:"size"`
+	Modified time.Time `json:"modified"`
+	Reason   string    `json:"reason"`
+}
+
+// repair moves orphan blobs into quarantine, one at a time. The manifest is written as the moves happen, one JSON line
+// per move, synced after each line, so a repair that stops at any point leaves a manifest of what moved. A stop is
+// checked before each move. The only file that can be without a line is the one being moved when the process dies,
+// and its path still says where it belongs.
 func (c *checker) repair() error {
 	day := time.Now().UTC().Format("2006-01-02")
 	qRel := filepath.Join("quarantine", day)
 	qAbs := filepath.Join(c.opts.DataDir, qRel)
-	type moved struct {
-		Account  string    `json:"account"`
-		Blob     string    `json:"blob"`
-		From     string    `json:"from"`
-		To       string    `json:"to"`
-		Size     int64     `json:"size"`
-		Modified time.Time `json:"modified"`
-		Reason   string    `json:"reason"`
-	}
-	var entries []moved
+	var man *os.File
+	defer func() {
+		if man != nil {
+			man.Close()
+		}
+	}()
 	for i := range c.rep.Findings {
+		if err := c.ctx.Err(); err != nil {
+			return err
+		}
 		f := &c.rep.Findings[i]
 		if f.Kind != KindOrphanBlob {
 			continue
@@ -642,27 +659,37 @@ func (c *checker) repair() error {
 		if done == nil {
 			continue
 		}
-		entries = append(entries, moved{Account: f.Account, Blob: f.ID, From: f.Path, To: filepath.Join(qRel, f.Path),
-			Size: done.Size(), Modified: done.ModTime().UTC(), Reason: "no row names this blob"})
+		if man == nil {
+			man, err = openManifest(qAbs)
+			if err != nil {
+				return err
+			}
+			c.rep.Quarantine = qRel
+		}
+		line, err := json.Marshal(movedEntry{Account: f.Account, Blob: f.ID, From: f.Path,
+			To: filepath.Join(qRel, f.Path), Size: done.Size(), Modified: done.ModTime().UTC(),
+			Reason: "no row names this blob"})
+		if err != nil {
+			return err
+		}
+		if _, err := man.Write(append(line, '\n')); err != nil {
+			return fmt.Errorf("writing the manifest: %w", err)
+		}
+		if err := man.Sync(); err != nil {
+			return fmt.Errorf("writing the manifest: %w", err)
+		}
 		c.rep.Moved++
-	}
-	if len(entries) == 0 {
-		return nil
-	}
-	c.rep.Quarantine = qRel
-	manifest := struct {
-		RunAt time.Time `json:"run_at"`
-		Moved []moved   `json:"moved"`
-	}{RunAt: time.Now().UTC(), Moved: entries}
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return err
-	}
-	name := "manifest-" + time.Now().UTC().Format("150405.000000000") + ".json"
-	if err := os.WriteFile(filepath.Join(qAbs, name), data, 0o600); err != nil {
-		return fmt.Errorf("writing the manifest: %w", err)
+		if c.opts.afterMove != nil {
+			c.opts.afterMove()
+		}
 	}
 	return nil
+}
+
+// openManifest creates a new manifest in the quarantine folder, 0600, and never reuses an existing name.
+func openManifest(qAbs string) (*os.File, error) {
+	name := "manifest-" + time.Now().UTC().Format("150405.000000000") + ".jsonl"
+	return os.OpenFile(filepath.Join(qAbs, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 }
 
 // moveOrphan renames one orphan into quarantine when it is still an orphan. It returns the file's info when it moved,
