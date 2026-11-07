@@ -31,7 +31,7 @@ func (s *Store) SearchUsers(ctx context.Context, accountID, q string, limit int)
 		WHERE account_id = ? AND status = 'active' AND (
 			substr(email_key, 1, instr(email_key, '@') - 1) LIKE ? || '%' ESCAPE '\'
 			OR lower(display_name) LIKE '%' || ? || '%' ESCAPE '\')
-		ORDER BY lower(display_name), email_key LIMIT ?`,
+		ORDER BY lower(CASE WHEN display_name = '' THEN email ELSE display_name END), email_key LIMIT ?`,
 		accountID, esc, esc, limit)
 	if err != nil {
 		return nil, err

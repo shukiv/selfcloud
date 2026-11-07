@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -300,5 +301,32 @@ func TestInfoReportsSharingMaxExpiryDays(t *testing.T) {
 		if got := days(c.d); got != c.want {
 			t.Errorf("max_expiry %v: sharing_max_expiry_days = %v, want %v", c.d, got, c.want)
 		}
+	}
+}
+
+// TestDirectoryEmptyQueryAnswerIsTheFirst20ByName: when some matched users have no display name, the answer is still the first
+// 20 by the name the answer shows (the email, for a user with no display name), so the set does not depend on the order of the store.
+// Five unnamed users sort after the named ones by their emails, and the answer must hold the named 00 to 19 and no unnamed user.
+func TestDirectoryEmptyQueryAnswerIsTheFirst20ByName(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	for i := 0; i < 20; i++ {
+		fx.activeUser(t, fmt.Sprintf("aa%02d@example.com", i), fmt.Sprintf("Aa zz %02d", i), "en")
+	}
+	for i := 0; i < 5; i++ {
+		fx.activeUser(t, fmt.Sprintf("zzx%02d@example.com", i), "", "en")
+	}
+	rec := searchAs(t, fx, fx.key, "zz", "user")
+	wantStatus(t, rec, 200)
+	got := namesIn(t, rec)
+	var want []string
+	for i := 0; i < 20; i++ {
+		want = append(want, fmt.Sprintf("Aa zz %02d", i))
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("answer = %v\nwant the first 20 by name = %v", got, want)
+	}
+	if m := decode[map[string]any](t, rec)["more"]; m != true {
+		t.Errorf("more = %v, want true (25 matched)", m)
 	}
 }
