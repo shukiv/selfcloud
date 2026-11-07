@@ -60,6 +60,8 @@ func TestScaleOnGeneratedTree(t *testing.T) {
 		t.Logf("run verify=%v: %s, %d findings, scanned blob_files=%d live_blob_rows=%d",
 			verify, time.Since(start).Round(time.Millisecond), len(r.Findings), r.Scanned["blob_files"],
 			r.Scanned["live_blob_rows"])
+		t.Logf("run verify=%v: read transactions=%d, longest single hold=%dms",
+			verify, r.Snapshots, r.LongestSnapshotHoldMS)
 		if len(r.Findings) != 0 {
 			t.Fatalf("clean generated tree reported %d findings", len(r.Findings))
 		}
