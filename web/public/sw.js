@@ -172,36 +172,37 @@ function holdShare(files, release) {
   return id;
 }
 
-// isWebOrigin reports whether an Origin header is an http or https address, which is the only kind a web page sends.
-function isWebOrigin(origin) {
+// webOrigin returns the origin of an address when it is an http or https address, normalised (the scheme and host in lower case, the
+// default port left out), and null for anything else: a non-web scheme such as an Android app's, about:client, or text that is not an
+// address at all. Only a web address can be another site, so only its origin is compared with this site's (decision 82, round 4).
+function webOrigin(value) {
   try {
-    const protocol = new URL(origin).protocol;
-    return protocol === 'http:' || protocol === 'https:';
+    const url = new URL(value);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.origin;
   } catch {
-    return false;
+    // Not an address: null.
   }
+  return null;
 }
 
-// fromAnotherSite reports whether a share post came from a page of another site. The system share sheet sends no referrer, so an
-// empty one is accepted, and a referrer that is another site's address is refused. A referrer that cannot be read as an address is
-// not refused (the check fails open). This is defence in depth only: a page can send no referrer at all, so the Share page also asks
-// the person to confirm before anything is saved.
+// fromAnotherSite reports whether a share post came from a page of another web site. Two signals are read, and each refuses only a
+// web address of another site (decision 82, rounds 2 to 4).
+// (1) The Origin header. It is what the worker can see of where a post came from (measured in headless Chrome, round 2): a post from a
+// page of another web site carries that site's origin. An Origin that is absent, the string "null" or a non-web scheme (such as an
+// Android app's) is not refused: the system share sheet's own Origin was not measured (round 3, M3).
+// (2) The referrer. An empty referrer is accepted. A referrer that is an http or https address of another site is refused. A referrer
+// with a non-web scheme (an Android app's, or about:client) is accepted, as is one that cannot be read as an address (the check fails
+// open). A page can send no referrer at all, so the Share page also asks the person to confirm before anything is saved, and both
+// signals are defence in depth only.
 function fromAnotherSite(request) {
-  // The Origin header is what the worker can see of where a post came from (measured in headless Chrome, decision 82, round 2): a
-  // post from a page of another web site carries that site's origin. Only an http or https origin of another site is refused here.
-  // The string "null", an absent Origin and a non-web scheme (such as an Android app's) are not refused by this rule: the system share
-  // sheet's own Origin was not measured (decision 82, round 3, M3). A "null" Origin with a cross-site referrer is still refused by
-  // the referrer check below, because that referrer is another site.
+  const here = new URL(self.location.origin).origin;
   const origin = request.headers && typeof request.headers.get === 'function' ? request.headers.get('origin') : null;
-  if (origin && isWebOrigin(origin) && origin !== self.location.origin) return true;
+  const fromOrigin = origin ? webOrigin(origin) : null;
+  if (fromOrigin !== null && fromOrigin !== here) return true;
   const referrer = request.referrer;
   if (!referrer) return false;
-  try {
-    return new URL(referrer).origin !== self.location.origin;
-  } catch {
-    // Not a web address: fail open. This is defence in depth only, so a referrer the check cannot read is not a refusal.
-    return false;
-  }
+  const fromReferrer = webOrigin(referrer);
+  return fromReferrer !== null && fromReferrer !== here;
 }
 
 // refusedShare answers a share the worker will not keep: 303 to the share page, with no id and nothing held.

@@ -675,6 +675,46 @@ describe("the share target (decision 82)", () => {
     expect(await take(w, b)).toEqual([]);
   });
 
+  // Round 4, H1: the referrer rule is narrowed like the Origin rule. Only a web referrer of another site is refused. An Android
+  // app's referrer parses to the origin "null", which is not this site, so the old rule refused every such share.
+  it("accepts an Android-app referrer with no Origin, since only a web referrer of another site is refused", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "android-app://com.example.app/" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  it("accepts a referrer of about:client", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "about:client" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  it("refuses a cross-site https referrer, with no Origin", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "https://evil.test/attack.html" }));
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+  });
+
+  // Round 4, L3: an Origin of another web site is refused even when the referrer is this site's own page.
+  it("refuses an Origin of another web site even when the referrer is this site's own page", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: absolute("/files"), origin: "https://evil.test" }));
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+  });
+
+  // Round 4, L4: the Origin is normalised before it is compared, so a host in another case is this site, and a port is another site.
+  it("accepts an Origin of this site whose host is written in capitals, since it is the same origin once normalised", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "", origin: "https://DRIVE.test" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  it("refuses an Origin of this host on another port, since that is another origin", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "", origin: "https://drive.test:8443" }));
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+  });
+
   it("accepts a post whose Origin is this site", async () => {
     const w = load();
     const res = await w.fetch(shareRequest([file("a.txt", "hi")], { origin: ORIGIN }));

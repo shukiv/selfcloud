@@ -17,8 +17,9 @@ import { uploadTargetWhere } from "../lib/files/ops";
 import { filesURL } from "../lib/files/route";
 import type { FolderAccess } from "../lib/files/types";
 import { manager } from "../lib/files/uploads";
-import { useLang, useT } from "../lib/i18n";
+import { useLang, useT, type Lang } from "../lib/i18n";
 import { dropShare, forgetShare, takeShare } from "../lib/pwa/share";
+import { loadShareText } from "../lib/share/text";
 import { session } from "../lib/session";
 import { useStore } from "../lib/store";
 
@@ -35,6 +36,22 @@ export default function SharePage() {
   // skipped is how many files of the share the worker did not keep, above its cap (decision 82, round 2).
   const skipped = Math.max(0, Number(params.get("skipped") ?? "0") || 0);
   const viewingAs = me?.impersonation != null;
+
+  // The page's strings: the language they were loaded for, and whether the load failed (with a try counter for Try again).
+  const [textLang, setTextLang] = useState<Lang | null>(null);
+  const [textFailed, setTextFailed] = useState(false);
+  const [textTry, setTextTry] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setTextFailed(false);
+    loadShareText(lang).then(
+      () => live && setTextLang(lang),
+      () => live && setTextFailed(true),
+    );
+    return () => {
+      live = false;
+    };
+  }, [lang, textTry]);
 
   const [phase, setPhase] = useState<Phase>("loading");
   const [files, setFiles] = useState<File[]>([]);
@@ -104,6 +121,32 @@ export default function SharePage() {
     forgetShare(id);
     setFiles([]);
     navigate("/files");
+  }
+
+  // The page's own strings load with the page, in the current language. Until they are there the page draws the spinner, never a
+  // raw key; if the load fails, the main catalogue's retry text is shown instead (decision 82, round 4).
+  if (textLang !== lang) {
+    if (textFailed) {
+      return (
+        <Alert
+          type="error"
+          showIcon
+          role="alert"
+          message={t("error.generic")}
+          action={
+            <Button size="small" onClick={() => setTextTry((n) => n + 1)}>
+              {t("files.retry")}
+            </Button>
+          }
+          style={{ margin: 16 }}
+        />
+      );
+    }
+    return (
+      <div role="status" style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
+        <Spin tip={t("app.loading")} />
+      </div>
+    );
   }
 
   if (phase === "loading") {

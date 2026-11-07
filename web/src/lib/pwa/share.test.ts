@@ -137,6 +137,22 @@ describe("the time-box on the page's copy (decision 82, round 3, M1)", () => {
     expect(takenIDs()).not.toContain("t3");
   });
 
+  // Round 4, M2: a forgotten share's timer must be stopped. If it kept running, it would fire at its old time and drop a later copy
+  // of the same id that the page took after the forget.
+  it("a forgotten share's timer does not drop a later copy of the same id", async () => {
+    held = { t5: [file("k.txt")] };
+    await takeShare("t5");
+    vi.advanceTimersByTime(10 * 1000);
+    forgetShare("t5");
+    held = { t5: [file("k.txt")] };
+    await takeShare("t5");
+    // The later copy runs from second 10 to second 70. The first timer was due at second 60.
+    vi.advanceTimersByTime(55 * 1000);
+    expect(takenIDs()).toContain("t5");
+    vi.advanceTimersByTime(5 * 1000);
+    expect(takenIDs()).not.toContain("t5");
+  });
+
   it("restarts the sixty seconds from each take of the page", async () => {
     held = { t4: [file("j.txt")] };
     await takeShare("t4");

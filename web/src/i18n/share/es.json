@@ -1,0 +1,12 @@
+{
+  "shareTarget.title": "Guardar archivos compartidos",
+  "shareTarget.none": "No se compartió nada aquí. Comparte los archivos de nuevo desde la otra app.",
+  "shareTarget.viewingAs": "Estás viendo como otra persona, así que estos archivos no se pueden guardar aquí.",
+  "shareTarget.saveTo": "Guardar en",
+  "shareTarget.change": "Cambiar el lugar",
+  "shareTarget.cancel": "Cancelar",
+  "shareTarget.upload": "Subir",
+  "shareTarget.notice": "Estos archivos llegaron desde otra app. Revisa primero el nombre y el tamaño de cada uno. Si no acabas de compartirlos, elige Cancelar. No se sube nada hasta que elijas Subir.",
+  "shareTarget.skipped": "{count} archivos más no se guardaron, porque un envío guarda como máximo 100 archivos. Comparte el resto de nuevo.",
+  "shareTarget.unknownType": "tipo desconocido"
+}
