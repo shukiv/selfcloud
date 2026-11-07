@@ -28,15 +28,15 @@ const TYPES = ['text/javascript', 'application/javascript', 'text/css', 'font/wo
 // files and the manifest. A navigation there goes to the network, and a failed one fails.
 const REFUSED = ['/api', '/wopi', '/s', '/brand', '/manifest'];
 // SHARE_PATH is the share target (decision 82). A form post there, from the system share sheet, is read by the worker and held in
-// memory only: the files are never written to a cache or to storage. The page at SHARE_PAGE takes them once, by message.
+// memory only: this code never writes the files to a cache or to storage. The page at SHARE_PAGE takes them once, by message.
 const SHARE_PATH = '/share-target';
 const SHARE_PAGE = '/share';
 // SHARE_CAP is how many shares the worker holds at once. At the cap a new share drops the oldest one no page has taken, so a
 // share from another site cannot keep a real share out (decision 82, after the review).
 const SHARE_CAP = 4;
-// SHARE_FILE_CAP is how many files one share keeps. A share sheet's multi-select of photos is the case it is for: 100 is more than
-// a person picks by hand in one go, and small enough that a share of many large files is not held whole. Files past it are not
-// kept, and the page says how many (decision 82, round 2).
+// SHARE_FILE_CAP is how many files one share keeps. It counts files, not bytes: request.formData() reads the whole body before the
+// worker can count anything, so the cap does not limit what is read. It bounds the number of files kept, for a share sheet's
+// multi-select of photos, and the files past it are not kept and the page says how many (decision 82, rounds 2 and 3).
 const SHARE_FILE_CAP = 100;
 // UNCLAIMED_LIMIT is how long a held share is kept while no page has taken it: sixty seconds. The page takes a share as soon as it
 // opens, so this is the time a share sheet's hand-off has to finish. Chromium ends an event that runs longer than five minutes
@@ -172,15 +172,28 @@ function holdShare(files, release) {
   return id;
 }
 
+// isWebOrigin reports whether an Origin header is an http or https address, which is the only kind a web page sends.
+function isWebOrigin(origin) {
+  try {
+    const protocol = new URL(origin).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 // fromAnotherSite reports whether a share post came from a page of another site. The system share sheet sends no referrer, so an
-// empty one is accepted. A referrer that is not a web address of this origin is refused. This is defence in depth only: a page
-// can send no referrer at all, so the Share page also asks the person to confirm before anything is saved.
+// empty one is accepted, and a referrer that is another site's address is refused. A referrer that cannot be read as an address is
+// not refused (the check fails open). This is defence in depth only: a page can send no referrer at all, so the Share page also asks
+// the person to confirm before anything is saved.
 function fromAnotherSite(request) {
   // The Origin header is what the worker can see of where a post came from (measured in headless Chrome, decision 82, round 2): a
-  // post from another web site carries that site's origin. The string "null" is not refused: a page that sends no referrer sends it
-  // too, and so may the system share sheet, so it cannot be told apart from the share sheet.
+  // post from a page of another web site carries that site's origin. Only an http or https origin of another site is refused here.
+  // The string "null", an absent Origin and a non-web scheme (such as an Android app's) are not refused by this rule: the system share
+  // sheet's own Origin was not measured (decision 82, round 3, M3). A "null" Origin with a cross-site referrer is still refused by
+  // the referrer check below, because that referrer is another site.
   const origin = request.headers && typeof request.headers.get === 'function' ? request.headers.get('origin') : null;
-  if (origin && origin !== 'null' && origin !== self.location.origin) return true;
+  if (origin && isWebOrigin(origin) && origin !== self.location.origin) return true;
   const referrer = request.referrer;
   if (!referrer) return false;
   try {
@@ -306,6 +319,11 @@ self.addEventListener('message', (event) => {
   }
   if (data.type === 'SHARE_DROP') {
     if (typeof data.id === 'string') endShare(data.id);
+    return;
+  }
+  // The page drops every share it holds when the person changes, the viewed-as person changes, or the server ends the session.
+  if (data.type === 'SHARE_DROP_ALL') {
+    for (const id of [...shares.keys()]) endShare(id);
     return;
   }
   if (data.type !== 'CLEAR_CACHES' && data.type !== 'PRECACHE') return;

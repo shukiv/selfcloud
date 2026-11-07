@@ -637,6 +637,44 @@ describe("the share target (decision 82)", () => {
     expect(res?.headers.get("location")).toBe(absolute("/share"));
   });
 
+  // The share sheet's own Origin was not measured (decision 82, round 3, M3). Only a web origin of another site is a refusal: an
+  // Android app's scheme, or any other scheme, is not, so a real share from a device is not refused by its Origin.
+  it("accepts a post whose Origin is a non-web scheme such as an Android app, since only a web origin of another site is refused", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "", origin: "android-app://com.example.app" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  it("still applies the referrer check to a non-web origin: an Android-app origin with another site's referrer is refused", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "https://evil.test/", origin: "android-app://com.example.app" }));
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+  });
+
+  it("refuses a post whose Origin is the string null when its referrer is another site (the referrer check still applies)", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "https://evil.test/", origin: "null" }));
+    expect(res?.headers.get("location")).toBe(absolute("/share"));
+  });
+
+  it("SHARE_DROP forgets one share by its id, and the other held share is still handed over", async () => {
+    const w = load();
+    const a = idOf((await w.fetch(shareRequest([file("a.txt", "hi")])))!);
+    const b = idOf((await w.fetch(shareRequest([file("b.txt", "hi")])))!);
+    await w.message({ type: "SHARE_DROP", id: a });
+    expect(await take(w, a)).toEqual([]);
+    expect((await take(w, b)).map((f) => f.name)).toEqual(["b.txt"]);
+  });
+
+  it("SHARE_DROP_ALL forgets every held share, so the worker keeps none for a page that was told to drop them", async () => {
+    const w = load();
+    const a = idOf((await w.fetch(shareRequest([file("a.txt", "hi")])))!);
+    const b = idOf((await w.fetch(shareRequest([file("b.txt", "hi")])))!);
+    await w.message({ type: "SHARE_DROP_ALL" });
+    expect(await take(w, a)).toEqual([]);
+    expect(await take(w, b)).toEqual([]);
+  });
+
   it("accepts a post whose Origin is this site", async () => {
     const w = load();
     const res = await w.fetch(shareRequest([file("a.txt", "hi")], { origin: ORIGIN }));

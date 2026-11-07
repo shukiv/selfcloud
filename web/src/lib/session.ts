@@ -34,7 +34,9 @@ export function setSignedIn(s: SignedIn): void {
   // A person who signs in may use the app's caches again (decision 65).
   void markSignedIn();
   // The shares a page holds belong to the person who took them. A different person who signs in over a signed-in one gets none
-  // of them; a sign-in from the signed-out state keeps them, since that is how a share opened while signed out reaches its page.
+  // of them; a sign-in from the signed-out state keeps them, since that is how a share opened while signed out reaches its page. That
+  // exception is bounded by the five-minute time-box of share.ts, and the files go to whoever signs in next on this tab, so the
+  // person at the device who shared is expected to be the one who signs in (decision 82, round 3, M2).
   const before = get(session);
   if (before !== null && before.user.id !== s.user.id) clearShares();
   session.set({ user: s.user, account: null, csrf: s.csrf_token, publicLinks: false });
@@ -113,8 +115,10 @@ export function signingOut(): boolean {
 
 export function clearSession(): void {
   // A sign-out, or a session the server ended, drops every share the page holds (decision 82, round 2). The app's signed-out
-  // page is the same tab, with no reload, so this module state has to be cleared here.
-  clearShares();
+  // page is the same tab, with no reload, so this module state has to be cleared here. Only a session that existed is ended: a
+  // signed-out page's own first check is answered 401 with no session to end, and it must not drop the share it was sent (the
+  // share's files are still in the worker then; decision 82, round 3).
+  if (get(session) !== null) clearShares();
   session.set(null);
 }
 

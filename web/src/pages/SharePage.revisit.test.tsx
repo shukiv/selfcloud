@@ -94,6 +94,7 @@ describe("a revisit of a share's address", () => {
     await waitFor(() => expect(screen.queryByTestId("where")).not.toBeNull());
     first.unmount();
     renderAt("r1");
+    expect(screen.queryByText("cancel-me.txt")).toBeNull();
     await screen.findByText(/Share the files again/);
     expect(screen.queryByText("cancel-me.txt")).toBeNull();
   });
@@ -105,6 +106,7 @@ describe("a revisit of a share's address", () => {
     await waitFor(() => expect(add).toHaveBeenCalledTimes(1));
     first.unmount();
     renderAt("r2");
+    expect(screen.queryByText("uploaded.txt")).toBeNull();
     await screen.findByText(/Share the files again/);
     expect(screen.queryByText("uploaded.txt")).toBeNull();
   });
@@ -117,6 +119,7 @@ describe("a revisit of a share's address", () => {
     clearSession();
     signedIn("usr_b");
     renderAt("r3");
+    expect(screen.queryByText("signed-out.txt")).toBeNull();
     await screen.findByText(/Share the files again/);
     expect(screen.queryByText("signed-out.txt")).toBeNull();
   });
