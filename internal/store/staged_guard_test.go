@@ -150,6 +150,7 @@ var unscopedNodeReads = map[string]struct {
 	"search_index.go":       {1, "the largest rowid of the nodes table (NodeRowIDMax, decision 40): one number, read by a copy to bound the rowid range it queues. It reveals no node, and the range is read through a folder ID, so a staged folder is never a search item"},
 	"trash.go":              {2, "trash listing and expiry over trashed_at: a staged node is never trashed (a copy never copies a trashed node, and a trashed source fails the copy), so no staged node matches"},
 	"imports.go":            {2, "blob existence checks (round 6): DropBlob and CleanupStagedBatch's blob delete keep a blob while NOT EXISTS (SELECT 1 FROM nodes WHERE nodes.blob_id = blobs.id) finds a node of any account that names it. The read returns no node and can only keep a blob, never remove one a node names; a staged node holds its blob, so the blob stays until the node is gone"},
+	"fsck.go":               {4, "fsck's reads for the data directory check (decision 100): BlobNamed, BlobReferrers, EachUnrecordedBlob and DerivedKept ask whether any node of any account names a blob. They must count staged nodes too: a staged copy holds its blob, and a check that missed it would call the blob an orphan. They read blob IDs and return no node's contents, only a count or the first node's ID for a finding"},
 }
 
 // TestAccountWideNodeReadsAreClassified fails when a read of nodes that is not scoped by an ID appears, moves or goes in
