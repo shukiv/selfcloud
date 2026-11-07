@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { freePort, launchBrowser, openTab, Page } from './cdp.mjs';
 import { linkChecks } from './sharePublic.mjs';
-import { sharingChecks } from './shareDialog.mjs';
+import { peopleFocusChecks, sharingChecks } from './shareDialog.mjs';
 import * as owner from './owner.mjs';
 import * as p3 from './p3.mjs';
 import * as p4 from './p4.mjs';
@@ -993,6 +993,15 @@ async function main() {
         sec2Browser = null;
       }
     }
+    // Slice fu10 (decision 96): the sections that use the people field, run on their own (SELFCLOUD_E2E_ONLY=share, owner-group
+    // or fu10). Each one signs in itself; the full run reaches the same checks in its own order below.
+    if (only && onlySet.has('share')) await sharingChecks(page, { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail });
+    if (only && onlySet.has('owner-group')) {
+      await signOut(page);
+      await signIn(page, OWNER);
+      await owner.ownerChecks(page, h, { base, sink, waitForMail, INVITEE });
+    }
+    if (only && onlySet.has('fu10')) await peopleFocusChecks(page, { base, accountID, accountKey, MEMBER, OWNER, check });
     if (only) {
       console.log(`only ${only}: passed`);
       passed = true;

@@ -5,9 +5,13 @@
 // ctx: { base, dir, accountID, accountKey, memberID, teamB, sink, check, OWNER, MEMBER, waitForMail, fld }
 // page.base must be the server's address, as run.mjs sets it for signIn.
 
+import { readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pickMenuEntry } from './menu.mjs';
+import { click, setLanguage, setPhone, setThemeByPlace, sleep } from './media.mjs';
+
+const he = JSON.parse(readFileSync(new URL('../src/i18n/he.json', import.meta.url), 'utf8'));
 
 const q = (v) => JSON.stringify(v);
 // The sidebar's folder tree (decision 62): each space is a row with a link to the space.
@@ -151,6 +155,78 @@ async function pickPerson(page, query, name, inputId = 'share-who') {
   await page.waitFor(`document.getElementById(${q(inputId)}).value === ${q(name)}`);
 }
 
+// focusPeopleField focuses the share dialog's people field with a real mouse click, after blurring it (the dialog puts the
+// cursor there when it opens; a script's focus() does not fire the focus event in a page without the window's focus). It
+// waits until the list shows the named person, and returns the status line's text. On failure it throws with the status,
+// the focus, and the names the list shows, so a run's log says what the page did.
+async function focusPeopleField(page, name) {
+  await page.evaluate(`(() => { document.getElementById('share-who').blur(); return true; })()`);
+  // The dialog animates in, so its field may still be moving: the field is measured and clicked again on each attempt.
+  await sleep(500);
+  for (let attempt = 1; ; attempt++) {
+    const at = await page.evaluate(`(() => { const r = document.getElementById('share-who').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await click(page, at);
+    try {
+      await page.waitFor(`[...document.querySelectorAll('[role="listbox"] [role="option"]')].some((o) => o.textContent.includes(${q(name)}))`, 4000);
+      break;
+    } catch (e) {
+      if (attempt < 3) {
+        await page.evaluate(`(() => { document.getElementById('share-who').blur(); return true; })()`);
+        await sleep(300);
+        continue;
+      }
+      const dbg = await page.evaluate(`(() => { const c = document.getElementById('share-who').closest('.combo'); return JSON.stringify({ focused: document.activeElement && document.activeElement.id, expanded: document.getElementById('share-who').getAttribute('aria-expanded'), status: c.querySelector('[role="status"]').textContent, listed: [...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => o.textContent.trim()) }); })()`);
+      throw new Error(`${e.message} DEBUG ${dbg}`);
+    }
+  }
+  return page.evaluate(`document.getElementById('share-who').closest('.combo').querySelector('[role="status"]').textContent`);
+}
+
+// peopleFocusChecks is slice fu10's check (decision 96): focusing the share dialog's people field, before anything is typed,
+// opens the account's people. It runs in four looks, English light and dark, Hebrew light and dark, and then English at a
+// 390 pixel phone, and in each one the list has the member, the status line counts the list, and a click picks the member.
+// Run on its own with SELFCLOUD_E2E_ONLY=fu10, it signs the owner in and makes its own folder.
+export async function peopleFocusChecks(page, ctx) {
+  const { base, accountID, accountKey, MEMBER, OWNER, check } = ctx;
+  const fld = (await api(base, 'POST', `/api/v1/accounts/${accountID}/folders`, accountKey, { name: 'Focus Room' })).id;
+  await api(base, 'POST', `/api/v1/folders/${fld}/directories`, accountKey, { path: '/Shared', parents: false });
+  await signOut(page);
+  await signIn(page, OWNER);
+  const enCounted = /people and groups|person or group/;
+  const heCounted = /אנשים וקבוצות|אנשים או קבוצות|איש קשר או קבוצה/;
+  const looks = [
+    { name: 'English light', lang: 'English', share: 'Share', theme: 'light', phone: false, counted: enCounted },
+    { name: 'English dark', lang: 'English', share: 'Share', theme: 'dark', phone: false, counted: enCounted },
+    { name: 'Hebrew light', lang: 'עברית', share: he['share.open'], theme: 'light', phone: false, counted: heCounted },
+    { name: 'Hebrew dark', lang: 'עברית', share: he['share.open'], theme: 'dark', phone: false, counted: heCounted },
+    { name: 'English phone', lang: 'English', share: 'Share', theme: 'light', phone: true, counted: enCounted },
+  ];
+  for (const look of looks) {
+    await setLanguage(page, look.lang);
+    await setThemeByPlace(page, look.theme === 'light' ? 1 : 2, look.theme);
+    await setPhone(page, look.phone);
+    await navigateTo(page, `/files/${fld}`);
+    await rowAppears(page, 'Shared');
+    await selectRow(page, 'Shared');
+    await clickButton(page, look.share);
+    await page.waitFor(`!!document.getElementById('share-who')`);
+    const counted = await focusPeopleField(page, MEMBER.name);
+    check(look.counted.test(counted), `${look.name}: focusing the people field lists the account's people, and the status line counts them (${counted})`);
+    const inside = await page.evaluate(
+      `(() => { const r = document.querySelector('[role="listbox"]').getBoundingClientRect(); const d = document.querySelector('[role="dialog"]').getBoundingClientRect(); return r.left >= d.left - 1 && r.right <= d.right + 1 && r.left >= 0 && r.right <= window.innerWidth; })()`,
+    );
+    check(inside, `${look.name}: the list stays inside the dialog and on the screen`);
+    await page.evaluate(
+      `(() => { const o = [...document.querySelectorAll('[role="listbox"] [role="option"]')].find((x) => x.textContent.includes(${q(MEMBER.name)})); o.click(); return true; })()`,
+    );
+    await page.waitFor(`document.getElementById('share-who').value === ${q(MEMBER.name)}`);
+    check(true, `${look.name}: a click on the list picks the member`);
+    await press(page, '[role="dialog"]', 'Escape');
+    await page.waitFor(`!document.querySelector('[role="dialog"]')`);
+    if (look.phone) await setPhone(page, false);
+  }
+}
+
 async function clickMenuItem(page, text) {
   await page.waitFor(
     `(() => { const b = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((x) => x.textContent.trim().startsWith(${q(text)})); if (!b) return false; b.click(); return true; })()`,
@@ -186,7 +262,17 @@ export async function sharingChecks(page, ctx) {
   await selectRow(page, 'Board');
   await clickButton(page, 'Share');
   await page.waitFor(`!!document.getElementById('share-who')`);
-  await pickPerson(page, 'mateo', MEMBER.name);
+  // Decision 96: focusing the field, before anything is typed, lists the account's people, and the status line counts them.
+  // The earlier checks may leave the phone emulation on, so the window is put back to the desktop first.
+  await setPhone(page, false);
+  // A real click focuses the field (focusPeopleField); the status line is read after the list shows the member.
+  const counted = await focusPeopleField(page, MEMBER.name);
+  check(/^\d+ (people and groups|person or group)$/.test(counted), `focusing the people field lists the account's people before anything is typed (status: "${counted}")`);
+  // The owner picks the member from the list with a click, and the member is added.
+  await page.evaluate(
+    `(() => { const o = [...document.querySelectorAll('[role="listbox"] [role="option"]')].find((x) => x.textContent.includes(${q(MEMBER.name)})); o.click(); return true; })()`,
+  );
+  await page.waitFor(`document.getElementById('share-who').value === ${q(MEMBER.name)}`);
   await setCheckbox(page, 'share-notify', false);
   await dialogSubmit(page);
   await page.waitFor(`${liveText}.includes('Shared with ${MEMBER.name} as Can view')`);
