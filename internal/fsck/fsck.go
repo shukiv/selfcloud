@@ -591,14 +591,17 @@ func (c *checker) stillMissing(snap *store.Snapshot, cand candidate) (bool, erro
 	ctx := c.ctx
 	switch cand.kind {
 	case KindMissingBlob:
+		// A row keeps the finding only while it is live: the sweep sets a row to orphan before it removes the file,
+		// so an orphan row with no file is the sweep's, and is dropped. With no row, a node, version, upload or
+		// archive that still names the blob keeps it.
 		row, found, err := snap.BlobRow(ctx, cand.id)
 		if err != nil {
 			return false, err
 		}
-		if found && row.State == store.BlobLive {
-			return true, nil
+		if found {
+			return row.State == store.BlobLive, nil
 		}
-		return snap.BlobNamed(ctx, cand.id)
+		return snap.BlobReferenced(ctx, cand.id)
 	case KindMissingDerived:
 		return snap.DerivedKept(ctx, cand.id)
 	case KindMissingZip:

@@ -547,6 +547,39 @@ func TestIntegrityCheckListsProblemsOnDamagedTail(t *testing.T) {
 	}
 }
 
+// M1: the sweep sets a blob to orphan, removes its file, then deletes the row. A recheck that finds such a row with no
+// file must drop the candidate: the sweep got there first.
+func TestOrphanStateRowWhoseFileIsGoneIsDroppedOnRecheck(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	bid := id.New("blb")
+	past := time.Now().Add(-time.Hour)
+	if err := f.st.Write(f.ctx, func(tx *store.Tx) error {
+		return tx.InsertBlob(f.ctx, &store.Blob{ID: bid, AccountID: f.acc, Size: 3, SHA256: sum([]byte("abc")),
+			State: store.BlobOrphan, DeleteAfter: &past, CreatedAt: time.Now()})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := store.OpenCheck(f.ctx, f.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	c := &checker{ctx: f.ctx, opts: Options{DataDir: f.dir, DBPath: f.dbPath, MinAge: time.Hour,
+		DerivedDir: filepath.Join(f.dir, "derived")}, cs: cs,
+		rep:   &Report{Counts: map[string]int{}, Scanned: map[string]int{}},
+		cands: []candidate{{kind: KindMissingBlob, account: f.acc, id: bid}}}
+	if err := c.recheck(); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.rep.Findings) != 0 {
+		t.Fatalf("an orphan-state row whose file is gone was reported as missing: %+v", c.rep.Findings)
+	}
+	if c.rep.Scanned["recheck_dropped"] != 1 {
+		t.Fatalf("recheck_dropped = %d, want 1", c.rep.Scanned["recheck_dropped"])
+	}
+}
+
 // H1: a derived directory other than data_dir/derived is checked where the server keeps its files.
 func TestNonDefaultDerivedDirIsChecked(t *testing.T) {
 	t.Parallel()

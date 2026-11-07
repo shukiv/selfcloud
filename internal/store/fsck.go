@@ -156,6 +156,20 @@ func (s *Snapshot) BlobNamed(ctx context.Context, blobID string) (bool, error) {
 	return named, nil
 }
 
+// BlobReferenced reports whether a node, version, upload or import archive names blobID, whatever blob row exists.
+// A recheck uses it when no row remains: a missing file that something still names is missing.
+func (s *Snapshot) BlobReferenced(ctx context.Context, blobID string) (bool, error) {
+	var named bool
+	err := s.tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM nodes WHERE blob_id = ?1)
+		OR EXISTS (SELECT 1 FROM versions WHERE blob_id = ?1)
+		OR EXISTS (SELECT 1 FROM uploads WHERE blob_id = ?1)
+		OR EXISTS (SELECT 1 FROM import_jobs WHERE archive_blob_id = ?1)`, blobID).Scan(&named)
+	if err != nil {
+		return false, fmt.Errorf("store: %w", err)
+	}
+	return named, nil
+}
+
 // BlobReferrers returns the first node and the first version that name blobID, or "" for none. It is for
 // describing a finding.
 func (s *Snapshot) BlobReferrers(ctx context.Context, blobID string) (nodeID, versionID string, err error) {
