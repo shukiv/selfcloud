@@ -969,7 +969,7 @@ func readDir(path string) ([]fs.DirEntry, error) {
 // hashFile returns the SHA-256 of a file's contents, in lowercase hex. The walk has already seen the entry as a regular
 // file, and the files are immutable once committed, so the bytes read are the bytes the row describes.
 func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|nofollow, 0)
 	if err != nil {
 		return "", err
 	}
