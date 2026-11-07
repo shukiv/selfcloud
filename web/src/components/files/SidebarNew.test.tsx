@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "../../lib/i18n";
 import { myFilesPlace, placeOfHere, type DocKind, type NewPlace } from "../../lib/files/newPlace";
@@ -147,5 +147,47 @@ describe("the sidebar's New button", () => {
     fireEvent.click(round);
     fireEvent.click(await screen.findByRole("menuitem", { name: "New folder" }));
     expect(onFolder).toHaveBeenCalledWith(place.where);
+  });
+});
+
+// Round 4, L4: Escape in the New menu. A parent's keydown stands for the phone drawer's panel, which closes on Escape: while the menu is
+// open the drawer must not see the key (the menu takes it and closes), and with the menu closed the key reaches the parent as before.
+describe("Escape in the sidebar's New menu (decision 95, round 3 fix)", () => {
+  beforeEach(async () => {
+    await setLang("en");
+  });
+
+  function renderInParent(place: NewPlace) {
+    const parentKey = vi.fn();
+    const utils = render(
+      <div onKeyDown={parentKey}>
+        <SidebarNew place={place} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} />
+      </div>,
+    );
+    return { ...utils, parentKey };
+  }
+
+  it("with the menu open, Escape closes it, focuses the New button, and does not reach the parent", async () => {
+    const { parentKey } = renderInParent(myFilesPlace("fld_mine"));
+    const button = screen.getByTestId("new-button");
+    fireEvent.click(button);
+    const item = await screen.findByRole("menuitem", { name: "New folder" });
+    fireEvent.keyDown(item, { key: "Escape", code: "Escape", keyCode: 27 });
+    // The menu is closed when its leave animation has started (jsdom never ends the animation, so it stays in the leave state).
+    await waitFor(() => {
+      const dropdown = document.querySelector(".ant-dropdown");
+      expect(!dropdown || dropdown.className.includes("slide-up-leave") || dropdown.classList.contains("ant-dropdown-hidden")).toBe(true);
+    });
+    expect(document.activeElement).toBe(button);
+    expect(parentKey).not.toHaveBeenCalled();
+  });
+
+  it("with the menu closed, Escape on the New button reaches the parent", () => {
+    const { parentKey } = renderInParent(myFilesPlace("fld_mine"));
+    const button = screen.getByTestId("new-button");
+    button.focus();
+    fireEvent.keyDown(button, { key: "Escape", code: "Escape", keyCode: 27 });
+    expect(parentKey).toHaveBeenCalledTimes(1);
+    expect(parentKey.mock.calls[0][0].key).toBe("Escape");
   });
 });

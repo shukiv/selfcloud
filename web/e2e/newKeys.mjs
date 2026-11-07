@@ -35,13 +35,10 @@ export async function newMenuKeyChecks(page, check, { button, label, opener = 'E
     }
     check(!titleStop, `Tab and ArrowDown never stop on the reason's title (${label}; last focus: ${await focusNow(page)})`);
   } else {
-    // Tab, or ArrowDown when Tab lands on the list, reaches the first enabled entry. The title is not in the walk.
+    // Tab reaches the first enabled entry, and the title is not in the walk. The Tab result is asserted before ArrowDown is pressed,
+    // so a Tab that lands elsewhere fails here and is not hidden by the arrow (round 4, L6; as accountKeys does).
     await pressKey(page, 'Tab', 'Tab', 9);
-    let first = await focusNow(page);
-    if (!first.startsWith('menuitem:')) {
-      await pressKey(page, 'ArrowDown', 'ArrowDown', 40);
-      first = await focusNow(page);
-    }
+    const first = await focusNow(page);
     trail.push(`first-stop:${first}`);
     check(first === `menuitem::${enabled[0]}` && !(await focusOnTitle(page)), `Tab reaches the first entry, ${enabled[0]}, and not the title (${label}; focus: ${first})`);
     await pressKey(page, 'ArrowDown', 'ArrowDown', 40);

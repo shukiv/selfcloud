@@ -81,42 +81,57 @@ export async function accountKeyboardChecks(page, check) {
 // The long address used for the measurement: 57 characters, a name, an @ and a domain.
 export const LONG_ADDRESS = 'mateo.longname.for.the.cut.test@a-long-example-domain.org';
 
-// longAddressChecks opens the account menu, puts the long address into its header, and measures the cut. The header's email box
-// (`.account-menu-who`) must fit the menu, carry the full address as its title, and show the start of the address: the address box
-// overflows to the end side, so the cut falls at the end of the address and the start stays on the screen. Run it at the viewport and
-// in the language the caller set; `where` names them in the messages.
+// longAddressChecks opens the account menu and checks the header's address box in the viewport and language the caller set. First the
+// app's own pair: the title and the text are the same address (read before the harness changes anything). Then the page puts a long
+// address into the text (the header is drawn from the session's email, which the harness cannot change without a second account), and
+// the box must fit the menu and show the start of the address: it overflows to the end side, so the cut falls at the end. Then a short
+// address must sit at the header's start edge (the left in English, the right in Hebrew). The original text is put back at the end.
 export async function longAddressChecks(page, check, where, snap) {
   await page.evaluate(`document.querySelector('[data-testid="account-menu"]').click(), true`);
   await page.waitFor(`!!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) .account-menu-who')`, 10000);
   await sleep(500);
-  await page.evaluate(`(() => { const e = document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) .account-menu-who'); e.querySelector('bdi').textContent = ${JSON.stringify(LONG_ADDRESS)}; e.title = ${JSON.stringify(LONG_ADDRESS)}; return true; })()`);
-  await sleep(200);
-  const m = await page.evaluate(`(() => {
+  const original = await page.evaluate(`(() => { const e = document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) .account-menu-who'); return { title: e.title, text: e.querySelector('bdi').textContent }; })()`);
+  check(original.title === original.text && original.text.length > 0, `the header's title is the address it shows, in ${where} ("${original.text}")`);
+
+  // Writes the address into the header's text and returns what the layout is: the box, its header, and the page's direction.
+  const setAndMeasure = (address) => page.evaluate(`(() => {
     const e = document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) .account-menu-who');
-    const b = e.querySelector('bdi');
+    e.querySelector('bdi').textContent = ${JSON.stringify(address)};
+    const h = e.parentElement;
     const r = e.getBoundingClientRect();
-    const br = b.getBoundingClientRect();
+    const hr = h.getBoundingClientRect();
+    const br = e.querySelector('bdi').getBoundingClientRect();
     const pop = e.closest('.ant-dropdown').getBoundingClientRect();
     return {
-      title: e.title,
-      text: b.textContent,
+      text: e.querySelector('bdi').textContent,
       overflow: getComputedStyle(e).textOverflow,
       dir: getComputedStyle(e).direction,
-      spanLeft: Math.round(r.left), spanRight: Math.round(r.right), spanWidth: Math.round(r.width),
-      bdiLeft: Math.round(br.left), bdiRight: Math.round(br.right), bdiWidth: Math.round(br.width),
+      pageDir: getComputedStyle(h.querySelector('span')).direction,
+      boxLeft: Math.round(r.left), boxRight: Math.round(r.right), boxWidth: Math.round(r.width),
+      headLeft: Math.round(hr.left), headRight: Math.round(hr.right), headWidth: Math.round(hr.width),
+      bdiWidth: Math.round(br.width),
       popLeft: Math.round(pop.left), popRight: Math.round(pop.right),
-      viewport: window.innerWidth,
     };
   })()`);
-  // The cut falls at the end: the address box starts where the header starts (its overflow runs to the end side), and it is wider
-  // than the header. If the box overflows to the start side instead, it ends where the header ends, and the start is cut.
-  const wider = m.bdiWidth > m.spanWidth;
-  const startShown = Math.abs(m.bdiLeft - m.spanLeft) <= 2;
-  const fits = m.spanRight <= m.popRight + 1 && m.spanLeft >= m.popLeft - 1;
-  check(m.title === LONG_ADDRESS && m.text === LONG_ADDRESS, `the long address is the header's text and its title, in ${where} (${LONG_ADDRESS.length} characters)`);
-  check(m.overflow === 'ellipsis' && wider && fits, `the long address is cut with an ellipsis inside the menu, in ${where} (address ${m.bdiWidth}px, header ${m.spanWidth}px, direction ${m.dir}, menu ${m.popLeft}-${m.popRight})`);
-  check(startShown, `the cut falls at the end of the address, so its start is shown, in ${where} (address box starts at ${m.bdiLeft}, header at ${m.spanLeft}, direction ${m.dir})`);
+
+  const m = await setAndMeasure(LONG_ADDRESS);
+  // The cut falls at the end: the box starts where the header starts (its overflow runs to the end side), and the address is wider than the box.
+  const wider = m.bdiWidth > m.boxWidth;
+  const startShown = Math.abs(m.boxLeft - m.headLeft) <= 2;
+  const fits = m.headRight <= m.popRight + 1 && m.headLeft >= m.popLeft - 1;
+  check(m.text === LONG_ADDRESS, `the long address is the header's text, in ${where} (${LONG_ADDRESS.length} characters)`);
+  check(m.overflow === 'ellipsis' && wider && fits && m.boxWidth <= m.headWidth, `the long address is cut with an ellipsis inside the menu, in ${where} (address ${m.bdiWidth}px, box ${m.boxWidth}px, header ${m.headWidth}px, direction ${m.dir}, menu ${m.popLeft}-${m.popRight})`);
+  check(startShown, `the cut falls at the end of the address, so its start is shown, in ${where} (box starts at ${m.boxLeft}, header at ${m.headLeft}, direction ${m.dir})`);
   if (snap) await snap(`i1-address-${where.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`);
+
+  // A short address sits at the header's start edge: the left in a left-to-right page, the right in a right-to-left one.
+  const s = await setAndMeasure('mateo@a.co');
+  const atStart = s.pageDir === 'rtl' ? Math.abs(s.boxRight - s.headRight) <= 2 : Math.abs(s.boxLeft - s.headLeft) <= 2;
+  check(atStart && s.boxWidth < s.headWidth, `a short address sits at the header's start edge, in ${where} (page ${s.pageDir}, box ${s.boxLeft}-${s.boxRight}, header ${s.headLeft}-${s.headRight})`);
+  if (snap) await snap(`i1-address-short-${where.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`);
+
+  // Put the session's own address back, then close the menu.
+  await setAndMeasure(original.text);
   await page.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur(), true`);
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });

@@ -615,6 +615,8 @@ describe("the Requests entry", () => {
     // the end side of the address (on a right-to-left page the box would otherwise cut the start).
     expect(email.parentElement?.getAttribute("dir")).toBe("ltr");
     expect(email.parentElement?.title).toBe("olivia@example.com");
+    // Round 4, L2: the box is as wide as its address (up to the header's width), so a short address sits at the header's start edge.
+    expect(email.parentElement?.style.width).toBe("fit-content");
   });
 });
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
+import { theme as antdTheme } from "antd";
 import { contrast } from "../lib/brand";
 import { splitParts } from "../lib/signin";
 import { antdTokens } from "../theme/theme";
@@ -46,5 +47,22 @@ describe("the Signed in as label (decision 95)", () => {
 
   it("is 'Signed in as' in English", () => {
     expect(trailingLabel(splitParts(en["user.signedInAs"], { name: "mateo@example.com" }))).toBe("Signed in as");
+  });
+});
+
+// The figures quoted in decision 95 are read here, from antd's own computed tokens for the app's palette (getDesignToken over
+// antdTokens), not from a browser. A disabled item and the group title (colorTextDescription) are the two inks the header avoids.
+describe("the figures quoted in decision 95", () => {
+  const ratio = (mode: "light" | "dark", ink: string) => {
+    const tokens = antdTheme.getDesignToken(antdTokens(mode, PALETTE[mode], SIDEBAR));
+    return Number(contrast(String(tokens[ink as keyof typeof tokens]), String(tokens.colorBgElevated)).toFixed(2));
+  };
+  it("the disabled colour reads 1.38:1 in dark and 2.47:1 in light on the menu's ground", () => {
+    expect(ratio("dark", "colorTextDisabled")).toBe(1.38);
+    expect(ratio("light", "colorTextDisabled")).toBe(2.47);
+  });
+  it("the group-title colour reads 3.68:1 in dark and 3.71:1 in light on the menu's ground", () => {
+    expect(ratio("dark", "colorTextDescription")).toBe(3.68);
+    expect(ratio("light", "colorTextDescription")).toBe(3.71);
   });
 });

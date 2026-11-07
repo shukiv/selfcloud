@@ -538,7 +538,9 @@ export default function Shell({ children }: { children: ReactNode }) {
         // side of the address. Without it, Hebrew cuts the start (round 3, M4).
         dir="ltr"
         title={email}
-        style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: inks.email, fontSize: 14 }}
+        // The box is as wide as its address, up to the header's width, so a short address sits at the header's start edge in both
+        // directions (round 4, L2). A long one fills the header and is cut at its end.
+        style={{ display: "block", width: "fit-content", maxInlineSize: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: inks.email, fontSize: 14 }}
       >
         <bdi>{email}</bdi>
       </span>
