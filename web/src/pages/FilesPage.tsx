@@ -421,6 +421,9 @@ export default function FilesPage() {
     // The sort is part of the key, so a sort change reads the directory again from its first page.
     queryKey: queryKey("children", folderID, dirID, prefs.sort.key, prefs.sort.dir),
     refetchOnMount: "always",
+    // A folder's listing is read again each time the page shows it, even inside the 30 seconds in which a read is fresh
+    // (fu8, decision 94): the page keeps the rows it had while the read is on its way.
+    staleTime: 0,
     queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
       childrenPage(folderID as string, dirID, pageParam, prefs.sort),
     initialPageParam: undefined as string | undefined,

@@ -50,6 +50,8 @@ export default function TrashPage() {
     enabled: signedIn,
     // A visit reads the trash again, so an item restored elsewhere is not shown as still here.
     refetchOnMount: "always",
+    // A space picked again is read again, even inside the window in which a read is fresh (fu8, decision 94).
+    staleTime: 0,
     queryFn: ({ pageParam }: { pageParam: string | undefined }) => listTrash(folder || null, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last: Page<TrashItem>) => last.next_cursor,

@@ -194,6 +194,25 @@ describe("the folder tree", () => {
     expect(latest.expanded).not.toContain("fld_a");
   });
 
+  // fu8: a folder opened again reads its folders again, so one added while it was closed is shown. The clock is frozen,
+  // so the reopening always falls inside the window in which a read is fresh.
+  it("lists a folder added while a folder was closed, when it is opened again inside the window (fu8)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      render(<Harness folder="fld_a" chain={["nod_one"]} start={{ expanded: ["fld_a"] }} />);
+      await screen.findByText("Docs");
+      fireEvent.click(screen.getByRole("button", { name: "Collapse Team A" }));
+      await waitFor(() => expect(screen.queryByText("Docs")).toBeNull());
+      api.childrenPage.mockImplementation(async (folder: string, d: string | null) =>
+        folder === "fld_a" && d === null ? { items: [dir("nod_one", "Docs"), dir("nod_new", "Added")], next_cursor: undefined } : { items: [], next_cursor: undefined },
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Expand Team A" }));
+      await screen.findByText("Added");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("makes every folder a place to drop, with the role there and the ids on the way down", async () => {
     render(<Harness start={{ expanded: ["fld_a", "nod_one"] }} />);
     const deep = (await screen.findByText("Deep")).closest<HTMLElement>(".tree-row") as HTMLElement;

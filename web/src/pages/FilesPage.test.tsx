@@ -288,6 +288,33 @@ describe("the listing is read fresh on every visit", () => {
   });
 });
 
+describe("a folder revisited shows what it holds now (fu8)", () => {
+  // The page stays mounted while it moves from one folder to another. A folder that gains an item while the page is away is
+  // read again when the page comes back to it, inside the window in which the client keeps a read as fresh.
+  // The clock is frozen, so the page comes back inside the window whatever the speed of the machine.
+  afterEach(() => vi.useRealTimers());
+  it("lists an item added to a folder while the page was away, when the page comes back to it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const other = "/files/fld_bbbbbbbb";
+    let aItems = [node("n1", "alpha.txt"), node("n2", "beta.txt")];
+    api.childrenPage.mockImplementation(async (folder: string) =>
+      folder === "fld_aaaaaaaa" ? { items: aItems, next_cursor: undefined } : { items: [node("n9", "elsewhere.txt", { folder_id: "fld_bbbbbbbb" })], next_cursor: undefined },
+    );
+    const { router } = renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await act(async () => {
+      await router.navigate(other);
+    });
+    await screen.findByRole("row", { name: "elsewhere.txt" });
+    // The folder gains an item while the page is on the other one.
+    aItems = [...aItems, node("n3", "gamma.txt")];
+    await act(async () => {
+      await router.navigate(FOLDER);
+    });
+    await screen.findByRole("row", { name: "gamma.txt" });
+  });
+});
+
 describe("the address selects what it names, each time it names it", () => {
   it("selects again when the page is returned to the same address after another", async () => {
     const { router } = renderAt(`${FOLDER}?select=n2`);

@@ -74,6 +74,8 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
     queryKey: queryKey("tree", space, id),
     queryFn: () => loadDirs((cursor) => childrenPage(space, id, cursor, { key: "name", dir: "asc" })),
     enabled: open,
+    // A folder opened again is read again, even inside the window in which a read is fresh (fu8, decision 94).
+    staleTime: 0,
   });
   // A space's root that the server says is not there for this person has nothing to show and cannot be retried into being.
   const unreachable = id === null && q.error instanceof ApiError && q.error.code === "not_found";

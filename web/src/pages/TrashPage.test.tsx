@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Role, TrashItem } from "../lib/files/types";
 import { session, type Session } from "../lib/session";
+import { folders } from "../lib/files/folders";
+import { createQueryClient } from "../lib/query";
 
 const api = vi.hoisted(() => ({
   getMe: vi.fn(),
@@ -66,6 +68,47 @@ function renderTrash(items: TrashItem[]) {
 
 // row waits for the listing to arrive, then returns the item's list entry.
 const row = async (name: string) => (await screen.findByText(name)).closest("li") as HTMLElement;
+
+// fu8: a space's trash that is read again when it is picked again, even inside the window in which a read is fresh. The
+// clock is frozen, so the second pick always falls inside that window.
+describe("TrashPage reads a space's trash again when the space is picked again (fu8)", () => {
+  beforeEach(() => {
+    signIn();
+    api.getMe.mockResolvedValue({ personal_folder_id: "f1" });
+    api.statOrNull.mockResolvedValue(null);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    folders.set([]);
+    session.set(null);
+  });
+
+  it("lists an item added to a space while another space was shown, when the space is picked again", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    folders.set([{ id: "f2", name: "Team B", kind: "team", access: "write", role: "manager" } as never]);
+    let teamItems = [item("t1", "old.txt", "manager")];
+    api.listTrash.mockImplementation(async (folder: string | null) =>
+      folder === "f2" ? { items: teamItems, next_cursor: undefined } : { items: [], next_cursor: undefined },
+    );
+    // The app's own client, with its 30 second window: renderTrash's client would not keep a read fresh.
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <TrashPage />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(api.listTrash).toHaveBeenCalled());
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByText("Team B"));
+    await screen.findByText("old.txt");
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByText("All spaces"));
+    await waitFor(() => expect(screen.queryByText("old.txt")).toBeNull());
+    teamItems = [...teamItems, item("t2", "new.txt", "manager")];
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByText("Team B"));
+    await screen.findByText("new.txt");
+  });
+});
 
 describe("TrashPage icon buttons name their item", () => {
   beforeEach(() => {
