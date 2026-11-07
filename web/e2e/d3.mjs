@@ -37,6 +37,11 @@ const styleOf = (page, selector) =>
     };
   })()`);
 
+// settled waits, up to 4 s, until the element a selector names and its ::before have no transition running, so a reading is the
+// end state and not a frame of the menu's 0.3 s fade (a long run on a busy machine starts the fade late).
+const settled = (page, selector) =>
+  page.waitFor(`(() => { const el = document.querySelector(${q(selector)}); return !!el && el.getAnimations({ subtree: true }).every((a) => a.playState !== 'running'); })()`, 4000).catch(() => undefined);
+
 // hoverStyle moves the pointer onto the element and reads it there. Before the move the element is scrolled into its sidebar
 // region, and the pointer is taken off the page first, so the move is a real entry. The reading is taken again until the hover
 // has applied (a transition of 0.3 s, and a busy machine may be slower), up to 4 s; the last reading is the one checked. The
@@ -208,6 +213,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     const title = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage > span'); const s = getComputedStyle(t); return { colour: s.color }; })()`);
     const line = await page.evaluate(`(() => { const t = document.querySelector('.shell-sider .shell-storage > span:last-child'); return t ? getComputedStyle(t).color : null; })()`);
     await sleep(500); // the fill fades in over 0.3 s (the menu's transition)
+    await settled(page, storage);
     const storageStyle = await styleOf(page, storage);
     check(title.colour === ONACTIVE && storageStyle.background === MARK && noBar(storageStyle), `the Storage row on its page: title in the mark colour, with the 3 px bar (${title.colour}; ${show(storageStyle)})`);
     check(line === ONACTIVE, `the Storage figures take the on-active colour when the row is filled (${line})`);
@@ -219,6 +225,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     await setTheme(page, 'Dark');
     await page.waitFor(`document.documentElement.dataset.theme === 'dark'`, 10000);
     await sleep(400);
+    await settled(page, '.shell-sider .shell-menu .ant-menu-item-selected');
     const darkSider = await page.evaluate(`getComputedStyle(document.querySelector('.shell-sider')).backgroundColor`);
     const darkMark = expectedMark(darkSider);
     const darkSel = await styleOf(page, '.shell-sider .shell-menu .ant-menu-item-selected');
@@ -247,6 +254,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     await page.evaluate(`document.querySelector('[data-testid="rail-toggle"]').click(), true`);
     await page.waitFor(`!!document.querySelector('.ant-layout-sider-collapsed .shell-menu .ant-menu-item-selected')`, 10000);
     await sleep(500);
+    await settled(page, '.ant-layout-sider-collapsed .shell-menu .ant-menu-item-selected');
     const railSel = await styleOf(page, '.ant-layout-sider-collapsed .shell-menu .ant-menu-item-selected');
     const railIcon = await page.evaluate(`getComputedStyle(document.querySelector('.ant-layout-sider-collapsed .shell-menu .ant-menu-item-selected svg')).color`);
     check(railSel.background === MARK && railSel.color === ONACTIVE && noBar(railSel) && railIcon === ONACTIVE, `in the folded rail the current item has no background, the mark colour on its text and its icon (${railIcon}), and the 3 px bar (${show(railSel)})`);
@@ -260,6 +268,7 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     await page.evaluate(`document.querySelector('[data-testid="nav-open"]').click(), true`);
     await page.waitFor(`!!document.querySelector('.ant-drawer-open .shell-menu .ant-menu-item-selected')`, 10000);
     await sleep(400);
+    await settled(page, '.ant-drawer-open .shell-menu .ant-menu-item-selected');
     const drawerSel = await styleOf(page, '.ant-drawer-open .shell-menu .ant-menu-item-selected');
     check(drawerSel.background === MARK && drawerSel.color === ONACTIVE && noBar(drawerSel), `in the phone drawer the current item has no background, the mark colour and the 3 px bar (${show(drawerSel)})`);
     const drawerName = await page.evaluate(`(() => { const d = document.querySelector('.ant-drawer-open [role="dialog"]'); const id = d?.getAttribute('aria-labelledby'); return { id, name: (id && document.getElementById(id)?.textContent.trim()) || d?.getAttribute('aria-label') || '' }; })()`);
