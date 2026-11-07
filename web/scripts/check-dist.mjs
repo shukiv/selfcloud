@@ -73,6 +73,7 @@ function firstLoadNames(html) {
 }
 
 const sizes = { entry: [], chunk: [], language: [] };
+const jsText = new Map();
 for (const path of await files(dist)) {
   const ext = extname(path);
   const name = relative(dist, path);
@@ -90,6 +91,7 @@ for (const path of await files(dist)) {
     if (externalImport.test(css)) problems.push(`${name}: @import`);
   } else if (ext === '.js') {
     const js = await readFile(path);
+    jsText.set(name, js.toString('utf8'));
     const gz = gzipSync(js, { level: 9 }).length;
     const base = basename(path);
     const stem = base.replace(/-[A-Za-z0-9_-]+\.js$/, '').replace(/\.js$/, '');
@@ -106,6 +108,22 @@ for (const [kind, list] of Object.entries(sizes)) {
   }
 }
 if (sizes.entry.length !== 1) problems.push(`expected one entry chunk, found ${sizes.entry.length}`);
+
+// The groups in vite.config.ts (decision 99) must hold what their comments say: React's own code and react-dom's sit in the
+// vendor chunk, and the src/csp reader sits in the csp chunk. Each marker is a string the minified code keeps. It must be in
+// exactly one built file, and that file must be the chunk named for it. antd's cssinjs has its own nonce reader, unquoted,
+// so the marker for ours is the quoted selector.
+const GROUP_MARKERS = [
+  { marker: 'PureComponent=', chunk: 'vendor', what: 'React' },
+  { marker: '__reactFiber$', chunk: 'vendor', what: 'react-dom' },
+  { marker: 'meta[property="csp-nonce"]', chunk: 'csp', what: 'src/csp/nonce.ts' },
+];
+for (const { marker, chunk, what } of GROUP_MARKERS) {
+  const where = [...jsText].filter(([, text]) => text.includes(marker)).map(([name]) => basename(name));
+  if (where.length !== 1 || !where[0].startsWith(`${chunk}-`)) {
+    problems.push(`${what} is in ${where.join(', ') || 'no chunk'}, but the ${chunk} chunk should hold it (web/vite.config.ts)`);
+  }
+}
 
 // The first-load total: each file index.html names, read from dist and counted once.
 const gzByName = new Map();

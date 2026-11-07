@@ -71,13 +71,30 @@ export default defineConfig({
     // that holds the antd pieces both the shell and the lazy pages use stays under the 120 KB budget (decision 25).
     rollupOptions: {
       output: {
-        manualChunks(id: string) {
-          if (!id.includes("node_modules")) return undefined;
-          // The antd modal and skeleton and rc-util's useId, which the first load reached through the main i18n chunk, go
-          // into one shared chunk of their own, so the first load preloads one file for them and not five (r7b review).
-          if (/[\\/]node_modules[\\/](antd[\\/]es[\\/](modal|skeleton)[\\/]|rc-util[\\/]es[\\/]hooks[\\/]useId\.js)/.test(id)) return "antd-shared";
-          if (/[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@remix-run|@tanstack|i18next|react-i18next)[\\/]/.test(id)) return "vendor";
-          return undefined;
+        // Rolldown's groups (the successor of manualChunks). A group also takes the dependencies of the modules it captures,
+        // unless includeDependenciesRecursively is false. antd-shared is matched through the modal and reached React that way,
+        // so vendor has the higher priority and takes React first; a module a higher group takes is not taken again.
+        // The csp group keeps the src/csp files out of the library chunks, and takes the rc-util module the shim wraps with
+        // its dependencies, so the group imports nothing from antd-shared and no chunk cycle forms (decision 99).
+        codeSplitting: {
+          groups: [
+            {
+              name: "csp",
+              priority: 3,
+              test: (id: string) => /[\\/]src[\\/]csp[\\/]|[\\/]node_modules[\\/]rc-util[\\/]es[\\/]Dom[\\/]dynamicCSS\.js$/.test(id),
+            },
+            {
+              name: "vendor",
+              priority: 2,
+              test: (id: string) => /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@remix-run|@tanstack|i18next|react-i18next)[\\/]/.test(id),
+            },
+            {
+              name: "antd-shared",
+              // The antd modal and skeleton and rc-util's useId, which the first load reached through the main i18n chunk, go
+              // into one shared chunk of their own, so the first load preloads one file for them and not five (r7b review).
+              test: (id: string) => /[\\/]node_modules[\\/](antd[\\/]es[\\/](modal|skeleton|input[\\/]style|checkbox[\\/]style|style[\\/]motion[\\/]move)[\\/]|rc-util[\\/]es[\\/]hooks[\\/]useId\.js|rc-dropdown[\\/]|rc-menu[\\/]|@ant-design[\\/]icons[\\/]es[\\/]icons[\\/](EllipsisOutlined|LeftOutlined)\.js)/.test(id),
+            },
+          ],
         },
       },
     },
