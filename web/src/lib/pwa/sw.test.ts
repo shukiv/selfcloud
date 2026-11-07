@@ -20,7 +20,7 @@ interface Req {
   method: string;
   mode: string;
   destination: string;
-  headers: { has(name: string): boolean };
+  headers: { has(name: string): boolean; get(name: string): string | null };
   // formData is the body of a form post, as the browser reads it for the worker (decision 82).
   formData?: () => Promise<FormData>;
   // referrer is the page that made the request: "" when the browser sent none, as the system share sheet does.
@@ -43,21 +43,28 @@ function absolute(url: string): string {
   return new URL(url, ORIGIN).href;
 }
 
-function request(url: string, opts: { method?: string; mode?: string; destination?: string; range?: boolean } = {}): Req {
+function request(
+  url: string,
+  opts: { method?: string; mode?: string; destination?: string; range?: boolean; origin?: string | null } = {},
+): Req {
   const headers = new Set<string>(opts.range ? ["range"] : []);
   return {
     url: absolute(url),
     method: opts.method ?? "GET",
     mode: opts.mode ?? "no-cors",
     destination: opts.destination ?? "script",
-    headers: { has: (name: string) => headers.has(name.toLowerCase()) },
+    headers: {
+      has: (name: string) => headers.has(name.toLowerCase()),
+      // origin is the Origin header the browser sent: a web address, the string "null", or none (null here).
+      get: (name: string) => (name.toLowerCase() === "origin" ? (opts.origin ?? null) : null),
+    },
   };
 }
 
 // shareRequest is the share sheet's form post: a navigation to the share target with the files in a multipart form.
 function shareRequest(
   files: File[],
-  opts: { url?: string; mode?: string; method?: string; referrer?: string; destination?: string } = {},
+  opts: { url?: string; mode?: string; method?: string; referrer?: string; destination?: string; origin?: string | null } = {},
 ): Req {
   const form = new FormData();
   for (const f of files) form.append("files", f);
@@ -66,6 +73,7 @@ function shareRequest(
       method: opts.method ?? "POST",
       mode: opts.mode ?? "navigate",
       destination: opts.destination ?? "document",
+      origin: opts.origin ?? null,
     }),
     formData: async () => form,
     referrer: opts.referrer ?? "",
@@ -598,10 +606,47 @@ describe("the share target (decision 82)", () => {
     expect(await take(w, "0".repeat(32))).toEqual([]);
   });
 
-  it("refuses a referrer that is not a web address, as another site", async () => {
+  it("accepts a referrer that is not a web address: the check is defence in depth, so it fails open here", async () => {
     const w = load();
     const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "not a url" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  it("keeps at most 100 files of a share, and says how many it left out", async () => {
+    const w = load();
+    const many = Array.from({ length: 101 }, (_, i) => file(`n${i}.txt`, "x"));
+    const res = await w.fetch(shareRequest(many));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}&skipped=1$/);
+    const id = idOf(res!).split("&")[0];
+    expect(await take(w, id)).toHaveLength(100);
+  });
+
+  it("a share of exactly the cap is kept whole, with no skipped count", async () => {
+    const w = load();
+    const hundred = Array.from({ length: 100 }, (_, i) => file(`m${i}.txt`, "x"));
+    const res = await w.fetch(shareRequest(hundred));
+    expect(res?.headers.get("location")).not.toContain("skipped");
+  });
+
+  // Measured in headless Chrome (decision 82, round 2): the worker sees the Origin header, the other site's address for a
+  // cross-site post, and the string "null" for a post from a page that sends no referrer. Sec-Fetch-* is not visible to it.
+  it("refuses a post whose Origin is another web site, even when it sends no referrer", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "", origin: "https://evil.test" }));
+    expect(res?.status).toBe(303);
     expect(res?.headers.get("location")).toBe(absolute("/share"));
+  });
+
+  it("accepts a post whose Origin is this site", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { origin: ORIGIN }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
+  });
+
+  it("accepts a post whose Origin is the string null: a no-referrer page sends it, and the share sheet may too", async () => {
+    const w = load();
+    const res = await w.fetch(shareRequest([file("a.txt", "hi")], { referrer: "", origin: "null" }));
+    expect(res?.headers.get("location")).toMatch(/\/share\?id=[0-9a-f-]{36}$/);
   });
 
   it("accepts a share with no referrer, as the system share sheet sends it", async () => {

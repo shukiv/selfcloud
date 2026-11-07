@@ -12,9 +12,11 @@ import { session, type Session } from "../lib/session";
 
 const takeShare = vi.fn();
 const dropShare = vi.fn();
+const forgetShare = vi.fn();
 vi.mock("../lib/pwa/share", () => ({
   takeShare: (...args: unknown[]) => takeShare(...args),
   dropShare: (...args: unknown[]) => dropShare(...args),
+  forgetShare: (...args: unknown[]) => forgetShare(...args),
 }));
 
 const add = vi.fn();
@@ -97,6 +99,20 @@ describe("SharePage", () => {
     screen.getByText(formatBytes(2048, "en"));
   });
 
+  it("shows the files' names and sizes before the notice, so the person sees what came in first", async () => {
+    takeShare.mockResolvedValue([new File(["abc"], "first-look.txt", { type: "text/plain" })]);
+    renderAt("abc");
+    await screen.findByText("first-look.txt");
+    const text = document.body.textContent ?? "";
+    expect(text.indexOf("first-look.txt")).toBeLessThan(text.indexOf("came from another app"));
+  });
+
+  it("says how many files were not kept when a share had more than the cap", async () => {
+    takeShare.mockResolvedValue([new File(["abc"], "kept.txt", { type: "text/plain" })]);
+    renderAt("abc&skipped=3");
+    await screen.findByText(/3 more files were not kept/);
+  });
+
   it("says the files came from another app, shows each one's type, and queues nothing before Upload", async () => {
     takeShare.mockResolvedValue([new File(["abc"], "a.txt", { type: "text/plain" })]);
     renderAt("abc");
@@ -133,6 +149,8 @@ describe("SharePage", () => {
       { file: b, target: { folder: PERSONAL, path: "/" } },
     ]);
     expect((await screen.findByTestId("where")).textContent).toBe(`/files/${PERSONAL}`);
+    // Once the files are with the upload queue, the page forgets its copy: a revisit must not bring them back.
+    expect(forgetShare).toHaveBeenCalledWith("abc");
   });
 
   it("Cancel drops the files, tells the worker, and goes to My files", async () => {
@@ -140,6 +158,7 @@ describe("SharePage", () => {
     renderAt("abc");
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(dropShare).toHaveBeenCalledWith("abc");
+    expect(forgetShare).toHaveBeenCalledWith("abc");
     expect(add).not.toHaveBeenCalled();
     expect((await screen.findByTestId("where")).textContent).toBe("/files");
   });

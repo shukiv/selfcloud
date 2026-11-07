@@ -44,10 +44,22 @@ function ask(id: string): Promise<File[]> {
   });
 }
 
-// dropShare tells the worker to forget the files of a share it still holds, when the person refuses or cancels. A share the
-// worker handed over is already gone; the message then does nothing.
+// dropShare tells the worker to forget the files of a share it still holds, when the person refuses or cancels, and forgets the
+// page's own copy too. A share the worker handed over is already gone; the message then does nothing.
 export function dropShare(id: string): void {
   if (id === "") return;
+  taken.delete(id);
   const worker = typeof navigator !== "undefined" ? navigator.serviceWorker?.controller : null;
   worker?.postMessage({ type: "SHARE_DROP", id });
+}
+
+// forgetShare drops the page's copy of one share's files, once they have gone to the upload queue (decision 82, round 2): a
+// revisit of the address must not bring them back.
+export function forgetShare(id: string): void {
+  taken.delete(id);
+}
+
+// clearShares drops the page's copy of every share: at a sign-out, and when the person changes (decision 82, round 2).
+export function clearShares(): void {
+  taken.clear();
 }

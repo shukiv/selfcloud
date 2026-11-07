@@ -29,6 +29,7 @@ import EmailChangePage from "./pages/EmailChangePage";
 import SignInPage from "./pages/SignInPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import { markSignedIn } from "./lib/pwa/cacheState";
+import ShareHold from "./components/share/ShareHold";
 
 // Pages beyond the shell and the auth pages load on first use, so the first load of sign-in stays small.
 const FilesPage = lazy(() => import("./pages/FilesPage"));
@@ -266,6 +267,11 @@ export function Gate() {
   }
   if (view === "notfound" ? !signedIn : PUBLIC_VIEWS.includes(view)) {
     return <Public view={view} />;
+  }
+  // A share opened while signed out: its files are taken into the page's memory first, then the person signs in and the share
+  // page shows them (decision 82, round 2).
+  if (!signedIn && view === "share") {
+    return <ShareHold id={new URLSearchParams(search).get("id") ?? ""} to={signInURL(path + search)} />;
   }
   if (!signedIn) {
     return <Navigate to={signInURL(path + search)} replace />;

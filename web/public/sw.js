@@ -34,6 +34,10 @@ const SHARE_PAGE = '/share';
 // SHARE_CAP is how many shares the worker holds at once. At the cap a new share drops the oldest one no page has taken, so a
 // share from another site cannot keep a real share out (decision 82, after the review).
 const SHARE_CAP = 4;
+// SHARE_FILE_CAP is how many files one share keeps. A share sheet's multi-select of photos is the case it is for: 100 is more than
+// a person picks by hand in one go, and small enough that a share of many large files is not held whole. Files past it are not
+// kept, and the page says how many (decision 82, round 2).
+const SHARE_FILE_CAP = 100;
 // UNCLAIMED_LIMIT is how long a held share is kept while no page has taken it: sixty seconds. The page takes a share as soon as it
 // opens, so this is the time a share sheet's hand-off has to finish. Chromium ends an event that runs longer than five minutes
 // ("event dispatched to service workers has a 5 minute timeout in the Chrome implementation", service_worker.mojom in the Chromium
@@ -172,12 +176,18 @@ function holdShare(files, release) {
 // empty one is accepted. A referrer that is not a web address of this origin is refused. This is defence in depth only: a page
 // can send no referrer at all, so the Share page also asks the person to confirm before anything is saved.
 function fromAnotherSite(request) {
+  // The Origin header is what the worker can see of where a post came from (measured in headless Chrome, decision 82, round 2): a
+  // post from another web site carries that site's origin. The string "null" is not refused: a page that sends no referrer sends it
+  // too, and so may the system share sheet, so it cannot be told apart from the share sheet.
+  const origin = request.headers && typeof request.headers.get === 'function' ? request.headers.get('origin') : null;
+  if (origin && origin !== 'null' && origin !== self.location.origin) return true;
   const referrer = request.referrer;
   if (!referrer) return false;
   try {
     return new URL(referrer).origin !== self.location.origin;
   } catch {
-    return true;
+    // Not a web address: fail open. This is defence in depth only, so a referrer the check cannot read is not a refusal.
+    return false;
   }
 }
 
@@ -200,8 +210,11 @@ async function receiveShare(request, release) {
     release();
     return refusedShare();
   }
+  // A share keeps at most SHARE_FILE_CAP files; the rest are counted, so the page can say so.
+  const kept = files.slice(0, SHARE_FILE_CAP);
+  const skipped = files.length - kept.length;
   const page = new URL(SHARE_PAGE, self.location.origin);
-  page.search = '?id=' + holdShare(files, release);
+  page.search = '?id=' + holdShare(kept, release) + (skipped > 0 ? '&skipped=' + skipped : '');
   return Response.redirect(page.href, 303);
 }
 

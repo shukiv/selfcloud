@@ -18,7 +18,7 @@ import { filesURL } from "../lib/files/route";
 import type { FolderAccess } from "../lib/files/types";
 import { manager } from "../lib/files/uploads";
 import { useLang, useT } from "../lib/i18n";
-import { dropShare, takeShare } from "../lib/pwa/share";
+import { dropShare, forgetShare, takeShare } from "../lib/pwa/share";
 import { session } from "../lib/session";
 import { useStore } from "../lib/store";
 
@@ -30,7 +30,10 @@ export default function SharePage() {
   const navigate = useNavigate();
   const { search } = useLocation();
   const me = useStore(session);
-  const id = new URLSearchParams(search).get("id") ?? "";
+  const params = new URLSearchParams(search);
+  const id = params.get("id") ?? "";
+  // skipped is how many files of the share the worker did not keep, above its cap (decision 82, round 2).
+  const skipped = Math.max(0, Number(params.get("skipped") ?? "0") || 0);
   const viewingAs = me?.impersonation != null;
 
   const [phase, setPhase] = useState<Phase>("loading");
@@ -89,6 +92,8 @@ export default function SharePage() {
     const target = uploadTargetWhere({ folder: dest.folder, dirID: dest.dir, path: null }, "");
     if (!target || files.length === 0) return;
     manager.add(files.map((file) => ({ file, target })));
+    // The files are with the upload queue now; the page's own copy goes, so a revisit of the address lists nothing (decision 82).
+    forgetShare(id);
     setFiles([]);
     navigate(filesURL(dest.folder, dest.dir));
   }
@@ -96,6 +101,7 @@ export default function SharePage() {
   // cancel forgets the files and goes to My files; the worker is told to drop any it still holds.
   function cancel() {
     dropShare(id);
+    forgetShare(id);
     setFiles([]);
     navigate("/files");
   }
@@ -126,7 +132,6 @@ export default function SharePage() {
 
       {phase === "ready" && (
         <>
-          <Alert type="warning" showIcon message={t("shareTarget.notice")} style={{ marginBlockEnd: 12 }} />
           <List
             size="small"
             dataSource={files}
@@ -142,6 +147,8 @@ export default function SharePage() {
               </List.Item>
             )}
           />
+          {skipped > 0 && <Alert type="info" showIcon message={t("shareTarget.skipped", { count: skipped })} style={{ marginBlockEnd: 12 }} />}
+          <Alert type="warning" showIcon message={t("shareTarget.notice")} style={{ marginBlockEnd: 12 }} />
           <p style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "16px 0" }}>
             <span>{t("shareTarget.saveTo")}:</span>
             <bdi>{dest?.name ?? t("nav.files")}</bdi>
