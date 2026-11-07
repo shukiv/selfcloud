@@ -121,14 +121,22 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	}
 	cs, err := store.OpenCheck(ctx, opts.DBPath)
 	if err != nil {
+		// A file that is there and can be read, but that the database layer will not open, is a damaged database: a
+		// finding. A file that is missing or cannot be read at all means the check could not run.
+		if f, rerr := os.Open(opts.DBPath); rerr == nil {
+			f.Close()
+			unreadable(rep, err)
+			return rep, nil
+		}
 		return rep, fmt.Errorf("fsck: %w", err)
 	}
 	defer cs.Close()
 	have, err := cs.SchemaVersion(ctx)
 	if err != nil {
-		// The file is there but cannot be read: that is a failed integrity check, not a usage error.
+		// The file is there but cannot be read: that is a failed integrity check, and a finding, not a check that
+		// could not run (exit 2 is for that).
 		unreadable(rep, err)
-		return rep, fmt.Errorf("fsck: %w", err)
+		return rep, nil
 	}
 	if have != want {
 		return rep, fmt.Errorf("fsck: the database is at schema version %d and this selfcloud expects %d; "+
@@ -137,6 +145,10 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	c := &checker{ctx: ctx, opts: opts, cs: cs, rep: rep}
 	err = c.run()
 	c.finish()
+	if errors.Is(err, errDamaged) {
+		// The integrity check failed with a finding already recorded: a finding, not a check that could not run.
+		return rep, nil
+	}
 	if err != nil {
 		return rep, fmt.Errorf("fsck: %w", err)
 	}
@@ -247,15 +259,16 @@ func (c *checker) step() error {
 func (c *checker) integrityChecks() error {
 	if err := c.openSnap(); err != nil {
 		unreadable(c.rep, err)
-		return err
+		return errDamaged
 	}
 	ok, problems, err := c.snap.IntegrityCheck(c.ctx)
 	c.closeSnap()
 	if err != nil {
-		// A damaged file can make the check itself fail rather than list its problems. That is a failure too.
+		// A damaged file can make the check itself fail rather than list its problems. That is a failure too, and the
+		// walks are not run against a database that cannot be checked.
 		c.rep.Integrity = "failed"
 		c.add(Finding{Kind: KindIntegrity, Detail: err.Error()})
-		return err
+		return errDamaged
 	}
 	if !ok {
 		c.rep.Integrity = "failed"
@@ -267,12 +280,14 @@ func (c *checker) integrityChecks() error {
 		c.rep.Integrity = "ok"
 	}
 	if err := c.openSnap(); err != nil {
-		return err
+		unreadable(c.rep, err)
+		return errDamaged
 	}
 	fks, err := c.snap.ForeignKeyViolations(c.ctx)
 	c.closeSnap()
 	if err != nil {
-		return err
+		unreadable(c.rep, err)
+		return errDamaged
 	}
 	for _, p := range fks {
 		c.add(Finding{Kind: KindForeignKey, Detail: p})
@@ -877,6 +892,10 @@ func countKinds(rep *Report) {
 		rep.Counts[f.Kind]++
 	}
 }
+
+// errDamaged ends a run whose database failed a check it could not finish. The finding is already in the report, so
+// Run returns that report without an error: the exit status is 1, not the 2 that means the check could not run.
+var errDamaged = errors.New("the database is damaged")
 
 // unreadable records that the database could not be read at all. That fails the integrity check.
 func unreadable(rep *Report, err error) {
