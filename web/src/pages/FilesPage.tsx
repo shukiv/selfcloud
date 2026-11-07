@@ -55,7 +55,7 @@ import { starNode, unstarNode } from "../lib/stars";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { makeZip, type ZipPhase } from "../lib/files/zips";
 import { officeConvert } from "../lib/files/convert";
-import { editorEntry, editorPath, officeEdit } from "../lib/files/editor";
+import { coarsePointer, editorEntry, editorPath, officeEdit, openEditorTab } from "../lib/files/editor";
 import { nameProblem, nameMessageKey, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
 import { documentKinds, newPlace, placeForRoute, placeOfHere, queueInto } from "../lib/files/newPlace";
 import { createdDocument, useNewDocument } from "../lib/files/documents";
@@ -584,7 +584,11 @@ export default function FilesPage() {
     }
     appliedFor.current = key;
     setSel({ ids: [found.id], anchor: null, focus: null, anchorID: found.id, focusID: found.id });
-    if (q.get("preview") && previewable(found)) openPreview(found);
+    // An address that asks for an office file's preview, with no click behind it (a pasted or mailed link), opens the editor in
+    // this tab: a new tab needs a click, since the browser blocks a script's pop-up otherwise (oe1).
+    const officeMode = q.get("preview") ? editorEntry(found, editorOn) : null;
+    if (officeMode !== null) go(editorPath(found.id, officeMode, path), { replace: true });
+    else if (q.get("preview") && previewable(found)) openPreview(found);
     // A notification's address asks for the file's details, which hold its comments (decision 55).
     else if (q.get("details") === "comments") {
       setTarget(found);
@@ -809,7 +813,10 @@ export default function FilesPage() {
       return;
     }
     if (viewable(n)) {
-      openPreview(n);
+      // An office file the editor offers opens in the editor, full page, in its own tab (oe1); the preview stays a menu item.
+      const mode = editorEntry(n, editorOn);
+      if (mode !== null) openEditorTab(n.id, mode, path + search, coarsePointer(), go);
+      else openPreview(n);
     } else {
       setTarget(n);
       setDialog("details");
@@ -1618,7 +1625,7 @@ export default function FilesPage() {
       run: () => {
         if (single) {
           const mode = editorEntry(single, editorOn);
-          if (mode) go(editorPath(single.id, mode, path + search));
+          if (mode) openEditorTab(single.id, mode, path + search, coarsePointer(), go);
         }
       },
     },

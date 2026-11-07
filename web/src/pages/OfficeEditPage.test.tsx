@@ -8,7 +8,7 @@ import { ApiError } from "../lib/apiError";
 // The page's calls to the API and its navigation are replaced: the test checks what the page sends and where it goes.
 const apiMock = vi.hoisted(() => vi.fn());
 const goMock = vi.hoisted(() => vi.fn());
-vi.mock("../lib/api", () => ({ api: apiMock }));
+vi.mock("../lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../lib/api")>()), api: apiMock }));
 vi.mock("../lib/files/api", () => ({
   statNode: () =>
     Promise.resolve({ id: "nod_a1", folder_id: "fld_b", name: "letter.docx", kind: "file", role: "editor" }),
@@ -147,6 +147,82 @@ describe("the editor page", () => {
     expect(goMock).toHaveBeenCalledWith("/files/fld_b");
   });
 
+  // sendFromEditor posts a message from the editor's own frame and origin, as the editor does.
+  function sendFromEditor(data: unknown, origin = "https://office.example.test") {
+    const frame = document.querySelector<HTMLIFrameElement>("iframe[name='selfcloud-office-editor']");
+    act(() => {
+      window.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(data), origin, source: frame?.contentWindow ?? null }));
+    });
+  }
+
+  it("a page a script opened (tab=1) asks the browser to close its tab, and goes to the folder when the tab stays open", async () => {
+    answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
+    const closeSpy = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    render("/edit/nod_a1?mode=edit&tab=1");
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    fireBack();
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, 250));
+    // jsdom leaves window.closed false, which is a tab the browser refused to close: the page then goes to the folder.
+    expect(goMock).toHaveBeenCalledWith("/files/fld_b");
+  });
+
+  it("a page opened directly closes by going back, and never asks the window to close", async () => {
+    answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
+    const closeSpy = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    render("/edit/nod_a1?mode=edit&from=%2Ffiles%2Ffld_b");
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    fireBack();
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(goMock).toHaveBeenCalledWith("/files/fld_b");
+  });
+
+  it("the bar shows the file's name, a link to its folder in this tab, and the close button", async () => {
+    answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
+    render("/edit/nod_a1?mode=edit&from=%2Ffiles%2Ffld_b");
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("letter.docx")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /folder/i }).getAttribute("href")).toBe("/files/fld_b");
+    expect(screen.getByRole("button", { name: /close/i })).toBeTruthy();
+    // The shell is not drawn here: the page has no header or sidebar of its own.
+    expect(document.querySelector("nav")).toBeNull();
+  });
+
+  it("the bar shows View only in view mode, and no save state", async () => {
+    answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
+    render("/edit/nod_a1?mode=view&from=%2Ffiles%2Ffld_b");
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("View only")).toBeTruthy();
+    sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } });
+    expect(screen.getByText("View only")).toBeTruthy();
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+  });
+
+  it("shows each save state from the editor's messages, and none before one is known", async () => {
+    answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
+    render("/edit/nod_a1?mode=edit&from=%2Ffiles%2Ffld_b");
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Saved")).toBeNull();
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+    sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } });
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    sendFromEditor({ MessageId: "Action_Save", Values: {} });
+    expect(screen.getByText("Saving…")).toBeTruthy();
+    sendFromEditor({ MessageId: "Action_Save_Resp", Values: { success: true } });
+    expect(screen.getByText("Saved")).toBeTruthy();
+    sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } });
+    sendFromEditor({ MessageId: "Action_Save_Resp", Values: { success: false } });
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+  });
+
+  it("ignores a save-state message from another origin", async () => {
+    answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
+    render("/edit/nod_a1?mode=edit&from=%2Ffiles%2Ffld_b");
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } }, "https://evil.example.test");
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+  });
+
   it("shows a refusal by its name, not the server's text", async () => {
     answerAll(() => Promise.reject(new ApiError(404, "not_found", {}, 0)));
     render("/edit/nod_a1?mode=edit");
@@ -158,7 +234,7 @@ describe("the editor page", () => {
 
 // fireBack presses the page's Back button.
 function fireBack() {
-  const back = screen.getByRole("button", { name: /back/i });
+  const back = screen.getByRole("button", { name: /close/i });
   act(() => {
     back.click();
   });

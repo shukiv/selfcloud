@@ -5,7 +5,7 @@ import { Alert, Button, Dropdown, Modal } from "antd";
 import { BookOpen, ChevronLeft, ChevronRight, FileOutput, Pencil, X, Download } from "lucide-react";
 import IconButton from "../IconButton";
 import { ApiError } from "../../lib/apiError";
-import { editorEntry, editorPath, officeEdit } from "../../lib/files/editor";
+import { coarsePointer, editorEntry, officeEdit, openEditorTab } from "../../lib/files/editor";
 import { go, location as routerLocation } from "../../lib/router";
 import { contentPath, signedLink } from "../../lib/files/api";
 import {
@@ -301,7 +301,7 @@ export default function Preview({
             <IconButton
               className="editor-btn"
               label={editorMode === "view" ? t("files.act.openViewer") : t("files.act.openEditor")}
-              onClick={() => go(editorPath(node.id, editorMode, get(routerLocation).path + get(routerLocation).search))}
+              onClick={() => openEditorTab(node.id, editorMode, get(routerLocation).path + get(routerLocation).search, coarsePointer(), go)}
               icon={editorMode === "view" ? <BookOpen size={18} aria-hidden="true" focusable="false" /> : <Pencil size={18} aria-hidden="true" focusable="false" />}
             />
           )}

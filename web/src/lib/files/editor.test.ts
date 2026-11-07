@@ -57,9 +57,9 @@ describe("the editor's address", () => {
   });
 
   it("reads back the mode and the place to return to, and never a token", () => {
-    expect(readEditorPath("?mode=view&from=%2Ffiles%2Ffld_b")).toEqual({ mode: "view", from: "/files/fld_b" });
-    expect(readEditorPath("?mode=edit")).toEqual({ mode: "edit", from: null });
-    expect(readEditorPath("?access_token=sct_x")).toEqual({ mode: "edit", from: null });
+    expect(readEditorPath("?mode=view&from=%2Ffiles%2Ffld_b")).toEqual({ mode: "view", from: "/files/fld_b", tab: false });
+    expect(readEditorPath("?mode=edit")).toEqual({ mode: "edit", from: null, tab: false });
+    expect(readEditorPath("?access_token=sct_x")).toEqual({ mode: "edit", from: null, tab: false });
   });
 
   it("accepts only a path of this app as the place to return to", () => {

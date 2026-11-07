@@ -1,26 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The office editor, full window, inside the app (decision 72). The page asks the API for the editor's address and a
-// token, then posts the token into a hidden form whose target is the editor's frame. The token is in the form's body and
+// The office editor, full page, in its own tab (decision 72, decision 102). The page asks the API for the editor's address and
+// a token, then posts the token into a hidden form whose target is the editor's frame. The token is in the form's body and
 // nowhere else: not in the address, not in a log, not in the page's text. The editor's messages are read only from its
-// origin and its own frame; its close button returns to the place the file was opened from.
+// origin and its own frame. The page is drawn outside the app shell, with a slim bar: the app's mark (to the folder), the
+// file's name, the save state and a close button. Close ends the tab when a script opened it, and otherwise goes back.
 
-import { ArrowLeft, Pencil, BookOpen } from "lucide-react";
-import { Alert, Input, Modal, Spin } from "antd";
+import { X } from "lucide-react";
+import { Alert, Button, Input, Modal, Spin } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import IconButton from "../components/IconButton";
+import Sentence from "../components/Sentence";
 import { api } from "../lib/api";
 import { ApiError } from "../lib/apiError";
 
+import { brand } from "../lib/brand";
+import { endImpersonation } from "../lib/impersonation";
+import { session } from "../lib/session";
 import { useT } from "../lib/i18n";
 import { go } from "../lib/router";
 import { useStore } from "../lib/store";
 import { statNode } from "../lib/files/api";
 import {
   EDITOR_FRAME,
-  type EditorMode,
   type SaveAsAsk,
+  type SaveState,
   buildEditorForm,
   editorMessage,
   editorOrigin,
@@ -28,6 +33,7 @@ import {
   officeEdit,
   parseEditorMessage,
   readEditorPath,
+  saveStateAfter,
   saveAsFilename,
   saveAsNameOk,
   saveAsSuggestion,
@@ -78,9 +84,13 @@ export default function OfficeEditPage() {
   const location = useLocation();
   const nod = /^\/edit\/([^/]+)$/.exec(location.pathname)?.[1] ?? "";
   const on = useStore(officeEdit);
-  const { mode, from } = readEditorPath(location.search);
+  const { mode, from, tab } = readEditorPath(location.search);
   const [state, setState] = useState<State>({ status: "opening" });
   const [loaded, setLoaded] = useState(false);
+  // saveState is the save state the editor's messages give; null until one of them is known (decision 102).
+  const [saveState, setSaveState] = useState<SaveState>(null);
+  const me = useStore(session);
+  const b = useStore(brand);
   // saveAs is the Save As dialog while it is open: the file's name split for it, and the name the person has typed.
   const [saveAs, setSaveAs] = useState<SaveAsAsk | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
@@ -128,7 +138,21 @@ export default function OfficeEditPage() {
   }, [state]);
 
   const origin = state.status === "ready" ? state.origin : null;
-  const back = () => go(from ?? (state.status === "ready" && state.folder ? `/files/${state.folder}` : "/files"));
+  // folderHref is the folder the file is in, or the listing when the file is not known yet.
+  const folderHref = state.status === "ready" && state.folder ? `/files/${state.folder}` : "/files";
+  const back = () => go(from ?? folderHref);
+  // close ends the tab when a script opened it (tab=1). The browser refuses a close it did not allow, and then the page is
+  // still here after a moment, so it goes back instead; a page opened directly goes back at once.
+  const close = () => {
+    if (!tab) {
+      back();
+      return;
+    }
+    window.close();
+    window.setTimeout(() => {
+      if (!window.closed) back();
+    }, 150);
+  };
 
   // The editor's messages: its close button goes back, and its loading status clears the wait. Any other origin or window
   // is ignored.
@@ -140,7 +164,8 @@ export default function OfficeEditPage() {
       }
       const msg = parseEditorMessage(ev.data);
       if (msg === null) return;
-      if (msg.id === "UI_Close") back();
+      setSaveState((prev) => saveStateAfter(prev, msg));
+      if (msg.id === "UI_Close") close();
       // Collabora's postMessage channel opens when the host answers its Initialized status with Host_PostmessageReady.
       // The reply goes to the editor's own origin only, never to "*".
       if (msg.id === "App_LoadingStatus" && msg.values?.Status === "Initialized") {
@@ -156,7 +181,7 @@ export default function OfficeEditPage() {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [origin, from, state]);
+  }, [origin, from, state, tab, folderHref]);
 
   // confirmSaveAs sends the copy's name to the editor, which makes the copy with PutRelativeFile. The dialog closes; the
   // editor keeps the file it has open.
@@ -171,24 +196,54 @@ export default function OfficeEditPage() {
 
   if (!on || !valid) return <NotFoundPage />;
 
-  const modeLabel: EditorMode = mode;
-  const Mode = modeLabel === "view" ? BookOpen : Pencil;
   const name = state.status === "ready" ? state.name : "";
+  // The bar's save state: "View only" for a viewer, otherwise the state the editor's messages gave (none until one is known).
+  const stateText =
+    mode === "view"
+      ? t("files.editor.viewOnly")
+      : saveState === "saving"
+        ? t("files.editor.saving")
+        : saveState === "saved"
+          ? t("files.editor.saved")
+          : saveState === "unsaved"
+            ? t("files.editor.unsaved")
+            : null;
 
   return (
     <div
       data-testid="office-editor"
       style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", flexDirection: "column", background: "var(--ant-color-bg-container, #fff)" }}
     >
-      <header style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 56, padding: "0 12px", borderBottom: "1px solid rgba(0,0,0,0.12)" }}>
-        <IconButton label={t("files.editor.back")} onClick={back} icon={<ArrowLeft className="icon-dir" size={18} aria-hidden="true" focusable="false" />} />
-        <p style={{ flex: "1 1 auto", minWidth: 0, margin: 0, overflowWrap: "anywhere", fontWeight: 600 }}>
+      {me?.impersonation && (
+        // The shell's banner is not drawn on this page, so the banner's words and its way back are drawn here (decision 102).
+        <div role="status" style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", fontWeight: 600 }}>
+          <span style={{ flex: "1 1 auto", minWidth: 0, overflowWrap: "anywhere" }}>
+            <Sentence template={t("impersonation.banner")} names={{ name: me.user.display_name || me.user.email || "" }} />
+          </span>
+          <Button size="small" onClick={() => void endImpersonation()} style={{ flex: "none" }}>
+            {t("impersonation.back")}
+          </Button>
+        </div>
+      )}
+      <header style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 48, padding: "0 12px", borderBottom: "1px solid rgba(0,0,0,0.12)" }}>
+        <a
+          href={folderHref}
+          aria-label={t("files.editor.toFolder")}
+          title={t("files.editor.toFolder")}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", color: "inherit", textDecoration: "none", fontWeight: 700 }}
+        >
+          {b.logo_url && <img src={b.logo_url} alt="" width={24} height={24} />}
+          <bdi>{b.name}</bdi>
+        </a>
+        <p style={{ flex: "1 1 auto", minWidth: 0, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>
           <bdi>{name}</bdi>
         </p>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <Mode size={16} aria-hidden="true" focusable="false" />
-          {modeLabel === "view" ? t("files.editor.viewing") : t("files.editor.editing")}
-        </span>
+        {stateText !== null && (
+          <span role="status" style={{ flex: "none", fontSize: 13, color: "var(--ant-color-text-secondary, #5a6b85)" }}>
+            {stateText}
+          </span>
+        )}
+        <IconButton label={t("files.editor.close")} onClick={close} icon={<X size={18} aria-hidden="true" focusable="false" />} />
       </header>
       {state.status === "failed" && (
         <div style={{ padding: 16 }}>

@@ -37,18 +37,88 @@ export function safeFrom(v: string | null): string | null {
   return v;
 }
 
-// editorPath is the address of the editor page for a node. from is the place to return to when the editor closes.
-export function editorPath(nod: string, mode: EditorMode, from: string | null): string {
+// editorPath is the address of the editor page for a node. from is the place to return to when the editor closes. tab says
+// the page was opened in a new tab by a script (window.open), so its close may end the tab (oe1).
+export function editorPath(nod: string, mode: EditorMode, from: string | null, tab = false): string {
   const q = new URLSearchParams({ mode });
   const back = safeFrom(from);
   if (back !== null) q.set("from", back);
+  if (tab) q.set("tab", "1");
   return `/edit/${encodeURIComponent(nod)}?${q.toString()}`;
 }
 
-// readEditorPath reads the mode and the place to return to from the page's query. Anything but view is edit.
-export function readEditorPath(search: string): { mode: EditorMode; from: string | null } {
+// readEditorPath reads the mode, the place to return to and the new-tab flag from the page's query. Anything but view is edit.
+export function readEditorPath(search: string): { mode: EditorMode; from: string | null; tab: boolean } {
   const q = new URLSearchParams(search);
-  return { mode: q.get("mode") === "view" ? "view" : "edit", from: safeFrom(q.get("from")) };
+  return { mode: q.get("mode") === "view" ? "view" : "edit", from: safeFrom(q.get("from")), tab: q.get("tab") === "1" };
+}
+
+// coarsePointer says whether the main pointer is a finger, read when called (the page's hook is for drawing). A phone or a
+// tablet opens an office file in the same tab (oe1).
+export function coarsePointer(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+}
+
+// openEditorTab opens an office file in the editor, full page (oe1). On a fine pointer it opens a new tab with
+// window.open and noopener, so the new tab cannot reach this one; it must be called from the person's click or key event,
+// or the browser blocks it. On a coarse pointer it goes to the editor in this tab, with from set to here, the place to
+// return to. The new tab's address carries tab=1, so its close may end the tab.
+export function openEditorTab(
+  nod: string,
+  mode: EditorMode,
+  here: string,
+  coarse: boolean,
+  goTo: (to: string) => void,
+  open: (url: string, target: string, features: string) => unknown = (u, t, f) => window.open(u, t, f),
+): void {
+  if (coarse) {
+    goTo(editorPath(nod, mode, here));
+    return;
+  }
+  open(editorPath(nod, mode, null, true), "_blank", "noopener");
+}
+
+// LinkClick is the part of a mouse event officeLinkClick reads.
+export interface LinkClick {
+  button: number;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  preventDefault: () => void;
+}
+
+// officeLinkClick is the click on a link to a file (a row on a page, a search hit). An office file the editor offers opens in
+// the editor tab, not at the link's address; a modified click (ctrl, shift, alt, or a middle button) keeps the browser's own
+// choice. Anything else is left to the link.
+export function officeLinkClick(e: LinkClick, n: Node, featureOn: boolean, here: string, goTo: (to: string) => void): void {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const mode = editorEntry(n, featureOn);
+  if (mode === null) return;
+  e.preventDefault();
+  openEditorTab(n.id, mode, here, coarsePointer(), goTo);
+}
+
+// SaveState is the save state the editor's bar shows. null is no state yet.
+export type SaveState = "saving" | "saved" | "unsaved" | null;
+
+// saveStateAfter gives the save state after one message from the editor. Doc_ModifiedStatus carries Values.Modified: true
+// is unsaved changes, false is saved. Action_Save_Resp carries Values.success. The ids are the ones the SDK documents
+// as far as this slice read them; they are not yet confirmed against a live Collabora (see decision 102).
+export function saveStateAfter(prev: SaveState, msg: EditorMessage): SaveState {
+  if (msg.id === "Doc_ModifiedStatus") {
+    const m = msg.values?.Modified;
+    if (m === true) return "unsaved";
+    if (m === false) return "saved";
+    return prev;
+  }
+  if (msg.id === "Action_Save") return "saving";
+  if (msg.id === "Action_Save_Resp") {
+    const ok = msg.values?.success;
+    if (ok === true) return "saved";
+    if (ok === false) return "unsaved";
+  }
+  return prev;
 }
 
 // editorOrigin is the origin of the editor's action URL, the only origin its messages may come from. Null when the URL

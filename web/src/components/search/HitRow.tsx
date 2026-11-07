@@ -6,6 +6,9 @@ import { useLang, useT } from "../../lib/i18n";
 import { formatBytes, formatDate } from "../../lib/files/format";
 import { kindOf } from "../../lib/files/kind";
 import { openShortcut } from "../../lib/files/shortcut";
+import { officeEdit, officeLinkClick } from "../../lib/files/editor";
+import { go, location as routerLocation } from "../../lib/router";
+import { get, useStore } from "../../lib/store";
 import type { SearchHit } from "../../lib/search/api";
 import { snippetParts } from "../../lib/search/snippet";
 import Icon from "../files/Icon";
@@ -18,6 +21,8 @@ export default function HitRow({ hit }: { hit: SearchHit }) {
   const { t } = useT();
   const lang = useLang();
   const opened = hit.kind === "shortcut" ? openShortcut(hit) : null;
+  // An office file the editor offers opens in its own tab from this link (oe1).
+  const editorOn = useStore(officeEdit);
   const name = <bdi>{hit.name}</bdi>;
   const meta = [t("search.modifiedOn", { date: formatDate(hit.modified_at, lang) }), hit.kind === "dir" ? "" : formatBytes(hit.size, lang)]
     .filter((x) => x !== "")
@@ -45,6 +50,7 @@ export default function HitRow({ hit }: { hit: SearchHit }) {
             ID is never shown, and the shortcut's own folder is one the caller reaches, since the search found it there. */}
         <Link
           to={opened?.kind === "go" ? opened.to : `/n/${hit.id}`}
+          onClick={(e) => officeLinkClick(e, hit, editorOn, get(routerLocation).path + get(routerLocation).search, go)}
           style={{ fontWeight: 600, color: token.colorLink, overflowWrap: "anywhere" }}
         >
           {name}

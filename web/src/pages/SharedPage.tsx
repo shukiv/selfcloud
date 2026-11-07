@@ -4,9 +4,11 @@ import { useEffect, useMemo } from "react";
 import { Alert, Button, Skeleton, Tag } from "antd";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useLang, useT } from "../lib/i18n";
-import { useStore } from "../lib/store";
+import { get, useStore } from "../lib/store";
 import { brand } from "../lib/brand";
 import { session } from "../lib/session";
+import { officeEdit, officeLinkClick } from "../lib/files/editor";
+import { go, location as routerLocation } from "../lib/router";
 import { queryKey } from "../lib/query";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { formatDate } from "../lib/files/format";
@@ -23,6 +25,7 @@ export default function SharedPage() {
   const { t } = useT();
   const lang = useLang();
   const brandName = useStore(brand).name;
+  const editorOn = useStore(officeEdit);
   const me = useStore(session);
   const signedIn = me !== null;
 
@@ -84,7 +87,11 @@ export default function SharedPage() {
                 }}
               >
                 <Icon kind={kindOf(n)} size={24} node={n} />
-                <a href={`/n/${n.id}`} style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere", fontWeight: 600 }}>
+                <a
+                  href={`/n/${n.id}`}
+                  onClick={(e) => officeLinkClick(e, n, editorOn, get(routerLocation).path + get(routerLocation).search, go)}
+                  style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere", fontWeight: 600 }}
+                >
                   <bdi>{n.name}</bdi>
                 </a>
                 <KindMarks node={n} />

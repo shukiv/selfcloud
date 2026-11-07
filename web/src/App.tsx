@@ -280,6 +280,11 @@ export function Gate() {
   if (path === "/") {
     return <Navigate to={homeFor(me.user)} replace />;
   }
+  // The office editor is a page of its own: full window, outside the shell, with its own slim bar (decision 102). The
+  // installation admin's refusal is the one the drive pages give (DRIVE_VIEWS).
+  if (view === "edit") {
+    return <Suspense fallback={<PageLoading />}>{me.user.role === "admin" ? <NotFoundPage /> : <OfficeEditPage />}</Suspense>;
+  }
   return (
     <Shell>
       <Suspense fallback={<PageLoading />}>{signedPage(view, path, me.user)}</Suspense>

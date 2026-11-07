@@ -6,6 +6,9 @@ import Icon from "../files/Icon";
 import KindMarks from "../files/KindMarks";
 import { openShortcut } from "../../lib/files/shortcut";
 import { kindOf } from "../../lib/files/kind";
+import { officeEdit, officeLinkClick } from "../../lib/files/editor";
+import { go, location as routerLocation } from "../../lib/router";
+import { get, useStore } from "../../lib/store";
 import type { Node } from "../../lib/files/types";
 
 // NodeRow is one item in a short list on a user page: its kind, its name (a link to its address), what happened to it,
@@ -14,6 +17,8 @@ export default function NodeRow({ node, meta, action }: { node: Node; meta: stri
   const { token } = theme.useToken();
   // A shortcut opens its target when the caller reaches it, and is plain text when it does not: its own ID is never a link.
   const opened = node.kind === "shortcut" ? openShortcut(node) : null;
+  // An office file the editor offers opens in its own tab from this link (oe1).
+  const editorOn = useStore(officeEdit);
   const name = <bdi>{node.name}</bdi>;
   return (
     <li
@@ -36,6 +41,7 @@ export default function NodeRow({ node, meta, action }: { node: Node; meta: stri
       ) : (
         <a
           href={opened ? opened.to : `/n/${node.id}`}
+          onClick={(e) => officeLinkClick(e, node, editorOn, get(routerLocation).path + get(routerLocation).search, go)}
           style={{ flex: "1 1 160px", minInlineSize: 0, overflowWrap: "anywhere", fontWeight: 600, color: token.colorPrimary }}
         >
           {name}
