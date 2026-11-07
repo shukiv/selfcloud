@@ -68,8 +68,8 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
       `the fake editor received CheckFileInfo for "${docName}" and may write (${JSON.stringify(seen)})`);
 
     // Back returns to the folder, and the folder lists the new file.
-    await page.waitFor(`!!document.querySelector('button[aria-label="Back"]')`, 15000);
-    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Back').click()`);
+    await page.waitFor(`!!document.querySelector('button[aria-label="Close"]')`, 15000);
+    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close').click()`);
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
     await rowAppears(page, docName);
     check(true, 'Back returns to the folder, which lists "Untitled document.docx"');
@@ -88,8 +88,8 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     const second = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
     const made2 = await api(base, 'GET', `/api/v1/nodes/${second}`, accountKey);
     check(made2.name === 'Untitled document (1).docx' && made2.folder_id === teamA, `the page's own New makes "${made2.name}" in Team A (${made2.folder_id})`);
-    await page.waitFor(`!!document.querySelector('button[aria-label="Back"]')`, 15000);
-    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Back').click()`);
+    await page.waitFor(`!!document.querySelector('button[aria-label="Close"]')`, 15000);
+    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close').click()`);
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
     await rowAppears(page, docName);
     await rowAppears(page, made2.name);

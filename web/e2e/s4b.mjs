@@ -7,6 +7,7 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setThemeByPlace } from './media.mjs';
+import { pickMenuEntry } from './menu.mjs';
 
 const q = (v) => JSON.stringify(v);
 
@@ -91,10 +92,14 @@ async function closeTopModal(page) {
 // bodyHas says whether the page's text holds text.
 const bodyHas = (text) => `document.body.innerText.includes(${q(text)})`;
 
-// viewerOpen opens the viewer of a file by its row, as a double click does.
+// openViewer opens an office file's preview from its row's menu. A double click on an office file opens the editor in its own
+// tab (decision 102), and the preview is the menu's Preview entry.
 async function openViewer(h, page, name) {
   await h.rowAppears(page, name);
-  await h.openRow(page, name);
+  await page.evaluate(`(() => { const row = document.querySelector(${JSON.stringify(`[role="row"][aria-label="${name}"]`)}); row.focus(); row.click(); const b = row && row.querySelector('button[aria-haspopup="menu"]'); if (b) b.click(); return !!b; })()`);
+  // The entry's label is in the page's language (English or Hebrew, the two the checks use).
+  const lang = (await page.evaluate(`document.documentElement.lang`)) === 'he' ? 'he' : 'en';
+  await pickMenuEntry(page, WORDS[lang].preview);
   await page.waitFor(`!!document.querySelector('[data-testid="preview"]')`, 15000);
 }
 

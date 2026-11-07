@@ -12,8 +12,26 @@
 import { mkdir } from 'node:fs/promises';
 import { setLanguage, setTheme, shot, sleep } from './media.mjs';
 import { pickMenuEntry } from './menu.mjs';
+import { Page } from './cdp.mjs';
 
 const q = (v) => JSON.stringify(v);
+
+// openedTab waits for the tab a script opened (decision 102): the browser's page list holds it at pathPart, and the
+// returned page is on that tab. The opener's debugging port is the one the new tab is on.
+async function openedTab(opener, pathPart) {
+  const origin = `http://${new URL(opener.ws.url).host}`;
+  for (let i = 0; i < 150; i++) {
+    const list = await (await fetch(`${origin}/json/list`)).json();
+    const t = list.find((x) => x.type === 'page' && new URL(x.url).pathname.startsWith(pathPart));
+    if (t) {
+      const p = new Page(t.webSocketDebuggerUrl);
+      await p.opened;
+      return p;
+    }
+    await sleep(100);
+  }
+  throw new Error(`no tab opened at ${pathPart}`);
+}
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -30,7 +48,13 @@ async function rowMenu(page, name) {
 // pickMenuItem clicks the open menu's entry with this text.
 async function pickMenuItem(page, text) {
   await page.waitFor(`[...document.querySelectorAll('[role="menuitem"]')].some((x) => x.textContent.trim() === ${q(text)})`, 10000);
-  await page.evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find((x) => x.textContent.trim() === ${q(text)}).click()`);
+  // With a user gesture, as a person's click is: the editor's new tab is a pop-up, which the browser blocks without one (decision 102).
+  await page.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[role="menuitem"]')].find((x) => x.textContent.trim() === ${q(text)}).click()`,
+    userGesture: true,
+    returnByValue: true,
+    awaitPromise: true,
+  });
 }
 
 // closeMenu closes an open menu with Escape.
@@ -88,9 +112,12 @@ export async function l4Checks(h, { page, base, accountKey, teamA, teamB, fake, 
     check(menuDocx.includes('Open in editor'), `an editor's menu offers Open in editor (${menuDocx.join(', ') || 'no entries'})`);
     await sleep(700);
     await snap('menu-open-in-editor.png');
+    // The editor opens in its own tab (decision 102); the listing stays where it is, and the editor steps run on the new tab.
+    const listingPage = page;
     await pickMenuItem(page, 'Open in editor');
+    page = await openedTab(listingPage, `/edit/${docxID}`);
     await page.waitFor(`location.pathname === ${q(`/edit/${docxID}`)}`, 15000);
-    check(true, 'Open in editor goes to the editor page for the file');
+    check(true, 'Open in editor opens the editor page for the file in its own tab');
     await page.waitFor(`!!document.querySelector('iframe[name="selfcloud-office-editor"]')`, 15000).catch(async (err) => {
       // Diagnostic for a stalled open: what the page shows, and what the fake editor saw.
       const shown = await page.evaluate(`(document.querySelector('[data-testid="office-editor"]')?.innerText ?? 'no editor page') + ' || body: ' + document.body.innerText.slice(0, 300) + ' || url: ' + location.href`);
@@ -132,10 +159,11 @@ export async function l4Checks(h, { page, base, accountKey, teamA, teamB, fake, 
     check(await page.evaluate(`!!document.querySelector('[data-testid="office-editor"]')?.innerText.includes(${q(docxName.replace(/\.docx$/, ''))})`), 'the editor page still shows the file it has open');
     await snap('save-as-done.png');
 
-    // Back returns to the folder the file was opened from.
-    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Back').click()`);
+    // Close ends the editor's tab, which a script opened, and the listing it came from shows the folder again.
+    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close').click()`);
+    page = listingPage;
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
-    check(true, 'Back returns to the folder the file was opened from');
+    check(true, 'Close ends the editor tab, and the listing shows the folder the file was opened from');
 
     // Phone, Hebrew: the editor's top bar fits at 390 px with no sideways scroll. The editor page has no language menu, so the
     // language is set on the folder, the editor is opened again, and the folder is set back to English after the check.
@@ -179,13 +207,16 @@ export async function l4Checks(h, { page, base, accountKey, teamA, teamB, fake, 
     });
     const menuView = await rowMenu(page, viewName);
     check(menuView.includes('Open in viewer') && !menuView.includes('Open in editor'), `a viewer's menu offers Open in viewer only (${menuView.join(', ')})`);
+    const teamBPage = page;
     await pickMenuItem(page, 'Open in viewer');
+    page = await openedTab(teamBPage, `/edit/${viewID}`);
     await page.waitFor(`location.pathname === ${q(`/edit/${viewID}`)}`, 15000);
     await page.waitFor(`!!document.querySelector('iframe[name="selfcloud-office-editor"]')`, 15000);
     await sleep(800);
     const seenView = fake.editor[fake.editor.length - 1];
     check(seenView && seenView.userCanWrite === false && seenView.locked === false, 'the viewer opened read only, and took no lock');
-    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Back').click()`);
+    await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close').click()`);
+    page = teamBPage;
     await page.waitFor(`location.pathname === '/files/${teamB}'`, 15000);
 
     // ---- The owner ends the editing session: Details shows the holder, the confirmation warns, and the lock goes.
