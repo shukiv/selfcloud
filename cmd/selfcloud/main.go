@@ -33,6 +33,8 @@ Commands:
   migrate       apply database migrations and exit
   admin         create admin keys and accounts (selfcloud admin help)
   healthcheck   exit 0 if the local server is ready (for container health checks)
+  fsck          check files against the database; safe beside a running server
+                (exit 0 clean, 1 findings, 2 cannot run; --json, --repair, --verify-content, --min-age)
   version       print the version
 
 Configuration comes from defaults, then the YAML file named by -config or
@@ -57,6 +59,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return admin(args[1:], stdout, stderr)
 	case "healthcheck":
 		return healthcheck(args[1:], stderr)
+	case "fsck":
+		return fsckCommand(args[1:], stdout, stderr)
 	case "thumb":
 		// The decoder's child process (internal/thumb). It is started by the server, with limits, and reads no config.
 		return thumb.Child(args[1:], os.Stdin, stdout, stderr)

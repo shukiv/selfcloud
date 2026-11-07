@@ -68,6 +68,23 @@ curl -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
 
 `selfcloud admin create-account -name Example` does both in one step.
 
+## Checking the data directory
+
+`selfcloud fsck` compares the files under the data directory with the database. It reads only, so it can run
+beside a running server. It reports blob files that no row names, rows whose file is missing or the wrong size,
+and SQLite's integrity check. Exit status 0 means clean, 1 means findings, 2 means it could not run.
+
+```sh
+./bin/selfcloud fsck               # text summary
+./bin/selfcloud fsck --json        # one JSON document
+./bin/selfcloud fsck --repair      # moves orphan blobs to quarantine/<UTC date>; deletes nothing
+# in Docker: docker exec <container> selfcloud fsck
+```
+
+`--verify-content` also hashes every file, which reads all the contents and is slow. `--min-age 1h` (the
+default) leaves alone files written less than that long ago. How to put a quarantined blob back is in
+decision 100 of `docs/design.md`.
+
 ## Configuration
 
 Defaults, then an optional YAML file (`-config FILE` or `$SELFCLOUD_CONFIG`), then environment
