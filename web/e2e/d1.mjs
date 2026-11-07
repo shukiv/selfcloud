@@ -58,8 +58,18 @@ async function settledCentreOf(page, selector) {
 
 // dragOnto presses on one element, glides to another, reads the drop state while the button is down, then lets go.
 async function dragOnto(page, fromSel, toSel) {
-  const a = await centreOf(page, fromSel);
   const b = await settledCentreOf(page, toSel);
+  // The source is read after the target has settled, until two reads agree, and the press goes ahead only when the point is on
+  // the source: the listing can still move after its read lands, and a press read before the target's settle then lands on the
+  // page around the row (gates l6g and l6g2, d1 in 3 of 4 runs: the press was on a section or a div).
+  let a = await settledCentreOf(page, fromSel);
+  for (let tries = 1; ; tries++) {
+    const onSource = await page.evaluate(`(() => { const el = document.querySelector(${q(fromSel)}); const at = document.elementFromPoint(${a.x}, ${a.y}); return !!el && !!at && el.contains(at); })()`);
+    if (a.rounds > 1 || !onSource) console.log(`DIAG d1 source: ${JSON.stringify({ point: [Math.round(a.x), Math.round(a.y)], rounds: a.rounds, onSource, tries })}`);
+    if (onSource || tries >= 5) break;
+    await sleep(200);
+    a = await settledCentreOf(page, fromSel);
+  }
   // What the press lands on, and the sidebar's scroll, before the drag (for the DIAG below).
   const sideScroll = `(() => { const s = [...document.querySelectorAll('.shell-sider *')].find((e) => e.scrollHeight > e.clientHeight + 1 && getComputedStyle(e).overflowY !== 'visible'); return s ? Math.round(s.scrollTop) : null; })()`;
   const before = await page.evaluate(`({ press: (() => { const at = document.elementFromPoint(${a.x}, ${a.y}); const row = at?.closest('[data-id]'); return at ? at.tagName.toLowerCase() + (row ? ' in row ' + (row.getAttribute('aria-label') ?? '') : '') : null; })(), side: ${sideScroll} })`);
