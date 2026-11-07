@@ -533,6 +533,34 @@ describe("the Requests entry", () => {
     renderShell("/files");
     expect((await screen.findByTestId("account-menu")).className).toMatch(/\bicon-btn\b/);
   });
+
+  // Decision 95: "Signed in as" is a header on the menu, not a disabled item. It is not a menu item (no menuitem, no aria-disabled),
+  // the menu is named by it so a screen reader hears it once, and the first item a keyboard reaches is Change password.
+  it("the account menu's Signed in as line is a header, not a disabled menu item, and Change password comes first", async () => {
+    signIn("member");
+    renderShell("/files");
+    fireEvent.click(await screen.findByTestId("account-menu"));
+    const menu = await screen.findByRole("menu", { name: "Signed in as olivia@example.com" });
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items[0]?.textContent).toBe("Change password");
+    expect(items.some((m) => m.textContent?.includes("olivia@example.com"))).toBe(false);
+    expect(items.some((m) => m.getAttribute("aria-disabled") === "true")).toBe(false);
+    expect(menu.querySelector("[aria-disabled='true']")).toBeNull();
+  });
+
+  it("the Signed in as header shows the email in a bdi, and cuts a long one with a title", async () => {
+    signIn("member");
+    renderShell("/files");
+    fireEvent.click(await screen.findByTestId("account-menu"));
+    const email = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".account-menu-who bdi");
+      if (!el) throw new Error("the header is not shown yet");
+      return el;
+    });
+    expect(email.textContent).toBe("olivia@example.com");
+    expect(email.parentElement?.style.textOverflow).toBe("ellipsis");
+    expect(email.parentElement?.title).toBe("olivia@example.com");
+  });
 });
 
 // wideScreen draws the sidebar beside the page (the lg breakpoint), as a desktop does, for the test's own run.

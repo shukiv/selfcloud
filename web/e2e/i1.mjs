@@ -65,6 +65,67 @@ async function closeMenus(page) {
   await sleep(300);
 }
 
+// Decision 95: the account menu's "Signed in as" is a header, not a disabled item. accountHeaderInfo reads, from the open account menu,
+// the header's label and email colours, the colour it is drawn on, the menu's own ground, the disabled items, the focusable parts of
+// the header, the menu's name, and the email's bdi and ellipsis.
+const accountHeaderInfo = (page) => page.evaluate(`(() => {
+  const pop = '.ant-dropdown:not(.ant-dropdown-hidden)';
+  const email = document.querySelector(pop + ' .account-menu-who');
+  if (!email) return null;
+  const label = email.previousElementSibling;
+  const frame = email.parentElement;
+  const menu = document.querySelector(pop + ' ul[role="menu"]');
+  const named = menu ? (menu.getAttribute('aria-labelledby') || '').split(' ').map((id) => (document.getElementById(id) || {}).textContent || '').join(' ') : '';
+  return {
+    label: getComputedStyle(label).color,
+    email: getComputedStyle(email).color,
+    ground: getComputedStyle(frame).backgroundColor,
+    menuGround: menu ? getComputedStyle(menu).backgroundColor : '',
+    disabledItems: document.querySelectorAll(pop + ' [role="menuitem"][aria-disabled="true"]').length,
+    headerFocusable: frame.querySelectorAll('a, button, input, [tabindex]').length,
+    bdi: !!email.querySelector('bdi'),
+    named,
+    text: label.textContent.trim() + ' ' + email.textContent.trim(),
+    title: email.title,
+    overflow: getComputedStyle(email).textOverflow,
+  };
+})()`);
+
+// contrastOf is the WCAG ratio of two colours as the browser reports them (rgb() or rgba()).
+function contrastOf(a, b) {
+  const lum = (css) => {
+    const [r, g, bl] = css.match(/[\d.]+/g).slice(0, 3).map((v) => {
+      const c = Number(v) / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// keyPress sends one key to the page as a keyboard does.
+async function keyPress(page, key, code, vk) {
+  const text = key === 'Enter' ? '\r' : undefined;
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, text });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk });
+  await sleep(250);
+}
+
+// checkAccountHeader measures the open account menu's header in the current theme and language.
+async function checkAccountHeader(page, check, where) {
+  const info = await accountHeaderInfo(page);
+  if (!info) {
+    check(false, `the account menu shows its Signed in as header (${where})`);
+    return;
+  }
+  const cl = contrastOf(info.label, info.ground);
+  const ce = contrastOf(info.email, info.ground);
+  check(cl >= 4.5 && ce >= 4.5 && info.ground === info.menuGround, `the account header reads 4.5:1 or more ${where}: label ${info.label} ${cl.toFixed(2)}:1, email ${info.email} ${ce.toFixed(2)}:1 on ${info.ground}`);
+  check(info.disabledItems === 0 && info.headerFocusable === 0 && info.bdi && info.overflow === 'ellipsis' && info.title === info.text.split(' ').slice(-1)[0], `the account header is not a disabled item, is focusable nowhere, and its email is in a bdi, cut with an ellipsis and titled (${where})`);
+  check(info.named === info.text, `the account menu is named by its header, so it is read once (${where}: "${info.named}")`);
+}
+
 // The top bar's icons, and the rest of the bar, as the page draws them.
 const TOP = { language: '[data-testid="language"]', theme: '[data-testid="theme"]', account: '[data-testid="account-menu"]' };
 
@@ -207,6 +268,19 @@ export async function i1Checks(h, { page, base, accountKey, teamA, dir }) {
     await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].length > 0`, 10000);
     await snap('i1-account-menu.png');
     check((await openMenuItems(page)).length > 0, 'the account menu opens with its items');
+    await checkAccountHeader(page, check, 'in light, English');
+    await closeMenus(page);
+    // Keyboard: the account button takes Enter and the menu opens. The menu's list is then focused, as a keyboard user moves into it,
+    // and the first arrow key lands on the first item, Change password, with the header never a stop on the way.
+    const focusNow = () => page.evaluate(`(() => { const a = document.activeElement; return a ? (a.getAttribute('role') || a.tagName) + ':' + a.textContent.trim() : ''; })()`);
+    await page.evaluate(`document.querySelector(${q(TOP.account)}).focus(), true`);
+    await keyPress(page, 'Enter', 'Enter', 13);
+    await page.waitFor(`!!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]')`, 10000);
+    const firstItem = (await openMenuItems(page))[0];
+    await page.evaluate(`document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) ul[role="menu"]').focus(), true`);
+    await keyPress(page, 'ArrowDown', 'ArrowDown', 40);
+    const reached = await focusNow();
+    check(reached === 'menuitem:Change password' && firstItem === 'Change password', `the menu's first arrow key reaches Change password, before anything else (focus: ${reached})`);
     await closeMenus(page);
 
     // Dark: the colours hold and the bar is a dark pill.
@@ -214,6 +288,11 @@ export async function i1Checks(h, { page, base, accountKey, teamA, dir }) {
     await sleep(300);
     check((await tileColour(page, files.report)) === RED && (await tileColour(page, files.notes)) === BLUE, 'in dark the squares keep their colours');
     await snap('i1-list-dark.png');
+    await page.evaluate(`document.querySelector(${q(TOP.account)}).click(), true`);
+    await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].length > 0`, 10000);
+    await checkAccountHeader(page, check, 'in dark, English');
+    await snap('i1-account-menu-dark.png');
+    await closeMenus(page);
     await setTheme(page, 'Light');
 
     // ---- The viewer's header: a PDF, then the player's header: an audio file.
@@ -272,6 +351,10 @@ export async function i1Checks(h, { page, base, accountKey, teamA, dir }) {
     const heActions = heRest.filter((b) => b.text === '' && b.name !== 'More');
     check(heClear && heCount && heClear.l > heCount.r - 1 && heActions.every((b) => b.r <= heCount.l + 1), 'in Hebrew the bar is mirrored: the clear icon on the right, the actions on the left');
     await snap('i1-hebrew.png');
+    await page.evaluate(`document.querySelector(${q(TOP.account)}).click(), true`);
+    await page.waitFor(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item')].length > 0`, 10000);
+    await checkAccountHeader(page, check, 'in Hebrew');
+    await closeMenus(page);
     await setLanguage(page, 'English');
 
     // Each new rule has a check above; the section ends by putting back what it changed.

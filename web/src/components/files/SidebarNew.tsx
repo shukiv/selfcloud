@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { CSSProperties, ReactNode } from "react";
-import { Button, ConfigProvider, Dropdown, Tooltip, type MenuProps } from "antd";
+import { useId, type CSSProperties, type ReactNode } from "react";
+import { Button, ConfigProvider, Dropdown, Tooltip, theme, type MenuProps } from "antd";
+import { MenuHeader, headerPopup } from "../menuHeader";
 import { FileSpreadsheet, FileText, FolderPlus, FolderUp, Plus, Presentation, Upload } from "lucide-react";
 import { useT } from "../../lib/i18n";
 import { DOC_KINDS, newEntries, type DocKind, type NewKey, type NewPlace } from "../../lib/files/newPlace";
@@ -42,6 +43,8 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     upload: <Upload {...ic} />,
     uploadFolder: <FolderUp {...ic} />,
   };
+  const { token } = theme.useToken();
+  const reasonId = useId();
   // The blank documents (decision 91) come after the uploads, behind a divider, each with its icon and its word.
   const docText: Record<DocKind, string> = { docx: t("files.act.document"), xlsx: t("files.act.spreadsheet"), pptx: t("files.act.presentation") };
   const docIcons: Record<DocKind, ReactNode> = { docx: <FileText {...ic} />, xlsx: <FileSpreadsheet {...ic} />, pptx: <Presentation {...ic} /> };
@@ -50,8 +53,15 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     label: docText[k],
     icon: docIcons[k],
   }));
+  // In a folder the person cannot add to, the reason is the menu's header (decision 95), not a disabled item: its text names the menu.
+  const header = place?.readOnly ? (
+    <MenuHeader>
+      <span id={reasonId} style={{ display: "block", color: token.colorText, fontSize: token.fontSizeSM }}>
+        {t("files.new.readOnly")}
+      </span>
+    </MenuHeader>
+  ) : null;
   const items: MenuProps["items"] = [
-    ...(place?.readOnly ? [{ key: "reason", disabled: true, label: t("files.new.readOnly") }, { type: "divider" as const, key: "rule" }] : []),
     ...(place ? newEntries(place) : [])
       .filter((e) => e.visible)
       .map((e) => ({ key: e.key, label: text[e.key], icon: icons[e.key], disabled: !e.enabled })),
@@ -64,7 +74,8 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     if (key === "uploadFolder") onPick("folders", place.where);
     if (key.startsWith("doc-")) onDocument(key.slice(4) as DocKind);
   };
-  const menu = { items, onClick: ({ key }: { key: string }) => choose(key) };
+  const menu = { items, onClick: ({ key }: { key: string }) => choose(key), "aria-labelledby": header ? reasonId : undefined };
+  const popup = headerPopup(header);
   // A place that is still being read shows the button, disabled.
   const disabled = place === null;
   if (collapsed) {
@@ -73,7 +84,7 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     const round: CSSProperties = { inlineSize: 44, blockSize: 44, minInlineSize: 44, marginBlockStart: 6, marginInline: "auto", boxShadow: RAISED, background: sidebar.text, color: sidebar.bg, border: "none" };
     return (
       <Tooltip title={t("files.act.new")} placement="right">
-        <Dropdown trigger={["click"]} disabled={disabled} menu={menu}>
+        <Dropdown trigger={["click"]} disabled={disabled} menu={menu} popupRender={popup}>
           <Button data-testid="new-button" aria-label={t("files.act.new")} aria-haspopup="menu" shape="circle" disabled={disabled} icon={<Plus {...ic} />} style={round} />
         </Dropdown>
       </Tooltip>
@@ -106,7 +117,7 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger.
     <div style={{ display: "flex", justifyContent: "flex-start", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
       <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? 44 : 36 } } }}>
-        <Dropdown trigger={["click"]} disabled={disabled} menu={menu}>
+        <Dropdown trigger={["click"]} disabled={disabled} menu={menu} popupRender={popup}>
           <Button data-testid="new-button" aria-haspopup="menu" disabled={disabled} style={face}>
             <Plus {...ic} />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("files.act.new")}</span>

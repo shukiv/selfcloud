@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "../../lib/i18n";
 import { myFilesPlace, placeOfHere, type DocKind, type NewPlace } from "../../lib/files/newPlace";
@@ -100,6 +100,16 @@ describe("the sidebar's New button", () => {
     mouse.unmount();
     renderNew(myFilesPlace("fld_mine"), false, true);
     expect(screen.getByTestId("new-button").parentElement?.style.marginBlockStart).toBe("6px");
+  });
+
+  // Decision 95: the reason is a header on the menu, not a disabled item. The menu is named by it, so a screen reader hears it once.
+  it("in a folder the person cannot add to, the reason is a header, not a disabled menu item, and names the menu", async () => {
+    renderNew(readOnly);
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    const menu = await screen.findByRole("menu", { name: "You cannot add to this folder." });
+    expect(within(menu).queryByRole("menuitem", { name: "You cannot add to this folder." })).toBeNull();
+    expect(menu.querySelector("[aria-disabled='true'][role='menuitem']")).not.toBeNull();
+    expect(menu.querySelectorAll("[aria-disabled='true']").length).toBe(within(menu).getAllByRole("menuitem").length);
   });
 
   it("waits, disabled, while the folder shown is not read", () => {

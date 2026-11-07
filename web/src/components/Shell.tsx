@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
 import { followTarget, keepInView } from "./menuScroll";
 import { Alert as AntdAlert, App, Button, Checkbox, ConfigProvider, Drawer, Dropdown, Grid, Layout, Menu, Skeleton, theme as antdTheme } from "antd";
 import type { MenuProps } from "antd";
@@ -9,6 +9,8 @@ import IconButton from "./IconButton";
 import { accountLabel, initialOf } from "../lib/avatar";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useT, useLang, directionOf, translatePlural } from "../lib/i18n";
+import { splitParts } from "../lib/signin";
+import { MenuHeader, headerPopup } from "./menuHeader";
 import { useStore } from "../lib/store";
 import { flash, isAdmin, isOwner, session, sessionChanged, sessionKey } from "../lib/session";
 import { failureText } from "../lib/manage/failure";
@@ -516,12 +518,33 @@ export default function Shell({ children }: { children: ReactNode }) {
     );
   };
 
+  // The account's "Signed in as" is the menu's header (decision 95), not an item: its label is the template's own words, and its email
+  // is in a bdi, cut with an ellipsis (with the full address as its title) when long. The menu is named by both, once.
+  const accountLabelId = useId();
+  const accountEmailId = useId();
+  const email = me?.user.email ?? "";
+  const signedInLabel = splitParts(t("user.signedInAs"), { name: email })
+    .filter((p) => !p.name)
+    .map((p) => p.text)
+    .join("")
+    .trim();
+  const accountHeader = (
+    <MenuHeader>
+      <span id={accountLabelId} style={{ display: "block", color: token.colorTextSecondary, fontSize: token.fontSizeSM }}>
+        {signedInLabel}
+      </span>
+      <span
+        id={accountEmailId}
+        className="account-menu-who"
+        title={email}
+        style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: token.colorText }}
+      >
+        <bdi>{email}</bdi>
+      </span>
+    </MenuHeader>
+  );
   const userItems: MenuProps["items"] = [
-    {
-      key: "who",
-      disabled: true,
-      label: <Sentence template={t("user.signedInAs")} names={{ name: me?.user.email ?? "" }} />,
-    },
+    // The divider under the header is not a stop for the keyboard: the first item reached is Change password.
     { type: "divider" },
     { key: "password", label: t("user.changePassword") },
     ...(offerInstall ? [{ key: "install", label: t("pwa.install") }] : []),
@@ -681,7 +704,9 @@ export default function Shell({ children }: { children: ReactNode }) {
                       if (key === "addHome") setIosFor(who);
                       if (key === "signout") void logout();
                     },
+                    "aria-labelledby": `${accountLabelId} ${accountEmailId}`,
                   }}
+                  popupRender={headerPopup(accountHeader)}
                   trigger={["click"]}
                 >
                   {/* The account is a round avatar with the first letter of the name (of the email, with no name). Its name and tooltip
