@@ -45,6 +45,9 @@ type Options struct {
 
 	// afterMove, when set, runs after each blob is moved into quarantine. Tests use it to stop a repair between moves.
 	afterMove func()
+	// snapshotBatch is how many files one read transaction judges before it is closed and a new one is opened. Zero
+	// means defaultSnapshotBatch. Tests set it small.
+	snapshotBatch int
 }
 
 // Finding kinds.
@@ -95,6 +98,9 @@ type Report struct {
 	Findings      []Finding      `json:"findings"`
 	Quarantine    string         `json:"quarantine,omitempty"`
 	Moved         int            `json:"moved"`
+	// Snapshots is how many read transactions the run opened, and LongestSnapshotHoldMS the longest any one was held.
+	Snapshots             int   `json:"snapshots"`
+	LongestSnapshotHoldMS int64 `json:"longest_snapshot_hold_ms"`
 }
 
 // Run checks the data directory against the database. On an error after the database was opened, the report still
@@ -152,30 +158,34 @@ type hashCheck struct {
 }
 
 type checker struct {
-	ctx    context.Context
-	opts   Options
-	cs     *store.CheckStore
-	snap   *store.Snapshot
-	rep    *Report
-	cands  []candidate
-	hashes []hashCheck
+	ctx       context.Context
+	opts      Options
+	cs        *store.CheckStore
+	snap      *store.Snapshot // the open read transaction, or nil
+	snapStart time.Time       // when snap was opened
+	lookups   int             // judgments made in snap
+	rep       *Report
+	cands     []candidate
+	hashes    []hashCheck
 }
+
+// defaultSnapshotBatch is how many files one read transaction judges before it is renewed.
+const defaultSnapshotBatch = 500
+
+// pageSize is how many rows one page of a row list reads, each page in its own transaction.
+const pageSize = 500
 
 // run makes every check in one read snapshot, so the checks agree with each other. Then it looks again at what it
 // found as missing, in newer snapshots, and repairs if asked.
 func (c *checker) run() error {
-	snap, err := c.cs.Begin(c.ctx)
-	if err != nil {
-		unreadable(c.rep, err)
+	if err := c.integrityChecks(); err != nil {
 		return err
 	}
-	c.snap = snap
-	c.rep.SnapshotAt = snap.At
-	err = c.snapshotChecks()
-	snap.Close()
-	c.snap = nil
-	if err != nil {
-		return err
+	for _, walk := range []func() error{c.walkBlobs, c.missingBlobs, c.walkDerived, c.missingDerived,
+		c.walkZips, c.missingZips} {
+		if err := walk(); err != nil {
+			return err
+		}
 	}
 	if err := c.hashPass(); err != nil {
 		return err
@@ -189,8 +199,58 @@ func (c *checker) run() error {
 	return nil
 }
 
-func (c *checker) snapshotChecks() error {
+// openSnap opens a read transaction, closing the open one first. The first one sets the report's snapshot time.
+func (c *checker) openSnap() error {
+	c.closeSnap()
+	snap, err := c.cs.Begin(c.ctx)
+	if err != nil {
+		return err
+	}
+	c.snap = snap
+	c.snapStart = time.Now()
+	c.lookups = 0
+	c.rep.Snapshots++
+	if c.rep.SnapshotAt.IsZero() {
+		c.rep.SnapshotAt = snap.At
+	}
+	return nil
+}
+
+// closeSnap ends the open read transaction and records how long it was held.
+func (c *checker) closeSnap() {
+	if c.snap == nil {
+		return
+	}
+	if held := time.Since(c.snapStart).Milliseconds(); held > c.rep.LongestSnapshotHoldMS {
+		c.rep.LongestSnapshotHoldMS = held
+	}
+	c.snap.Close()
+	c.snap = nil
+}
+
+// step is called before each judgment. Every batch of judgments gets a new read transaction, so no one transaction
+// is held for the whole tree. A judgment is made against the transaction open at the time, and tooRecent compares
+// with that transaction's At, so the argument of decision 100 holds for each batch.
+func (c *checker) step() error {
+	c.lookups++
+	batch := defaultSnapshotBatch
+	if c.opts.snapshotBatch > 0 {
+		batch = c.opts.snapshotBatch
+	}
+	if c.snap != nil && c.lookups < batch {
+		return nil
+	}
+	return c.openSnap()
+}
+
+// integrityChecks runs SQLite's integrity and foreign key checks, each in its own read transaction.
+func (c *checker) integrityChecks() error {
+	if err := c.openSnap(); err != nil {
+		unreadable(c.rep, err)
+		return err
+	}
 	ok, problems, err := c.snap.IntegrityCheck(c.ctx)
+	c.closeSnap()
 	if err != nil {
 		// A damaged file can make the check itself fail rather than list its problems. That is a failure too.
 		c.rep.Integrity = "failed"
@@ -203,18 +263,16 @@ func (c *checker) snapshotChecks() error {
 			c.add(Finding{Kind: KindIntegrity, Detail: p})
 		}
 	}
+	if err := c.openSnap(); err != nil {
+		return err
+	}
 	fks, err := c.snap.ForeignKeyViolations(c.ctx)
+	c.closeSnap()
 	if err != nil {
 		return err
 	}
 	for _, p := range fks {
 		c.add(Finding{Kind: KindForeignKey, Detail: p})
-	}
-	for _, step := range []func() error{c.walkBlobs, c.missingBlobs, c.walkDerived, c.missingDerived,
-		c.walkZips, c.missingZips} {
-		if err := step(); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -231,6 +289,7 @@ func (c *checker) tooRecent(info fs.FileInfo) bool {
 
 // walkBlobs judges every file under blobs/ that has the layout of a blob.
 func (c *checker) walkBlobs() error {
+	defer c.closeSnap()
 	root := filepath.Join(c.opts.DataDir, "blobs")
 	accs, err := readDir(root)
 	if err != nil {
@@ -293,6 +352,9 @@ func (c *checker) walkBlobs() error {
 // judgeBlob checks one blob file against its row, or, with no row, against the rows that name it.
 func (c *checker) judgeBlob(acc, bid, rel string, info fs.FileInfo) error {
 	c.count("blob_files")
+	if err := c.step(); err != nil {
+		return err
+	}
 	row, found, err := c.snap.BlobRow(c.ctx, bid)
 	if err != nil {
 		return err
@@ -332,43 +394,70 @@ func (c *checker) judgeBlob(acc, bid, rel string, info fs.FileInfo) error {
 // missingBlobs lists the blob rows that are live, and the blobs that a node or version names with no row, whose files
 // are not there. They are candidates until recheck.
 func (c *checker) missingBlobs() error {
-	err := c.snap.EachLiveBlob(c.ctx, func(r store.FileRow) error {
-		c.count("live_blob_rows")
-		if !id.Valid("acc", r.AccountID) || !id.Valid("blb", r.ID) {
-			c.count("blob_rows_bad_id")
-			return nil
+	// Each page of rows is read in its own transaction, and the file is looked for after the page is read.
+	after := ""
+	for {
+		if err := c.openSnap(); err != nil {
+			return err
 		}
-		gone, err := absent(blobPath(c.opts.DataDir, r.AccountID, r.ID))
+		rows, err := c.snap.LiveBlobsAfter(c.ctx, after, pageSize)
+		c.closeSnap()
 		if err != nil {
 			return err
 		}
-		if gone {
-			c.cands = append(c.cands, candidate{kind: KindMissingBlob, account: r.AccountID, id: r.ID})
+		if len(rows) == 0 {
+			break
 		}
-		return nil
-	})
-	if err != nil {
-		return err
+		for _, r := range rows {
+			after = r.ID
+			c.count("live_blob_rows")
+			if !id.Valid("acc", r.AccountID) || !id.Valid("blb", r.ID) {
+				c.count("blob_rows_bad_id")
+				continue
+			}
+			gone, err := absent(blobPath(c.opts.DataDir, r.AccountID, r.ID))
+			if err != nil {
+				return err
+			}
+			if gone {
+				c.cands = append(c.cands, candidate{kind: KindMissingBlob, account: r.AccountID, id: r.ID})
+			}
+		}
 	}
-	return c.snap.EachUnrecordedBlob(c.ctx, func(acc, bid string) error {
-		if !id.Valid("acc", acc) || !id.Valid("blb", bid) {
-			c.count("blob_rows_bad_id")
-			return nil
+	afterBlob, afterAcc := "", ""
+	for {
+		if err := c.openSnap(); err != nil {
+			return err
 		}
-		gone, err := absent(blobPath(c.opts.DataDir, acc, bid))
+		refs, err := c.snap.UnrecordedBlobsAfter(c.ctx, afterBlob, afterAcc, pageSize)
+		c.closeSnap()
 		if err != nil {
 			return err
 		}
-		if gone {
-			c.cands = append(c.cands, candidate{kind: KindMissingBlob, account: acc, id: bid})
+		if len(refs) == 0 {
+			return nil
 		}
-		return nil
-	})
+		for _, r := range refs {
+			afterBlob, afterAcc = r.BlobID, r.AccountID
+			if !id.Valid("acc", r.AccountID) || !id.Valid("blb", r.BlobID) {
+				c.count("blob_rows_bad_id")
+				continue
+			}
+			gone, err := absent(blobPath(c.opts.DataDir, r.AccountID, r.BlobID))
+			if err != nil {
+				return err
+			}
+			if gone {
+				c.cands = append(c.cands, candidate{kind: KindMissingBlob, account: r.AccountID, id: r.BlobID})
+			}
+		}
+	}
 }
 
 // walkDerived judges the files of derived rows. A file no row names is an orphan; a ready row's file is checked
 // against the row's size, and with --verify-content against its hash.
 func (c *checker) walkDerived() error {
+	defer c.closeSnap()
 	root := c.derivedRoot()
 	accs, err := readDir(root)
 	if err != nil {
@@ -396,6 +485,9 @@ func (c *checker) walkDerived() error {
 			}
 			rel := c.rel(filepath.Join(root, a.Name(), name))
 			c.count("derived_files")
+			if err := c.step(); err != nil {
+				return err
+			}
 			row, found, err := c.snap.DerivedRow(c.ctx, name)
 			if err != nil {
 				return err
@@ -458,7 +550,9 @@ func (c *checker) hashPass() error {
 // missingDerived lists ready derived rows whose files are not there.
 func (c *checker) missingDerived() error {
 	root := c.derivedRoot()
-	return c.snap.EachReadyDerived(c.ctx, func(r store.FileRow) error {
+	return c.eachPage(func(after string) ([]store.FileRow, error) {
+		return c.snap.ReadyDerivedAfter(c.ctx, after, pageSize)
+	}, func(r store.FileRow) error {
 		c.count("ready_derived_rows")
 		if !id.Valid("acc", r.AccountID) || !id.Valid("drv", r.ID) {
 			c.count("derived_rows_bad_id")
@@ -475,8 +569,34 @@ func (c *checker) missingDerived() error {
 	})
 }
 
+// eachPage reads a row list a page at a time, each page in its own read transaction, and calls each for every row.
+// The file of a row is looked for after its page is read, so no transaction spans the stat calls.
+func (c *checker) eachPage(page func(after string) ([]store.FileRow, error), each func(store.FileRow) error) error {
+	after := ""
+	for {
+		if err := c.openSnap(); err != nil {
+			return err
+		}
+		rows, err := page(after)
+		c.closeSnap()
+		if err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		for _, r := range rows {
+			after = r.ID
+			if err := each(r); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 // walkZips judges the zip files. A zip file no row names is an orphan; a ready zip's .zip is checked against its row.
 func (c *checker) walkZips() error {
+	defer c.closeSnap()
 	root := filepath.Join(c.derivedRoot(), "zips")
 	accs, err := readDir(root)
 	if err != nil {
@@ -506,6 +626,9 @@ func (c *checker) walkZips() error {
 			}
 			rel := c.rel(filepath.Join(root, a.Name(), name))
 			c.count("zip_files")
+			if err := c.step(); err != nil {
+				return err
+			}
 			row, found, err := c.snap.ZipRow(c.ctx, zid)
 			if err != nil {
 				return err
@@ -532,7 +655,9 @@ func (c *checker) walkZips() error {
 // missingZips lists ready zip rows whose .zip is not there.
 func (c *checker) missingZips() error {
 	root := filepath.Join(c.derivedRoot(), "zips")
-	return c.snap.EachReadyZip(c.ctx, func(r store.FileRow) error {
+	return c.eachPage(func(after string) ([]store.FileRow, error) {
+		return c.snap.ReadyZipsAfter(c.ctx, after, pageSize)
+	}, func(r store.FileRow) error {
 		c.count("ready_zip_rows")
 		if !id.Valid("acc", r.AccountID) || !id.Valid("zip", r.ID) {
 			c.count("zip_rows_bad_id")

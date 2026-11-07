@@ -182,33 +182,61 @@ func (s *Snapshot) BlobReferrers(ctx context.Context, blobID string) (nodeID, ve
 	return nodeID, versionID, nil
 }
 
-// EachLiveBlob calls fn for every blob row in state live. fn must not use the snapshot.
-func (s *Snapshot) EachLiveBlob(ctx context.Context, fn func(FileRow) error) error {
-	return s.each(ctx, `SELECT id, account_id, state, size, sha256 FROM blobs WHERE state = 'live' ORDER BY id`, fn)
+// BlobRef is a blob that a row names with no blob row of its own.
+type BlobRef struct {
+	AccountID string
+	BlobID    string
 }
 
-// EachUnrecordedBlob calls fn for each account and blob that a node, version or import archive names while no blob
-// row exists. fn must not use the snapshot.
-func (s *Snapshot) EachUnrecordedBlob(ctx context.Context, fn func(accountID, blobID string) error) error {
-	rows, err := s.tx.QueryContext(ctx, `SELECT account_id, blob_id FROM nodes
-		WHERE blob_id IS NOT NULL AND blob_id NOT IN (SELECT id FROM blobs)
-		UNION SELECT account_id, blob_id FROM versions WHERE blob_id NOT IN (SELECT id FROM blobs)
-		UNION SELECT account_id, archive_blob_id FROM import_jobs
-		WHERE archive_blob_id <> '' AND archive_blob_id NOT IN (SELECT id FROM blobs)`)
+// LiveBlobsAfter returns up to limit blob rows in state live whose ID sorts after after, in ID order. A caller reads the
+// list a page at a time, each page in its own snapshot, so no snapshot is held for the whole list.
+func (s *Snapshot) LiveBlobsAfter(ctx context.Context, after string, limit int) ([]FileRow, error) {
+	return s.page(ctx, `SELECT id, account_id, state, size, sha256 FROM blobs
+		WHERE state = 'live' AND id > ?1 ORDER BY id LIMIT ?2`, after, limit)
+}
+
+// UnrecordedBlobsAfter returns up to limit blobs that a node, version or import archive names while no blob row exists,
+// after the cursor (afterBlob, afterAccount), in (blob, account) order.
+func (s *Snapshot) UnrecordedBlobsAfter(ctx context.Context, afterBlob, afterAccount string, limit int) ([]BlobRef, error) {
+	rows, err := s.tx.QueryContext(ctx, `SELECT account_id, blob_id FROM (
+			SELECT account_id, blob_id FROM nodes
+				WHERE blob_id IS NOT NULL AND blob_id NOT IN (SELECT id FROM blobs)
+			UNION SELECT account_id, blob_id FROM versions WHERE blob_id NOT IN (SELECT id FROM blobs)
+			UNION SELECT account_id, archive_blob_id FROM import_jobs
+				WHERE archive_blob_id <> '' AND archive_blob_id NOT IN (SELECT id FROM blobs))
+		WHERE blob_id > ?1 OR (blob_id = ?1 AND account_id > ?2)
+		ORDER BY blob_id, account_id LIMIT ?3`, afterBlob, afterAccount, limit)
 	if err != nil {
-		return fmt.Errorf("store: %w", err)
+		return nil, fmt.Errorf("store: %w", err)
 	}
 	defer rows.Close()
+	var out []BlobRef
 	for rows.Next() {
-		var acc, bid string
-		if err := rows.Scan(&acc, &bid); err != nil {
-			return err
+		var r BlobRef
+		if err := rows.Scan(&r.AccountID, &r.BlobID); err != nil {
+			return nil, err
 		}
-		if err := fn(acc, bid); err != nil {
-			return err
-		}
+		out = append(out, r)
 	}
-	return rows.Err()
+	return out, rows.Err()
+}
+
+// page reads one page of file rows. query takes the cursor and the limit as its two parameters.
+func (s *Snapshot) page(ctx context.Context, query, after string, limit int) ([]FileRow, error) {
+	rows, err := s.tx.QueryContext(ctx, query, after, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: %w", err)
+	}
+	defer rows.Close()
+	var out []FileRow
+	for rows.Next() {
+		var r FileRow
+		if err := rows.Scan(&r.ID, &r.AccountID, &r.State, &r.Size, &r.SHA256); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // DerivedRow returns the derived row with derivedID, if there is one.
@@ -231,9 +259,10 @@ func (s *Snapshot) DerivedKept(ctx context.Context, derivedID string) (bool, err
 	return kept, nil
 }
 
-// EachReadyDerived calls fn for every derived row in state ready. fn must not use the snapshot.
-func (s *Snapshot) EachReadyDerived(ctx context.Context, fn func(FileRow) error) error {
-	return s.each(ctx, `SELECT id, account_id, state, size, sha256 FROM derived WHERE state = 'ready' ORDER BY id`, fn)
+// ReadyDerivedAfter returns up to limit derived rows in state ready whose ID sorts after after, in ID order.
+func (s *Snapshot) ReadyDerivedAfter(ctx context.Context, after string, limit int) ([]FileRow, error) {
+	return s.page(ctx, `SELECT id, account_id, state, size, sha256 FROM derived
+		WHERE state = 'ready' AND id > ?1 ORDER BY id LIMIT ?2`, after, limit)
 }
 
 // ZipRow returns the zip row with zipID, if there is one.
@@ -241,9 +270,10 @@ func (s *Snapshot) ZipRow(ctx context.Context, zipID string) (FileRow, bool, err
 	return s.one(ctx, `SELECT id, account_id, state, size, sha256 FROM zips WHERE id = ?`, zipID)
 }
 
-// EachReadyZip calls fn for every zip row in state ready. fn must not use the snapshot.
-func (s *Snapshot) EachReadyZip(ctx context.Context, fn func(FileRow) error) error {
-	return s.each(ctx, `SELECT id, account_id, state, size, sha256 FROM zips WHERE state = 'ready' ORDER BY id`, fn)
+// ReadyZipsAfter returns up to limit zip rows in state ready whose ID sorts after after, in ID order.
+func (s *Snapshot) ReadyZipsAfter(ctx context.Context, after string, limit int) ([]FileRow, error) {
+	return s.page(ctx, `SELECT id, account_id, state, size, sha256 FROM zips
+		WHERE state = 'ready' AND id > ?1 ORDER BY id LIMIT ?2`, after, limit)
 }
 
 func (s *Snapshot) one(ctx context.Context, query string, arg string) (FileRow, bool, error) {
@@ -256,22 +286,4 @@ func (s *Snapshot) one(ctx context.Context, query string, arg string) (FileRow, 
 		return FileRow{}, false, fmt.Errorf("store: %w", err)
 	}
 	return r, true, nil
-}
-
-func (s *Snapshot) each(ctx context.Context, query string, fn func(FileRow) error) error {
-	rows, err := s.tx.QueryContext(ctx, query)
-	if err != nil {
-		return fmt.Errorf("store: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var r FileRow
-		if err := rows.Scan(&r.ID, &r.AccountID, &r.State, &r.Size, &r.SHA256); err != nil {
-			return err
-		}
-		if err := fn(r); err != nil {
-			return err
-		}
-	}
-	return rows.Err()
 }

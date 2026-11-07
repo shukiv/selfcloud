@@ -547,6 +547,25 @@ func TestIntegrityCheckListsProblemsOnDamagedTail(t *testing.T) {
 	}
 }
 
+// M2: no read transaction judges more than snapshotBatch files. With a batch of five and sixty orphans, the walk alone
+// must open at least twelve transactions, and each judgment is still right. The other opens (the integrity check, the
+// foreign key check and the row pages) add a handful more; a run that never renews opens about eight.
+func TestSnapshotsAreRenewedInBatches(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	for i := 0; i < 60; i++ {
+		bid, _ := f.commit([]byte("orphan " + strconv.Itoa(i)))
+		f.age(f.path(bid), 2*time.Hour)
+	}
+	r := f.run(Options{snapshotBatch: 5})
+	if got := find(r, KindOrphanBlob); len(got) != 60 {
+		t.Fatalf("orphans = %d, want 60", len(got))
+	}
+	if r.Snapshots < 15 {
+		t.Fatalf("snapshots = %d, want at least 15 for 60 files in batches of 5", r.Snapshots)
+	}
+}
+
 // M3: a repair stopped after its first move leaves a manifest naming exactly the moved files, line by line.
 func TestCancelledRepairManifestNamesTheMovedFiles(t *testing.T) {
 	t.Parallel()
