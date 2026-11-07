@@ -215,20 +215,21 @@ func TestConfirmForADeletingAccountIsRefused(t *testing.T) {
 }
 
 // TestPendingAddressReadsAsNoneAfterItsLinkExpires: a pending address whose link has expired is not shown as pending; the
-// address that signs in is unchanged.
+// address that signs in is unchanged. The link lives a second: the change and the first read must both fit inside it, and
+// under the race detector with the whole package running in parallel 20 ms was not enough.
 func TestPendingAddressReadsAsNoneAfterItsLinkExpires(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
 	usr, _ := verifiedUser(t, s, key, acc.ID, "old@example.com")
-	s.cfg.Users.VerificationTTL = config.Duration(20 * time.Millisecond)
+	s.cfg.Users.VerificationTTL = config.Duration(time.Second)
 	wantStatus(t, call(t, s, "PATCH", userPath(acc.ID, usr.ID), key,
 		map[string]any{"email": "new@example.com", "verification": "link"}), 200)
 	if got := emailOf(t, s, key, acc.ID, usr.ID); got.PendingEmail == nil {
 		t.Fatal("a live request reads without its pending address")
 	}
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(1200 * time.Millisecond)
 	if got := emailOf(t, s, key, acc.ID, usr.ID); got.PendingEmail != nil || got.Email != "old@example.com" {
 		t.Errorf("after the link expired the user reads %+v, want no pending address", got)
 	}
