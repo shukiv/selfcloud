@@ -21,14 +21,15 @@ describe("a menu header's colours (decision 95)", () => {
     it(`in ${mode}, the label and the email read 4.5:1 or more on the menu's ground`, () => {
       const token = antdTokens(mode, PALETTE[mode], SIDEBAR).token ?? {};
       const ink = menuHeaderInks(token);
-      expect(contrast(ink.label, ink.ground)).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(ink.email, ink.ground)).toBeGreaterThanOrEqual(4.5);
+      const ground = String(token.colorBgElevated);
+      expect(contrast(ink.label, ground)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(ink.email, ground)).toBeGreaterThanOrEqual(4.5);
     });
 
-    it(`in ${mode}, the ground is the popup's own (colorBgElevated), and the inks are the secondary and the primary text`, () => {
+    it(`in ${mode}, the inks are the secondary and the primary text, on the popup's own ground (colorBgElevated)`, () => {
       const token = antdTokens(mode, PALETTE[mode], SIDEBAR).token ?? {};
       const ink = menuHeaderInks(token);
-      expect(ink.ground).toBe(token.colorBgElevated);
+      expect(token.colorBgElevated).toBeDefined();
       expect(ink.label).toBe(token.colorTextSecondary);
       expect(ink.email).toBe(token.colorText);
     });

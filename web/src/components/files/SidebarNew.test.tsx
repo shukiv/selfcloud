@@ -117,19 +117,22 @@ describe("the sidebar's New button", () => {
   // Round 2, M4: in dark the reason is drawn at 4.5:1 or more on the menu's ground, read from the DOM (the palette's colorBgElevated).
   it("in dark, the read-only reason is drawn at 4.5:1 or more on the menu's ground", async () => {
     window.localStorage.setItem("selfcloud.theme", "dark");
-    render(
-      <ThemeProvider>
-        <SidebarNew place={readOnly} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} />
-      </ThemeProvider>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
-    const menu = await screen.findByRole("menu", { name: "You cannot add to this folder." });
-    const reason = document.getElementById(menu.getAttribute("aria-labelledby") ?? "") as HTMLElement;
-    const ground = String(antdTokens("dark", PALETTE.dark, SIDEBAR).token?.colorBgElevated);
-    const css = reason.style.color.match(/\d+/g) ?? ["0", "0", "0"];
-    const hex = `#${css.slice(0, 3).map((v) => Number(v).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
-    expect(contrast(hex, ground)).toBeGreaterThanOrEqual(4.5);
-    window.localStorage.removeItem("selfcloud.theme");
+    try {
+      render(
+        <ThemeProvider>
+          <SidebarNew place={readOnly} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} />
+        </ThemeProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "New" }));
+      const menu = await screen.findByRole("menu", { name: "You cannot add to this folder." });
+      const reason = document.getElementById(menu.getAttribute("aria-labelledby") ?? "") as HTMLElement;
+      const ground = String(antdTokens("dark", PALETTE.dark, SIDEBAR).token?.colorBgElevated);
+      const css = reason.style.color.match(/\d+/g) ?? ["0", "0", "0"];
+      const hex = `#${css.slice(0, 3).map((v) => Number(v).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+      expect(contrast(hex, ground)).toBeGreaterThanOrEqual(4.5);
+    } finally {
+      window.localStorage.removeItem("selfcloud.theme");
+    }
   });
 
   it("waits, disabled, while the folder shown is not read", () => {

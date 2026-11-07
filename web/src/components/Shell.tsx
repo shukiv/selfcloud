@@ -534,6 +534,9 @@ export default function Shell({ children }: { children: ReactNode }) {
       <span
         id={accountEmailId}
         className="account-menu-who"
+        // The address is left to right in a right-to-left page, and the box that is cut must say so: its overflow runs to the end
+        // side of the address. Without it, Hebrew cuts the start (round 3, M4).
+        dir="ltr"
         title={email}
         style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: inks.email, fontSize: 14 }}
       >

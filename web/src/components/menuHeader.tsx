@@ -7,26 +7,25 @@ import { theme } from "antd";
 // focusable and not an item, so the keyboard goes straight to the first item; the title is text, not a disabled item. Its colours are
 // set inline from menuHeaderInks, because antd paints a group title in colorTextDescription, which is 3.68:1 in dark.
 
-// menuHeaderInks are the inks of a header on the menu's ground, from antd's tokens: the ground the menu is drawn on (colorBgElevated),
-// the label's ink (the secondary text) and the value's ink (the primary text). The app sets each of these tokens for each mode in
-// antdTokens (theme/theme.tsx), so the values here are the palette's own. A custom brand changes only the accent family of tokens
-// (lib/brand.ts, TOKEN_KEYS), none of which these three read, so the default palette is the one to test.
+// menuHeaderInks are the header's two inks, from antd's tokens: the label's ink (the secondary text) and the value's ink (the primary
+// text). The menu is drawn on colorBgElevated, which is the ground the contrast is read against. The app sets each of these tokens
+// for each mode in antdTokens (theme/theme.tsx), so the values here are the palette's own. A custom brand changes only the accent
+// family of tokens (lib/brand.ts, TOKEN_KEYS), none of which these read, so the default palette is the one to test.
 export interface MenuHeaderTokens {
   colorBgElevated?: string;
   colorTextSecondary?: string;
   colorText?: string;
 }
 
-export function menuHeaderInks(token: MenuHeaderTokens): { ground: string; label: string; email: string } {
+export function menuHeaderInks(token: MenuHeaderTokens): { label: string; email: string } {
   return {
-    ground: String(token.colorBgElevated),
     label: String(token.colorTextSecondary),
     email: String(token.colorText),
   };
 }
 
 // useMenuHeaderInks is menuHeaderInks for the app's computed token, in the mode being painted.
-export function useMenuHeaderInks(): { ground: string; label: string; email: string } {
+export function useMenuHeaderInks(): { label: string; email: string } {
   const { token } = theme.useToken();
   return menuHeaderInks(token);
 }

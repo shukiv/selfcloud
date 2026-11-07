@@ -22,14 +22,14 @@ import { myStorage } from "../lib/storage/api";
 import { manager } from "../lib/files/uploads";
 import { formatBytes } from "../lib/files/format";
 import { PALETTE, SIDEBAR } from "../theme/tokens";
+import { sidebarRow } from "../theme/sidebarRow";
+import { theme as antdTheme } from "antd";
 
 // hexOfRgb turns the rgb() string the DOM reports for an inline colour into #RRGGBB, for the contrast function.
 function hexOfRgb(css: string): string {
   const [r, g, b] = (css.match(/\d+/g) ?? ["0", "0", "0"]).map(Number);
   return `#${[r, g, b].map((v) => (v ?? 0).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
 }
-import { sidebarRow } from "../theme/sidebarRow";
-import { theme as antdTheme } from "antd";
 
 // The folder lists and the hide call are replaced: each test states what the server answers.
 const mocks = vi.hoisted(() => ({
@@ -556,8 +556,9 @@ describe("the Requests entry", () => {
     expect(menu.querySelector("[aria-disabled='true']")).toBeNull();
   });
 
-  // Round 2, H1: a real keyboard, not a script. Enter opens the account menu from its button, and Tab moves focus into the menu,
-  // which stays open. (The arrow step is in the browser run: e2e/accountKeys.mjs. jsdom does not move rc-menu's focus on an arrow.)
+  // Round 2, H1: user-event keys, not a script. This checks that Enter on the account button opens the menu, and that Tab moves
+  // focus into the menu and the menu stays open. It does not check the arrow keys or Escape, and jsdom does not reproduce the
+  // round-1 fault (it passes on both trees). The browser run checks the rest: e2e/accountKeys.mjs (arrow, Escape, focus back).
   it("keyboard: Enter on the account button opens the menu, and Tab moves focus into it and keeps it open", async () => {
     signIn("member");
     renderShell("/files");
@@ -579,19 +580,22 @@ describe("the Requests entry", () => {
   // colorBgElevated, which the popup is drawn on). A mutant ink (for example the description colour) fails this.
   it("in dark, the Signed in as label and email are drawn at 4.5:1 or more on the menu's ground", async () => {
     window.localStorage.setItem("selfcloud.theme", "dark");
-    signIn("member");
-    renderShell("/files");
-    fireEvent.click(await screen.findByTestId("account-menu"));
-    const email = await waitFor(() => {
-      const el = document.querySelector<HTMLElement>(".account-menu-who");
-      if (!el) throw new Error("the header is not shown yet");
-      return el;
-    });
-    const ground = antdTokens("dark", PALETTE.dark, SIDEBAR).token?.colorBgElevated ?? "";
-    const label = email.previousElementSibling as HTMLElement;
-    expect(contrast(hexOfRgb(label.style.color), String(ground))).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(hexOfRgb(email.style.color), String(ground))).toBeGreaterThanOrEqual(4.5);
-    window.localStorage.removeItem("selfcloud.theme");
+    try {
+      signIn("member");
+      renderShell("/files");
+      fireEvent.click(await screen.findByTestId("account-menu"));
+      const email = await waitFor(() => {
+        const el = document.querySelector<HTMLElement>(".account-menu-who");
+        if (!el) throw new Error("the header is not shown yet");
+        return el;
+      });
+      const ground = antdTokens("dark", PALETTE.dark, SIDEBAR).token?.colorBgElevated ?? "";
+      const label = email.previousElementSibling as HTMLElement;
+      expect(contrast(hexOfRgb(label.style.color), String(ground))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(hexOfRgb(email.style.color), String(ground))).toBeGreaterThanOrEqual(4.5);
+    } finally {
+      window.localStorage.removeItem("selfcloud.theme");
+    }
   });
 
   it("the Signed in as header shows the email in a bdi, and cuts a long one with a title", async () => {
@@ -607,6 +611,9 @@ describe("the Requests entry", () => {
     // Round 2, H2: the header is in browse mode, not hidden from it (no aria-hidden on or above the email).
     expect(email.closest("[aria-hidden='true']")).toBeNull();
     expect(email.parentElement?.style.textOverflow).toBe("ellipsis");
+    // Round 3, M4: the cut is at the end of the address in Hebrew too. The box that is cut is left to right, so its overflow runs to
+    // the end side of the address (on a right-to-left page the box would otherwise cut the start).
+    expect(email.parentElement?.getAttribute("dir")).toBe("ltr");
     expect(email.parentElement?.title).toBe("olivia@example.com");
   });
 });

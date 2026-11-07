@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useId, type CSSProperties, type ReactNode } from "react";
+import { useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { Button, ConfigProvider, Dropdown, Tooltip, theme, type MenuProps } from "antd";
 import { useMenuHeaderInks } from "../menuHeader";
 import { FileSpreadsheet, FileText, FolderPlus, FolderUp, Plus, Presentation, Upload } from "lucide-react";
@@ -74,16 +74,29 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
   const menu = { items, onClick: ({ key }: { key: string }) => choose(key), "aria-labelledby": place?.readOnly ? reasonId : undefined };
   // A place that is still being read shows the button, disabled.
   const disabled = place === null;
+  // The menu is controlled so Escape can close it here. In the phone drawer the drawer's panel takes Escape from the menu and closes
+  // the drawer, and the menu stayed open (decision 95, round 3). So while the menu is open, Escape is taken by the wrapper around the
+  // dropdown, which sits between the menu and the drawer: it closes the menu and returns focus to the button.
+  const [open, setOpen] = useState(false);
+  const newButton = useRef<HTMLButtonElement>(null);
+  const takeEscape = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!open || e.key !== "Escape") return;
+    e.stopPropagation();
+    setOpen(false);
+    newButton.current?.focus();
+  };
   if (collapsed) {
     // The folded rail keeps a round button with the same menu; its name is in the tooltip and is its accessible name.
-    // Its centre is the top bar's (28 px): a 44 px circle starts 6 px down.
-    const round: CSSProperties = { inlineSize: 44, blockSize: 44, minInlineSize: 44, marginBlockStart: 6, marginInline: "auto", boxShadow: RAISED, background: sidebar.text, color: sidebar.bg, border: "none" };
+    // Its centre is the top bar's (28 px): a 44 px circle starts 6 px down. The wrapper centres it in the rail.
+    const round: CSSProperties = { inlineSize: 44, blockSize: 44, minInlineSize: 44, boxShadow: RAISED, background: sidebar.text, color: sidebar.bg, border: "none" };
     return (
-      <Tooltip title={t("files.act.new")} placement="right">
-        <Dropdown trigger={["click"]} disabled={disabled} menu={menu}>
-          <Button data-testid="new-button" aria-label={t("files.act.new")} aria-haspopup="menu" shape="circle" disabled={disabled} icon={<Plus {...ic} />} style={round} />
-        </Dropdown>
-      </Tooltip>
+      <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "center", marginBlockStart: 6 }}>
+        <Tooltip title={t("files.act.new")} placement="right">
+          <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
+            <Button ref={newButton} data-testid="new-button" aria-label={t("files.act.new")} aria-haspopup="menu" shape="circle" disabled={disabled} icon={<Plus {...ic} />} style={round} />
+          </Dropdown>
+        </Tooltip>
+      </div>
     );
   }
   const face: CSSProperties = {
@@ -111,10 +124,10 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
   };
   return (
     // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger.
-    <div style={{ display: "flex", justifyContent: "flex-start", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
+    <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "flex-start", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
       <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? 44 : 36 } } }}>
-        <Dropdown trigger={["click"]} disabled={disabled} menu={menu}>
-          <Button data-testid="new-button" aria-haspopup="menu" disabled={disabled} style={face}>
+        <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
+          <Button ref={newButton} data-testid="new-button" aria-haspopup="menu" disabled={disabled} style={face}>
             <Plus {...ic} />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("files.act.new")}</span>
           </Button>

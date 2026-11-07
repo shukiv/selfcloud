@@ -13,6 +13,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { onActiveInk, setLanguage, setPhone, setTheme } from './media.mjs';
 import { menuHeaderText } from './menu.mjs';
+import { newMenuKeyChecks } from './newKeys.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const q = (v) => JSON.stringify(v);
@@ -520,24 +521,33 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await press(page, 'body', 'Escape');
     await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
 
+    // Round 3, M1: the same New menu by real key presses, in the read-only folder: the reason is the title, and no key stops on it.
+    await newMenuKeyChecks(page, check, { button: '.shell-sider [data-testid="new-button"]', label: 'desktop, Team B, read-only, Enter', readOnly: true });
     // Decision 95, in Hebrew: the reason is the menu's header in the Hebrew words of he.json, and the entries stay disabled.
-    await setLanguage(page, 'עברית');
-    await page.waitFor(`document.documentElement.dir === 'rtl'`, 15000);
-    await navigateTo(page, `/files/${teamB}`);
-    await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
-    const roItemsHe = await newMenu(page);
-    await page.waitFor(`!!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) ul[role="menu"][aria-labelledby]')`, 10000);
-    const roReasonHe = await menuHeaderText(page);
-    const heStrings = JSON.parse(await readFile(new URL('../src/i18n/he.json', import.meta.url), 'utf8'));
-    check(roReasonHe === heStrings['files.new.readOnly'] && roItemsHe.length > 0 && roItemsHe.every((i) => i.disabled), `in Hebrew, a folder the member cannot add to names its menu with the reason, and the entries are disabled (header ${JSON.stringify(roReasonHe)})`);
-    await press(page, 'body', 'Escape');
-    await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
-    await setLanguage(page, 'English');
-    await page.waitFor(`document.documentElement.lang === 'en'`, 15000);
+    // The language is put back to English in a finally, so a failure in here cannot leave the rest of the section in Hebrew (L6).
+    try {
+      await setLanguage(page, 'עברית');
+      await page.waitFor(`document.documentElement.dir === 'rtl'`, 15000);
+      await navigateTo(page, `/files/${teamB}`);
+      await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
+      const roItemsHe = await newMenu(page);
+      await page.waitFor(`!!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) ul[role="menu"][aria-labelledby]')`, 10000);
+      const roReasonHe = await menuHeaderText(page);
+      const heStrings = JSON.parse(await readFile(new URL('../src/i18n/he.json', import.meta.url), 'utf8'));
+      check(roReasonHe === heStrings['files.new.readOnly'] && roItemsHe.length > 0 && roItemsHe.every((i) => i.disabled), `in Hebrew, a folder the member cannot add to names its menu with the reason, and the entries are disabled (header ${JSON.stringify(roReasonHe)})`);
+      await press(page, 'body', 'Escape');
+      await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
+    } finally {
+      await press(page, 'body', 'Escape').catch(() => undefined);
+      await setLanguage(page, 'English');
+      await page.waitFor(`document.documentElement.lang === 'en'`, 15000);
+    }
 
     // ---- Collapsed: a round New with its name in a tooltip, and the same menu. The place is Team A, which the member can add to.
     await navigateTo(page, `/files/${teamA}`);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])')`, 15000);
+    // Round 3, M1: the writable folder, by real key presses, Enter opens the sidebar's New.
+    await newMenuKeyChecks(page, check, { button: '.shell-sider [data-testid="new-button"]', label: 'desktop, Team A, writable, Enter' });
     await clickOn(page, '[data-testid="rail-toggle"]');
     await page.waitFor(`!!document.querySelector('.ant-layout-sider-collapsed [data-testid="new-button"]')`, 15000);
     const round = await page.evaluate(`(() => { const b = document.querySelector('.ant-layout-sider-collapsed [data-testid="new-button"]'); const r = b.getBoundingClientRect(); return { label: b.getAttribute('aria-label'), w: Math.round(r.width), h: Math.round(r.height) }; })()`);
@@ -553,6 +563,8 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     check(folded.some((i) => i.text === 'New folder' && !i.disabled), 'folded, the New menu opens with its entries');
     await press(page, 'body', 'Escape');
     await page.waitFor(`![...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].length`, 10000);
+    // Round 3, M1: the folded rail's round New, by real key presses, opened with Space.
+    await newMenuKeyChecks(page, check, { button: '.ant-layout-sider-collapsed [data-testid="new-button"]', label: 'folded, Team A, writable, Space', opener: 'Space' });
     await clickOn(page, '[data-testid="rail-toggle"]');
     await page.waitFor(`!document.querySelector('.ant-layout-sider-collapsed')`, 15000);
 
@@ -569,6 +581,8 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
     await page.waitFor(`!!document.querySelector('.ant-drawer-open [data-testid="new-button"]')`, 15000);
     const drawerTop = await page.evaluate(`(() => { const n = document.querySelector('.ant-drawer-open [data-testid="new-button"]').getBoundingClientRect().top; const t = document.querySelector('.ant-drawer-open [data-testid="folder-tree"]')?.getBoundingClientRect().top ?? Infinity; return { n, t }; })()`);
     check(drawerTop.n < drawerTop.t, `the drawer shows New at its top, above the tree (${JSON.stringify(drawerTop)})`);
+    // Round 3, M1: the drawer's New at 390 px, by real key presses (the drawer keeps the focus inside it while it is open).
+    await newMenuKeyChecks(page, check, { button: '.ant-drawer-open [data-testid="new-button"]', label: '390 px, drawer, Team A, writable, Enter' });
     await page.waitFor(`!!document.querySelector('.ant-drawer-open .shell-storage-item')`, 15000);
     // The drawn height is 56 px with the figures, so the height alone would pass without the rule (which matters before the figures
     // are read, when the row is its title alone). The row's declared minimum is what the rule sets, so both are checked.

@@ -12,7 +12,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { accountName, hoverOver, setLanguage, setPhone, setTheme, shot, sleep } from './media.mjs';
-import { accountKeyboardChecks } from './accountKeys.mjs';
+import { accountKeyboardChecks, longAddressChecks } from './accountKeys.mjs';
 
 const q = (v) => JSON.stringify(v);
 // The song is a real Ogg file, so the player keeps its controls: a file the browser cannot play shows a message in their place.
@@ -346,6 +346,8 @@ export async function i1Checks(h, { page, base, accountKey, teamA, dir }) {
     check(phone.over <= 0, `at 390 px there is no sideways scroll (${phone.over} px over)`);
     check(phone.right !== null && phone.right <= phone.inner, `at 390 px the theme icon fits in the bar (right ${phone.right} of ${phone.inner})`);
     await snap('i1-phone-390.png');
+    // Round 3, M4: a long address in the account menu at 390 px, in English: cut at its end, with the full address as the title.
+    await longAddressChecks(page, check, 'English, 390 px', snap);
     await setPhone(page, false);
     await size(1280, 800);
     await sleep(400);
@@ -365,6 +367,14 @@ export async function i1Checks(h, { page, base, accountKey, teamA, dir }) {
     await checkAccountHeader(page, check, 'in Hebrew');
     await snap('i1-account-menu-he.png');
     await closeMenus(page);
+    // Round 3, M4: the same long address at 390 px, in Hebrew (a right-to-left page). The cut still falls at the end of the address.
+    await setPhone(page, true);
+    await size(390, 800);
+    await sleep(400);
+    await longAddressChecks(page, check, 'Hebrew, 390 px', snap);
+    await setPhone(page, false);
+    await size(1280, 800);
+    await sleep(400);
     await setLanguage(page, 'English');
 
     // Each new rule has a check above; the section ends by putting back what it changed.
