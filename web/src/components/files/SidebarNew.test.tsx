@@ -120,7 +120,7 @@ describe("the sidebar's New button", () => {
     try {
       render(
         <ThemeProvider>
-          <SidebarNew place={readOnly} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} />
+          <SidebarNew place={readOnly} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
         </ThemeProvider>,
       );
       fireEvent.click(screen.getByRole("button", { name: "New" }));
@@ -161,7 +161,7 @@ describe("Escape in the sidebar's New menu (decision 95, round 3 fix)", () => {
     const parentKey = vi.fn();
     const utils = render(
       <div onKeyDown={parentKey}>
-        <SidebarNew place={place} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} />
+        <SidebarNew place={place} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
       </div>,
     );
     return { ...utils, parentKey };
