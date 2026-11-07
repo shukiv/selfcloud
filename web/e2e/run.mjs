@@ -34,6 +34,7 @@ import { q4Checks } from './q4.mjs';
 import { r7Checks } from './r7.mjs';
 import { r7bChecks } from './r7b.mjs';
 import { pwaChecks } from './pwa.mjs';
+import { pwa2Checks } from './pwa2.mjs';
 import { x3Checks } from './x3.mjs';
 import { x4Checks } from './x4.mjs';
 import { x6Checks } from './x6.mjs';
@@ -956,6 +957,8 @@ async function main() {
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x6')) await x6Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('pwa')) await pwaChecks(h, { page, base, brand: { name: BRAND.name, accentUpper: BRAND.accent.toUpperCase(), member: MEMBER }, check, wsUrl: launched.wsUrl });
+    // The share target (slice pwa2, decision 82): the manifest, the share post with and without the worker, and the page.
+    if (!only || onlySet.has('pwa2')) await pwa2Checks(h, { page, base, check, MEMBER });
     // The new-browser confirmation (sec2, decision 86): its own user, its own browser with its own profile. It comes after the
     // sections above, which hold no sign-ins for its user, and before the full run's own checks.
     if (!only || onlySet.has('sec2')) {
