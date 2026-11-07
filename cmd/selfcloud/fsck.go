@@ -35,7 +35,7 @@ func fsckCommand(args []string, stdout, stderr io.Writer) int {
 	defer stop()
 
 	rep, err := fsck.Run(ctx, fsck.Options{DataDir: cfg.DataDir, DBPath: cfg.Store.Path, MinAge: minAge,
-		VerifyContent: verify, Repair: repair})
+		VerifyContent: verify, Repair: repair, DerivedDir: cfg.DerivedDir()})
 	if rep != nil {
 		if asJSON {
 			if werr := rep.WriteJSON(stdout); werr != nil {

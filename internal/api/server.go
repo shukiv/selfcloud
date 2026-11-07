@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -265,11 +264,7 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
-	zdir := opts.Config.Derived.Dir
-	if zdir == "" {
-		zdir = filepath.Join(opts.Config.DataDir, "derived")
-	}
-	zipFiles, err := derived.NewZipFiles(zdir, opts.Store, opts.Config.Zip.TTL.D())
+	zipFiles, err := derived.NewZipFiles(opts.Config.DerivedDir(), opts.Store, opts.Config.Zip.TTL.D())
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}

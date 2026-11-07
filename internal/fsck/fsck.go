@@ -41,6 +41,7 @@ type Options struct {
 	MinAge        time.Duration // files modified within this long before the snapshot are not judged
 	VerifyContent bool          // hash the contents against the rows
 	Repair        bool          // move orphan blobs to quarantine
+	DerivedDir    string        // the derived directory; "" means DataDir/derived (the server's default)
 }
 
 // Finding kinds.
@@ -101,6 +102,9 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		Counts: map[string]int{}, Scanned: map[string]int{}, Findings: []Finding{}}
 	if opts.MinAge < 0 {
 		return rep, errors.New("fsck: the minimum age must not be negative")
+	}
+	if opts.DerivedDir == "" {
+		opts.DerivedDir = filepath.Join(opts.DataDir, "derived")
 	}
 	want, err := store.LatestSchemaVersion()
 	if err != nil {
@@ -362,7 +366,7 @@ func (c *checker) missingBlobs() error {
 // walkDerived judges the files of derived rows. A file no row names is an orphan; a ready row's file is checked
 // against the row's size, and with --verify-content against its hash.
 func (c *checker) walkDerived() error {
-	root := filepath.Join(c.opts.DataDir, "derived")
+	root := c.derivedRoot()
 	accs, err := readDir(root)
 	if err != nil {
 		return err
@@ -387,7 +391,7 @@ func (c *checker) walkDerived() error {
 				}
 				return err
 			}
-			rel := filepath.Join("derived", a.Name(), name)
+			rel := c.rel(filepath.Join(root, a.Name(), name))
 			c.count("derived_files")
 			row, found, err := c.snap.DerivedRow(c.ctx, name)
 			if err != nil {
@@ -450,7 +454,7 @@ func (c *checker) hashPass() error {
 
 // missingDerived lists ready derived rows whose files are not there.
 func (c *checker) missingDerived() error {
-	root := filepath.Join(c.opts.DataDir, "derived")
+	root := c.derivedRoot()
 	return c.snap.EachReadyDerived(c.ctx, func(r store.FileRow) error {
 		c.count("ready_derived_rows")
 		if !id.Valid("acc", r.AccountID) || !id.Valid("drv", r.ID) {
@@ -470,7 +474,7 @@ func (c *checker) missingDerived() error {
 
 // walkZips judges the zip files. A zip file no row names is an orphan; a ready zip's .zip is checked against its row.
 func (c *checker) walkZips() error {
-	root := filepath.Join(c.opts.DataDir, "derived", "zips")
+	root := filepath.Join(c.derivedRoot(), "zips")
 	accs, err := readDir(root)
 	if err != nil {
 		return err
@@ -497,7 +501,7 @@ func (c *checker) walkZips() error {
 				}
 				return err
 			}
-			rel := filepath.Join("derived", "zips", a.Name(), name)
+			rel := c.rel(filepath.Join(root, a.Name(), name))
 			c.count("zip_files")
 			row, found, err := c.snap.ZipRow(c.ctx, zid)
 			if err != nil {
@@ -524,7 +528,7 @@ func (c *checker) walkZips() error {
 
 // missingZips lists ready zip rows whose .zip is not there.
 func (c *checker) missingZips() error {
-	root := filepath.Join(c.opts.DataDir, "derived", "zips")
+	root := filepath.Join(c.derivedRoot(), "zips")
 	return c.snap.EachReadyZip(c.ctx, func(r store.FileRow) error {
 		c.count("ready_zip_rows")
 		if !id.Valid("acc", r.AccountID) || !id.Valid("zip", r.ID) {
@@ -570,9 +574,9 @@ func (c *checker) recheck() error {
 			f.Path = filepath.Join("blobs", cand.account, cand.id[4:6], cand.id[6:8], cand.id)
 			f.Node, f.Version, err = snap.BlobReferrers(c.ctx, cand.id)
 		case KindMissingDerived:
-			f.Path = filepath.Join("derived", cand.account, cand.id)
+			f.Path = c.rel(filepath.Join(c.derivedRoot(), cand.account, cand.id))
 		case KindMissingZip:
-			f.Path = filepath.Join("derived", "zips", cand.account, cand.id+".zip")
+			f.Path = c.rel(filepath.Join(c.derivedRoot(), "zips", cand.account, cand.id+".zip"))
 		}
 		snap.Close()
 		if err != nil {
@@ -770,6 +774,18 @@ func (r *Report) WriteText(w io.Writer) {
 	if r.Moved > 0 {
 		fmt.Fprintf(w, "moved to quarantine: %d (%s)\n", r.Moved, r.Quarantine)
 	}
+}
+
+// derivedRoot is the derived directory the server writes to: the configured one, or data_dir/derived.
+func (c *checker) derivedRoot() string { return c.opts.DerivedDir }
+
+// rel names a path for a finding: relative to the data directory when it is inside it, absolute otherwise.
+func (c *checker) rel(p string) string {
+	r, err := filepath.Rel(c.opts.DataDir, p)
+	if err != nil || strings.HasPrefix(r, "..") {
+		return p
+	}
+	return r
 }
 
 func blobPath(dataDir, acc, bid string) string {

@@ -547,6 +547,51 @@ func TestIntegrityCheckListsProblemsOnDamagedTail(t *testing.T) {
 	}
 }
 
+// H1: a derived directory other than data_dir/derived is checked where the server keeps its files.
+func TestNonDefaultDerivedDirIsChecked(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	custom := filepath.Join(f.dir, "elsewhere")
+	content := []byte("thumbnail source")
+	bid, sha := f.commit(content)
+	f.row(bid, int64(len(content)), sha)
+	f.node("p.jpg", bid, int64(len(content)), sha)
+	d := &store.Derived{ID: id.New("drv"), AccountID: f.acc, BlobID: bid, Kind: derived.Kind(256),
+		Converter: derived.EncoderVersion + "+test", CreatedAt: time.Now()}
+	if err := f.st.Write(f.ctx, func(tx *store.Tx) error {
+		_, err := tx.InsertDerivedPending(f.ctx, d)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out := []byte("thumb bytes")
+	if err := f.st.Write(f.ctx, func(tx *store.Tx) error {
+		_, err := tx.CompleteDerived(f.ctx, f.acc, d.ID, int64(len(out)), "", time.Now())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(custom, f.acc, d.ID)
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	orphan := filepath.Join(custom, f.acc, id.New("drv"))
+	if err := os.WriteFile(orphan, []byte("no row"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.age(orphan, 2*time.Hour)
+	r := f.run(Options{DerivedDir: custom})
+	if got := find(r, KindMissingDerived); len(got) != 0 {
+		t.Fatalf("a ready row whose file is in the custom directory was reported missing: %+v", got)
+	}
+	if got := find(r, KindOrphanDerived); len(got) != 1 || got[0].ID != filepath.Base(orphan) {
+		t.Fatalf("orphan in the custom directory = %+v, want one", got)
+	}
+}
+
 func TestMissingReadyDerivedFileIsFound(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

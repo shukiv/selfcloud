@@ -310,6 +310,15 @@ type AuditConfig struct {
 	RetentionDays int `yaml:"retention_days"`
 }
 
+// DerivedDir is the directory the derived files are kept in: derived.dir, or data_dir/derived when that is empty. The
+// server and selfcloud fsck both use it, so they cannot disagree about where the files are.
+func (c *Config) DerivedDir() string {
+	if c.Derived.Dir != "" {
+		return c.Derived.Dir
+	}
+	return filepath.Join(c.DataDir, "derived")
+}
+
 // DerivedConfig controls the files made from file contents, such as thumbnails (design section 14, slice s1).
 // They are kept apart from the blobs, have their own budget, and do not count toward any quota.
 type DerivedConfig struct {

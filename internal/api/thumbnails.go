@@ -20,7 +20,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -43,11 +42,7 @@ const thumbBatch = 500
 // newDerivedPool builds the pool that makes derived files. Its files live under derived.dir, or
 // data_dir/derived. The server's own binary runs the decoder subcommand.
 func newDerivedPool(cfg *config.Config, st *store.Store, blobs blob.Store, log *slog.Logger) (*derived.Pool, error) {
-	dir := cfg.Derived.Dir
-	if dir == "" {
-		dir = filepath.Join(cfg.DataDir, "derived")
-	}
-	files, err := derived.NewFiles(dir)
+	files, err := derived.NewFiles(cfg.DerivedDir())
 	if err != nil {
 		return nil, err
 	}
