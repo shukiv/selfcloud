@@ -70,7 +70,7 @@ curl -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
 
 ## Checking the data directory
 
-`selfcloud fsck` compares the files under the data directory with the database. It reads only, so it can run
+`selfcloud fsck` compares the files under the data directory with the database. It changes no blob, row or derived file, except that `--repair` renames orphan blobs into quarantine; it can run
 beside a running server. It renews its read transaction every 500 judgments and reads the row lists a page at a time,
 so no single read holds back the server's checkpoints for the whole tree (decision 100). It reports blob files that no row names, rows whose file is missing or the wrong size,
 and SQLite's integrity check. Exit status 0 means clean, 1 means findings, 2 means it could not run.
@@ -84,7 +84,9 @@ and SQLite's integrity check. Exit status 0 means clean, 1 means findings, 2 mea
 
 `--verify-content` also hashes every file, which reads all the contents and is slow. `--min-age 1h` (the
 default) leaves alone files written less than that long ago. How to put a quarantined blob back is in
-decision 100 of `docs/design.md`.
+decision 100 of `docs/design.md`. Files in quarantine are outside the server's deletion guarantees: they stay until an
+operator empties the folder. On a network file system, run the check where the clocks agree with the file server, since
+a clock difference larger than `--min-age` can make a fresh blob look old (decision 100).
 
 ## Configuration
 
