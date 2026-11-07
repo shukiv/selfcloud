@@ -167,19 +167,14 @@ describe("the people combobox", () => {
     it("Enter right after the focus picks nothing, and no option is active", async () => {
       api.searchDirectory.mockResolvedValue({ items: [mate, kim], more: false });
       const onpick = vi.fn();
-      const submit = vi.fn((e: { preventDefault: () => void }) => e.preventDefault());
-      render(
-        <form onSubmit={submit}>
-          <PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={onpick} />
-        </form>,
-      );
+      render(<PeopleCombobox id="share-who" label="Who" hint="Name or email" onpick={onpick} />);
       const box = screen.getByRole("combobox");
       fireEvent.focus(box);
       expect(await screen.findByText("Mateo Member")).toBeTruthy();
       expect(box.getAttribute("aria-activedescendant")).toBeNull();
       fireEvent.keyDown(box, { key: "Enter", keyCode: 13 });
       expect(onpick).not.toHaveBeenCalled();
-      expect(submit).not.toHaveBeenCalled();
+      // The form's submit is checked in the browser (the fu10 e2e section): jsdom does not submit a form from a keydown.
     });
 
     it("an arrow after the focus, then Enter, picks the first option", async () => {

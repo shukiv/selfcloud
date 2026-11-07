@@ -12,6 +12,7 @@ import { pickMenuEntry } from './menu.mjs';
 import { click, setLanguage, setPhone, setThemeByPlace, sleep } from './media.mjs';
 
 const he = JSON.parse(readFileSync(new URL('../src/i18n/he.json', import.meta.url), 'utf8'));
+const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'));
 
 const q = (v) => JSON.stringify(v);
 // The sidebar's folder tree (decision 62): each space is a row with a link to the space.
@@ -157,13 +158,16 @@ async function pickPerson(page, query, name, inputId = 'share-who') {
 
 // focusPeopleField focuses the share dialog's people field with a real mouse click, after blurring it (the dialog puts the
 // cursor there when it opens; a script's focus() does not fire the focus event in a page without the window's focus). It
-// waits until the list shows the named person, and returns the status line's text. On failure it throws with the status,
+// waits until the list shows the named person, and returns the status line's text and the attempt that showed it (1 when the
+// first click did). A miss is logged and clicked again, up to three attempts. On failure it throws with the status,
 // the focus, and the names the list shows, so a run's log says what the page did.
 async function focusPeopleField(page, name) {
   await page.evaluate(`(() => { document.getElementById('share-who').blur(); return true; })()`);
-  // The dialog animates in, so its field may still be moving: the field is measured and clicked again on each attempt.
-  await sleep(500);
-  for (let attempt = 1; ; attempt++) {
+  // The dialog animates in, so the first click waits until its animations have ended (the same settled test as d3's helper).
+  await page.waitFor(`(() => { const d = document.querySelector('[role="dialog"]'); return !!d && d.getAnimations({ subtree: true }).every((a) => a.playState !== 'running'); })()`, 10000);
+  let attempt = 0;
+  for (;;) {
+    attempt += 1;
     const at = await page.evaluate(`(() => { const r = document.getElementById('share-who').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     await click(page, at);
     try {
@@ -171,6 +175,8 @@ async function focusPeopleField(page, name) {
       break;
     } catch (e) {
       if (attempt < 3) {
+        // A miss is logged with its attempt number, so a run that needed a second click shows it.
+        console.log(`focusPeopleField: attempt ${attempt} did not show ${name} in the list; trying again`);
         await page.evaluate(`(() => { document.getElementById('share-who').blur(); return true; })()`);
         await sleep(300);
         continue;
@@ -179,7 +185,8 @@ async function focusPeopleField(page, name) {
       throw new Error(`${e.message} DEBUG ${dbg}`);
     }
   }
-  return page.evaluate(`document.getElementById('share-who').closest('.combo').querySelector('[role="status"]').textContent`);
+  const counted = await page.evaluate(`document.getElementById('share-who').closest('.combo').querySelector('[role="status"]').textContent`);
+  return { counted, attempt };
 }
 
 // peopleFocusChecks is slice fu10's check (decision 96): focusing the share dialog's people field, before anything is typed,
@@ -210,12 +217,26 @@ export async function peopleFocusChecks(page, ctx) {
     await selectRow(page, 'Shared');
     await clickButton(page, look.share);
     await page.waitFor(`!!document.getElementById('share-who')`);
-    const counted = await focusPeopleField(page, MEMBER.name);
-    check(look.counted.test(counted), `${look.name}: focusing the people field lists the account's people, and the status line counts them (${counted})`);
+    const { counted, attempt } = await focusPeopleField(page, MEMBER.name);
+    check(look.counted.test(counted), `${look.name}: focusing the people field lists the account's people, and the status line counts them (${counted}; attempt ${attempt})`);
     const inside = await page.evaluate(
       `(() => { const r = document.querySelector('[role="listbox"]').getBoundingClientRect(); const d = document.querySelector('[role="dialog"]').getBoundingClientRect(); return r.left >= d.left - 1 && r.right <= d.right + 1 && r.left >= 0 && r.right <= window.innerWidth; })()`,
     );
     check(inside, `${look.name}: the list stays inside the dialog and on the screen`);
+    // Enter right after the focus picks nothing (decision 96, review L3). A real Enter key goes to the field: the list has
+    // no option active, so nobody is added, the field is still empty and shows its usual hint, and the dialog stays open.
+    // An Enter in a form's text field may submit the form; the check reads the field's error state too.
+    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await sleep(400);
+    const afterEnter = await page.evaluate(
+      `(() => ({ value: document.getElementById('share-who').value, hint: document.getElementById('share-who-hint').textContent, invalid: document.getElementById('share-who').getAttribute('aria-invalid'), dialog: !!document.querySelector('[role="dialog"]') }))()`,
+    );
+    const usualHint = (look.lang === 'עברית' ? he : en)['share.whoHint'];
+    check(
+      afterEnter.value === '' && afterEnter.hint === usualHint && afterEnter.invalid !== 'true' && afterEnter.dialog,
+      `${look.name}: Enter right after the focus adds no one, and the field keeps its usual message (${JSON.stringify(afterEnter)})`,
+    );
     await page.evaluate(
       `(() => { const o = [...document.querySelectorAll('[role="listbox"] [role="option"]')].find((x) => x.textContent.includes(${q(MEMBER.name)})); o.click(); return true; })()`,
     );
@@ -263,11 +284,9 @@ export async function sharingChecks(page, ctx) {
   await clickButton(page, 'Share');
   await page.waitFor(`!!document.getElementById('share-who')`);
   // Decision 96: focusing the field, before anything is typed, lists the account's people, and the status line counts them.
-  // The earlier checks may leave the phone emulation on, so the window is put back to the desktop first.
-  await setPhone(page, false);
   // A real click focuses the field (focusPeopleField); the status line is read after the list shows the member.
-  const counted = await focusPeopleField(page, MEMBER.name);
-  check(/^\d+ (people and groups|person or group)$/.test(counted), `focusing the people field lists the account's people before anything is typed (status: "${counted}")`);
+  const { counted, attempt } = await focusPeopleField(page, MEMBER.name);
+  check(/^\d+ (people and groups|person or group)$/.test(counted), `focusing the people field lists the account's people before anything is typed (status: "${counted}"; attempt ${attempt})`);
   // The owner picks the member from the list with a click, and the member is added.
   await page.evaluate(
     `(() => { const o = [...document.querySelectorAll('[role="listbox"] [role="option"]')].find((x) => x.textContent.includes(${q(MEMBER.name)})); o.click(); return true; })()`,
