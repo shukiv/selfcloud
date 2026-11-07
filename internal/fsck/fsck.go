@@ -137,13 +137,21 @@ type candidate struct {
 	id      string
 }
 
+// hashCheck is a file to hash after the snapshot is closed: its row says what the hash must be.
+type hashCheck struct {
+	kind string
+	row  store.FileRow
+	rel  string
+}
+
 type checker struct {
-	ctx   context.Context
-	opts  Options
-	cs    *store.CheckStore
-	snap  *store.Snapshot
-	rep   *Report
-	cands []candidate
+	ctx    context.Context
+	opts   Options
+	cs     *store.CheckStore
+	snap   *store.Snapshot
+	rep    *Report
+	cands  []candidate
+	hashes []hashCheck
 }
 
 // run makes every check in one read snapshot, so the checks agree with each other. Then it looks again at what it
@@ -160,6 +168,9 @@ func (c *checker) run() error {
 	snap.Close()
 	c.snap = nil
 	if err != nil {
+		return err
+	}
+	if err := c.hashPass(); err != nil {
 		return err
 	}
 	if err := c.recheck(); err != nil {
@@ -289,17 +300,8 @@ func (c *checker) judgeBlob(acc, bid, rel string, info fs.FileInfo) error {
 				Detail: fmt.Sprintf("the file has %d bytes, its row says %d", info.Size(), row.Size)})
 		}
 		if c.opts.VerifyContent && row.SHA256 != "" {
-			got, err := hashFile(filepath.Join(c.opts.DataDir, rel))
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil // removed since the listing
-			}
-			if err != nil {
-				return err
-			}
-			if got != row.SHA256 {
-				c.add(Finding{Kind: KindHashBlob, Account: acc, ID: bid, Path: rel,
-					Detail: "the contents do not hash to the row's SHA-256"})
-			}
+			c.hashes = append(c.hashes, hashCheck{kind: KindHashBlob,
+				row: store.FileRow{ID: bid, AccountID: acc, SHA256: row.SHA256}, rel: rel})
 		}
 		return nil
 	}
@@ -419,15 +421,27 @@ func (c *checker) checkFile(row store.FileRow, rel string, info fs.FileInfo, siz
 			Detail: fmt.Sprintf("the file has %d bytes, its row says %d", info.Size(), row.Size)})
 	}
 	if c.opts.VerifyContent && row.SHA256 != "" {
-		got, err := hashFile(filepath.Join(c.opts.DataDir, rel))
+		c.hashes = append(c.hashes, hashCheck{kind: hashKind, row: row, rel: rel})
+	}
+	return nil
+}
+
+// hashPass reads the contents for --verify-content. It runs after the snapshot is closed, so a long hash does not hold
+// a read transaction open. That is safe because a committed blob, derived file or zip is never changed, so its bytes
+// are the bytes its row describes whenever they are read. The file may be gone by now; that is not a finding.
+func (c *checker) hashPass() error {
+	for _, h := range c.hashes {
+		c.count("hashed_files")
+		got, err := hashFile(filepath.Join(c.opts.DataDir, h.rel))
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil
+			c.count("hash_removed_since_listing")
+			continue
 		}
 		if err != nil {
 			return err
 		}
-		if got != row.SHA256 {
-			c.add(Finding{Kind: hashKind, Account: row.AccountID, ID: row.ID, Path: rel,
+		if got != h.row.SHA256 {
+			c.add(Finding{Kind: h.kind, Account: h.row.AccountID, ID: h.row.ID, Path: h.rel,
 				Detail: "the contents do not hash to the row's SHA-256"})
 		}
 	}

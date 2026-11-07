@@ -505,6 +505,48 @@ func TestIntegrityCheckFailsOnCorruptCopy(t *testing.T) {
 	}
 }
 
+// With the front of the file intact the schema still reads, so integrity_check itself runs and lists its problems. That
+// is the path that reports the problems line by line, unlike the unreadable path above.
+func TestIntegrityCheckListsProblemsOnDamagedTail(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	for i := 0; i < 200; i++ {
+		content := []byte(strings.Repeat("x", 300) + strconv.Itoa(i))
+		bid, sha := f.commit(content)
+		f.row(bid, int64(len(content)), sha)
+		f.node("n"+strconv.Itoa(i), bid, int64(len(content)), sha)
+	}
+	f.st.Close()
+	src, err := os.ReadFile(f.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := append([]byte(nil), src...)
+	for i := len(bad) - 16384; i < len(bad); i++ {
+		bad[i] ^= 0xA5
+	}
+	copyPath := filepath.Join(f.dir, "damaged-tail.db")
+	if err := os.WriteFile(copyPath, bad, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Run(f.ctx, Options{DataDir: f.dir, DBPath: copyPath, MinAge: time.Hour})
+	if r == nil {
+		t.Fatalf("no report, error %v", err)
+	}
+	if r.Integrity != "failed" {
+		t.Fatalf("integrity = %q for a damaged copy (error %v), want failed", r.Integrity, err)
+	}
+	listed := 0
+	for _, x := range find(r, KindIntegrity) {
+		if !strings.HasPrefix(x.Detail, "the database cannot be read") {
+			listed++
+		}
+	}
+	if listed == 0 {
+		t.Fatalf("integrity failed but no problem was listed by integrity_check (error %v): %+v", err, r.Findings)
+	}
+}
+
 func TestMissingReadyDerivedFileIsFound(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
