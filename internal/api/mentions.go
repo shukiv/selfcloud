@@ -33,6 +33,8 @@ const (
 	peopleScanLimit = 50
 	// peopleSearchRate is the limiter of the people list, per user.
 	peopleSearchRate = "people.search"
+	// mentionMinQuery is the shortest name the people list searches for. The account directory's floor is 0 (decision 96); this one is unchanged.
+	mentionMinQuery = 2
 	// mentionRefPrefix starts every reference, so a reference is told apart from an ID.
 	mentionRefPrefix = "mnt_"
 	// mentionRefLabel labels the key derived for references, so it is not the key of another use.
@@ -174,8 +176,8 @@ func (s *Server) handleListPeople(w http.ResponseWriter, r *http.Request) error 
 		return nodeNotFound()
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if n := utf8.RuneCountInString(q); n < directoryMinQuery || n > directoryMaxQuery {
-		return apierr.Newf(apierr.InvalidRequest, "q must be between %d and %d characters", directoryMinQuery, directoryMaxQuery)
+	if n := utf8.RuneCountInString(q); n < mentionMinQuery || n > directoryMaxQuery {
+		return apierr.Newf(apierr.InvalidRequest, "q must be between %d and %d characters", mentionMinQuery, directoryMaxQuery)
 	}
 	if err := s.rateLimit(peopleSearchRate, p.UserID); err != nil {
 		return err

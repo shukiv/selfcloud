@@ -13,10 +13,10 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-// Directory search bounds: the query is 2 to 100 characters, and an answer holds at most this many
-// entries, users and groups together.
+// Directory search bounds: the query is 0 to 100 characters (an empty one lists the account, decision 96),
+// and an answer holds at most directoryMax entries, users and groups together. The answer says more when
+// more matched than it holds.
 const (
-	directoryMinQuery = 2
 	directoryMaxQuery = 100
 	directoryMax      = 20
 )
@@ -28,6 +28,13 @@ type directoryJSON struct {
 	Kind  string `json:"kind"` // user or group
 	Name  string `json:"name"`
 	Email string `json:"email,omitempty"`
+}
+
+// directoryResponse is the answer of a directory search. More is true when more entries matched than Items
+// holds, so a client can say so and ask for a narrower q.
+type directoryResponse struct {
+	Items []directoryJSON `json:"items"`
+	More  bool            `json:"more"`
 }
 
 // handleDirectory finds people and groups of the caller's account, so a share dialog can name them. Any
@@ -44,8 +51,8 @@ func (s *Server) handleDirectory(w http.ResponseWriter, r *http.Request) error {
 		return apierr.New(apierr.Forbidden, "only a signed-in user of the account or its key may search its directory")
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if n := utf8.RuneCountInString(q); n < directoryMinQuery || n > directoryMaxQuery {
-		return apierr.Newf(apierr.InvalidRequest, "q must be between %d and %d characters", directoryMinQuery, directoryMaxQuery)
+	if n := utf8.RuneCountInString(q); n > directoryMaxQuery {
+		return apierr.Newf(apierr.InvalidRequest, "q must be at most %d characters", directoryMaxQuery)
 	}
 	kind := r.URL.Query().Get("kind")
 	if kind == "" {
@@ -58,16 +65,17 @@ func (s *Server) handleDirectory(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx := r.Context()
+	// Each kind is read one past the answer's size, so the merge can tell that more matched.
 	var found []directoryJSON
 	if kind == "user" || kind == "all" {
-		users, err := s.store.SearchUsers(ctx, p.AccountID, q, directoryMax)
+		users, err := s.store.SearchUsers(ctx, p.AccountID, q, directoryMax+1)
 		if err != nil {
 			return err
 		}
 		found = append(found, toDirectory(users)...)
 	}
 	if kind == "group" || kind == "all" {
-		groups, err := s.store.SearchGroups(ctx, p.AccountID, q, directoryMax)
+		groups, err := s.store.SearchGroups(ctx, p.AccountID, q, directoryMax+1)
 		if err != nil {
 			return err
 		}
@@ -75,13 +83,14 @@ func (s *Server) handleDirectory(w http.ResponseWriter, r *http.Request) error {
 	}
 	// Users and groups are merged by name, and the answer holds at most directoryMax of them.
 	sort.SliceStable(found, func(i, j int) bool { return strings.ToLower(found[i].Name) < strings.ToLower(found[j].Name) })
-	if len(found) > directoryMax {
+	more := len(found) > directoryMax
+	if more {
 		found = found[:directoryMax]
 	}
 	if found == nil {
 		found = []directoryJSON{}
 	}
-	writeJSON(w, http.StatusOK, listResponse[directoryJSON]{Items: found})
+	writeJSON(w, http.StatusOK, directoryResponse{Items: found, More: more})
 	return nil
 }
 

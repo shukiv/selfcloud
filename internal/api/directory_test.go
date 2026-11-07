@@ -110,17 +110,84 @@ func TestDirectoryFindsGroups(t *testing.T) {
 	}
 }
 
-// TestDirectoryQueryBounds: q is trimmed, then must be 2 to 100 characters.
+// TestDirectoryQueryBounds: q is trimmed, then must be 0 to 100 characters. An empty q lists the account
+// (decision 96), and one character is a search like any other.
 func TestDirectoryQueryBounds(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
-	for _, q := range []string{"", " ", "a", " a ", strings.Repeat("a", 101)} {
+	for _, q := range []string{strings.Repeat("a", 101), " " + strings.Repeat("a", 101) + " "} {
 		wantError(t, searchAs(t, fx, fx.key, q, ""), 400, apierr.InvalidRequest)
 	}
-	wantStatus(t, searchAs(t, fx, fx.key, "ab", ""), 200)
-	wantStatus(t, searchAs(t, fx, fx.key, strings.Repeat("a", 100), ""), 200)
-	wantStatus(t, searchAs(t, fx, fx.key, "  ab  ", ""), 200)
+	for _, q := range []string{"", " ", "a", " a ", "ab", "  ab  ", strings.Repeat("a", 100)} {
+		wantStatus(t, searchAs(t, fx, fx.key, q, ""), 200)
+	}
 	wantError(t, searchAs(t, fx, fx.key, "ab", "people"), 400, apierr.InvalidRequest)
+}
+
+// TestDirectoryEmptyQueryListsTheAccount: an empty q lists the account's active users and groups, the same
+// set a search reads, and leaves out a pending user, a disabled one and another account's people.
+func TestDirectoryEmptyQueryListsTheAccount(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	gid := fx.group(t, "Finance Team")
+	fx.pendingUser(t, "pat@example.com")
+	dis := fx.activeUser(t, "dan@example.com", "Dan Disabled", "en")
+	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+dis.ID, fx.key,
+		map[string]any{"status": "disabled"}), 200)
+	other, _ := newAccount(t, fx.s, fx.admin, "Other Co")
+	wantStatus(t, call(t, fx.s, "POST", "/api/v1/accounts/"+other.ID+"/users", fx.admin,
+		map[string]any{"email": "carol@example.com", "display_name": "Carol Other", "verification": "none"}), 201)
+
+	for _, rec := range []*httptest.ResponseRecorder{searchSession(t, fx, fx.annSess, ""), searchAs(t, fx, fx.key, "", "")} {
+		wantStatus(t, rec, 200)
+		ids := map[string]bool{}
+		for _, e := range decode[listResponse[directoryJSON]](t, rec).Items {
+			ids[e.ID] = true
+		}
+		for _, want := range []string{fx.ann.ID, fx.bob.ID, gid} {
+			if !ids[want] {
+				t.Errorf("empty q did not list %s; answer %s", want, rec.Body)
+			}
+		}
+		if len(ids) != 3 {
+			t.Errorf("empty q listed %d entries, want 3 (ann, bob, the group): %s", len(ids), rec.Body)
+		}
+	}
+}
+
+// TestDirectoryAnswerSaysWhenThereIsMore: an answer holds at most 20 entries, and says more when more matched,
+// for any q, including an empty one. Exactly 20 matches say nothing more.
+func TestDirectoryAnswerSaysWhenThereIsMore(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	more := func(q string) (int, bool) {
+		t.Helper()
+		rec := searchAs(t, fx, fx.key, q, "")
+		wantStatus(t, rec, 200)
+		m, ok := decode[map[string]any](t, rec)["more"].(bool)
+		if !ok {
+			t.Fatalf("answer for %q has no more field: %s", q, rec.Body)
+		}
+		return len(decode[listResponse[directoryJSON]](t, rec).Items), m
+	}
+	for i := 0; i < 19; i++ {
+		fx.activeUser(t, fmt.Sprintf("qx%02d@example.com", i), "", "en")
+	}
+	// Ann and Bob do not match "qx", so only the qx users count here.
+	if n, m := more("qx"); n != 19 || m {
+		t.Errorf("qx: %d entries, more %v; want 19 and false", n, m)
+	}
+	fx.activeUser(t, "qx19@example.com", "", "en")
+	if n, m := more("qx"); n != 20 || m {
+		t.Errorf("20 matches: %d entries, more %v; want 20 and false", n, m)
+	}
+	fx.activeUser(t, "qx20@example.com", "", "en")
+	if n, m := more("qx"); n != 20 || !m {
+		t.Errorf("21 matches: %d entries, more %v; want 20 and true", n, m)
+	}
+	if n, m := more(""); n != 20 || !m {
+		t.Errorf("empty q: %d entries, more %v; want 20 and true", n, m)
+	}
 }
 
 // TestDirectoryTakesWildcardsLiterally: % and _ in q match only themselves.

@@ -5004,13 +5004,16 @@ paths:
         taken literally. Only active users are listed: a pending or disabled user is never found, and
         no other account is searched. The answer holds at most 20 entries, users and groups together,
         sorted by name. Each caller is rate limited.
+
+        An empty `q` lists the account's active users and groups by the same rules, so the share dialog can
+        offer its members before anything is typed (decision 96). The answer's `more` is true when more
+        entries matched than it holds, for any `q`.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - name: q
           in: query
-          required: true
-          description: The text to find, 2 to 100 characters after trimming.
-          schema: { type: string, minLength: 2, maxLength: 100 }
+          description: The text to find, 0 to 100 characters after trimming. Empty lists the account.
+          schema: { type: string, minLength: 0, maxLength: 100 }
         - name: kind
           in: query
           description: Which kinds to find. Defaults to all.
@@ -5022,12 +5025,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, more]
                 properties:
                   items:
                     type: array
                     maxItems: 20
                     items: { $ref: "#/components/schemas/DirectoryEntry" }
+                  more:
+                    type: boolean
+                    description: True when more entries matched than `items` holds. Narrow `q` to see them.
         default: { $ref: "#/components/responses/Error" }
   /api/v1/folders/{fld}/settings:
     parameters:
