@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../lib/session";
 import { setLang } from "../lib/i18n";
 import { ThemeProvider, antdTokens } from "../theme/theme";
@@ -19,6 +19,7 @@ import { createQueryClient } from "../lib/query";
 import { treePlace } from "../lib/files/treePlace";
 import { newPlace, type NewPlace } from "../lib/files/newPlace";
 import { myStorage } from "../lib/storage/api";
+import { officeEdit } from "../lib/files/editor";
 import { manager } from "../lib/files/uploads";
 import { formatBytes } from "../lib/files/format";
 import { PALETTE, SIDEBAR } from "../theme/tokens";
@@ -895,4 +896,88 @@ describe("the sidebar's menu takes the row metrics (decision 81)", () => {
       });
     }
   }
+});
+
+// wf1, decision 91: the sidebar's New menu takes its document entries from documentKinds, with the place on screen, the office
+// editing switch and the impersonation (Shell.tsx). The wiring is checked here at the sidebar, where a viewer and a commenter see
+// the menu: FilesPage shows no New menu to them. Each case also checks a plain entry of the menu.
+describe("the sidebar's document entries follow the place, the role and the impersonation (decision 91, wf1)", () => {
+  const DOCUMENTS = ["Document", "Spreadsheet", "Presentation"];
+  const FOLDER = "fld_bbbbbbbb";
+  const place = (over: Partial<NewPlace>): NewPlace => ({
+    where: { folder: FOLDER, dirID: null, path: "/" },
+    canFolder: true,
+    canUpload: true,
+    canUploadFolder: true,
+    readOnly: false,
+    canEdit: true,
+    nodeID: "nod_root",
+    ...over,
+  });
+  // A viewer's and a commenter's place: nothing can be added, so it is read-only (placeOfHere).
+  const readOnlyPlace = () => place({ canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false });
+
+  // Opens the sidebar's New menu on the folder's page, and waits for its entries.
+  async function openSidebarNew() {
+    renderShell(`/files/${FOLDER}`);
+    fireEvent.click(await screen.findByRole("button", { name: "New" }));
+    await screen.findByRole("menuitem", { name: "New folder" });
+  }
+
+  function setUp(role: "owner" | "member" | "admin" | "viewer" | "commenter", folderRole: FolderAccess["role"], shown: NewPlace, impersonated = false) {
+    signIn(role === "viewer" || role === "commenter" ? "member" : role);
+    folders.set([
+      team("fld_mine", "Mine", { kind: "personal", role: "manager" }),
+      team(FOLDER, "B", { role: folderRole }),
+    ]);
+    newPlace.set(shown);
+    if (impersonated) session.set({ ...(get(session) as Session), impersonation: { endsAt: "2099-01-01T00:00:00Z" } });
+  }
+
+  beforeEach(async () => {
+    window.localStorage.clear();
+    await setLang("en");
+    folders.set([]);
+    hiddenFolders.set([]);
+    newPlace.set(null);
+    officeEdit.set(true);
+  });
+  afterEach(() => {
+    officeEdit.set(false);
+  });
+
+  it("offers the three documents to a person who edits the folder, while office editing is on (the control)", async () => {
+    await wideScreen(async () => {
+      setUp("member", "editor", place({}));
+      await openSidebarNew();
+      for (const name of DOCUMENTS) expect(screen.getByRole("menuitem", { name })).toBeTruthy();
+    });
+  });
+
+  it("hides the three documents from a viewer's place, and keeps the reason and the disabled entries", async () => {
+    await wideScreen(async () => {
+      setUp("viewer", "viewer", readOnlyPlace());
+      await openSidebarNew();
+      expect(screen.getByRole("menuitem", { name: "Upload files" }).getAttribute("aria-disabled")).toBe("true");
+      for (const name of DOCUMENTS) expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    });
+  });
+
+  it("hides the three documents from a commenter's place, and keeps the reason and the disabled entries", async () => {
+    await wideScreen(async () => {
+      setUp("commenter", "commenter", readOnlyPlace());
+      await openSidebarNew();
+      expect(screen.getByRole("menuitem", { name: "Upload files" }).getAttribute("aria-disabled")).toBe("true");
+      for (const name of DOCUMENTS) expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    });
+  });
+
+  it("hides the three documents when an installation admin is signed in as the person, and keeps the other entries", async () => {
+    await wideScreen(async () => {
+      setUp("member", "editor", place({}), true);
+      await openSidebarNew();
+      expect(screen.getByRole("menuitem", { name: "Upload files" }).getAttribute("aria-disabled")).not.toBe("true");
+      for (const name of DOCUMENTS) expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    });
+  });
 });
