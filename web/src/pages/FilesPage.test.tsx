@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { App as AntdApp } from "antd";
-import { createQueryClient } from "../lib/query";
+import { createQueryClient, refreshTree } from "../lib/query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/apiError";
 import type { FolderAccess, Node, Role } from "../lib/files/types";
@@ -36,7 +36,7 @@ const api = vi.hoisted(() => ({
   getJob: vi.fn(),
   serverLimits: vi.fn(),
 }));
-const place = vi.hoisted(() => ({ role: "editor" as Role, noDownload: false, folderName: "Team A", rootNodeID: null as string | null }));
+const place = vi.hoisted(() => ({ role: "editor" as Role, noDownload: false, folderName: "Team A", rootNodeID: null as string | null, trail: [] as Node[] }));
 const uploadsMock = vi.hoisted(() => ({ add: vi.fn(), setChunkSize: vi.fn() }));
 const uploadList = vi.hoisted(() => {
   return { store: null as unknown as { set: (v: unknown[]) => void } };
@@ -56,7 +56,7 @@ vi.mock("../lib/files/location", async (orig) => ({
     folderRole: place.role,
     dir: dirID ? { id: dirID, name: "Reports", kind: "dir", role: place.role } : null,
     dirRole: place.role,
-    trail: [],
+    trail: place.trail,
     rootReachable: true,
     rootNodeID: place.rootNodeID,
     reach: [],
@@ -64,6 +64,15 @@ vi.mock("../lib/files/location", async (orig) => ({
     path: dirID ? "/Reports" : "/",
   })),
 }));
+// swallowed waits out the window in which the page swallows a click after a drag (useGestures, swallowClick: 50 ms). A dialog's button
+// pressed inside that window gets no click, so a test that presses one after a release waits for it first.
+const swallowed = () => new Promise<void>((r) => setTimeout(r, 60));
+
+// refreshTree is the real one, spied on: the tests read which folder-tree branches a change asked to read again.
+vi.mock("../lib/query", async (orig) => {
+  const real = await orig<typeof import("../lib/query")>();
+  return { ...real, refreshTree: vi.fn(real.refreshTree) };
+});
 vi.mock("../lib/files/folders", async () => {
   const { userWritable } = await import("../lib/store");
   return { folders: userWritable([]), hiddenFolders: userWritable([]), loadFolders: async () => [], loadHiddenFolders: async () => [] };
@@ -200,6 +209,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   place.role = "editor";
   place.noDownload = false;
+  place.trail = [];
   place.folderName = "Team A";
   place.rootNodeID = null;
   session.set(signedAs("u1"));
@@ -752,6 +762,7 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
     expect(trash.dataset.dropState).toBe("ok");
     await waitFor(() => expect(screen.getByTestId("drag-ghost").textContent).toContain("Move to Trash"));
     release();
+    await swallowed();
     const dialog = await screen.findByRole("dialog");
     expect(api.deleteNode).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
@@ -765,9 +776,80 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
     const mine = treeRow("nod_mine0001", "Mine", "");
     dragFrom(mine, trashEntry());
     release();
+    await swallowed();
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
     await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_mine0001"));
+  });
+
+  // branchesFrom lists the folder-tree branches the page asked to read again since call number from (decision 104, reviewed).
+  const branchesFrom = (from: number) =>
+    vi.mocked(refreshTree).mock.calls.slice(from).flatMap((c) => (c[1] ?? []) as Array<{ folder: string; dir: string | null }>);
+
+  it("after a tree folder is moved to the Trash, the tree reads its parent again, and Undo reads it again", async () => {
+    // Docs is shown, so the shown branch is not the parent of the folder dragged (Mine, under the space's root).
+    renderAt(`${FOLDER}/nod_docs0001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    api.restoreNode.mockResolvedValue(undefined);
+    dragFrom(treeRow("nod_mine0001", "Mine", ""), trashEntry());
+    release();
+    await swallowed();
+    const dialog = await screen.findByRole("dialog");
+    const beforeDelete = vi.mocked(refreshTree).mock.calls.length;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
+    await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_mine0001"));
+    await waitFor(() => expect(branchesFrom(beforeDelete)).toContainEqual({ folder: "fld_aaaaaaaa", dir: null }));
+    const beforeUndo = vi.mocked(refreshTree).mock.calls.length;
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(api.restoreNode).toHaveBeenCalledWith("nod_mine0001"));
+    await waitFor(() => expect(branchesFrom(beforeUndo)).toContainEqual({ folder: "fld_aaaaaaaa", dir: null }));
+  });
+
+  it("moving the folder shown to the Trash leaves the page on the space's root; Undo brings the folder back and stays there", async () => {
+    window.history.replaceState(null, "", "/");
+    renderAt(`${FOLDER}/nod_docs0001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    api.restoreNode.mockResolvedValue(undefined);
+    dragFrom(treeRow("nod_docs0001", "Docs", ""), trashEntry());
+    release();
+    await swallowed();
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
+    await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_docs0001"));
+    await waitFor(() => expect(window.location.pathname).toBe(FOLDER));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(api.restoreNode).toHaveBeenCalledWith("nod_docs0001"));
+    expect(window.location.pathname).toBe(FOLDER);
+  });
+
+  it("moving an ancestor of the folder shown to the Trash leaves the page on that ancestor's parent", async () => {
+    // Shown: Pics, inside Reports, inside Docs. Reports goes to the Trash, so the page goes to Docs, its parent.
+    window.history.replaceState(null, "", "/");
+    place.trail = [dirNode("nod_docs0001", "Docs", A), dirNode("nod_reports1", "Reports", A)];
+    renderAt(`${FOLDER}/nod_pics0001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    dragFrom(treeRow("nod_reports1", "Reports", "nod_docs0001"), trashEntry());
+    release();
+    await swallowed();
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
+    await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_reports1"));
+    await waitFor(() => expect(window.location.pathname).toBe(`${FOLDER}/nod_docs0001`));
+  });
+
+  it("a tree folder released on its own row does nothing, and shows no refusal", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const mine = treeRow("nod_mine0001", "Mine", "");
+    dragFrom(mine, mine);
+    release();
+    await waitFor(() => expect(screen.queryByTestId("drag-ghost")).toBeNull());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(screen.queryByText("A folder cannot go into itself.")).toBeNull();
+    expect(api.moveNode).not.toHaveBeenCalled();
+    expect(api.copyNode).not.toHaveBeenCalled();
   });
 
   it("refuses Ctrl over the Trash: nothing is copied there, and nothing is deleted", async () => {
@@ -1838,12 +1920,15 @@ describe("slice w2: drag onto a folder, and the rubber band", () => {
     expect(api.copyNode).not.toHaveBeenCalled();
   });
 
-  it("refuses a folder dropped on itself, with a reason", async () => {
+  it("a folder dropped on its own row does nothing: no state on the row, and no refusal (decision 104)", async () => {
     await ready();
     drag("Docs", rows("Docs"));
-    expect((rows("Docs") as HTMLElement).dataset.dropState).toBe("refused");
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBeUndefined();
     release();
-    expect(await screen.findByText("A folder cannot go into itself.")).toBeTruthy();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(screen.queryByText("A folder cannot go into itself.")).toBeNull();
     expect(api.moveNode).not.toHaveBeenCalled();
   });
 
