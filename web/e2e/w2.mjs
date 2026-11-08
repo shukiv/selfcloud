@@ -319,7 +319,12 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     const innerDiag = (label, point) =>
       page.evaluate(`(() => { const s = document.querySelector('.shell-scroll'); const r = s ? s.getBoundingClientRect() : null; const i = document.querySelector(${q(innerSel)}); const ir = i ? i.getBoundingClientRect() : null; const at = ${point ? `document.elementFromPoint(${point.x}, ${point.y})` : 'null'}; const d = at ? at.closest('[data-drop-folder],[data-drop-trash],[data-id]') : null; return JSON.stringify({ label: ${q(label)}, region: r ? [Math.round(r.top), Math.round(r.bottom)] : null, scrollTop: s ? s.scrollTop : null, inner: ir ? [Math.round(ir.top), Math.round(ir.bottom)] : null, point: ${point ? JSON.stringify(point) : 'null'}, under: at ? at.tagName + ':' + (d ? d.dataset.dropName || d.dataset.id || 'drop' : 'none') : null, dragBegan: document.documentElement.classList.contains('sc-gesture') }); })()`).then((s) => console.log(`DIAG ${s}`));
     await innerDiag('w2 tree drop, before the press', null);
-    const mid = await dragTo(page, from, to, {
+    // The source is read again here, after Inner is centred. Centring Inner can scroll the window (the brand block moves the tree 58 px
+    // lower, decision 109), and the rows then move under the pointer: the read taken before it named the row one below g07. This read
+    // does not scroll, and the check says the source is on screen for the press.
+    const pressFrom = await page.evaluate(`(() => { const el = document.querySelector(${q(itemSel('g07.txt'))}); const r = el ? (el.querySelector('bdi') ?? el).getBoundingClientRect() : null; return r ? { x: r.left + Math.min(r.width / 2, 40), y: r.top + r.height / 2, onScreen: r.top >= 0 && r.bottom <= window.innerHeight } : null; })()`);
+    check(pressFrom?.onScreen === true, `the file to drag is on screen for the press (${JSON.stringify(pressFrom)})`);
+    const mid = await dragTo(page, pressFrom, to, {
       during: async () => {
         await innerDiag('w2 tree drop, held over Inner', to);
         return dropState(page, innerSel);

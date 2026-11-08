@@ -87,6 +87,20 @@ describe("SidebarBrand (decision 109)", () => {
     expect(block?.style.marginBlockEnd).toBe("10px");
   });
 
+  // The reserved space is the height the loaded brand takes, so the sidebar does not move when the info arrives (the w2 e2e drag
+  // depends on it: a move of 58 px shifted the rows under a press).
+  it("reserves the height the loaded brand takes, so nothing moves when it arrives", () => {
+    const box = (el: HTMLElement | null) => [el?.style.minHeight, el?.style.paddingBlockStart, el?.style.marginBlockEnd];
+    brandLoaded.set(false);
+    brand.set({ name: "", accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
+    const reserved = box(renderBrand(false).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]'));
+    brandLoaded.set(true);
+    brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
+    const loaded = box(renderBrand(false).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]'));
+    expect(reserved).toEqual(["38px", "10px", "10px"]);
+    expect(loaded).toEqual(reserved);
+  });
+
   it("keeps the 10 px edges on a mouse and 6 px on a finger", () => {
     brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
     const mouse = renderBrand(false).container.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
