@@ -76,19 +76,25 @@ async function pickMenuItem(page, text) {
   );
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// setViewport emulates the window size and waits until the page has taken it: its width is the new one, and a moment has passed
-// for the layout to settle. A window resize closes a menu that is open at a point (the menu's trigger closes on resize, in
-// @rc-component/trigger), so a click made while the page is still resizing would race the close.
+// setViewport emulates the window size and waits until the page has taken it. @rc-component/trigger closes a popup that is
+// anchored at a point (the More menu) on a window resize, so a click made while the page is still resizing races that close.
+// When the size changes, the wait is for the resize events themselves: the final size, at least one resize, and two frames
+// (a resize event is dispatched before the frame's callbacks). When the size does not change, no resize is expected.
 async function setViewport(page, width, height, mobile) {
+  const size = await page.evaluate(`({ w: window.innerWidth, h: window.innerHeight })`);
+  const changed = size.w !== width || size.h !== height;
+  if (changed) {
+    await page.evaluate(`(() => { window.__resizes = 0; window.__onResize = () => { window.__resizes += 1; }; window.addEventListener('resize', window.__onResize); return true; })()`);
+  }
   await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
-  await page.waitFor(`window.innerWidth === ${width}`, 10000);
-  await sleep(200);
+  const landed = `window.innerWidth === ${width} && window.innerHeight === ${height}`;
+  await page.waitFor(changed ? `${landed} && window.__resizes > 0` : landed, 10000);
+  await page.evaluate(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`);
+  if (changed) {
+    await page.evaluate(`(() => { window.removeEventListener('resize', window.__onResize); delete window.__onResize; delete window.__resizes; return true; })()`);
+  }
 }
 
-// pickSegment chooses a theme in the theme switch by its label, once the switch is on the page.
-// The options are system, light and dark, in that order, whatever the language: the choice is made by its place.
 async function pickSegment(page, value) {
   await setThemeByPlace(page, { system: 0, light: 1, dark: 2 }[value], value);
 }
