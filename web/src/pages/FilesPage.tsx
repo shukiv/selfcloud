@@ -75,7 +75,7 @@ import { tapOpens } from "../lib/files/tap";
 import { readPrefs, writePrefs, type ViewPrefs } from "../lib/files/viewPrefs";
 import { UndoStack } from "../lib/files/undo";
 import { copyText, nodeAddress } from "../lib/files/copyText";
-import { alreadyIn, dropDecision, type Dest } from "../lib/files/drag";
+import { alreadyIn, dropDecision, dropTrash, type Dest } from "../lib/files/drag";
 import { HEADER_H, rowPad, stickyTop, toolbarH } from "../lib/files/layout";
 import { treePlace } from "../lib/files/treePlace";
 import { rowStep, type TilePlace } from "../lib/files/grid";
@@ -238,6 +238,21 @@ async function loadPlace(route: FilesRoute): Promise<PlaceState> {
 
 // dialogOpen says whether a dialog is on screen. antd keeps a closed modal in the DOM (its wrapper is display none) and a
 // closed drawer too (it loses the open class), so a plain query for the role finds a dialog that is not there.
+// chainTo is the folders of a listing's chain down to dir, inclusive, for a place on the chain; a dir below the chain is the chain
+// with dir added, and no dir (a space's root) has none above it. It is the path a drop's descendant check reads (decision 104).
+function chainTo(chain: string[], dir: string | null): string[] {
+  if (dir === null) return [];
+  const at = chain.indexOf(dir);
+  return at >= 0 ? chain.slice(0, at + 1) : [...chain, dir];
+}
+
+// ancestry is the folders from a listing's top down to the folder shown, itself included: the trail below the space's root, or the
+// reachable folders above the shown one when the root is not reachable, then the folder shown. (The tree's own chain leaves the folder
+// shown out when the root is not reachable; a drop's check needs it in.)
+function ancestry(here: Here): string[] {
+  return [...(here.rootReachable ? here.trail : here.reach).map((n) => n.id), ...(here.dir ? [here.dir.id] : [])];
+}
+
 function dialogOpen(): boolean {
   return Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).some((d) => {
     const modal = d.closest<HTMLElement>(".ant-modal-wrap");
@@ -1564,7 +1579,6 @@ export default function FilesPage() {
   // and at phone width the one-row bar takes its main action and a More menu from it. Each action is hidden when the caller
   // may never perform it in this listing (the listing is read for that), and disabled when the selection does not allow it
   // now. So the three places cannot disagree about permissions.
-  const editable = items.some((n) => can.edit(n.role));
   const downloadable = items.some((n) => n.kind === "file" && downloadAllowed(gated(n)));
   const zippable = items.some((n) => n.kind !== "shortcut" && downloadAllowed(gated(n)));
   const versionable = items.some((n) => n.kind === "file" && atLeast(n.role, "viewer"));
@@ -1576,6 +1590,9 @@ export default function FilesPage() {
   // buildActs is the one list, for a set of items: the selection for the toolbar and the menus, and the dragged set for a drag,
   // which asks the same Move and Copy whether they are enabled for those items (see gestureCtl).
   const buildActs = (selectedNodes: Node[]): BarAct[] => {
+    // The rights of a dragged folder of the sidebar's tree may be the tree's, not the listing's: an action is shown when the listing
+    // or the items themselves may take it. For a listing's selection the two are the same (its items are the listing's).
+    const editable = items.some((n) => can.edit(n.role)) || selectedNodes.some((n) => can.edit(n.role));
     const single = selectedNodes.length === 1 ? selectedNodes[0] : null;
     const pickedFile = selectedNodes.length === 0 || selectedNodes.some((n) => n.kind === "file");
     const allEdit = selectedNodes.length > 0 && selectedNodes.every((n) => can.edit(n.role));
@@ -1971,7 +1988,7 @@ export default function FilesPage() {
   // Copy, built for the dragged items, must be enabled for the drop to be allowed; the place is judged by dropDecision, with the
   // role a paste needs. A drop then runs the same transfer as a paste does, which reads each item again for its current etag,
   // asks about a taken name, and pushes its undo.
-  const WHY_KEY = { role: "files.drag.no.role", self: "files.drag.no.self", here: "files.drag.no.here", move: "files.drag.no.move" } as const;
+  const WHY_KEY = { role: "files.drag.no.role", self: "files.drag.no.self", here: "files.drag.no.here", move: "files.drag.no.move", copy: "files.drag.no.copy", trash: "files.drag.no.trash" } as const;
   gestureCtl.current = {
     enabled: () => here !== null && !busy && renameRef.current === null && dialogRef.current === null && conflict === null && !dialogOpen(),
     startDrag: (id) => {
@@ -1982,13 +1999,25 @@ export default function FilesPage() {
       setSelection({ ids: [id], anchor: index, focus: index });
       return [n];
     },
+    // A folder of the sidebar's tree carries only itself: the listing's selection stays as it is (decision 104).
+    startTree: (folder) => [folder],
     decide: (nodes, dest: Dest, copy) => {
       const list = buildActs(nodes);
       const allowed = (key: string) => list.some((a) => a.key === key && !a.hidden && a.enabled);
-      return dropDecision(nodes, dest, copy, { move: allowed("move"), copy: allowed("copy") });
+      if (dest.trash) return dropTrash(nodes, copy, { delete: allowed("delete") });
+      // A listing row or breadcrumb does not carry the folders above it, so a folder dragged onto a place below itself would pass the
+      // check. The place's chain of the listing is the way down to the folder shown, and a place on it or below it has that chain above.
+      const path = dest.path ?? (here !== null && dest.folder === here.folder ? chainTo(ancestry(here), dest.dir) : undefined);
+      return dropDecision(nodes, path === undefined ? dest : { ...dest, path }, copy, { move: allowed("move"), copy: allowed("copy") });
     },
     drop: (decision, dest) => {
-      void runTransfer(decision.mode, decision.nodes, { folder: dest.folder, dir: dest.dir }, false, true);
+      const mode = decision.mode;
+      if (mode === "trash") {
+        // The Delete action on the items: its own confirmation, then the usual Undo notice (decision 104).
+        buildActs(decision.nodes).find((a) => a.key === "delete")?.run();
+        return;
+      }
+      void runTransfer(mode, decision.nodes, { folder: dest.folder, dir: dest.dir }, false, true);
     },
     refuse: (why) => void message.warning(t(WHY_KEY[why])),
     selectedIDs: () => sel.ids,

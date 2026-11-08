@@ -1248,6 +1248,15 @@ tr[data-drop-state="refused"] > td {
   background: var(--ant-color-error-bg) !important;
 }
 
+/* The sidebar's Trash is a menu item, which has its own background: its state wins over the menu's (decision 104). */
+.shell-menu [data-drop-state="ok"] {
+  background: var(--ant-color-primary-bg) !important;
+}
+
+.shell-menu [data-drop-state="refused"] {
+  background: var(--ant-color-error-bg) !important;
+}
+
 /* The folder tree: a row lights up under the pointer, and shows the keyboard's place. The sidebar's rows have their own hover above. */
 .tree-row:not(.tree-row-side):hover {
   background: var(--ant-color-fill-tertiary);

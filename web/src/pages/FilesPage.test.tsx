@@ -635,6 +635,196 @@ describe("a session change stops the work it started", () => {
   });
 });
 
+// Slice sd1 (decision 104): a folder of the sidebar's tree is a drag source, and the sidebar's Trash takes a drop. The sidebar is not
+// rendered here: a tree row and the Trash entry are the DOM the sidebar draws, with the attributes the sidebar draws (Shell, FolderTree).
+describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
+  const pointer = (type: string, x: number, y: number, extra: PointerEventInit = {}) =>
+    new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerType: "mouse", isPrimary: true, clientX: x, clientY: y, ...extra });
+  const send = (el: Element | Window | Document, type: string, x: number, y: number, extra: PointerEventInit = {}) => {
+    el.dispatchEvent(pointer(type, x, y, extra));
+  };
+  const dirNode = (id: string, name: string, extra: Partial<Node> = {}) => node(id, name, { kind: "dir", mime_type: undefined, ...extra });
+  const A = { folder_id: "fld_aaaaaaaa" };
+  let under: Element | null = null;
+  let sidebarEls: HTMLElement[] = [];
+
+  // treeRow draws a folder of the sidebar's tree the way FolderTree does: the drag source, then the drop place, with the same values.
+  function treeRow(id: string, name: string, parent: string, role = "editor", into: HTMLElement = document.body): HTMLElement {
+    const el = document.createElement("div");
+    el.className = "tree-row";
+    Object.assign(el.dataset, {
+      treeDrag: id,
+      treeSpace: "fld_aaaaaaaa",
+      treeParent: parent,
+      treeName: name,
+      treeRole: role,
+      dropFolder: "fld_aaaaaaaa",
+      dropDir: id,
+      dropRole: role,
+      dropName: name,
+      dropPath: ["fld_aaaaaaaa", ...(parent ? [parent] : []), id].join(","),
+    });
+    into.appendChild(el);
+    sidebarEls.push(el);
+    return el;
+  }
+  // trashEntry draws the sidebar's Trash entry as the menu does, with the attributes Shell gives it.
+  function trashEntry(): HTMLElement {
+    const el = document.createElement("li");
+    el.setAttribute("role", "menuitem");
+    el.dataset.dropTrash = "";
+    el.dataset.dropName = "Trash";
+    document.body.appendChild(el);
+    sidebarEls.push(el);
+    return el;
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    under = null;
+    sidebarEls = [];
+    document.elementFromPoint = () => under;
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
+    api.childrenPage.mockResolvedValue({
+      items: [dirNode("d1", "Docs", A), dirNode("d2", "Pics", A), node("n1", "alpha.txt", A), node("n2", "beta.txt", A)],
+      next_cursor: undefined,
+    });
+    api.statOrNull.mockImplementation(async (id: string) => (id === "d1" ? dirNode("d1", "Docs", { ...A, etag: "fresh-d1" }) : node(id, `${id}.txt`, { ...A, etag: `fresh-${id}` })));
+    api.moveNode.mockResolvedValue(node("n1", "alpha.txt"));
+    api.deleteNode.mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    for (const el of sidebarEls) el.remove();
+    vi.restoreAllMocks();
+    folders.set([]);
+  });
+
+  // The pointer presses the tree row, moves over the place, and returns the place's state before the release.
+  function dragFrom(from: Element, over: Element | null, extra: PointerEventInit = {}) {
+    send(from, "pointerdown", 10, 10, extra);
+    send(from, "pointermove", 40, 40, extra);
+    under = over;
+    send(from, "pointermove", 60, 60, extra);
+  }
+  const release = (extra: PointerEventInit = {}) => send(document.body, "pointerup", 60, 60, extra);
+
+  it("moves a folder of the tree onto a folder row of the listing, as one transfer with Undo", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const mine = treeRow("nod_mine0001", "Mine", "");
+    dragFrom(mine, rows("Docs"));
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBe("ok");
+    await waitFor(() => expect(screen.getByTestId("drag-ghost").textContent).toContain("Move to"));
+    release();
+    await waitFor(() => expect(api.moveNode).toHaveBeenCalledTimes(1));
+    expect(api.moveNode.mock.calls[0][0]).toBe("nod_mine0001");
+    expect(api.moveNode.mock.calls[0][1]).toMatchObject({ folder: "fld_aaaaaaaa", parent: "d1" });
+    expect(api.copyNode).not.toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: "Undo" })).toBeTruthy();
+  });
+
+  it("refuses a folder of the tree dropped on a folder below it in the listing, and says why", async () => {
+    // Docs is shown, under the space's root: the page reads the way down from the root to it. (Its ids are as the server's, so the
+    // route accepts them.)
+    api.statOrNull.mockImplementation(async (id: string) => {
+      if (id === "nod_root0001") return dirNode("nod_root0001", "Team A", { parent_id: null });
+      if (id === "nod_docs0001") return dirNode("nod_docs0001", "Docs", { ...A, parent_id: "nod_root0001", etag: "fresh-docs" });
+      return node(id, `${id}.txt`, { ...A, etag: `fresh-${id}` });
+    });
+    api.childrenPage.mockResolvedValue({ items: [dirNode("nod_pics0001", "Pics", A), node("n1", "alpha.txt", A)], next_cursor: undefined });
+    renderAt(`${FOLDER}/nod_docs0001`);
+    await screen.findByRole("row", { name: "Pics" });
+    // Pics is a folder inside Docs, so Docs cannot go into Pics. A listing row does not carry the folders above it: the page adds the
+    // chain of the folder shown to the drop's place (decision 104).
+    const docs = treeRow("nod_docs0001", "Docs", "");
+    dragFrom(docs, rows("Pics"));
+    expect((rows("Pics") as HTMLElement).dataset.dropState).toBe("refused");
+    release();
+    await screen.findAllByText("A folder cannot go into itself.");
+    expect(api.moveNode).not.toHaveBeenCalled();
+  });
+
+  it("moves a listing item onto the sidebar's Trash through Delete, and deletes it after the confirmation", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const trash = trashEntry();
+    dragFrom(rows("alpha.txt") as Element, trash);
+    expect(trash.dataset.dropState).toBe("ok");
+    await waitFor(() => expect(screen.getByTestId("drag-ghost").textContent).toContain("Move to Trash"));
+    release();
+    const dialog = await screen.findByRole("dialog");
+    expect(api.deleteNode).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
+    await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("n1"));
+    expect(api.moveNode).not.toHaveBeenCalled();
+  });
+
+  it("deletes a folder of the tree dropped on the Trash the same way", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const mine = treeRow("nod_mine0001", "Mine", "");
+    dragFrom(mine, trashEntry());
+    release();
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
+    await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_mine0001"));
+  });
+
+  it("refuses Ctrl over the Trash: nothing is copied there, and nothing is deleted", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const trash = trashEntry();
+    dragFrom(rows("alpha.txt") as Element, trash, { ctrlKey: true });
+    expect(trash.dataset.dropState).toBe("refused");
+    release({ ctrlKey: true });
+    await waitFor(() => expect(screen.getAllByText("Nothing is copied to the Trash. Let go without Ctrl to move to it.").length).toBeGreaterThan(0));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.deleteNode).not.toHaveBeenCalled();
+    expect(api.copyNode).not.toHaveBeenCalled();
+  });
+
+  it("shows the Trash as refused, and deletes nothing, when Delete is not allowed for the item", async () => {
+    api.childrenPage.mockResolvedValue({ items: [dirNode("d1", "Docs", A), node("n2", "beta.txt", { ...A, role: "viewer" })], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "beta.txt" });
+    const trash = trashEntry();
+    dragFrom(rows("beta.txt") as Element, trash);
+    expect(trash.dataset.dropState).toBe("refused");
+    release();
+    await waitFor(() => expect(screen.getAllByText("These items cannot go to the Trash: you may not delete them.").length).toBeGreaterThan(0));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.deleteNode).not.toHaveBeenCalled();
+  });
+
+  it("scrolls the sidebar when a drag holds in its bottom edge band, and not when the pointer is beside it", async () => {
+    // The sidebar's scroll region (.shell-scroll) is stated with its box: 264 px wide, 400 px tall, 1000 px of content.
+    const side = document.createElement("div");
+    side.className = "shell-scroll";
+    side.style.overflowY = "auto";
+    side.getBoundingClientRect = () => new DOMRect(0, 0, 264, 400);
+    Object.defineProperty(side, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(side, "clientHeight", { value: 400, configurable: true });
+    let scrollTop = 0;
+    Object.defineProperty(side, "scrollTop", { get: () => scrollTop, set: (v: number) => (scrollTop = v), configurable: true });
+    document.body.appendChild(side);
+    sidebarEls.push(side);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const mine = treeRow("nod_mine0001", "Mine", "", "editor", side);
+    send(mine, "pointerdown", 10, 10);
+    send(mine, "pointermove", 40, 40);
+    // Beside the sidebar (x 600), at its bottom edge: the sidebar does not move.
+    send(mine, "pointermove", 600, 380);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(scrollTop).toBe(0);
+    // In the sidebar, 20 px above its bottom edge: it scrolls down.
+    send(mine, "pointermove", 100, 380);
+    await waitFor(() => expect(scrollTop).toBeGreaterThan(0));
+    release();
+  });
+
+});
+
 describe("a drop onto a dialog is not a drop onto the folder behind it", () => {
   it("does not start an upload for a file dropped on an open dialog", async () => {
     renderAt(FOLDER);

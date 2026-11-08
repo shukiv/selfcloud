@@ -31,7 +31,7 @@ space ("My files"), and a group can hold users.
 
 | Drive feature | Selfcloud |
 |---|---|
-| Upload files and folders, with drag and drop | Have: resumable uploads (f). Built (k2): the upload tray, folder upload and drag and drop |
+| Upload files and folders, with drag and drop | Have: resumable uploads (f). Built (k2): the upload tray, folder upload and drag and drop. Built (sd1, decision 104): a folder of the sidebar's tree can be dragged onto the folders, roots and breadcrumbs of the listing and the tree, and the sidebar's Trash takes a drop (Delete, with its confirmation and Undo); the sidebar scrolls at its edge during a drag. Not built: a finger |
 | Create blank documents, spreadsheets and presentations | Built (l6, decision 91; nt1, decision 105): `POST /api/v1/nodes/{nod}/documents` makes Word, Excel and PowerPoint files, and the OpenDocument text, spreadsheet, presentation and drawing kinds, and an empty text file (`txt`, made with office editing off). Documents also come from templates: six built-in starters (`builtin:letter` and the rest, `GET /api/v1/templates?kind=`) and the account's own templates folder (`GET` and `PUT /api/v1/accounts/{acc}/templates`, by a manager). The submenus and the template picker in the web interface are slice nt2 |
 | Create from a template gallery | New (l+): per-account template folders |
 | Maximum file size (5 TB in Drive) | Have: settable, default 100 GiB (`upload.max_file_size`) |

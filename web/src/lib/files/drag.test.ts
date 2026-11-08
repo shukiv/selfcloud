@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { bandSelection, boxBetween, dropDecision, edgeScroll, movedFar, touches, type Dest } from "./drag";
+import { bandSelection, boxBetween, dropDecision, dropTrash, edgeScroll, movedFar, touches, treeNode, type Dest } from "./drag";
 import type { Node } from "./types";
 
 function node(id: string, extra: Partial<Node> = {}): Node {
@@ -92,6 +92,48 @@ describe("the rubber band", () => {
 
   it("selects nothing from a band over empty space", () => {
     expect(bandSelection(items, boxBetween(200, 0, 300, 100), [], false)).toEqual([]);
+  });
+});
+
+describe("a tree folder as a source (decision 104)", () => {
+  // A folder of the sidebar's tree: in the space fld_aaaaaaaa, under the folder nod_parent01, with the role the tree gives it.
+  const folder = (id: string, extra: Partial<Node> = {}) => node(id, { kind: "dir", parent_id: "nod_parent01", ...extra });
+
+  it("builds a folder node from the tree's own row", () => {
+    const n = treeNode({ id: "nod_mine0001", space: "fld_aaaaaaaa", parent: null, name: "Mine", role: "editor" });
+    expect(n).toMatchObject({ id: "nod_mine0001", folder_id: "fld_aaaaaaaa", parent_id: null, name: "Mine", kind: "dir", role: "editor" });
+  });
+
+  it("refuses a folder dropped on itself, and on a folder below it (the path of the tree)", () => {
+    const f = folder("nod_one00001");
+    expect(dropDecision([f], dest({ dir: "nod_one00001" }), false, both)).toEqual({ ok: false, why: "self" });
+    expect(dropDecision([f], dest({ dir: "nod_kid00001", path: ["fld_aaaaaaaa", "nod_one00001", "nod_kid00001"] }), false, both)).toEqual({ ok: false, why: "self" });
+    // Its own parent: the folder is already there, so nothing would move.
+    expect(dropDecision([f], dest({ dir: "nod_parent01" }), false, both)).toEqual({ ok: false, why: "here" });
+  });
+
+  it("moves to a sibling, and to a space's root, when the caller may add there", () => {
+    const f = folder("nod_one00001");
+    expect(dropDecision([f], dest({ dir: "nod_sister01" }), false, both).ok).toBe(true);
+    expect(dropDecision([f], dest({ dir: null }), false, both)).toMatchObject({ ok: true, mode: "move" });
+    expect(dropDecision([f], dest({ dir: "nod_sister01", role: "viewer" }), false, both)).toEqual({ ok: false, why: "role" });
+  });
+});
+
+describe("dropping on the Trash (decision 104)", () => {
+  const trash = (nodes: Node[], copy: boolean, delete_: boolean) => dropTrash(nodes, copy, { delete: delete_ });
+
+  it("is the Delete action on the dragged items, when Delete is allowed for them", () => {
+    const n = [node("nod_one00001")];
+    expect(trash(n, false, true)).toEqual({ ok: true, mode: "trash", nodes: n });
+  });
+
+  it("is refused when Delete is not shown or not enabled for them, with its own reason", () => {
+    expect(trash([node("nod_one00001")], false, false)).toEqual({ ok: false, why: "trash" });
+  });
+
+  it("refuses a copy with Ctrl: nothing is copied into the Trash", () => {
+    expect(trash([node("nod_one00001")], true, true)).toEqual({ ok: false, why: "copy" });
   });
 });
 

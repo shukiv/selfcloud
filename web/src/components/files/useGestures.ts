@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { bandSelection, boxBetween, edgeScroll, movedFar, type Box, type Decision, type Dest, type Why } from "../../lib/files/drag";
+import { bandSelection, boxBetween, edgeScroll, movedFar, treeNode, type Box, type Decision, type Dest, type Why } from "../../lib/files/drag";
 import type { Node } from "../../lib/files/types";
 
 // The pointer gestures of the file browser, with a mouse (a finger scrolls and a pen has no touch-action to keep the browser from panning, so both use Move to and the menu): a press on an item that moves becomes a drag (move, or copy
@@ -20,6 +20,9 @@ export interface GestureCtl {
   // startDrag says the item with this id was pressed and has moved. It returns the items the drag carries: the whole
   // selection when the item is in it, else that item alone (which the page selects). null stops the drag.
   startDrag: (id: string) => Node[] | null;
+  // startTree says a folder of the sidebar's tree was pressed and has moved (decision 104). The folder is the one the drag carries:
+  // the listing's selection is not changed by it. null stops the drag.
+  startTree: (folder: Node) => Node[] | null;
   decide: (nodes: Node[], dest: Dest, copy: boolean) => Decision;
   drop: (decision: Extract<Decision, { ok: true }>, dest: Dest) => void;
   refuse: (why: Why) => void;
@@ -45,12 +48,33 @@ const FRAME_GAP = 14;
 
 type Press =
   | { kind: "row"; id: string; x: number; y: number }
+  | { kind: "tree"; folder: Node; x: number; y: number }
   | { kind: "band"; x: number; y: number; ax: number; ay: number; base: string[] };
 
 // destOf reads a place from the attributes its element carries.
 export function destOf(el: HTMLElement): Dest {
   const d = el.dataset;
+  if (el.hasAttribute("data-drop-trash")) return { folder: "", dir: null, role: undefined, trash: true };
   return { folder: d.dropFolder ?? "", dir: d.dropDir ? d.dropDir : null, role: d.dropRole || undefined, path: d.dropPath ? d.dropPath.split(",") : undefined };
+}
+
+// treeOf reads the folder a sidebar row says it is, from the attributes FolderTree gives a drag source (data-tree-*), or null.
+function treeOf(el: HTMLElement): Node | null {
+  const d = el.dataset;
+  if (!d.treeDrag) return null;
+  return treeNode({ id: d.treeDrag, space: d.treeSpace ?? "", parent: d.treeParent ? d.treeParent : null, name: d.treeName ?? "", role: d.treeRole || undefined });
+}
+
+// The controls of a sidebar row: an arrow is the row's own, and a press on it is not a drag.
+const TREE_SKIP = 'button, input, textarea, select, label, [contenteditable="true"], [role="menu"], .ant-dropdown, .ant-modal-root, .ant-drawer';
+
+// sideBox is the sidebar's scroll region, when the pointer is inside it: a drag there scrolls it at its edges (decision 104).
+function sideBox(x: number, y: number): { el: HTMLElement; top: number; bottom: number } | null {
+  const el = document.querySelector<HTMLElement>(".shell-scroll");
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (x < r.left || x > r.right || y < r.top || y > r.bottom) return null;
+  return { el, top: r.top, bottom: r.bottom };
 }
 
 // scrollerOf is the nearest ancestor that scrolls, or null when the page itself does.
@@ -119,7 +143,7 @@ export function useGestures(rootRef: RefObject<HTMLElement | null>, listRef: Ref
       place.current = { x: last.x, y: last.y };
       if (mode === "drag") {
         putGhost();
-        const el = document.elementFromPoint(last.x, last.y)?.closest<HTMLElement>("[data-drop-folder]") ?? null;
+        const el = document.elementFromPoint(last.x, last.y)?.closest<HTMLElement>("[data-drop-folder], [data-drop-trash]") ?? null;
         const key = `${el ? "t" : "-"}|${last.ctrl}`;
         if (el === over && key === overKey) return;
         if (el !== over) clearOver();
@@ -180,6 +204,22 @@ export function useGestures(rootRef: RefObject<HTMLElement | null>, listRef: Ref
     const tick = () => {
       frame = 0;
       if (mode === "none") return;
+      // A drag held in the sidebar's edge band scrolls the sidebar, so a folder far down the tree can be reached (decision 104).
+      // The listing is not scrolled then: the pointer is not over it.
+      const side = mode === "drag" ? sideBox(last.x, last.y) : null;
+      if (side) {
+        const dy = edgeScroll(last.y, side.top, side.bottom);
+        if (dy !== 0) {
+          const before = side.el.scrollTop;
+          side.el.scrollTop += dy;
+          if (side.el.scrollTop !== before) {
+            overKey = "";
+            update();
+          }
+        }
+        frame = requestAnimationFrame(tick);
+        return;
+      }
       const root = rootRef.current;
       const scroller = scrollerOf(root);
       const bar = root?.querySelector<HTMLElement>('[role="toolbar"]');
@@ -263,8 +303,8 @@ export function useGestures(rootRef: RefObject<HTMLElement | null>, listRef: Ref
         if (!movedFar(e.clientX - press.x, e.clientY - press.y)) return;
         const c = ctl.current;
         if (!c) return;
-        if (press.kind === "row") {
-          const nodes = c.startDrag(press.id);
+        if (press.kind === "row" || press.kind === "tree") {
+          const nodes = press.kind === "row" ? c.startDrag(press.id) : c.startTree(press.folder);
           if (!nodes || nodes.length === 0) {
             finish(false);
             return;
@@ -309,16 +349,27 @@ export function useGestures(rootRef: RefObject<HTMLElement | null>, listRef: Ref
       const c = ctl.current;
       const root = rootRef.current;
       const t = e.target;
-      if (!c || !root || !(t instanceof Element) || !root.contains(t) || !c.enabled()) return;
-      if (t.closest(SKIP) || t === document.documentElement) return;
+      if (!c || !(t instanceof Element) || !c.enabled()) return;
+      if (t === document.documentElement) return;
       // A press that only dismisses an open menu does nothing else.
       if (document.querySelector(".ant-dropdown:not(.ant-dropdown-hidden)")) return;
-      const row = t.closest<HTMLElement>("[data-id]");
-      if (row && listRef.current?.contains(row)) {
-        press = { kind: "row", id: row.dataset.id ?? "", x: e.clientX, y: e.clientY };
+      // A folder of the sidebar's tree is a drag source (decision 104): a press on its name or its row moves it; its arrow and its menu are
+      // the controls' own. Its name is a link, so a press that does not move is the click that opens the folder, as before.
+      const tree = t.closest<HTMLElement>("[data-tree-drag]");
+      if (tree) {
+        if (t.closest(TREE_SKIP)) return;
+        const folder = treeOf(tree);
+        if (!folder) return;
+        press = { kind: "tree", folder, x: e.clientX, y: e.clientY };
       } else {
-        const rr = root.getBoundingClientRect();
-        press = { kind: "band", x: e.clientX, y: e.clientY, ax: e.clientX - rr.left, ay: e.clientY - rr.top, base: c.selectedIDs() };
+        if (!root || !root.contains(t) || t.closest(SKIP)) return;
+        const row = t.closest<HTMLElement>("[data-id]");
+        if (row && listRef.current?.contains(row)) {
+          press = { kind: "row", id: row.dataset.id ?? "", x: e.clientX, y: e.clientY };
+        } else {
+          const rr = root.getBoundingClientRect();
+          press = { kind: "band", x: e.clientX, y: e.clientY, ax: e.clientX - rr.left, ay: e.clientY - rr.top, base: c.selectedIDs() };
+        }
       }
       last = { x: e.clientX, y: e.clientY, ctrl: e.ctrlKey || e.metaKey };
       window.addEventListener("pointermove", onMove, true);
