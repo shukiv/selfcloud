@@ -422,7 +422,7 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
     case 'imports.archive':
       return { key: flag(d, 'enabled') === false ? 'audit.imports.archive.off' : 'audit.imports.archive.on', params: { actor } };
     case 'templates.folder':
-      return { key: d.node ? 'audit.templates.folder.set' : 'audit.templates.folder.clear', params: { actor } };
+      return { key: detail(d, 'node') !== '' ? 'audit.templates.folder.set' : 'audit.templates.folder.clear', params: { actor } };
     default:
       return { key: 'audit.unlisted', params: { actor } };
   }

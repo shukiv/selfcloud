@@ -116,4 +116,15 @@ describe('renderSentence', () => {
   it('isolates an empty name as nothing', () => {
     expect(isolateText('')).toBe('');
   });
+
+  // The templates folder: the server writes its node ID when it is set, and an empty node when it is cleared (decision 105).
+  it('says a templates folder is set when a node is named, and cleared when it is empty or missing', () => {
+    expect(sentence(entry({ action: 'templates.folder', details: { node: 'nod_x' } }), names).key).toBe(
+      'audit.templates.folder.set',
+    );
+    expect(sentence(entry({ action: 'templates.folder', details: { node: '' } }), names).key).toBe(
+      'audit.templates.folder.clear',
+    );
+    expect(sentence(entry({ action: 'templates.folder' }), names).key).toBe('audit.templates.folder.clear');
+  });
 });
