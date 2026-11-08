@@ -5,7 +5,8 @@ import { Download, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import { useLang, useT } from "../../lib/i18n";
 import { formatBytes, formatDate } from "../../lib/files/format";
 import { kindOf } from "../../lib/files/kind";
-import { plainClick, type LinkClick } from "../../lib/files/editor";
+import { coarsePointer, officeEdit, plainClick, type LinkClick } from "../../lib/files/editor";
+import { get } from "../../lib/store";
 import { contentPath } from "../../lib/files/api";
 import { CHIPS, type ChipId } from "../../lib/storage/breakdown";
 import type { LargestFile } from "../../lib/storage/api";
@@ -137,13 +138,14 @@ export default function LargestFilesCard({
   );
 }
 
-// officeInNewTab opens an office file's address in a new tab, from the click (decision 102, round 2 R6). The address reaches the
-// editor there, for the person's role, through the /n/ route. A file that is not an office document keeps its link, and a
-// modified click keeps the browser's own choice.
+// officeInNewTab opens an office file's editor in a new tab, from the click (decision 102, round 2 R6, and the review: the same
+// rules as the editor's open). The address is /n/{id}?tab=1: the /n/ page reaches the editor for the person's role, and the tab
+// flag lets the editor's Close end the tab. The link stays, and the browser's own choice stays, for a modified click, a file that
+// is not an office document, office editing off, and a coarse pointer (the same tab, as the editor's open does on a phone).
 function officeInNewTab(e: LinkClick, id: string, mime: string | undefined): void {
-  if (!plainClick(e) || kindOf({ kind: "file", mime_type: mime }) !== "office") return;
+  if (!get(officeEdit) || coarsePointer() || !plainClick(e) || kindOf({ kind: "file", mime_type: mime }) !== "office") return;
   e.preventDefault();
-  window.open(`/n/${encodeURIComponent(id)}`, "_blank", "noopener");
+  window.open(`/n/${encodeURIComponent(id)}?tab=1`, "_blank", "noopener");
 }
 
 // RowActions are the icons of one row: download, move to the trash (or restore, for a file in the trash), and More. Each

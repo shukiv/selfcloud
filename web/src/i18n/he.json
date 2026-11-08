@@ -1531,6 +1531,7 @@
   "files.editor.saveFailed": "השמירה נכשלה",
   "files.editor.creating": "יוצרים את הקובץ…",
   "files.editor.nothing": "אין כאן מה לפתוח",
+  "files.newDocument.blocked": "הדפדפן חסם את הלשונית החדשה. אפשרו חלונות קופצים לאתר הזה, ואז נסו שוב.",
   "files.editor.saved": "נשמר",
   "files.editor.unsaved": "יש שינויים שלא נשמרו",
   "files.editing.mark": "בעריכה",

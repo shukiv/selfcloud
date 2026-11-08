@@ -62,15 +62,20 @@ describe("the new-document key (decision 102, round 2 R5)", () => {
 });
 
 describe("the opener: the click makes the key, the new tab waits, the server call makes the file (decision 102, round 2 R5)", () => {
-  it("in a new tab with noopener opens only the wait page, makes the file once, and hands the result over on the channel", async () => {
+  // popup is the window a script opened: the opener clears its opener link before anything else happens in it.
+  const popup = { opener: {} as unknown };
+
+  it("the new tab opens only the wait page, makes the file once, and hands the result over on the channel; the opener link is cleared", async () => {
     vi.mocked(createDocument).mockResolvedValue({ id: "nod_a1", folder_id: "fld_b", name: "Untitled document.docx" } as never);
-    const open = vi.fn(() => null);
+    const open = vi.fn(() => popup);
     openNewDocumentTab({ parent: "nod_root", kind: "docx", from: "/files/fld_b", coarse: false, goTo: vi.fn(), fail: () => "x" }, open);
     expect(open).toHaveBeenCalledTimes(1);
-    const [url, target, features] = open.mock.calls[0] as unknown as [string, string, string];
+    const [url, target, features] = open.mock.calls[0] as unknown as [string, string, string | undefined];
     expect(url).toMatch(/^\/edit\/wait\?k=[A-Za-z0-9_-]{22}$/);
     expect(target).toBe("_blank");
-    expect(features).toBe("noopener");
+    // No noopener feature: a blocked pop-up is seen as null, and the opener link is cleared here instead.
+    expect(features).toBeUndefined();
+    expect(popup.opener).toBeNull();
     await vi.waitFor(() => expect(sent.length).toBe(1));
     expect(createDocument).toHaveBeenCalledTimes(1);
     expect(createDocument).toHaveBeenCalledWith("nod_root", "docx");
@@ -78,9 +83,21 @@ describe("the opener: the click makes the key, the new tab waits, the server cal
     expect(sent[0]).toEqual({ k, handoff: { node: "nod_a1", from: "/files/fld_b", tab: true } });
   });
 
+  it("a blocked new tab (the browser returned no window) creates nothing, and tells the person", async () => {
+    vi.mocked(createDocument).mockResolvedValue({ id: "nod_a1" } as never);
+    const open = vi.fn(() => null);
+    const blocked = vi.fn();
+    openNewDocumentTab({ parent: "nod_root", kind: "docx", from: "/files/fld_b", coarse: false, goTo: vi.fn(), fail: () => "x", blocked }, open);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(blocked).toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(createDocument).not.toHaveBeenCalled();
+    expect(sent.length).toBe(0);
+  });
+
   it("a refused creation is handed over as its error text", async () => {
     vi.mocked(createDocument).mockRejectedValue(new Error("over quota"));
-    const open = vi.fn(() => null);
+    const open = vi.fn(() => popup);
     openNewDocumentTab({ parent: "nod_root", kind: "xlsx", from: "/files/fld_b", coarse: false, goTo: vi.fn(), fail: (e) => `failed: ${(e as Error).message}` }, open);
     await vi.waitFor(() => expect(sent.length).toBe(1));
     const k = new URL((open.mock.calls[0] as unknown as [string])[0], "https://x.test").searchParams.get("k");

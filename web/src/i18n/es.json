@@ -1531,6 +1531,7 @@
   "files.editor.saveFailed": "No se pudo guardar",
   "files.editor.creating": "Creando el archivo…",
   "files.editor.nothing": "No hay nada que abrir aquí",
+  "files.newDocument.blocked": "El navegador bloqueó la pestaña nueva. Permita las ventanas emergentes para este sitio y vuelva a intentarlo.",
   "files.editor.saved": "Guardado",
   "files.editor.unsaved": "Cambios sin guardar",
   "files.editing.mark": "Se está editando",

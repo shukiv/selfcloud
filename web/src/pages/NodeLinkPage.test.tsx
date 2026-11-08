@@ -3,10 +3,11 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../lib/query";
 import type { Node } from "../lib/files/types";
 import { session, type Session } from "../lib/session";
+import { officeEdit } from "../lib/files/editor";
 import NodeLinkPage from "./NodeLinkPage";
 
 const api = vi.hoisted(() => ({ statOrNull: vi.fn(), statNode: vi.fn(), contentPath: vi.fn(), listVersions: vi.fn() }));
@@ -91,3 +92,56 @@ describe("the link page leaves the address alone once the person has moved on", 
   });
 });
 
+
+describe("a link a script opened in a new tab (tab=1) goes straight to the editor when office editing is on (oe1)", () => {
+  const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  const office: Node = { ...lone, id: "nod_0ff1ce01", name: "letter.docx", mime_type: DOCX, role: "editor" };
+  const mountAt = (path: string) => {
+    // Outside the app the page moves with the History API (lib/router), so the address bar is what the test reads.
+    window.history.replaceState(null, "", path);
+    const router = createMemoryRouter(
+      [
+        { path: "/n/:nod", element: <NodeLinkPage /> },
+        { path: "/edit/:nod", element: <p>editor page</p> },
+        { path: "*", element: <p>elsewhere</p> },
+      ],
+      { initialEntries: [path] },
+    );
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+  };
+
+  beforeEach(() => {
+    officeEdit.set(true);
+  });
+  afterEach(() => {
+    officeEdit.set(false);
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("opens the editor, with tab=1 kept, when office editing is on", async () => {
+    api.statOrNull.mockResolvedValue(office);
+    api.statNode.mockResolvedValue({ ...lone, id: "nod_parent0", parent_id: null, kind: "dir", mime_type: undefined });
+    mountAt("/n/nod_0ff1ce01?tab=1");
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_0ff1ce01"));
+    expect(window.location.search).toBe("?mode=edit&tab=1");
+  });
+
+  it("keeps the folder view for the same link without tab=1", async () => {
+    api.statOrNull.mockResolvedValue(office);
+    api.statNode.mockResolvedValue({ ...lone, id: "nod_parent0", parent_id: null, kind: "dir", mime_type: undefined });
+    mountAt("/n/nod_0ff1ce01");
+    await waitFor(() => expect(window.location.pathname).toBe("/files/fld_aaaaaaaa"));
+  });
+
+  it("keeps the folder view when office editing is off", async () => {
+    officeEdit.set(false);
+    api.statOrNull.mockResolvedValue(office);
+    api.statNode.mockResolvedValue({ ...lone, id: "nod_parent0", parent_id: null, kind: "dir", mime_type: undefined });
+    mountAt("/n/nod_0ff1ce01?tab=1");
+    await waitFor(() => expect(window.location.pathname).toBe("/files/fld_aaaaaaaa"));
+  });
+});

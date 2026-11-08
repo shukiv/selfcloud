@@ -8,8 +8,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNewDocument } from "./documents";
 import { createDocument } from "./api";
+import { session } from "../session";
 
 vi.mock("./api", () => ({ createDocument: vi.fn(() => new Promise(() => {})) }));
+
+// popup is what window.open returns for a tab the browser let open: a blocked pop-up returns null instead.
+const popup = () => ({ opener: {} }) as never;
 import { newPlace, placeOfHere, type NewPlace } from "./newPlace";
 
 // Pick is a stand-in for the New menu's Document entry: it calls the same hook the menus call.
@@ -67,8 +71,8 @@ describe("the pick opens the new-document page for the directory shown (round 2 
     vi.restoreAllMocks();
   });
 
-  it("the pick opens the wait page in a new tab with noopener, makes the file in the directory shown, and the opener does not move", () => {
-    const spy = vi.spyOn(window, "open").mockImplementation(() => null);
+  it("the pick opens the wait page in a new tab, makes the file in the directory shown, and the opener does not move", () => {
+    const spy = vi.spyOn(window, "open").mockImplementation(popup);
     const dir = { id: dirB, name: "d", kind: "dir" } as never;
     newPlace.set(placeOfHere({ folder: folderB, folderName: null, folderRole: "contributor", dir, dirRole: "contributor", trail: [], rootReachable: true, reach: [], spaceNoDownload: false, path: "/d" } as never, true, true));
     const router = createMemoryRouter(
@@ -82,7 +86,7 @@ describe("the pick opens the new-document page for the directory shown (round 2 
     expect(url).toMatch(/^\/edit\/wait\?k=[A-Za-z0-9_-]{22}$/);
     expect(url).not.toContain(dirB);
     expect(target).toBe("_blank");
-    expect(features).toBe("noopener");
+    expect(features).toBeUndefined();
     expect(createDocument).toHaveBeenCalledWith(dirB, "docx");
     expect(router.state.location.pathname).toBe(`/files/${folderB}/${dirB}`);
   });
@@ -96,7 +100,7 @@ describe("the opener refreshes the listing its own create changed (decision 102,
 
   it("after the create succeeds, the folder's listing is invalidated, so the new row is there when the person comes back", async () => {
     vi.mocked(createDocument).mockResolvedValueOnce({ id: "nod_new", name: "Untitled document.docx" } as never);
-    const spy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const spy = vi.spyOn(window, "open").mockImplementation(popup);
     const qc = new QueryClient();
     const invalidate = vi.spyOn(qc, "invalidateQueries");
     const dir = { id: dirB, name: "d", kind: "dir" } as never;
@@ -115,7 +119,7 @@ describe("the opener refreshes the listing its own create changed (decision 102,
 
   it("a create that fails invalidates nothing", async () => {
     vi.mocked(createDocument).mockRejectedValueOnce(new Error("over quota"));
-    vi.spyOn(window, "open").mockImplementation(() => null);
+    vi.spyOn(window, "open").mockImplementation(popup);
     const qc = new QueryClient();
     const invalidate = vi.spyOn(qc, "invalidateQueries");
     const dir = { id: dirB, name: "d", kind: "dir" } as never;
@@ -128,5 +132,52 @@ describe("the opener refreshes the listing its own create changed (decision 102,
     fireEvent.click(screen.getByText("pick"));
     await new Promise((r) => setTimeout(r, 20));
     expect(invalidate).not.toHaveBeenCalled();
+  });
+});
+
+// mountPick renders the pick in the directory shown, with the place the files page writes for it.
+function mountPick() {
+  const dir = { id: dirB, name: "d", kind: "dir" } as never;
+  newPlace.set(placeOfHere({ folder: folderB, folderName: null, folderRole: "contributor", dir, dirRole: "contributor", trail: [], rootReachable: true, reach: [], spaceNoDownload: false, path: "/d" } as never, true, true));
+  const router = createMemoryRouter(
+    [{ path: "*", element: <AntApp><Pick /></AntApp> }],
+    { initialEntries: [`/files/${folderB}/${dirB}`] },
+  );
+  render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router} /></QueryClientProvider>);
+}
+
+describe("the New document is not offered while an installation admin is signed in as a person (review, round 2)", () => {
+  beforeEach(() => {
+    newPlace.set(null);
+    vi.restoreAllMocks();
+    vi.mocked(createDocument).mockClear();
+  });
+
+  it("a pick while impersonating opens no tab and makes no file", async () => {
+    session.set({ user: { id: "usr_a", role: "user" }, impersonation: { endsAt: "2099-01-01T00:00:00Z" } } as never);
+    const spy = vi.spyOn(window, "open").mockImplementation(popup);
+    mountPick();
+    fireEvent.click(screen.getByText("pick"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(spy).not.toHaveBeenCalled();
+    expect(createDocument).not.toHaveBeenCalled();
+    session.set(null);
+  });
+});
+
+describe("a blocked new tab is said so, and makes no file (review, round 2)", () => {
+  beforeEach(() => {
+    newPlace.set(null);
+    vi.restoreAllMocks();
+    vi.mocked(createDocument).mockClear();
+  });
+
+  it("the browser's refusal to open the tab shows a message that says how to allow it, and no file is made", async () => {
+    const spy = vi.spyOn(window, "open").mockImplementation(() => null);
+    mountPick();
+    fireEvent.click(screen.getByText("pick"));
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/blocked the new tab/)).toBeTruthy();
+    expect(createDocument).not.toHaveBeenCalled();
   });
 });

@@ -1531,6 +1531,7 @@
   "files.editor.saveFailed": "Не удалось сохранить",
   "files.editor.creating": "Создаём файл…",
   "files.editor.nothing": "Здесь нечего открыть",
+  "files.newDocument.blocked": "Браузер заблокировал новую вкладку. Разрешите всплывающие окна для этого сайта и попробуйте ещё раз.",
   "files.editor.saved": "Сохранено",
   "files.editor.unsaved": "Несохранённые изменения",
   "files.editing.mark": "Редактируется",

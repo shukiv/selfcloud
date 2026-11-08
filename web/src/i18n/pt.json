@@ -1531,6 +1531,7 @@
   "files.editor.saveFailed": "Falha ao guardar",
   "files.editor.creating": "A criar o ficheiro…",
   "files.editor.nothing": "Não há nada para abrir aqui",
+  "files.newDocument.blocked": "O navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.",
   "files.editor.saved": "Guardado",
   "files.editor.unsaved": "Alterações por guardar",
   "files.editing.mark": "Em edição",

@@ -1531,6 +1531,7 @@
   "files.editor.saveFailed": "Échec de l'enregistrement",
   "files.editor.creating": "Création du fichier…",
   "files.editor.nothing": "Rien à ouvrir ici",
+  "files.newDocument.blocked": "Le navigateur a bloqué le nouvel onglet. Autorisez les fenêtres surgissantes pour ce site, puis réessayez.",
   "files.editor.saved": "Enregistré",
   "files.editor.unsaved": "Modifications non enregistrées",
   "files.editing.mark": "En cours de modification",

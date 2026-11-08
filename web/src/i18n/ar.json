@@ -1531,6 +1531,7 @@
   "files.editor.saveFailed": "تعذّر الحفظ",
   "files.editor.creating": "جارٍ إنشاء الملف…",
   "files.editor.nothing": "لا يوجد ما يُفتح هنا",
+  "files.newDocument.blocked": "منع المتصفح فتح التبويب الجديد. اسمح بالنوافذ المنبثقة لهذا الموقع، ثم حاول مرة أخرى.",
   "files.editor.saved": "تم الحفظ",
   "files.editor.unsaved": "تغييرات غير محفوظة",
   "files.editing.mark": "قيد التحرير",
