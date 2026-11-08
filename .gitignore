@@ -2,6 +2,8 @@
 .claude/settings.local.json
 /bin/
 /data/
+# The browser checks' output and the folders their runs keep (scripts/ci-e2e.sh).
+/e2e-out/
 # Package and tool caches, wherever a tool creates them (vitest writes one beside the test it runs).
 node_modules/
 # The build output is never committed. Only dist/.gitignore is, so the Go embed compiles before a build.

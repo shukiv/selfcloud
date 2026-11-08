@@ -38,3 +38,35 @@ jobs:
         run: go test -race -gcflags='modernc.org/...=-d=checkptr=0' -timeout 40m ./...
       - name: build
         run: CGO_ENABLED=0 go build -o /dev/null ./cmd/selfcloud
+
+  # The browser checks (decision 101): the web interface and the server are built, then run.mjs and both adminAccess runs
+  # drive Google Chrome, which the ubuntu-latest image ships, against the fake document converter. scripts/ci-e2e.sh holds
+  # the steps, so a builder's host runs the same ones.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SELFCLOUD_E2E_BROWSER: google-chrome-stable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Node 22 for the web interface
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: web install
+        run: npm ci
+        working-directory: web
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: browser checks
+        run: scripts/ci-e2e.sh
+      - name: keep the e2e output when a check fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: e2e-out/
+          retention-days: 3
