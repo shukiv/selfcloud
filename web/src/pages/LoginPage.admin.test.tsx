@@ -2,9 +2,11 @@
 
 import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "../lib/router";
+import { createQueryClient } from "../lib/query";
 import { setLang } from "../lib/i18n";
 import { session, setSignedIn } from "../lib/session";
 import { ThemeProvider } from "../theme/theme";
@@ -46,12 +48,14 @@ describe("an installation admin signs in from /login", () => {
   it("lands on the tenants list, not on a blank page at /", async () => {
     window.history.replaceState(null, "", "/login");
     const router = createAppRouter([{ path: "*", element: <Boot><Gate /></Boot> }]);
-    // main.tsx mounts the app in StrictMode, which runs each effect twice: the test does the same.
+    // main.tsx mounts the app in StrictMode, which runs each effect twice, inside the query client: the test does the same.
     render(
       <StrictMode>
-        <ThemeProvider>
-          <RouterProvider router={router} />
-        </ThemeProvider>
+        <QueryClientProvider client={createQueryClient()}>
+          <ThemeProvider>
+            <RouterProvider router={router} />
+          </ThemeProvider>
+        </QueryClientProvider>
       </StrictMode>,
     );
     await waitFor(() => expect(document.getElementById("login-email")).toBeTruthy());
