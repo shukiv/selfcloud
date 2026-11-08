@@ -17,6 +17,7 @@ import { promisify } from 'node:util';
 import { freePort, launchBrowser, Page } from './cdp.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
 import { accountName } from './media.mjs';
+import { saveFailure } from './diag.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -290,6 +291,8 @@ async function main() {
   } catch (err) {
     check(false, `the run stopped: ${err.message}`);
   } finally {
+    // The page as the failure left it, kept for CI (diag.mjs). Only a failed run keeps it.
+    if (!passed) await saveFailure(page, `adminAccess-${LANG}`);
     page?.close();
     browser?.kill();
     server.kill();
