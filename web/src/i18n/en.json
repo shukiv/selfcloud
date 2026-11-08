@@ -1529,6 +1529,7 @@
   "files.editor.saveAsOk": "Save copy",
   "files.editor.saveAsInvalid": "The name cannot be empty or contain a slash or a backslash.",
   "files.editor.saveFailed": "Save failed",
+  "files.editor.creating": "Creating the file…",
   "files.editor.saved": "Saved",
   "files.editor.unsaved": "Unsaved changes",
   "files.editing.mark": "Being edited",

@@ -8,8 +8,10 @@ import { ApiError } from "../lib/apiError";
 // The page's calls to the API and its navigation are replaced: the test checks what the page sends and where it goes.
 const apiMock = vi.hoisted(() => vi.fn());
 const goMock = vi.hoisted(() => vi.fn());
+const createMock = vi.hoisted(() => vi.fn());
 vi.mock("../lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../lib/api")>()), api: apiMock }));
 vi.mock("../lib/files/api", () => ({
+  createDocument: createMock,
   statNode: () =>
     Promise.resolve({ id: "nod_a1", folder_id: "fld_b", name: "letter.docx", kind: "file", role: "editor" }),
 }));
@@ -65,6 +67,7 @@ describe("the editor page", () => {
     // The server offers the editor (office_edit) in these tests; a test with the feature off is the page's own gate.
     officeEdit.set(true);
     goMock.mockReset();
+    createMock.mockReset();
     logged = [];
     posted = [];
     submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(function (this: HTMLFormElement) {
@@ -226,6 +229,40 @@ describe("the editor page", () => {
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } }, "https://evil.example.test");
     expect(screen.queryByText("Unsaved changes")).toBeNull();
+  });
+
+  // The new-document page (decision 102, round 2 R5) makes the file once, replaces its address with the editor's, and opens it.
+  it("makes its file once, replaces its address with the editor's, and opens the editor on it", async () => {
+    createMock.mockResolvedValue({ id: "nod_a1", folder_id: "fld_b", name: "Untitled spreadsheet.xlsx" });
+    answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
+    render("/edit/new?kind=xlsx&parent=nod_root&from=%2Ffiles%2Ffld_b&tab=1");
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock).toHaveBeenCalledWith("nod_root", "xlsx");
+    expect(apiMock).toHaveBeenCalledWith("POST", "/api/v1/nodes/nod_a1/office", { body: { mode: "edit" } });
+  });
+
+  it("a reload of the editor's address opens the file and creates nothing", async () => {
+    answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
+    render("/edit/nod_a1?mode=edit&from=%2Ffiles%2Ffld_b&tab=1");
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("a refused creation shows the error and a close button, and opens no editor", async () => {
+    createMock.mockRejectedValue(new Error("over quota"));
+    render("/edit/new?kind=docx&parent=nod_root&tab=1");
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: /close/i })).toBeTruthy();
+    expect(submit).not.toHaveBeenCalled();
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a request for a kind that is not one of the three, or a parent that is not a node, creates nothing", async () => {
+    render("/edit/new?kind=exe&parent=nod_root");
+    await screen.findByRole("alert");
+    expect(createMock).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it("shows a refusal by its name, not the server's text", async () => {

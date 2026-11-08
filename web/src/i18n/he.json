@@ -1529,6 +1529,7 @@
   "files.editor.saveAsOk": "שמירת העותק",
   "files.editor.saveAsInvalid": "השם לא יכול להיות ריק ולא יכול להכיל לוכסן או לוכסן הפוך.",
   "files.editor.saveFailed": "השמירה נכשלה",
+  "files.editor.creating": "יוצרים את הקובץ…",
   "files.editor.saved": "נשמר",
   "files.editor.unsaved": "יש שינויים שלא נשמרו",
   "files.editing.mark": "בעריכה",

@@ -6,10 +6,8 @@ vi.mock("../api", () => ({ api: vi.fn(), ApiError: class ApiError extends Error 
 
 import { api } from "../api";
 import { createDocument } from "./api";
-import { editorPath } from "./editor";
-import { openNewDocument } from "./documents";
+import { newDocumentPath, openNewDocumentTab, readNewDocument } from "./documents";
 import { documentKinds, myFilesPlace, placeForRoute, placeOfHere, type NewPlace } from "./newPlace";
-import type { Node } from "./types";
 
 const writable: NewPlace = {
   where: { folder: "fld_t", dirID: null, path: "/" },
@@ -33,31 +31,35 @@ describe("New documents (decision 91)", () => {
     expect(node.id).toBe("nod_new");
   });
 
-  it("creates the document, then opens it in the editor in this tab, back to the folder shown", async () => {
-    const node = { id: "nod_new", name: "Untitled document.docx" } as Node;
-    const create = vi.fn().mockResolvedValue(node);
-    const navigate = vi.fn();
-    const onCreated = vi.fn();
-    const onError = vi.fn();
-    await openNewDocument({ nodeID: "nod_root", kind: "docx", from: "/files/fld_t", create, navigate, onCreated, onError });
-    expect(create).toHaveBeenCalledWith("nod_root", "docx");
-    expect(onCreated).toHaveBeenCalledWith(node);
-    expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith(editorPath("nod_new", "edit", "/files/fld_t"));
-    expect(navigate.mock.calls[0][0]).toMatch(/^\/edit\/nod_new\?/);
-    expect(onError).not.toHaveBeenCalled();
+  // The click opens the new-document page in a new tab, from the click itself, and makes nothing: the page makes the file
+  // (decision 102, round 2 R5).
+  it("the click opens /edit/new in a new tab with noopener, and the opener makes no file", () => {
+    const open = vi.fn();
+    const goTo = vi.fn();
+    openNewDocumentTab({ parent: "nod_root", kind: "docx", from: "/files/fld_t", coarse: false, goTo }, open);
+    expect(open).toHaveBeenCalledWith(newDocumentPath("nod_root", "docx", null, true), "_blank", "noopener");
+    expect(goTo).not.toHaveBeenCalled();
+    expect(api).not.toHaveBeenCalled();
   });
 
-  it("a failure is reported, and nothing is opened", async () => {
-    const failure = new Error("over quota");
-    const create = vi.fn().mockRejectedValue(failure);
-    const navigate = vi.fn();
-    const onCreated = vi.fn();
-    const onError = vi.fn();
-    await openNewDocument({ nodeID: "nod_root", kind: "pptx", from: "/files/fld_t", create, navigate, onCreated, onError });
-    expect(onError).toHaveBeenCalledWith(failure);
-    expect(navigate).not.toHaveBeenCalled();
-    expect(onCreated).not.toHaveBeenCalled();
+  it("on a coarse pointer the same page opens in this tab, with from set to the folder shown", () => {
+    const open = vi.fn();
+    const goTo = vi.fn();
+    openNewDocumentTab({ parent: "nod_root", kind: "xlsx", from: "/files/fld_t", coarse: true, goTo }, open);
+    expect(open).not.toHaveBeenCalled();
+    expect(goTo).toHaveBeenCalledWith(newDocumentPath("nod_root", "xlsx", "/files/fld_t", false));
+  });
+
+  it("the new-document address carries the kind, the parent, the place to return to and the tab flag, and reads back", () => {
+    const path = newDocumentPath("nod_root", "pptx", "/files/fld_t", true);
+    expect(path.startsWith("/edit/new?")).toBe(true);
+    expect(readNewDocument(path.split("?")[1] ?? "")).toEqual({ kind: "pptx", parent: "nod_root", from: "/files/fld_t", tab: true });
+  });
+
+  it("a kind that is not one of the three, or a parent that is not a node's ID, is no request", () => {
+    expect(readNewDocument("kind=exe&parent=nod_root")).toBeNull();
+    expect(readNewDocument("kind=docx&parent=../etc")).toBeNull();
+    expect(readNewDocument("kind=docx")).toBeNull();
   });
 
   // The menu offers the kinds only while office editing is on, and in a place that takes new files with a node to hold them.

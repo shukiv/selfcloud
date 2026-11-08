@@ -5,6 +5,7 @@ import { Download, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import { useLang, useT } from "../../lib/i18n";
 import { formatBytes, formatDate } from "../../lib/files/format";
 import { kindOf } from "../../lib/files/kind";
+import { plainClick, type LinkClick } from "../../lib/files/editor";
 import { contentPath } from "../../lib/files/api";
 import { CHIPS, type ChipId } from "../../lib/storage/breakdown";
 import type { LargestFile } from "../../lib/storage/api";
@@ -82,7 +83,7 @@ export default function LargestFilesCard({
                   <span style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                     <Icon kind={kindOf({ kind: "file", mime_type: f.mime_type })} node={{ kind: "file", mime_type: f.mime_type, name: f.name }} size={28} />
                     <span style={{ minWidth: 0 }}>
-                      <a href={`/n/${encodeURIComponent(f.id)}`}>
+                      <a href={`/n/${encodeURIComponent(f.id)}`} onClick={(e) => officeInNewTab(e, f.id, f.mime_type)}>
                         <bdi>{f.name}</bdi>
                       </a>{" "}
                       {f.in_trash && <Tag>{t("storage.inTrash")}</Tag>}
@@ -136,13 +137,31 @@ export default function LargestFilesCard({
   );
 }
 
+// officeInNewTab opens an office file's address in a new tab, from the click (decision 102, round 2 R6). The address reaches the
+// editor there, for the person's role, through the /n/ route. A file that is not an office document keeps its link, and a
+// modified click keeps the browser's own choice.
+function officeInNewTab(e: LinkClick, id: string, mime: string | undefined): void {
+  if (!plainClick(e) || kindOf({ kind: "file", mime_type: mime }) !== "office") return;
+  e.preventDefault();
+  window.open(`/n/${encodeURIComponent(id)}`, "_blank", "noopener");
+}
+
 // RowActions are the icons of one row: download, move to the trash (or restore, for a file in the trash), and More. Each
 // button's name starts with its tooltip's verb and names its file ("Download: name"), so a screen reader and a sighted
 // person hear the same action (decision 68).
 function RowActions({ file, onTrash, onRestore }: { file: LargestFile; onTrash: (id: string) => void; onRestore: (id: string) => void }) {
   const { t } = useT();
   const menu: MenuProps = {
-    items: [{ key: "open", label: <a href={`/n/${encodeURIComponent(file.id)}`}>{t("files.act.open")}</a> }],
+    items: [
+      {
+        key: "open",
+        label: (
+          <a href={`/n/${encodeURIComponent(file.id)}`} onClick={(e) => officeInNewTab(e, file.id, file.mime_type)}>
+            {t("files.act.open")}
+          </a>
+        ),
+      },
+    ],
   };
   return (
     <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>

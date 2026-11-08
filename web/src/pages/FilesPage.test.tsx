@@ -18,6 +18,8 @@ import { fileErrorText } from "../lib/files/fileErrors";
 import { translate } from "../lib/i18n";
 import { myStorage } from "../lib/storage/api";
 import { newPlace } from "../lib/files/newPlace";
+import { officeEdit } from "../lib/files/editor";
+import { officeConvert } from "../lib/files/convert";
 
 // The API, the place reader, the uploads and the stars are replaced, so each test states what the server answers.
 const api = vi.hoisted(() => ({
@@ -209,6 +211,63 @@ beforeEach(() => {
 afterEach(() => {
   session.set(null);
   document.title = "";
+});
+
+// An office file opens in the editor, full page, in its own tab (decision 102, round 2 R3): a double click or Enter calls the
+// open helper, which opens /edit/<node> with noopener; with the editor off, the preview opens as before.
+describe("an office file's open (decision 102, round 2 R3)", () => {
+  const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  beforeEach(() => {
+    place.role = "editor";
+    officeEdit.set(true);
+    officeConvert.set(true);
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "letter.docx", { mime_type: DOCX })], next_cursor: undefined });
+  });
+  afterEach(() => {
+    officeEdit.set(false);
+    officeConvert.set(false);
+    vi.restoreAllMocks();
+  });
+
+  it("a double click opens the editor in a new tab with noopener, in edit mode for an editor", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "letter.docx" });
+    fireEvent.doubleClick(rows("letter.docx") as Element);
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    expect(open).toHaveBeenCalledWith(expect.stringMatching(/^\/edit\/n1\?mode=edit/), "_blank", "noopener");
+  });
+
+  it("Enter on a selected office file opens the editor the same way", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "letter.docx" });
+    fireEvent.click(rows("letter.docx") as Element);
+    fireEvent.keyDown(rows("letter.docx") as Element, { key: "Enter" });
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    expect(open).toHaveBeenCalledWith(expect.stringMatching(/^\/edit\/n1\?mode=edit/), "_blank", "noopener");
+  });
+
+  it("a viewer's double click opens the editor in view mode, in a new tab", async () => {
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "letter.docx", { mime_type: DOCX, role: "viewer" })], next_cursor: undefined });
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "letter.docx" });
+    fireEvent.doubleClick(rows("letter.docx") as Element);
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    expect(open).toHaveBeenCalledWith(expect.stringMatching(/^\/edit\/n1\?mode=view/), "_blank", "noopener");
+  });
+
+  it("with the editor off, a double click opens the preview, and no tab", async () => {
+    officeEdit.set(false);
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "letter.docx" });
+    fireEvent.doubleClick(rows("letter.docx") as Element);
+    await screen.findByTestId("preview");
+    expect(open).not.toHaveBeenCalled();
+  });
 });
 
 describe("the listing survives a failed read", () => {

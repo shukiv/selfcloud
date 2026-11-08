@@ -1529,6 +1529,7 @@
   "files.editor.saveAsOk": "Guardar cópia",
   "files.editor.saveAsInvalid": "O nome não pode estar vazio nem conter uma barra.",
   "files.editor.saveFailed": "Falha ao guardar",
+  "files.editor.creating": "A criar o ficheiro…",
   "files.editor.saved": "Guardado",
   "files.editor.unsaved": "Alterações por guardar",
   "files.editing.mark": "Em edição",

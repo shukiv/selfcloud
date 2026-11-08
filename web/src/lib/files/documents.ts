@@ -1,88 +1,79 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// New documents (decision 91): the New menu's Document, Spreadsheet and Presentation make a blank file in the folder shown
-// and open it in the office editor (decision 72), in the same tab. The file is named by the server. A failure is reported and
-// nothing is opened.
-import { useCallback, useRef } from 'react';
-import { App } from 'antd';
+// New documents (decision 91, round 2 R5): the New menu's Document, Spreadsheet and Presentation open a new tab at /edit/new,
+// which makes the blank file and replaces its own address with the editor's (decision 102). The file is named by the server.
+// The opener makes nothing itself: a pick the browser blocks, or a failure, is shown in the new tab. On a coarse pointer the
+// same page opens in this tab.
+import { useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useLang } from '../i18n';
-import { get, writable } from '../store';
-import type { Branch } from '../query';
-import { createDocument } from './api';
-import { editorPath } from './editor';
-import { fileErrorText } from './fileErrors';
+import { get } from '../store';
+import { coarsePointer, safeFrom } from './editor';
 import { newPlace, placeForRoute } from './newPlace';
-import type { Node } from './types';
 
 export type DocumentKind = 'docx' | 'xlsx' | 'pptx';
 
-export interface OpenNewDocument {
-  // nodeID is the directory the file goes in, the folder's root or the directory shown.
-  nodeID: string;
+const KINDS: readonly DocumentKind[] = ['docx', 'xlsx', 'pptx'];
+const NOD = /^nod_[A-Za-z0-9_-]+$/;
+
+// NewDocumentAsk is what the /edit/new page reads from its address: the kind, the node the file goes in, and the place to
+// return to when the editor closes. tab says the page was opened in a new tab by a script.
+export interface NewDocumentAsk {
   kind: DocumentKind;
-  // from is the place the editor returns to when it closes: the folder shown.
-  from: string;
-  // create makes the file. The default posts it to the server.
-  create?: (nodeID: string, kind: DocumentKind) => Promise<Node>;
-  navigate: (to: string) => void;
-  // onCreated runs once the file exists, so the listing it returns to can read it again.
-  onCreated?: (node: Node) => void;
-  onError: (err: unknown) => void;
+  parent: string;
+  from: string | null;
+  tab: boolean;
 }
 
-// openNewDocument makes the blank document and opens it in the editor. It resolves once the editor's address is set, or once
-// the failure is reported.
-export async function openNewDocument(o: OpenNewDocument): Promise<void> {
-  let node: Node;
-  try {
-    node = await (o.create ?? createDocument)(o.nodeID, o.kind);
-  } catch (err) {
-    o.onError(err);
+// newDocumentPath is the address of the new-document page. The kind and the parent are the server's names, never a path.
+export function newDocumentPath(parent: string, kind: DocumentKind, from: string | null, tab: boolean): string {
+  const q = new URLSearchParams({ kind, parent });
+  const back = safeFrom(from);
+  if (back !== null) q.set('from', back);
+  if (tab) q.set('tab', '1');
+  return `/edit/new?${q.toString()}`;
+}
+
+// readNewDocument reads the new-document page's query. A kind that is not one of the three, or a parent that is not a node's
+// ID, is no request: null, and the page makes nothing.
+export function readNewDocument(search: string): NewDocumentAsk | null {
+  const q = new URLSearchParams(search);
+  const kind = q.get('kind') as DocumentKind | null;
+  const parent = q.get('parent') ?? '';
+  if (kind === null || !KINDS.includes(kind) || !NOD.test(parent)) return null;
+  return { kind, parent, from: safeFrom(q.get('from')), tab: q.get('tab') === '1' };
+}
+
+// openNewDocumentTab opens the new-document page for a parent and a kind. On a fine pointer it is a new tab with noopener, from
+// the person's click, so the browser allows it; on a coarse pointer it is this tab. Nothing is created here.
+export function openNewDocumentTab(
+  o: { parent: string; kind: DocumentKind; from: string; coarse: boolean; goTo: (to: string) => void },
+  open: (url: string, target: string, features: string) => unknown = (u, t, f) => window.open(u, t, f),
+): void {
+  if (o.coarse) {
+    o.goTo(newDocumentPath(o.parent, o.kind, o.from, false));
     return;
   }
-  o.onCreated?.(node);
-  o.navigate(editorPath(node.id, 'edit', o.from));
+  open(newDocumentPath(o.parent, o.kind, null, true), '_blank', 'noopener');
 }
 
-// createdDocument records the listing a new document went into, so the page that shows it reads that listing again. FilesPage
-// has the query client (the sidebar does not), and it refreshes the branch when this changes (decision 91).
-export const createdDocument = writable<{ branch: Branch; at: number } | null>(null);
-
-// useNewDocument is the action the New menus call: it makes a document of kind in the place the New actions act on (the
-// place the files page shows, when the page is the one the place is for: placeForRoute) and opens it in the editor, in this
-// tab. Both the sidebar's New and the toolbar's New use it. A pick is ignored while another is still being made (L1), and
-// the editor opens only if the page is still where the pick was made (L2): a page the person has left is not taken to the
-// editor, and the new file is still listed where it was made.
+// useNewDocument is the action the New menus call: it opens a new tab for a document of kind in the place the New actions act
+// on (the place the files page shows, when the page is the one the place is for: placeForRoute). Both the sidebar's New and the
+// toolbar's New use it.
 export function useNewDocument(): (kind: DocumentKind) => void {
   const navigate = useNavigate();
   const location = useLocation();
-  const { message } = App.useApp();
-  const lang = useLang();
-  const pending = useRef(false);
-  const where = useRef('');
-  where.current = location.pathname + location.search;
   return useCallback(
     (kind: DocumentKind) => {
-      if (pending.current) return;
       const place = placeForRoute(get(newPlace), location.pathname);
       if (!place?.nodeID) return;
-      const branch = { folder: place.where.folder, dir: place.where.dirID };
-      const from = location.pathname + location.search;
-      pending.current = true;
-      void openNewDocument({
-        nodeID: place.nodeID,
+      openNewDocumentTab({
+        parent: place.nodeID,
         kind,
-        from,
-        navigate: (to) => {
-          if (where.current === from) navigate(to);
-        },
-        onCreated: () => createdDocument.set({ branch, at: Date.now() }),
-        onError: (err) => void message.error(fileErrorText(err, lang)),
-      }).finally(() => {
-        pending.current = false;
+        from: location.pathname + location.search,
+        coarse: coarsePointer(),
+        goTo: (to) => navigate(to),
       });
     },
-    [navigate, location.pathname, location.search, message, lang],
+    [navigate, location.pathname, location.search],
   );
 }

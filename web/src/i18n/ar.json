@@ -1529,6 +1529,7 @@
   "files.editor.saveAsOk": "حفظ النسخة",
   "files.editor.saveAsInvalid": "لا يمكن أن يكون الاسم فارغًا أو أن يحتوي على شرطة مائلة أو شرطة مائلة عكسية.",
   "files.editor.saveFailed": "تعذّر الحفظ",
+  "files.editor.creating": "جارٍ إنشاء الملف…",
   "files.editor.saved": "تم الحفظ",
   "files.editor.unsaved": "تغييرات غير محفوظة",
   "files.editing.mark": "قيد التحرير",

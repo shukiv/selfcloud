@@ -9,7 +9,7 @@
 import { X } from "lucide-react";
 import { Alert, Button, Input, Modal, Spin } from "antd";
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import IconButton from "../components/IconButton";
 import Sentence from "../components/Sentence";
 import { api } from "../lib/api";
@@ -18,12 +18,15 @@ import { ApiError } from "../lib/apiError";
 import { brand } from "../lib/brand";
 import { endImpersonation } from "../lib/impersonation";
 import { session } from "../lib/session";
-import { useT } from "../lib/i18n";
+import { useLang, useT } from "../lib/i18n";
 import { go } from "../lib/router";
 import { useStore } from "../lib/store";
-import { statNode } from "../lib/files/api";
+import { createDocument, statNode } from "../lib/files/api";
+import { readNewDocument } from "../lib/files/documents";
+import { fileErrorText } from "../lib/files/fileErrors";
 import {
   EDITOR_FRAME,
+  editorPath,
   type SaveAsAsk,
   type SaveState,
   buildEditorForm,
@@ -99,6 +102,14 @@ export default function OfficeEditPage() {
   // pending is the form built for the editor, until it is posted. It is cleared after the post.
   const pendingRef = useRef<HTMLFormElement | null>(null);
   const valid = NOD.test(nod);
+  const navigate = useNavigate();
+  const lang = useLang();
+  // The new-document page (/edit/new, decision 102, round 2 R5) makes its file once, then replaces its address with the editor's.
+  const isNew = nod === "new";
+  const [createError, setCreateError] = useState<string | null>(null);
+  const createdRef = useRef(false);
+  // newFailed: the new-document page has no file to open, because its request is wrong or the server refused it.
+  const newFailed = createError !== null || (isNew && readNewDocument(location.search) === null);
 
   useEffect(() => {
     if (!on || !valid) return;
@@ -125,6 +136,20 @@ export default function OfficeEditPage() {
       cancelled = true;
     };
   }, [nod, mode, on, valid]);
+
+  // The new-document page makes its file once: a second run of this effect makes nothing. The reply replaces the address with
+  // the editor's, so a reload then opens that file and makes no other. A reload while the one request is in flight can make a
+  // second file; that window is the length of the request.
+  useEffect(() => {
+    if (!on || !isNew || createdRef.current) return;
+    const ask = readNewDocument(location.search);
+    if (ask === null) return;
+    createdRef.current = true;
+    void createDocument(ask.parent, ask.kind).then(
+      (node) => navigate(editorPath(node.id, "edit", ask.from, ask.tab), { replace: true }),
+      (err: unknown) => setCreateError(fileErrorText(err, lang)),
+    );
+  }, [on, isNew, location.search, navigate, lang]);
 
   // Once the frame is on the page, the form is posted into it, and the form is taken off the pending slot. The post reads
   // the form when it is submitted, so the form then leaves the page, and no script of the page can read the token from it.
@@ -194,7 +219,7 @@ export default function OfficeEditPage() {
     setSaveAs(null);
   };
 
-  if (!on || !valid) return <NotFoundPage />;
+  if (!on || (!valid && !isNew)) return <NotFoundPage />;
 
   const name = state.status === "ready" ? state.name : "";
   // The bar's save state: "View only" for a viewer, otherwise the state the editor's messages gave (none until one is known).
@@ -250,9 +275,15 @@ export default function OfficeEditPage() {
           <Alert type="error" showIcon message={t(`files.editor.${state.why}`)} />
         </div>
       )}
-      {state.status !== "failed" && !loaded && (
+      {newFailed && (
+        // The new file was refused, or its request is wrong: the server's reason, read as the app reads errors, and no editor.
+        <div style={{ padding: 16 }}>
+          <Alert type="error" showIcon message={createError ?? t("files.editor.failed")} />
+        </div>
+      )}
+      {state.status !== "failed" && !newFailed && !loaded && (
         <div role="status" style={{ display: "grid", placeItems: "center", padding: 24 }}>
-          <Spin tip={t("files.editor.opening")} />
+          <Spin tip={isNew ? t("files.editor.creating") : t("files.editor.opening")} />
         </div>
       )}
       {/* The form is put here to be posted, then removed. It is hidden, and it holds the token only as a form input. */}

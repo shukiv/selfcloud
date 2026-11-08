@@ -91,8 +91,12 @@ export interface LinkClick {
 // officeLinkClick is the click on a link to a file (a row on a page, a search hit). An office file the editor offers opens in
 // the editor tab, not at the link's address; a modified click (ctrl, shift, alt, or a middle button) keeps the browser's own
 // choice. Anything else is left to the link.
+export function plainClick(e: LinkClick): boolean {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}
+
 export function officeLinkClick(e: LinkClick, n: Node, featureOn: boolean, here: string, goTo: (to: string) => void): void {
-  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (!plainClick(e)) return;
   const mode = editorEntry(n, featureOn);
   if (mode === null) return;
   e.preventDefault();

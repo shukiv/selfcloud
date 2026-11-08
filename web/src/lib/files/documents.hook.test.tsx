@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, render, fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { App as AntApp } from "antd";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./api", () => ({ createDocument: vi.fn() }));
-
-import { createDocument } from "./api";
 import { useNewDocument } from "./documents";
 import { newPlace, placeOfHere, type NewPlace } from "./newPlace";
 
@@ -35,14 +32,19 @@ function placeOf(folder: string, dir: string): NewPlace {
   };
 }
 
-describe("a New document goes where the page shows, never to a stale place (race)", () => {
+// opened is the address each new tab was opened at, read from the window's open calls.
+function opened(spy: { mock: { calls: unknown[][] } }): string[] {
+  return spy.mock.calls.map((c) => String(c[0]));
+}
+
+describe("a New document goes where the page shows, never to a stale place (race, round 2 R5)", () => {
   beforeEach(() => {
-    vi.mocked(createDocument).mockReset();
-    vi.mocked(createDocument).mockResolvedValue({ id: "nod_new", name: "Untitled document.docx" } as never);
     newPlace.set(null);
+    vi.restoreAllMocks();
   });
 
-  it("a place of folder A is not used while the route shows folder B's directory", async () => {
+  it("a place of folder A is not used while the route shows folder B's directory: no tab opens for it", () => {
+    const spy = vi.spyOn(window, "open").mockImplementation(() => null);
     newPlace.set(placeOf(folderA, dirA));
     const router = createMemoryRouter(
       [{ path: "*", element: <AntApp><Pick /></AntApp> }],
@@ -50,20 +52,19 @@ describe("a New document goes where the page shows, never to a stale place (race
     );
     render(<RouterProvider router={router} />);
     fireEvent.click(screen.getByText("pick"));
-    await waitFor(() => expect(createDocument).toHaveBeenCalledTimes(0));
-    const calls = vi.mocked(createDocument).mock.calls.map((c) => c[0]);
-    expect(calls).not.toContain(dirA);
+    expect(spy).not.toHaveBeenCalled();
+    expect(opened(spy).join(" ")).not.toContain(dirA);
   });
 });
 
-describe("a place built the way FilesPage builds it is used on its own directory route", () => {
+describe("the pick opens the new-document page for the directory shown (round 2 R5)", () => {
   beforeEach(() => {
-    vi.mocked(createDocument).mockReset();
-    vi.mocked(createDocument).mockResolvedValue({ id: "nod_new", name: "Untitled document.docx" } as never);
     newPlace.set(null);
+    vi.restoreAllMocks();
   });
 
-  it("the pick creates the document in the directory shown", async () => {
+  it("the pick opens /edit/new for the directory shown, in a new tab with noopener, and the opener does not move", () => {
+    const spy = vi.spyOn(window, "open").mockImplementation(() => null);
     const dir = { id: dirB, name: "d", kind: "dir" } as never;
     newPlace.set(placeOfHere({ folder: folderB, folderName: null, folderRole: "contributor", dir, dirRole: "contributor", trail: [], rootReachable: true, reach: [], spaceNoDownload: false, path: "/d" } as never, true, true));
     const router = createMemoryRouter(
@@ -72,56 +73,13 @@ describe("a place built the way FilesPage builds it is used on its own directory
     );
     render(<RouterProvider router={router} />);
     fireEvent.click(screen.getByText("pick"));
-    await waitFor(() => expect(createDocument).toHaveBeenCalledWith(dirB, "docx"));
-  });
-});
-
-// deferred returns a promise and the function that settles it, so a test decides when the server answers.
-function deferred() {
-  let resolve!: (v: unknown) => void;
-  const promise = new Promise((r) => (resolve = r));
-  return { promise, resolve };
-}
-
-describe("a pick while a document is being made (L1, L2)", () => {
-  beforeEach(() => {
-    vi.mocked(createDocument).mockReset();
-    newPlace.set(null);
-  });
-
-  it("L1: a second pick while the first is pending makes nothing", async () => {
-    const d = deferred();
-    vi.mocked(createDocument).mockReturnValue(d.promise as never);
-    newPlace.set(placeOf(folderB, dirB));
-    const router = createMemoryRouter(
-      [{ path: "*", element: <AntApp><Pick /></AntApp> }],
-      { initialEntries: [`/files/${folderB}/${dirB}`] },
-    );
-    render(<RouterProvider router={router} />);
-    fireEvent.click(screen.getByText("pick"));
-    fireEvent.click(screen.getByText("pick"));
-    await waitFor(() => expect(createDocument).toHaveBeenCalled());
-    expect(vi.mocked(createDocument).mock.calls.length).toBe(1);
-    d.resolve({ id: "nod_new", name: "Untitled document.docx" });
-  });
-
-  it("L2: the editor is not opened when the page has moved on before the file exists", async () => {
-    const d = deferred();
-    vi.mocked(createDocument).mockReturnValue(d.promise as never);
-    newPlace.set(placeOf(folderB, dirB));
-    const start = `/files/${folderB}/${dirB}`;
-    const router = createMemoryRouter(
-      [{ path: "*", element: <AntApp><Pick /></AntApp> }],
-      { initialEntries: [start] },
-    );
-    render(<RouterProvider router={router} />);
-    fireEvent.click(screen.getByText("pick"));
-    await waitFor(() => expect(createDocument).toHaveBeenCalled());
-    await act(async () => {
-      await router.navigate("/files/fld_elsewhere1");
-    });
-    d.resolve({ id: "nod_new", name: "Untitled document.docx" });
-    await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
-    expect(router.state.location.pathname).toBe("/files/fld_elsewhere1");
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [url, target, features] = spy.mock.calls[0] as [string, string, string];
+    expect(url.startsWith("/edit/new?")).toBe(true);
+    expect(new URLSearchParams(url.split("?")[1]).get("parent")).toBe(dirB);
+    expect(new URLSearchParams(url.split("?")[1]).get("kind")).toBe("docx");
+    expect(target).toBe("_blank");
+    expect(features).toBe("noopener");
+    expect(router.state.location.pathname).toBe(`/files/${folderB}/${dirB}`);
   });
 });
