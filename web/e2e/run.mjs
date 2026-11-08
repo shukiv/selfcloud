@@ -519,30 +519,59 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
   await clickMenu(page, 'Team A');
   await page.waitFor(`location.pathname === '/files/${teamA}' && !!document.querySelector('[role="toolbar"]')`);
   const sentPieces = () => page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length;
-  // The upload is slowed to 256 KiB a second, so a 1 MiB piece takes about 4 s on any runner. Unslowed, a fast runner
-  // finishes all three pieces before the drop below is sent, and no failure ever shows (CI run 42429830700, attempt 2).
-  await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: 256 * 1024 });
-  const sentBefore = sentPieces();
+  // The Fetch domain pauses the upload's requests, so the run decides what reaches the server. The first piece goes through
+  // whole. The second is held and does not reach the server until the connection drops: then it is failed, and so is every
+  // request the uploader makes while the connection is down. Throttling did not do this: the second piece reached the server
+  // whole on CI (run 42433153116). piecesThrough counts the pieces this run let through, not the requests the page sent.
+  let state = 'through'; // 'through': a request goes on; 'down': every request fails
+  let patches = 0;
+  let piecesThrough = 0;
+  let held = null;
+  const onPaused = (p) => {
+    if (state === 'down') {
+      page.send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'InternetDisconnected' }).catch(() => undefined);
+      return;
+    }
+    if (p.request.method === 'PATCH') {
+      patches++;
+      if (patches === 1) {
+        piecesThrough++;
+        page.send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => undefined);
+        return;
+      }
+      held = p.requestId;
+      return;
+    }
+    page.send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => undefined);
+  };
+  page.on('Fetch.requestPaused', onPaused);
+  await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/v1/uploads/*', requestStage: 'Request' }] });
   await page.setFiles(UPLOAD, [resumable]);
-  // The first piece has gone up once the second one starts (pieces go one at a time), so the drop cuts the second piece in
-  // flight. The loop waits for that second start, and a missed one fails the check below rather than a timeout.
-  for (let i = 0; i < 3000 && sentPieces() < sentBefore + 2; i++) {
+  // The first piece has gone through when the second one is held (pieces go one at a time). A missing second piece fails here,
+  // clearly, rather than at the tray's timeout.
+  for (let i = 0; i < 3000 && held === null; i++) {
     await new Promise((r) => setTimeout(r, 20));
   }
-  const sentAtDrop = sentPieces() - sentBefore;
-  check(sentAtDrop >= 2 && sentAtDrop < 3, `the connection drops with the second of three pieces going up (${sentAtDrop} sent before the drop)`);
-  // The connection drops, and comes back after the retry below.
-  await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
-  // The tray reports the failure. The connection stays down until it does: the uploader tries a dropped piece again after a
-  // second, and a connection back by then let the upload finish on its own, with no failure to see (gate fu1b, under load).
+  check(piecesThrough === 1 && held !== null, `one piece reaches the server before the connection drops (${piecesThrough} through, the next one held: ${held !== null})`);
+  // The connection drops: the held piece is failed, and so is every request while it is down.
+  const throughAtDrop = piecesThrough;
+  state = 'down';
+  await page.send('Fetch.failRequest', { requestId: held, errorReason: 'InternetDisconnected' });
+  held = null;
+  // The tray reports the failure. The uploader tries the dropped piece again after a second, and each try fails too, so the
+  // failure is reported at once, not after a long wait.
   await page.waitFor(`document.querySelector('[data-testid="upload-tray"]')?.innerText.includes('resume.bin failed to upload.')`, 60000);
-  await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  check(piecesThrough === throughAtDrop, 'no piece reached the server while the connection was down');
+  // Back online: the interception ends, so the retry is an ordinary one.
+  state = 'through';
+  page.off('Fetch.requestPaused', onPaused);
+  await page.send('Fetch.disable');
   // Retry sends the rest of the file from the offset the server has, not from the start.
-  const beforeRetry = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length;
+  const beforeRetry = sentPieces();
   await clickButton(page, 'Retry: resume.bin');
   await rowAppears(page, 'resume.bin', 60000);
-  const afterRetry = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length - beforeRetry;
-  // The first piece is kept and the second was cut, so two pieces remain: a cut piece's kept bytes make the last one shorter, not more.
+  const afterRetry = sentPieces() - beforeRetry;
+  // The first piece is kept and the second was failed before any of its bytes reached the server, so exactly two remain.
   check(afterRetry === 2, `an interrupted upload resumes and finishes, sending ${afterRetry} of its 3 pieces after the retry`);
 
   // Star is one of the icons at the end of a selected row (decision 70); once starred, the same icon says Unstar.
