@@ -153,9 +153,12 @@ export function useGestures(rootRef: RefObject<HTMLElement | null>, listRef: Ref
         const base = { count: carried.length, name: carried.length === 1 ? carried[0].name : "", copy: last.ctrl };
         if (el) {
           const dec = c.decide(carried, destOf(el), last.ctrl);
-          el.dataset.dropState = dec.ok ? "ok" : "refused";
-          if (!dec.ok) el.dataset.dropWhy = dec.why;
-          view = { ...base, target: el.dataset.dropName ?? "", why: dec.ok ? null : dec.why };
+          // A folder over its own place is no drop and no refusal: the place shows no state (decision 104).
+          const same = !dec.ok && dec.why === "same";
+          if (same) delete el.dataset.dropState;
+          else el.dataset.dropState = dec.ok ? "ok" : "refused";
+          if (!dec.ok && !same) el.dataset.dropWhy = dec.why;
+          view = { ...base, target: el.dataset.dropName ?? "", why: dec.ok || same ? null : dec.why };
         } else {
           view = { ...base, target: null, why: null };
         }
@@ -284,7 +287,7 @@ export function useGestures(rootRef: RefObject<HTMLElement | null>, listRef: Ref
         const dest = destOf(target);
         const dec = c.decide(nodes, dest, ctrl);
         if (dec.ok) c.drop(dec, dest);
-        else c.refuse(dec.why);
+        else if (dec.why !== "same") c.refuse(dec.why);
       } else if (wasMode === "none" && wasPress?.kind === "band" && !ctrl) {
         // A click on empty space, with no band drawn, clears the selection.
         c.clear();

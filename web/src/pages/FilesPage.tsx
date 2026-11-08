@@ -253,6 +253,19 @@ function ancestry(here: Here): string[] {
   return [...(here.rootReachable ? here.trail : here.reach).map((n) => n.id), ...(here.dir ? [here.dir.id] : [])];
 }
 
+// parentBranches is the folder-tree branch each item is in, for a change that moved items out of or into those folders.
+function parentBranches(nodes: Node[]): Branch[] {
+  return nodes.map((n) => ({ folder: n.folder_id, dir: n.parent_id }));
+}
+
+// leaveAfterTrash says where the page goes when items went to the Trash and the place shown is one of them or is below one: the
+// parent of the topmost trashed folder in the chain (null, the space's root, when that is the top). undefined: the page stays.
+function leaveAfterTrash(chain: string[], trashed: string[]): string | null | undefined {
+  const at = chain.findIndex((id) => trashed.includes(id));
+  if (at < 0) return undefined;
+  return at === 0 ? null : chain[at - 1];
+}
+
 function dialogOpen(): boolean {
   return Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).some((d) => {
     const modal = d.closest<HTMLElement>(".ant-modal-wrap");
@@ -1225,6 +1238,8 @@ export default function FilesPage() {
     const nodes = pending;
     setDialog(null);
     const changed = sessionChanged();
+    // The folders the place shown is in, top down, read before the delete (for leaveAfterTrash).
+    const chain = here ? ancestry(here) : [];
     const done: Node[] = [];
     let failed = 0;
     for (const n of nodes) {
@@ -1250,13 +1265,17 @@ export default function FilesPage() {
             bad++;
           }
         }
-        await reload();
+        // Undo reads the folders the items came back to, as the delete read the ones they left (the sidebar's tree too).
+        await reload(parentBranches(done));
         return bad;
       });
       showUndo(label);
     }
     if (failed > 0) void message.error(t("files.err.someFailed", { count: failed }));
-    await reload();
+    await reload(parentBranches(done));
+    // A folder the place is in went to the Trash, so the page cannot stay in it: it goes to the parent of the topmost one (decision 104).
+    const leave = leaveAfterTrash(chain, done.map((n) => n.id));
+    if (leave !== undefined && here) go(filesURL(here.folder, leave));
   }
 
   // ---- move and copy ----
@@ -2019,7 +2038,9 @@ export default function FilesPage() {
       }
       void runTransfer(mode, decision.nodes, { folder: dest.folder, dir: dest.dir }, false, true);
     },
-    refuse: (why) => void message.warning(t(WHY_KEY[why])),
+    refuse: (why) => {
+      if (why !== "same") void message.warning(t(WHY_KEY[why]));
+    },
     selectedIDs: () => sel.ids,
     setBand: (hit) => {
       const first = hit.length > 0 ? ids.indexOf(hit[0]) : null;
@@ -2034,7 +2055,7 @@ export default function FilesPage() {
   const dragHint =
     dragView === null
       ? null
-      : dragWhy
+      : dragWhy && dragWhy !== "same"
         ? t(WHY_KEY[dragWhy])
         : dragView.target !== null
           ? null
