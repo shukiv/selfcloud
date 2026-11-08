@@ -219,6 +219,9 @@ make, found by running against Collabora Online 26.04.5.2:
   about 56 s and passed the 60 s limit, so a preview or export of such a document is a counted time-out. Raise
   `derived.timeout` for large documents, or keep the documents small.
 
+- **Logs.** When an upload fails, Collabora's log holds the full storage URI with the access token in it. That is Collabora's log, not Selfcloud's: keep it private. Selfcloud's own log holds no token. A refused editor call names its reason, node and session, and never the token.
+- **Editor tokens.** An editor's token lives `office.token_minutes` (600 by default, and at most a day). It never outlives the token that opened the editor. An editor ends with the browser session that opened it. Its file's lock is freed by the next sweep (every five minutes) once no editor on that file is live (decision 106).
+
 A conversion is refused when Collabora cannot save the document as the format asked (a spreadsheet asked for as a text
 document, for example). A stopped Collabora is an outage: Selfcloud answers `unavailable` with `Retry-After` and tries
 again. Collabora converts unknown content as text rather than refusing it, so a corrupt file yields a PDF of its bytes.
