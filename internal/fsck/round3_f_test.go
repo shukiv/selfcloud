@@ -42,3 +42,39 @@ func TestManifestFailureMovesNothing(t *testing.T) {
 		t.Fatal("the blob reached quarantine with no manifest line")
 	}
 }
+
+// F2. A link swapped in after the walk, before the hash pass, is a stray entry and not an abort. The run finishes and
+// reports it, so the exit status is 1. Mutant: return the ELOOP error from the hash pass; the run fails.
+func TestSymlinkSwappedBeforeHashIsStray(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links need privileges here")
+	}
+	f := newFixture(t)
+	content := []byte("first written, then swapped for a link")
+	bid, sha := f.commit(content)
+	f.row(bid, int64(len(content)), sha)
+	f.node("swap.txt", bid, int64(len(content)), sha)
+	f.age(f.path(bid), 2*time.Hour)
+	target := filepath.Join(f.dir, "aside", "target.bin")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	swap := func() {
+		f.aside(f.path(bid))
+		if err := os.Symlink(target, f.path(bid)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := Run(f.ctx, Options{DataDir: f.dir, DBPath: f.dbPath, MinAge: time.Hour, VerifyContent: true, beforeHash: swap})
+	if err != nil {
+		t.Fatalf("a swapped link aborted the run: %v", err)
+	}
+	got := find(r, KindStray)
+	if len(got) != 1 || got[0].ID != bid {
+		t.Fatalf("stray findings = %+v, want the swapped link for %q (findings %+v)", got, bid, r.Findings)
+	}
+}

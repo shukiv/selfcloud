@@ -29,6 +29,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/id"
@@ -584,6 +585,12 @@ func (c *checker) hashPass() error {
 		got, err := hashFile(filepath.Join(c.opts.DataDir, h.rel))
 		if errors.Is(err, fs.ErrNotExist) {
 			c.count("hash_removed_since_listing")
+			continue
+		}
+		if errors.Is(err, syscall.ELOOP) {
+			// A link was put where the file was after the walk. It is not read, and it is a stray entry, not an abort.
+			c.add(Finding{Kind: KindStray, Account: h.row.AccountID, ID: h.row.ID, Path: h.rel,
+				Detail: "a symbolic link replaced the file after the walk; the link was not read"})
 			continue
 		}
 		if err != nil {
