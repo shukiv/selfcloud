@@ -1530,6 +1530,7 @@
   "files.editor.saveAsInvalid": "Le nom ne peut pas être vide ni contenir de barre oblique ou de barre oblique inverse.",
   "files.editor.saveFailed": "Échec de l'enregistrement",
   "files.editor.creating": "Création du fichier…",
+  "files.editor.nothing": "Rien à ouvrir ici",
   "files.editor.saved": "Enregistré",
   "files.editor.unsaved": "Modifications non enregistrées",
   "files.editing.mark": "En cours de modification",

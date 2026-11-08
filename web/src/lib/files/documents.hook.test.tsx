@@ -6,6 +6,9 @@ import { App as AntApp } from "antd";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNewDocument } from "./documents";
+import { createDocument } from "./api";
+
+vi.mock("./api", () => ({ createDocument: vi.fn(() => new Promise(() => {})) }));
 import { newPlace, placeOfHere, type NewPlace } from "./newPlace";
 
 // Pick is a stand-in for the New menu's Document entry: it calls the same hook the menus call.
@@ -63,7 +66,7 @@ describe("the pick opens the new-document page for the directory shown (round 2 
     vi.restoreAllMocks();
   });
 
-  it("the pick opens /edit/new for the directory shown, in a new tab with noopener, and the opener does not move", () => {
+  it("the pick opens the wait page in a new tab with noopener, makes the file in the directory shown, and the opener does not move", () => {
     const spy = vi.spyOn(window, "open").mockImplementation(() => null);
     const dir = { id: dirB, name: "d", kind: "dir" } as never;
     newPlace.set(placeOfHere({ folder: folderB, folderName: null, folderRole: "contributor", dir, dirRole: "contributor", trail: [], rootReachable: true, reach: [], spaceNoDownload: false, path: "/d" } as never, true, true));
@@ -75,11 +78,11 @@ describe("the pick opens the new-document page for the directory shown (round 2 
     fireEvent.click(screen.getByText("pick"));
     expect(spy).toHaveBeenCalledTimes(1);
     const [url, target, features] = spy.mock.calls[0] as [string, string, string];
-    expect(url.startsWith("/edit/new?")).toBe(true);
-    expect(new URLSearchParams(url.split("?")[1]).get("parent")).toBe(dirB);
-    expect(new URLSearchParams(url.split("?")[1]).get("kind")).toBe("docx");
+    expect(url).toMatch(/^\/edit\/wait\?k=[A-Za-z0-9_-]{22}$/);
+    expect(url).not.toContain(dirB);
     expect(target).toBe("_blank");
     expect(features).toBe("noopener");
+    expect(createDocument).toHaveBeenCalledWith(dirB, "docx");
     expect(router.state.location.pathname).toBe(`/files/${folderB}/${dirB}`);
   });
 });

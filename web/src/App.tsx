@@ -35,6 +35,7 @@ import ShareHold from "./components/share/ShareHold";
 const FilesPage = lazy(() => import("./pages/FilesPage"));
 const NodeLinkPage = lazy(() => import("./pages/NodeLinkPage"));
 const OfficeEditPage = lazy(() => import("./pages/OfficeEditPage"));
+const NewDocumentWaitPage = lazy(() => import("./pages/NewDocumentWaitPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
 const SharedPage = lazy(() => import("./pages/SharedPage"));
 const RequestsPage = lazy(() => import("./pages/RequestsPage"));
@@ -283,7 +284,7 @@ export function Gate() {
   // The office editor is a page of its own: full window, outside the shell, with its own slim bar (decision 102). The
   // installation admin's refusal is the one the drive pages give (DRIVE_VIEWS).
   if (view === "edit") {
-    return <Suspense fallback={<PageLoading />}>{me.user.role === "admin" ? <NotFoundPage /> : <OfficeEditPage />}</Suspense>;
+    return <Suspense fallback={<PageLoading />}>{me.user.role === "admin" ? <NotFoundPage /> : path === "/edit/wait" ? <NewDocumentWaitPage /> : <OfficeEditPage />}</Suspense>;
   }
   return (
     <Shell>

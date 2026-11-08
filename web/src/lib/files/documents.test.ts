@@ -6,7 +6,6 @@ vi.mock("../api", () => ({ api: vi.fn(), ApiError: class ApiError extends Error 
 
 import { api } from "../api";
 import { createDocument } from "./api";
-import { newDocumentPath, openNewDocumentTab, readNewDocument } from "./documents";
 import { documentKinds, myFilesPlace, placeForRoute, placeOfHere, type NewPlace } from "./newPlace";
 
 const writable: NewPlace = {
@@ -33,35 +32,6 @@ describe("New documents (decision 91)", () => {
 
   // The click opens the new-document page in a new tab, from the click itself, and makes nothing: the page makes the file
   // (decision 102, round 2 R5).
-  it("the click opens /edit/new in a new tab with noopener, and the opener makes no file", () => {
-    const open = vi.fn();
-    const goTo = vi.fn();
-    openNewDocumentTab({ parent: "nod_root", kind: "docx", from: "/files/fld_t", coarse: false, goTo }, open);
-    expect(open).toHaveBeenCalledWith(newDocumentPath("nod_root", "docx", null, true), "_blank", "noopener");
-    expect(goTo).not.toHaveBeenCalled();
-    expect(api).not.toHaveBeenCalled();
-  });
-
-  it("on a coarse pointer the same page opens in this tab, with from set to the folder shown", () => {
-    const open = vi.fn();
-    const goTo = vi.fn();
-    openNewDocumentTab({ parent: "nod_root", kind: "xlsx", from: "/files/fld_t", coarse: true, goTo }, open);
-    expect(open).not.toHaveBeenCalled();
-    expect(goTo).toHaveBeenCalledWith(newDocumentPath("nod_root", "xlsx", "/files/fld_t", false));
-  });
-
-  it("the new-document address carries the kind, the parent, the place to return to and the tab flag, and reads back", () => {
-    const path = newDocumentPath("nod_root", "pptx", "/files/fld_t", true);
-    expect(path.startsWith("/edit/new?")).toBe(true);
-    expect(readNewDocument(path.split("?")[1] ?? "")).toEqual({ kind: "pptx", parent: "nod_root", from: "/files/fld_t", tab: true });
-  });
-
-  it("a kind that is not one of the three, or a parent that is not a node's ID, is no request", () => {
-    expect(readNewDocument("kind=exe&parent=nod_root")).toBeNull();
-    expect(readNewDocument("kind=docx&parent=../etc")).toBeNull();
-    expect(readNewDocument("kind=docx")).toBeNull();
-  });
-
   // The menu offers the kinds only while office editing is on, and in a place that takes new files with a node to hold them.
   it("offers the three kinds only with office editing on, in a place that takes new files", () => {
     expect(documentKinds(writable, true)).toEqual(["docx", "xlsx", "pptx"]);

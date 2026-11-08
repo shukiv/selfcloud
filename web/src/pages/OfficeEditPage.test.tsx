@@ -231,15 +231,13 @@ describe("the editor page", () => {
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   });
 
-  // The new-document page (decision 102, round 2 R5) makes the file once, replaces its address with the editor's, and opens it.
-  it("makes its file once, replaces its address with the editor's, and opens the editor on it", async () => {
-    createMock.mockResolvedValue({ id: "nod_a1", folder_id: "fld_b", name: "Untitled spreadsheet.xlsx" });
+  // A GET never makes a file (decision 102, round 2 R5): the old new-document address makes no file and opens no editor.
+  it("the address of the old new-document page makes no file and opens no editor", async () => {
     answerAll(() => Promise.resolve({ url: ACTION, token: TOKEN, expires_at: "2026-11-03T12:00:00Z" }));
     render("/edit/new?kind=xlsx&parent=nod_root&from=%2Ffiles%2Ffld_b&tab=1");
-    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(createMock).toHaveBeenCalledWith("nod_root", "xlsx");
-    expect(apiMock).toHaveBeenCalledWith("POST", "/api/v1/nodes/nod_a1/office", { body: { mode: "edit" } });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(createMock).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it("a reload of the editor's address opens the file and creates nothing", async () => {
@@ -247,22 +245,6 @@ describe("the editor page", () => {
     render("/edit/nod_a1?mode=edit&from=%2Ffiles%2Ffld_b&tab=1");
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     expect(createMock).not.toHaveBeenCalled();
-  });
-
-  it("a refused creation shows the error and a close button, and opens no editor", async () => {
-    createMock.mockRejectedValue(new Error("over quota"));
-    render("/edit/new?kind=docx&parent=nod_root&tab=1");
-    await screen.findByRole("alert");
-    expect(screen.getByRole("button", { name: /close/i })).toBeTruthy();
-    expect(submit).not.toHaveBeenCalled();
-    expect(createMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("a request for a kind that is not one of the three, or a parent that is not a node, creates nothing", async () => {
-    render("/edit/new?kind=exe&parent=nod_root");
-    await screen.findByRole("alert");
-    expect(createMock).not.toHaveBeenCalled();
-    expect(submit).not.toHaveBeenCalled();
   });
 
   it("shows a refusal by its name, not the server's text", async () => {
