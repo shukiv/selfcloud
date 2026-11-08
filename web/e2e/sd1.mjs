@@ -25,7 +25,7 @@ const where = (page, sel) =>
 async function reveal(page, sel) {
   const found = await page.evaluate(`(() => { const el = document.querySelector(${q(sel)}); if (!el) return false; el.scrollIntoView({ block: 'center', inline: 'nearest' }); return true; })()`);
   if (!found) throw new Error(`nothing matches ${sel}`);
-  await sleepMs(500);
+  await stillScroll(page, sel);
   const p = await where(page, sel);
   if (!p) throw new Error(`nothing matches ${sel} after the scroll`);
   return p;
@@ -124,20 +124,23 @@ async function dialogsNow(page, label) {
   return info;
 }
 
-// confirmSettled returns the point of the Delete confirmation's button once the dialog has settled. antd zooms a dialog in when it
+// settledPoint returns the centre of the element pick finds, once it has settled. antd zooms a dialog or a notice in when it
 // opens (ant-zoom-*), so a press read before the zoom ends lands where the button was mid-zoom: round 9 showed no request sent. The
 // dialog and its wrap must carry no antd motion class and have no running animation, and the button's box must be the same on two
 // reads 100 ms apart. It returns null if there is no such button (the caller's check reports it), and throws if the dialog keeps
 // moving for 10 s.
-async function confirmSettled(page) {
+async function settledPoint(page, pick, what) {
   const read = () =>
     page.evaluate(`(() => {
-      const b = [...document.querySelectorAll('[role="dialog"] button')].find((x) => x.textContent.trim() === 'Move to trash');
+      const b = (${pick});
       if (!b) return null;
-      const els = [b.closest('.ant-modal'), b.closest('.ant-modal-wrap'), b.closest('[role="dialog"]')].filter(Boolean);
-      const motion = els.some((el) => /(^|\\s)ant-(zoom|fade)-/.test(String(el.className)) || el.getAnimations().some((a) => a.playState !== 'finished'));
+      let motion = false;
+      for (let e = b; e && e !== document.body; e = e.parentElement) {
+        if (/(^|\\s)ant-(zoom|fade|slide)-/.test(String(e.className))) motion = true;
+        if (e.getAnimations && e.getAnimations().some((a) => a.playState !== 'finished')) motion = true;
+      }
       const r = b.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2, box: [r.left, r.top, r.width, r.height].map(Math.round), motion, classes: els.map((el) => String(el.className).slice(0, 80)) };
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, box: [r.left, r.top, r.width, r.height].map(Math.round), motion };
     })()`);
   const deadline = Date.now() + 10000;
   let last = null;
@@ -151,11 +154,31 @@ async function confirmSettled(page) {
       if (second && !second.motion && JSON.stringify(second.box) === JSON.stringify(first.box)) return { x: second.x, y: second.y };
     }
     if (Date.now() > deadline) {
+      // Never there: null, and the caller fails without pressing. There, but still moving: an error that names the last read.
       if (last === null) return null;
-      throw new Error(`the Delete confirmation did not settle in 10 s (its dialog keeps moving or the button keeps moving): last read ${JSON.stringify(last)}`);
+      throw new Error(`${what} did not settle in 10 s (it keeps moving): last read ${JSON.stringify(last)}`);
     }
     await sleepMs(50);
   }
+}
+
+// CONFIRM_PICK is the Move to trash button of the topmost visible dialog (antd appends a new dialog after the old ones).
+const CONFIRM_PICK = `(() => { const shown = [...document.querySelectorAll('[role="dialog"]')].filter((d) => { const w = d.closest('.ant-modal-wrap'); return (!w || getComputedStyle(w).display !== 'none') && d.getBoundingClientRect().width > 0; }); const top = shown[shown.length - 1]; return top ? [...top.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Move to trash') : null; })()`;
+
+// stillScroll waits until the element's box and the sidebar's scroll are the same on two reads 100 ms apart, so a press is aimed at
+// where the row stays. It fails after 5 s, if the sidebar keeps moving.
+async function stillScroll(page, sel) {
+  const read = () =>
+    page.evaluate(`(() => { const el = document.querySelector(${q(sel)}); const s = document.querySelector('.shell-scroll'); if (!el) return null; const r = el.getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left), scroll: s ? s.scrollTop : null }; })()`);
+  const deadline = Date.now() + 5000;
+  let last = await read();
+  while (Date.now() < deadline) {
+    await sleepMs(100);
+    const next = await read();
+    if (next !== null && last !== null && JSON.stringify(next) === JSON.stringify(last)) return;
+    last = next;
+  }
+  throw new Error(`the sidebar did not stop moving toward ${sel} in 5 s: last read ${JSON.stringify(last)}`);
 }
 
 export async function sd1Checks(h, { page, base, accountKey, teamA, teamB }) {
@@ -210,7 +233,7 @@ export async function sd1Checks(h, { page, base, accountKey, teamA, teamB }) {
       await page.waitFor(`!!document.querySelector(${q(TREE_ROW(name))})`, 15000);
       await page.evaluate(`(() => { const li = document.querySelector(${q(TREE_ROW(name))}).parentElement; if (li.getAttribute('aria-expanded') !== 'true') li.querySelector('button[aria-label^="Expand"]')?.click(); return true; })()`);
       await page.waitFor(`document.querySelector(${q(TREE_ROW(name))}).parentElement.getAttribute('aria-expanded') === 'true'`, 15000);
-      await sleepMs(500);
+      await stillScroll(page, TREE_ROW(name));
     };
 
     // ---- 1. a tree folder dropped on another tree folder moves it, and both branches show it ----
@@ -301,11 +324,14 @@ export async function sd1Checks(h, { page, base, accountKey, teamA, teamB }) {
       await diag(page, 'step 7: after the release', null);
       check(mid === 'ok', `the Trash is marked as taking the drop (${mid})`);
       await page.waitFor(`!!document.querySelector('[role="dialog"]')`, 15000);
-      const confirm = await confirmSettled(page);
+      const confirm = await settledPoint(page, CONFIRM_PICK, 'the Delete confirmation\'s Move to trash button');
       check(confirm !== null, 'the Delete confirmation offers Move to trash');
+      if (confirm === null) throw new Error('the Delete confirmation did not open, so nothing was pressed');
       await click(page, confirm);
       await waitIn(api, base, teamA, '/sd1/Src', accountKey, 's01.txt', false);
       await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Undo')`, 15000);
+      // Undo is a pointer click once its notice has settled: the notice's button is still animating in when it first shows, as the Delete
+      // button was in step 8. (Decision 104's round two pressed it as a DOM click for that reason; see the review's M3.)
       // Undo is pressed as the DOM button, as run.mjs presses its own Undo. A pointer click at its position did not restore the file in
       // the run of decision 104's round two; why it did not is not yet known.
       await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Undo' && b.offsetParent !== null).click()`);
@@ -350,7 +376,8 @@ export async function sd1Checks(h, { page, base, accountKey, teamA, teamB }) {
         if (!trash) throw new Error('the Trash entry is not on the page after the scroll');
         await diag(page, `step 8: region at its end (scrollTop ${now.top} of ${now.max}, from ${before.top}), held in the band`, bandPoint);
         await glide(page, bandPoint, trash, {});
-        await sleepMs(200);
+        // The state is read once the Trash has one (ok or refused), so the check below reads what the page shows.
+        await page.waitFor(`document.querySelector(${q(TRASH)})?.dataset.dropState != null`, 3000).catch(() => undefined);
         const state = await dropState(page, TRASH);
         await diag(page, 'step 8: over the Trash, before the release', trash);
         check(state === 'ok', `the Trash is marked as taking the drop, reached by the edge scroll (${state})`);
@@ -362,9 +389,10 @@ export async function sd1Checks(h, { page, base, accountKey, teamA, teamB }) {
       await diag(page, 'step 8: after the release', null);
       await page.waitFor(`!!document.querySelector('[role="dialog"]')`, 15000);
       const trashmeID = await idOf(teamA, '/sd1', 'Trashme');
-      // The press waits until the dialog has settled (confirmSettled); the assertion below is unchanged.
-      const confirm = await confirmSettled(page);
+      // The press waits until the dialog has settled (settledPoint); the assertion below is unchanged.
+      const confirm = await settledPoint(page, CONFIRM_PICK, 'the Delete confirmation\'s Move to trash button');
       check(confirm !== null, 'the Delete confirmation opens for the folder');
+      if (confirm === null) throw new Error('the Delete confirmation did not open, so nothing was pressed');
       const sentFrom = page.sent.length;
       const responses = [];
       const onResponse = (p) => responses.push({ url: p.response.url.replace(/^https?:\/\/[^/]+/, ''), status: p.response.status });
@@ -437,12 +465,15 @@ export async function sd1Checks(h, { page, base, accountKey, teamA, teamB }) {
       await mouse(page, 'mouseMoved', from);
       await mouse(page, 'mousePressed', from);
       await glide(page, from, edge, {});
+      // The fixed 1500 ms hold is the behaviour under test: the sidebar scrolls for as long as the drag holds at its edge, so the scroll is
+      // read after that hold. There is no state to wait for here.
       await sleepMs(1500);
       const after = await page.evaluate(`document.querySelector('.shell-scroll').scrollTop`);
       check(after > region.top, `the sidebar scrolled down while the drag held at its bottom edge (${region.top} to ${after})`);
       await press(page, 'Escape');
       await mouse(page, 'mouseReleased', edge);
-      await sleepMs(300);
+      // The drag is over when the page takes its drag mark away (sc-gesture), so the listing is read after that.
+      await page.waitFor(`!document.documentElement.classList.contains('sc-gesture')`, 3000).catch(() => undefined);
       check((await listed(api, base, teamA, '/sd1/Many', accountKey)).includes('F01'), 'Escape ended the drag, and F01 did not move');
     });
   } finally {
