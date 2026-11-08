@@ -269,6 +269,10 @@ export async function pwaChecks(h, { page, base, brand, dir, check, wsUrl }) {
   await setPhone(page, true);
   await page.goto(`${base}/files`);
   await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]')`, 20000);
+  // /files moves on to the member's own folder once the account is read (FilesPage.tsx, the redirect with replace). The move
+  // changes the address, and a change of address closes the sidebar's dialogs (Shell.tsx). The menu is opened after the move,
+  // or the instructions opened by the item below are closed by it (CI run 42429830700, attempt 1).
+  await page.waitFor(`/^\\/files\\/fld_/.test(location.pathname)`, 20000);
   await openAccountMenu(page);
   items = await menuTexts(page);
   check(items.includes('Add to Home Screen'), `an iPhone is offered the Add to Home Screen steps (${items.join(', ')})`);
