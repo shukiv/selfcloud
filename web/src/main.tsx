@@ -7,6 +7,7 @@ import { RouterProvider } from "react-router-dom";
 import { App as AntdApp } from "antd";
 import "./index.css";
 import { clearOnSessionChange, createQueryClient } from "./lib/query";
+import { listenOfficeChanges } from "./lib/files/officeSync";
 import { createAppRouter } from "./lib/router";
 import { loadLang } from "./lib/i18n";
 import { ThemeProvider } from "./theme/theme";
@@ -22,6 +23,8 @@ registerWorker();
 
 const queryClient = createQueryClient();
 clearOnSessionChange(queryClient);
+// The other tabs read again what an office editor changed in this browser (decision 107).
+listenOfficeChanges(queryClient);
 const router = createAppRouter([{ path: "*", element: <Boot><Gate /></Boot> }]);
 
 const root = document.getElementById("root");

@@ -194,7 +194,7 @@ space ("My files"), and a group can hold users.
 | Push notifications | Built (j1 to j4): webhook endpoints, events, the delivery worker and quota warnings (decisions 26 to 30) |
 | Export to other formats | Built (s3, decision 37): `POST /nodes/{nod}/exports`, through Collabora's conversion; run live against Collabora Online on 2026-10-31 |
 | Thumbnails | Built in part (s1, s4a): images from the API; the grid's tiles show them (s4a, decision 38) |
-| "Open with" office editor | Built (l1 to l4, decision 73): the editor in the interface, Open in editor (a file the caller may edit) and Open in viewer (read only), from the row menu and the viewer; the WOPI host; rename from the editor (RenameFile); the lock mark, Details and a manager's confirmed end of an editing session. Checked against a fake Collabora only; a live run is not done |
+| "Open with" office editor | Built (l1 to l4, decision 73): the editor in the interface, Open in editor (a file the caller may edit) and Open in viewer (read only), from the row menu and the viewer; the WOPI host; rename from the editor (RenameFile); the lock mark, Details and a manager's confirmed end of an editing session; ef1 (decision 107): the other tabs read again a file the editor renamed or saved, a Save As copy's page moves to the copy, and an expired token is renewed in the editor. Checked against a fake Collabora only; a live run is not done |
 | Embeddable file picker for client applications | New (t): a small script client apps embed, over delegated tokens (i) |
 
 ## Proposed new slices

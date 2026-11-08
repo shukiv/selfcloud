@@ -140,8 +140,38 @@ export async function l4Checks(h, { page, base, accountKey, teamA, teamB, fake, 
     await page.waitFor(`!document.querySelector('.ant-modal')`, 10000).catch(() => {});
     const afterSave = await api(base, 'GET', `/api/v1/folders/${teamA}/children?path=${encodeURIComponent(`/${folderName}`)}`, accountKey);
     check((afterSave.items ?? []).some((n) => n.name === `${copyBase}.docx`), 'the copy is in the folder beside the file');
-    check(await page.evaluate(`!!document.querySelector('[data-testid="office-editor"]')?.innerText.includes(${q(docxName.replace(/\.docx$/, ''))})`), 'the editor page still shows the file it has open');
+    // ef1 (decision 107): after Save As the page moves to the copy, in this tab, at the copy's own address, and its bar shows the copy.
+    const copied = (afterSave.items ?? []).find((n) => n.name === `${copyBase}.docx`);
+    const moved = copied ? await page.waitFor(`location.pathname === ${q(`/edit/${copied.id}`)}`, 15000).then(() => true, async (err) => {
+      // Diagnostic for a page that did not move: where it is, what the bar shows, and what the fake saw.
+      const shown = await page.evaluate(`JSON.stringify({ at: location.pathname, bar: document.querySelector('[data-testid="office-editor"]')?.innerText.slice(0, 200), notice: [...document.querySelectorAll('[data-testid="office-editor"] .ant-alert')].map((a) => a.innerText) })`).catch(() => 'unreadable');
+      console.error(`ef1 move diagnostic: ${shown}; copy ${copied.id}; saves ${JSON.stringify(fake.saves)}; ${err.message}`);
+      return false;
+    }) : false;
+    check(moved, 'after Save As the editor page moves to the copy, at the copy\'s own address (decision 107)');
+    check(await page.evaluate(`!!document.querySelector('[data-testid="office-editor"]')?.innerText.includes(${q(copyBase)})`), 'the editor page shows the copy\'s name in its bar');
     await snap('save-as-done.png');
+
+    // ef1: a rename made in the editor shows in the bar and is the name the Save As dialog suggests; the editor's token is renewed
+    // when the editor reports it has expired, for the copy the editor now has.
+    const renamedBase = `renamed-${suffix}`;
+    const renamesBefore = fake.renames.length;
+    fake.requestRename(renamedBase);
+    for (let i = 0; i < 150 && fake.renames.length === renamesBefore; i++) await new Promise((r) => setTimeout(r, 100));
+    check(fake.renames.length > renamesBefore && fake.renames[fake.renames.length - 1].status === 200, 'the editor renamed the copy through the host (RenameFile)');
+    await page.waitFor(`document.querySelector('[data-testid="office-editor"]')?.innerText.includes(${q(renamedBase + '.docx')})`, 15000).catch(() => {});
+    check(await page.evaluate(`!!document.querySelector('[data-testid="office-editor"]')?.innerText.includes(${q(renamedBase + '.docx')})`), 'a rename made in the editor shows the new name in the page\'s bar (decision 107)');
+    fake.requestSaveAs();
+    await page.waitFor(`!!document.querySelector('.ant-modal input[aria-label="File name"]')`, 15000);
+    const suggested = await page.evaluate(`document.querySelector('.ant-modal input[aria-label="File name"]').value`);
+    check(suggested === renamedBase, `the Save As dialog suggests the renamed file's name (${suggested})`);
+    await page.evaluate(`[...document.querySelectorAll('.ant-modal button')].find((b) => b.textContent.trim() === 'Cancel').click()`);
+    await page.waitFor(`!document.querySelector('.ant-modal')`, 10000).catch(() => {});
+    const resetsBefore = fake.resets.length;
+    fake.requestExpire();
+    for (let i = 0; i < 150 && fake.resets.length === resetsBefore; i++) await new Promise((r) => setTimeout(r, 100));
+    const reset = fake.resets[fake.resets.length - 1];
+    check(fake.resets.length > resetsBefore && reset.ttl > Date.now(), 'an expired token is answered with a fresh one for the editor, with a later expiry (decision 107)');
 
     // Close ends the editor's tab, which a script opened, and the listing it came from shows the folder again.
     await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close').click()`);

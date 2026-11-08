@@ -21,7 +21,7 @@ import { session } from "../lib/session";
 import { useT } from "../lib/i18n";
 import { go } from "../lib/router";
 import { useStore } from "../lib/store";
-import { statNode } from "../lib/files/api";
+import { childrenPage, statNode } from "../lib/files/api";
 import {
   EDITOR_FRAME,
   type SaveAsAsk,
@@ -38,6 +38,15 @@ import {
   saveAsNameOk,
   saveAsSuggestion,
 } from "../lib/files/editor";
+import {
+  announceNodeChanged,
+  decodeEditorName,
+  displayName,
+  findCopy,
+  isSameName,
+} from "../lib/files/officeSync";
+import type { Node } from "../lib/files/types";
+import { sessionChanged } from "../lib/session";
 import NotFoundPage from "./NotFoundPage";
 
 // The editor's answer to POST /api/v1/nodes/{nod}/office. The token is held only until the form has carried it.
@@ -52,8 +61,11 @@ type Failure = "notFound" | "forbidden" | "notSupported" | "unavailable" | "fail
 
 type State =
   | { status: "opening" }
-  | { status: "ready"; origin: string; folder: string | null; name: string }
+  | { status: "ready"; origin: string; folder: string | null; parent: string | null; name: string }
   | { status: "failed"; why: Failure };
+
+// Notice is a note the bar shows about the session or a copy (ef1). Its words are the catalogue key after files.editor.
+type Notice = "sessionEnded" | "tokenRefreshFailed" | "copyNotShown";
 
 const NOD = /^nod_[A-Za-z0-9_-]+$/;
 
@@ -94,17 +106,38 @@ export default function OfficeEditPage() {
   // saveAs is the Save As dialog while it is open: the file's name split for it, and the name the person has typed.
   const [saveAs, setSaveAs] = useState<SaveAsAsk | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
+  const [notice, setNotice] = useState<Notice | null>(null);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const holderRef = useRef<HTMLDivElement | null>(null);
   // pending is the form built for the editor, until it is posted. It is cleared after the post.
   const pendingRef = useRef<HTMLFormElement | null>(null);
   const valid = NOD.test(nod);
+  // ef1: the node the editor has now (the copy, after a Save As), the file's name as the server last gave it, the state of
+  // the editor's save (read by the message handler), the latest state for the handler, and the session watch of this editor.
+  const nodRef = useRef(nod);
+  const authNameRef = useRef("");
+  const saveRef = useRef<SaveState>(null);
+  const stateRef = useRef(state);
+  const seqRef = useRef(0);
+  const renewingRef = useRef(false);
+  const watchRef = useRef<(() => boolean) | null>(null);
+  const originRef = useRef<string | null>(null);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     if (!on || !valid) return;
     let cancelled = false;
+    nodRef.current = nod;
+    watchRef.current = sessionChanged();
     setState({ status: "opening" });
     setLoaded(false);
+    setNotice(null);
+    saveRef.current = null;
     void (async () => {
       try {
         const node = await statNode(nod);
@@ -115,8 +148,10 @@ export default function OfficeEditPage() {
           setState({ status: "failed", why: "unavailable" });
           return;
         }
+        authNameRef.current = node.name;
+        originRef.current = origin;
         pendingRef.current = buildEditorForm(document, answer.url, answer.token, Date.parse(answer.expires_at), EDITOR_FRAME);
-        setState({ status: "ready", origin, folder: node.folder_id, name: node.name });
+        setState({ status: "ready", origin, folder: node.folder_id, parent: node.parent_id, name: node.name });
       } catch (err) {
         if (!cancelled) setState({ status: "failed", why: failureOf(err) });
       }
@@ -125,6 +160,101 @@ export default function OfficeEditPage() {
       cancelled = true;
     };
   }, [nod, mode, on, valid]);
+
+  // applyName shows the name a file has when the server says so, and tells the other tabs when it changed.
+  const applyName = (n: Node) => {
+    const changed = n.name !== authNameRef.current;
+    authNameRef.current = n.name;
+    setState((s) => (s.status === "ready" ? { ...s, name: n.name, folder: n.folder_id, parent: n.parent_id } : s));
+    if (changed) announceNodeChanged(n.id, n.folder_id, n.parent_id);
+  };
+
+  // resolveName finds what the editor now has, from a name it sent. The file's own read is the authority: when it has the
+  // name, the file was renamed. When not, the editor has made a copy (Save As), which is found by its exact name among the
+  // children of the same directory, newest first. No exact match is no guess: the page stays where it is and says so.
+  const resolveName = async (signalled: string) => {
+    const seq = ++seqRef.current;
+    let cur: Node;
+    try {
+      cur = await statNode(nodRef.current);
+    } catch {
+      return;
+    }
+    if (seq !== seqRef.current) return;
+    if (isSameName(cur.name, signalled)) {
+      applyName(cur);
+      return;
+    }
+    if (cur.parent_id === null) {
+      setNotice("copyNotShown");
+      return;
+    }
+    let copy: Node | null = null;
+    try {
+      const page = await childrenPage(cur.folder_id, cur.parent_id, undefined, { key: "modified", dir: "desc" });
+      copy = findCopy(page.items, signalled);
+    } catch {
+      copy = null;
+    }
+    if (seq !== seqRef.current) return;
+    if (copy === null) {
+      setNotice("copyNotShown");
+      return;
+    }
+    nodRef.current = copy.id;
+    window.history.replaceState(window.history.state, "", `/edit/${copy.id}${window.location.search}`);
+    authNameRef.current = copy.name;
+    saveRef.current = null;
+    setSaveState(null);
+    setNotice(null);
+    setState((s) => (s.status === "ready" ? { ...s, name: copy.name, folder: copy.folder_id, parent: copy.parent_id } : s));
+    announceNodeChanged(copy.id, copy.folder_id, copy.parent_id);
+  };
+
+  // readName re-reads the file after a rename the editor reported. A rename never makes a copy, so a name the page cannot read
+  // is not a Save As: the file's own read is shown, and nothing else is looked for.
+  const readName = async () => {
+    const seq = ++seqRef.current;
+    try {
+      const cur = await statNode(nodRef.current);
+      if (seq === seqRef.current) applyName(cur);
+    } catch {
+      // The name stays as it was; the next read or message shows it again.
+    }
+  };
+
+  // renew answers the editor's request for a fresh token (App_TokenExpiring, App_TokenExpired; decision 107). The token is for
+  // the mode the page opened with, and for the node the editor has now, and it goes to the editor's own origin only. A page
+  // whose browser session has changed mints nothing: the session-ended note says so.
+  const renew = async () => {
+    if (renewingRef.current) return;
+    if (watchRef.current?.() ?? false) {
+      setNotice("sessionEnded");
+      return;
+    }
+    renewingRef.current = true;
+    try {
+      const answer = await api<OfficeAnswer>("POST", `/api/v1/nodes/${nodRef.current}/office`, { body: { mode: modeRef.current } });
+      if (watchRef.current?.() ?? false) {
+        setNotice("sessionEnded");
+        return;
+      }
+      const target = originRef.current;
+      if (target === null || editorOrigin(answer.url) !== target) {
+        setNotice("tokenRefreshFailed");
+        return;
+      }
+      frameRef.current?.contentWindow?.postMessage(
+        editorMessage("Reset_Access_Token", { token: answer.token, ttl: Date.parse(answer.expires_at) }),
+        target,
+      );
+      setNotice(null);
+    } catch {
+      setNotice(watchRef.current?.() ?? false ? "sessionEnded" : "tokenRefreshFailed");
+    } finally {
+      renewingRef.current = false;
+    }
+  };
 
   // Once the frame is on the page, the form is posted into it, and the form is taken off the pending slot. The post reads
   // the form when it is submitted, so the form then leaves the page, and no script of the page can read the token from it.
@@ -164,7 +294,32 @@ export default function OfficeEditPage() {
       }
       const msg = parseEditorMessage(ev.data);
       if (msg === null) return;
-      setSaveState((prev) => saveStateAfter(prev, msg));
+      const prevSave = saveRef.current;
+      const nextSave = saveStateAfter(prevSave, msg);
+      saveRef.current = nextSave;
+      setSaveState(nextSave);
+      // A save that made the file newer (unsaved, then saved) changes its size and time: the other tabs read it again.
+      if (prevSave === "unsaved" && nextSave === "saved") {
+        const cur = stateRef.current;
+        if (cur.status === "ready" && cur.folder !== null) announceNodeChanged(nodRef.current, cur.folder, cur.parent);
+      }
+      if (msg.id === "File_Rename") {
+        const sent = decodeEditorName(msg.values?.NewName);
+        if (sent !== null) {
+          const shown = displayName(sent, authNameRef.current);
+          setState((s) => (s.status === "ready" ? { ...s, name: shown } : s));
+        }
+        void readName();
+      }
+      if (msg.id === "Doc_Title" && typeof msg.values?.DocName === "string" && msg.values.DocName !== "") {
+        // The title names the file the editor shows; when that is the name the page has, nothing has changed.
+        if (!isSameName(authNameRef.current, msg.values.DocName)) void resolveName(msg.values.DocName);
+      }
+      // Save As: the editor's answer carries the copy's final name (the request asked for it with Notify).
+      if (msg.id === "Action_Save_Resp" && typeof msg.values?.fileName === "string" && msg.values.fileName !== "") {
+        void resolveName(msg.values.fileName);
+      }
+      if (msg.id === "App_TokenExpiring" || msg.id === "App_TokenExpired") void renew();
       if (msg.id === "UI_Close") close();
       // Collabora's postMessage channel opens when the host answers its Initialized status with Host_PostmessageReady.
       // The reply goes to the editor's own origin only, never to "*".
@@ -173,8 +328,8 @@ export default function OfficeEditPage() {
       }
       if (msg.id === "App_LoadingStatus" && msg.values?.Status === "Document_Loaded") setLoaded(true);
       // Save As: the editor asks for the copy's name, the person types it, and confirmSaveAs sends it back (Action_SaveAs).
-      if (msg.id === "UI_SaveAs" && state.status === "ready") {
-        const ask = saveAsSuggestion(state.name);
+      if (msg.id === "UI_SaveAs" && stateRef.current.status === "ready") {
+        const ask = saveAsSuggestion(stateRef.current.name);
         setSaveAsName(ask.base);
         setSaveAs(ask);
       }
@@ -188,7 +343,7 @@ export default function OfficeEditPage() {
   const confirmSaveAs = () => {
     if (saveAs === null || origin === null || !saveAsNameOk(saveAsName)) return;
     frameRef.current?.contentWindow?.postMessage(
-      editorMessage("Action_SaveAs", { Filename: saveAsFilename(saveAsName, saveAs.ext) }),
+      editorMessage("Action_SaveAs", { Filename: saveAsFilename(saveAsName, saveAs.ext), Notify: true }),
       origin,
     );
     setSaveAs(null);
@@ -245,6 +400,11 @@ export default function OfficeEditPage() {
         )}
         <IconButton label={t("files.editor.close")} onClick={close} icon={<X size={18} aria-hidden="true" focusable="false" />} />
       </header>
+      {notice !== null && (
+        <div style={{ padding: "8px 12px" }}>
+          <Alert type="warning" showIcon message={t(`files.editor.${notice}`)} />
+        </div>
+      )}
       {state.status === "failed" && (
         <div style={{ padding: 16 }}>
           <Alert type="error" showIcon message={t(`files.editor.${state.why}`)} />

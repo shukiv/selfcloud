@@ -124,6 +124,29 @@ async function saveAsAsEditor(privateKey, editor, filename) {
     body: 'a copy made by the fake editor',
   });
   const answer = res.ok ? await res.json() : {};
+  // url is the copy's address with its token: the fake keeps it for a later rename, and never records or sends it.
+  return { status: res.status, name: answer.Name ?? '', url: answer.Url ?? '' };
+}
+
+// renameAsEditor renames the file the editor holds, the way Collabora does a rename: RenameFile with the lock the editor took,
+// and the name without its extension (ASCII here). It answers the status and the Name the host gives the file.
+async function renameAsEditor(privateKey, editor, name) {
+  const target = new URL(editor.wopiSrc);
+  target.searchParams.set('access_token', editor.token);
+  const signed = target.toString();
+  const ticks = BigInt(Date.now()) * 10000n + DOT_NET_EPOCH_TICKS;
+  const proof = signProof(privateKey, editor.token, signed, ticks);
+  const res = await fetch(signed, {
+    method: 'POST',
+    headers: {
+      'X-WOPI-Timestamp': String(ticks),
+      'X-WOPI-Proof': proof,
+      'X-WOPI-Override': 'RENAME_FILE',
+      'X-WOPI-Lock': 'fake-editor-lock',
+      'X-WOPI-RequestedName': name,
+    },
+  });
+  const answer = res.ok ? await res.json() : {};
   return { status: res.status, name: answer.Name ?? '' };
 }
 
@@ -147,7 +170,19 @@ function editorPage({ name, userCanWrite, locked }) {
     const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
     if (msg.MessageId === 'Host_PostmessageReady') post({ MessageId: 'App_LoadingStatus', Values: { Status: 'Document_Loaded' } });
     if (msg.MessageId === 'Action_SaveAs') {
-      fetch('/fake/save-as', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: msg.Values.Filename }) });
+      // Collabora's order (decision 107): the copy loads, so the title names it (Doc_Title), and Action_Save_Resp carries the
+      // copy's name when the host asked for it with Notify.
+      fetch('/fake/save-as', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: msg.Values.Filename }) })
+        .then((r) => r.json().then((a) => ({ ok: r.ok && a.status === 200, a })))
+        .then(({ ok, a }) => {
+          if (ok) post({ MessageId: 'Doc_Title', Values: { Title: a.name + ' - Writer', DocName: a.name, DocType: 'text', ProductName: 'Writer' } });
+          if (msg.Values.Notify === true) post({ MessageId: 'Action_Save_Resp', Values: ok ? { success: true, fileName: a.name } : { success: false } });
+        })
+        .catch(() => {});
+    }
+    if (msg.MessageId === 'Reset_Access_Token') {
+      // The host's fresh token: the fake records its ttl only, never the token.
+      fetch('/fake/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ttl: msg.Values.ttl }) }).catch(() => {});
     }
   });
   document.getElementById('fake-editor-saveas').addEventListener('click', () => post({ MessageId: 'UI_SaveAs', Values: {} }));
@@ -156,6 +191,18 @@ function editorPage({ name, userCanWrite, locked }) {
   setInterval(() => {
     fetch('/fake/command', { cache: 'no-store' }).then((r) => r.json()).then((c) => {
       if (c.command === 'save-as') post({ MessageId: 'UI_SaveAs', Values: {} });
+      if (c.command === 'expire') post({ MessageId: 'App_TokenExpired', Values: {} });
+      if (c.command && c.command.rename) {
+        // A rename in Collabora: the title follows, then File_Rename with the new name, percent-encoded.
+        fetch('/fake/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: c.command.rename }) })
+          .then((r) => r.json().then((a) => ({ ok: r.ok && a.status === 200, a })))
+          .then(({ ok, a }) => {
+            if (!ok) return;
+            post({ MessageId: 'Doc_Title', Values: { Title: a.name + ' - Writer', DocName: a.name, DocType: 'text', ProductName: 'Writer' } });
+            post({ MessageId: 'File_Rename', Values: { NewName: encodeURIComponent(a.name) } });
+          })
+          .catch(() => {});
+      }
     }).catch(() => {});
   }, 200);
   document.getElementById('fake-editor-close').addEventListener('click', () => post({ MessageId: 'UI_Close', Values: {} }));
@@ -212,6 +259,9 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
   // pendingCommand is what the open editor page is asked to do next (GET /fake/command takes it).
   let pendingCommand = null;
   let refusing = false;
+  // renames and resets are what the open editor page did: each rename the fake made, and each fresh token the host gave the page.
+  const renames = [];
+  const resets = [];
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const server = createServer({ key: readFileSync(keyFile), cert: readFileSync(certFile) }, async (req, res) => {
@@ -246,6 +296,40 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
       res.end(JSON.stringify({ command }));
       return;
     }
+    if (req.method === 'POST' && url.pathname === '/fake/rename') {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      let name = '';
+      try {
+        name = String(JSON.parse(Buffer.concat(chunks).toString('utf8')).name ?? '');
+      } catch {
+        name = '';
+      }
+      if (lastEditor === null || name === '') {
+        res.writeHead(400);
+        res.end();
+        return;
+      }
+      const answer = await renameAsEditor(privateKey, lastEditor, name);
+      renames.push({ name, ...answer });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(answer));
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/fake/reset') {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      let ttl = 0;
+      try {
+        ttl = Number(JSON.parse(Buffer.concat(chunks).toString('utf8')).ttl) || 0;
+      } catch {
+        ttl = 0;
+      }
+      resets.push({ ttl });
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     if (req.method === 'POST' && url.pathname === '/fake/save-as') {
       const chunks = [];
       for await (const c of req) chunks.push(c);
@@ -260,8 +344,13 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
         res.end();
         return;
       }
-      const answer = await saveAsAsEditor(privateKey, lastEditor, filename);
+      const { url: copyURL, ...answer } = await saveAsAsEditor(privateKey, lastEditor, filename);
       saves.push({ filename, ...answer });
+      // The editor now holds the copy: the copy's address and token are the ones a rename or a save goes through.
+      if (answer.status === 200 && copyURL) {
+        const copy = new URL(copyURL);
+        lastEditor = { token: copy.searchParams.get('access_token') ?? '', wopiSrc: `${copy.origin}${copy.pathname}` };
+      }
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify(answer));
       return;
@@ -307,9 +396,19 @@ export async function startConvertFake(dir, port, { delayMs = 600 } = {}) {
     hits,
     editor,
     saves,
+    renames,
+    resets,
     // requestSaveAs asks the open editor page to press Save as (the dialog then asks the person for the copy's name).
     requestSaveAs() {
       pendingCommand = 'save-as';
+    },
+    // requestRename asks the open editor page to rename the file it holds, as Collabora's rename does.
+    requestRename(name) {
+      pendingCommand = { rename: name };
+    },
+    // requestExpire makes the open editor page report an expired token, as Collabora does after a refused save.
+    requestExpire() {
+      pendingCommand = 'expire';
     },
     refuse(on) {
       refusing = on;
