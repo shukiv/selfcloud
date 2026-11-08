@@ -143,7 +143,10 @@ describe("Shell", () => {
     const trash = within(nav).getByRole("menuitem", { name: "Trash" });
     expect(trash.dataset.dropTrash).toBe("");
     expect(trash.dataset.dropName).toBe("Trash");
-    expect(within(nav).getByRole("menuitem", { name: "Starred" }).dataset.dropTrash).toBeUndefined();
+    // Every other entry of the menu is no Trash target: none of them carries the attribute.
+    const others = within(nav).getAllByRole("menuitem").filter((item) => item !== trash);
+    expect(others.length).toBeGreaterThan(1);
+    for (const item of others) expect(item.dataset.dropTrash, item.textContent ?? "").toBeUndefined();
   });
 
   it("draws the page inside and lists the member's destinations", async () => {
