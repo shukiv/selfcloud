@@ -3270,9 +3270,12 @@ paths:
         account whose extension makes it a template (.docx, .odt, .xlsx, .ods, .pptx, .odp). Only `txt` is made while
         office editing is off; every other `type` and every `template` answers `not_found` then. A copy of an account
         template is audited with `via: template` and the template's ID in `template`; a built-in copy with `via: template`
-        and the built-in ID. The copy of an account template shares the template's bytes, as a file copy does: it
+        and the built-in ID. The no-download rule of an account template is read inside the copy's write transaction: a
+        viewer or commenter is refused with `download_restricted` (as the copy route refuses them), and a copy by a
+        contributor or above keeps the template's own `no_download` flag (as a file copy does). A copy over the quota
+        answers 507 and makes nothing. The copy of an account template shares the template's bytes, as a file copy does: it
         writes no bytes and reserves no disk, and the account is charged its size in full. The caller reads an account
-        template, and a template it cannot read is `not_found`; a template with no-download rules is refused. A
+        template, and a template it cannot read is `not_found`; a viewer or commenter is refused a no-download template (below). A
         built-in is built and stored as a blank file is.
         `{nod}` must be a folder's root node or a directory. The caller needs
         editor (or manager) on it, not contributor: the new file opens in the office editor and is saved
@@ -3327,8 +3330,11 @@ paths:
         an invoice for a spreadsheet; a slide deck for a presentation. Then come the files of the account's templates
         folder (`GET /api/v1/accounts/{acc}/templates`) whose extension makes them templates of the kind and that the
         caller can read: .docx and .odt for a document, .xlsx and .ods for a spreadsheet, .pptx and .odp for a
-        presentation. A folder that is trashed, deleted or unreadable contributes none. `limit` (1 to 100, default 50)
-        caps the account files on a page; `next_cursor`, when present, is the `after` of the next page. A built-in has
+        presentation. A folder that is trashed, deleted or unreadable contributes none. A file the caller can read but
+        cannot copy is not listed: a no-download file, for a viewer or a commenter (the copy route refuses them). `limit`
+        (1 to 100, default 50) caps the account files on a page. A page can be shorter than `limit`: one request reads at
+        most 1000 children of the folder, and a larger folder continues on the next page. `next_cursor` is present only
+        when a further usable file (or a child to scan) follows, and is the `after` of the next page. A built-in has
         `source: builtin`, the ID `builtin:<name>` and the name the copy takes, in the caller's language. An account file
         has `source: account`, its node ID as `id` and as `node_id`, and `has_thumbnail` (an office file has none yet).
         Office editing must be on; otherwise the route answers `not_found`. A 400 is a missing or unknown `kind`, a
@@ -3368,7 +3374,8 @@ paths:
       summary: The account's templates folder
       description: |
         The directory that holds the account's own templates (decision 105), as `node_id`, or `null` for none. Only
-        the account's owner or a manager may read it; any other person is told the account is not found. A folder
+        a manager of the account may read it (the account's owner, an installation admin for it, or an account key; a
+        manager of the folder alone does not). Any other person is told the account is not found. A folder
         that is trashed or deleted reads as `null`; its setting is kept.
       security: [{ bearer: [] }, { session: [] }]
       responses:
@@ -3385,7 +3392,7 @@ paths:
       summary: Name the account's templates folder, or clear it
       description: |
         Sets the account's templates folder to `node_id`, a directory of this account the caller can read, or clears
-        it with `null`. Only the account's owner or a manager may change it, and the change is audited as
+        it with `null`. Only a manager of the account may change it (as for the archive switch), and the change is audited as
         `templates.folder`. A file is a 400; a node the caller cannot reach, or another account's, is a 404. While an
         installation admin is signed in as a user (impersonation), the route is refused with 403.
       security: [{ bearer: [] }, { session: [] }]
