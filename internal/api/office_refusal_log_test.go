@@ -4,6 +4,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/base64"
 	"log/slog"
 	"strings"
 	"testing"
@@ -73,11 +74,7 @@ func TestWOPIRefusedCallLogsItsReasonAndNeverTheToken(t *testing.T) {
 		},
 		"bad signature": {
 			prepare: func(t *testing.T, fx *officeFixture, tok string) string {
-				last := tok[len(tok)-1:]
-				if last == "A" {
-					return tok[:len(tok)-1] + "B"
-				}
-				return tok[:len(tok)-1] + "A"
+				return tamperSignature(t, tok)
 			},
 			path:   func(fx *officeFixture) string { return nodeRoute(fx.doc.ID) },
 			status: 401, reason: "bad signature",
@@ -142,5 +139,50 @@ func TestWOPIRefusedCallsWarnOncePerSessionAndReason(t *testing.T) {
 	}
 	if n := len(refusalLines(logs.String(), "DEBUG")); n != 4 {
 		t.Errorf("debug lines for the four repeats = %d, want 4", n)
+	}
+}
+
+// tamperSignature returns tok with its signature changed: one bit of the decoded MAC is flipped and the MAC is encoded
+// again. The last character is not changed, since its filler bits are ignored by the decoder (lk1 review fix).
+func tamperSignature(t *testing.T, tok string) string {
+	t.Helper()
+	body, _, ok := strings.Cut(strings.TrimPrefix(tok, auth.TokenPrefix), ".")
+	if !ok {
+		t.Fatalf("token has no signature part")
+	}
+	raw := macOf(t, tok)
+	raw[0] ^= 1
+	return auth.TokenPrefix + body + "." + base64.RawURLEncoding.EncodeToString(raw)
+}
+
+// macOf returns the decoded signature of tok, as the server compares it.
+func macOf(t *testing.T, tok string) []byte {
+	t.Helper()
+	_, mac, ok := strings.Cut(strings.TrimPrefix(tok, auth.TokenPrefix), ".")
+	if !ok {
+		t.Fatalf("token has no signature part")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(mac)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// lk1 review fix: a tampered token must carry a different signature, or the refusal test cannot tell a forgery from a
+// valid token. A raw base64url string's last character has filler bits the decoder ignores, so "...A" and "...B" can decode
+// to one MAC. Here a token ending in "A" is tampered, and the MAC must still change.
+func TestWOPITamperedSignatureChangesTheMAC(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	tok := fx.openToken(t, "edit")
+	for i := 0; i < 4000 && !strings.HasSuffix(tok, "A"); i++ {
+		tok = fx.openToken(t, "edit")
+	}
+	if !strings.HasSuffix(tok, "A") {
+		t.Skip("no token ending in A was made")
+	}
+	if bytes.Equal(macOf(t, tamperSignature(t, tok)), macOf(t, tok)) {
+		t.Fatalf("the tampered token decodes to the same signature as the original; it would still be valid")
 	}
 }
