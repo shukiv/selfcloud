@@ -284,6 +284,7 @@ function fireBack() {
 // ef1: the names, the copy after Save As, the token renewal and the announcements. The editor's messages are sent from its frame.
 describe("the editor page follows renames, copies and sessions (ef1)", () => {
   const ORIGIN = "https://office.example.test";
+  // A copy is found only when it was made after the request (decision 107): its creation time is now.
   const COPY = {
     id: "nod_c2",
     folder_id: "fld_b",
@@ -291,7 +292,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     name: "letter (2).docx",
     kind: "file",
     size: 5,
-    created_at: "2026-10-01T00:00:00Z",
+    created_at: new Date().toISOString(),
     modified_at: "2026-11-08T10:00:00Z",
     role: "editor",
     no_download: false,
@@ -452,9 +453,73 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (9)");
-    from({ MessageId: "Doc_Title", Values: { DocName: "letter (9).docx", Title: "letter (9).docx - Writer" } });
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (9).docx" } });
     expect(await screen.findByText("The copy was saved, but it is not shown here. Open its folder to find it.")).toBeTruthy();
     expect(window.location.pathname).toBe("/edit/nod_a1");
+    expect(officePosts()).toHaveLength(1);
+  });
+
+  // ef1 review (decision 107): a copy is bound only while a Save As this page started is pending, and only when it is the
+  // requested name or its free form, made after the request. Outside that, a title or a save answer never moves the page.
+  it("no Save As pending: a title naming a sibling does not move the page, and a renewal renews the file the editor opened", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    from({ MessageId: "Doc_Title", Values: { DocName: "letter (2).docx", Title: "letter (2).docx - Writer" } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(window.location.pathname).toBe("/edit/nod_a1");
+    from({ MessageId: "App_TokenExpired", Values: {} });
+    await waitFor(() => expect(officePosts()).toHaveLength(2));
+    expect(officePosts().every((c) => c[1] === "/api/v1/nodes/nod_a1/office")).toBe(true);
+  });
+
+  it("no Save As pending: an answer that names a file is ignored, and nothing is bound", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(window.location.pathname).toBe("/edit/nod_a1");
+    expect(officePosts()).toHaveLength(1);
+  });
+
+  it("Save As pending: an answer naming another file, neither the request nor its free form, is not bound", async () => {
+    nodesMock.children = [{ ...COPY, id: "nod_o1", name: "other (2).docx" }];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    from({ MessageId: "Doc_Title", Values: { DocName: "other (2).docx", Title: "other (2).docx - Writer" } });
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "other (2).docx" } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(window.location.pathname).toBe("/edit/nod_a1");
+  });
+
+  it("Save As pending: a copy made before the request is not bound", async () => {
+    nodesMock.children = [{ ...COPY, created_at: "2026-10-01T00:00:00Z" }];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    from({ MessageId: "Doc_Title", Values: { DocName: "letter (2).docx", Title: "letter (2).docx - Writer" } });
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(window.location.pathname).toBe("/edit/nod_a1");
+  });
+
+  it("Save As pending: the free form the server gives a taken name is bound (requested letter.docx, made letter (2).docx)", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter");
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
+  });
+
+  it("Save As pending: once the answer has come, a later title does not bind", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
+    // A later title for the sibling, with the window closed, changes nothing more.
+    nodesMock.children = [{ ...COPY, id: "nod_o1", name: "other (2).docx" }];
+    from({ MessageId: "Doc_Title", Values: { DocName: "other (2).docx", Title: "other (2).docx - Writer" } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(window.location.pathname).toBe("/edit/nod_c2");
   });
 
   it("F4: App_TokenExpired gets a fresh token for the same mode, posted to the editor's origin only", async () => {

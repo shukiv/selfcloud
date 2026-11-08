@@ -53,13 +53,30 @@ export function isSameName(nodeName: string, signalled: string): boolean {
   return ext !== "" && nodeName === signalled + ext;
 }
 
-// findCopy finds the file a Save As made, by its name, among a folder's children. Names are unique in a folder, so a
-// name that matches nothing, or more than one file, is no match: the caller does not guess.
-export function findCopy(items: Node[], name: string): Node | null {
-  const exact = items.find((n) => n.kind === "file" && n.name === name);
-  if (exact !== undefined) return exact;
-  const loose = items.filter((n) => n.kind === "file" && isSameName(n.name, name));
-  return loose.length === 1 ? (loose[0] ?? null) : null;
+// SAVE_AS_WINDOW_MS is how long a Save As the page started may bind its copy (decision 107): the editor answers in seconds.
+export const SAVE_AS_WINDOW_MS = 60_000;
+
+// COPY_SKEW_MS is the allowance for a difference between the server's clock and this browser's, on a copy's creation time.
+export const COPY_SKEW_MS = 30_000;
+
+function escapeRe(v: string): string {
+  return v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// copyCandidates lists the files a Save As with this requested name may have made: a file whose name is the requested name, or
+// the free form the server gives a taken name ("base (n).ext"), exactly and in its case, and whose creation time is at or after
+// the request, less COPY_SKEW_MS. The creation time is the node's created_at. A node without a usable time is no candidate.
+// The editor's answer chooses among these; it cannot make a file a candidate.
+export function copyCandidates(items: Node[], requested: string, requestedAtMs: number): Node[] {
+  const ext = extOf(requested);
+  const base = ext === "" ? requested : requested.slice(0, requested.length - ext.length);
+  const free = new RegExp(`^${escapeRe(base)} \\(\\d+\\)${escapeRe(ext)}$`);
+  return items.filter((n) => {
+    if (n.kind !== "file") return false;
+    if (n.name !== requested && !free.test(n.name)) return false;
+    const made = Date.parse(n.created_at);
+    return Number.isFinite(made) && made >= requestedAtMs - COPY_SKEW_MS;
+  });
 }
 
 // NodeChanged is the announcement of a changed file: the node, its folder and its parent directory, and the user it is for.

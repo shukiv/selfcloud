@@ -39,10 +39,11 @@ import {
   saveAsSuggestion,
 } from "../lib/files/editor";
 import {
+  SAVE_AS_WINDOW_MS,
   announceNodeChanged,
+  copyCandidates,
   decodeEditorName,
   displayName,
-  findCopy,
   isSameName,
 } from "../lib/files/officeSync";
 import type { Node } from "../lib/files/types";
@@ -63,6 +64,12 @@ type State =
   | { status: "opening" }
   | { status: "ready"; origin: string; folder: string | null; parent: string | null; name: string }
   | { status: "failed"; why: Failure };
+
+// SaveAsPending is a Save As this page started: the name it asked for, and when it was asked (decision 107).
+interface SaveAsPending {
+  filename: string;
+  at: number;
+}
 
 // Notice is a note the bar shows about the session or a copy (ef1). Its words are the catalogue key after files.editor.
 type Notice = "sessionEnded" | "tokenRefreshFailed" | "copyNotShown";
@@ -124,6 +131,20 @@ export default function OfficeEditPage() {
   const originRef = useRef<string | null>(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  // saveAsRef is the Save As this page started and is waiting for its copy (decision 107), with its timer in saveAsTimerRef.
+  const saveAsRef = useRef<SaveAsPending | null>(null);
+  const saveAsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // endSaveAs closes the window in which a copy can be bound. The window ends at the editor's answer, or after SAVE_AS_WINDOW_MS.
+  const endSaveAs = () => {
+    saveAsRef.current = null;
+    if (saveAsTimerRef.current !== null) {
+      clearTimeout(saveAsTimerRef.current);
+      saveAsTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => endSaveAs(), []);
 
   useEffect(() => {
     stateRef.current = state;
@@ -169,46 +190,46 @@ export default function OfficeEditPage() {
     if (changed) announceNodeChanged(n.id, n.folder_id, n.parent_id);
   };
 
-  // resolveName finds what the editor now has, from a name it sent. The file's own read is the authority: when it has the
-  // name, the file was renamed. When not, the editor has made a copy (Save As), which is found by its exact name among the
-  // children of the same directory, newest first. No exact match is no guess: the page stays where it is and says so.
-  const resolveName = async (signalled: string) => {
+  // bindCopy moves the page to the copy that a Save As this page started has made (decision 107). It runs only while that
+  // Save As is pending (win), and only for a candidate of it: a file named exactly as the request or its free form, made at or
+  // after the request (copyCandidates). signal is the name the editor gave (the title's or the answer's); it picks among the
+  // candidates and never makes one. last says the answer has come, so the pending Save As ends with this check.
+  const bindCopy = async (win: SaveAsPending, signal: string, last: boolean) => {
     const seq = ++seqRef.current;
     let cur: Node;
     try {
       cur = await statNode(nodRef.current);
     } catch {
+      if (last) endSaveAs();
       return;
     }
     if (seq !== seqRef.current) return;
-    if (isSameName(cur.name, signalled)) {
-      applyName(cur);
+    let items: Node[] = [];
+    if (cur.parent_id !== null) {
+      try {
+        items = (await childrenPage(cur.folder_id, cur.parent_id, undefined, { key: "modified", dir: "desc" })).items;
+      } catch {
+        items = [];
+      }
+    }
+    if (seq !== seqRef.current || saveAsRef.current !== win) return;
+    const hit = copyCandidates(items, win.filename, win.at).find((n) => n.name === signal);
+    if (hit === undefined) {
+      if (last) {
+        endSaveAs();
+        setNotice("copyNotShown");
+      }
       return;
     }
-    if (cur.parent_id === null) {
-      setNotice("copyNotShown");
-      return;
-    }
-    let copy: Node | null = null;
-    try {
-      const page = await childrenPage(cur.folder_id, cur.parent_id, undefined, { key: "modified", dir: "desc" });
-      copy = findCopy(page.items, signalled);
-    } catch {
-      copy = null;
-    }
-    if (seq !== seqRef.current) return;
-    if (copy === null) {
-      setNotice("copyNotShown");
-      return;
-    }
-    nodRef.current = copy.id;
-    window.history.replaceState(window.history.state, "", `/edit/${copy.id}${window.location.search}`);
-    authNameRef.current = copy.name;
+    endSaveAs();
+    nodRef.current = hit.id;
+    window.history.replaceState(window.history.state, "", `/edit/${hit.id}${window.location.search}`);
+    authNameRef.current = hit.name;
     saveRef.current = null;
     setSaveState(null);
     setNotice(null);
-    setState((s) => (s.status === "ready" ? { ...s, name: copy.name, folder: copy.folder_id, parent: copy.parent_id } : s));
-    announceNodeChanged(copy.id, copy.folder_id, copy.parent_id);
+    setState((s) => (s.status === "ready" ? { ...s, name: hit.name, folder: hit.folder_id, parent: hit.parent_id } : s));
+    announceNodeChanged(hit.id, hit.folder_id, hit.parent_id);
   };
 
   // readName re-reads the file after a rename the editor reported. A rename never makes a copy, so a name the page cannot read
@@ -311,13 +332,22 @@ export default function OfficeEditPage() {
         }
         void readName();
       }
+      // A title is a name the editor shows. While a Save As of this page is pending it may name the copy; otherwise it only
+      // tells the page to read its own file again, which never moves the page (decision 107).
       if (msg.id === "Doc_Title" && typeof msg.values?.DocName === "string" && msg.values.DocName !== "") {
-        // The title names the file the editor shows; when that is the name the page has, nothing has changed.
-        if (!isSameName(authNameRef.current, msg.values.DocName)) void resolveName(msg.values.DocName);
+        const pending = saveAsRef.current;
+        if (pending !== null) void bindCopy(pending, msg.values.DocName, false);
+        else if (!isSameName(authNameRef.current, msg.values.DocName)) void readName();
       }
-      // Save As: the editor's answer carries the copy's final name (the request asked for it with Notify).
-      if (msg.id === "Action_Save_Resp" && typeof msg.values?.fileName === "string" && msg.values.fileName !== "") {
-        void resolveName(msg.values.fileName);
+      // The answer to a Save As this page started names the copy (the request asked for it with Notify). Without a pending
+      // Save As, the answer is ignored for binding.
+      if (msg.id === "Action_Save_Resp") {
+        const pending = saveAsRef.current;
+        if (pending !== null) {
+          const named = typeof msg.values?.fileName === "string" && msg.values.fileName !== "" ? msg.values.fileName : null;
+          if (named === null) endSaveAs();
+          else void bindCopy(pending, named, true);
+        }
       }
       if (msg.id === "App_TokenExpiring" || msg.id === "App_TokenExpired") void renew();
       if (msg.id === "UI_Close") close();
@@ -342,10 +372,13 @@ export default function OfficeEditPage() {
   // editor keeps the file it has open.
   const confirmSaveAs = () => {
     if (saveAs === null || origin === null || !saveAsNameOk(saveAsName)) return;
-    frameRef.current?.contentWindow?.postMessage(
-      editorMessage("Action_SaveAs", { Filename: saveAsFilename(saveAsName, saveAs.ext), Notify: true }),
-      origin,
-    );
+    const filename = saveAsFilename(saveAsName, saveAs.ext);
+    // The window for the copy opens with the request. It ends at the answer, or after SAVE_AS_WINDOW_MS: the editor answers in
+    // seconds, and a longer window would let a late or unrelated title bind a file the person did not ask for.
+    endSaveAs();
+    saveAsRef.current = { filename, at: Date.now() };
+    saveAsTimerRef.current = setTimeout(endSaveAs, SAVE_AS_WINDOW_MS);
+    frameRef.current?.contentWindow?.postMessage(editorMessage("Action_SaveAs", { Filename: filename, Notify: true }), origin);
     setSaveAs(null);
   };
 

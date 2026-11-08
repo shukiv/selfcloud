@@ -7,8 +7,8 @@ const refreshMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock("../query", () => ({ refreshTree: refreshMock }));
 
 import {
+  copyCandidates,
   decodeEditorName,
-  findCopy,
   isSameName,
   makeAnnouncer,
   makeReceiver,
@@ -52,19 +52,6 @@ describe("isSameName", () => {
     expect(isSameName("letter.docx", "letter (2).docx")).toBe(false);
     expect(isSameName("letter.docx", "letter.pdf")).toBe(false);
     expect(isSameName("letter.docx", "letter.pdf.docx")).toBe(false);
-  });
-});
-
-describe("findCopy", () => {
-  it("finds the child with exactly that name, among files", () => {
-    const items = [file("nod_x", "other.docx"), file("nod_c2", "letter (2).docx")];
-    expect(findCopy(items, "letter (2).docx")?.id).toBe("nod_c2");
-  });
-
-  it("never guesses: a near name, or a folder with the name, is no match", () => {
-    expect(findCopy([file("nod_c2", "letter (2).docx")], "letter (9).docx")).toBeNull();
-    expect(findCopy([file("nod_d", "letter (2).docx", "dir")], "letter (2).docx")).toBeNull();
-    expect(findCopy([], "letter.docx")).toBeNull();
   });
 });
 
@@ -154,5 +141,54 @@ describe("makeReceiver", () => {
     await new Promise((res) => setTimeout(res, 10));
     expect(refreshMock).not.toHaveBeenCalled();
     r.stop();
+  });
+});
+
+// ef1 (decision 107): a Save As copy is one whose name is the requested name or its free form, made at or after the request.
+describe("copyCandidates", () => {
+  const REQUEST = Date.parse("2026-11-08T10:00:00Z");
+  function made(id: string, name: string, created: string): Node {
+    return { ...file(id, name), created_at: created } as Node;
+  }
+
+  it("takes the requested name, and the free form the server gives a taken name", () => {
+    const items = [
+      made("nod_c2", "letter (2).docx", "2026-11-08T10:00:05Z"),
+      made("nod_c3", "letter.docx", "2026-11-08T10:00:06Z"),
+    ];
+    expect(copyCandidates(items, "letter.docx", REQUEST).map((n) => n.id)).toEqual(["nod_c2", "nod_c3"]);
+  });
+
+  it("takes a name whose free form was asked for (the request is 'letter (2).docx')", () => {
+    const items = [made("nod_c4", "letter (2) (2).docx", "2026-11-08T10:00:05Z")];
+    expect(copyCandidates(items, "letter (2).docx", REQUEST).map((n) => n.id)).toEqual(["nod_c4"]);
+  });
+
+  it("refuses any other name, including the same name in another case, and a folder", () => {
+    const items = [
+      made("nod_o1", "other (2).docx", "2026-11-08T10:00:05Z"),
+      made("nod_o2", "Letter.docx", "2026-11-08T10:00:05Z"),
+      { ...made("nod_d", "letter.docx", "2026-11-08T10:00:05Z"), kind: "dir" } as Node,
+    ];
+    expect(copyCandidates(items, "letter.docx", REQUEST)).toEqual([]);
+  });
+
+  it("refuses a copy made before the request, beyond the clock allowance", () => {
+    const items = [made("nod_old", "letter.docx", "2026-10-01T00:00:00Z")];
+    expect(copyCandidates(items, "letter.docx", REQUEST)).toEqual([]);
+    // Thirty seconds before the request is inside the allowance for clock skew; a minute before is not.
+    expect(copyCandidates([made("nod_skew", "letter.docx", "2026-11-08T09:59:40Z")], "letter.docx", REQUEST).length).toBe(1);
+    expect(copyCandidates([made("nod_early", "letter.docx", "2026-11-08T09:59:00Z")], "letter.docx", REQUEST)).toEqual([]);
+  });
+
+  it("refuses a node with no usable creation time", () => {
+    const items = [made("nod_x", "letter.docx", "")];
+    expect(copyCandidates(items, "letter.docx", REQUEST)).toEqual([]);
+  });
+
+  it("reads the dot and the brackets of a name as plain characters", () => {
+    const items = [made("nod_y", "a.b (2).docx", "2026-11-08T10:00:05Z"), made("nod_z", "aXb (2).docx", "2026-11-08T10:00:05Z")];
+    // "a.b (2).docx" is the free form of "a.b.docx"; "aXb (2).docx" is not, since the dot is a dot.
+    expect(copyCandidates(items, "a.b.docx", REQUEST).map((n) => n.id)).toEqual(["nod_y"]);
   });
 });
