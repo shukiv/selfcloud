@@ -2,7 +2,8 @@
 
 // Package blankdoc makes the blank Office documents that New creates (decision 91): an empty Word document, an empty
 // workbook and a presentation with one empty slide, each as an OOXML package (ECMA-376, the .docx, .xlsx and .pptx
-// formats).
+// formats). From decision 105 it also makes the OpenDocument kinds (odt, ods, odp, odg, in odf.go) and the empty text
+// file (txt).
 //
 // The packages are built here, not stored as binary files. Each part is written out below as its XML text, and Build zips
 // them in a fixed order with fixed timestamps, so the same kind is the same bytes every time and a reviewer reads the XML
@@ -28,7 +29,8 @@ const (
 	mimePptx = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 )
 
-// MIME is the media type of a kind ("docx", "xlsx" or "pptx"), or "" for a kind this package does not make.
+// MIME is the media type of a kind, or "" for a kind this package does not make. The kinds are the OOXML ones (docx,
+// xlsx, pptx), the OpenDocument ones (odt, ods, odp, odg) and txt.
 func MIME(kind string) string {
 	switch kind {
 	case "docx":
@@ -37,6 +39,11 @@ func MIME(kind string) string {
 		return mimeXlsx
 	case "pptx":
 		return mimePptx
+	case "txt":
+		return mimeTxt
+	}
+	if d, ok := odfDocs[kind]; ok {
+		return d.mime
 	}
 	return ""
 }
@@ -168,8 +175,14 @@ const theme = xmlHead + `<a:theme xmlns:a="http://schemas.openxmlformats.org/dra
 var kinds = map[string]map[string]string{"docx": docx, "xlsx": xlsx, "pptx": pptx}
 
 // Build returns the blank document of kind as a zip package, or an error for a kind this package does not make. The
-// result is the same bytes on every call.
+// result is the same bytes on every call. txt is an empty file, not a package: its result is no bytes.
 func Build(kind string) ([]byte, error) {
+	if kind == "txt" {
+		return []byte{}, nil
+	}
+	if d, ok := odfDocs[kind]; ok {
+		return packODF(d)
+	}
 	parts, ok := kinds[kind]
 	if !ok {
 		return nil, fmt.Errorf("blankdoc: no blank document of kind %q", kind)
