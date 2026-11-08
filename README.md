@@ -72,7 +72,9 @@ curl -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
 
 `selfcloud fsck` compares the files under the data directory with the database. It changes no blob, row or derived file, except that `--repair` renames orphan blobs into quarantine; it can run
 beside a running server. It renews its read transaction every 500 judgments and reads the row lists a page at a time,
-so no single read holds back the server's checkpoints for the whole tree (decision 100). It reports blob files that no row names, rows whose file is missing or the wrong size,
+so no single read holds back the server's checkpoints for the whole tree (decision 100). The longest hold measured on
+100,000 empty files on a warm cache was 0.26 s. A cold disk or large directories can make a batch longer, and the
+integrity check is one read that grows with the database (decision 100). It reports blob files that no row names, rows whose file is missing or the wrong size,
 and SQLite's integrity check. Exit status 0 means clean, 1 means findings, 2 means it could not run.
 
 ```sh
