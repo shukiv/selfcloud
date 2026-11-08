@@ -86,3 +86,67 @@ describe("refreshMyBreakdown and myLargest (decision 79)", () => {
     expect(mocks.api).toHaveBeenLastCalledWith("GET", "/api/v1/me/storage/largest?limit=20&cursor=c2");
   });
 });
+
+describe("the breakdown and the meter racing (wf1)", () => {
+  const breakdown = (versions: number) => ({ versions_bytes: versions, versions_files: 1, trash_bytes: 0, trash_files: 0 });
+  const withBreakdown = (used: number, versions: number) => ({
+    storage: { used_bytes: used, reserved_bytes: 0, quota_bytes: 100, available_bytes: 100 - used, breakdown: breakdown(versions) },
+  });
+
+  beforeEach(() => {
+    mocks.api.mockReset();
+    myStorage.set(null);
+    myBreakdown.set(null);
+  });
+
+  it("lands the breakdown when a plain refresh starts later and answers first", async () => {
+    const older = held<unknown>();
+    const newer = held<unknown>();
+    mocks.api.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+
+    const breakdownCall = refreshMyBreakdown();
+    const plainCall = refreshMyStorage();
+
+    newer.resolve(storage(200));
+    await plainCall;
+    expect(get(myStorage)?.used_bytes).toBe(200);
+
+    older.resolve(withBreakdown(150, 40));
+    await breakdownCall;
+    expect(get(myBreakdown)).toEqual(breakdown(40));
+    // The breakdown's meter figures are older than the plain refresh's, so they do not overwrite them.
+    expect(get(myStorage)?.used_bytes).toBe(200);
+  });
+
+  it("keeps the newer breakdown when an older breakdown answers last", async () => {
+    const older = held<unknown>();
+    const newer = held<unknown>();
+    mocks.api.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+
+    const first = refreshMyBreakdown();
+    const second = refreshMyBreakdown();
+
+    newer.resolve(withBreakdown(300, 90));
+    await second;
+    older.resolve(withBreakdown(100, 10));
+    await first;
+    expect(get(myBreakdown)).toEqual(breakdown(90));
+    expect(get(myStorage)?.used_bytes).toBe(300);
+  });
+
+  it("does not let an older breakdown's meter figures overwrite a newer plain refresh", async () => {
+    const older = held<unknown>();
+    const newer = held<unknown>();
+    mocks.api.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+
+    const breakdownCall = refreshMyBreakdown();
+    const plainCall = refreshMyStorage();
+
+    older.resolve(withBreakdown(100, 10));
+    await breakdownCall;
+    expect(get(myBreakdown)).toEqual(breakdown(10));
+    newer.resolve(storage(200));
+    await plainCall;
+    expect(get(myStorage)?.used_bytes).toBe(200);
+  });
+});

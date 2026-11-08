@@ -36,7 +36,7 @@ const api = vi.hoisted(() => ({
   getJob: vi.fn(),
   serverLimits: vi.fn(),
 }));
-const place = vi.hoisted(() => ({ role: "editor" as Role, noDownload: false, folderName: "Team A" }));
+const place = vi.hoisted(() => ({ role: "editor" as Role, noDownload: false, folderName: "Team A", rootNodeID: null as string | null }));
 const uploadsMock = vi.hoisted(() => ({ add: vi.fn(), setChunkSize: vi.fn() }));
 const uploadList = vi.hoisted(() => {
   return { store: null as unknown as { set: (v: unknown[]) => void } };
@@ -58,6 +58,7 @@ vi.mock("../lib/files/location", async (orig) => ({
     dirRole: place.role,
     trail: [],
     rootReachable: true,
+    rootNodeID: place.rootNodeID,
     reach: [],
     spaceNoDownload: place.noDownload,
     path: dirID ? "/Reports" : "/",
@@ -200,6 +201,7 @@ beforeEach(() => {
   place.role = "editor";
   place.noDownload = false;
   place.folderName = "Team A";
+  place.rootNodeID = null;
   session.set(signedAs("u1"));
   api.getMe.mockResolvedValue({ personal_folder_id: "fld_me" });
   api.serverLimits.mockResolvedValue({ max_chunk_size: 1048576, max_file_size: 1 });
@@ -2728,5 +2730,64 @@ describe("an empty folder says how to add files (decision 85)", () => {
     expect(screen.getByText(translate("en", "files.drop.here"))).toBeTruthy();
     fireEvent.drop(box, { dataTransfer: dt([file]) });
     await waitFor(() => expect(uploadsMock.add).toHaveBeenCalled());
+  });
+});
+
+// wf1: the New menu's Document, Spreadsheet and Presentation entries (decision 91) are wired to documentKinds with the place and
+// the impersonation. Each case also checks a plain entry of the same menu, so an empty menu cannot pass for a hidden document.
+describe("decision 91: the document entries follow the place and the impersonation (wf1)", () => {
+  const DOCUMENTS = ["Document", "Spreadsheet", "Presentation"];
+  const openNew = async () => {
+    fireEvent.click(await screen.findByRole("button", { name: "New" }));
+    await screen.findByRole("menuitem", { name: "New folder" });
+  };
+  beforeEach(() => {
+    folders.set([{ id: "fld_aaaaaaaa", name: "Team A", kind: "team", access: "write", role: "editor", members_only: false, sharing_managers_only: false, no_download_for_viewers: false, allow_links: true }]);
+    officeEdit.set(true);
+    // A folder has a root node, which the place needs to take a new file (documentKinds: nodeID).
+    place.rootNodeID = "nod_root";
+    api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt")], next_cursor: undefined });
+  });
+  afterEach(() => {
+    officeEdit.set(false);
+    place.rootNodeID = null;
+    folders.set([]);
+  });
+
+  it("offers the three documents in a folder the person edits, while office editing is on", async () => {
+    place.role = "editor";
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await openNew();
+    for (const name of DOCUMENTS) expect(screen.getByRole("menuitem", { name })).toBeTruthy();
+  });
+
+  it("hides the three documents while office editing is off, even in a folder the person edits", async () => {
+    officeEdit.set(false);
+    place.role = "editor";
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await openNew();
+    expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeTruthy();
+    for (const name of DOCUMENTS) expect(screen.queryByRole("menuitem", { name })).toBeNull();
+  });
+
+  it("hides the three documents in a folder the person may add to but not edit, and keeps the other entries", async () => {
+    place.role = "contributor";
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await openNew();
+    expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeTruthy();
+    for (const name of DOCUMENTS) expect(screen.queryByRole("menuitem", { name })).toBeNull();
+  });
+
+  it("hides the three documents when an installation admin is signed in as the person, and keeps the other entries", async () => {
+    place.role = "editor";
+    session.set({ ...signedAs("u1"), impersonation: { endsAt: "2099-01-01T00:00:00Z" } });
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await openNew();
+    expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeTruthy();
+    for (const name of DOCUMENTS) expect(screen.queryByRole("menuitem", { name })).toBeNull();
   });
 });

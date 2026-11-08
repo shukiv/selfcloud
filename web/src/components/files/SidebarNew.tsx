@@ -91,10 +91,14 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     const round: CSSProperties = { inlineSize: 44, blockSize: 44, minInlineSize: 44, boxShadow: RAISED, background: sidebar.text, color: sidebar.bg, border: "none" };
     return (
       <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "center", marginBlockStart: 6 }}>
-        <Tooltip title={t("files.act.new")} placement="right">
-          <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
-            <Button ref={newButton} data-testid="new-button" aria-label={t("files.act.new")} aria-haspopup="menu" shape="circle" disabled={disabled} icon={<Plus {...ic} />} style={round} />
-          </Dropdown>
+        {/* While the place is read, the button is disabled and its tooltip gives the reason (wf1). A disabled button fires no hover
+            events, so the tooltip hangs on the span around it. */}
+        <Tooltip title={disabled ? t("files.loading") : t("files.act.new")} placement="right">
+          <span data-testid="new-tip" style={{ display: "inline-flex" }}>
+            <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
+              <Button ref={newButton} data-testid="new-button" aria-label={t("files.act.new")} aria-haspopup="menu" shape="circle" disabled={disabled} icon={<Plus {...ic} />} style={round} />
+            </Dropdown>
+          </span>
         </Tooltip>
       </div>
     );
@@ -126,12 +130,17 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger.
     <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "flex-start", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
       <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? 44 : 36 } } }}>
-        <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
-          <Button ref={newButton} data-testid="new-button" aria-haspopup="menu" disabled={disabled} style={face}>
-            <Plus {...ic} />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("files.act.new")}</span>
-          </Button>
-        </Dropdown>
+        {/* The reason while the place is read (wf1): the tooltip hangs on the span, as above. */}
+        <Tooltip title={disabled ? t("files.loading") : undefined}>
+          <span data-testid="new-tip" style={{ display: "inline-flex", maxInlineSize: "100%", minInlineSize: 0 }}>
+            <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
+              <Button ref={newButton} data-testid="new-button" aria-haspopup="menu" disabled={disabled} style={face}>
+                <Plus {...ic} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("files.act.new")}</span>
+              </Button>
+            </Dropdown>
+          </span>
+        </Tooltip>
       </ConfigProvider>
     </div>
   );

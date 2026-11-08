@@ -11,9 +11,14 @@ import type { Breakdown } from './breakdown';
 // myStorage is the caller's own storage, as the navigation meter shows it. null until read, and for an admin.
 export const myStorage = userWritable<MeStorage | null>(null);
 
-// latestStorageRequest numbers the GET /me calls. An answer to an older call that lands after a newer one is dropped, so the
-// figures always come from the last call started.
-let latestStorageRequest = 0;
+// latestMeterRequest numbers every GET /me call, of either kind. Only the last call started may set myStorage, so the meter
+// always shows the figures of the last call started.
+let latestMeterRequest = 0;
+
+// latestBreakdownRequest numbers the breakdown reads alone. The breakdown has its own counter, so a plain refresh that starts
+// later does not drop it: a breakdown answer sets myBreakdown unless a newer breakdown read has started (wf1; the shared
+// counter dropped the breakdown whenever a sidebar refresh raced it).
+let latestBreakdownRequest = 0;
 
 // myBreakdown is the old versions and the trash of My files, read by the Storage page (decision 79). It is kept apart
 // from myStorage, so a plain refresh of the meter does not clear it.
@@ -22,20 +27,25 @@ export const myBreakdown = userWritable<Breakdown | null>(null);
 // refreshMyStorage reads GET /me and keeps only its storage block.
 export async function refreshMyStorage(): Promise<void> {
   const changed = sessionChanged();
-  const request = ++latestStorageRequest;
+  const request = ++latestMeterRequest;
   const me = await api<{ storage?: MeStorage }>('GET', '/api/v1/me');
-  if (request === latestStorageRequest && !changed()) myStorage.set(me.storage ?? null);
+  if (request === latestMeterRequest && !changed()) myStorage.set(me.storage ?? null);
 }
 
 // refreshMyBreakdown reads GET /me with the breakdown asked for: the meter's figures, and the old versions and the trash.
+// Its meter figures are set only when it is also the last call started, the same as a plain refresh, so an older breakdown
+// never overwrites a newer plain refresh.
 export async function refreshMyBreakdown(): Promise<void> {
   const changed = sessionChanged();
-  const request = ++latestStorageRequest;
+  const request = ++latestMeterRequest;
+  const breakdownRequest = ++latestBreakdownRequest;
   const me = await api<{ storage?: MeStorage & { breakdown?: Breakdown } }>('GET', '/api/v1/me?storage=breakdown');
-  if (request !== latestStorageRequest || changed()) return;
+  if (changed()) return;
   const s = me.storage;
-  myStorage.set(s ? { used_bytes: s.used_bytes, reserved_bytes: s.reserved_bytes, quota_bytes: s.quota_bytes, available_bytes: s.available_bytes } : null);
-  myBreakdown.set(s?.breakdown ?? null);
+  if (request === latestMeterRequest) {
+    myStorage.set(s ? { used_bytes: s.used_bytes, reserved_bytes: s.reserved_bytes, quota_bytes: s.quota_bytes, available_bytes: s.available_bytes } : null);
+  }
+  if (breakdownRequest === latestBreakdownRequest) myBreakdown.set(s?.breakdown ?? null);
 }
 
 // A file in a listing. in_trash is true when the file is in the trash, or below a trashed directory.

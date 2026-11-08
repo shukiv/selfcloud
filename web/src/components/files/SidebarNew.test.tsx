@@ -75,6 +75,23 @@ describe("the sidebar's New button", () => {
     expect(screen.queryByRole("menuitem", { name: "Presentation" })).toBeNull();
   });
 
+  // wf1: while the folder shown is not read yet, the button is disabled and its tooltip gives the reason. A disabled button fires
+  // no hover events, so the tooltip hangs on a wrapper.
+  it("while the place is still read, hovering the disabled button shows the reason", async () => {
+    renderNew(null);
+    const button = screen.getByTestId("new-button");
+    expect(button.hasAttribute("disabled")).toBe(true);
+    fireEvent.mouseEnter(button);
+    expect(await screen.findByText("Loading the folder")).toBeTruthy();
+  });
+
+  it("in the folded rail, while the place is still read, the tooltip gives the reason instead of the name", async () => {
+    renderNew(null, true);
+    fireEvent.mouseEnter(screen.getByTestId("new-button"));
+    expect(await screen.findByText("Loading the folder")).toBeTruthy();
+    expect(screen.queryByText("New")).toBeNull();
+  });
+
   // Decision 69: the button is as wide as its text, not the sidebar's width, and it is capped at the sidebar's width so a long
   // translation is cut with an ellipsis rather than pushing the sidebar.
   it("is as wide as its text, and no wider than the sidebar", () => {
@@ -98,10 +115,10 @@ describe("the sidebar's New button", () => {
   // Decision 69, review fix 8: New's top edge is 10 px down with a mouse and 6 px on a finger (the search box's top edge).
   it("sits 10 px from the top with a mouse, and 6 px on a finger", () => {
     const mouse = renderNew(myFilesPlace("fld_mine"));
-    expect(screen.getByTestId("new-button").parentElement?.style.marginBlockStart).toBe("10px");
+    expect(screen.getByTestId("new-button").closest("div")?.style.marginBlockStart).toBe("10px");
     mouse.unmount();
     renderNew(myFilesPlace("fld_mine"), false, true);
-    expect(screen.getByTestId("new-button").parentElement?.style.marginBlockStart).toBe("6px");
+    expect(screen.getByTestId("new-button").closest("div")?.style.marginBlockStart).toBe("6px");
   });
 
   // Decision 95: the reason is a header on the menu, not a disabled item. The menu is named by it, so a screen reader hears it once.
