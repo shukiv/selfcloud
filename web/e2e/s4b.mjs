@@ -84,11 +84,16 @@ async function setViewport(page, width, height, mobile) {
   const size = await page.evaluate(`({ w: window.innerWidth, h: window.innerHeight })`);
   const changed = size.w !== width || size.h !== height;
   if (changed) {
-    await page.evaluate(`(() => { window.__resizes = 0; window.__onResize = () => { window.__resizes += 1; }; window.addEventListener('resize', window.__onResize); return true; })()`);
+    await page.evaluate(`(() => { window.__resizes = 0; window.__vpDoc = Math.random(); window.__onResize = () => { window.__resizes += 1; }; window.addEventListener('resize', window.__onResize); return true; })()`);
   }
   await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
   const landed = `window.innerWidth === ${width} && window.innerHeight === ${height}`;
-  await page.waitFor(changed ? `${landed} && window.__resizes > 0` : landed, 10000);
+  try {
+    await page.waitFor(changed ? `${landed} && window.__resizes > 0` : landed, 10000);
+  } catch (err) {
+    const state = await page.evaluate(`JSON.stringify({ w: window.innerWidth, h: window.innerHeight, resizes: window.__resizes ?? null, doc: window.__vpDoc ?? null, path: location.pathname, readyState: document.readyState })`);
+    throw new Error(`the viewport did not land at ${width}x${height} (from ${size.w}x${size.h}): ${state}; ${err.message.slice(0, 120)}`);
+  }
   await page.evaluate(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`);
   if (changed) {
     await page.evaluate(`(() => { window.removeEventListener('resize', window.__onResize); delete window.__onResize; delete window.__resizes; return true; })()`);
