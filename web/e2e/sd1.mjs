@@ -127,8 +127,10 @@ async function dialogsNow(page, label) {
 // settledPoint returns the centre of the element pick finds, once it has settled. antd zooms a dialog or a notice in when it
 // opens (ant-zoom-*), so a press read before the zoom ends lands where the button was mid-zoom: round 9 showed no request sent. The
 // dialog and its wrap must carry no antd motion class and have no running animation, and the button's box must be the same on two
-// reads 100 ms apart. It returns null if there is no such button (the caller's check reports it), and throws if the dialog keeps
-// moving for 10 s.
+// reads 100 ms apart. It also waits for the layer above the target to clear: no other visible .ant-modal-wrap may be over it, and
+// elementFromPoint at its centre must be the button or inside it (round 12: a closing Delete dialog covered the Undo notice, and a
+// press there reached the dialog, not Undo). It returns null if there is no such button (the caller fails without pressing), and
+// throws, naming the last read, if it is still not settled after 10 s.
 async function settledPoint(page, pick, what) {
   const read = () =>
     page.evaluate(`(() => {
@@ -140,27 +142,36 @@ async function settledPoint(page, pick, what) {
         if (e.getAnimations && e.getAnimations().some((a) => a.playState !== 'finished')) motion = true;
       }
       const r = b.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2, box: [r.left, r.top, r.width, r.height].map(Math.round), motion };
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      const top = document.elementFromPoint(x, y);
+      const hit = top !== null && (top === b || b.contains(top));
+      const above = [...document.querySelectorAll('.ant-modal-wrap')].some((w) => !w.contains(b) && getComputedStyle(w).display !== 'none');
+      return { x, y, box: [r.left, r.top, r.width, r.height].map(Math.round), motion, hit, above, top: top ? top.tagName.toLowerCase() + ':' + (top.textContent || '').trim().slice(0, 30) : null };
     })()`);
+  const ready = (r) => r !== null && !r.motion && r.hit && !r.above;
   const deadline = Date.now() + 10000;
   let last = null;
   for (;;) {
     const first = await read();
     last = first;
-    if (first && !first.motion) {
+    if (ready(first)) {
       await sleepMs(100);
       const second = await read();
       last = second;
-      if (second && !second.motion && JSON.stringify(second.box) === JSON.stringify(first.box)) return { x: second.x, y: second.y };
+      if (ready(second) && JSON.stringify(second.box) === JSON.stringify(first.box)) return { x: second.x, y: second.y };
     }
     if (Date.now() > deadline) {
-      // Never there: null, and the caller fails without pressing. There, but still moving: an error that names the last read.
+      // Never there: null, and the caller fails without pressing. There, but not settled: an error that names the last read.
       if (last === null) return null;
-      throw new Error(`${what} did not settle in 10 s (it keeps moving): last read ${JSON.stringify(last)}`);
+      throw new Error(`${what} did not settle in 10 s: last read ${JSON.stringify(last)}`);
     }
     await sleepMs(50);
   }
 }
+
+// UNDO_PICK is the visible Undo button of the notice.
+const UNDO_PICK = `[...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Undo' && b.offsetParent !== null).pop()`;
 
 // CONFIRM_PICK is the Move to trash button of the topmost visible dialog (antd appends a new dialog after the old ones).
 const CONFIRM_PICK = `(() => { const shown = [...document.querySelectorAll('[role="dialog"]')].filter((d) => { const w = d.closest('.ant-modal-wrap'); return (!w || getComputedStyle(w).display !== 'none') && d.getBoundingClientRect().width > 0; }); const top = shown[shown.length - 1]; return top ? [...top.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Move to trash') : null; })()`;
@@ -332,9 +343,11 @@ export async function sd1Checks(h, { page, base, accountKey, teamA, teamB }) {
       await page.waitFor(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Undo')`, 15000);
       // Undo is a pointer click once its notice has settled: the notice's button is still animating in when it first shows, as the Delete
       // button was in step 8. (Decision 104's round two pressed it as a DOM click for that reason; see the review's M3.)
-      // Undo is pressed as the DOM button, as run.mjs presses its own Undo. A pointer click at its position did not restore the file in
-      // the run of decision 104's round two; why it did not is not yet known.
-      await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Undo' && b.offsetParent !== null).click()`);
+      // Undo is a real pointer click, once the notice's button is settled and is what is under the pointer (see settledPoint: the closing
+      // Delete dialog covered it in round 12, and a press there went to the dialog).
+      const undo = await settledPoint(page, UNDO_PICK, 'the Undo button');
+      if (undo === null) throw new Error('the Undo button did not appear, so nothing was pressed');
+      await click(page, undo);
       await waitIn(api, base, teamA, '/sd1/Src', accountKey, 's01.txt');
     });
 
