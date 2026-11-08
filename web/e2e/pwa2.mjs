@@ -54,7 +54,7 @@ const bodyText = `(document.body ? document.body.innerText : '')`;
 // shareID is the id in the share page's address, or ''.
 const shareID = `(new URLSearchParams(location.search).get('id') || '')`;
 
-export async function pwa2Checks(h, { page, base, check, MEMBER }) {
+export async function pwa2Checks(h, { page, base, check, MEMBER, openProbe }) {
   const report = check ?? h.check;
   const port = new URL(base).port;
 
@@ -128,13 +128,20 @@ export async function pwa2Checks(h, { page, base, check, MEMBER }) {
   report(revisit.indexOf('share-one.txt') < 0, 'pwa2: a revisit of the address after Upload lists nothing');
 
   // 5. Another site's form post is refused: the worker answers 303 to the share page with nothing held, so no file is listed.
-  // The probe page is a document of the other origin (localhost, the same server), which has no worker of its own.
-  await page.goto(`http://localhost:${port}/robots.txt`);
-  await page.evaluate(postShare(`${base}/share-target`, 'cross-site.txt', 'attack body'));
-  await page.waitFor(`location.origin === ${q(base)} && location.pathname === '/share'`, 20000);
-  await page.waitFor(`${bodyText}.indexOf('Nothing was shared here') >= 0 || ${bodyText}.indexOf('Share the files again') >= 0`, 20000);
-  const refused = await page.evaluate(bodyText);
-  report(refused.indexOf('cross-site.txt') < 0, 'pwa2: a share from another site is refused, and its file is not listed');
+  // The probe page is a document of the other origin (localhost, the same server), which has no worker of its own. It runs in a
+  // browser of its own, so the shared page, whose requests the run checks for same-origin, never leaves this origin.
+  const probe = await openProbe();
+  try {
+    const probePage = probe.page;
+    await probePage.goto(`http://localhost:${port}/robots.txt`);
+    await probePage.evaluate(postShare(`${base}/share-target`, 'cross-site.txt', 'attack body'));
+    await probePage.waitFor(`location.origin === ${q(base)} && location.pathname === '/share'`, 20000);
+    await probePage.waitFor(`${bodyText}.indexOf('Nothing was shared here') >= 0 || ${bodyText}.indexOf('Share the files again') >= 0`, 20000);
+    const refused = await probePage.evaluate(bodyText);
+    report(refused.indexOf('cross-site.txt') < 0, 'pwa2: a share from another site is refused, and its file is not listed');
+  } finally {
+    probe.close();
+  }
 
   // 6. A share opened while signed out: its files are taken at once, the person signs in, and the share page shows them.
   await h.signOut(page);
