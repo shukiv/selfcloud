@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/shukiv/selfcloud/internal/id"
 )
 
 // The JSON the templates routes answer, as the tests read it (decision 105).
@@ -77,7 +79,9 @@ func TestTemplatesFolderRefusesAFileAndClears(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
 	wantStatus(t, call(t, fx.s, "PUT", templatesPath(fx), fx.key, map[string]any{"node_id": fx.doc.ID}), 400)
-	wantStatus(t, call(t, fx.s, "PUT", templatesPath(fx), fx.key, map[string]any{"node_id": "nod_0000000000000000000000000000000000"}), 404)
+	// A well-formed node ID that names nothing is not found; a malformed one is a bad request.
+	wantStatus(t, call(t, fx.s, "PUT", templatesPath(fx), fx.key, map[string]any{"node_id": id.New("nod")}), 404)
+	wantStatus(t, call(t, fx.s, "PUT", templatesPath(fx), fx.key, map[string]any{"node_id": "nod_x"}), 400)
 	wantStatus(t, call(t, fx.s, "PUT", templatesPath(fx), fx.key, map[string]any{}), 400)
 	dir := newDirectoryAt(t, fx, "/Templates")
 	setTemplatesFolder(t, fx, dir.ID)
@@ -200,7 +204,9 @@ func TestListTemplatesPagesTheAccountFiles(t *testing.T) {
 func TestCreateFromBuiltinTemplate(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
-	n := nodeOf(t, newDocumentCall(t, fx.s, fx.key, fx.fld.RootNodeID, map[string]any{"template": "builtin:letter"}))
+	// The team folder already holds letter.docx (the fixture's), so the copy goes to a folder of its own.
+	dir := newDirectoryAt(t, fx, "/Letters")
+	n := nodeOf(t, newDocumentCall(t, fx.s, fx.key, dir.ID, map[string]any{"template": "builtin:letter"}))
 	if n.Name != "Letter.docx" || n.MimeType != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
 		t.Errorf("Name = %q, MimeType = %q", n.Name, n.MimeType)
 	}

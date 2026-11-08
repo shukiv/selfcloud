@@ -32,7 +32,7 @@ space ("My files"), and a group can hold users.
 | Drive feature | Selfcloud |
 |---|---|
 | Upload files and folders, with drag and drop | Have: resumable uploads (f). Built (k2): the upload tray, folder upload and drag and drop |
-| Create blank documents, spreadsheets and presentations | Planned (l): Collabora, from templates (`TemplateSource`) |
+| Create blank documents, spreadsheets and presentations | Built (l6, decision 91; nt1, decision 105): `POST /api/v1/nodes/{nod}/documents` makes Word, Excel and PowerPoint files, and the OpenDocument text, spreadsheet, presentation and drawing kinds, and an empty text file (`txt`, made with office editing off). Documents also come from templates: six built-in starters (`builtin:letter` and the rest, `GET /api/v1/templates?kind=`) and the account's own templates folder (`GET` and `PUT /api/v1/accounts/{acc}/templates`, by a manager). The submenus and the template picker in the web interface are slice nt2 |
 | Create from a template gallery | New (l+): per-account template folders |
 | Maximum file size (5 TB in Drive) | Have: settable, default 100 GiB (`upload.max_file_size`) |
 | Daily upload cap per user | New (u): `upload.daily_cap_per_user` |

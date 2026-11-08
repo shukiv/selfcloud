@@ -3259,21 +3259,37 @@ paths:
     post:
       tags: [Office]
       operationId: createDocument
-      summary: Make a blank Office document in a folder
+      summary: Make a blank document, or a document from a template, in a folder
       description: |
-        Makes a blank Word (`docx`), Excel (`xlsx`) or PowerPoint (`pptx`) file in the folder or directory
-        `{nod}` (decision 91). `{nod}` must be a folder's root node or a directory. The caller needs
+        Makes a file in the folder or directory `{nod}` (decision 91; decision 105 adds the OpenDocument kinds,
+        the empty text file and templates). The body is either a `type` (a blank file) or a `template` (a copy of
+        one), never both and never neither. A `type` is `docx`, `xlsx` or `pptx` (Office Open XML), `odt`, `ods`,
+        `odp` or `odg` (OpenDocument: text, spreadsheet, presentation, drawing), or `txt` (an empty plain text file).
+        A `template` is a built-in one, `builtin:letter`, `builtin:resume`, `builtin:meeting-notes`, `builtin:budget`,
+        `builtin:invoice` or `builtin:slide-deck` (see `GET /api/v1/templates`), or the node ID of a file in the
+        account whose extension makes it a template (.docx, .odt, .xlsx, .ods, .pptx, .odp). Only `txt` is made while
+        office editing is off; every other `type` and every `template` answers `not_found` then. A copy of an account
+        template is audited with `via: template` and the template's ID in `template`; a built-in copy with `via: template`
+        and the built-in ID. The copy of an account template shares the template's bytes, as a file copy does: it
+        writes no bytes and reserves no disk, and the account is charged its size in full. The caller reads an account
+        template, and a template it cannot read is `not_found`; a template with no-download rules is refused. A
+        built-in is built and stored as a blank file is.
+        `{nod}` must be a folder's root node or a directory. The caller needs
+        editor (or manager) on it, not contributor: the new file opens in the office editor and is saved
+        there (for `txt`, the same role is needed). `{nod}` must be a folder's root node or a directory. The caller needs
         editor (or manager) on it, not contributor: the new file opens in the office editor and is saved
         there. The quota, disk check, audit row (`node.create`, with `via: document`) and webhooks are those
         of a file upload. While an installation admin is signed in as a user (impersonation), the route is
         refused with 403 and reason `impersonation`, as the other writes that need the person's own session. The default name is "Untitled document", "Untitled
         spreadsheet" or "Untitled presentation" in the caller's stored language (English for an account key),
         with the type's extension. A given `name` gets the extension when it lacks it. A name taken in the
-        folder gets the first free "name (n).ext". The file is a valid OOXML package, opened in the editor
-        with `/api/v1/nodes/{nod}/office`. While office editing is off, the route answers `not_found`.
-        A 400 is a body that is not JSON of this shape (an unknown field included), a `type` other than
-        docx, xlsx or pptx, a name that is not a file name (a slash, `.`, `..`, empty or too long), and
-        `{nod}` being a file rather than a folder or a directory.
+        folder gets the first free "name (n).ext". The file is a valid package of its type, opened in the editor
+        with `/api/v1/nodes/{nod}/office` (`txt` is a plain file, not an office file). While office editing is
+        off, the route answers `not_found` except for `txt`. A 400 is a body that is not JSON of this shape (an
+        unknown field included), neither or both of `type` and `template`, a `type` not in the list above, a
+        `template` that is not a built-in or a node ID, an account node that is not a template file, a name that
+        is not a file name (a slash, `.`, `..`, empty or too long), and `{nod}` being a file rather than a folder
+        or a directory.
       security: [{ bearer: [] }, { session: [] }]
       requestBody:
         required: true
@@ -3281,10 +3297,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [type]
               additionalProperties: false
+              description: "Exactly one of `type` and `template`."
               properties:
-                type: { type: string, enum: [docx, xlsx, pptx] }
+                type: { type: string, enum: [docx, xlsx, pptx, odt, ods, odp, odg, txt] }
+                template: { type: string, description: "A built-in template's ID (`builtin:<name>`) or an account file's node ID." }
                 name: { type: string, description: "Optional; a name the server cleans as any other name is." }
       responses:
         "201":
@@ -3298,6 +3315,100 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "507": { $ref: "#/components/responses/Error" }
+  /api/v1/templates:
+    get:
+      tags: [Office]
+      operationId: listTemplates
+      summary: List the templates of a kind
+      description: |
+        The templates New starts a document from, of one kind (decision 105). `kind` is required: `document` (a
+        Word or OpenDocument text file), `spreadsheet` or `presentation`. The built-in starter set of the kind comes
+        first, on the first page only (no `after`): a letter, a resume and meeting notes for a document; a budget and
+        an invoice for a spreadsheet; a slide deck for a presentation. Then come the files of the account's templates
+        folder (`GET /api/v1/accounts/{acc}/templates`) whose extension makes them templates of the kind and that the
+        caller can read: .docx and .odt for a document, .xlsx and .ods for a spreadsheet, .pptx and .odp for a
+        presentation. A folder that is trashed, deleted or unreadable contributes none. `limit` (1 to 100, default 50)
+        caps the account files on a page; `next_cursor`, when present, is the `after` of the next page. A built-in has
+        `source: builtin`, the ID `builtin:<name>` and the name the copy takes, in the caller's language. An account file
+        has `source: account`, its node ID as `id` and as `node_id`, and `has_thumbnail` (an office file has none yet).
+        Office editing must be on; otherwise the route answers `not_found`. A 400 is a missing or unknown `kind`, a
+        `limit` outside 1 to 100, and an `after` that is not a cursor from this listing.
+      security: [{ bearer: [] }, { session: [] }]
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          schema: { type: string, enum: [document, spreadsheet, presentation] }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: after
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: The templates of the kind.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Template" } }
+                  next_cursor: { type: string, description: "Present when more account files follow." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{acc}/templates:
+    parameters:
+      - $ref: "#/components/parameters/acc"
+    get:
+      tags: [Office]
+      operationId: getTemplatesFolder
+      summary: The account's templates folder
+      description: |
+        The directory that holds the account's own templates (decision 105), as `node_id`, or `null` for none. Only
+        the account's owner or a manager may read it; any other person is told the account is not found. A folder
+        that is trashed or deleted reads as `null`; its setting is kept.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The setting.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemplatesFolder" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Office]
+      operationId: setTemplatesFolder
+      summary: Name the account's templates folder, or clear it
+      description: |
+        Sets the account's templates folder to `node_id`, a directory of this account the caller can read, or clears
+        it with `null`. Only the account's owner or a manager may change it, and the change is audited as
+        `templates.folder`. A file is a 400; a node the caller cannot reach, or another account's, is a 404. While an
+        installation admin is signed in as a user (impersonation), the route is refused with 403.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [node_id]
+              additionalProperties: false
+              properties:
+                node_id: { type: [string, "null"], description: "A directory's node ID, or null to clear the setting." }
+      responses:
+        "200":
+          description: The setting, as it now is.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemplatesFolder" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /wopi/files/{nod}:
     parameters:
       - $ref: "#/components/parameters/nod"
@@ -5949,6 +6060,23 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    Template:
+      type: object
+      description: "A template New can start a document from (decision 105). `source` is `builtin` (ID `builtin:<name>`, no node) or `account` (ID and `node_id` are the file's node ID; `has_thumbnail` is set)."
+      required: [id, name, kind, source]
+      properties:
+        id: { type: string }
+        name: { type: string, description: "The file name the copy takes, with its extension." }
+        kind: { type: string, enum: [document, spreadsheet, presentation] }
+        source: { type: string, enum: [builtin, account] }
+        node_id: { type: string, description: "Account files only." }
+        has_thumbnail: { type: boolean, description: "Account files only." }
+    TemplatesFolder:
+      type: object
+      description: "The account's templates folder (decision 105): its directory's node ID, or null for none."
+      required: [node_id]
+      properties:
+        node_id: { type: [string, "null"] }
     AudioTags:
       type: object
       description: "An audio file's tags (decision 56). `state` is `ready` with the values, or `none`; values are plain text."

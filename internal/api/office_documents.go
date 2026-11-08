@@ -2,15 +2,21 @@
 
 package api
 
-// New documents (decision 91): POST /api/v1/nodes/{nod}/documents makes a blank Word document, workbook or presentation in
-// the folder or directory {nod}, and the web interface opens it in the editor (decision 72). The rights, the quota, the disk
-// check, the audit row and the webhooks are those of an upload of the same file: the caller needs contributor on the
-// directory, the bytes are reserved and checked as a one-request write is (decision 84), and the new node is written as
-// handleCreateFile writes one, audited as node.create with via "document".
+// New documents (decision 91, extended by decision 105): POST /api/v1/nodes/{nod}/documents makes a file in the folder or
+// directory {nod}, either blank ({"type": ...}) or a copy of a template ({"template": ...}). The rights, the quota, the
+// disk check, the audit row and the webhooks are those of an upload of the same file: the caller needs editor on the
+// directory, and the new node is written as handleCreateFile writes one, audited as node.create with via "document" or
+// "template". A blank file's bytes go through the one-request write path (decision 84). A copy of an account template
+// shares the template's bytes, as a file copy does (copyTree), so it writes no bytes and reserves no disk; its quota is
+// charged in full, and its rate limit is the one-request limit.
 //
-// The name is the default for the type in the caller's language, or the name given, with the type's extension added when
-// it does not end in it. A name taken in the directory gets the first free "name (n).ext", the rule saveAsFreeName reads
-// from freeName (decision 87). The route exists only while office editing is on, as the other office routes do.
+// The types are the OOXML kinds (docx, xlsx, pptx), the OpenDocument kinds (odt, ods, odp, odg) and the empty text file
+// (txt). Only txt is made with office editing off; every other type and every template is not found while it is off, as the
+// other office routes are.
+//
+// The name is the default for the kind in the caller's language, or the name given, with the extension of the file added
+// when the name does not end in it. A built-in template's default is its display name; an account template's is its own
+// name. A name taken in the directory gets the first free "name (n).ext" (saveAsFreeName, decision 87).
 
 import (
 	"context"
@@ -21,23 +27,36 @@ import (
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/blankdoc"
 	"github.com/shukiv/selfcloud/internal/blob"
+	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/locale"
 	"github.com/shukiv/selfcloud/internal/names"
 	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/templates"
 )
 
 // documentNames is the default name of each kind (without its extension), by language. Every language the server ships
-// has all three; a language the server does not ship gets English (locale.Resolve).
+// has all the kinds of nameKind; a language the server does not ship gets English (locale.Resolve).
 var documentNames = map[string]map[string]string{
-	"en": {"docx": "Untitled document", "xlsx": "Untitled spreadsheet", "pptx": "Untitled presentation"},
-	"es": {"docx": "Documento sin título", "xlsx": "Hoja de cálculo sin título", "pptx": "Presentación sin título"},
-	"fr": {"docx": "Document sans titre", "xlsx": "Feuille de calcul sans titre", "pptx": "Présentation sans titre"},
-	"pt": {"docx": "Documento sem título", "xlsx": "Planilha sem título", "pptx": "Apresentação sem título"},
-	"ru": {"docx": "Документ без названия", "xlsx": "Таблица без названия", "pptx": "Презентация без названия"},
+	"en": {"docx": "Untitled document", "xlsx": "Untitled spreadsheet", "pptx": "Untitled presentation",
+		"odg": "Untitled drawing", "txt": "Untitled text file"},
+	"es": {"docx": "Documento sin título", "xlsx": "Hoja de cálculo sin título", "pptx": "Presentación sin título",
+		"odg": "Dibujo sin título", "txt": "Archivo de texto sin título"},
+	"fr": {"docx": "Document sans titre", "xlsx": "Feuille de calcul sans titre", "pptx": "Présentation sans titre",
+		"odg": "Dessin sans titre", "txt": "Fichier texte sans titre"},
+	"pt": {"docx": "Documento sem título", "xlsx": "Planilha sem título", "pptx": "Apresentação sem título",
+		"odg": "Desenho sem título", "txt": "Arquivo de texto sem título"},
+	"ru": {"docx": "Документ без названия", "xlsx": "Таблица без названия", "pptx": "Презентация без названия",
+		"odg": "Рисунок без названия", "txt": "Текстовый файл без названия"},
 	// Machine drafts (decision 91): ar and he are to be checked by a native speaker.
-	"ar": {"docx": "مستند بدون عنوان", "xlsx": "جدول بيانات بدون عنوان", "pptx": "عرض تقديمي بدون عنوان"},
-	"he": {"docx": "מסמך ללא שם", "xlsx": "גיליון ללא שם", "pptx": "מצגת ללא שם"},
+	"ar": {"docx": "مستند بدون عنوان", "xlsx": "جدول بيانات بدون عنوان", "pptx": "عرض تقديمي بدون عنوان",
+		"odg": "رسم بدون عنوان", "txt": "ملف نصي بدون عنوان"},
+	"he": {"docx": "מסמך ללא שם", "xlsx": "גיליון ללא שם", "pptx": "מצגת ללא שם",
+		"odg": "ציור ללא שם", "txt": "קובץ טקסט ללא שם"},
 }
+
+// nameKind is the key in documentNames of each type: an OpenDocument kind takes the name of the OOXML kind it stands for.
+var nameKind = map[string]string{"docx": "docx", "odt": "docx", "xlsx": "xlsx", "ods": "xlsx", "pptx": "pptx", "odp": "pptx",
+	"odg": "odg", "txt": "txt"}
 
 // documentLanguage is the language of the default name: the signed-in person's stored locale, or English for a key.
 func (s *Server) documentLanguage(ctx context.Context, p *auth.Principal, accountID string) string {
@@ -51,24 +70,29 @@ func (s *Server) documentLanguage(ctx context.Context, p *auth.Principal, accoun
 	return locale.Resolve(u.Locale)
 }
 
-// documentName is the name a new document is asked for: the given name, or the default in lang, with the kind's extension.
-// A given name that already ends in the extension (in any case) is kept; another name gets it added.
-func documentName(lang, kind, given string) (string, string, error) {
-	ext := "." + kind
+// fileName is the name a new file is asked for: the given name, or base, with the extension ext added when the name does
+// not already end in it (in any case). A given name is checked as a name first, so "." or a name with a slash is refused,
+// not turned into "..docx".
+func fileName(base, ext, given string) (string, string, error) {
+	suffix := "." + ext
 	name := given
 	if name == "" {
-		name = documentNames[lang][kind]
+		name = base
 	}
-	// The given name is checked as a name first, so "." or a name with a slash is refused, not turned into "..docx".
 	if given != "" {
 		if _, _, err := names.Clean(given); err != nil {
 			return "", "", err
 		}
 	}
-	if !strings.HasSuffix(strings.ToLower(name), ext) {
-		name += ext
+	if !strings.HasSuffix(strings.ToLower(name), suffix) {
+		name += suffix
 	}
 	return names.Clean(name)
+}
+
+// documentName is fileName for a blank file of a type, with the default name of the type in lang.
+func documentName(lang, kind, given string) (string, string, error) {
+	return fileName(documentNames[lang][nameKind[kind]], kind, given)
 }
 
 // storeBytes writes body as a new blob of accountID. It takes the same rate limit, disk reservation and quota check as a
@@ -96,21 +120,26 @@ func (s *Server) storeBytes(ctx context.Context, p *auth.Principal, accountID st
 	return wr.Commit()
 }
 
-// handleCreateDocument makes a blank document in the directory {nod}. It answers 201 with the new node.
+// handleCreateDocument makes a file in the directory {nod}: a blank one of a type, or a copy of a template. It answers 201
+// with the new node.
 func (s *Server) handleCreateDocument(w http.ResponseWriter, r *http.Request) error {
-	if s.office == nil {
-		return notFound("node")
-	}
 	var in struct {
-		Type string `json:"type"`
-		Name string `json:"name"`
+		Type     string `json:"type"`
+		Name     string `json:"name"`
+		Template string `json:"template"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	mt := blankdoc.MIME(in.Type)
-	if mt == "" {
-		return apierr.New(apierr.InvalidRequest, "type must be docx, xlsx or pptx")
+	if (in.Type == "") == (in.Template == "") {
+		return apierr.New(apierr.InvalidRequest, "give a type or a template, not both")
+	}
+	if in.Type != "" && blankdoc.MIME(in.Type) == "" {
+		return apierr.New(apierr.InvalidRequest, "type must be docx, xlsx, pptx, odt, ods, odp, odg or txt")
+	}
+	// Only the empty text file is made with office editing off; a template is an office file, so it is not found either.
+	if s.office == nil && in.Type != "txt" {
+		return notFound("node")
 	}
 	ctx := r.Context()
 	p := principalOf(r)
@@ -121,22 +150,113 @@ func (s *Server) handleCreateDocument(w http.ResponseWriter, r *http.Request) er
 	if dir.Kind != store.KindDir {
 		return apierr.New(apierr.InvalidRequest, "a document goes in a folder")
 	}
-	name, key, err := documentName(s.documentLanguage(ctx, p, dir.AccountID), in.Type, in.Name)
+	lang := s.documentLanguage(ctx, p, dir.AccountID)
+	var out *store.Node
+	if in.Type != "" {
+		out, err = s.makeBlankDocument(r, p, dir, lang, in.Type, in.Name)
+	} else {
+		out, err = s.makeFromTemplate(r, p, dir, lang, in.Template, in.Name)
+	}
 	if err != nil {
 		return err
 	}
-	body, err := blankdoc.Build(in.Type)
+	w.Header().Set("Location", "/api/v1/nodes/"+out.ID)
+	writeJSON(w, http.StatusCreated, toNodeJSON(out))
+	return nil
+}
+
+// makeBlankDocument makes a blank file of a type in dir, audited as via "document".
+func (s *Server) makeBlankDocument(r *http.Request, p *auth.Principal, dir *store.Node, lang, kind, given string) (*store.Node, error) {
+	name, key, err := documentName(lang, kind, given)
 	if err != nil {
-		return apierr.Wrap(apierr.Internal, "the blank document could not be made", err)
+		return nil, err
 	}
+	body, err := blankdoc.Build(kind)
+	if err != nil {
+		return nil, apierr.Wrap(apierr.Internal, "the blank document could not be made", err)
+	}
+	c, err := s.storeBytes(r.Context(), p, dir.AccountID, body)
+	if err != nil {
+		return nil, err
+	}
+	return s.placeDocument(r, p, dir, name, key, blankdoc.MIME(kind), c, true,
+		map[string]any{"via": "document"})
+}
+
+// makeFromTemplate copies a template into dir. A built-in template is built and stored as a blank file is. An account
+// template is a file of the account the caller reads (a person who cannot read it is told it is not found), and its copy
+// shares its bytes.
+func (s *Server) makeFromTemplate(r *http.Request, p *auth.Principal, dir *store.Node, lang, ref, given string) (*store.Node, error) {
+	ctx := r.Context()
 	acc := dir.AccountID
-	c, err := s.storeBytes(ctx, p, acc, body)
-	if err != nil {
-		return err
+	if strings.HasPrefix(ref, "builtin:") {
+		tpl, ok := templates.Get(ref)
+		if !ok {
+			return nil, apierr.New(apierr.InvalidRequest, "there is no built-in template "+ref)
+		}
+		name, key, err := fileName(tpl.Name(lang), tpl.Ext, given)
+		if err != nil {
+			return nil, err
+		}
+		body, err := tpl.Build()
+		if err != nil {
+			return nil, apierr.Wrap(apierr.Internal, "the template could not be made", err)
+		}
+		c, err := s.storeBytes(ctx, p, acc, body)
+		if err != nil {
+			return nil, err
+		}
+		return s.placeDocument(r, p, dir, name, key, blankdoc.MIME(tpl.Ext), c, true,
+			map[string]any{"via": "template", "template": tpl.ID})
 	}
+	if !id.Valid("nod", ref) {
+		return nil, apierr.New(apierr.InvalidRequest, "template must be a built-in template or a file's node ID")
+	}
+	src, role, err := s.nodeAccess(r, ref)
+	if err != nil {
+		return nil, err
+	}
+	if src.AccountID != acc {
+		return nil, nodeNotFound()
+	}
+	if src.Kind != store.KindFile {
+		return nil, apierr.New(apierr.InvalidRequest, "a template is a file")
+	}
+	ext := templateExtOf(src.Name)
+	if ext == "" {
+		return nil, apierr.New(apierr.InvalidRequest, "that file is not a template: its extension is not a template's")
+	}
+	restricted, err := s.copyRestricted(ctx, s.store, src, role)
+	if err != nil {
+		return nil, err
+	}
+	if restricted {
+		return nil, errDownloadRestricted()
+	}
+	name, key, err := fileName(src.Name, ext, given)
+	if err != nil {
+		return nil, err
+	}
+	if p != nil {
+		if err := s.rateLimit(oneRequestWriteRate, string(p.Kind)+":"+p.ID); err != nil {
+			return nil, err
+		}
+	}
+	c := blob.Committed{ID: src.BlobID, Size: src.Size, SHA256: src.SHA256}
+	return s.placeDocument(r, p, dir, name, key, blankdoc.MIME(ext), c, false,
+		map[string]any{"via": "template", "template": src.ID})
+}
+
+// placeDocument writes a new file node named name, of media type mt, into dir, with the content c. A fresh blob is
+// inserted with the node; a shared one (fresh false) already exists. The quota is checked and charged in full, and the
+// row is audited as node.create with details added to kind, name, parent and size. A failed write removes a fresh blob.
+func (s *Server) placeDocument(r *http.Request, p *auth.Principal, dir *store.Node, name, key, mt string,
+	c blob.Committed, fresh bool, details map[string]any) (*store.Node, error) {
+	ctx := r.Context()
+	acc := dir.AccountID
 	var out *store.Node
 	s.atWrite()
-	err = s.store.Write(ctx, func(tx *store.Tx) error {
+	err := s.store.Write(ctx, func(tx *store.Tx) error {
 		parent, err := requireNodeRole(ctx, tx, p, dir.ID, store.RoleEditor)
 		if err != nil {
 			return err
@@ -154,9 +274,11 @@ func (s *Server) handleCreateDocument(w http.ResponseWriter, r *http.Request) er
 				return err
 			}
 		}
-		if err := tx.InsertBlob(ctx, &store.Blob{ID: c.ID, AccountID: acc, Size: c.Size,
-			SHA256: c.SHA256, State: store.BlobLive, CreatedAt: store.Now()}); err != nil {
-			return err
+		if fresh {
+			if err := tx.InsertBlob(ctx, &store.Blob{ID: c.ID, AccountID: acc, Size: c.Size,
+				SHA256: c.SHA256, State: store.BlobLive, CreatedAt: store.Now()}); err != nil {
+				return err
+			}
 		}
 		n, err := s.newNode(ctx, tx, acc, parent.FolderID, parent.ID, pathSeg{name: finalName, key: finalKey}, store.KindFile, p.ID)
 		if err != nil {
@@ -175,15 +297,17 @@ func (s *Server) handleCreateDocument(w http.ResponseWriter, r *http.Request) er
 		if err := noteEdit(ctx, tx, p, acc, n.ID); err != nil {
 			return err
 		}
-		return tx.InsertAudit(ctx, s.auditEntry(r, acc, "node.create", n.ID,
-			map[string]any{"kind": store.KindFile, "name": n.Name, "parent": parent.ID, "size": c.Size, "via": "document"},
-			parent.FolderID))
+		audit := map[string]any{"kind": store.KindFile, "name": n.Name, "parent": parent.ID, "size": c.Size}
+		for k, v := range details {
+			audit[k] = v
+		}
+		return tx.InsertAudit(ctx, s.auditEntry(r, acc, "node.create", n.ID, audit, parent.FolderID))
 	})
 	if err != nil {
-		s.discardBlob(acc, c.ID)
-		return err
+		if fresh {
+			s.discardBlob(acc, c.ID)
+		}
+		return nil, err
 	}
-	w.Header().Set("Location", "/api/v1/nodes/"+out.ID)
-	writeJSON(w, http.StatusCreated, toNodeJSON(out))
-	return nil
+	return out, nil
 }

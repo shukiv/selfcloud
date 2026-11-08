@@ -788,6 +788,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/unlock", handle: s.handleBreakNodeLock, auth: true, imp: impRefuse},
 		// New documents (decision 91): a blank Word, Excel or PowerPoint file in a folder, with file creation's rights.
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/documents", handle: s.handleCreateDocument, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/templates", handle: s.handleListTemplates, auth: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/templates", handle: s.handleGetTemplatesFolder, auth: true, imp: impAllow},
+		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/templates", handle: s.handleSetTemplatesFolder, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/wopi/files/{nod}", handle: s.handleWOPICheckFileInfo, secretPath: true, imp: impAllow},
 		{method: http.MethodGet, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIGetFile, secretPath: true, imp: impAllow},
 		{method: http.MethodPost, path: "/wopi/files/{nod}/contents", handle: s.handleWOPIPutFile, secretPath: true, imp: impAllow},
