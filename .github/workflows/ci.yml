@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+# Both jobs only read the repository. The artifact upload uses the runner's own token, not this one.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -68,5 +72,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-output
-          path: e2e-out/
+          # The Chrome profiles the runs keep (each named *-profile) and Chrome's own temporary folders are left out: they
+          # are large and not useful for debugging. The exclusions are matched as the upload's glob does.
+          path: |
+            e2e-out/
+            !e2e-out/tmp/**/*-profile
+            !e2e-out/tmp/com.google.Chrome.*
           retention-days: 3
