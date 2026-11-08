@@ -76,6 +76,17 @@ async function pickMenuItem(page, text) {
   );
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// setViewport emulates the window size and waits until the page has taken it: its width is the new one, and a moment has passed
+// for the layout to settle. A window resize closes a menu that is open at a point (the menu's trigger closes on resize, in
+// @rc-component/trigger), so a click made while the page is still resizing would race the close.
+async function setViewport(page, width, height, mobile) {
+  await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
+  await page.waitFor(`window.innerWidth === ${width}`, 10000);
+  await sleep(200);
+}
+
 // pickSegment chooses a theme in the theme switch by its label, once the switch is on the page.
 // The options are system, light and dark, in that order, whatever the language: the choice is made by its place.
 async function pickSegment(page, value) {
@@ -237,7 +248,7 @@ export async function s4bChecks(h, { page, base, accountKey, teamA, dir, fake, r
   const info = await (await fetch(`${base}/api/v1/info`)).json();
   check(Array.isArray(info.features) && info.features.includes('office_convert'), 'the server offers document previews and exports (/info features)');
 
-  await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await setViewport(page, 1280, 800, false);
   await page.goto(`${page.base}/files/${teamA}`);
   await listView(page);
   await h.rowAppears(page, 's4b-docs');
@@ -328,7 +339,7 @@ export async function s4bChecks(h, { page, base, accountKey, teamA, dir, fake, r
   await setCoarse(page, false);
 
   // Phone width, light then dark, English. Dark is set on the desktop first: the theme switch is not shown at phone width.
-  await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+  await setViewport(page, 375, 812, true);
   await setCoarse(page, true);
   await openViewer(h, page, 'letter.docx');
   const overflow = await page.evaluate(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
@@ -338,14 +349,14 @@ export async function s4bChecks(h, { page, base, accountKey, teamA, dir, fake, r
   await closeViewer(page);
 
   // Dark, English, on the desktop; then the phone in dark.
-  await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await setViewport(page, 1280, 800, false);
   await page.waitFor(`!!document.querySelector('[data-testid="theme"]')`, 10000);
   await pickSegment(page, 'dark');
   await page.waitFor(`document.documentElement.dataset.theme === 'dark'`, 10000);
   await openViewer(h, page, 'letter.docx');
   await shot(page, 'desktop-dark-en-card.png');
   await closeViewer(page);
-  await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+  await setViewport(page, 375, 812, true);
   await openViewer(h, page, 'letter.docx');
   await shot(page, 'phone-dark-en-card.png');
   await closeViewer(page);
@@ -361,7 +372,7 @@ export async function s4bChecks(h, { page, base, accountKey, teamA, dir, fake, r
   await closeViewer(page);
 
   // Hebrew, on the desktop in light; then the phone in light.
-  await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await setViewport(page, 1280, 800, false);
   await page.waitFor(`!!document.querySelector('[data-testid="theme"]')`, 10000);
   await pickSegment(page, 'light');
   await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
@@ -370,14 +381,14 @@ export async function s4bChecks(h, { page, base, accountKey, teamA, dir, fake, r
   await clickIn(page, '[data-testid="preview"]', WORDS.he.preview);
   await page.waitFor(`!!document.querySelector('[data-testid="preview"] iframe')`, 30000);
   await closeViewer(page);
-  await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+  await setViewport(page, 375, 812, true);
   await openViewer(h, page, 'letter.docx');
   await shot(page, 'phone-light-he-card.png');
   await closeViewer(page);
 
   // Back to English on the desktop, so the checks that follow read English.
   await setCoarse(page, false);
-  await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await setViewport(page, 1280, 800, false);
   await page.evaluate(`(() => { document.querySelector('[data-testid="language"]').click(); return true; })()`);
   await page.waitFor(`[...document.querySelectorAll('.ant-dropdown-menu-item')].some((i) => i.textContent.trim() === 'English')`, 10000);
   await pickMenuItem(page, 'English');
