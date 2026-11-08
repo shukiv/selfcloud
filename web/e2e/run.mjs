@@ -966,8 +966,13 @@ async function main() {
     // for same-origin.
     const openProbe = async () => {
       const tab = await openTab(page);
-      tab.page.base = base;
-      await tab.page.start(EXPECTED);
+      try {
+        tab.page.base = base;
+        await tab.page.start(EXPECTED);
+      } catch (err) {
+        await tab.close();
+        throw err;
+      }
       return tab;
     };
     if (!only || onlySet.has('pwa2')) await pwa2Checks(h, { page, base, check, MEMBER, openProbe });

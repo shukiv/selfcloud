@@ -129,9 +129,11 @@ export async function pwa2Checks(h, { page, base, check, MEMBER, openProbe }) {
 
   // 5. Another site's form post is refused: the worker answers 303 to the share page with nothing held, so no file is listed.
   // The probe page is a document of the other origin (localhost, the same server), which has no worker of its own. It runs in a
-  // browser of its own, so the shared page, whose requests the run checks for same-origin, never leaves this origin.
-  const probe = await openProbe();
+  // tab of the shared browser, with its own page, so the shared page, whose requests the run checks for same-origin, never
+  // leaves this origin.
+  let probe = null;
   try {
+    probe = await openProbe();
     const probePage = probe.page;
     await probePage.goto(`http://localhost:${port}/robots.txt`);
     await probePage.evaluate(postShare(`${base}/share-target`, 'cross-site.txt', 'attack body'));
@@ -140,7 +142,7 @@ export async function pwa2Checks(h, { page, base, check, MEMBER, openProbe }) {
     const refused = await probePage.evaluate(bodyText);
     report(refused.indexOf('cross-site.txt') < 0, 'pwa2: a share from another site is refused, and its file is not listed');
   } finally {
-    await probe.close();
+    if (probe) await probe.close();
   }
 
   // 6. A share opened while signed out: its files are taken at once, the person signs in, and the share page shows them.

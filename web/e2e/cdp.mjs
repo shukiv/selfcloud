@@ -267,7 +267,8 @@ export async function openTab(page) {
     page: tab,
     close: async () => {
       tab.close();
-      await fetch(`${origin}/json/close/${target.id}`);
+      // A failed close must not hide the error that ended the section, so it is only logged.
+      await fetch(`${origin}/json/close/${target.id}`).catch((err) => console.error(`could not close the probe tab: ${err.message}`));
     },
   };
 }
