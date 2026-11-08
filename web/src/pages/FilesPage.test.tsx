@@ -837,21 +837,6 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
     await waitFor(() => expect(window.location.pathname).toBe(`${FOLDER}/nod_docs0001`));
   });
 
-  it("a tree folder released on its own row does nothing, and shows no refusal", async () => {
-    renderAt(FOLDER);
-    await screen.findByRole("row", { name: "alpha.txt" });
-    const mine = treeRow("nod_mine0001", "Mine", "");
-    dragFrom(mine, mine);
-    release();
-    await waitFor(() => expect(screen.queryByTestId("drag-ghost")).toBeNull());
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
-    });
-    expect(screen.queryByText("A folder cannot go into itself.")).toBeNull();
-    expect(api.moveNode).not.toHaveBeenCalled();
-    expect(api.copyNode).not.toHaveBeenCalled();
-  });
-
   it("refuses Ctrl over the Trash: nothing is copied there, and nothing is deleted", async () => {
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
@@ -1920,15 +1905,12 @@ describe("slice w2: drag onto a folder, and the rubber band", () => {
     expect(api.copyNode).not.toHaveBeenCalled();
   });
 
-  it("a folder dropped on its own row does nothing: no state on the row, and no refusal (decision 104)", async () => {
+  it("refuses a folder dropped on itself, with a reason", async () => {
     await ready();
     drag("Docs", rows("Docs"));
-    expect((rows("Docs") as HTMLElement).dataset.dropState).toBeUndefined();
+    expect((rows("Docs") as HTMLElement).dataset.dropState).toBe("refused");
     release();
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
-    });
-    expect(screen.queryByText("A folder cannot go into itself.")).toBeNull();
+    expect(await screen.findByText("A folder cannot go into itself.")).toBeTruthy();
     expect(api.moveNode).not.toHaveBeenCalled();
   });
 

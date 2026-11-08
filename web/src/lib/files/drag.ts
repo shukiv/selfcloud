@@ -26,9 +26,8 @@ export interface Perms {
 
 // Why is the reason a drop is refused. role: the caller may not add to the place. self: a folder would go into itself or into
 // something below it. here: every item is already in the place. move: the caller may not move these items (a copy may be allowed).
-// copy: Ctrl was held over the Trash, where nothing is copied. trash: Delete is not shown or not enabled for the items. same: the
-// dragged folder was released on its own place, so nothing happens and nothing is said (it is no refusal).
-export type Why = "role" | "self" | "here" | "move" | "copy" | "trash" | "same";
+// copy: Ctrl was held over the Trash, where nothing is copied. trash: Delete is not shown or not enabled for the items.
+export type Why = "role" | "self" | "here" | "move" | "copy" | "trash";
 
 export type Decision = { ok: true; mode: "move" | "copy" | "trash"; nodes: Node[] } | { ok: false; why: Why };
 
@@ -65,7 +64,6 @@ export function intoItself(n: Node, dest: Dest): boolean {
 // place are left out; if none is left the drop is refused. A folder into itself or below it refuses the whole drop.
 export function dropDecision(nodes: Node[], dest: Dest, copy: boolean, perms: Perms): Decision {
   if (!can.create(dest.role)) return { ok: false, why: "role" };
-  if (nodes.some((n) => n.id === dest.dir)) return { ok: false, why: "same" };
   if (nodes.some((n) => intoItself(n, dest))) return { ok: false, why: "self" };
   const rest = nodes.filter((n) => !alreadyIn(n, dest));
   if (rest.length === 0) return { ok: false, why: "here" };
