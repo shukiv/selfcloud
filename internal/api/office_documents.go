@@ -180,7 +180,7 @@ func (s *Server) makeBlankDocument(r *http.Request, p *auth.Principal, dir *stor
 		return nil, err
 	}
 	return s.placeDocument(r, p, dir, name, key, blankdoc.MIME(kind), c, true,
-		map[string]any{"via": "document"})
+		map[string]any{"via": "document"}, nil)
 }
 
 // makeFromTemplate copies a template into dir. A built-in template is built and stored as a blank file is. An account
@@ -207,12 +207,12 @@ func (s *Server) makeFromTemplate(r *http.Request, p *auth.Principal, dir *store
 			return nil, err
 		}
 		return s.placeDocument(r, p, dir, name, key, blankdoc.MIME(tpl.Ext), c, true,
-			map[string]any{"via": "template", "template": tpl.ID})
+			map[string]any{"via": "template", "template": tpl.ID}, nil)
 	}
 	if !id.Valid("nod", ref) {
 		return nil, apierr.New(apierr.InvalidRequest, "template must be a built-in template or a file's node ID")
 	}
-	src, role, err := s.nodeAccess(r, ref)
+	src, _, err := s.nodeAccess(r, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -226,13 +226,6 @@ func (s *Server) makeFromTemplate(r *http.Request, p *auth.Principal, dir *store
 	if ext == "" {
 		return nil, apierr.New(apierr.InvalidRequest, "that file is not a template: its extension is not a template's")
 	}
-	restricted, err := s.copyRestricted(ctx, s.store, src, role)
-	if err != nil {
-		return nil, err
-	}
-	if restricted {
-		return nil, errDownloadRestricted()
-	}
 	name, key, err := fileName(src.Name, ext, given)
 	if err != nil {
 		return nil, err
@@ -244,14 +237,14 @@ func (s *Server) makeFromTemplate(r *http.Request, p *auth.Principal, dir *store
 	}
 	c := blob.Committed{ID: src.BlobID, Size: src.Size, SHA256: src.SHA256}
 	return s.placeDocument(r, p, dir, name, key, blankdoc.MIME(ext), c, false,
-		map[string]any{"via": "template", "template": src.ID})
+		map[string]any{"via": "template", "template": src.ID}, src)
 }
 
 // placeDocument writes a new file node named name, of media type mt, into dir, with the content c. A fresh blob is
 // inserted with the node; a shared one (fresh false) already exists. The quota is checked and charged in full, and the
 // row is audited as node.create with details added to kind, name, parent and size. A failed write removes a fresh blob.
 func (s *Server) placeDocument(r *http.Request, p *auth.Principal, dir *store.Node, name, key, mt string,
-	c blob.Committed, fresh bool, details map[string]any) (*store.Node, error) {
+	c blob.Committed, fresh bool, details map[string]any, tmpl *store.Node) (*store.Node, error) {
 	ctx := r.Context()
 	acc := dir.AccountID
 	var out *store.Node
@@ -263,6 +256,24 @@ func (s *Server) placeDocument(r *http.Request, p *auth.Principal, dir *store.No
 		}
 		if parent.Kind != store.KindDir {
 			return apierr.New(apierr.InvalidRequest, "a document goes in a folder")
+		}
+		// A copy of an account template is made as a copy of a file is (copy route, decision 87): the no-download rule
+		// is read from this transaction, on the template's state and the caller's role on it. A viewer or commenter is
+		// refused, and a copy of a contributor or above keeps the template's own flag (copyTree keeps it too).
+		keepNoDownload := false
+		if tmpl != nil {
+			cur, tRole, err := nodeAccessWith(ctx, tx, p, tmpl.ID)
+			if err != nil {
+				return err
+			}
+			restricted, err := s.copyRestricted(ctx, tx, cur, tRole)
+			if err != nil {
+				return err
+			}
+			if restricted {
+				return errDownloadRestricted()
+			}
+			keepNoDownload = cur.NoDownload
 		}
 		finalName, finalKey := name, key
 		taken, err := nameTakenBy(tx.Child(ctx, acc, parent.ID, key))
@@ -286,6 +297,7 @@ func (s *Server) placeDocument(r *http.Request, p *auth.Principal, dir *store.No
 		}
 		n.Size, n.MimeType, n.BlobID, n.ETag, n.SHA256 = c.Size, mt, c.ID, newETag(), c.SHA256
 		n.ContentTag = store.NewContentTag()
+		n.NoDownload = keepNoDownload
 		if err := tx.UpdateNode(ctx, n); err != nil {
 			return err
 		}

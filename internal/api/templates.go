@@ -5,9 +5,9 @@ package api
 // Templates (decision 105): the built-in starter set, and the account's templates folder. GET /api/v1/templates?kind=
 // lists the templates of a kind: the built-ins (on the first page only), then the files of the account's templates folder
 // whose extension makes them templates of that kind, that the caller can read. A file is listed with its node ID and
-// whether it has a thumbnail. The folder is named by GET and PUT /api/v1/accounts/{acc}/templates, by the account's owner or
-// a manager (as the archive switch is). A folder that is trashed, deleted or unreadable is none: its setting stays, and
-// nothing lists from it.
+// whether it has a thumbnail. The folder is named by GET and PUT /api/v1/accounts/{acc}/templates, by a manager of the
+// account (p.ManagesAccount, as the archive switch checks), not by a manager of the folder alone. A folder that is trashed,
+// deleted or unreadable is none: its setting stays, and nothing lists from it.
 
 import (
 	"context"
@@ -111,7 +111,9 @@ func (s *Server) handleGetTemplatesFolder(w http.ResponseWriter, r *http.Request
 }
 
 // handleSetTemplatesFolder names the account's templates folder: a directory the caller can read, in the account. null
-// clears the setting. Only the account's owner or a manager may change it; the change is audited.
+// clears the setting. Only a manager of the account may change it (p.ManagesAccount: the account's owner, an installation
+// admin for the account, or an account key, as handleSetArchiveSwitch checks), not a manager of the folder alone; the
+// change is audited.
 func (s *Server) handleSetTemplatesFolder(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	acc := r.PathValue("acc")
@@ -225,15 +227,18 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
-// templateFiles returns up to limit files of the folder whose extension makes them templates of kind, from the cursor after
-// on, in name order. It also returns the cursor to continue from, or "" when the folder has no more to read. A file the
-// caller cannot read is left out, as a node it cannot reach is.
+// templateFiles returns up to limit usable files of the folder whose extension makes them templates of kind, from the
+// cursor after on, in name order. A usable file is one the caller can read and can copy: a no-download file is hidden from
+// a viewer or commenter, as its copy is refused to them. The cursor returned is the one to continue from, and it is set only
+// when a further usable file exists, so a page is never followed by an empty one. A listing reads at most templatesScanCap
+// children in one request; when it stops there, the page can be shorter than limit and the cursor continues the scan, or is
+// "" when no child follows.
 func (s *Server) templateFiles(ctx context.Context, p *auth.Principal, folder *store.Node, kind string, limit int,
 	after string) ([]*store.Node, string, error) {
 	var out []*store.Node
 	pos := after
 	scanned := 0
-	for len(out) < limit && scanned < templatesScanCap {
+	for {
 		children, _, err := s.store.Children(ctx, folder.AccountID, folder.ID, store.Page{Limit: templatesPageSize, Cursor: pos})
 		if err != nil {
 			return nil, "", err
@@ -241,22 +246,52 @@ func (s *Server) templateFiles(ctx context.Context, p *auth.Principal, folder *s
 		if len(children) == 0 {
 			return out, "", nil
 		}
-		for _, c := range children {
+		for i := 0; i < len(children) && scanned < templatesScanCap; i++ {
+			c := children[i]
 			scanned++
 			pos = store.ChildCursor(c)
 			if c.Kind != store.KindFile || templateExt[templateExtOf(c.Name)] != kind {
 				continue
 			}
-			if _, _, err := nodeAccessWith(ctx, s.store, p, c.ID); isNotFoundErr(err) {
-				continue
-			} else if err != nil {
+			usable, err := s.templateUsable(ctx, p, c)
+			if err != nil {
 				return nil, "", err
 			}
-			out = append(out, c)
-			if len(out) == limit {
-				return out, pos, nil
+			if !usable {
+				continue
 			}
+			if len(out) == limit {
+				// A further usable file exists, so the next page starts after the last file this page returns.
+				return out, store.ChildCursor(out[len(out)-1]), nil
+			}
+			out = append(out, c)
+		}
+		if scanned >= templatesScanCap {
+			more, _, err := s.store.Children(ctx, folder.AccountID, folder.ID, store.Page{Limit: 1, Cursor: pos})
+			if err != nil {
+				return nil, "", err
+			}
+			if len(more) == 0 {
+				return out, "", nil
+			}
+			return out, pos, nil
 		}
 	}
-	return out, pos, nil
+}
+
+// templateUsable reports whether the caller may list and copy the file c: it reads it, and the no-download rule does not
+// refuse a copy of it at the caller's role (copyRestricted, the rule the copy route applies).
+func (s *Server) templateUsable(ctx context.Context, p *auth.Principal, c *store.Node) (bool, error) {
+	_, role, err := nodeAccessWith(ctx, s.store, p, c.ID)
+	if isNotFoundErr(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	restricted, err := s.copyRestricted(ctx, s.store, c, role)
+	if err != nil {
+		return false, err
+	}
+	return !restricted, nil
 }
