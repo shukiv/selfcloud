@@ -14,37 +14,15 @@ export const myStorage = userWritable<MeStorage | null>(null);
 // latestMeterRequest numbers every GET /me call, of either kind.
 let latestMeterRequest = 0;
 
-// The meter's answers. A call is in flight until it answers or fails. An answer is shown only when no newer call is still in
-// flight, so the meter never shows older figures while a newer call is pending; when the newer call fails, the answer held
-// back is shown (wf1, review item 4: a failed breakdown no longer drops an older plain refresh's figures).
-const meterInFlight = new Set<number>();
-let heldMeter: { n: number; storage: MeStorage | null; changed: () => boolean } | null = null;
+// shownMeter numbers the call whose figures the meter shows. An answer is shown only when it is newer than that one, so an
+// older answer never overwrites a newer one. A newer call that has not settled hides nothing (wf1, review item 1).
 let shownMeter = 0;
 
-// answerMeter settles call n with its figures; a session that changed meanwhile keeps nothing of them.
-function answerMeter(n: number, storage: MeStorage | null, changed: () => boolean): void {
-  meterInFlight.delete(n);
-  if (!changed() && n > shownMeter && (!heldMeter || n > heldMeter.n)) heldMeter = { n, storage, changed };
-  showHeldMeter();
-}
-
-// failMeter settles call n without figures, so the answers held back for it can be shown.
-function failMeter(n: number): void {
-  meterInFlight.delete(n);
-  showHeldMeter();
-}
-
-function showHeldMeter(): void {
-  const held = heldMeter;
-  if (!held) return;
-  if (held.changed()) {
-    heldMeter = null;
-    return;
-  }
-  if ([...meterInFlight].some((p) => p > held.n)) return;
-  shownMeter = held.n;
-  heldMeter = null;
-  myStorage.set(held.storage);
+// showMeter shows call n's figures unless the session changed or a newer answer is shown already.
+function showMeter(n: number, storage: MeStorage | null, changed: () => boolean): void {
+  if (changed() || n <= shownMeter) return;
+  shownMeter = n;
+  myStorage.set(storage);
 }
 
 // latestBreakdownRequest numbers the breakdown reads alone. The breakdown has its own counter, so a plain refresh that starts
@@ -60,35 +38,20 @@ export const myBreakdown = userWritable<Breakdown | null>(null);
 export async function refreshMyStorage(): Promise<void> {
   const changed = sessionChanged();
   const request = ++latestMeterRequest;
-  meterInFlight.add(request);
-  let me: { storage?: MeStorage };
-  try {
-    me = await api<{ storage?: MeStorage }>('GET', '/api/v1/me');
-  } catch (err) {
-    failMeter(request);
-    throw err;
-  }
-  answerMeter(request, me.storage ?? null, changed);
+  const me = await api<{ storage?: MeStorage }>('GET', '/api/v1/me');
+  showMeter(request, me.storage ?? null, changed);
 }
 
 // refreshMyBreakdown reads GET /me with the breakdown asked for: the meter's figures, and the old versions and the trash.
-// Its meter figures go through the same answers as a plain refresh (answerMeter), so an older breakdown never shows over a
-// newer call that is still in flight.
+// Its meter figures go through the same rule as a plain refresh (showMeter), so an older breakdown never overwrites a newer one.
 export async function refreshMyBreakdown(): Promise<void> {
   const changed = sessionChanged();
   const request = ++latestMeterRequest;
   const breakdownRequest = ++latestBreakdownRequest;
-  meterInFlight.add(request);
-  let me: { storage?: MeStorage & { breakdown?: Breakdown } };
-  try {
-    me = await api<{ storage?: MeStorage & { breakdown?: Breakdown } }>('GET', '/api/v1/me?storage=breakdown');
-  } catch (err) {
-    failMeter(request);
-    throw err;
-  }
-  const s = me.storage;
-  answerMeter(request, s ? { used_bytes: s.used_bytes, reserved_bytes: s.reserved_bytes, quota_bytes: s.quota_bytes, available_bytes: s.available_bytes } : null, changed);
+  const me = await api<{ storage?: MeStorage & { breakdown?: Breakdown } }>('GET', '/api/v1/me?storage=breakdown');
   if (changed()) return;
+  const s = me.storage;
+  showMeter(request, s ? { used_bytes: s.used_bytes, reserved_bytes: s.reserved_bytes, quota_bytes: s.quota_bytes, available_bytes: s.available_bytes } : null, changed);
   if (breakdownRequest === latestBreakdownRequest) myBreakdown.set(s?.breakdown ?? null);
 }
 

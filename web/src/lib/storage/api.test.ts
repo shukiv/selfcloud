@@ -142,14 +142,27 @@ describe("the breakdown and the meter racing (wf1)", () => {
     const breakdownCall = refreshMyBreakdown();
     const plainCall = refreshMyStorage();
 
-    older.resolve(withBreakdown(100, 10));
-    await breakdownCall;
-    expect(get(myBreakdown)).toEqual(breakdown(10));
-    // The older call's figures are not shown while the newer plain call is still in flight (review item 3).
-    expect(get(myStorage)).toBeNull();
+    // The newer plain call answers first; the older breakdown's figures must not show over it when they land (review item 3).
     newer.resolve(storage(200));
     await plainCall;
     expect(get(myStorage)?.used_bytes).toBe(200);
+    older.resolve(withBreakdown(100, 10));
+    await breakdownCall;
+    expect(get(myStorage)?.used_bytes).toBe(200);
+    expect(get(myBreakdown)).toEqual(breakdown(10));
+  });
+
+  // Review item 1 (wf1): a newer call that never settles hides nothing. An answer shows when it is newer than the one shown.
+  it("shows an older answer while a newer call has not settled", async () => {
+    const older = held<unknown>();
+    const newer = held<unknown>();
+    mocks.api.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+
+    const first = refreshMyStorage();
+    void refreshMyStorage();
+    older.resolve(storage(100));
+    await first;
+    expect(get(myStorage)?.used_bytes).toBe(100);
   });
 
   // Review item 4 (wf1): a failed breakdown read must not drop an older plain refresh's figures.
