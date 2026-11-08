@@ -24,14 +24,14 @@ import (
 var webhookAuditNoEvent = map[string]string{
 	// Background imports (decision 92, round 3, F19): the audit rows are the record; the outcome is an import.* event.
 	"imports.archive": "the archive source switch is an account setting; no event (decision 92)",
-		// The account's templates folder is a setting, as the archive switch is; the documents made from a template are
-		// node.create, which already reports file.created (decision 105).
-		"templates.folder": "the account's templates folder is an account setting; no event (decision 105)",
-	"import.start":    "the request is reported as import.started, with the import's IDs and counts",
-	"import.finish":   "the outcome is reported as import.completed, import.failed or import.cancelled",
-	"import.pause":    "a pause by the owner is audited here; the event list has no pause event",
-	"import.resume":   "a resume by the owner is audited here; the event list has no resume event",
-	"import.cancel":   "a cancel is reported as import.cancelled when its cleanup ends",
+	// The account's templates folder is a setting, as the archive switch is; the documents made from a template are
+	// node.create, which already reports file.created (decision 105).
+	"templates.folder": "the account's templates folder is an account setting; no event (decision 105)",
+	"import.start":     "the request is reported as import.started, with the import's IDs and counts",
+	"import.finish":    "the outcome is reported as import.completed, import.failed or import.cancelled",
+	"import.pause":     "a pause by the owner is audited here; the event list has no pause event",
+	"import.resume":    "a resume by the owner is audited here; the event list has no resume event",
+	"import.cancel":    "a cancel is reported as import.cancelled when its cleanup ends",
 
 	"node.purge":           "design: a purge sends nothing more; the trash already reported file.deleted",
 	"node.transfer":        "a move into My files reports file.moved from ownership.go; a change of owner in a team space reports nothing",
