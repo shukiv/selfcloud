@@ -66,6 +66,23 @@ export async function launchBrowser(binary, profileDir, { mouse = false, finger 
   return { proc, wsUrl: page.webSocketDebuggerUrl };
 }
 
+// openedTab waits for the tab a script opened (decision 102): the browser's page list holds it at pathPart, and the returned
+// Page is on that tab, on the same debugging port as the opener. The new tab's own requests are recorded by its own Page.
+export async function openedTab(opener, pathPart) {
+  const origin = `http://${new URL(opener.ws.url).host}`;
+  for (let i = 0; i < 150; i++) {
+    const list = await (await fetch(`${origin}/json/list`)).json();
+    const t = list.find((x) => x.type === 'page' && new URL(x.url).pathname.startsWith(pathPart));
+    if (t) {
+      const p = new Page(t.webSocketDebuggerUrl);
+      await p.opened;
+      return p;
+    }
+    await sleep(100);
+  }
+  throw new Error(`no tab opened at ${pathPart}`);
+}
+
 // Page is one tab. It records what the policy tests need: console errors, uncaught exceptions,
 // security-policy log entries, and every request's URL. Every violation of the content policy,
 // enforced or report-only, is recorded as an error, so a run with one fails.

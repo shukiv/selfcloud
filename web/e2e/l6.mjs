@@ -6,6 +6,7 @@
 // own folder inside Team A, so the default name is the one the server gives on a first document there. The folder is removed
 // in a finally, and the language and the viewport are put back.
 import { setLanguage, setTheme, sleep } from './media.mjs';
+import { openedTab } from './cdp.mjs';
 
 const q = (v) => JSON.stringify(v);
 
@@ -13,7 +14,8 @@ const q = (v) => JSON.stringify(v);
 async function pickMenuItem(page, text) {
   const visible = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]')].filter((x) => x.textContent.trim() === ${q(text)})`;
   await page.waitFor(`${visible}.length > 0`, 10000);
-  await page.evaluate(`${visible}[0].click()`);
+  // With a user gesture, as a person's click is: the new document's tab is a pop-up, which the browser blocks without one.
+  await page.send('Runtime.evaluate', { expression: `${visible}[0].click()`, userGesture: true, returnByValue: true, awaitPromise: true });
 }
 
 // l6Checks runs the section. opts: the member's page (an editor on Team A), the base address, the account key, the team folder
@@ -46,8 +48,11 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
     await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
     await page.evaluate(`document.querySelector('[data-testid="new-button"]').click()`);
+    // The new document opens in its own tab (decision 102, round 2 R5): the listing stays here; the file's editor is there.
+    const listingPage = page;
     await pickMenuItem(page, 'Document');
-    await page.waitFor(`location.pathname.startsWith('/edit/')`, 15000);
+    page = await openedTab(listingPage, '/edit/new');
+    await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/new'`, 15000);
     newID = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
     const created = await api(base, 'GET', `/api/v1/nodes/${newID}`, accountKey);
     check(created.name === docName && created.kind === 'file', `New -> Document made "${docName}" in the folder (${created.name})`);
@@ -67,9 +72,10 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     check(seen !== null && seen.checkStatus === 200 && seen.userCanWrite === true,
       `the fake editor received CheckFileInfo for "${docName}" and may write (${JSON.stringify(seen)})`);
 
-    // Back returns to the folder, and the folder lists the new file.
+    // Close ends the editor's tab, and the listing shows the folder, with the new file in it.
     await page.waitFor(`!!document.querySelector('button[aria-label="Close"]')`, 15000);
     await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close').click()`);
+    page = listingPage;
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
     await rowAppears(page, docName);
     check(true, 'Back returns to the folder, which lists "Untitled document.docx"');
@@ -83,13 +89,16 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     const pageNew = `[...document.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === 'New' && !b.closest('.shell-sider'))`;
     await page.waitFor(`!!${pageNew}`, 15000);
     await page.evaluate(`${pageNew}.click()`);
+    const listingPage2 = page;
     await pickMenuItem(page, 'Document');
-    await page.waitFor(`location.pathname.startsWith('/edit/')`, 15000);
+    page = await openedTab(listingPage2, '/edit/new');
+    await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/new'`, 15000);
     const second = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
     const made2 = await api(base, 'GET', `/api/v1/nodes/${second}`, accountKey);
     check(made2.name === 'Untitled document (1).docx' && made2.folder_id === teamA, `the page's own New makes "${made2.name}" in Team A (${made2.folder_id})`);
     await page.waitFor(`!!document.querySelector('button[aria-label="Close"]')`, 15000);
     await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Close').click()`);
+    page = listingPage2;
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
     await rowAppears(page, docName);
     await rowAppears(page, made2.name);

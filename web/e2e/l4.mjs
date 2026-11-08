@@ -12,26 +12,10 @@
 import { mkdir } from 'node:fs/promises';
 import { setLanguage, setTheme, shot, sleep } from './media.mjs';
 import { pickMenuEntry } from './menu.mjs';
-import { Page } from './cdp.mjs';
+import { openedTab } from './cdp.mjs';
 
 const q = (v) => JSON.stringify(v);
 
-// openedTab waits for the tab a script opened (decision 102): the browser's page list holds it at pathPart, and the
-// returned page is on that tab. The opener's debugging port is the one the new tab is on.
-async function openedTab(opener, pathPart) {
-  const origin = `http://${new URL(opener.ws.url).host}`;
-  for (let i = 0; i < 150; i++) {
-    const list = await (await fetch(`${origin}/json/list`)).json();
-    const t = list.find((x) => x.type === 'page' && new URL(x.url).pathname.startsWith(pathPart));
-    if (t) {
-      const p = new Page(t.webSocketDebuggerUrl);
-      await p.opened;
-      return p;
-    }
-    await sleep(100);
-  }
-  throw new Error(`no tab opened at ${pathPart}`);
-}
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
