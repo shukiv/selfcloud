@@ -3,6 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { App as AntApp } from "antd";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNewDocument } from "./documents";
@@ -53,7 +54,7 @@ describe("a New document goes where the page shows, never to a stale place (race
       [{ path: "*", element: <AntApp><Pick /></AntApp> }],
       { initialEntries: [`/files/${folderB}/${dirB}`] },
     );
-    render(<RouterProvider router={router} />);
+    render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router} /></QueryClientProvider>);
     fireEvent.click(screen.getByText("pick"));
     expect(spy).not.toHaveBeenCalled();
     expect(opened(spy).join(" ")).not.toContain(dirA);
@@ -74,7 +75,7 @@ describe("the pick opens the new-document page for the directory shown (round 2 
       [{ path: "*", element: <AntApp><Pick /></AntApp> }],
       { initialEntries: [`/files/${folderB}/${dirB}`] },
     );
-    render(<RouterProvider router={router} />);
+    render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router} /></QueryClientProvider>);
     fireEvent.click(screen.getByText("pick"));
     expect(spy).toHaveBeenCalledTimes(1);
     const [url, target, features] = spy.mock.calls[0] as [string, string, string];
@@ -84,5 +85,48 @@ describe("the pick opens the new-document page for the directory shown (round 2 
     expect(features).toBe("noopener");
     expect(createDocument).toHaveBeenCalledWith(dirB, "docx");
     expect(router.state.location.pathname).toBe(`/files/${folderB}/${dirB}`);
+  });
+});
+
+describe("the opener refreshes the listing its own create changed (decision 102, round 2 R5 fix)", () => {
+  beforeEach(() => {
+    newPlace.set(null);
+    vi.restoreAllMocks();
+  });
+
+  it("after the create succeeds, the folder's listing is invalidated, so the new row is there when the person comes back", async () => {
+    vi.mocked(createDocument).mockResolvedValueOnce({ id: "nod_new", name: "Untitled document.docx" } as never);
+    const spy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const dir = { id: dirB, name: "d", kind: "dir" } as never;
+    newPlace.set(placeOfHere({ folder: folderB, folderName: null, folderRole: "contributor", dir, dirRole: "contributor", trail: [], rootReachable: true, reach: [], spaceNoDownload: false, path: "/d" } as never, true, true));
+    const router = createMemoryRouter(
+      [{ path: "*", element: <AntApp><Pick /></AntApp> }],
+      { initialEntries: [`/files/${folderB}/${dirB}`] },
+    );
+    render(<QueryClientProvider client={qc}><RouterProvider router={router} /></QueryClientProvider>);
+    fireEvent.click(screen.getByText("pick"));
+    expect(spy).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(invalidate).toHaveBeenCalled());
+    const keys = invalidate.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown[] }).queryKey));
+    expect(keys.some((k) => k.includes('"children"'))).toBe(true);
+  });
+
+  it("a create that fails invalidates nothing", async () => {
+    vi.mocked(createDocument).mockRejectedValueOnce(new Error("over quota"));
+    vi.spyOn(window, "open").mockImplementation(() => null);
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const dir = { id: dirB, name: "d", kind: "dir" } as never;
+    newPlace.set(placeOfHere({ folder: folderB, folderName: null, folderRole: "contributor", dir, dirRole: "contributor", trail: [], rootReachable: true, reach: [], spaceNoDownload: false, path: "/d" } as never, true, true));
+    const router = createMemoryRouter(
+      [{ path: "*", element: <AntApp><Pick /></AntApp> }],
+      { initialEntries: [`/files/${folderB}/${dirB}`] },
+    );
+    render(<QueryClientProvider client={qc}><RouterProvider router={router} /></QueryClientProvider>);
+    fireEvent.click(screen.getByText("pick"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(invalidate).not.toHaveBeenCalled();
   });
 });

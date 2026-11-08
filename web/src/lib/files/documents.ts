@@ -5,6 +5,7 @@
 // (newDocumentHandoff.ts). A GET never creates a file: the wait page and the editor's address make none. On a coarse pointer
 // the same wait page opens in this tab.
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLang } from '../i18n';
 import { get } from '../store';
@@ -12,6 +13,7 @@ import { createDocument } from './api';
 import { coarsePointer, safeFrom } from './editor';
 import { fileErrorText } from './fileErrors';
 import { finishHandoff, newKey, startHandoff, waitPath } from './newDocumentHandoff';
+import { refreshTree } from '../query';
 import { newPlace, placeForRoute } from './newPlace';
 
 export type DocumentKind = 'docx' | 'xlsx' | 'pptx';
@@ -26,6 +28,8 @@ export function openNewDocumentTab(
     coarse: boolean;
     goTo: (to: string) => void;
     fail: (err: unknown) => string;
+    // created runs once the server has made the file: the listing the new row belongs in is read again (decision 102).
+    created?: () => void;
   },
   open: (url: string, target: string, features: string) => unknown = (u, t, f) => window.open(u, t, f),
 ): void {
@@ -36,7 +40,10 @@ export function openNewDocumentTab(
   else open(waitPath(k), '_blank', 'noopener');
   const tab = !o.coarse;
   void createDocument(o.parent, o.kind).then(
-    (node) => finishHandoff(k, { node: node.id, from: back, tab }),
+    (node) => {
+      o.created?.();
+      finishHandoff(k, { node: node.id, from: back, tab });
+    },
     (err: unknown) => finishHandoff(k, { error: o.fail(err) }),
   );
 }
@@ -48,10 +55,12 @@ export function useNewDocument(): (kind: DocumentKind) => void {
   const navigate = useNavigate();
   const location = useLocation();
   const lang = useLang();
+  const qc = useQueryClient();
   return useCallback(
     (kind: DocumentKind) => {
       const place = placeForRoute(get(newPlace), location.pathname);
       if (!place?.nodeID) return;
+      const branch = { folder: place.where.folder, dir: place.where.dirID };
       openNewDocumentTab({
         parent: place.nodeID,
         kind,
@@ -59,8 +68,9 @@ export function useNewDocument(): (kind: DocumentKind) => void {
         coarse: coarsePointer(),
         goTo: (to) => navigate(to),
         fail: (err) => fileErrorText(err, lang),
+        created: () => void refreshTree(qc, [branch]),
       });
     },
-    [navigate, location.pathname, location.search, lang],
+    [navigate, location.pathname, location.search, lang, qc],
   );
 }
