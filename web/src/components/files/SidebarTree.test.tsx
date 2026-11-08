@@ -17,7 +17,7 @@ import Shell from "../Shell";
 import { createQueryClient, refreshTree } from "../../lib/query";
 import { ApiError } from "../../lib/apiError";
 import { treePlace } from "../../lib/files/treePlace";
-import { brand } from "../../lib/brand";
+import { brand, brandLoaded } from "../../lib/brand";
 import { DEFAULT_ACCENT } from "../../theme/tokens";
 
 const mocks = vi.hoisted(() => ({
@@ -362,7 +362,10 @@ describe("the folder tree in the sidebar", () => {
     treePlace.set({ folder: "fld_p", chain: [] });
     renderShell("/files/fld_p");
     await waitFor(() => expect(document.querySelector('[data-testid="new-button"]')).not.toBeNull());
-    expect(document.querySelector('[data-testid="sidebar-top-gap"]')).toBeNull();
+    // Decision 109: on a files page New follows the brand block, one edge (10 px) below it; the block keeps its own top edge.
+    const brandBlock = document.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
+    expect(brandBlock?.style.paddingBlockStart).toBe("10px");
+    expect(brandBlock?.style.marginBlockEnd).toBe("10px");
     restore();
   });
 
@@ -447,6 +450,7 @@ describe("the folder tree in the sidebar", () => {
   // browser tab and the sign-in pages (not tested here). The sidebar is a named region, and the top bar a banner.
   // Decision 109 reverses 69's no-logo rule for the sidebar: the logo or the mark is at its top, in the rail and in the drawer.
   it("draws the logo at the top of the sidebar, the rail and the phone drawer, and no brand in the top bar", async () => {
+    brandLoaded.set(true);
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo.png" });
     try {
       signIn("member");
@@ -494,6 +498,7 @@ describe("the folder tree in the sidebar", () => {
       window.matchMedia = plain;
     } finally {
       brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null });
+      brandLoaded.set(false);
     }
   });
 });

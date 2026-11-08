@@ -28,7 +28,7 @@ const notBuiltPage = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SelfCloud</title>
+<title>__SELFCLOUD_BRAND__</title>
 </head>
 <body>
 <p>The web interface is not built. Run make build.</p>
@@ -110,6 +110,10 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		if len(parts) == 1 {
 			return nil, errors.New("web: index.html has no CSP nonce placeholder; rebuild the web interface")
 		}
+		// The title and the noscript text carry the installation's name before any script runs (decision 109).
+		for i := range parts {
+			parts[i] = strings.ReplaceAll(parts[i], brandPlaceholder, brandHTML(brand.name))
+		}
 		h.index = parts
 	}
 	return h, nil
@@ -152,6 +156,9 @@ func (h *Handler) Serves(r *http.Request) bool {
 		return false
 	}
 	p := r.URL.Path
+	if p == wordmarkPath && !h.brand.artwork {
+		return false
+	}
 	if isPWAPath(p) {
 		// The manifest and the icons sit under /brand, which is reserved below, so they are checked first.
 		return true
@@ -216,7 +223,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		name, fallback = "index.html", true
 		data, err = fs.ReadFile(h.files, name)
 		if err != nil {
-			data = []byte(notBuiltPage)
+			data = []byte(strings.ReplaceAll(notBuiltPage, brandPlaceholder, brandHTML(h.brand.name)))
 		}
 	}
 	hd := w.Header()

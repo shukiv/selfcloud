@@ -449,7 +449,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         } as CSSProperties}
       >
         {/* The brand's block carries the gap New leaves under it, so New is one edge below the brand (decision 109). */}
-        <SidebarBrand collapsed={collapsedNow} coarse={coarse} text={sidebar.text} />
+        <SidebarBrand collapsed={collapsedNow} coarse={coarse} text={sidebar.text} background={sidebar.bg} />
         {newShown && <SidebarNew place={newWhere} failure={placeFailure} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} onPick={pick} onFolder={(where) => setFolderWhere(where)}
           documents={onFiles ? documentKinds(placeForRoute(shownPlace, location.pathname), editorOn, impersonating) : []} onDocument={makeDocument} />}
         <div className="shell-scroll">

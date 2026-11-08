@@ -1,4 +1,4 @@
-Subject: {{.Count}} new mentions and replies in SelfCloud
+Subject: {{.Count}} new mentions and replies in {{.Brand}}
 
 You have {{.Count}} new mentions and replies.
 

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { theme as antdTheme } from "antd";
 import { useT } from "../lib/i18n";
 import { useStore } from "../lib/store";
-import { brand } from "../lib/brand";
+import { brand, brandLoaded, safeLogo } from "../lib/brand";
 import { flash } from "../lib/session";
 import { RADIUS } from "../theme/tokens";
 import Alert from "./Alert";
@@ -19,12 +19,16 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
   const { token } = antdTheme.useToken();
   const b = useStore(brand);
   const note = useStore(flash);
-  // The SelfCloud artwork has its name inside the picture, so no name is drawn beside it (decision 109).
-  const brandMark = b.artwork ? (
-    b.logo_url && <img src={b.logo_url} alt={b.name} height={64} />
+  const loaded = useStore(brandLoaded);
+  // Until the brand is loaded nothing is drawn, and the space of the logo is kept so nothing moves (decision 109). The SelfCloud
+  // artwork has its name inside the picture, so no name is drawn beside it; its picture is /brand/logo.
+  const brandMark = !loaded ? (
+    <div aria-hidden="true" style={{ height: 64 }} />
+  ) : b.artwork ? (
+    <img src="/brand/logo" alt={b.name} height={64} />
   ) : (
     <>
-      {b.logo_url && <img src={b.logo_url} alt="" width={56} height={56} />}
+      {safeLogo(b.logo_url) && <img src={safeLogo(b.logo_url) ?? undefined} alt="" width={56} height={56} />}
       <p className="auth-brand-name">
         <bdi>{b.name}</bdi>
       </p>

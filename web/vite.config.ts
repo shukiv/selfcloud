@@ -104,6 +104,7 @@ export default defineConfig({
     proxy: {
       "/api": api,
       "/brand": api,
+      "/favicon.svg": api,
     },
   },
   test: {

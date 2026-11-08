@@ -256,19 +256,19 @@ var unsubscribePage = template.Must(template.New("unsubscribe").Parse(`<!doctype
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SelfCloud</title>
+<title>{{.Brand}}</title>
 </head>
 <body style="font-family: sans-serif; max-width: 36em; margin: 2em auto; padding: 0 1em;">
 {{- if eq .State "confirm"}}
 <h1>Stop comment emails</h1>
-<p>SelfCloud will stop sending you emails about comments and mentions. Notifications in SelfCloud stay on.</p>
+<p>{{.Brand}} will stop sending you emails about comments and mentions. Notifications in {{.Brand}} stay on.</p>
 <form method="post" action="{{.Action}}"><button type="submit">Stop these emails</button></form>
 {{- else if eq .State "done"}}
 <h1>Done</h1>
 <p>You will no longer get emails about comments. You can turn them back on in your notification settings.</p>
 {{- else}}
 <h1>This link is not valid</h1>
-<p>Open a newer email from SelfCloud, or turn emails off in your notification settings.</p>
+<p>Open a newer email from {{.Brand}}, or turn emails off in your notification settings.</p>
 {{- end}}
 </body>
 </html>
@@ -276,7 +276,7 @@ var unsubscribePage = template.Must(template.New("unsubscribe").Parse(`<!doctype
 
 // writeUnsubscribePage writes the page in state, with status. A page is not cached and does not pass the token on in a
 // referrer.
-func writeUnsubscribePage(w http.ResponseWriter, status int, state, action string) {
+func (s *Server) writeUnsubscribePage(w http.ResponseWriter, status int, state, action string) {
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
@@ -284,7 +284,7 @@ func writeUnsubscribePage(w http.ResponseWriter, status int, state, action strin
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'")
 	w.WriteHeader(status)
-	_ = unsubscribePage.Execute(w, struct{ State, Action string }{state, action})
+	_ = unsubscribePage.Execute(w, struct{ Brand, State, Action string }{s.cfg.UI.Brand.Name, state, action})
 }
 
 // handleUnsubscribeForm answers the page an unsubscribe link opens. It changes nothing: a mail client or a scanner that opens
@@ -292,10 +292,10 @@ func writeUnsubscribePage(w http.ResponseWriter, status int, state, action strin
 func (s *Server) handleUnsubscribeForm(w http.ResponseWriter, r *http.Request) error {
 	tok := r.URL.Query().Get("t")
 	if _, _, ok := s.openUnsubscribe(tok); !ok {
-		writeUnsubscribePage(w, http.StatusBadRequest, "invalid", "")
+		s.writeUnsubscribePage(w, http.StatusBadRequest, "invalid", "")
 		return nil
 	}
-	writeUnsubscribePage(w, http.StatusOK, "confirm", notifyUnsubPath+"?t="+url.QueryEscape(tok))
+	s.writeUnsubscribePage(w, http.StatusOK, "confirm", notifyUnsubPath+"?t="+url.QueryEscape(tok))
 	return nil
 }
 
@@ -306,7 +306,7 @@ func (s *Server) handleUnsubscribeForm(w http.ResponseWriter, r *http.Request) e
 func (s *Server) handleUnsubscribe(w http.ResponseWriter, r *http.Request) error {
 	acc, usr, ok := s.openUnsubscribe(r.URL.Query().Get("t"))
 	if !ok {
-		writeUnsubscribePage(w, http.StatusBadRequest, "invalid", "")
+		s.writeUnsubscribePage(w, http.StatusBadRequest, "invalid", "")
 		return nil
 	}
 	ctx := r.Context()
@@ -322,6 +322,6 @@ func (s *Server) handleUnsubscribe(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	writeUnsubscribePage(w, http.StatusOK, "done", "")
+	s.writeUnsubscribePage(w, http.StatusOK, "done", "")
 	return nil
 }

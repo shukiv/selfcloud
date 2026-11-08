@@ -182,8 +182,8 @@ paths:
         The file named by `ui.brand.logo_file`, read at start (PNG or SVG, at most 256 KiB). Served
         whether or not the web interface is on. `brand.logo_url` in `/info` is null when there is no
         logo, and this route then answers `not_found`. An SVG is sent with a sandbox policy. With no
-        logo file and the default name (`SelfCloud`), this route answers the SelfCloud artwork, and
-        `brand.logo_url` is this route (`brand.artwork` is true; decision 109).
+        logo file and the default name (`SelfCloud`), this route answers the SelfCloud artwork, though
+        `brand.logo_url` stays null (`brand.artwork` is true; decision 109).
       responses:
         "200":
           description: The logo, as image/png or image/svg+xml.
@@ -1913,9 +1913,9 @@ paths:
         Account key, admin key, or an owner session. The `verification` method decides how the
         user proves the address:
 
-        - `email`: Selfcloud mails a link. If mail is not configured, or the mail fails to send,
+        - `email`: SelfCloud mails a link. If mail is not configured, or the mail fails to send,
           the user is still created and `verification.sent` says whether the mail went out.
-        - `link`: Selfcloud returns the link and token in `verification`, for the client to
+        - `link`: SelfCloud returns the link and token in `verification`, for the client to
           deliver.
         - `none`: the user is verified at once. Only an account or admin key may do this.
 
@@ -6177,7 +6177,7 @@ components:
         items: { type: array, items: { $ref: "#/components/schemas/NodeLabel" } }
     WebhookEvent:
       description: |
-        The body of every event. Selfcloud writes the bytes it will send, so the signature (slice j3) covers exactly
+        The body of every event. SelfCloud writes the bytes it will send, so the signature (slice j3) covers exactly
         what the receiver reads. The event ID is the same on every attempt; receivers de-duplicate on it.
         The data of quota.warning and quota.exceeded is QuotaEventData. The test route sends webhook.test, whose data is
         an empty object. A quota event is sent once when its level is crossed, and again only after usage drops below it.
@@ -7208,7 +7208,7 @@ components:
       type: object
       required: [name, version, public_url, web_interface, brand, password_min_length, limits, sharing_max_expiry_days, features]
       properties:
-        name: { type: string, example: SelfCloud }
+        name: { type: string, example: SelfCloud, description: "The software's identity, SelfCloud. It is not the installation's name, which is brand.name, and it does not change with the configuration." }
         version: { type: string, example: 0.1.0 }
         public_url:
           type: string
@@ -7252,7 +7252,7 @@ components:
       properties:
         name:
           type: string
-          description: The product name, shown in the web interface's header and title.
+          description: The installation's name (ui.brand.name; the default is SelfCloud), shown in the web interface, the page titles and the installed app. It is what a client shows to a person.
           example: SelfCloud
         accent:
           type: string
@@ -7261,7 +7261,7 @@ components:
           example: "#053D8E"
         logo_url:
           type: [string, "null"]
-          description: The logo's URL (`/brand/logo`), or null when the installation has none. The file's path is never sent. For the default brand it is the SelfCloud artwork.
+          description: The URL of the installation's own logo file (`/brand/logo`), or null when it has no logo file. The file's path is never sent. The SelfCloud artwork has no URL here; `artwork` says whether it is shown.
         artwork:
           type: boolean
           description: "True when the installation shows the SelfCloud artwork, which is the default name with no logo file. The artwork is one picture with the name inside it, so the web interface draws no name beside it (decision 109)."

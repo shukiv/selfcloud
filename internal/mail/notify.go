@@ -24,7 +24,9 @@ type Entry struct {
 
 // Digest is the data of a mail that covers several notifications: how many there are, and up to a few of them as entries.
 type Digest struct {
-	Count   int
+	Count int
+	// Brand is the installation's name, for the subject (decision 109).
+	Brand   string
 	Entries []Entry
 }
 

@@ -41,7 +41,7 @@ var wantFields = map[string][]string{
 	PurposeDrop:           {"Count", "Folder", "Link"},
 	// Kind only chooses a sentence in a conditional, which fieldsOf does not count, so it is not listed.
 	PurposeComment: {"Actor", "Item", "Link"},
-	PurposeDigest:  {"Actor", "Count", "Item", "Link"},
+	PurposeDigest:  {"Actor", "Brand", "Count", "Item", "Link"},
 	// The device confirmation mail says what happened with no name, address, password or agent in it (sec2, decision 86).
 	PurposeDeviceConfirm: {"ExpiresAt", "URL"},
 
@@ -51,10 +51,10 @@ var wantFields = map[string][]string{
 
 // mailData carries every field any purpose uses, so one value can render each template.
 type mailData struct {
-	URL, ExpiresAt, Actor, Item, Role, Link, Message, Folder, Kind string
-	Count                                                          int
-	Approved                                                       bool
-	Entries                                                        []Entry
+	URL, ExpiresAt, Actor, Item, Role, Link, Message, Folder, Kind, Brand string
+	Count                                                                 int
+	Approved                                                              bool
+	Entries                                                               []Entry
 }
 
 // TestEveryPurposeInEveryLanguage checks that each purpose has a template in all seven languages,

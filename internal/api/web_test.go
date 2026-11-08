@@ -159,7 +159,7 @@ func TestInfoBrand(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`"name":"SelfCloud"`,
-		`"brand":{"name":"SelfCloud","accent":"#053D8E","logo_url":"/brand/logo","artwork":true}`,
+		`"brand":{"name":"SelfCloud","accent":"#053D8E","logo_url":null,"artwork":true}`,
 		`"password_min_length":8`,
 	} {
 		if !strings.Contains(body, want) {

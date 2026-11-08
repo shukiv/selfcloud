@@ -238,11 +238,15 @@ func markSVG(b brandInfo) []byte {
 
 // brandSVGs are the SVG files the server answers for a brand, by path.
 func brandSVGs(b brandInfo) map[string][]byte {
-	return map[string][]byte{
-		faviconPath:  faviconSVG(b),
-		markPath:     markSVG(b),
-		wordmarkPath: brandFile("selfcloud-logo-transparent.svg"),
+	out := map[string][]byte{
+		faviconPath: faviconSVG(b),
+		markPath:    markSVG(b),
 	}
+	// The wordmark is the SelfCloud artwork's; a custom name shows its name as text, so it has none (decision 109).
+	if b.artwork {
+		out[wordmarkPath] = brandFile("selfcloud-logo-transparent.svg")
+	}
+	return out
 }
 
 // isBrandSVGPath reports whether p is one of the SVG files of the brand.

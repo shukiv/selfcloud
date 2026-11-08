@@ -167,7 +167,8 @@ func (s *Server) features() []string {
 	return out
 }
 
-// brandInfo describes the brand; the logo URL is set when there is a logo or the artwork (decision 109).
+// brandInfo describes the brand. The logo URL is set only for a custom logo file, so a client that reads it as "has a custom
+// logo" is right; the artwork is named by artwork instead (decision 109).
 func (s *Server) brandInfo() infoBrand {
 	brand := s.cfg.UI.Brand
 	b := infoBrand{
@@ -177,7 +178,7 @@ func (s *Server) brandInfo() infoBrand {
 		Palette: infoPaletteOf(brand.Palette),
 		Sidebar: infoSidebarOf(brand.Sidebar),
 	}
-	if s.logo != nil || b.Artwork {
+	if s.logo != nil {
 		u := logoPath
 		b.LogoURL = &u
 	}

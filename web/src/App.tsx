@@ -6,7 +6,7 @@ import { Spin, ConfigProvider } from "antd";
 import type { Locale } from "antd/es/locale";
 import enUS from "antd/locale/en_US";
 import { loadInfo, loadMe } from "./lib/auth";
-import { applyBrand, brand, passwordMinLength } from "./lib/brand";
+import { applyBrand, DEFAULT_BRAND, passwordMinLength } from "./lib/brand";
 import { maxExpiryDays } from "./lib/sharing/limits";
 import { CONVERT_FEATURE, featureOn, officeConvert } from "./lib/files/convert";
 import { EDIT_FEATURE, officeEdit } from "./lib/files/editor";
@@ -17,7 +17,7 @@ import { homeFor, mayOpen, targetOf, type ManageSection, type Target } from "./l
 import type { User } from "./lib/types";
 import { antdLocaleOf, directionOf, matchLang, setLang, useLang, useT, type Lang } from "./lib/i18n";
 import { PREF_LANG, readPref } from "./lib/prefs";
-import { get, useStore } from "./lib/store";
+import { useStore } from "./lib/store";
 import Shell from "./components/Shell";
 import AuthLayout from "./components/AuthLayout";
 import LoginPage from "./pages/LoginPage";
@@ -167,7 +167,7 @@ export function Boot({ children }: { children: ReactNode }) {
       } catch {
         info = null;
       }
-      applyBrand(info?.brand ?? get(brand));
+      applyBrand(info?.brand ?? DEFAULT_BRAND);
       passwordMinLength.set(info?.passwordMinLength ?? 8);
       maxExpiryDays.set(info?.sharingMaxExpiryDays ?? 0);
       officeConvert.set(info !== null && featureOn(info.features, CONVERT_FEATURE));

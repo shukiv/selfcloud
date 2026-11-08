@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"image/color"
 )
@@ -142,14 +143,37 @@ func TestFaviconFollowsTheBrand(t *testing.T) {
 	}
 }
 
-// TestBrandSVGsAreServed: the wordmark is served for every installation, the mark is the mark for the default brand and the
-// glyph for a custom name. Both are served only with the web interface, like the icons.
+// TestIndexCarriesTheInstallationsName: the page the server sends carries the installation's name in its title and its
+// noscript text, before any script runs, and never the default name when another name is set (decision 109).
+func TestIndexCarriesTheInstallationsName(t *testing.T) {
+	files := testFiles()
+	files["index.html"] = &fstest.MapFile{Data: []byte(`<!doctype html><meta property="csp-nonce" nonce="` + cspNoncePlaceholder +
+		`"><title>` + brandPlaceholder + `</title><noscript>` + brandPlaceholder + ` needs JavaScript.</noscript>`)}
+	h := newTestHandler(t, files, Options{BrandName: "Acme <Drive>", BrandAccent: "#053D8E"})
+	body := get(t, h, http.MethodGet, "/").Body.String()
+	if !strings.Contains(body, "<title>Acme &lt;Drive&gt;</title>") || !strings.Contains(body, "Acme &lt;Drive&gt; needs JavaScript.") {
+		t.Errorf("the page does not carry the installation's name, escaped: %.300s", body)
+	}
+	if strings.Contains(body, "SelfCloud") || strings.Contains(body, brandPlaceholder) {
+		t.Errorf("the page names the default brand or keeps the placeholder: %.300s", body)
+	}
+}
+
+// TestBrandSVGsAreServed: the mark is the mark for the default brand and the glyph for a custom name. The wordmark is served
+// only for the default brand, since a custom name shows its name as text. All of them need the web interface, like the icons.
 func TestBrandSVGsAreServed(t *testing.T) {
 	art := artworkHandler(t, "#053D8E")
 	for _, p := range []string{wordmarkPath, markPath} {
 		if !art.Serves(httptest.NewRequest(http.MethodGet, p, nil)) {
-			t.Errorf("%s is not served by the web interface", p)
+			t.Errorf("%s is not served by the web interface with the default brand", p)
 		}
+	}
+	custom := pwaHandler(t, "Acme", "#053D8E")
+	if custom.Serves(httptest.NewRequest(http.MethodGet, wordmarkPath, nil)) {
+		t.Error("the wordmark is served for a custom name")
+	}
+	if !custom.Serves(httptest.NewRequest(http.MethodGet, markPath, nil)) {
+		t.Error("the mark is not served for a custom name")
 	}
 	if w := get(t, art, http.MethodGet, wordmarkPath).Body.String(); !strings.Contains(w, `aria-label="SelfCloud"`) {
 		t.Error("the wordmark file is not the SelfCloud wordmark")

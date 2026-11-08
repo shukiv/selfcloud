@@ -45,7 +45,14 @@ export { DEFAULT_ACCENT };
 // The minimum password length the server accepts, read from /api/v1/info. 8 until it is read.
 export const passwordMinLength = writable(8);
 
-export const brand = writable<Brand>({ name: 'SelfCloud', accent: DEFAULT_ACCENT, logo_url: null });
+// The brand is empty until the server's answer is applied: no name and no picture show before it, so nothing is drawn that the
+// installation may not use (decision 109). brandLoaded says the answer is in.
+export const brand = writable<Brand>({ name: '', accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
+export const brandLoaded = writable(false);
+
+// DEFAULT_BRAND is the brand when the server cannot be reached: the default name with the artwork. It is applied only on that
+// failure, so the default name is never shown before a real answer.
+export const DEFAULT_BRAND: Brand = { name: 'SelfCloud', accent: DEFAULT_ACCENT, logo_url: null, artwork: true };
 
 function rgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);
@@ -245,6 +252,7 @@ export function resolveBrand(b: Brand): ResolvedBrand {
 export function applyBrand(b: Brand): void {
   const accent = validAccent(b.accent) ? b.accent.toUpperCase() : DEFAULT_ACCENT;
   brand.set({ ...b, accent });
+  brandLoaded.set(true);
   document.title = b.name;
   // The light theme's browser colour is the accent, as the installed app's is (decision 65).
   document.querySelector<HTMLMetaElement>('meta[name="theme-color"][media="(prefers-color-scheme: light)"]')?.setAttribute("content", accent);

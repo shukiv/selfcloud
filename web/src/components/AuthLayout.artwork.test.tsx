@@ -6,10 +6,10 @@ import AuthLayout from "./AuthLayout";
 import { ThemeProvider } from "../theme/theme";
 import { Direction } from "../App";
 import { setLang } from "../lib/i18n";
-import { brand, DEFAULT_ACCENT } from "../lib/brand";
+import { brand, brandLoaded, DEFAULT_ACCENT } from "../lib/brand";
 
-// The sign-in brand (decision 109): the SelfCloud artwork is one picture with the name inside it, so the name is not drawn beside
-// it. A custom logo or name is drawn as before.
+// The sign-in brand (decision 109): the SelfCloud artwork is one picture with the name inside it, so the name is not drawn beside it.
+// A custom logo or name is drawn as before. Nothing is drawn before the brand is loaded.
 function renderAuth() {
   return render(
     <ThemeProvider>
@@ -26,11 +26,15 @@ describe("AuthLayout brand (decision 109)", () => {
   beforeEach(async () => {
     window.localStorage.clear();
     await setLang("en");
+    brandLoaded.set(true);
   });
-  afterEach(() => brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null }));
+  afterEach(() => {
+    brandLoaded.set(false);
+    brand.set({ name: "", accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
+  });
 
-  it("shows the artwork alone, and no name beside it", () => {
-    brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: "/brand/logo", artwork: true });
+  it("shows the artwork alone, from /brand/logo, and no name beside it", () => {
+    brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
     const { container } = renderAuth();
     const imgs = container.querySelectorAll("img");
     expect(imgs.length).toBeGreaterThan(0);
@@ -50,5 +54,15 @@ describe("AuthLayout brand (decision 109)", () => {
     const { container } = renderAuth();
     expect(container.querySelector("img")?.getAttribute("src")).toBe("/brand/logo");
     expect(container.querySelector(".auth-brand-name")?.textContent).toBe("Acme Drive");
+  });
+
+  // Before the server's answer there is no name and no picture, and the logo's space stays, so the card does not move.
+  it("shows no name and no picture before the brand is loaded", () => {
+    brandLoaded.set(false);
+    brand.set({ name: "", accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
+    const { container } = renderAuth();
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector(".auth-brand-name")).toBeNull();
+    expect(container.textContent).not.toContain("SelfCloud");
   });
 });

@@ -185,7 +185,7 @@ Content search keeps the words of each file in the database. Deleting the text o
 | `metrics_on_main` | `false` | Serve `/metrics` on the main listener too. Off by default: `/metrics` shows storage totals, route counts and the webhook queue to anyone who can reach the listener (sec1, decision 84). Ignored when `metrics_listen` is set, which serves it on its own address. |
 | `admin_key_file` | none | File holding an admin key to add on start. |
 | `ui.enabled` | `true` | Serve the web interface at `/`. With `false`, the API alone runs; `/` is the JSON 404. |
-| `ui.brand.name` | `SelfCloud` | Product name in the web interface and `/api/v1/info`. Up to 64 characters. |
+| `ui.brand.name` | `SelfCloud` | The installation's name, in the web interface, the page titles, the installed app and `brand.name` in `/api/v1/info`. Up to 64 characters. An installation with only a logo still shows this name as text and in the titles, so set it to replace the default. |
 | `ui.brand.accent` | `#053D8E` | Primary colour, as `#rrggbb`. The web interface derives its accent family from it. |
 | `ui.brand.palette.light` / `.dark` | none | Colour tokens of each theme (`accent`, `accent_fill`, `accent_fill_hover`, `accent_fill_active`, `accent_text`, `accent_soft`, `accent_border`), each `#rrggbb`. Unset tokens keep the default. |
 | `ui.brand.sidebar` | none | Sidebar colours (`bg`, `text`, `caption`, `active`, `on_active`), each `#rrggbb`. Unset ones keep the default. |
@@ -285,7 +285,8 @@ enforces this by reading each package's licence from `node_modules`.
 ## Brand
 
 The SelfCloud mark and wordmark in `docs/brand/` (and the copies the server serves) use the glyph outlines of the Nunito ExtraBold
-typeface, under the SIL Open Font License 1.1. The artwork is SelfCloud's own.
+typeface, under the SIL Open Font License 1.1 (copyright "Copyright 2014 The Nunito Project Authors
+(https://github.com/googlefonts/nunito)", as the font's own notice gives it). The artwork is SelfCloud's own.
 
 ## Licence
 
