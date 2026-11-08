@@ -367,6 +367,8 @@ func New(opts Options) (*Server, error) {
 			"reset.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
 			// Warnings for refused /wopi requests, per client address: one a minute (sec1, decision 84).
 			"wopi.refusal": newLimiter(1),
+			// Warnings for refused WOPI calls, per editing session and reason: one a minute (lk1, decision 106).
+			"wopi.session_refusal": newLimiter(1),
 			// One-request writes (see oneRequestWriteRate): every one, and large or unsized ones again (oneRequestLargeRate).
 			oneRequestWriteRate: newLimiter(300),
 			oneRequestLargeRate: newLimiter(60),

@@ -296,53 +296,84 @@ type wopiReader interface {
 func (s *Server) authenticateWOPI(ctx context.Context, rd wopiReader, tok string, now time.Time) (*auth.Principal, tokenPayload, error) {
 	body, mac, err := splitToken(tok)
 	if err != nil {
-		return nil, tokenPayload{}, err
+		return nil, tokenPayload{}, wopiRefused("malformed token", nil, errBadToken)
 	}
 	key := s.wopiTokens.match(body, mac)
 	if key == nil {
-		return nil, tokenPayload{}, errBadToken
+		return nil, tokenPayload{}, wopiRefused("bad signature", nil, errBadToken)
 	}
+	// From here the MAC has verified, so the payload is the one Selfcloud issued and its node and session may be logged.
 	pl, err := parsePayload(body)
 	if err != nil || !pl.wopiValid() || pl.KeyID != key.kid {
-		return nil, tokenPayload{}, errBadToken
+		return nil, tokenPayload{}, wopiRefused("malformed token", nil, errBadToken)
 	}
 	if now.UnixMilli() >= pl.ExpiresAt {
-		return nil, tokenPayload{}, errBadToken
+		return nil, tokenPayload{}, wopiRefused("expired token", &pl, errBadToken)
 	}
 	sess, err := rd.WOPISession(ctx, pl.AccountID, pl.Session)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, tokenPayload{}, errBadToken
+		return nil, tokenPayload{}, wopiRefused("unknown session", &pl, errBadToken)
 	}
 	if err != nil {
 		return nil, tokenPayload{}, err
 	}
-	if sess.RevokedAt != nil || !now.Before(sess.ExpiresAt) || sess.NodeID != pl.Node || sess.UserID != pl.UserID {
-		return nil, tokenPayload{}, errBadToken
+	if sess.RevokedAt != nil || !now.Before(sess.ExpiresAt) {
+		return nil, tokenPayload{}, wopiRefused("ended session", &pl, errBadToken)
+	}
+	if sess.NodeID != pl.Node {
+		return nil, tokenPayload{}, wopiRefused("wrong node", &pl, errBadToken)
+	}
+	if sess.UserID != pl.UserID {
+		return nil, tokenPayload{}, wopiRefused("wrong user", &pl, errBadToken)
 	}
 	if len(sess.BrowserSession) > 0 {
 		bs, err := rd.SessionByHash(ctx, sess.BrowserSession)
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, tokenPayload{}, errBadToken
+			return nil, tokenPayload{}, wopiRefused("ended browser session", &pl, errBadToken)
 		}
 		if err != nil {
 			return nil, tokenPayload{}, err
 		}
 		if !now.Before(bs.ExpiresAt) || bs.UserID != pl.UserID {
-			return nil, tokenPayload{}, errBadToken
+			return nil, tokenPayload{}, wopiRefused("ended browser session", &pl, errBadToken)
 		}
 	}
 	d, err := rd.Delegation(ctx, pl.AccountID, pl.MintedBy, pl.UserID)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, tokenPayload{}, errBadToken
+		return nil, tokenPayload{}, wopiRefused("user no longer allowed", &pl, errBadToken)
 	}
 	if err != nil {
 		return nil, tokenPayload{}, err
 	}
 	p := principalOfToken(pl, d)
 	if !callerLive(p, d, now) {
-		return nil, tokenPayload{}, errBadToken
+		return nil, tokenPayload{}, wopiRefused("user no longer allowed", &pl, errBadToken)
 	}
 	return p, pl, nil
+}
+
+// wopiRefusal is a WOPI call refused at its checks. It answers as its cause does (errBadToken, or the not-found answer of a
+// wrong node), and it carries what the server's log names: the reason, and the node and the WOPI session of a token whose
+// MAC verified. Those two are left empty for a token that did not verify, since its payload is the caller's to choose.
+// The text of a refusal names no token.
+type wopiRefusal struct {
+	reason  string
+	node    string
+	session string
+	cause   error
+}
+
+func (e *wopiRefusal) Error() string { return e.cause.Error() }
+
+func (e *wopiRefusal) Unwrap() error { return e.cause }
+
+// wopiRefused makes a refusal with reason. pl is the payload of a token whose MAC verified, or nil when there is none.
+func wopiRefused(reason string, pl *tokenPayload, cause error) error {
+	r := &wopiRefusal{reason: reason, cause: cause}
+	if pl != nil {
+		r.node, r.session = pl.Node, pl.Session
+	}
+	return r
 }
 
 // principalOfToken is the caller a token stands for: its user, when it names one, else the account

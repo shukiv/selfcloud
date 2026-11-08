@@ -270,7 +270,7 @@ func (s *Server) wopiRequest(w http.ResponseWriter, r *http.Request) (*wopiGrant
 		return nil, err
 	}
 	if pl.Node != nod {
-		return nil, nodeNotFound()
+		return nil, wopiRefused("wrong node", &pl, nodeNotFound())
 	}
 	if info := infoFrom(ctx); info != nil {
 		info.principal = p
@@ -318,6 +318,34 @@ func wopiStatus(err error) int {
 	return http.StatusInternalServerError
 }
 
+// logWOPIRefusal writes the line that names a refused WOPI call (lk1, decision 106). It is written for a call answered 401,
+// and for one refused at a check that names its reason (a *wopiRefusal, such as a wrong node). Its fields are the request's
+// ID, the reason, the node and the WOPI session of a verified token, and never the token, its body or its signature.
+// The first refusal of one session for one reason in a window is at warn, the level the server uses for a refused request
+// (decision 84); the repeats in the window are at debug, so a stuck editor cannot fill the log. A refusal with no session
+// (its token did not verify) is keyed by the client address instead.
+func (s *Server) logWOPIRefusal(r *http.Request, err error, status int) {
+	var rf *wopiRefusal
+	refused := errors.As(err, &rf)
+	if !refused && status != http.StatusUnauthorized {
+		return
+	}
+	reason, node, sess := "refused", "", ""
+	if refused {
+		reason, node, sess = rf.reason, rf.node, rf.session
+	}
+	key := sess + " " + reason
+	if sess == "" {
+		key = addressKey(r) + " " + reason
+	}
+	attrs := []any{"request_id", requestID(r), "reason", reason, "node", node, "wopi_session", sess}
+	if s.rateLimit("wopi.session_refusal", key) == nil {
+		s.log.Warn("wopi request refused", attrs...)
+	} else {
+		s.log.Debug("wopi request refused", attrs...)
+	}
+}
+
 // wopiFail answers a WOPI request that failed. The body is empty, as the specification's error answers are, and no
 // token is logged: the log line names the route's request ID and the reason only.
 func (s *Server) wopiFail(w http.ResponseWriter, r *http.Request, err error) {
@@ -345,6 +373,7 @@ func (s *Server) wopiFail(w http.ResponseWriter, r *http.Request, err error) {
 	case code == apierr.Internal && !errors.Is(err, errNotImplemented) && !locked:
 		s.log.Error("wopi request failed", "request_id", requestID(r), "error", err)
 	}
+	s.logWOPIRefusal(r, err, status)
 	w.Header().Set("Cache-Control", "no-store")
 	if locked {
 		// A 409 always carries X-WOPI-Lock: the lock on the file, or "" when no editor holds it. The reason is one of
