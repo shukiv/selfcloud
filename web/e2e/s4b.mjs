@@ -98,6 +98,9 @@ const bodyHas = (text) => `document.body.innerText.includes(${q(text)})`;
 // step), and a finger's tap on an office file opens it. The More button stops its click, so the row's click is not needed.
 async function openViewer(h, page, name) {
   await h.rowAppears(page, name);
+  // A menu still on its way out (the theme menu after a theme pick closes with a motion, and setThemeByPlace does not wait for it)
+  // must be gone before the More click: the click is made when no menu is shown.
+  await page.waitFor(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')`, 10000);
   await page.evaluate(`(() => { const row = document.querySelector(${JSON.stringify(`[role="row"][aria-label="${name}"]`)}); row.focus(); const b = row && row.querySelector('button[aria-haspopup="menu"]'); if (b) b.click(); return !!b; })()`);
   // The entry's label is in the page's language (English or Hebrew, the two the checks use).
   const lang = (await page.evaluate(`document.documentElement.lang`)) === 'he' ? 'he' : 'en';
