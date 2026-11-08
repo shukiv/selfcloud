@@ -897,6 +897,8 @@
   "audit.import.cancel": "{actor} ביטל ייבוא של ארכיון.",
   "audit.imports.archive.on": "{actor} הפעיל ייבוא מארכיונים לחשבון.",
   "audit.imports.archive.off": "{actor} כיבה ייבוא מארכיונים לחשבון.",
+  "audit.templates.folder.set": "{actor} הגדיר את תיקיית התבניות של החשבון.",
+  "audit.templates.folder.clear": "{actor} הסיר את תיקיית התבניות של החשבון.",
   "audit.upload.create": "{actor} התחיל להעלות {name}.",
   "audit.upload.delete": "{actor} הסיר העלאה שלא הושלמה.",
   "audit.upload.expire": "{actor} סיים את ההעלאה של {name}, שפג תוקפה.",

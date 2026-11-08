@@ -897,6 +897,8 @@
   "audit.import.cancel": "ألغى {actor} استيراد أرشيف.",
   "audit.imports.archive.on": "فعّل {actor} الاستيراد من الأرشيفات للحساب.",
   "audit.imports.archive.off": "أوقف {actor} الاستيراد من الأرشيفات للحساب.",
+  "audit.templates.folder.set": "حدّد {actor} مجلد القوالب للحساب.",
+  "audit.templates.folder.clear": "أزال {actor} مجلد القوالب من الحساب.",
   "audit.upload.create": "بدأ {actor} رفع {name}.",
   "audit.upload.delete": "أزال {actor} رفعًا غير مكتمل.",
   "audit.upload.expire": "أنهى {actor} رفع {name}، وقد انتهت صلاحيته.",

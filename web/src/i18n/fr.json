@@ -897,6 +897,8 @@
   "audit.import.cancel": "{actor} a annulé l'import d'une archive.",
   "audit.imports.archive.on": "{actor} a activé l'import depuis les archives pour le compte.",
   "audit.imports.archive.off": "{actor} a désactivé l'import depuis les archives pour le compte.",
+  "audit.templates.folder.set": "{actor} a défini le dossier de modèles du compte.",
+  "audit.templates.folder.clear": "{actor} a retiré le dossier de modèles du compte.",
   "audit.upload.create": "{actor} a commencé à envoyer {name}.",
   "audit.upload.delete": "{actor} a supprimé un envoi inachevé.",
   "audit.upload.expire": "{actor} a mis fin à l’envoi de {name}, qui avait expiré.",

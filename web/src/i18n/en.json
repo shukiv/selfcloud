@@ -897,6 +897,8 @@
   "audit.import.cancel": "{actor} cancelled an import of an archive.",
   "audit.imports.archive.on": "{actor} turned on importing from archives for the account.",
   "audit.imports.archive.off": "{actor} turned off importing from archives for the account.",
+  "audit.templates.folder.set": "{actor} set the account's templates folder.",
+  "audit.templates.folder.clear": "{actor} cleared the account's templates folder.",
   "audit.upload.create": "{actor} started uploading {name}.",
   "audit.upload.delete": "{actor} removed an unfinished upload.",
   "audit.upload.expire": "{actor} ended the upload of {name}, which had expired.",

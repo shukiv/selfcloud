@@ -897,6 +897,8 @@
   "audit.import.cancel": "{actor} cancelou uma importação de um arquivo.",
   "audit.imports.archive.on": "{actor} ativou a importação de arquivos para a conta.",
   "audit.imports.archive.off": "{actor} desativou a importação de arquivos para a conta.",
+  "audit.templates.folder.set": "{actor} definiu a pasta de modelos da conta.",
+  "audit.templates.folder.clear": "{actor} removeu a pasta de modelos da conta.",
   "audit.upload.create": "{actor} começou a enviar {name}.",
   "audit.upload.delete": "{actor} removeu um envio não concluído.",
   "audit.upload.expire": "{actor} encerrou o envio de {name}, que havia expirado.",

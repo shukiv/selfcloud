@@ -897,6 +897,8 @@
   "audit.import.cancel": "{actor} canceló una importación de un archivo.",
   "audit.imports.archive.on": "{actor} activó la importación desde archivos para la cuenta.",
   "audit.imports.archive.off": "{actor} desactivó la importación desde archivos para la cuenta.",
+  "audit.templates.folder.set": "{actor} definió la carpeta de plantillas de la cuenta.",
+  "audit.templates.folder.clear": "{actor} quitó la carpeta de plantillas de la cuenta.",
   "audit.upload.create": "{actor} empezó a subir {name}.",
   "audit.upload.delete": "{actor} quitó una subida sin terminar.",
   "audit.upload.expire": "{actor} terminó la subida de {name}, que había caducado.",

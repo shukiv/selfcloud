@@ -69,7 +69,14 @@ var reviewedNodeKindSites = map[string]int{
 	// Slice l6 added two in office_documents.go, each refusing whatever is not a directory: the target of a new document must
 	// be a folder or a directory (a file or a shortcut is invalid_request, which grants nothing; the caller needs contributor on
 	// it either way), checked before the bytes are written and again inside the write. Decision 91.
-	"internal/api/office_documents.go": 2,
+	// Slice nt1 added one here, after nodeAccess has read the template: a template must be a file (a folder or a shortcut
+	// is invalid_request), and the no-download check reads the template's state inside the write (copyRestricted, not a
+	// kind test). Decision 105.
+	"internal/api/office_documents.go": 3,
+	// Slice nt1 added three in templates.go, each failing closed after the read check: the templates folder must be a
+	// directory of the account (anything else is none), a setting names a directory (a file is invalid_request), and the
+	// listing takes only files of a template's extension (a shortcut is not a template). Decision 105.
+	"internal/api/templates.go": 3,
 	// Slice l5 added three in office_saveas.go, each reviewed: the copy's directory must be a directory (a file or a
 	// shortcut parent is refused as not_found, which grants nothing); an overwrite replaces a file only (a folder or a
 	// shortcut is taken as a name clash, answered 409 with a free name, never replaced); and the copy's source must be a

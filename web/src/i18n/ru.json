@@ -897,6 +897,8 @@
   "audit.import.cancel": "{actor} отменил(а) импорт из архива.",
   "audit.imports.archive.on": "{actor} включил(а) импорт из архивов для аккаунта.",
   "audit.imports.archive.off": "{actor} выключил(а) импорт из архивов для аккаунта.",
+  "audit.templates.folder.set": "{actor} задал(а) папку шаблонов аккаунта.",
+  "audit.templates.folder.clear": "{actor} убрал(а) папку шаблонов аккаунта.",
   "audit.upload.create": "{actor} начал(а) загрузку {name}.",
   "audit.upload.delete": "{actor} удалил(а) незавершённую загрузку.",
   "audit.upload.expire": "{actor} завершил(а) загрузку {name}, срок которой истёк.",
