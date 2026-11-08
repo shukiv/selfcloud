@@ -51,8 +51,8 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     // The new document opens in its own tab (decision 102, round 2 R5): the listing stays here; the file's editor is there.
     const listingPage = page;
     await pickMenuItem(page, 'Document');
-    page = await openedTab(listingPage, '/edit/new');
-    await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/new'`, 15000);
+    page = await openedTab(listingPage, '/edit/wait');
+    await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/wait'`, 15000);
     newID = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
     const created = await api(base, 'GET', `/api/v1/nodes/${newID}`, accountKey);
     check(created.name === docName && created.kind === 'file', `New -> Document made "${docName}" in the folder (${created.name})`);
@@ -91,8 +91,8 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     await page.evaluate(`${pageNew}.click()`);
     const listingPage2 = page;
     await pickMenuItem(page, 'Document');
-    page = await openedTab(listingPage2, '/edit/new');
-    await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/new'`, 15000);
+    page = await openedTab(listingPage2, '/edit/wait');
+    await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/wait'`, 15000);
     const second = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
     const made2 = await api(base, 'GET', `/api/v1/nodes/${second}`, accountKey);
     check(made2.name === 'Untitled document (1).docx' && made2.folder_id === teamA, `the page's own New makes "${made2.name}" in Team A (${made2.folder_id})`);
