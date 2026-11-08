@@ -26,6 +26,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -818,6 +819,24 @@ func (c *checker) repair() error {
 			man.Close()
 		}
 	}()
+	// ensure creates the quarantine folder and the manifest. moveOrphan calls it before its first rename, so a manifest
+	// that cannot be made means no file moves.
+	ensure := func() error {
+		if man != nil {
+			return nil
+		}
+		if err := os.MkdirAll(qAbs, 0o700); err != nil {
+			return fmt.Errorf("quarantine: %w", err)
+		}
+		m, err := openManifest(qAbs)
+		if err != nil {
+			return fmt.Errorf("the manifest: %w", err)
+		}
+		man = m
+		c.rep.Quarantine = qRel
+		// The manifest's name and the folders above it are made durable before any file is moved into them.
+		return syncUpTo(qAbs, filepath.Clean(c.opts.DataDir))
+	}
 	for i := range c.rep.Findings {
 		if err := c.ctx.Err(); err != nil {
 			return err
@@ -826,19 +845,12 @@ func (c *checker) repair() error {
 		if f.Kind != KindOrphanBlob {
 			continue
 		}
-		done, err := c.moveOrphan(f, qRel, qAbs)
+		done, err := c.moveOrphan(f, qRel, qAbs, ensure)
 		if err != nil {
 			return err
 		}
 		if done == nil {
 			continue
-		}
-		if man == nil {
-			man, err = openManifest(qAbs)
-			if err != nil {
-				return err
-			}
-			c.rep.Quarantine = qRel
 		}
 		line, err := json.Marshal(movedEntry{Account: f.Account, Blob: f.ID, From: f.Path,
 			To: filepath.Join(qRel, f.Path), Size: done.Size(), Modified: done.ModTime().UTC(),
@@ -868,7 +880,7 @@ func openManifest(qAbs string) (*os.File, error) {
 
 // moveOrphan renames one orphan into quarantine when it is still an orphan. It returns the file's info when it moved,
 // and nil with f.Outcome saying why not.
-func (c *checker) moveOrphan(f *Finding, qRel, qAbs string) (fs.FileInfo, error) {
+func (c *checker) moveOrphan(f *Finding, qRel, qAbs string, before func() error) (fs.FileInfo, error) {
 	snap, err := c.cs.Begin(c.ctx)
 	if err != nil {
 		return nil, err
@@ -901,6 +913,10 @@ func (c *checker) moveOrphan(f *Finding, qRel, qAbs string) (fs.FileInfo, error)
 		f.Outcome = "not moved: already in quarantine"
 		return nil, nil
 	}
+	// The manifest must exist before the first rename: a move with no line cannot be undone by a reader of the manifest.
+	if err := before(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return nil, fmt.Errorf("quarantine: %w", err)
 	}
@@ -908,8 +924,46 @@ func (c *checker) moveOrphan(f *Finding, qRel, qAbs string) (fs.FileInfo, error)
 		f.Outcome = "not moved: " + err.Error()
 		return nil, nil
 	}
+	// The rename is durable only when the directories it changed are synced: the one it left, and each folder from the
+	// file's new folder up to the data directory (the folders made for it, and their entries).
+	if err := syncDir(filepath.Dir(src)); err != nil {
+		return nil, fmt.Errorf("syncing %s: %w", filepath.Dir(src), err)
+	}
+	if err := syncUpTo(filepath.Dir(dst), filepath.Clean(c.opts.DataDir)); err != nil {
+		return nil, err
+	}
 	f.Outcome = "moved to " + filepath.Join(qRel, f.Path)
 	return info, nil
+}
+
+// syncDir fsyncs a directory, so the entries made or removed in it survive a power loss. Windows cannot open a directory
+// to sync it, and makes no such promise here.
+func syncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("syncing %s: %w", dir, err)
+	}
+	defer d.Close()
+	if err := d.Sync(); err != nil {
+		return fmt.Errorf("syncing %s: %w", dir, err)
+	}
+	return nil
+}
+
+// syncUpTo fsyncs dir and each folder above it up to root, inclusive. A folder's entries are in that folder, so this
+// covers every folder made on the way down to dir.
+func syncUpTo(dir, root string) error {
+	for d := dir; ; d = filepath.Dir(d) {
+		if err := syncDir(d); err != nil {
+			return err
+		}
+		if d == root || filepath.Dir(d) == d {
+			return nil
+		}
+	}
 }
 
 // finish fills in the counts from the findings. Every kind has a count, zero included.
