@@ -76,23 +76,26 @@ async function pickMenuItem(page, text) {
   );
 }
 
-// setViewport emulates the window size and waits until the page has taken it. @rc-component/trigger closes a popup that is
-// anchored at a point (the More menu) on a window resize, so a click made while the page is still resizing races that close.
-// When the size changes, the wait is for the resize events themselves: the final size, at least one resize, and two frames
-// (a resize event is dispatched before the frame's callbacks). When the size does not change, no resize is expected.
+// setViewport emulates the window size and waits until the page has settled at it. @rc-component/trigger closes a popup that
+// is anchored at a point (the More menu) on a window resize, so a click made while the page is still resizing races that close.
+// The page does not always report the size asked for (CI's browser reports 377 by 817 for 375 by 812), so the wait is not for an
+// exact size: when the emulated size changes, it is for a resize event; then for two frames, which run after any pending
+// resize event. When the emulated size does not change, no resize is expected and none is waited for.
+let emulated = null;
 async function setViewport(page, width, height, mobile) {
-  const size = await page.evaluate(`({ w: window.innerWidth, h: window.innerHeight })`);
-  const changed = size.w !== width || size.h !== height;
+  const changed = emulated !== null && (emulated.width !== width || emulated.height !== height || emulated.mobile !== mobile);
+  emulated = { width, height, mobile };
   if (changed) {
-    await page.evaluate(`(() => { window.__resizes = 0; window.__vpDoc = Math.random(); window.__onResize = () => { window.__resizes += 1; }; window.addEventListener('resize', window.__onResize); return true; })()`);
+    await page.evaluate(`(() => { window.__resizes = 0; window.__onResize = () => { window.__resizes += 1; }; window.addEventListener('resize', window.__onResize); return true; })()`);
   }
   await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
-  const landed = `window.innerWidth === ${width} && window.innerHeight === ${height}`;
-  try {
-    await page.waitFor(changed ? `${landed} && window.__resizes > 0` : landed, 10000);
-  } catch (err) {
-    const state = await page.evaluate(`JSON.stringify({ w: window.innerWidth, h: window.innerHeight, resizes: window.__resizes ?? null, doc: window.__vpDoc ?? null, path: location.pathname, readyState: document.readyState })`);
-    throw new Error(`the viewport did not land at ${width}x${height} (from ${size.w}x${size.h}): ${state}; ${err.message.slice(0, 120)}`);
+  if (changed) {
+    try {
+      await page.waitFor(`window.__resizes > 0`, 10000);
+    } catch (err) {
+      const state = await page.evaluate(`JSON.stringify({ w: window.innerWidth, h: window.innerHeight, resizes: window.__resizes ?? null, path: location.pathname })`);
+      throw new Error(`the page did not resize for ${width}x${height}: ${state}; ${err.message.slice(0, 120)}`);
+    }
   }
   await page.evaluate(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`);
   if (changed) {
