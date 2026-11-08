@@ -1491,7 +1491,7 @@
   "files.drag.no.role": "You cannot add items to this folder.",
   "files.drag.no.copy": "Nothing is copied to the Trash. Let go without Ctrl to move to it.",
   "files.drag.no.trash": "These items cannot go to the Trash: you may not delete them.",
-  "files.drag.no.self":"A folder cannot go into itself.",
+  "files.drag.no.self": "A folder cannot go into itself.",
   "files.drag.no.here": "These items are already in this folder.",
   "files.drag.no.move": "You cannot move these items. Hold Ctrl to copy them.",
   "files.tree.label": "Folders",
