@@ -68,11 +68,21 @@ export async function launchBrowser(binary, profileDir, { mouse = false, finger 
 
 // openedTab waits for the tab a script opened (decision 102): the browser's page list holds it at pathPart, and the returned
 // Page is on that tab, on the same debugging port as the opener. The new tab's own requests are recorded by its own Page.
+// pathOf is a tab's path, or '' when its address is not yet a URL.
+function pathOf(url) {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return '';
+  }
+}
+
 export async function openedTab(opener, pathPart) {
   const origin = `http://${new URL(opener.ws.url).host}`;
   for (let i = 0; i < 150; i++) {
     const list = await (await fetch(`${origin}/json/list`)).json();
-    const t = list.find((x) => x.type === 'page' && new URL(x.url).pathname.startsWith(pathPart));
+    // A tab opened by window.open can list an empty address for a moment; that is not a match, and it must not end the search.
+    const t = list.find((x) => x.type === 'page' && pathOf(x.url).startsWith(pathPart));
     if (t) {
       const p = new Page(t.webSocketDebuggerUrl);
       await p.opened;
