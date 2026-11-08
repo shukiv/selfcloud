@@ -17,7 +17,7 @@ import { get } from "../lib/store";
 
 import { createQueryClient } from "../lib/query";
 import { treePlace } from "../lib/files/treePlace";
-import { newPlace, type NewPlace } from "../lib/files/newPlace";
+import { myFilesPlace, newPlace, newPlaceFailure, type NewPlace } from "../lib/files/newPlace";
 import { myStorage } from "../lib/storage/api";
 import { officeEdit } from "../lib/files/editor";
 import { manager } from "../lib/files/uploads";
@@ -918,6 +918,24 @@ describe("the sidebar's document entries follow the place, the role and the impe
   const readOnlyPlace = () => place({ canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false });
 
   // Opens the sidebar's New menu on the folder's page, and waits for its entries.
+  // Review item 2 (wf1): the failure the files page records reaches the sidebar's disabled New as its reason.
+  it("a folder that could not be read gives the sidebar's disabled New the error as its reason", async () => {
+    await wideScreen(async () => {
+      setUp("member", "contributor", myFilesPlace("fld_mine"));
+      newPlace.set(null);
+      newPlaceFailure.set("Could not read this folder.");
+      try {
+        renderShell(`/files/${FOLDER}`);
+        const button = await screen.findByRole("button", { name: "New" });
+        expect(button.hasAttribute("disabled")).toBe(true);
+        const id = button.getAttribute("aria-describedby");
+        expect(id && document.getElementById(id)?.textContent).toBe("Could not read this folder.");
+      } finally {
+        newPlaceFailure.set(null);
+      }
+    });
+  });
+
   async function openSidebarNew() {
     renderShell(`/files/${FOLDER}`);
     fireEvent.click(await screen.findByRole("button", { name: "New" }));

@@ -16,6 +16,9 @@ import type { Sidebar } from "../../theme/tokens";
 export interface SidebarNewProps {
   // place is where the New actions act, and what it takes. null: the folder shown is not read yet, so the button waits.
   place: NewPlace | null;
+  // failure is the error text when the folder shown could not be read (null otherwise): the reason a disabled button gives in
+  // place of "Loading the folder" (wf1, review item 2).
+  failure?: string | null;
   collapsed: boolean;
   coarse: boolean;
   sidebar: Sidebar;
@@ -31,7 +34,7 @@ const ic = { size: 18, strokeWidth: 1.75, "aria-hidden": true } as const;
 // The raised face: the sidebar's white with its blue word, and a shadow that reads on the blue in light and in dark.
 const RAISED = "0 1px 2px rgba(0, 0, 0, 0.3), 0 3px 8px rgba(0, 0, 0, 0.28)";
 
-export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, onFolder, documents, onDocument }: SidebarNewProps) {
+export default function SidebarNew({ place, failure, collapsed, coarse, sidebar, onPick, onFolder, documents, onDocument }: SidebarNewProps) {
   const { t } = useT();
   const text: Record<NewKey, string> = {
     newFolder: t("files.act.newFolder"),
@@ -45,6 +48,10 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
   };
   const { token } = theme.useToken();
   const reasonId = useId();
+  // While the place is read, or could not be (failure), the button says why it waits: the hover tooltip shows the reason, and
+  // the button's accessible description is the same text, always present while disabled, so a keyboard or screen-reader user
+  // gets it too (wf1, review item 1). A disabled button fires no hover events, so the tooltip hangs on the span around it.
+  const waitId = useId();
   // The blank documents (decision 91) come after the uploads, behind a divider, each with its icon and its word.
   const docText: Record<DocKind, string> = { docx: t("files.act.document"), xlsx: t("files.act.spreadsheet"), pptx: t("files.act.presentation") };
   const docIcons: Record<DocKind, ReactNode> = { docx: <FileText {...ic} />, xlsx: <FileSpreadsheet {...ic} />, pptx: <Presentation {...ic} /> };
@@ -74,6 +81,7 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
   const menu = { items, onClick: ({ key }: { key: string }) => choose(key), "aria-labelledby": place?.readOnly ? reasonId : undefined };
   // A place that is still being read shows the button, disabled.
   const disabled = place === null;
+  const reason = disabled ? failure || t("files.loading") : null;
   // The menu is controlled so Escape can close it here. In the phone drawer the drawer's panel takes Escape from the menu and closes
   // the drawer, and the menu stayed open (decision 95, round 3). So while the menu is open, Escape is taken by the wrapper around the
   // dropdown, which sits between the menu and the drawer: it closes the menu and returns focus to the button.
@@ -91,12 +99,11 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     const round: CSSProperties = { inlineSize: 44, blockSize: 44, minInlineSize: 44, boxShadow: RAISED, background: sidebar.text, color: sidebar.bg, border: "none" };
     return (
       <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "center", marginBlockStart: 6 }}>
-        {/* While the place is read, the button is disabled and its tooltip gives the reason (wf1). A disabled button fires no hover
-            events, so the tooltip hangs on the span around it. */}
-        <Tooltip title={disabled ? t("files.loading") : t("files.act.new")} placement="right">
+        {reason && <span id={waitId} className="sr-only">{reason}</span>}
+        <Tooltip title={reason ?? t("files.act.new")} placement="right">
           <span data-testid="new-tip" style={{ display: "inline-flex" }}>
             <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
-              <Button ref={newButton} data-testid="new-button" aria-label={t("files.act.new")} aria-haspopup="menu" shape="circle" disabled={disabled} icon={<Plus {...ic} />} style={round} />
+              <Button ref={newButton} data-testid="new-button" aria-label={t("files.act.new")} aria-haspopup="menu" aria-describedby={reason ? waitId : undefined} shape="circle" disabled={disabled} icon={<Plus {...ic} />} style={round} />
             </Dropdown>
           </span>
         </Tooltip>
@@ -130,11 +137,11 @@ export default function SidebarNew({ place, collapsed, coarse, sidebar, onPick, 
     // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger.
     <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "flex-start", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
       <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? 44 : 36 } } }}>
-        {/* The reason while the place is read (wf1): the tooltip hangs on the span, as above. */}
-        <Tooltip title={disabled ? t("files.loading") : undefined}>
+        {reason && <span id={waitId} className="sr-only">{reason}</span>}
+        <Tooltip title={reason ?? undefined}>
           <span data-testid="new-tip" style={{ display: "inline-flex", maxInlineSize: "100%", minInlineSize: 0 }}>
             <Dropdown trigger={["click"]} open={open} onOpenChange={setOpen} disabled={disabled} menu={menu}>
-              <Button ref={newButton} data-testid="new-button" aria-haspopup="menu" disabled={disabled} style={face}>
+              <Button ref={newButton} data-testid="new-button" aria-haspopup="menu" aria-describedby={reason ? waitId : undefined} disabled={disabled} style={face}>
                 <Plus {...ic} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("files.act.new")}</span>
               </Button>

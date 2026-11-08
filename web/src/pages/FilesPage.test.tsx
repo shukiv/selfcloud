@@ -17,7 +17,7 @@ import { get } from "../lib/store";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { translate } from "../lib/i18n";
 import { myStorage } from "../lib/storage/api";
-import { newPlace } from "../lib/files/newPlace";
+import { newPlace, newPlaceFailure } from "../lib/files/newPlace";
 import { officeEdit } from "../lib/files/editor";
 import { officeConvert } from "../lib/files/convert";
 
@@ -838,6 +838,29 @@ describe("sharing from the browser", () => {
     vi.mocked(locate).mockResolvedValueOnce(null as never);
     renderAt(`${FOLDER}/nod_dddddddd`);
     expect(await screen.findByText("request for nod_dddddddd")).toBeTruthy();
+  });
+});
+
+// Review item 2 (wf1): a folder that cannot be read says why to the sidebar's New, instead of "Loading the folder" for ever.
+describe("a failed place read is named to the sidebar's New", () => {
+  it("the page shows the error, and newPlaceFailure gives the sidebar the same text", async () => {
+    const err = new ApiError(500, "internal", {}, 0);
+    const real = vi.mocked(locate).getMockImplementation()!;
+    vi.mocked(locate).mockRejectedValue(err);
+    try {
+      renderAt(FOLDER);
+      const text = fileErrorText(err, "en");
+      expect(await screen.findByText(text)).toBeTruthy();
+      expect(get(newPlaceFailure)).toBe(text);
+    } finally {
+      vi.mocked(locate).mockImplementation(real);
+    }
+  });
+
+  it("a read that works has no failure to name", async () => {
+    renderAt(FOLDER);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(get(newPlaceFailure)).toBeNull();
   });
 });
 

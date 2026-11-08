@@ -145,7 +145,25 @@ describe("the breakdown and the meter racing (wf1)", () => {
     older.resolve(withBreakdown(100, 10));
     await breakdownCall;
     expect(get(myBreakdown)).toEqual(breakdown(10));
+    // The older call's figures are not shown while the newer plain call is still in flight (review item 3).
+    expect(get(myStorage)).toBeNull();
     newer.resolve(storage(200));
+    await plainCall;
+    expect(get(myStorage)?.used_bytes).toBe(200);
+  });
+
+  // Review item 4 (wf1): a failed breakdown read must not drop an older plain refresh's figures.
+  it("a failed breakdown read does not drop an older plain refresh's figures", async () => {
+    const plain = held<unknown>();
+    const failing = held<unknown>();
+    mocks.api.mockReturnValueOnce(plain.promise).mockReturnValueOnce(failing.promise);
+
+    const plainCall = refreshMyStorage();
+    const breakdownCall = refreshMyBreakdown();
+
+    failing.reject(new Error("breakdown failed"));
+    await expect(breakdownCall).rejects.toThrow("breakdown failed");
+    plain.resolve(storage(200));
     await plainCall;
     expect(get(myStorage)?.used_bytes).toBe(200);
   });

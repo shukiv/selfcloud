@@ -57,7 +57,7 @@ import { makeZip, type ZipPhase } from "../lib/files/zips";
 import { officeConvert } from "../lib/files/convert";
 import { coarsePointer, editorEntry, editorPath, officeEdit, openEditorTab } from "../lib/files/editor";
 import { nameProblem, nameMessageKey, fromFileList, fromDataTransfer, startDownload, type DroppedFile } from "../lib/files/ops";
-import { documentKinds, newPlace, placeForRoute, placeOfHere, queueInto } from "../lib/files/newPlace";
+import { documentKinds, newPlace, newPlaceFailure, placeForRoute, placeOfHere, queueInto } from "../lib/files/newPlace";
 import { useNewDocument } from "../lib/files/documents";
 import { useSidebarDocked } from "../lib/sidebarDocked";
 import { refreshMyStorage } from "../lib/storage/api";
@@ -692,6 +692,10 @@ export default function FilesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newKey]);
   useEffect(() => () => newPlace.set(null), []);
+  // A failed place read is named to the sidebar's New (newPlaceFailure, wf1 review item 2); a read that works clears it.
+  const placeError = placeQ.isError ? fileErrorText(placeQ.error, lang) : null;
+  useEffect(() => { newPlaceFailure.set(placeError); }, [placeError]);
+  useEffect(() => () => newPlaceFailure.set(null), []);
   const allEdit = picked.length > 0 && picked.every((n) => can.edit(n.role));
   // The space the listing is in: a visible one, or a hidden one, which is still reached.
   const space = here ? ([...folderList, ...hiddenList].find((f) => f.id === here.folder) ?? null) : null;

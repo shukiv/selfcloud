@@ -11,12 +11,12 @@ import SidebarNew from "./SidebarNew";
 
 const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
 
-function renderNew(place: NewPlace | null, collapsed = false, coarse = false, documents: DocKind[] = []) {
+function renderNew(place: NewPlace | null, collapsed = false, coarse = false, documents: DocKind[] = [], failure: string | null = null) {
   const onPick = vi.fn();
   const onFolder = vi.fn();
   const onDocument = vi.fn();
   const utils = render(
-    <SidebarNew place={place} collapsed={collapsed} coarse={coarse} sidebar={SIDEBAR} onPick={onPick} onFolder={onFolder} documents={documents} onDocument={onDocument} />,
+    <SidebarNew place={place} failure={failure} collapsed={collapsed} coarse={coarse} sidebar={SIDEBAR} onPick={onPick} onFolder={onFolder} documents={documents} onDocument={onDocument} />,
   );
   return { ...utils, onPick, onFolder, onDocument };
 }
@@ -90,6 +90,40 @@ describe("the sidebar's New button", () => {
     fireEvent.mouseEnter(screen.getByTestId("new-button"));
     expect(await screen.findByText("Loading the folder")).toBeTruthy();
     expect(screen.queryByText("New")).toBeNull();
+  });
+
+  // Review item 1 (wf1): the reason is the button's accessible description while it is disabled, with no hover needed, so a
+  // keyboard or screen-reader user hears why it waits. It is absent once the button is enabled.
+  function description(button: HTMLElement): string | null {
+    const id = button.getAttribute("aria-describedby");
+    return id ? document.getElementById(id)?.textContent ?? null : null;
+  }
+
+  it("while the place is still read, the button's accessible description is the reason, without a hover", () => {
+    renderNew(null);
+    expect(description(screen.getByTestId("new-button"))).toBe("Loading the folder");
+  });
+
+  it("in the folded rail, while the place is still read, the accessible description is the reason too", () => {
+    renderNew(null, true);
+    expect(description(screen.getByTestId("new-button"))).toBe("Loading the folder");
+  });
+
+  it("when the place is read, the button has no accessible description", () => {
+    renderNew(myFilesPlace("fld_mine"));
+    const button = screen.getByTestId("new-button");
+    expect(button.getAttribute("aria-describedby")).toBeNull();
+    expect(screen.queryByText("Loading the folder")).toBeNull();
+  });
+
+  // Review item 2 (wf1): a failed read names its error where the wait used to say "Loading the folder".
+  it("when the folder could not be read, the reason is the error, as the tooltip and the accessible description", async () => {
+    renderNew(null, false, false, [], "Something went wrong.");
+    const button = screen.getByTestId("new-button");
+    expect(description(button)).toBe("Something went wrong.");
+    fireEvent.mouseEnter(button);
+    expect(await screen.findByText("Something went wrong.")).toBeTruthy();
+    expect(screen.queryByText("Loading the folder")).toBeNull();
   });
 
   // Decision 69: the button is as wide as its text, not the sidebar's width, and it is capped at the sidebar's width so a long

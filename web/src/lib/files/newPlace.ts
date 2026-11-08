@@ -66,6 +66,10 @@ export function placeForRoute(p: NewPlace | null, pathname: string): NewPlace | 
 // newPlace is the place the files page shows, written by FilesPage and cleared when it is left. null until the place is read.
 export const newPlace = userWritable<NewPlace | null>(null);
 
+// newPlaceFailure is the text of the error when the page could not read its place (wf1, review item 2), or null. The sidebar's
+// disabled New gives it as the reason in place of "Loading the folder", so a failed read does not look like a read still going.
+export const newPlaceFailure = userWritable<string | null>(null);
+
 // myFilesPlace is the person's own My files root: everything can be added there.
 export function myFilesPlace(personalID: string): NewPlace {
   return { where: { folder: personalID, dirID: null, path: '/' }, canFolder: true, canUpload: true, canUploadFolder: true, readOnly: false, canEdit: true, nodeID: null };
