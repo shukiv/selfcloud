@@ -187,6 +187,29 @@ func Build(kind string) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("blankdoc: no blank document of kind %q", kind)
 	}
+	return Pack(parts)
+}
+
+// Parts returns a copy of the parts of an OOXML kind (docx, xlsx or pptx), by name, for a caller that writes its own text
+// into them: the built-in templates do. It is nil for a kind this package does not make as OOXML.
+func Parts(kind string) map[string]string {
+	src, ok := kinds[kind]
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string, len(src))
+	for name, text := range src {
+		out[name] = text
+	}
+	return out
+}
+
+// Pack zips parts in the order Build uses: [Content_Types].xml first, then the other parts by name, each with the fixed
+// timestamp. The same parts are the same bytes every time. A set with no [Content_Types].xml is refused.
+func Pack(parts map[string]string) ([]byte, error) {
+	if _, ok := parts["[Content_Types].xml"]; !ok {
+		return nil, fmt.Errorf("blankdoc: the package has no [Content_Types].xml")
+	}
 	names := make([]string, 0, len(parts))
 	for name := range parts {
 		if name != "[Content_Types].xml" {
