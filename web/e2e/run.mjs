@@ -544,35 +544,41 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
     }
     page.send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => undefined);
   };
-  page.on('Fetch.requestPaused', onPaused);
-  await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/v1/uploads/*', requestStage: 'Request' }] });
-  await page.setFiles(UPLOAD, [resumable]);
-  // The first piece has gone through when the second one is held (pieces go one at a time). A missing second piece fails here,
-  // clearly, rather than at the tray's timeout.
-  for (let i = 0; i < 3000 && held === null; i++) {
-    await new Promise((r) => setTimeout(r, 20));
+  // However the section ends, the listener goes and Fetch is switched off, so no later section meets a held request.
+  try {
+    page.on('Fetch.requestPaused', onPaused);
+    await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/v1/uploads/*', requestStage: 'Request' }] });
+    await page.setFiles(UPLOAD, [resumable]);
+    // The first piece has gone through when the second one is held (pieces go one at a time). A missing second piece fails
+    // here, clearly, rather than at the tray's timeout.
+    for (let i = 0; i < 3000 && held === null; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    check(piecesThrough === 1 && held !== null, `one piece reaches the server before the connection drops (${piecesThrough} through, the next one held: ${held !== null})`);
+    // The connection drops: the held piece is failed, and so is every request while it is down.
+    state = 'down';
+    await page.send('Fetch.failRequest', { requestId: held, errorReason: 'InternetDisconnected' });
+    held = null;
+    // The tray reports the failure. The uploader tries the dropped piece again after a second, and each try fails too, so the
+    // failure is reported at once, not after a long wait. Nothing is checked about the pieces during the outage: a request that
+    // is failed is never counted as through, so a count taken here could not fail. The retry's count below covers it instead:
+    // exactly two pieces after the retry means the server held exactly one piece when the retry began.
+    await page.waitFor(`document.querySelector('[data-testid="upload-tray"]')?.innerText.includes('resume.bin failed to upload.')`, 60000);
+    // Back online: the interception ends, so the retry is an ordinary one.
+    state = 'through';
+    page.off('Fetch.requestPaused', onPaused);
+    await page.send('Fetch.disable');
+    // Retry sends the rest of the file from the offset the server has, not from the start.
+    const beforeRetry = sentPieces();
+    await clickButton(page, 'Retry: resume.bin');
+    await rowAppears(page, 'resume.bin', 60000);
+    const afterRetry = sentPieces() - beforeRetry;
+    // The first piece is kept and the second was failed before any of its bytes reached the server, so exactly two remain.
+    check(afterRetry === 2, `an interrupted upload resumes and finishes, sending ${afterRetry} of its 3 pieces after the retry`);
+  } finally {
+    page.off('Fetch.requestPaused', onPaused);
+    await page.send('Fetch.disable').catch(() => undefined);
   }
-  check(piecesThrough === 1 && held !== null, `one piece reaches the server before the connection drops (${piecesThrough} through, the next one held: ${held !== null})`);
-  // The connection drops: the held piece is failed, and so is every request while it is down.
-  const throughAtDrop = piecesThrough;
-  state = 'down';
-  await page.send('Fetch.failRequest', { requestId: held, errorReason: 'InternetDisconnected' });
-  held = null;
-  // The tray reports the failure. The uploader tries the dropped piece again after a second, and each try fails too, so the
-  // failure is reported at once, not after a long wait.
-  await page.waitFor(`document.querySelector('[data-testid="upload-tray"]')?.innerText.includes('resume.bin failed to upload.')`, 60000);
-  check(piecesThrough === throughAtDrop, 'no piece reached the server while the connection was down');
-  // Back online: the interception ends, so the retry is an ordinary one.
-  state = 'through';
-  page.off('Fetch.requestPaused', onPaused);
-  await page.send('Fetch.disable');
-  // Retry sends the rest of the file from the offset the server has, not from the start.
-  const beforeRetry = sentPieces();
-  await clickButton(page, 'Retry: resume.bin');
-  await rowAppears(page, 'resume.bin', 60000);
-  const afterRetry = sentPieces() - beforeRetry;
-  // The first piece is kept and the second was failed before any of its bytes reached the server, so exactly two remain.
-  check(afterRetry === 2, `an interrupted upload resumes and finishes, sending ${afterRetry} of its 3 pieces after the retry`);
 
   // Star is one of the icons at the end of a selected row (decision 70); once starred, the same icon says Unstar.
   await page.waitFor(`!!document.querySelector(${q(rowSel('Reports'))})`);
