@@ -155,6 +155,7 @@ type Result struct {
 	DeviceConfirms int64 // expired or used device confirmations removed (sec2, decision 86)
 	WOPISessions   int64 // office editing sessions past their end removed
 	Locks          int   // office editing locks past their expiry removed and audited (decision 32)
+	UnusedLocks    int   // office editing locks freed before their expiry, as no live editing session is on the file (decision 106)
 	TempRemoved    int   // abandoned temporary upload files removed
 	Uploads        int   // expired resumable uploads removed, rows and files
 	UploadFiles    int   // resumable upload files with no row, removed
@@ -391,6 +392,21 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 			}
 		}
 		res.Locks = len(expiredLocks)
+		// A lock whose file has no live editing session is freed before its expiry (decision 106). It is audited with the
+		// same entry as an expired one, and the reason says why.
+		unusedLocks, err := tx.ReleaseUnusedLocks(ctx, now)
+		if err != nil {
+			return err
+		}
+		for _, l := range unusedLocks {
+			entry := &store.AuditEntry{Time: now, AccountID: l.AccountID, ActorKind: "system",
+				Action: "node.unlock", Target: l.NodeID, Folders: []string{l.FolderID},
+				Details: map[string]any{"reason": "no_live_session"}}
+			if err := tx.InsertAudit(ctx, entry); err != nil {
+				return err
+			}
+		}
+		res.UnusedLocks = len(unusedLocks)
 		// Recent entries older than recentRetention, and all but the recentPerUser latest of each user (slice p2).
 		if res.Recent, err = tx.PruneRecent(ctx, now.Add(-recentRetention), recentPerUser); err != nil {
 			return err

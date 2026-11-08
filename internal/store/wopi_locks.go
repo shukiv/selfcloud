@@ -320,3 +320,63 @@ func (s *Store) LiveLocksOf(ctx context.Context, accountID string) (map[string]*
 	}
 	return out, nil
 }
+
+// liveWOPISessionOn is the test of a live editing session on one file, for NOT EXISTS in the release. A session is live
+// while it is not revoked and has not ended, and, when a browser session opened it, that browser session still exists
+// for the same person and has not ended. Its placeholders are the file's node ID, then the clock twice.
+const liveWOPISessionOn = `EXISTS (SELECT 1 FROM wopi_sessions w WHERE w.node_id = ? AND w.revoked_at IS NULL
+	AND w.expires_at > ? AND (w.browser_session IS NULL OR EXISTS (SELECT 1 FROM sessions s
+		WHERE s.id_hash = w.browser_session AND s.user_id = w.user_id AND s.expires_at > ?)))`
+
+// ReleaseUnusedLocks removes every live lock whose file has no live editing session left, and returns the locks it
+// removed, so the sweep can audit each with its reason. A file's lock is needed only while an editor can use it: when the
+// last session on the file has ended, or the browser session that opened the last one has, no editor can save or refresh
+// under the lock, so it is freed before its expiry. A lock is kept while any live session on its file remains, so a
+// co-editor's next save is not refused with 409. Each lock is released by releaseIfUnused, which re-checks in the same
+// statement, so a lock that was replaced, or a session that came to the file after the locks were read, is not removed.
+func (tx *Tx) ReleaseUnusedLocks(ctx context.Context, now time.Time) ([]*WOPILock, error) {
+	rows, err := tx.q.QueryContext(ctx, `SELECT `+wopiLockCols+` FROM wopi_locks l
+		JOIN nodes n ON n.id = l.node_id WHERE l.expires_at > ? ORDER BY l.node_id`, millis(now))
+	if err != nil {
+		return nil, err
+	}
+	var live []*WOPILock
+	for rows.Next() {
+		l, err := scanWOPILock(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		live = append(live, l)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	var out []*WOPILock
+	for _, l := range live {
+		ok, err := tx.releaseIfUnused(ctx, l, now)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
+// releaseIfUnused removes the lock l, as read, when it is still live under the same lock ID and no live editing session
+// is on its file at now. It reports whether it removed the row. The check and the delete are one statement, so the
+// decision holds for the row it deletes.
+func (tx *Tx) releaseIfUnused(ctx context.Context, l *WOPILock, now time.Time) (bool, error) {
+	res, err := tx.q.ExecContext(ctx, `DELETE FROM wopi_locks WHERE node_id = ? AND account_id = ? AND lock_id = ?
+		AND expires_at > ? AND NOT `+liveWOPISessionOn,
+		l.NodeID, l.AccountID, l.LockID, millis(now), l.NodeID, millis(now), millis(now))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
