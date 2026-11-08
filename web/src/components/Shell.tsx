@@ -45,6 +45,7 @@ import UploadTrayHost from "./UploadTrayHost";
 import MediaHost from "./files/MediaHost";
 import BellBoundary from "./notifications/BellBoundary";
 import SidebarNew from "./files/SidebarNew";
+import SidebarBrand from "./SidebarBrand";
 import SidebarStorage, { storageTitle } from "./storage/SidebarStorage";
 
 // The new folder dialog is a lazy chunk: the sidebar's New opens it, and the first screen does not carry it (decision 66).
@@ -447,11 +448,10 @@ export default function Shell({ children }: { children: ReactNode }) {
           "--sc-icon-col": `${row.inline + row.indent}px`,
         } as CSSProperties}
       >
+        {/* The brand's block carries the gap New leaves under it, so New is one edge below the brand (decision 109). */}
+        <SidebarBrand collapsed={collapsedNow} coarse={coarse} text={sidebar.text} />
         {newShown && <SidebarNew place={newWhere} failure={placeFailure} collapsed={collapsedNow} coarse={coarse} sidebar={sidebar} onPick={pick} onFolder={(where) => setFolderWhere(where)}
           documents={onFiles ? documentKinds(placeForRoute(shownPlace, location.pathname), editorOn, impersonating) : []} onDocument={makeDocument} />}
-        {/* With no New drawn, the gap New leaves stays (10 px, or 6 px on a finger, as New's own top edge), so the first item does not
-            touch the top bar (decision 69). */}
-        {!newShown && <div aria-hidden="true" data-testid="sidebar-top-gap" style={{ flex: "none", blockSize: coarse ? 6 : 10 }} />}
         <div className="shell-scroll">
           {shellError && !collapsedNow && <AntdAlert type="error" showIcon role="alert" message={shellError} style={{ margin: "8px 0" }} />}
           {tree && (

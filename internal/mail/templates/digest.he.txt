@@ -1,4 +1,4 @@
-Subject: {{.Count}} אזכורים ותגובות חדשים ב-Selfcloud
+Subject: {{.Count}} אזכורים ותגובות חדשים ב-SelfCloud
 
 יש לך {{.Count}} אזכורים ותגובות חדשים.
 

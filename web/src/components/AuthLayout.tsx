@@ -19,7 +19,10 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
   const { token } = antdTheme.useToken();
   const b = useStore(brand);
   const note = useStore(flash);
-  const brandMark = (
+  // The SelfCloud artwork has its name inside the picture, so no name is drawn beside it (decision 109).
+  const brandMark = b.artwork ? (
+    b.logo_url && <img src={b.logo_url} alt={b.name} height={64} />
+  ) : (
     <>
       {b.logo_url && <img src={b.logo_url} alt="" width={56} height={56} />}
       <p className="auth-brand-name">

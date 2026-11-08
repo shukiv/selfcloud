@@ -31,6 +31,8 @@ export interface Brand {
   name: string;
   accent: string;
   logo_url: string | null;
+  // artwork is true when the installation shows the SelfCloud artwork (decision 109): its logo is then the artwork at logo_url.
+  artwork?: boolean;
   palette?: { light?: TokenWire; dark?: TokenWire };
   sidebar?: SidebarWire;
 }
@@ -43,7 +45,7 @@ export { DEFAULT_ACCENT };
 // The minimum password length the server accepts, read from /api/v1/info. 8 until it is read.
 export const passwordMinLength = writable(8);
 
-export const brand = writable<Brand>({ name: 'Selfcloud', accent: DEFAULT_ACCENT, logo_url: null });
+export const brand = writable<Brand>({ name: 'SelfCloud', accent: DEFAULT_ACCENT, logo_url: null });
 
 function rgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);
@@ -166,6 +168,7 @@ export interface ResolvedBrand {
   name: string;
   accent: string;
   logo_url: string | null;
+  artwork: boolean;
   light: Palette;
   dark: Palette;
   sidebar: SidebarColours;
@@ -229,6 +232,7 @@ export function resolveBrand(b: Brand): ResolvedBrand {
     name: b.name,
     accent,
     logo_url: safeLogo(b.logo_url),
+    artwork: b.artwork === true,
     light,
     dark,
     sidebar,

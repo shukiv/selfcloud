@@ -21,7 +21,7 @@ const BUILD_MARK = '/build';
 const OFFLINE = '/offline.html';
 // OFFLINE_FILES are the offline page and the three files it loads. They are fetched at install and at activate, and answered
 // from the cache, so the page shows offline, styled and with its words.
-const OFFLINE_FILES = ['/offline.html', '/offline.css', '/offline.js', '/favicon.svg'];
+const OFFLINE_FILES = ['/offline.html', '/offline.css', '/offline.js'];
 // TYPES are the media types the build's own files are served with. Any other answer under /assets/ is not stored.
 const TYPES = ['text/javascript', 'application/javascript', 'text/css', 'font/woff2', 'font/woff', 'image/svg+xml', 'image/png', 'image/webp', 'image/jpeg'];
 // REFUSED are the paths that are never a page the worker answers: the API, the office endpoints, the share pages, the brand

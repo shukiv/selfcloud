@@ -1,4 +1,8 @@
-# Selfcloud
+<p align="center">
+  <img src="docs/brand/selfcloud-logo.svg" alt="SelfCloud" width="420">
+</p>
+
+# SelfCloud
 
 A self-hosted drive, written in Go. It has its own accounts, users, sign-in and storage, and it
 depends on no other system. Any application can manage it and move files through its HTTP API.
@@ -150,10 +154,10 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `search.max_text_per_account` | `64MiB` | Extracted text one account may hold, in bytes of text (about 3 times that on disk for high-entropy words, decision 46). A file over the cap is skipped with its reason; the owner sees the count on the usage page. `0` means no cap. Must be `0` or at least `search.text_max_bytes`. Not charged to quota. |
 | `search.max_text_total` | `1GiB` | Extracted text the whole installation may hold. `0` means no cap. Must be `0` or at least `search.max_text_per_account`. |
 
-Content search keeps the words of each file in the database. Deleting the text overwrites the freed pages of the database file (`PRAGMA secure_delete`, always on), and the full-text tables use FTS5's `secure-delete` option, also always on. The write-ahead log holds deleted words until a checkpoint: the sweep runs one every hour (`wal_checkpoint(TRUNCATE)`), so deleted words leave the database and its log within about an hour of the deletion. A checkpoint that a reader blocks is retried the next hour. The cost of FTS5's secure-delete is in decision 46. A `VACUUM INTO` copy carries only the text still held. Not closed, and outside Selfcloud: backups and file-system snapshots made before a deletion keep the words, as they keep the file; the file system may keep the bytes of an unlinked blob until its blocks are reused (a blob file is removed by the sweep, not overwritten); SSD wear levelling and the operating system's page cache.
+Content search keeps the words of each file in the database. Deleting the text overwrites the freed pages of the database file (`PRAGMA secure_delete`, always on), and the full-text tables use FTS5's `secure-delete` option, also always on. The write-ahead log holds deleted words until a checkpoint: the sweep runs one every hour (`wal_checkpoint(TRUNCATE)`), so deleted words leave the database and its log within about an hour of the deletion. A checkpoint that a reader blocks is retried the next hour. The cost of FTS5's secure-delete is in decision 46. A `VACUUM INTO` copy carries only the text still held. Not closed, and outside SelfCloud: backups and file-system snapshots made before a deletion keep the words, as they keep the file; the file system may keep the bytes of an unlinked blob until its blocks are reused (a blob file is removed by the sweep, not overwritten); SSD wear levelling and the operating system's page cache.
 | `office.enabled` | `false` | Turns on the office editor (the page in the interface and the WOPI host for Collabora). Needs `office.discovery_url`. Off, every `/wopi` route and the editor answer not found. |
-| `office.discovery_url` | (none) | Collabora's WOPI discovery address, https, ending in `/hosting/discovery`. Selfcloud fetches it, and only it, for office editing. Its host is where the browser loads the editor from, so the browser must reach it. |
-| `office.wopi_url` | (none) | The address Collabora uses to call Selfcloud, with no path, when it differs from `public_url` (a proxy in front, for example). Selfcloud checks Collabora's signatures on the URL built from it, so it must be the address Collabora really calls. |
+| `office.discovery_url` | (none) | Collabora's WOPI discovery address, https, ending in `/hosting/discovery`. SelfCloud fetches it, and only it, for office editing. Its host is where the browser loads the editor from, so the browser must reach it. |
+| `office.wopi_url` | (none) | The address Collabora uses to call SelfCloud, with no path, when it differs from `public_url` (a proxy in front, for example). SelfCloud checks Collabora's signatures on the URL built from it, so it must be the address Collabora really calls. |
 | `office.lock_minutes` | `30` | How long an editor's lock lasts without a refresh, at most 30 (the WOPI limit). A crashed editor frees its file after this. |
 | `office.token_minutes` | `600` | How long an editor's access token lives, at most a day. It never outlives the token that opened the editor. |
 | `office.max_file_bytes` | `50MiB` | The largest office file that may be opened in the editor, and the largest one a save may write. |
@@ -181,7 +185,7 @@ Content search keeps the words of each file in the database. Deleting the text o
 | `metrics_on_main` | `false` | Serve `/metrics` on the main listener too. Off by default: `/metrics` shows storage totals, route counts and the webhook queue to anyone who can reach the listener (sec1, decision 84). Ignored when `metrics_listen` is set, which serves it on its own address. |
 | `admin_key_file` | none | File holding an admin key to add on start. |
 | `ui.enabled` | `true` | Serve the web interface at `/`. With `false`, the API alone runs; `/` is the JSON 404. |
-| `ui.brand.name` | `Selfcloud` | Product name in the web interface and `/api/v1/info`. Up to 64 characters. |
+| `ui.brand.name` | `SelfCloud` | Product name in the web interface and `/api/v1/info`. Up to 64 characters. |
 | `ui.brand.accent` | `#053D8E` | Primary colour, as `#rrggbb`. The web interface derives its accent family from it. |
 | `ui.brand.palette.light` / `.dark` | none | Colour tokens of each theme (`accent`, `accent_fill`, `accent_fill_hover`, `accent_fill_active`, `accent_text`, `accent_soft`, `accent_border`), each `#rrggbb`. Unset tokens keep the default. |
 | `ui.brand.sidebar` | none | Sidebar colours (`bg`, `text`, `caption`, `active`, `on_active`), each `#rrggbb`. Unset ones keep the default. |
@@ -191,39 +195,39 @@ Content search keeps the words of each file in the database. Deleting the text o
 ## Office editing and conversion (Collabora Online)
 
 `office.enabled` turns on the office editor and the document previews and exports. Both use a Collabora Online server, which
-Selfcloud reaches at `office.discovery_url` (an https address ending in `/hosting/discovery`). Settings the operator must
+SelfCloud reaches at `office.discovery_url` (an https address ending in `/hosting/discovery`). Settings the operator must
 make, found by running against Collabora Online 26.04.5.2:
 
 - **Two directions.** The browser must reach Collabora (it loads the editor's page from the discovery address), and
-  Collabora must reach Selfcloud (at `office.wopi_url`, or `public_url`). The checks of these two directions were run
+  Collabora must reach SelfCloud (at `office.wopi_url`, or `public_url`). The checks of these two directions were run
   against a fake Collabora only, not a live one, so how a live Collabora reports either failure is not known here.
-- **The page's security headers.** Selfcloud's content security policy allows the discovery address's origin, and nothing
+- **The page's security headers.** SelfCloud's content security policy allows the discovery address's origin, and nothing
   else, in `frame-src` and `form-action`, so the editor's frame and its form post are allowed. Nothing else of Collabora's
   is allowed; a Collabora on another host than the discovery address cannot open a file, since each editor address must be
   on the discovery host.
 - **A WOPI proof key.** Collabora must have one at `/etc/coolwsd/proof_key`. Collabora starts without it and logs
-  `Could not open proof RSA key`. Without it the discovery document has no `proof-key`, and Selfcloud refuses it, so
+  `Could not open proof RSA key`. Without it the discovery document has no `proof-key`, and SelfCloud refuses it, so
   every office route answers `unavailable`. Create it with Collabora's own tool (`coolconfig generate-proof-key`) or
   with `openssl genrsa`, and mount it.
 - **`server_name` must match the discovery address.** Set Collabora's `server_name` to the host and port of
   `office.discovery_url` (for example `office.example.com:9980`). Collabora writes that host into every editor and
-  discovery address. With a bare host, the discovery's addresses lack the port, Selfcloud keeps none of them, and every
+  discovery address. With a bare host, the discovery's addresses lack the port, SelfCloud keeps none of them, and every
   preview and export answers `unsupported_media_type`.
-- **Trust.** Collabora's certificate must be trusted by Selfcloud, as `office.discovery_url` must be https. In a
+- **Trust.** Collabora's certificate must be trusted by SelfCloud, as `office.discovery_url` must be https. In a
   container, mount the CA and set `SSL_CERT_FILE` to it.
 - **Allowed hosts.** Conversion takes requests only from the addresses in Collabora's `net.post_allow` list. The shipped
   list covers `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and loopback, so a Docker or LAN address is allowed. Any other
   address needs an entry.
-- **Time.** Collabora's `limit_convert_secs` (100 s by default) and Selfcloud's `derived.timeout` (60 s) both limit a
+- **Time.** Collabora's `limit_convert_secs` (100 s by default) and SelfCloud's `derived.timeout` (60 s) both limit a
   conversion. On the test host (arm64), a 167-page document took about 5 s; a 834-page document (40,000 paragraphs) took
   about 56 s and passed the 60 s limit, so a preview or export of such a document is a counted time-out. Raise
   `derived.timeout` for large documents, or keep the documents small.
 
-- **Logs.** When an upload fails, Collabora's log holds the full storage URI with the access token in it. That is Collabora's log, not Selfcloud's: keep it private. Selfcloud's own log holds no token. A refused editor call names its reason, node and session, and never the token.
+- **Logs.** When an upload fails, Collabora's log holds the full storage URI with the access token in it. That is Collabora's log, not SelfCloud's: keep it private. SelfCloud's own log holds no token. A refused editor call names its reason, node and session, and never the token.
 - **Editor tokens.** An editor's token lives `office.token_minutes` (600 by default, and at most a day). It never outlives the token that opened the editor. An editor ends with the browser session that opened it. Its file's lock is freed by the next sweep (every five minutes) once no editor on that file is live (decision 106).
 
 A conversion is refused when Collabora cannot save the document as the format asked (a spreadsheet asked for as a text
-document, for example). A stopped Collabora is an outage: Selfcloud answers `unavailable` with `Retry-After` and tries
+document, for example). A stopped Collabora is an outage: SelfCloud answers `unavailable` with `Retry-After` and tries
 again. Collabora converts unknown content as text rather than refusing it, so a corrupt file yields a PDF of its bytes.
 
 ## Off by default
@@ -278,8 +282,13 @@ must be MIT, ISC, BSD or OFL. Build-time packages may also be Apache-2.0, MPL-2.
 BlueOak-1.0.0 (test-runner packages only; none of them reaches the browser). `npm run check` in `web/`
 enforces this by reading each package's licence from `node_modules`.
 
+## Brand
+
+The SelfCloud mark and wordmark in `docs/brand/` (and the copies the server serves) use the glyph outlines of the Nunito ExtraBold
+typeface, under the SIL Open Font License 1.1. The artwork is SelfCloud's own.
+
 ## Licence
 
-Selfcloud is free software under the GNU Affero General Public License, version 3 or (at your
+SelfCloud is free software under the GNU Affero General Public License, version 3 or (at your
 option) any later version. See [LICENSE](LICENSE). If you run a modified version as a network
 service, you must offer its source to the people who use it.

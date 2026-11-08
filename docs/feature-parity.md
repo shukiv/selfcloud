@@ -3,7 +3,7 @@
 Status: **approved 2026-10-28** (design.md §15, decisions 11 to 13). Search limits: full text up to 50 MiB, OCR up to 10 MiB images and 20 MiB PDFs.
 
 The goal is to offer what Google Drive offers, matched in function, not in look: the screens
-follow Selfcloud's own design system. The inventory behind this file covers 213 Drive features
+follow SelfCloud's own design system. The inventory behind this file covers 213 Drive features
 from Google's help centre, admin help and Drive API v3 reference.
 
 Each feature is marked:
@@ -29,7 +29,7 @@ space ("My files"), and a group can hold users.
 
 ## 1. Files and upload
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Upload files and folders, with drag and drop | Have: resumable uploads (f). Built (k2): the upload tray, folder upload and drag and drop. Built (sd1, decision 104): a folder of the sidebar's tree can be dragged onto the folders, roots and breadcrumbs of the listing and the tree, and the sidebar's Trash takes a drop (Delete, with its confirmation and Undo); the sidebar scrolls at its edge during a drag. Not built: a finger |
 | Create blank documents, spreadsheets and presentations | Built (l6, decision 91; nt1, decision 105): `POST /api/v1/nodes/{nod}/documents` makes Word, Excel and PowerPoint files, and the OpenDocument text, spreadsheet, presentation and drawing kinds, and an empty text file (`txt`, made with office editing off). Documents also come from templates: six built-in starters (`builtin:letter` and the rest, `GET /api/v1/templates?kind=`) and the account's own templates folder (`GET` and `PUT /api/v1/accounts/{acc}/templates`, by a manager). The submenus and the template picker in the web interface are slice nt2 |
@@ -42,7 +42,7 @@ space ("My files"), and a group can hold users.
 
 ## 2. Viewing and preview
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Full-screen preview of images, PDF, video, audio and text | Built (k2), over signed links (g); text is read on the content route. Video and audio play to the end of a long file: a new link is asked for when the first one ends, and a format the browser cannot play is said so (s4c, decision 42). Double click, a tap on a phone, and a play mark on media rows. Pictures open in a lightbox over the dimmed page (decision 60). A Play media button plays a folder's audio and video (decision 61). |
 | Video and audio player: own controls (play, seek with the buffered part, time, volume kept between files, mute, speed, full screen, picture in picture) and the keys | Built (x1, decision 45): antd controls over the element, with no player library; the browser's own controls are not used. Mini player and Media Session (x2), subtitles (x2) are planned |
@@ -56,7 +56,7 @@ space ("My files"), and a group can hold users.
 
 ## 3. Organisation
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Nested folders | Have |
 | Personal space ("My Drive") | Built (n1): "My files" per user, made with the user. Counts against the account quota and the user's own limit (built, p1); team spaces count against the account only |
@@ -73,7 +73,7 @@ space ("My files"), and a group can hold users.
 
 ## 4. Sharing and permissions
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Roles: viewer, commenter, editor, owner | Built (n1): viewer, commenter, contributor, editor, manager. Drive's "content manager" is `editor` in the API; owners of the account hold manager on team spaces |
 | Share a single file, or any folder at any depth | Built (n1): permissions on any node, inherited downward, additive only |
@@ -92,7 +92,7 @@ space ("My files"), and a group can hold users.
 
 ## 5. Team spaces (Drive's "shared drives")
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Create, rename, hide and delete | Have: create, rename, delete. Built (n2): hide, per user |
 | Roles: manager, content manager, contributor, commenter, viewer | Built (n1), with the API names of section 8 |
@@ -102,7 +102,7 @@ space ("My files"), and a group can hold users.
 
 ## 6. Versions and recovery
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Trash, deleted after 30 days; restore; empty trash | Built (m): `trash.retention`, default 30 days |
 | Delete permanently, skipping the trash | Built (m): needs manager, not an editor, and the API flag is `?permanent=true` |
@@ -114,7 +114,7 @@ space ("My files"), and a group can hold users.
 
 ## 7. Search
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Search by name | Built (q1, q2, decision 40): a query parameter in the API, and the search page of the web interface (q4, decision 54) |
 | Filters: type, owner, location, modified and created date, starred, shared with me, trashed | Partly built (q2, decision 40): kind, extension, modified and size, scope, label values. Owner, location and the others are not in v1. The page (q4, decision 54) has chips for type, extension, modified, size and label values; a scope is in the API but not yet in the page |
@@ -125,7 +125,7 @@ space ("My files"), and a group can hold users.
 
 ## 8. Collaboration
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Comments on a file, replies, resolve | Built (r1): file and folder threads, one reply level, edit, delete and resolve. Plain text, 2,000 characters and 50 lines at most. Comments inside a document stay in Collabora. The account can turn comments off. The web interface is built (r7a, decision 55): the comments panel, replies, edit, delete, resolve, and the owner's switch. Comment search and assignment are not built |
 | @mentions, assign a comment | Mentions built (r2): a person named in a comment must reach the node; a people list suggests them. A mention and a reply notify the person in the app and by email, once an hour at most (r3, decision 43). Assignment is deferred (decision 39) |
@@ -138,7 +138,7 @@ space ("My files"), and a group can hold users.
 
 ## 9. Offline, sync and devices
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Desktop sync app (streaming or mirroring) | Skip as a native app for now. New (t): a WebDAV endpoint, so operating systems and rclone can mount Selfcloud. A dedicated client can follow |
 | Offline access in the browser | New, later: a service worker can cache recent files; not before the interface is stable |
@@ -147,7 +147,7 @@ space ("My files"), and a group can hold users.
 
 ## 10. Storage
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Storage quota | Have (h): per account |
 | Per-user quota inside an account | Built (p1): each user's limit, with an account default; no default out of the box |
@@ -158,7 +158,7 @@ space ("My files"), and a group can hold users.
 
 ## 11. Web interface
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Keyboard shortcuts and a shortcut list (ctrl+/) | Built in part (k2, w1): arrows, Enter, Space, F2, Delete, Escape and Ctrl+A in the file list; Backspace and Alt+Up go up a folder, Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste within the tab (w1, decision 44). The shortcut list (ctrl+/) is not built |
 | Multi-select, right-click menu, grid and list, density, dark mode | Built in part (k2, w1): multi-select, grid and list, dark mode (k1). The right-click menu, with a long press on a finger, is built (w1, decision 44), on a row, a selection and empty space. Density is not built. The selection actions are in a toolbar above the listing, not in a bar over the rows (w1) |
@@ -174,7 +174,7 @@ space ("My files"), and a group can hold users.
 
 ## 12. Admin and security
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Audit log | Have (b). New (u): a viewer in the interface and CSV export |
 | External sharing controls, trusted domains | New (u) |
@@ -187,7 +187,7 @@ space ("My files"), and a group can hold users.
 
 ## 13. API and integrations
 
-| Drive feature | Selfcloud |
+| Drive feature | SelfCloud |
 |---|---|
 | Files, permissions, revisions, comments and team-space APIs | Have for files (e). Permissions and team spaces (n1, n2) and revisions and trash (m) are built. Comments are built (r1) |
 | Changes feed (what changed since a token) | New (t): for sync clients and API clients |

@@ -333,12 +333,13 @@ describe("the folder tree in the sidebar", () => {
   it("keeps the gap New leaves on an admin page, 10 px, and 6 px on a finger; a files page has no gap", async () => {
     signIn("admin");
     renderShell("/admin/tenants");
+    // Decision 109: the brand's block carries the gap, so the menu starts a gap below it.
     const gap = await waitFor(() => {
-      const el = document.querySelector<HTMLElement>('[data-testid="sidebar-top-gap"]');
-      if (!el) throw new Error("no gap yet");
+      const el = document.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
+      if (!el) throw new Error("no brand yet");
       return el;
     });
-    expect(gap.style.blockSize).toBe("10px");
+    expect(gap.style.marginBlockEnd).toBe("10px");
     expect(document.querySelector('.shell-sider [data-testid="new-button"]')).toBeNull();
     cleanup();
     const plain = window.matchMedia;
@@ -347,11 +348,11 @@ describe("the folder tree in the sidebar", () => {
       signIn("admin");
       renderShell("/admin/tenants");
       const finger = await waitFor(() => {
-        const el = document.querySelector<HTMLElement>('[data-testid="sidebar-top-gap"]');
-        if (!el) throw new Error("no gap yet");
+        const el = document.querySelector<HTMLElement>('[data-testid="sidebar-brand"]');
+        if (!el) throw new Error("no brand yet");
         return el;
       });
-      expect(finger.style.blockSize).toBe("6px");
+      expect(finger.style.marginBlockEnd).toBe("6px");
     } finally {
       window.matchMedia = plain;
     }
@@ -444,7 +445,8 @@ describe("the folder tree in the sidebar", () => {
 
   // Decision 69: the shell draws no name and no logo, on the desktop, in the rail and in the phone's drawer. The name stays in the
   // browser tab and the sign-in pages (not tested here). The sidebar is a named region, and the top bar a banner.
-  it("draws no brand name or logo in the sidebar, the top bar, the rail or the phone drawer", async () => {
+  // Decision 109 reverses 69's no-logo rule for the sidebar: the logo or the mark is at its top, in the rail and in the drawer.
+  it("draws the logo at the top of the sidebar, the rail and the phone drawer, and no brand in the top bar", async () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo.png" });
     try {
       signIn("member");
@@ -455,8 +457,9 @@ describe("the folder tree in the sidebar", () => {
         if (!el) throw new Error("no sidebar yet");
         return el;
       });
+      // Decision 109: the logo is at the top of the sidebar, and the name is not drawn beside it; the top bar draws neither.
       expect(sider.textContent).not.toContain("Acme Drive");
-      expect(sider.querySelector("img")).toBeNull();
+      expect(sider.querySelector("img")?.getAttribute("src")).toBe("/brand/logo.png");
       expect(document.querySelector("header")?.textContent).not.toContain("Acme Drive");
       expect(document.querySelector("header img")).toBeNull();
       expect(screen.getByRole("complementary", { name: "Sidebar" })).toBeTruthy();
@@ -464,13 +467,13 @@ describe("the folder tree in the sidebar", () => {
       cleanup();
       restore();
 
-      // Folded to the rail: the logo was drawn there, and the name is gone; neither is drawn now.
+      // Folded to the rail: the same logo, small; the name is not drawn.
       window.localStorage.setItem("selfcloud.navRail", "1");
       const rail = wide(true);
       renderShell("/starred");
       await waitFor(() => expect(document.querySelector(".ant-layout-sider-collapsed")).not.toBeNull());
       expect(document.querySelector(".ant-layout-sider-collapsed")?.textContent).not.toContain("Acme Drive");
-      expect(document.querySelector(".ant-layout-sider-collapsed img")).toBeNull();
+      expect(document.querySelector(".ant-layout-sider-collapsed img")?.getAttribute("src")).toBe("/brand/logo.png");
       cleanup();
       rail();
       window.localStorage.removeItem("selfcloud.navRail");
@@ -486,11 +489,11 @@ describe("the folder tree in the sidebar", () => {
         return el;
       });
       expect(drawer.textContent).not.toContain("Acme Drive");
-      expect(drawer.querySelector("img")).toBeNull();
+      expect(drawer.querySelector("img")?.getAttribute("src")).toBe("/brand/logo.png");
       expect(document.querySelector("header")?.textContent).not.toContain("Acme Drive");
       window.matchMedia = plain;
     } finally {
-      brand.set({ name: "Selfcloud", accent: DEFAULT_ACCENT, logo_url: null });
+      brand.set({ name: "SelfCloud", accent: DEFAULT_ACCENT, logo_url: null });
     }
   });
 });

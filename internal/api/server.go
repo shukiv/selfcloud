@@ -533,7 +533,7 @@ func New(opts Options) (*Server, error) {
 			officeURL = cfg.Office.DiscoveryURL
 		}
 		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL,
-			BrandName: cfg.UI.Brand.Name, BrandAccent: cfg.UI.Brand.Accent}); err != nil {
+			BrandName: cfg.UI.Brand.Name, BrandAccent: cfg.UI.Brand.Accent, BrandArtwork: cfg.UI.Brand.Artwork()}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
 		}
 	}

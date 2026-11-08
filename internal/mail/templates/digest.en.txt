@@ -1,4 +1,4 @@
-Subject: {{.Count}} new mentions and replies in Selfcloud
+Subject: {{.Count}} new mentions and replies in SelfCloud
 
 You have {{.Count}} new mentions and replies.
 

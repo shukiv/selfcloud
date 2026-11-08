@@ -158,7 +158,8 @@ func TestInfoBrand(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	body := rec.Body.String()
 	for _, want := range []string{
-		`"brand":{"name":"Selfcloud","accent":"#053D8E","logo_url":null}`,
+		`"name":"SelfCloud"`,
+		`"brand":{"name":"SelfCloud","accent":"#053D8E","logo_url":"/brand/logo","artwork":true}`,
 		`"password_min_length":8`,
 	} {
 		if !strings.Contains(body, want) {
@@ -174,7 +175,7 @@ func TestInfoBrand(t *testing.T) {
 		c.UI.Brand = config.BrandConfig{Name: "Acme Drive", Accent: "#0F766E", LogoFile: logo}
 	})
 	body = serveRaw(t, s, http.MethodGet, "/api/v1/info").Body.String()
-	if !strings.Contains(body, `"brand":{"name":"Acme Drive","accent":"#0F766E","logo_url":"/brand/logo"}`) {
+	if !strings.Contains(body, `"brand":{"name":"Acme Drive","accent":"#0F766E","logo_url":"/brand/logo","artwork":false}`) {
 		t.Errorf("info = %s", body)
 	}
 	if strings.Contains(body, "palette") || strings.Contains(body, "sidebar") {
@@ -206,11 +207,42 @@ func TestLogoRoute(t *testing.T) {
 	}
 }
 
-// TestLogoRouteWithoutLogo: no logo file, so the route is the JSON 404.
+// TestLogoRouteWithoutLogo: no logo file and a name of the installation's own, so the route is the JSON 404.
 func TestLogoRouteWithoutLogo(t *testing.T) {
 	t.Parallel()
-	s := newTestServer(t)
+	s := newTestServer(t, func(c *config.Config) { c.UI.Brand.Name = "Acme Drive" })
 	wantError(t, serveRaw(t, s, http.MethodGet, "/brand/logo"), http.StatusNotFound, "not_found")
+}
+
+// TestLogoRouteArtwork: the default brand (name SelfCloud, no logo file) has the SelfCloud artwork at the logo route, with the
+// UI on or off (decision 109).
+func TestLogoRouteArtwork(t *testing.T) {
+	t.Parallel()
+	for _, ui := range []bool{true, false} {
+		s := newTestServer(t, func(c *config.Config) { c.UI.Enabled = ui })
+		rec := serveRaw(t, s, http.MethodGet, "/brand/logo")
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/svg+xml" ||
+			!strings.Contains(rec.Body.String(), `aria-label="SelfCloud"`) {
+			t.Errorf("ui=%v: %d %v", ui, rec.Code, rec.Header())
+		}
+	}
+}
+
+// TestConfigArtwork: the artwork shows only for the default name with no logo file (decision 109, Q4).
+func TestConfigArtwork(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, logo string
+		want       bool
+	}{
+		{"SelfCloud", "", true},
+		{"SelfCloud", "/x/logo.png", false},
+		{"Acme Drive", "", false},
+	} {
+		if got := (config.BrandConfig{Name: tc.name, LogoFile: tc.logo}).Artwork(); got != tc.want {
+			t.Errorf("name %q logo %q: Artwork() = %v, want %v", tc.name, tc.logo, got, tc.want)
+		}
+	}
 }
 
 // TestLinkResponsesKeepTheirPolicy: a signed link's file keeps the content policy on the content

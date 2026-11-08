@@ -1,4 +1,4 @@
-Subject: {{.Count}} إشارات وردود جديدة في Selfcloud
+Subject: {{.Count}} إشارات وردود جديدة في SelfCloud
 
 لديك {{.Count}} إشارات وردود جديدة.
 

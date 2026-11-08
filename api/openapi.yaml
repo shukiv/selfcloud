@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: Selfcloud API
+  title: SelfCloud API
   version: 0.1.0
-  summary: The HTTP API of Selfcloud, a self-hosted drive.
+  summary: The HTTP API of SelfCloud, a self-hosted drive.
   description: |
     The design behind this API is in docs/design.md.
 
@@ -181,7 +181,9 @@ paths:
       description: |
         The file named by `ui.brand.logo_file`, read at start (PNG or SVG, at most 256 KiB). Served
         whether or not the web interface is on. `brand.logo_url` in `/info` is null when there is no
-        logo, and this route then answers `not_found`. An SVG is sent with a sandbox policy.
+        logo, and this route then answers `not_found`. An SVG is sent with a sandbox policy. With no
+        logo file and the default name (`SelfCloud`), this route answers the SelfCloud artwork, and
+        `brand.logo_url` is this route (`brand.artwork` is true; decision 109).
       responses:
         "200":
           description: The logo, as image/png or image/svg+xml.
@@ -7206,7 +7208,7 @@ components:
       type: object
       required: [name, version, public_url, web_interface, brand, password_min_length, limits, sharing_max_expiry_days, features]
       properties:
-        name: { type: string, example: Selfcloud }
+        name: { type: string, example: SelfCloud }
         version: { type: string, example: 0.1.0 }
         public_url:
           type: string
@@ -7246,12 +7248,12 @@ components:
     Brand:
       type: object
       description: The installation's look. The same for every user.
-      required: [name, accent, logo_url]
+      required: [name, accent, logo_url, artwork]
       properties:
         name:
           type: string
           description: The product name, shown in the web interface's header and title.
-          example: Selfcloud
+          example: SelfCloud
         accent:
           type: string
           pattern: "^#[0-9a-fA-F]{6}$"
@@ -7259,7 +7261,10 @@ components:
           example: "#053D8E"
         logo_url:
           type: [string, "null"]
-          description: The logo's URL (`/brand/logo`), or null when the installation has none. The file's path is never sent.
+          description: The logo's URL (`/brand/logo`), or null when the installation has none. The file's path is never sent. For the default brand it is the SelfCloud artwork.
+        artwork:
+          type: boolean
+          description: "True when the installation shows the SelfCloud artwork, which is the default name with no logo file. The artwork is one picture with the name inside it, so the web interface draws no name beside it (decision 109)."
         palette:
           type: object
           description: The colour tokens the installation overrides, one set per theme. Absent when it overrides none; a theme with no override is absent too. Each token is #rrggbb.

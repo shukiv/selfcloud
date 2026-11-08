@@ -40,11 +40,12 @@ const workerBuild: Plugin = {
     const dist = fileURLToPath(new URL("./dist/", import.meta.url));
     const worker = join(dist, "sw.js");
     if (!existsSync(worker)) throw new Error("dist/sw.js is missing: the service worker is not in the build");
-    // The identifier covers what the worker serves from its cache: the build's file names, and the contents of the offline page,
-    // its files and the favicon, so a change to any of them gives the worker a new cache and a new copy to fetch.
+    // The identifier covers what the worker serves from its cache: the build's file names, and the contents of the offline page
+    // and its files, so a change to any of them gives the worker a new cache and a new copy to fetch. The favicon is not cached:
+    // it follows the brand (decision 109).
     const names = readdirSync(join(dist, "assets")).sort();
     const hash = createHash("sha256").update(names.join("\n")).update(readFileSync(join(dist, "sw.js"), "utf8"));
-    for (const file of ["offline.html", "offline.css", "offline.js", "favicon.svg"]) {
+    for (const file of ["offline.html", "offline.css", "offline.js"]) {
       hash.update(file).update("\0").update(readFileSync(join(dist, file)));
     }
     const id = hash.digest("hex").slice(0, 16);

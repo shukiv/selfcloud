@@ -67,24 +67,26 @@ type icon struct {
 	etag string
 }
 
-// brandInfo is the installation's name and accent, for the manifest and the icons.
+// brandInfo is the installation's name and accent, for the manifest and the icons. artwork says the icons and the favicon
+// carry the SelfCloud mark rather than the glyph (decision 109).
 type brandInfo struct {
-	name   string
-	accent color.RGBA
-	hex    string
+	name    string
+	accent  color.RGBA
+	hex     string
+	artwork bool
 }
 
-// newBrandInfo reads the brand's name and accent. A missing name is "Selfcloud", a missing or malformed accent the default.
-func newBrandInfo(name, accent string) brandInfo {
+// newBrandInfo reads the brand's name and accent. A missing name is "SelfCloud", a missing or malformed accent the default.
+func newBrandInfo(name, accent string, artwork bool) brandInfo {
 	if name == "" {
-		name = "Selfcloud"
+		name = "SelfCloud"
 	}
 	c, ok := parseHexColour(accent)
 	if !ok {
 		c, _ = parseHexColour(defaultAccent)
 		accent = defaultAccent
 	}
-	return brandInfo{name: name, accent: c, hex: strings.ToUpper(accent)}
+	return brandInfo{name: name, accent: c, hex: strings.ToUpper(accent), artwork: artwork}
 }
 
 // parseHexColour reads #rrggbb.
@@ -99,9 +101,9 @@ func parseHexColour(s string) (color.RGBA, bool) {
 	return color.RGBA{R: uint8(n >> 16), G: uint8(n >> 8), B: uint8(n), A: 255}, true
 }
 
-// isPWAPath reports whether p is the manifest or one of the icons.
+// isPWAPath reports whether p is the manifest, one of the icons, or one of the brand's SVG files.
 func isPWAPath(p string) bool {
-	if p == manifestPath {
+	if p == manifestPath || isBrandSVGPath(p) {
 		return true
 	}
 	for _, s := range iconSpecs {
@@ -112,13 +114,23 @@ func isPWAPath(p string) bool {
 	return false
 }
 
-// drawIcon draws one icon: the accent everywhere, and the white glyph over it, each pixel blended by its coverage.
-func drawIcon(size int, maskable bool, accent color.RGBA) *image.RGBA {
+// drawIcon draws one icon: the accent everywhere, and the white figure over it, each pixel blended by its coverage. The figure
+// is the mark for the artwork and the glyph otherwise.
+func drawIcon(size int, maskable bool, accent color.RGBA, artwork bool) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	var cover []float64
+	if artwork {
+		cover = markCoverage(size)
+	}
 	scale := glyphScale(size, maskable)
 	for py := 0; py < size; py++ {
 		for px := 0; px < size; px++ {
-			a := glyphCoverage(px, py, size, scale)
+			a := 0.0
+			if artwork {
+				a = cover[py*size+px]
+			} else {
+				a = glyphCoverage(px, py, size, scale)
+			}
 			img.SetRGBA(px, py, color.RGBA{
 				R: blend(accent.R, a),
 				G: blend(accent.G, a),
@@ -135,14 +147,18 @@ func blend(c uint8, a float64) uint8 {
 	return uint8(float64(c)*(1-a) + 255*a + 0.5)
 }
 
-// encodeIcon draws the icon and encodes it as a PNG. Its validator is a hash of the accent, the glyph, the kind of icon
-// and its size, so a change to any of them changes the ETag.
+// encodeIcon draws the icon and encodes it as a PNG. Its validator is a hash of the accent, the figure (the glyph, or the
+// mark's path for the artwork), the kind of icon and its size, so a change to any of them changes the ETag.
 func encodeIcon(spec iconSpec, b brandInfo) (icon, error) {
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, drawIcon(spec.size, spec.maskable, b.accent)); err != nil {
+	if err := png.Encode(&buf, drawIcon(spec.size, spec.maskable, b.accent, b.artwork)); err != nil {
 		return icon{}, err
 	}
-	sum := sha256.Sum256([]byte(b.hex + "\n" + glyphSpec() + "\n" + spec.path + "\n" + strconv.Itoa(spec.size)))
+	figure := glyphSpec()
+	if b.artwork {
+		figure = "mark=" + mark.d
+	}
+	sum := sha256.Sum256([]byte(b.hex + "\n" + figure + "\n" + spec.path + "\n" + strconv.Itoa(spec.size)))
 	return icon{data: buf.Bytes(), etag: `"` + hex.EncodeToString(sum[:16]) + `"`}, nil
 }
 
@@ -252,6 +268,10 @@ func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request) bool {
 		http.ServeContent(w, r, "manifest.webmanifest", time.Time{}, bytes.NewReader(data))
 		return true
 	}
+	if body, ok := h.svgs[p]; ok {
+		serveBrandSVG(w, r, body)
+		return true
+	}
 	ic, ok := h.icons[p]
 	if !ok {
 		return false
@@ -263,6 +283,19 @@ func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request) bool {
 	hd.Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, "icon.png", time.Time{}, bytes.NewReader(ic.data))
 	return true
+}
+
+// serveBrandSVG answers one of the brand's SVG files. Its ETag is a hash of the file, so a repeat request gets 304. It runs no
+// script and loads nothing, as the installation's logo does.
+func serveBrandSVG(w http.ResponseWriter, r *http.Request, body []byte) {
+	sum := sha256.Sum256(body)
+	hd := w.Header()
+	hd.Set("Content-Type", "image/svg+xml")
+	hd.Set("Cache-Control", "no-cache")
+	hd.Set("ETag", `"`+hex.EncodeToString(sum[:16])+`"`)
+	hd.Set("X-Content-Type-Options", "nosniff")
+	hd.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	http.ServeContent(w, r, "brand.svg", time.Time{}, bytes.NewReader(body))
 }
 
 // buildIcons draws every icon for the brand.

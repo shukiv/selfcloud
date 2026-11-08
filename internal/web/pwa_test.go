@@ -86,14 +86,14 @@ func TestShortNameIsCut(t *testing.T) {
 	}
 }
 
-// TestManifestNameDefaults: an empty name is Selfcloud, and a malformed accent is the default.
+// TestManifestNameDefaults: an empty name is SelfCloud, and a malformed accent is the default.
 func TestManifestNameDefaults(t *testing.T) {
 	h := pwaHandler(t, "", "not a colour")
 	var m webManifest
 	if err := json.Unmarshal(get(t, h, http.MethodGet, manifestPath).Body.Bytes(), &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.Name != "Selfcloud" || m.ThemeColor != defaultAccent {
+	if m.Name != "SelfCloud" || m.ThemeColor != defaultAccent {
 		t.Errorf("name %q theme %q", m.Name, m.ThemeColor)
 	}
 }
@@ -222,7 +222,7 @@ func glyphAlphaAt(img image.Image, x, y int) float64 {
 func TestGlyphEdgeIsAntiAliased(t *testing.T) {
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
 	for _, size := range []int{180, 192, 512} {
-		img := drawIcon(size, false, accent)
+		img := drawIcon(size, false, accent, false)
 		solid, partial := 0, 0
 		for y := 0; y < size; y++ {
 			for x := 0; x < size; x++ {
@@ -249,7 +249,7 @@ func TestGlyphEdgeIsAntiAliased(t *testing.T) {
 func TestGlyphBoundingBoxIsSixtyPercentOfWidth(t *testing.T) {
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
 	for _, size := range []int{180, 192, 512} {
-		img := drawIcon(size, false, accent)
+		img := drawIcon(size, false, accent, false)
 		minX, minY, maxX, maxY := size, size, -1, -1
 		for y := 0; y < size; y++ {
 			for x := 0; x < size; x++ {
@@ -275,7 +275,7 @@ func TestGlyphBoundingBoxIsSixtyPercentOfWidth(t *testing.T) {
 func TestMaskableGlyphIsInsideTheSafeCircle(t *testing.T) {
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
 	const n = 512
-	img := drawIcon(n, true, accent)
+	img := drawIcon(n, true, accent, false)
 	limit := 0.40 * n
 	for y := 0; y < n; y++ {
 		for x := 0; x < n; x++ {

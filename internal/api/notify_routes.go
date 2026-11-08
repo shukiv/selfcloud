@@ -256,19 +256,19 @@ var unsubscribePage = template.Must(template.New("unsubscribe").Parse(`<!doctype
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Selfcloud</title>
+<title>SelfCloud</title>
 </head>
 <body style="font-family: sans-serif; max-width: 36em; margin: 2em auto; padding: 0 1em;">
 {{- if eq .State "confirm"}}
 <h1>Stop comment emails</h1>
-<p>Selfcloud will stop sending you emails about comments and mentions. Notifications in Selfcloud stay on.</p>
+<p>SelfCloud will stop sending you emails about comments and mentions. Notifications in SelfCloud stay on.</p>
 <form method="post" action="{{.Action}}"><button type="submit">Stop these emails</button></form>
 {{- else if eq .State "done"}}
 <h1>Done</h1>
 <p>You will no longer get emails about comments. You can turn them back on in your notification settings.</p>
 {{- else}}
 <h1>This link is not valid</h1>
-<p>Open a newer email from Selfcloud, or turn emails off in your notification settings.</p>
+<p>Open a newer email from SelfCloud, or turn emails off in your notification settings.</p>
 {{- end}}
 </body>
 </html>

@@ -28,7 +28,7 @@ const notBuiltPage = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Selfcloud</title>
+<title>SelfCloud</title>
 </head>
 <body>
 <p>The web interface is not built. Run make build.</p>
@@ -57,6 +57,8 @@ type Options struct {
 	// and manifest (decision 65).
 	BrandName   string
 	BrandAccent string
+	// BrandArtwork says the installation shows the SelfCloud artwork: the default name with no logo file (decision 109).
+	BrandArtwork bool
 }
 
 // Handler serves the built files of the web interface.
@@ -72,6 +74,8 @@ type Handler struct {
 	// brand names the manifest and colours the icons; icons are the drawn icons by path (pwa.go).
 	brand brandInfo
 	icons map[string]icon
+	// svgs are the brand's SVG files by path: the favicon, the rail's mark and the wordmark (decision 109).
+	svgs map[string][]byte
 }
 
 // New returns a handler for files. The build's index.html is served at "/" and for client routes.
@@ -94,12 +98,12 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		}
 		officeOrigin = " " + u.Scheme + "://" + u.Host
 	}
-	brand := newBrandInfo(opts.BrandName, opts.BrandAccent)
+	brand := newBrandInfo(opts.BrandName, opts.BrandAccent, opts.BrandArtwork)
 	icons, err := buildIcons(brand)
 	if err != nil {
 		return nil, fmt.Errorf("web: cannot draw the app icons: %w", err)
 	}
-	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin, brand: brand, icons: icons}
+	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin, brand: brand, icons: icons, svgs: brandSVGs(brand)}
 	data, err := fs.ReadFile(files, "index.html")
 	if err == nil {
 		parts := strings.Split(string(data), cspNoncePlaceholder)

@@ -1,4 +1,4 @@
-Subject: {{.Count}} новых упоминаний и ответов в Selfcloud
+Subject: {{.Count}} новых упоминаний и ответов в SelfCloud
 
 У вас {{.Count}} новых упоминаний и ответов.
 

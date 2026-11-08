@@ -1,4 +1,4 @@
-Subject: {{.Count}} nouvelles mentions et réponses dans Selfcloud
+Subject: {{.Count}} nouvelles mentions et réponses dans SelfCloud
 
 Vous avez {{.Count}} nouvelles mentions et réponses.
 

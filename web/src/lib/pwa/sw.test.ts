@@ -397,9 +397,16 @@ describe("install, activate and the messages", () => {
   it("precaches the offline page and the three files it loads at install", async () => {
     const w = load();
     await w.install();
-    for (const f of ["/offline.html", "/offline.css", "/offline.js", "/favicon.svg"]) {
+    for (const f of ["/offline.html", "/offline.css", "/offline.js"]) {
       expect(w.caches.get(SHELL)?.entries.has(absolute(f)), f).toBe(true);
     }
+  });
+
+  // The favicon follows the brand (decision 109), which the worker cannot keep current: it is not precached.
+  it("does not precache the favicon, which follows the brand", async () => {
+    const w = load();
+    await w.install();
+    expect(w.caches.get(SHELL)?.entries.has(absolute("/favicon.svg"))).toBe(false);
   });
 
   it("answers the offline page's own files from the cache, with the network down", async () => {

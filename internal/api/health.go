@@ -15,6 +15,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/fsutil"
 	"github.com/shukiv/selfcloud/internal/version"
+	"github.com/shukiv/selfcloud/internal/web"
 )
 
 type readiness struct {
@@ -97,9 +98,11 @@ type infoLimits struct {
 // infoBrand is the installation's look. The logo is a URL, never the file's path on the host.
 // Palette and Sidebar carry only the tokens the installation sets; the rest are the defaults.
 type infoBrand struct {
-	Name    string       `json:"name"`
-	Accent  string       `json:"accent"`
-	LogoURL *string      `json:"logo_url"`
+	Name    string  `json:"name"`
+	Accent  string  `json:"accent"`
+	LogoURL *string `json:"logo_url"`
+	// Artwork is true when the installation shows the SelfCloud artwork (decision 109): its logo is then the artwork at logo_url.
+	Artwork bool         `json:"artwork"`
 	Palette *infoPalette `json:"palette,omitempty"`
 	Sidebar *infoSidebar `json:"sidebar,omitempty"`
 }
@@ -130,7 +133,7 @@ type infoSidebar struct {
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusOK, infoResponse{
-		Name:              "Selfcloud",
+		Name:              config.DefaultBrandName,
 		Version:           version.Version,
 		PublicURL:         s.cfg.PublicURL,
 		WebInterface:      s.cfg.UI.Enabled,
@@ -164,16 +167,17 @@ func (s *Server) features() []string {
 	return out
 }
 
-// brandInfo describes the brand; the logo URL is set only when there is a logo.
+// brandInfo describes the brand; the logo URL is set when there is a logo or the artwork (decision 109).
 func (s *Server) brandInfo() infoBrand {
 	brand := s.cfg.UI.Brand
 	b := infoBrand{
 		Name:    brand.Name,
 		Accent:  brand.Accent,
+		Artwork: brand.Artwork(),
 		Palette: infoPaletteOf(brand.Palette),
 		Sidebar: infoSidebarOf(brand.Sidebar),
 	}
-	if s.logo != nil {
+	if s.logo != nil || b.Artwork {
 		u := logoPath
 		b.LogoURL = &u
 	}
@@ -220,11 +224,16 @@ const logoPath = "/brand/logo"
 
 // handleLogo serves the installation's logo, or answers not_found when there is none.
 func (s *Server) handleLogo(w http.ResponseWriter, r *http.Request) error {
-	if s.logo == nil {
-		return apierr.New(apierr.NotFound, "the installation has no logo")
+	if s.logo != nil {
+		s.logo.ServeHTTP(w, r)
+		return nil
 	}
-	s.logo.ServeHTTP(w, r)
-	return nil
+	if s.cfg.UI.Brand.Artwork() {
+		// The default brand's logo is the SelfCloud artwork (decision 109).
+		web.ArtworkLogo().ServeHTTP(w, r)
+		return nil
+	}
+	return apierr.New(apierr.NotFound, "the installation has no logo")
 }
 
 func (s *Server) handleSpec(w http.ResponseWriter, r *http.Request) error {

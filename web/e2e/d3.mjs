@@ -283,11 +283,12 @@ export async function d3Checks(h, { page, ADMIN, MEMBER }) {
     await signOut(page);
     await signIn(page, ADMIN);
     await navigateTo(page, '/admin/tenants');
-    await page.waitFor(`location.pathname.startsWith('/admin') && !!document.querySelector('[data-testid="sidebar-top-gap"]') && !!document.querySelector('.shell-sider .shell-menu .ant-menu-item')`, 20000);
+    await page.waitFor(`location.pathname.startsWith('/admin') && !!document.querySelector('[data-testid="sidebar-brand"]') && !!document.querySelector('.shell-sider .shell-menu .ant-menu-item')`, 20000);
     await sleep(300);
-    const adminGap = await page.evaluate(`(() => { const s = document.querySelector('.shell-sider').getBoundingClientRect(); const g = document.querySelector('[data-testid="sidebar-top-gap"]').getBoundingClientRect(); const first = document.querySelector('.shell-sider .shell-menu .ant-menu-item').getBoundingClientRect(); const menu = document.querySelector('.shell-sider .shell-menu').getBoundingClientRect(); return { gapTop: Math.round(g.top - s.top), gapHeight: Math.round(g.height), menuTop: Math.round(menu.top - s.top), firstTop: Math.round(first.top - s.top), firstMargin: parseFloat(getComputedStyle(document.querySelector('.shell-sider .shell-menu .ant-menu-item')).marginTop), news: document.querySelectorAll('.shell-sider [data-testid="new-button"]').length }; })()`);
-    // The gap is 10 px and the menu starts at its foot; the first item sits at the menu's top plus its own margin (the menu's rule, 4 px).
-    check(adminGap.news === 0 && adminGap.gapTop === 0 && adminGap.gapHeight === 10 && adminGap.menuTop === 10 && adminGap.firstTop === 10 + adminGap.firstMargin, `on an admin page there is no New, and the menu starts 10 px below the sidebar's top (${JSON.stringify(adminGap)})`);
+    const adminGap = await page.evaluate(`(() => { const s = document.querySelector('.shell-sider').getBoundingClientRect(); const g = document.querySelector('[data-testid="sidebar-brand"]').getBoundingClientRect(); const first = document.querySelector('.shell-sider .shell-menu .ant-menu-item').getBoundingClientRect(); const menu = document.querySelector('.shell-sider .shell-menu').getBoundingClientRect(); return { gapTop: Math.round(g.top - s.top), gapHeight: Math.round(g.height), menuTop: Math.round(menu.top - s.top), firstTop: Math.round(first.top - s.top), firstMargin: parseFloat(getComputedStyle(document.querySelector('.shell-sider .shell-menu .ant-menu-item')).marginTop), news: document.querySelectorAll('.shell-sider [data-testid="new-button"]').length }; })()`);
+    // Decision 109: the brand's block is at the top (10 px above its picture, then the picture), and the menu starts 10 px below the
+    // block's foot; the first item sits at the menu's top plus its own margin (the menu's rule, 4 px).
+    check(adminGap.news === 0 && adminGap.gapTop === 0 && adminGap.gapHeight === 48 && adminGap.menuTop - adminGap.gapHeight === 10 && adminGap.firstTop === adminGap.menuTop + adminGap.firstMargin, `on an admin page there is no New, the brand is at the top and the menu starts 10 px below it (${JSON.stringify(adminGap)})`);
     await signOut(page);
     await signIn(page, MEMBER);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 20000);
