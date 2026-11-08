@@ -11,7 +11,8 @@ import { join, extname, relative, basename } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
-const dist = fileURLToPath(new URL('../dist/', import.meta.url));
+// SELFCLOUD_CHECK_DIST names another built folder; check-dist.test.mjs uses it with fixtures. The build leaves it unset.
+const dist = process.env.SELFCLOUD_CHECK_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url));
 const PLACEHOLDER = '__SELFCLOUD_CSP_NONCE__';
 
 // The budgets, in gzip bytes.
@@ -121,7 +122,10 @@ const GROUP_MARKERS = [
 for (const { marker, chunk, what } of GROUP_MARKERS) {
   const where = [...jsText].filter(([, text]) => text.includes(marker)).map(([name]) => basename(name));
   if (where.length !== 1 || !where[0].startsWith(`${chunk}-`)) {
-    problems.push(`${what} is in ${where.join(', ') || 'no chunk'}, but the ${chunk} chunk should hold it (web/vite.config.ts)`);
+    problems.push(
+      `${what} is in ${where.join(', ') || 'no chunk'}, but the ${chunk} chunk should hold it (web/vite.config.ts); ` +
+        `if the marker '${marker}' is no longer in the build, it may have changed with the minifier or React, so look there first`,
+    );
   }
 }
 
@@ -135,6 +139,9 @@ for (const ref of firstNames) {
   if (gz === undefined) problems.push(`index.html names ${ref}, which is not a built JavaScript file`);
   else firstLoad += gz;
 }
+// An index.html that names no module script and no modulepreload would have a first load of 0 and pass the budget. The page
+// must load something, so an empty set fails.
+if (firstNames.size === 0) problems.push('first load is empty: index.html names no module script and no modulepreload link');
 if (firstLoad > BUDGET.firstLoad) {
   problems.push(`first load is ${firstLoad} bytes gzip, over the first-load budget of ${BUDGET.firstLoad}`);
 }
