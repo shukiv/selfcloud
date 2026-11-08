@@ -9,7 +9,21 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"modernc.org/sqlite"
 )
+
+// Damaged reports whether err is SQLite saying the file is damaged: SQLITE_CORRUPT (11) or SQLITE_NOTADB (26), with
+// or without an extended code. Any other error (busy, locked, I/O, permission, interrupted, a cancelled context) is
+// not damage: it means the check could not run.
+func Damaged(err error) bool {
+	var se *sqlite.Error
+	if !errors.As(err, &se) {
+		return false
+	}
+	code := se.Code() & 0xff
+	return code == 11 || code == 26
+}
 
 // CheckStore is the database as fsck reads it. It never migrates and never writes: it opens an existing file and
 // sets query_only, so a server may run beside it. It is not a Store, so none of the write methods exist on it.
@@ -19,12 +33,17 @@ type CheckStore struct {
 
 // OpenCheck opens the database at path for reading. The file must exist; it is not created.
 func OpenCheck(ctx context.Context, path string) (*CheckStore, error) {
+	return OpenCheckBusy(ctx, path, 10000)
+}
+
+// OpenCheckBusy is OpenCheck with the busy timeout given in milliseconds.
+func OpenCheckBusy(ctx context.Context, path string, busyMS int) (*CheckStore, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("store: %w", err)
 	}
 	// mode=rw without create: the file must exist. query_only makes any write an error. busy_timeout waits out a
 	// checkpoint by the server rather than fail.
-	db, err := sql.Open("sqlite", dsn(path, []string{"busy_timeout(10000)", "query_only(1)"}, "")+"&mode=rw")
+	db, err := sql.Open("sqlite", dsn(path, []string{fmt.Sprintf("busy_timeout(%d)", busyMS), "query_only(1)"}, "")+"&mode=rw")
 	if err != nil {
 		return nil, fmt.Errorf("store: %w", err)
 	}

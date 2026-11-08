@@ -48,6 +48,11 @@ type Options struct {
 	// snapshotBatch is how many files one read transaction judges before it is closed and a new one is opened. Zero
 	// means defaultSnapshotBatch. Tests set it small.
 	snapshotBatch int
+	// busyMS is how long the database waits for a lock held by another connection. Zero means 10 seconds. Tests set it
+	// small.
+	busyMS int
+	// beforeHash, when set, runs once after the walks and before the hash pass. Tests use it to swap a file.
+	beforeHash func()
 }
 
 // Finding kinds.
@@ -119,22 +124,27 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	if err != nil {
 		return rep, fmt.Errorf("fsck: %w", err)
 	}
-	cs, err := store.OpenCheck(ctx, opts.DBPath)
+	busy := opts.busyMS
+	if busy == 0 {
+		busy = 10000
+	}
+	cs, err := store.OpenCheckBusy(ctx, opts.DBPath, busy)
 	if err != nil {
-		// A file that is there and can be read, but that the database layer will not open, is a damaged database: a
-		// finding. A file that is missing or cannot be read at all means the check could not run.
-		if f, rerr := os.Open(opts.DBPath); rerr == nil {
-			f.Close()
-			unreadable(rep, err)
-			return rep, nil
+		// Damage is a finding. A missing file, a busy or locked database, a permission error or a cancelled run means
+		// the check could not run: exit 2, with integrity unchecked.
+		if !damaged(ctx, err) {
+			return rep, fmt.Errorf("fsck: %w", err)
 		}
-		return rep, fmt.Errorf("fsck: %w", err)
+		unreadable(rep, err)
+		return rep, nil
 	}
 	defer cs.Close()
 	have, err := cs.SchemaVersion(ctx)
 	if err != nil {
-		// The file is there but cannot be read: that is a failed integrity check, and a finding, not a check that
-		// could not run (exit 2 is for that).
+		// Damage is a finding. Anything else (busy, I/O, a cancelled run) means the check could not run: exit 2.
+		if !damaged(ctx, err) {
+			return rep, fmt.Errorf("fsck: %w", err)
+		}
 		unreadable(rep, err)
 		return rep, nil
 	}
@@ -256,16 +266,28 @@ func (c *checker) step() error {
 }
 
 // integrityChecks runs SQLite's integrity and foreign key checks, each in its own read transaction.
+// damaged reports whether err is real damage to the database, not a run that could not finish: a cancelled context
+// (SIGINT, SIGTERM) and SQLite's busy, locked or I/O errors are not damage.
+func damaged(ctx context.Context, err error) bool {
+	return ctx.Err() == nil && store.Damaged(err)
+}
+
 func (c *checker) integrityChecks() error {
 	if err := c.openSnap(); err != nil {
+		if !damaged(c.ctx, err) {
+			return err
+		}
 		unreadable(c.rep, err)
 		return errDamaged
 	}
 	ok, problems, err := c.snap.IntegrityCheck(c.ctx)
 	c.closeSnap()
 	if err != nil {
-		// A damaged file can make the check itself fail rather than list its problems. That is a failure too, and the
-		// walks are not run against a database that cannot be checked.
+		// Only a damaged file makes the check fail: the report says so and the walks are not run against it. Any
+		// other error is a run that could not finish, and the integrity status stays unchecked.
+		if !damaged(c.ctx, err) {
+			return err
+		}
 		c.rep.Integrity = "failed"
 		c.add(Finding{Kind: KindIntegrity, Detail: err.Error()})
 		return errDamaged
@@ -280,12 +302,18 @@ func (c *checker) integrityChecks() error {
 		c.rep.Integrity = "ok"
 	}
 	if err := c.openSnap(); err != nil {
+		if !damaged(c.ctx, err) {
+			return err
+		}
 		unreadable(c.rep, err)
 		return errDamaged
 	}
 	fks, err := c.snap.ForeignKeyViolations(c.ctx)
 	c.closeSnap()
 	if err != nil {
+		if !damaged(c.ctx, err) {
+			return err
+		}
 		unreadable(c.rep, err)
 		return errDamaged
 	}
@@ -547,6 +575,9 @@ func (c *checker) checkFile(row store.FileRow, rel string, info fs.FileInfo, siz
 // a read transaction open. That is safe because a committed blob, derived file or zip is never changed, so its bytes
 // are the bytes its row describes whenever they are read. The file may be gone by now; that is not a finding.
 func (c *checker) hashPass() error {
+	if c.opts.beforeHash != nil {
+		c.opts.beforeHash()
+	}
 	for _, h := range c.hashes {
 		c.count("hashed_files")
 		got, err := hashFile(filepath.Join(c.opts.DataDir, h.rel))
