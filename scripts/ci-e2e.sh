@@ -17,6 +17,8 @@ out="$root/e2e-out"
 mkdir -p "$out/tmp"
 export TMPDIR="$out/tmp"
 export SELFCLOUD_E2E_KEEP=1
+# A failed run keeps its picture and its errors here (web/e2e/diag.mjs), beside the logs.
+export SELFCLOUD_E2E_DIAG="$out"
 
 echo "== build the web interface"
 (cd "$root/web" && npm run build)
@@ -26,6 +28,8 @@ version=$(git -C "$root" describe --tags --always --dirty 2>/dev/null || echo de
 (cd "$root" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/shukiv/selfcloud/internal/version.Version=$version" -o bin/selfcloud ./cmd/selfcloud)
 
 cd "$root/web"
+echo "== the e2e helpers' unit tests"
+node --test e2e/diag.test.mjs
 echo "== run.mjs"
 node e2e/run.mjs 2>&1 | tee "$out/run.log"
 echo "== adminAccess en"

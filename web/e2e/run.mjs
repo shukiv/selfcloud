@@ -54,6 +54,7 @@ import { fu5Checks } from './fu5.mjs';
 import { sec2Checks } from './sec2.mjs';
 import { stChecks } from './st.mjs';
 import { pickMenuEntry } from './menu.mjs';
+import { saveFailure } from './diag.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -517,12 +518,20 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
   await writeFile(resumable, randomBytes(3 * 1024 * 1024));
   await clickMenu(page, 'Team A');
   await page.waitFor(`location.pathname === '/files/${teamA}' && !!document.querySelector('[role="toolbar"]')`);
-  const sentBefore = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length;
+  const sentPieces = () => page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length;
+  // The upload is slowed to 256 KiB a second, so a 1 MiB piece takes about 4 s on any runner. Unslowed, a fast runner
+  // finishes all three pieces before the drop below is sent, and no failure ever shows (CI run 42429830700, attempt 2).
+  await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: 256 * 1024 });
+  const sentBefore = sentPieces();
   await page.setFiles(UPLOAD, [resumable]);
-  // The connection drops once the first piece has gone up, and comes back a moment later.
-  for (let i = 0; i < 300 && page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length <= sentBefore; i++) {
+  // The first piece has gone up once the second one starts (pieces go one at a time), so the drop cuts the second piece in
+  // flight. The loop waits for that second start, and a missed one fails the check below rather than a timeout.
+  for (let i = 0; i < 3000 && sentPieces() < sentBefore + 2; i++) {
     await new Promise((r) => setTimeout(r, 20));
   }
+  const sentAtDrop = sentPieces() - sentBefore;
+  check(sentAtDrop >= 2 && sentAtDrop < 3, `the connection drops with the second of three pieces going up (${sentAtDrop} sent before the drop)`);
+  // The connection drops, and comes back after the retry below.
   await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
   // The tray reports the failure. The connection stays down until it does: the uploader tries a dropped piece again after a
   // second, and a connection back by then let the upload finish on its own, with no failure to see (gate fu1b, under load).
@@ -533,7 +542,8 @@ async function fileBrowserExtraChecks(page, { dir, teamA }) {
   await clickButton(page, 'Retry: resume.bin');
   await rowAppears(page, 'resume.bin', 60000);
   const afterRetry = page.sent.filter((r) => r.method === 'PATCH' && r.url.includes('/api/v1/uploads/')).length - beforeRetry;
-  check(afterRetry >= 1 && afterRetry <= 2, `an interrupted upload resumes and finishes, sending ${afterRetry} of its 3 pieces after the retry`);
+  // The first piece is kept and the second was cut, so two pieces remain: a cut piece's kept bytes make the last one shorter, not more.
+  check(afterRetry === 2, `an interrupted upload resumes and finishes, sending ${afterRetry} of its 3 pieces after the retry`);
 
   // Star is one of the icons at the end of a selected row (decision 70); once starred, the same icon says Unstar.
   await page.waitFor(`!!document.querySelector(${q(rowSel('Reports'))})`);
@@ -987,6 +997,8 @@ async function main() {
     console.log('e2e passed');
     passed = true;
   } finally {
+    // The page as the failure left it, kept for CI (diag.mjs). Only a failed run keeps it.
+    if (!passed) await saveFailure(page, 'run');
     sink.close();
     page?.close();
     browser?.kill();
