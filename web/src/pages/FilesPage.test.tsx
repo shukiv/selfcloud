@@ -788,6 +788,7 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
 
   it("after a tree folder is moved to the Trash, the tree reads its parent again, and Undo reads it again", async () => {
     // Docs is shown, so the shown branch is not the parent of the folder dragged (Mine, under the space's root).
+    window.history.replaceState(null, "", "/");
     renderAt(`${FOLDER}/nod_docs0001`);
     await screen.findByRole("row", { name: "alpha.txt" });
     api.restoreNode.mockResolvedValue(undefined);
@@ -803,12 +804,15 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
     await waitFor(() => expect(api.restoreNode).toHaveBeenCalledWith("nod_mine0001"));
     await waitFor(() => expect(branchesFrom(beforeUndo)).toContainEqual({ folder: "fld_aaaaaaaa", dir: null }));
+    // Mine is not one of the folders Docs is in, so the page stays (no address was set).
+    expect(window.location.pathname).toBe("/");
   });
 
   it("moving the folder shown to the Trash leaves the page on the space's root; Undo brings the folder back and stays there", async () => {
     window.history.replaceState(null, "", "/");
     renderAt(`${FOLDER}/nod_docs0001`);
     await screen.findByRole("row", { name: "alpha.txt" });
+    const depth = window.history.length;
     api.restoreNode.mockResolvedValue(undefined);
     dragFrom(treeRow("nod_docs0001", "Docs", ""), trashEntry());
     release();
@@ -817,6 +821,8 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
     await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_docs0001"));
     await waitFor(() => expect(window.location.pathname).toBe(FOLDER));
+    // The trashed place's entry is replaced, so Back does not lead to it.
+    expect(window.history.length).toBe(depth);
     fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
     await waitFor(() => expect(api.restoreNode).toHaveBeenCalledWith("nod_docs0001"));
     expect(window.location.pathname).toBe(FOLDER);
@@ -828,6 +834,7 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
     place.trail = [dirNode("nod_docs0001", "Docs", A), dirNode("nod_reports1", "Reports", A)];
     renderAt(`${FOLDER}/nod_pics0001`);
     await screen.findByRole("row", { name: "alpha.txt" });
+    const depth = window.history.length;
     dragFrom(treeRow("nod_reports1", "Reports", "nod_docs0001"), trashEntry());
     release();
     await swallowed();
@@ -835,6 +842,25 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
     await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_reports1"));
     await waitFor(() => expect(window.location.pathname).toBe(`${FOLDER}/nod_docs0001`));
+    expect(window.history.length).toBe(depth);
+  });
+
+  it("a folder of the listing moved to the Trash leaves the page where it is, and so does its Undo", async () => {
+    // Pics is a row of Docs, the folder shown: it is not one of the folders Docs is in.
+    window.history.replaceState(null, "", "/");
+    api.childrenPage.mockResolvedValue({ items: [dirNode("nod_pics0001", "Pics", A), node("n1", "alpha.txt", A)], next_cursor: undefined });
+    api.restoreNode.mockResolvedValue(undefined);
+    renderAt(`${FOLDER}/nod_docs0001`);
+    await screen.findByRole("row", { name: "Pics" });
+    dragFrom(rows("Pics") as Element, trashEntry());
+    release();
+    await swallowed();
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
+    await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_pics0001"));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(api.restoreNode).toHaveBeenCalledWith("nod_pics0001"));
+    expect(window.location.pathname).toBe("/");
   });
 
   it("refuses Ctrl over the Trash: nothing is copied there, and nothing is deleted", async () => {
