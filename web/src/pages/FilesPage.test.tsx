@@ -862,6 +862,42 @@ describe("a failed place read is named to the sidebar's New", () => {
     await screen.findByRole("row", { name: "alpha.txt" });
     expect(get(newPlaceFailure)).toBeNull();
   });
+
+  // Review item 3 (wf1): the failure is cleared when a later place reads fine, and when the page is left.
+  it("the failure is cleared when a later place reads fine", async () => {
+    const err = new ApiError(500, "internal", {}, 0);
+    const real = vi.mocked(locate).getMockImplementation()!;
+    vi.mocked(locate).mockRejectedValue(err);
+    let router: ReturnType<typeof renderAt>["router"];
+    try {
+      ({ router } = renderAt(FOLDER));
+      await screen.findByText(fileErrorText(err, "en"));
+      expect(get(newPlaceFailure)).toBe(fileErrorText(err, "en"));
+    } finally {
+      vi.mocked(locate).mockImplementation(real);
+    }
+    await act(async () => {
+      await router.navigate(`${FOLDER}/nod_bbbbbbbb`);
+    });
+    await screen.findByRole("row", { name: "alpha.txt" });
+    expect(get(newPlaceFailure)).toBeNull();
+  });
+
+  it("the failure is cleared when the page is left", async () => {
+    const err = new ApiError(500, "internal", {}, 0);
+    const real = vi.mocked(locate).getMockImplementation()!;
+    vi.mocked(locate).mockRejectedValue(err);
+    let view: ReturnType<typeof renderAt>;
+    try {
+      view = renderAt(FOLDER);
+      await screen.findByText(fileErrorText(err, "en"));
+      expect(get(newPlaceFailure)).not.toBeNull();
+    } finally {
+      vi.mocked(locate).mockImplementation(real);
+    }
+    view.unmount();
+    expect(get(newPlaceFailure)).toBeNull();
+  });
 });
 
 describe("a change of address closes what was open at the last one", () => {

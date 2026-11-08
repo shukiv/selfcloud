@@ -109,6 +109,16 @@ describe("the sidebar's New button", () => {
     expect(description(screen.getByTestId("new-button"))).toBe("Loading the folder");
   });
 
+  // Review item 2 (wf1): the copy is hidden from the reading order, so browse mode does not read the reason twice; the button's
+  // description still reads it.
+  it("the reason copy is aria-hidden, so it is read once, as the button's description", () => {
+    renderNew(null);
+    const id = screen.getByTestId("new-button").getAttribute("aria-describedby");
+    const copy = id ? document.getElementById(id) : null;
+    expect(copy?.getAttribute("aria-hidden")).toBe("true");
+    expect(description(screen.getByTestId("new-button"))).toBe("Loading the folder");
+  });
+
   it("when the place is read, the button has no accessible description", () => {
     renderNew(myFilesPlace("fld_mine"));
     const button = screen.getByTestId("new-button");
