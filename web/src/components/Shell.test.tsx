@@ -135,6 +135,17 @@ describe("Shell", () => {
     mocks.setHidden.mockClear();
   });
 
+  it("makes the sidebar's Trash entry a drop target for the drag gesture, and no other menu entry (decision 104)", async () => {
+    signIn("member");
+    folders.set([team("fld_p", "Mine", { kind: "personal", role: "manager" })]);
+    renderShell("/files");
+    const nav = await openNav();
+    const trash = within(nav).getByRole("menuitem", { name: "Trash" });
+    expect(trash.dataset.dropTrash).toBe("");
+    expect(trash.dataset.dropName).toBe("Trash");
+    expect(within(nav).getByRole("menuitem", { name: "Starred" }).dataset.dropTrash).toBeUndefined();
+  });
+
   it("draws the page inside and lists the member's destinations", async () => {
     signIn("member");
     folders.set([team("fld_p", "Mine", { kind: "personal", role: "manager" })]);

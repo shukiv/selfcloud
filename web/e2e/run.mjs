@@ -29,6 +29,7 @@ import { accountName, E2E_ACCENT, mediaChecks, setTheme } from './media.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
 import { w1Checks } from './w1.mjs';
 import { w2Checks } from './w2.mjs';
+import { sd1Checks } from './sd1.mjs';
 import { x2Checks } from './x2.mjs';
 import { q4Checks } from './q4.mjs';
 import { r7Checks } from './r7.mjs';
@@ -831,7 +832,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb, pwa or sec2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb, pwa or sec2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -846,6 +847,7 @@ async function main() {
     if (!only || onlySet.has('media')) await mediaChecks(h, { page, base, accountKey, teamA });
     if (!only || onlySet.has('w1')) await w1Checks(h, { page, base, accountKey, teamA, teamB, dir, browserBinary: await findBrowser() });
     if (!only || onlySet.has('w2')) await w2Checks(h, { page, base, accountKey, accountID, memberID, teamA, teamB, dir });
+    if (!only || onlySet.has('sd1')) await sd1Checks(h, { page, base, accountKey, teamA, teamB });
     if (!only || onlySet.has('x2')) await x2Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('q4')) await q4Checks(h, { page, base, accountKey, teamA });
     if (!only || onlySet.has('r7')) await r7Checks(h, { page, base, accountKey, accountID, memberID, teamA, dir });

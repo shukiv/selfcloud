@@ -226,6 +226,30 @@ describe("the folder tree", () => {
     expect(root.dataset.dropRole).toBe("editor");
   });
 
+  it("makes a folder a drag source with its own id, space, parent, name and role, but not a space's root (decision 104)", async () => {
+    render(<Harness start={{ expanded: ["fld_a", "nod_one"] }} />);
+    const deep = (await screen.findByText("Deep")).closest<HTMLElement>(".tree-row") as HTMLElement;
+    expect(deep.dataset.treeDrag).toBe("nod_deep");
+    expect(deep.dataset.treeSpace).toBe("fld_a");
+    expect(deep.dataset.treeParent).toBe("nod_one");
+    expect(deep.dataset.treeName).toBe("Deep");
+    expect(deep.dataset.treeRole).toBe("editor");
+    const docs = screen.getByText("Docs").closest<HTMLElement>(".tree-row") as HTMLElement;
+    expect(docs.dataset.treeDrag).toBe("nod_one");
+    expect(docs.dataset.treeParent).toBe("");
+    const pics = screen.getByText("Pics").closest<HTMLElement>(".tree-row") as HTMLElement;
+    expect(pics.dataset.treeDrag).toBe("nod_two");
+    const root = screen.getByText("Team A").closest<HTMLElement>(".tree-row") as HTMLElement;
+    expect(root.dataset.treeDrag).toBeUndefined();
+  });
+
+  it("does not make a top folder a drag source: there is no place to move it from", () => {
+    render(<Harness folder="fld_a" top={{ id: "nod_top", name: "Shared", role: "editor" }} />);
+    const shared = screen.getByText("Shared").closest<HTMLElement>(".tree-row") as HTMLElement;
+    expect(shared.dataset.treeDrag).toBeUndefined();
+    expect(shared.dataset.dropDir).toBe("nod_top");
+  });
+
   it("shows an error with a Retry when a folder cannot be read, and reads again on Retry", async () => {
     api.childrenPage.mockRejectedValueOnce(new ApiError(500, "internal", {}, 0)).mockRejectedValueOnce(new ApiError(500, "internal", {}, 0));
     render(<Harness start={{ expanded: ["fld_a"] }} />);

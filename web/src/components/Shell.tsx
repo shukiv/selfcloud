@@ -69,6 +69,8 @@ interface NavItem {
   icon: ReactNode;
   // className marks an entry whose label is more than one line (the Storage entry's bar), so its row is not held to one line.
   className?: string;
+  // drop holds the attributes that make the entry a drop target for the files' drag gesture (decision 104), such as the Trash's.
+  drop?: Record<string, string>;
 }
 
 const icon = (C: typeof FolderOpen) => <C size={18} strokeWidth={1.75} aria-hidden="true" />;
@@ -100,7 +102,8 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
     { key: "/starred", label: t("nav.starred"), icon: icon(Star) },
     { key: "/recent", label: t("nav.recent"), icon: icon(Clock) },
     { key: "/shared", label: t("nav.shared"), icon: icon(Share2) },
-    { key: "/trash", label: t("nav.trash"), icon: icon(Trash2) },
+    // The Trash takes a drop from the files: an item dragged onto it is deleted (decision 104). Its name is the drop's ghost text.
+    { key: "/trash", label: t("nav.trash"), icon: icon(Trash2), drop: { "data-drop-trash": "", "data-drop-name": t("nav.trash") } },
     // Storage is the last entry of the person's list, and it is a block with its meter (decision 66), not a plain row.
     ...(storage !== null ? [{ key: "/storage", label: storage, icon: icon(HardDrive), className: "shell-storage-item" }] : []),
   ];
@@ -138,7 +141,7 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
 
 // menuLeaves turns nav entries into antd menu items; the icon is passed through with the label.
 function menuLeaves(items: NavItem[]): NonNullable<MenuProps["items"]> {
-  return items.map((it) => ({ key: it.key, label: it.label, icon: it.icon, className: it.className }));
+  return items.map((it) => ({ key: it.key, label: it.label, icon: it.icon, className: it.className, ...it.drop }));
 }
 
 // Shell is the signed-in frame: the top bar with the account menu, and the sidebar. The sidebar

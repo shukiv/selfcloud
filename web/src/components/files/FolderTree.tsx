@@ -69,6 +69,8 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
   const key = id ?? space;
   const open = ctx.state.expanded.includes(key);
   const path = [space, ...above, ...(id ? [id] : [])];
+  // A folder of the tree can be dragged unless it is a space's root (id null) or the top folder the person was given (ctx.top).
+  const draggable = id !== null && ctx.top?.id !== id;
   // The folders inside are read the first time the folder is opened, and again when something changes (refreshTree).
   const q = useQuery({
     queryKey: queryKey("tree", space, id),
@@ -160,6 +162,13 @@ function Branch(p: { ctx: Ctx; space: string; id: string | null; name: string; r
         data-drop-role={role ?? ""}
         data-drop-name={name}
         data-drop-path={path.join(",")}
+        // A folder is a drag source (decision 104), read by the gesture engine, except a space's root and a top folder: neither has a
+        // place to move it from. Its parent is the folder above it in the tree, or "" when it sits in the space's root.
+        data-tree-drag={draggable ? id : undefined}
+        data-tree-space={draggable ? space : undefined}
+        data-tree-parent={draggable ? (above[above.length - 1] ?? "") : undefined}
+        data-tree-name={draggable ? name : undefined}
+        data-tree-role={draggable ? (role ?? "") : undefined}
         style={{
           display: "flex",
           alignItems: "center",

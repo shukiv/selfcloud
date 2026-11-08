@@ -307,8 +307,28 @@ export async function w2Checks(h, { page, base, accountKey, accountID, memberID,
     await page.waitFor(`[...document.querySelectorAll('[data-testid="folder-tree"] .tree-row')].some((r) => r.dataset.dropName === 'Inner')`, 10000);
     // Drag a file onto Inner in the tree.
     const from = await nameAt(page, 'g07.txt');
-    const to = await centre(page, `[data-testid="folder-tree"] .tree-row[data-drop-name="Inner"]`);
-    const mid = await dragTo(page, from, to, { during: () => dropState(page, `[data-testid="folder-tree"] .tree-row[data-drop-name="Inner"]`) });
+    const innerSel = `[data-testid="folder-tree"] .tree-row[data-drop-name="Inner"]`;
+    // Inner is brought to the middle of the sidebar before the hover, and the scroll is let settle, then it is measured again: a row in
+    // the bottom 48 px edge band scrolls the region while the pointer stays there (decision 104), so a press aimed at its old place
+    // missed it (the diagnosis of the full pass: Inner at 696 to 736 in a region ending at 736, scrolled away during the hold).
+    await centre(page, innerSel, 'center');
+    await sleepMs(500);
+    const to = await centre(page, innerSel, 'center');
+    // Diagnosis (decision 104's edge band): the sidebar region's box and scroll, Inner's box and what is under the pointer, before the
+    // hover and while it is held over Inner. A failure keeps a picture under its own name.
+    const innerDiag = (label, point) =>
+      page.evaluate(`(() => { const s = document.querySelector('.shell-scroll'); const r = s ? s.getBoundingClientRect() : null; const i = document.querySelector(${q(innerSel)}); const ir = i ? i.getBoundingClientRect() : null; const at = ${point ? `document.elementFromPoint(${point.x}, ${point.y})` : 'null'}; const d = at ? at.closest('[data-drop-folder],[data-drop-trash],[data-id]') : null; return JSON.stringify({ label: ${q(label)}, region: r ? [Math.round(r.top), Math.round(r.bottom)] : null, scrollTop: s ? s.scrollTop : null, inner: ir ? [Math.round(ir.top), Math.round(ir.bottom)] : null, point: ${point ? JSON.stringify(point) : 'null'}, under: at ? at.tagName + ':' + (d ? d.dataset.dropName || d.dataset.id || 'drop' : 'none') : null, dragBegan: document.documentElement.classList.contains('sc-gesture') }); })()`).then((s) => console.log(`DIAG ${s}`));
+    await innerDiag('w2 tree drop, before the press', null);
+    const mid = await dragTo(page, from, to, {
+      during: async () => {
+        await innerDiag('w2 tree drop, held over Inner', to);
+        return dropState(page, innerSel);
+      },
+    });
+    if (mid !== 'ok') {
+      const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+      await writeFile(join(process.env.SELFCLOUD_E2E_DIAG ?? process.env.TMPDIR ?? '/tmp', 'w2-inner-failure.png'), Buffer.from(shot.data, 'base64'));
+    }
     check(mid === 'ok', `the tree's folder is marked as taking the drop (${mid})`);
     await waitIn(api, base, teamA, '/w2/drag/Beta/Inner', accountKey, 'g07.txt');
     // A folder cannot be dropped into a folder below it: Beta onto Inner, in the tree.
@@ -741,3 +761,6 @@ async function shots(page, { dragURL, longURL, shortURL, dir }) {
   await setTheme(page, 'Light');
   void longURL;
 }
+
+// The helpers the sd1 section (sd1.mjs) shares with this one.
+export { MODS, press, mouse, glide, dragTo, dropState, ghost, listed, waitIn, setView, nameAt, centre, present, sleepMs };

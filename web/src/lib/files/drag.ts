@@ -14,6 +14,8 @@ export interface Dest {
   dir: string | null;
   role: string | undefined;
   path?: string[];
+  // trash says the place is the sidebar's Trash entry: a drop there is the Delete action (decision 104), not a move into a folder.
+  trash?: boolean;
 }
 
 // Perms is what the toolbar's Move and Copy actions say about the dragged set: each is the action's own enabled and not hidden.
@@ -24,9 +26,28 @@ export interface Perms {
 
 // Why is the reason a drop is refused. role: the caller may not add to the place. self: a folder would go into itself or into
 // something below it. here: every item is already in the place. move: the caller may not move these items (a copy may be allowed).
-export type Why = "role" | "self" | "here" | "move";
+// copy: Ctrl was held over the Trash, where nothing is copied. trash: Delete is not shown or not enabled for the items.
+export type Why = "role" | "self" | "here" | "move" | "copy" | "trash";
 
-export type Decision = { ok: true; mode: "move" | "copy"; nodes: Node[] } | { ok: false; why: Why };
+export type Decision = { ok: true; mode: "move" | "copy" | "trash"; nodes: Node[] } | { ok: false; why: Why };
+
+// treeNode is a folder of the sidebar's tree as an item, for a drag that starts there. Only the fields the drag reads are the
+// tree's; the rest are placeholders, and a drop reads the item again before it moves it (runTransfer's reread).
+export function treeNode(f: { id: string; space: string; parent: string | null; name: string; role: string | undefined }): Node {
+  return {
+    id: f.id,
+    folder_id: f.space,
+    parent_id: f.parent,
+    name: f.name,
+    kind: "dir",
+    size: 0,
+    created_at: "",
+    modified_at: "",
+    no_download: false,
+    editors_can_share: false,
+    role: f.role as Node["role"],
+  };
+}
 
 // alreadyIn says an item is in the place now, so moving it there changes nothing.
 export function alreadyIn(n: Node, dest: Pick<Dest, "folder" | "dir">): boolean {
@@ -48,6 +69,14 @@ export function dropDecision(nodes: Node[], dest: Dest, copy: boolean, perms: Pe
   if (rest.length === 0) return { ok: false, why: "here" };
   if (copy ? !perms.copy : !perms.move) return { ok: false, why: "move" };
   return { ok: true, mode: copy ? "copy" : "move", nodes: rest };
+}
+
+// dropTrash says what dropping the dragged items on the sidebar's Trash does: the Delete action on them, and only when the action list
+// shows Delete shown and enabled for them (perms.delete). Ctrl has no copy meaning there, so it is refused rather than ignored, and the reason says so.
+export function dropTrash(nodes: Node[], copy: boolean, perms: { delete: boolean }): Decision {
+  if (copy) return { ok: false, why: "copy" };
+  if (!perms.delete) return { ok: false, why: "trash" };
+  return { ok: true, mode: "trash", nodes };
 }
 
 // Box is a rectangle in any one coordinate space.
