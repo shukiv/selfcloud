@@ -77,12 +77,20 @@ function pathOf(url) {
   }
 }
 
-export async function openedTab(opener, pathPart) {
+// tabIds lists the ids of the browser's tabs now, so a later openedTab can skip the ones that were already open.
+export async function tabIds(opener) {
+  const origin = `http://${new URL(opener.ws.url).host}`;
+  return (await (await fetch(`${origin}/json/list`)).json()).map((x) => x.id);
+}
+
+// openedTab waits for a tab whose path starts with pathPart, and skips the tabs listed in known. A page can change its own
+// address soon after it opens (the new-document wait page replaces itself with the editor's), so a caller may match a prefix.
+export async function openedTab(opener, pathPart, known = []) {
   const origin = `http://${new URL(opener.ws.url).host}`;
   for (let i = 0; i < 150; i++) {
     const list = await (await fetch(`${origin}/json/list`)).json();
     // A tab opened by window.open can list an empty address for a moment; that is not a match, and it must not end the search.
-    const t = list.find((x) => x.type === 'page' && pathOf(x.url).startsWith(pathPart));
+    const t = list.find((x) => x.type === 'page' && !known.includes(x.id) && pathOf(x.url).startsWith(pathPart));
     if (t) {
       const p = new Page(t.webSocketDebuggerUrl);
       await p.opened;

@@ -6,7 +6,7 @@
 // own folder inside Team A, so the default name is the one the server gives on a first document there. The folder is removed
 // in a finally, and the language and the viewport are put back.
 import { setLanguage, setTheme, sleep } from './media.mjs';
-import { openedTab } from './cdp.mjs';
+import { openedTab, tabIds } from './cdp.mjs';
 
 const q = (v) => JSON.stringify(v);
 
@@ -50,8 +50,10 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     await page.evaluate(`document.querySelector('[data-testid="new-button"]').click()`);
     // The new document opens in its own tab (decision 102, round 2 R5): the listing stays here; the file's editor is there.
     const listingPage = page;
+    const before1 = await tabIds(listingPage);
     await pickMenuItem(page, 'Document');
-    page = await openedTab(listingPage, '/edit/wait');
+    // The wait page may already have become the editor's address, so any new /edit/ tab is the one.
+    page = await openedTab(listingPage, '/edit/', before1);
     await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/wait'`, 15000);
     newID = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
     const created = await api(base, 'GET', `/api/v1/nodes/${newID}`, accountKey);
@@ -90,8 +92,9 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     await page.waitFor(`!!${pageNew}`, 15000);
     await page.evaluate(`${pageNew}.click()`);
     const listingPage2 = page;
+    const before2 = await tabIds(listingPage2);
     await pickMenuItem(page, 'Document');
-    page = await openedTab(listingPage2, '/edit/wait');
+    page = await openedTab(listingPage2, '/edit/', before2);
     await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/wait'`, 15000);
     const second = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
     const made2 = await api(base, 'GET', `/api/v1/nodes/${second}`, accountKey);
