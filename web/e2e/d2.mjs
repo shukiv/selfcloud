@@ -513,6 +513,8 @@ export async function d2Checks(h, { page, base, accountKey, teamA, teamB, dir, a
 
     // ---- A folder the member cannot add to: New is disabled there, with the reason, and nothing goes to My files.
     await navigateTo(page, `/files/${teamB}`);
+    // The New button is already there from My files, enabled: wait for Team B's own title, so the menu opened below is Team B's.
+    await page.waitFor(`location.pathname === '/files/${teamB}' && document.querySelector('#browser-title')?.textContent.trim() === 'Team B'`, 15000);
     await page.waitFor(`!!document.querySelector('.shell-sider [data-testid="new-button"]')`, 15000);
     // Decision 95: the reason is the menu's header (what the menu is named by), not an item; the entries stay disabled.
     const roItems = await newMenu(page, 'New folder');
