@@ -152,6 +152,11 @@ func (s *Server) lockWrite(r *http.Request, g *wopiGrant,
 		if err != nil {
 			return err
 		}
+		// A view-mode session may not lock, refresh or release a lock, whatever its person may do (lk1 review). The answer
+		// is the one a session with no right to the operation gets: Forbidden, which the status map answers 404.
+		if sess.Role != "write" {
+			return apierr.New(apierr.Forbidden, "the editor for this session is read-only")
+		}
 		cur, err := requireNodeRole(ctx, tx, g.p, g.node.ID, store.RoleEditor)
 		if err != nil {
 			return err

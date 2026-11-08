@@ -321,10 +321,11 @@ func (s *Store) LiveLocksOf(ctx context.Context, accountID string) (map[string]*
 	return out, nil
 }
 
-// liveWOPISessionOn is the test of a live editing session on one file, for NOT EXISTS in the release. A session is live
-// while it is not revoked and has not ended, and, when a browser session opened it, that browser session still exists
-// for the same person and has not ended. Its placeholders are the file's node ID, then the clock twice.
-const liveWOPISessionOn = `EXISTS (SELECT 1 FROM wopi_sessions w WHERE w.node_id = ? AND w.revoked_at IS NULL
+// liveWOPISessionOn is the test of a live editing session on one file, for NOT EXISTS in the release. Only a session
+// that may write counts (role "write"): a view session can never LOCK, REFRESH_LOCK or UNLOCK, so it must not keep a lock.
+// A session is live while it is not revoked and has not ended, and, when a browser session opened it, that browser
+// session still exists for the same person and has not ended. Its placeholders are the file's node ID, then the clock twice.
+const liveWOPISessionOn = `EXISTS (SELECT 1 FROM wopi_sessions w WHERE w.node_id = ? AND w.role = 'write' AND w.revoked_at IS NULL
 	AND w.expires_at > ? AND (w.browser_session IS NULL OR EXISTS (SELECT 1 FROM sessions s
 		WHERE s.id_hash = w.browser_session AND s.user_id = w.user_id AND s.expires_at > ?)))`
 

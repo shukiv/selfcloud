@@ -14,7 +14,13 @@ import (
 // that cookie hash, and userID is the person the session belongs to.
 func (fx *lockFixture) wopiSessionOn(t *testing.T, n *Node, userID string, until time.Time, browser []byte) *WOPISession {
 	t.Helper()
-	w := &WOPISession{ID: id.New("wop"), AccountID: fx.acc, NodeID: n.ID, UserID: userID, Role: "write",
+	return fx.wopiSessionRole(t, n, userID, "write", until, browser)
+}
+
+// wopiSessionRole is wopiSessionOn with the session's role: "write" for an editing session, "read" for a view.
+func (fx *lockFixture) wopiSessionRole(t *testing.T, n *Node, userID, role string, until time.Time, browser []byte) *WOPISession {
+	t.Helper()
+	w := &WOPISession{ID: id.New("wop"), AccountID: fx.acc, NodeID: n.ID, UserID: userID, Role: role,
 		IssuedAt: fx.clock.Now(), ExpiresAt: until, BrowserSession: browser}
 	if err := fx.s.Write(context.Background(), func(tx *Tx) error { return tx.InsertWOPISession(context.Background(), w) }); err != nil {
 		t.Fatal(err)
@@ -208,4 +214,16 @@ func (fx *lockFixture) releaseGuarded(t *testing.T, read *WOPILock) bool {
 		t.Fatal(err)
 	}
 	return ok
+}
+
+// TestLockReleasedWhenOnlyAViewerSessionIsLive: a view session can never use the lock (a viewer cannot LOCK, and a
+// view-mode session cannot either), so it must not keep the lock. Owner signs out while a member only views the file:
+// the lock is freed at the next sweep rather than at lock_minutes.
+func TestLockReleasedWhenOnlyAViewerSessionIsLive(t *testing.T) {
+	t.Parallel()
+	fx := newLockFixture(t)
+	fx.lock(t, fx.a, "L1", 30)
+	fx.wopiSessionRole(t, fx.a, "", "read", fx.clock.Now().Add(time.Hour), nil)
+	fx.clock.Add(2 * time.Minute)
+	fx.wantLockReleased(t, fx.releaseNow(t), fx.a, "L1", "only a viewer is live")
 }
