@@ -201,12 +201,12 @@ export default function OfficeEditPage() {
   const stateText =
     mode === "view"
       ? t("files.editor.viewOnly")
-      : saveState === "saving"
-        ? t("files.editor.saving")
-        : saveState === "saved"
-          ? t("files.editor.saved")
-          : saveState === "unsaved"
-            ? t("files.editor.unsaved")
+      : saveState === "saved"
+        ? t("files.editor.saved")
+        : saveState === "unsaved"
+          ? t("files.editor.unsaved")
+          : saveState === "failed"
+            ? t("files.editor.saveFailed")
             : null;
 
   return (

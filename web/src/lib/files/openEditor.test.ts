@@ -87,11 +87,25 @@ describe("the save state (decision 102)", () => {
     expect(saveStateAfter("saved", msg("Doc_ModifiedStatus", {}))).toBe("saved");
   });
 
-  it("Action_Save_Resp: success is saved, a refusal is unsaved changes; other messages change nothing", () => {
+  it("a repeated Doc_ModifiedStatus with the same value keeps the state, and the message alone is not a change", () => {
+    expect(saveStateAfter("unsaved", msg("Doc_ModifiedStatus", { Modified: true }))).toBe("unsaved");
+    expect(saveStateAfter("saved", msg("Doc_ModifiedStatus", { Modified: false }))).toBe("saved");
+  });
+
+  it("Action_Save_Resp: success true is saved, false is save failed", () => {
     expect(saveStateAfter("unsaved", msg("Action_Save_Resp", { success: true }))).toBe("saved");
-    expect(saveStateAfter("saved", msg("Action_Save_Resp", { success: false }))).toBe("unsaved");
+    expect(saveStateAfter("saved", msg("Action_Save_Resp", { success: false }))).toBe("failed");
+    expect(saveStateAfter("unsaved", msg("Action_Save_Resp", { success: false }))).toBe("failed");
+  });
+
+  it("a save state is not set by a message that says nothing about a save, and nothing shows before one", () => {
     expect(saveStateAfter("saved", msg("Action_Save_Resp"))).toBe("saved");
     expect(saveStateAfter("unsaved", msg("UI_Close"))).toBe("unsaved");
+    expect(saveStateAfter(null, msg("Action_Save", {}))).toBeNull();
     expect(saveStateAfter(null, msg("App_LoadingStatus", { Status: "Document_Loaded" }))).toBeNull();
+  });
+
+  it("a later Doc_ModifiedStatus after a failed save shows unsaved changes again", () => {
+    expect(saveStateAfter("failed", msg("Doc_ModifiedStatus", { Modified: true }))).toBe("unsaved");
   });
 });

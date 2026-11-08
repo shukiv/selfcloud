@@ -1528,7 +1528,7 @@
   "files.editor.saveAsName": "Nom du fichier",
   "files.editor.saveAsOk": "Enregistrer la copie",
   "files.editor.saveAsInvalid": "Le nom ne peut pas être vide ni contenir de barre oblique ou de barre oblique inverse.",
-  "files.editor.saving": "Enregistrement…",
+  "files.editor.saveFailed": "Échec de l'enregistrement",
   "files.editor.saved": "Enregistré",
   "files.editor.unsaved": "Modifications non enregistrées",
   "files.editing.mark": "En cours de modification",

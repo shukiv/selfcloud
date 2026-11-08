@@ -1528,7 +1528,7 @@
   "files.editor.saveAsName": "Имя файла",
   "files.editor.saveAsOk": "Сохранить копию",
   "files.editor.saveAsInvalid": "Имя не может быть пустым и не может содержать косую черту или обратную косую черту.",
-  "files.editor.saving": "Сохранение…",
+  "files.editor.saveFailed": "Не удалось сохранить",
   "files.editor.saved": "Сохранено",
   "files.editor.unsaved": "Несохранённые изменения",
   "files.editing.mark": "Редактируется",

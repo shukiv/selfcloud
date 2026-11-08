@@ -206,13 +206,18 @@ describe("the editor page", () => {
     expect(screen.queryByText("Unsaved changes")).toBeNull();
     sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } });
     expect(screen.getByText("Unsaved changes")).toBeTruthy();
-    sendFromEditor({ MessageId: "Action_Save", Values: {} });
-    expect(screen.getByText("Saving…")).toBeTruthy();
     sendFromEditor({ MessageId: "Action_Save_Resp", Values: { success: true } });
     expect(screen.getByText("Saved")).toBeTruthy();
+    // A save that failed is said so; the next change is unsaved again (decision 102, round 2 R4).
     sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } });
     sendFromEditor({ MessageId: "Action_Save_Resp", Values: { success: false } });
+    expect(screen.getByText("Save failed")).toBeTruthy();
+    sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } });
     expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    // A repeated message with the same value keeps the state, and "Saving…" is never shown.
+    sendFromEditor({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } });
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    expect(screen.queryByText("Saving…")).toBeNull();
   });
 
   it("ignores a save-state message from another origin", async () => {

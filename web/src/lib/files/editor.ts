@@ -99,12 +99,13 @@ export function officeLinkClick(e: LinkClick, n: Node, featureOn: boolean, here:
   openEditorTab(n.id, mode, here, coarsePointer(), goTo);
 }
 
-// SaveState is the save state the editor's bar shows. null is no state yet.
-export type SaveState = "saving" | "saved" | "unsaved" | null;
+// SaveState is the save state the editor's bar shows. null is no state yet. No documented message says a save has started,
+// so there is no "saving" state (decision 102).
+export type SaveState = "saved" | "unsaved" | "failed" | null;
 
-// saveStateAfter gives the save state after one message from the editor. Doc_ModifiedStatus carries Values.Modified: true
-// is unsaved changes, false is saved. Action_Save_Resp carries Values.success. The ids are the ones the SDK documents
-// as far as this slice read them; they are not yet confirmed against a live Collabora (see decision 102).
+// saveStateAfter gives the save state after one message from the editor (decision 102, round 2). Doc_ModifiedStatus carries
+// Values.Modified: true is unsaved changes, false is saved; the message may come again with the same value, which keeps the
+// state. Action_Save_Resp carries Values.success: true is saved, false is save failed. Anything else changes nothing.
 export function saveStateAfter(prev: SaveState, msg: EditorMessage): SaveState {
   if (msg.id === "Doc_ModifiedStatus") {
     const m = msg.values?.Modified;
@@ -112,11 +113,10 @@ export function saveStateAfter(prev: SaveState, msg: EditorMessage): SaveState {
     if (m === false) return "saved";
     return prev;
   }
-  if (msg.id === "Action_Save") return "saving";
   if (msg.id === "Action_Save_Resp") {
     const ok = msg.values?.success;
     if (ok === true) return "saved";
-    if (ok === false) return "unsaved";
+    if (ok === false) return "failed";
   }
   return prev;
 }
