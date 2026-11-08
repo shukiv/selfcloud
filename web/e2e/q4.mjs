@@ -363,9 +363,16 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
   const afterOffline = await resultNames(page);
   check(afterOffline.includes('Q4 budget.txt'), `the search works again once the connection is back (${JSON.stringify(afterOffline)})`);
 
-  // The limit: past sixty searches a minute the server refuses, and the page says so in a sentence. The bucket refills by one a
-  // second. The words are typed first, and a burst of searches is sent while the page is still waiting out its pause, so the
-  // page's own search meets an empty bucket.
+  // The limit: past sixty searches a minute the server refuses, and the page says so in a sentence. The bucket holds sixty
+  // searches and refills one a second, and a search takes its token when it reaches the server. The page's own search is held
+  // before it reaches the server (the CDP Fetch domain pauses it until the run releases it), so it cannot take a token by
+  // chance. The run empties the bucket, then waits for the refill: it sends searches until one is refused (the bucket is then
+  // empty), and then until one is answered, which is the search that takes the refilled token. The bucket is empty again at
+  // that moment. The held search is released at once, so it reaches the server within a round trip of that take, and the next
+  // token is a second away: the page's search meets an empty bucket. The window left is that round trip. A page search gets
+  // through only if it reaches the server a second or more after the take, which needs a stall that long; then the alert is
+  // missing and the step fails, as the race did, so no pass can come from a refill.
+  const limited = 'Too many searches. Wait a minute, then try again.';
   // flood sends searches as the page's own script does, and counts the refusals.
   const flood = () =>
     page.evaluate(`(async () => {
@@ -376,13 +383,53 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
       }
       return n;
     })()`);
-  await flood(); // empties the bucket first, so the page's own search below is the one that meets the limit
-  const limited = 'Too many searches. Wait a minute, then try again.';
-  await typeWords(page, BOX, 'limited');
-  const refused = await flood();
-  check(refused >= 1, `the server refuses searches past its limit (${refused} refused)`);
-  await bodyHas(page, limited, 15000);
-  check(await alertShows(page, limited), 'past the limit the page shows the sentence in an alert');
-  const logged = page.expectedAnswers.get('rate limited search')?.length ?? 0;
-  check(logged >= 1, `the refused searches were logged by the browser, and counted (${logged})`);
+  // drain sends searches one after another. The first refusal means the bucket holds less than one token: the bucket is
+  // empty. The next answer after that is the search that takes the refilled token, so the bucket is empty again the moment it
+  // returns. drain returns the refusals it saw.
+  const drain = () =>
+    page.evaluate(`(async () => {
+      let n = 0;
+      let empty = false;
+      const until = Date.now() + 10000;
+      for (;;) {
+        if (Date.now() > until) throw new Error('the bucket did not empty and refill in 10 seconds');
+        const r = await fetch('${SEARCH_PATH}?q=budget&limit=1', { headers: { Accept: 'application/json' } });
+        await r.text();
+        if (r.status === 200) {
+          if (empty) return n;
+        } else {
+          n++;
+          empty = true;
+        }
+      }
+    })()`);
+  // holdLimited keeps the page's search paused, and only that one: the pattern names its word.
+  const held = [];
+  const holdLimited = (p) => {
+    if (p.request.url.includes('q=limited')) held.push(p.requestId);
+  };
+  await page.send('Fetch.enable', { patterns: [{ urlPattern: '*q=limited*', requestStage: 'Request' }] });
+  page.on('Fetch.requestPaused', holdLimited);
+  try {
+    await typeWords(page, BOX, 'limited');
+    // The page sends its search once its pause is over; the run waits for the paused request to arrive before it drains.
+    for (let i = 0; held.length === 0; i++) {
+      if (i > 100) throw new Error('the page did not send its search for the word limited in 10 seconds');
+      await sleep(100);
+    }
+    const drained = await drain();
+    for (const requestId of held.splice(0)) await page.send('Fetch.continueRequest', { requestId });
+    const after = await flood();
+    const refused = drained + after;
+    check(refused >= 1, `the server refuses searches past its limit (${refused} refused)`);
+    await bodyHas(page, limited, 15000);
+    check(await alertShows(page, limited), 'past the limit the page shows the sentence in an alert');
+    const logged = page.expectedAnswers.get('rate limited search')?.length ?? 0;
+    check(logged >= 1, `the refused searches were logged by the browser, and counted (${logged})`);
+  } finally {
+    // The section leaves no paused request and no listener behind: a later section must not see either.
+    page.off('Fetch.requestPaused', holdLimited);
+    for (const requestId of held.splice(0)) await page.send('Fetch.continueRequest', { requestId });
+    await page.send('Fetch.disable');
+  }
 }
