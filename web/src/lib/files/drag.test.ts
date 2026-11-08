@@ -39,8 +39,7 @@ describe("dropDecision", () => {
 
   it("refuses a folder dropped on itself or on something below it", () => {
     const dir = node("nod_dir00001", { kind: "dir" });
-    // A folder dropped on its own place is a no-op (why "same"), not a refusal that says it cannot go into itself.
-    expect(dropDecision([dir], dest({ dir: "nod_dir00001" }), false, both)).toEqual({ ok: false, why: "same" });
+    expect(dropDecision([dir], dest({ dir: "nod_dir00001" }), false, both)).toEqual({ ok: false, why: "self" });
     expect(dropDecision([dir], dest({ dir: "nod_deep0001", path: ["fld_aaaaaaaa", "nod_dir00001", "nod_deep0001"] }), true, both)).toEqual({ ok: false, why: "self" });
     // A file with the same id as a path entry is not a folder: only a folder can contain the place.
     expect(dropDecision([node("nod_dir00001")], dest({ path: ["nod_dir00001"] }), false, both).ok).toBe(true);
@@ -107,7 +106,7 @@ describe("a tree folder as a source (decision 104)", () => {
 
   it("refuses a folder dropped on itself, and on a folder below it (the path of the tree)", () => {
     const f = folder("nod_one00001");
-    expect(dropDecision([f], dest({ dir: "nod_one00001" }), false, both)).toEqual({ ok: false, why: "same" });
+    expect(dropDecision([f], dest({ dir: "nod_one00001" }), false, both)).toEqual({ ok: false, why: "self" });
     expect(dropDecision([f], dest({ dir: "nod_kid00001", path: ["fld_aaaaaaaa", "nod_one00001", "nod_kid00001"] }), false, both)).toEqual({ ok: false, why: "self" });
     // Its own parent: the folder is already there, so nothing would move.
     expect(dropDecision([f], dest({ dir: "nod_parent01" }), false, both)).toEqual({ ok: false, why: "here" });

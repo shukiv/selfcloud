@@ -2038,9 +2038,7 @@ export default function FilesPage() {
       }
       void runTransfer(mode, decision.nodes, { folder: dest.folder, dir: dest.dir }, false, true);
     },
-    refuse: (why) => {
-      if (why !== "same") void message.warning(t(WHY_KEY[why]));
-    },
+    refuse: (why) => void message.warning(t(WHY_KEY[why])),
     selectedIDs: () => sel.ids,
     setBand: (hit) => {
       const first = hit.length > 0 ? ids.indexOf(hit[0]) : null;
@@ -2055,7 +2053,7 @@ export default function FilesPage() {
   const dragHint =
     dragView === null
       ? null
-      : dragWhy && dragWhy !== "same"
+      : dragWhy
         ? t(WHY_KEY[dragWhy])
         : dragView.target !== null
           ? null
