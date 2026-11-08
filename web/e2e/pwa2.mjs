@@ -140,7 +140,7 @@ export async function pwa2Checks(h, { page, base, check, MEMBER, openProbe }) {
     const refused = await probePage.evaluate(bodyText);
     report(refused.indexOf('cross-site.txt') < 0, 'pwa2: a share from another site is refused, and its file is not listed');
   } finally {
-    probe.close();
+    await probe.close();
   }
 
   // 6. A share opened while signed out: its files are taken at once, the person signs in, and the share page shows them.

@@ -255,3 +255,19 @@ export class Page {
     this.ws.close();
   }
 }
+
+// openTab opens a new tab in the same browser as the page, so it has the same profile: the same service worker, cookies and
+// sign-in. Its requests go to its own Page, not to the page's list. The result's close ends the tab's socket and closes the tab.
+export async function openTab(page) {
+  const origin = `http://${new URL(page.ws.url).host}`;
+  const target = await (await fetch(`${origin}/json/new?about:blank`, { method: 'PUT' })).json();
+  const tab = new Page(target.webSocketDebuggerUrl);
+  await tab.opened;
+  return {
+    page: tab,
+    close: async () => {
+      tab.close();
+      await fetch(`${origin}/json/close/${target.id}`);
+    },
+  };
+}

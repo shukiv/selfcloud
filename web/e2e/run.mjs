@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { freePort, launchBrowser, Page } from './cdp.mjs';
+import { freePort, launchBrowser, openTab, Page } from './cdp.mjs';
 import { linkChecks } from './sharePublic.mjs';
 import { sharingChecks } from './shareDialog.mjs';
 import * as owner from './owner.mjs';
@@ -961,20 +961,14 @@ async function main() {
     if (!only || onlySet.has('x6')) await x6Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('pwa')) await pwaChecks(h, { page, base, brand: { name: BRAND.name, accentUpper: BRAND.accent.toUpperCase(), member: MEMBER }, check, wsUrl: launched.wsUrl });
     // The share target (slice pwa2, decision 82): the manifest, the share post with and without the worker, and the page.
-    // openProbe opens a browser of its own for a cross-site probe. The probe leaves this origin on purpose, so it must not run
-    // in the shared page, whose requests the end of the run checks for same-origin.
+    // openProbe opens a tab in the shared browser for a cross-site probe. It shares the profile, so the service worker and the
+    // member's sign-in are there, and its requests go to its own list, not the shared page's, which the end of the run checks
+    // for same-origin.
     const openProbe = async () => {
-      const probeLaunch = await launchBrowser(await findBrowser(), join(dir, 'probe-profile'), {});
-      const probe = new Page(probeLaunch.wsUrl);
-      probe.base = base;
-      await probe.start(EXPECTED);
-      return {
-        page: probe,
-        close: () => {
-          probe.close();
-          probeLaunch.proc.kill();
-        },
-      };
+      const tab = await openTab(page);
+      tab.page.base = base;
+      await tab.page.start(EXPECTED);
+      return tab;
     };
     if (!only || onlySet.has('pwa2')) await pwa2Checks(h, { page, base, check, MEMBER, openProbe });
     // The new-browser confirmation (sec2, decision 86): its own user, its own browser with its own profile. It comes after the
