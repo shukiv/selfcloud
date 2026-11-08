@@ -1274,8 +1274,9 @@ export default function FilesPage() {
     if (failed > 0) void message.error(t("files.err.someFailed", { count: failed }));
     await reload(parentBranches(done));
     // A folder the place is in went to the Trash, so the page cannot stay in it: it goes to the parent of the topmost one (decision 104).
+    // The trashed place's entry is replaced, so Back does not lead to it.
     const leave = leaveAfterTrash(chain, done.map((n) => n.id));
-    if (leave !== undefined && here) go(filesURL(here.folder, leave));
+    if (leave !== undefined && here) go(filesURL(here.folder, leave), { replace: true });
   }
 
   // ---- move and copy ----
