@@ -1491,7 +1491,7 @@
   "files.drag.no.role": "Você não pode adicionar itens a esta pasta.",
   "files.drag.no.copy": "Nada é copiado para a lixeira. Solte sem Ctrl para movê-lo para lá.",
   "files.drag.no.trash": "Estes itens não podem ir para a lixeira: você não pode excluí-los.",
-  "files.drag.no.self":"Uma pasta não pode entrar nela mesma.",
+  "files.drag.no.self": "Uma pasta não pode entrar nela mesma.",
   "files.drag.no.here": "Estes itens já estão nesta pasta.",
   "files.drag.no.move": "Você não pode mover estes itens. Mantenha Ctrl para copiá-los.",
   "files.tree.label": "Pastas",
