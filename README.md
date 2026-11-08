@@ -237,7 +237,7 @@ make e2e     # the browser smoke test (needs Chrome or Chromium)
 cd web && npm run check   # TypeScript, source checks, licence and key checks, unit tests
 ```
 
-CI runs `npm run check` and `npm run build` in `web/`, then the Go checks.
+CI runs `npm run check` and `npm run build` in `web/`, then the Go checks. A second job, `e2e`, runs the browser checks with Google Chrome through `scripts/ci-e2e.sh`, and keeps their output when it fails.
 
 The upload benchmark pushes 1 GiB through the resumable-upload routes in 64 MiB pieces and reports
 MB/s. It writes about 1 GiB to a temporary directory, so point `TMPDIR` at a disk with room:
