@@ -380,6 +380,15 @@ type SharedNode struct {
 // The order is node ID, with the node ID as cursor. With byRecent the order is the time each node was shared
 // with the user (SharedAt), newest first, and the cursor is that time and the node ID.
 func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner, byRecent bool, p Page) ([]SharedNode, string, error) {
+	return s.SharedNodesFiltered(ctx, accountID, userID, owner, byRecent, ListFilter{}, p)
+}
+
+// SharedNodesFiltered is SharedNodes narrowed by a list filter (decision 110): the node's type and modified range. The
+// cursor carries the filter's tag, so it continues only the same filter.
+func (s *Store) SharedNodesFiltered(ctx context.Context, accountID, userID string, owner, byRecent bool, f ListFilter, p Page) ([]SharedNode, string, error) {
+	if err := f.Validate(); err != nil {
+		return nil, "", err
+	}
 	where := []string{"n.account_id = ?",
 		"NOT (f.kind = 'personal' AND f.owner_user_id = ?)",
 		`NOT EXISTS (SELECT 1 FROM permissions rp JOIN nodes rn ON rn.id = rp.node_id
@@ -399,6 +408,11 @@ func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner
 	if owner {
 		where = append(where, "f.kind <> 'team'")
 	}
+	// The filter's clauses follow the arguments above, and their values follow them in the same order.
+	if fsql, fargs := f.Where("n"); fsql != "" {
+		where = append(where, strings.TrimPrefix(fsql, " AND "))
+		args = append(args, fargs...)
+	}
 	// The shared time is the permission's creation or the visit, whichever is later, for each branch.
 	atPerm, atLink := "pm.created_at", "v.visited_at"
 	var cursorCond, order string
@@ -409,7 +423,7 @@ func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner
 	if p.Cursor != "" {
 		// The recent order's cursor is the shared time and the node ID; the default order's is the node ID alone.
 		if byRecent {
-			parts, err := decodeCursor(p.Cursor, 2)
+			parts, err := decodeFilteredCursor(p.Cursor, 2, f)
 			if err != nil {
 				return nil, "", err
 			}
@@ -420,7 +434,7 @@ func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner
 			having = append(having, "(MAX(src.at) < ? OR (MAX(src.at) = ? AND src.node_id < ?))")
 			args = append(args, at, at, parts[1])
 		} else {
-			parts, err := decodeCursor(p.Cursor, 1)
+			parts, err := decodeFilteredCursor(p.Cursor, 1, f)
 			if err != nil {
 				return nil, "", err
 			}
@@ -483,9 +497,9 @@ func (s *Store) SharedNodes(ctx context.Context, accountID, userID string, owner
 		out = out[:p.Limit]
 		last := out[len(out)-1]
 		if byRecent {
-			next = encodeCursor(strconv.FormatInt(millis(last.SharedAt), 10), last.NodeID)
+			next = encodeFilteredCursor(f, strconv.FormatInt(millis(last.SharedAt), 10), last.NodeID)
 		} else {
-			next = encodeCursor(last.NodeID)
+			next = encodeFilteredCursor(f, last.NodeID)
 		}
 	}
 	return out, next, nil

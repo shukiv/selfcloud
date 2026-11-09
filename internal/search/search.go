@@ -226,6 +226,9 @@ type Request struct {
 	Terms []string
 	Kind  string // "", file, dir or shortcut
 	Exts  []string
+	// Group is a file type group (decision 110): "" for none, else a group ID that keeps the files of that group. It is
+	// omitted from the fingerprint when empty, so a search with no type keeps its fingerprint.
+	Group string `json:",omitempty"`
 	// ModifiedFrom and ModifiedTo bound the modified time in unix milliseconds: From inclusive, To exclusive. -1 is none.
 	ModifiedFrom, ModifiedTo int64
 	// SizeMin and SizeMax bound the size in bytes, both inclusive. -1 is none.
@@ -294,6 +297,10 @@ func (r *Request) candidateSQL(after int64, limit int) (string, []any, error) {
 	if r.Kind != "" {
 		b.WriteString(" AND sn.kind = ?")
 		args = append(args, r.Kind)
+	}
+	if r.Group != "" {
+		b.WriteString(" AND n.kind = 'file' AND n.type_group = ?")
+		args = append(args, r.Group)
 	}
 	if len(r.Exts) > 0 {
 		marks := make([]string, len(r.Exts))
