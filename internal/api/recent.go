@@ -29,8 +29,12 @@ func (s *Server) handleListRecent(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
+	filter, err := listFilterParams(r)
+	if err != nil {
+		return err
+	}
 	ctx := r.Context()
-	rows, err := s.store.RecentPage(ctx, p.UserID, page)
+	rows, err := s.store.RecentPageFiltered(ctx, p.UserID, filter, page)
 	if err != nil {
 		return storeErr(err)
 	}
@@ -69,7 +73,7 @@ func (s *Server) handleListRecent(w http.ResponseWriter, r *http.Request) error 
 	out := listResponse[recentItem]{Items: []recentItem{}}
 	out.Items = append(out.Items, items...)
 	if len(rows) == page.Limit {
-		out.NextCursor = store.RecentCursor(rows[len(rows)-1])
+		out.NextCursor = store.RecentCursorOf(rows[len(rows)-1], filter)
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil

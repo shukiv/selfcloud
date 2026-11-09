@@ -436,8 +436,12 @@ func (s *Server) handleSharedWithMe(w http.ResponseWriter, r *http.Request) erro
 	default:
 		return apierr.New(apierr.InvalidRequest, "order must be recent, or left out")
 	}
+	filter, err := listFilterParams(r)
+	if err != nil {
+		return err
+	}
 	ctx := r.Context()
-	shared, next, err := s.store.SharedNodes(ctx, p.AccountID, p.UserID, p.Role == auth.RoleOwner, byRecent, page)
+	shared, next, err := s.store.SharedNodesFiltered(ctx, p.AccountID, p.UserID, p.Role == auth.RoleOwner, byRecent, filter, page)
 	if err != nil {
 		return storeErr(err)
 	}

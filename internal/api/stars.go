@@ -168,8 +168,12 @@ func (s *Server) handleListStarred(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
+	filter, err := listFilterParams(r)
+	if err != nil {
+		return err
+	}
 	ctx := r.Context()
-	stars, err := s.store.StarsPage(ctx, p.UserID, page)
+	stars, err := s.store.StarsPageFiltered(ctx, p.UserID, filter, page)
 	if err != nil {
 		return storeErr(err)
 	}
@@ -205,7 +209,7 @@ func (s *Server) handleListStarred(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if len(stars) == page.Limit {
-		out.NextCursor = store.StarCursor(stars[len(stars)-1])
+		out.NextCursor = store.StarCursorOf(stars[len(stars)-1], filter)
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
