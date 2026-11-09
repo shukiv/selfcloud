@@ -1540,7 +1540,7 @@
   "files.editor.tokenRefreshFailed": "העורך לא הצליח לחדש את החיבור, ולכן השינויים האחרונים עלולים לא להישמר. פתחו את הקובץ מחדש.",
   "files.editor.copyNotShown": "העותק נשמר, אבל הוא לא מוצג כאן. פתחו את התיקייה שלו כדי למצוא אותו.",
   "files.editor.copyNotStarted": "העותק לא התחיל, כי לא ניתן היה לקרוא את התיקייה. נסו שוב.",
-  "files.editor.saveAsBusy": "עותק כבר נוצר. המתינו עד שיסתיים.",
+  "files.editor.saveAsBusy": "עותק נוצר כעת. המתינו עד לסיומו.",
   "files.editing.mark": "בעריכה",
   "files.details.editing": "בעריכה",
   "files.details.editingUnnamed": "עורך",
