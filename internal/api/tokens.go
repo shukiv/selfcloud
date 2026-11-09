@@ -350,6 +350,11 @@ func (s *Server) authenticateWOPI(ctx context.Context, rd wopiReader, tok string
 	if !callerLive(p, d, now) {
 		return nil, tokenPayload{}, wopiRefused("user no longer allowed", &pl, errBadToken)
 	}
+	// A must-change user's editor is refused as a dead caller's is (decision 116): the WOPI routes take no
+	// checkImpersonation, so this is the only check they make on the flag.
+	if p.MustChangePassword {
+		return nil, tokenPayload{}, wopiRefused("password change required", &pl, errBadToken)
+	}
 	return p, pl, nil
 }
 
