@@ -28,6 +28,15 @@ function check(dir) {
 
 const NONCE_META = '<meta property="csp-nonce" nonce="__SELFCLOUD_CSP_NONCE__">';
 
+// tl1: the antd Table stays out of the first load. A file the page names at once that holds the Table's marker fails.
+test('a Table marker in a file the first load names fails: the Table must stay in a lazy chunk', () => {
+  const html = `<!doctype html><html><head>${NONCE_META}<script type="module" nonce="__SELFCLOUD_CSP_NONCE__" src="/assets/index-a.js"></script></head><body></body></html>`;
+  const dir = fixture(html, { 'index-a.js': 'const cls = "ant-table-selection-column";' });
+  const r = check(dir);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /\/assets\/index-a\.js is named by index\.html and holds the antd Table code/);
+});
+
 test('an index.html that names no module script and no modulepreload fails: the first load is empty', () => {
   const dir = fixture(`<!doctype html><html><head>${NONCE_META}</head><body></body></html>`);
   const r = check(dir);
