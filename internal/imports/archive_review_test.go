@@ -99,13 +99,13 @@ func TestTarGlobalHeadersCountTowardTheEntryCap(t *testing.T) {
 
 // The ratio test divides, so a packed size near MaxInt64 does not overflow the product into a small number.
 func TestOverRatioDoesNotOverflow(t *testing.T) {
-	if !overRatio(101*1024, 1024, 100) {
+	if !OverRatio(101*1024, 1024, 100) {
 		t.Fatal("101 KiB from 1 KiB packed at ratio 100 is over the ratio")
 	}
-	if overRatio(100*1024, 1024, 100) {
+	if OverRatio(100*1024, 1024, 100) {
 		t.Fatal("exactly 100 times the packed size is not over the ratio")
 	}
-	if overRatio(math.MaxInt64, math.MaxInt64, 100) {
+	if OverRatio(math.MaxInt64, math.MaxInt64, 100) {
 		t.Fatal("a size equal to the packed size is not over a ratio of 100")
 	}
 }

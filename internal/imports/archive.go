@@ -137,7 +137,7 @@ func Scan(r io.ReaderAt, size int64, caps Caps) (Summary, error) {
 	if err := s.clashes(); err != nil {
 		return Summary{}, err
 	}
-	if f == TarGz && overRatio(s.sum.Bytes, size, caps.MaxRatio) {
+	if f == TarGz && OverRatio(s.sum.Bytes, size, caps.MaxRatio) {
 		return Summary{}, refuse(apierr.TooLarge, "the archive expands more than it may", "ratio")
 	}
 	return s.sum, nil
@@ -200,7 +200,7 @@ func (s *scanner) add(e Entry) error {
 		if e.Size > s.caps.MaxFile {
 			return refuse(apierr.TooLarge, "a file in the archive is larger than the largest file allowed", "file_size")
 		}
-		if e.Zipped && overRatio(e.Size, e.Packed, s.caps.MaxRatio) {
+		if e.Zipped && OverRatio(e.Size, e.Packed, s.caps.MaxRatio) {
 			return refuse(apierr.TooLarge, "a file in the archive expands more than it may", "ratio")
 		}
 		if e.Size > s.caps.MaxTotal-s.sum.Bytes {
@@ -428,9 +428,10 @@ func tarLimit(size int64, caps Caps, f Format) int64 {
 	return limit
 }
 
-// overRatio reports whether size is more than ratio times the larger of packed and ratioFloor. It divides rather than
-// multiplies, so a large packed size cannot overflow the product into a small one.
-func overRatio(size, packed, ratio int64) bool {
+// OverRatio reports whether size is more than ratio times the larger of packed and ratioFloor. It divides rather than
+// multiplies, so a large packed size cannot overflow the product into a small one. A bundle and an import both use this
+// one definition (design 2.3), so they refuse the same entries.
+func OverRatio(size, packed, ratio int64) bool {
 	if ratio <= 0 {
 		return size > 0
 	}
