@@ -72,7 +72,7 @@ type View =
 const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link", "email-change"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
-const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new","starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share"];
+const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share"];
 
 export function viewFor(path: string): View {
   // The root is My files: the gate sends a person there (or to the admin's home) with a replace, so it is never drawn.

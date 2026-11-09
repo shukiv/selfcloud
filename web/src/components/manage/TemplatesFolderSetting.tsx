@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The account's templates folder (nt2, decision 105): the directory whose files the New menu's gallery offers as the
-// account's own templates. Only the account's owner sees it; the choice is made with the folder picker and saved with PUT.
+// account's own templates. A manager of the account sees it (the owner, an installation admin for the account, or an account key: the same people the server lets change it); the choice is made with the folder picker and saved with PUT.
 // null clears it. An error keeps the old value on the page.
 import { useState } from "react";
 import { Alert, Button, Space } from "antd";
