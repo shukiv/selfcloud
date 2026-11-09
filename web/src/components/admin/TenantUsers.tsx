@@ -21,9 +21,11 @@ import Listing, { type ListAction, type ListMenuEntry } from "../files/Listing";
 import EmptyState from "../EmptyState";
 import LastSignIn from "./LastSignIn";
 
-// The two dialogs load on first use: a first load of the tenant's people does not need them.
+// The dialogs load on first use: a first load of the tenant's people does not need them. Remove is the owner's People
+// page's own dialog: a confirmation, then, when the person's My files hold files, the choice of what happens to them.
 const ResetPassword = lazy(() => import("./ResetPassword"));
 const SignInAs = lazy(() => import("./SignInAs"));
+const RemoveDialog = lazy(() => import("../manage/RemoveDialog"));
 
 // A secret shown once: a link, with the id and title of its dialog.
 interface OnceLink {
@@ -33,7 +35,7 @@ interface OnceLink {
 }
 
 // TenantUsers: the tenant's people. An admin does not manage a tenant's members day to day. It can resend the invitation of
-// a person who has not verified yet, reset a person's password, disable or enable a person, and (when admin.tenant_access
+// a person who has not verified yet, reset a person's password, disable or enable a person, remove a person from the account, and (when admin.tenant_access
 // is on) sign in as the person. The actions are offered only as far as the installation allows; the server checks each one
 // again. One action runs at a time; while it runs, the row's actions stay where they are, disabled (review M1).
 export default function TenantUsers({ account }: { account: string }) {
@@ -48,6 +50,7 @@ export default function TenantUsers({ account }: { account: string }) {
   const [resetFor, setResetFor] = useState<Person | null>(null);
   const [signInFor, setSignInFor] = useState<Person | null>(null);
   const [linkFor, setLinkFor] = useState<Person | null>(null);
+  const [removing, setRemoving] = useState<Person | null>(null);
   // tenant_access and mail_configured are sent to an installation admin's own session only.
   const me = useStore(session);
   const tenantAccess = me?.tenantAccess === true;
@@ -57,6 +60,7 @@ export default function TenantUsers({ account }: { account: string }) {
     setResetFor(null);
     setSignInFor(null);
     setLinkFor(null);
+    setRemoving(null);
   });
   const q = useInfiniteQuery({
     queryKey: queryKey("tenant-users", account),
@@ -175,9 +179,9 @@ export default function TenantUsers({ account }: { account: string }) {
             // A row with a change on its way keeps its actions where they are, disabled (review M1).
             return acts.flatMap((a) => (a ? [{ ...a, disabled: busyRow }] : []));
           }}
-          menu={(p): ListMenuEntry[] =>
+          menu={(p): ListMenuEntry[] => [
             // Disable and Enable (the mockup's ⋮): a pending person has not verified, so there is nothing to disable yet.
-            p.status === "pending"
+            ...(p.status === "pending"
               ? []
               : [
                   {
@@ -187,8 +191,21 @@ export default function TenantUsers({ account }: { account: string }) {
                     disabled: busy === p.id,
                     onSelect: () => void changeStatus(p),
                   },
-                ]
-          }
+                ]),
+            // Remove from account (the mockup's ⋮, re-check item 2), for anyone, a pending person too. Its words are the
+            // owner's People page's "Remove…": the language chunks are at their budget (decision 114).
+            {
+              key: "remove",
+              label: t("people.remove.open"),
+              danger: true,
+              disabled: busy === p.id,
+              onSelect: () => {
+                setActionError(null);
+                setNotice(null);
+                setRemoving(p);
+              },
+            },
+          ]}
           empty={<EmptyState role="status" size="compact" text={t("tenant.users.empty")} />}
         />
       )}
@@ -220,6 +237,19 @@ export default function TenantUsers({ account }: { account: string }) {
           />
         )}
         {signInFor !== null && <SignInAs accountID={account} person={signInFor} onClose={() => setSignInFor(null)} />}
+        {removing !== null && (
+          <RemoveDialog
+            account={account}
+            person={removing}
+            candidates={people}
+            onclose={() => setRemoving(null)}
+            ondone={() => {
+              setNotice(t("people.removed", { name: personLabel(removing) }));
+              setRemoving(null);
+              void qc.invalidateQueries({ queryKey: queryKey("tenant-users", account) });
+            }}
+          />
+        )}
       </Suspense>
       {linkFor !== null && (
         <AdminPassword
