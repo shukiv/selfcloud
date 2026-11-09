@@ -10,6 +10,16 @@ import (
 	"testing"
 )
 
+// TestEncryptedArchiveIs415: an encrypted archive is refused as an unsupported media type with its own code.
+func TestEncryptedArchiveIs415(t *testing.T) {
+	if EncryptedArchive != "encrypted_archive" {
+		t.Errorf("EncryptedArchive = %q, want encrypted_archive", EncryptedArchive)
+	}
+	if got := EncryptedArchive.Status(); got != http.StatusUnsupportedMediaType {
+		t.Errorf("EncryptedArchive status = %d, want 415", got)
+	}
+}
+
 func TestEveryCodeHasAStatus(t *testing.T) {
 	for _, c := range Codes() {
 		if s := c.Status(); s < 400 || s > 599 {
