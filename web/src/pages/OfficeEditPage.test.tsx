@@ -654,8 +654,8 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
       from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
       await flush();
       expect(window.location.pathname).toBe("/edit/nod_a1");
-      // The request was sent, so the timeout leaves the copy note (round 4): the copy may exist, and the page has not seen it.
-      expect(screen.getByText("The copy was saved, but it is not shown here. Open its folder to find it.")).toBeTruthy();
+      // The request was sent, so the timeout is a lost copy (round 4), with its own note (round 5): it says the Save As did not finish.
+      expect(screen.getByText(/did not finish in time/)).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
@@ -925,7 +925,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
   });
 
-  it("round 4: a window that times out after its request was sent leaves the copy note, and a renewal then mints nothing", async () => {
+  it("round 4: a window that times out after its request was sent leaves the timed-out note, and a renewal then mints nothing", async () => {
     nodesMock.children = [];
     await openEditor();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -941,7 +941,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
       act(() => {
         vi.advanceTimersByTime(60_000);
       });
-      expect(screen.getByText(COPY_NOT_SHOWN)).toBeTruthy();
+      expect(screen.getByText(/did not finish in time/)).toBeTruthy();
       const before = officePosts().length;
       from({ MessageId: "App_TokenExpired", Values: {} });
       await flush();
@@ -981,5 +981,57 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     });
     await flush();
     expect(window.location.pathname).toBe("/edit/nod_c2");
+  });
+
+  // Round 5 (decision 107): a renewal already in flight when the copy is lost posts no token, and a refused one keeps the note.
+  async function renewalInFlightAtLoss(outcome: "ok" | "refused") {
+    nodesMock.children = [];
+    await openEditor();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let resolveRenew: (v: unknown) => void = () => undefined;
+    let rejectRenew: (e: unknown) => void = () => undefined;
+    try {
+      from({ MessageId: "UI_SaveAs", Values: {} });
+      fireEvent.change(screen.getByLabelText("File name"), { target: { value: "letter (2)" } });
+      act(() => {
+        screen.getByRole("button", { name: "Save copy" }).click();
+      });
+      await flush();
+      apiMock.mockImplementation((method: string, path: string) => {
+        if (method === "GET" && path === "/api/v1/nodes/nod_a1") return Promise.resolve(NODE);
+        if (method === "POST" && path === "/api/v1/nodes/nod_a1/office")
+          return new Promise((res, rej) => {
+            resolveRenew = res;
+            rejectRenew = rej;
+          });
+        return Promise.reject(new Error(`unexpected ${method} ${path}`));
+      });
+      const spy = vi.spyOn(frame().contentWindow as Window, "postMessage");
+      from({ MessageId: "App_TokenExpiring", Values: { Timeout: 1000 } });
+      await flush();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      if (outcome === "ok") {
+        resolveRenew({ url: ORIGIN + "/loleaflet/x", token: "tok-probe", expires_at: new Date(Date.now() + 3600_000).toISOString() });
+      } else {
+        rejectRenew(new ApiError(503, "unavailable", {}, 0));
+      }
+      await flush();
+      const reset = spy.mock.calls.filter((c) => String(c[0]).includes("Reset_Access_Token"));
+      expect(reset).toHaveLength(0);
+      expect(screen.queryByText(REOPEN)).toBeNull();
+      expect(screen.getByText(/did not finish in time/)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("round 5: a renewal in flight at the copy loss posts no token for the original", async () => {
+    await renewalInFlightAtLoss("ok");
+  });
+
+  it("round 5: a renewal in flight at the copy loss, refused, keeps the timed-out note and does not show the reopen note", async () => {
+    await renewalInFlightAtLoss("refused");
   });
 });
