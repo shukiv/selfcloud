@@ -102,6 +102,10 @@ func cleanExternalID(s string) (string, error) {
 	return s, checkText("external_id", s)
 }
 
+// CheckText is the rule for a free text the API stores: valid UTF-8 and no control character. The admin commands apply
+// it to what they store too, so a local account is held to the same rule as one made through the API.
+func CheckText(field, s string) error { return checkText(field, s) }
+
 func checkText(field, s string) error {
 	if !utf8.ValidString(s) {
 		return apierr.Newf(apierr.InvalidRequest, "%s is not valid UTF-8", field)

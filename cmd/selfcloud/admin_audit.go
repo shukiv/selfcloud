@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
@@ -33,9 +35,32 @@ func parseAuditSince(v string, now time.Time) (time.Time, error) {
 	return now.Add(-d), nil
 }
 
-// auditField makes a value safe for a tab-separated cell: a tab or a line break becomes a space.
-func auditField(s string) string {
-	return strings.NewReplacer("\t", " ", "\r", " ", "\n", " ").Replace(s)
+// cell makes a value one safe cell of a tab-separated table. A backslash is written \\, a tab \t, a line feed \n and a carriage
+// return \r; every other control character, and every byte that is not UTF-8, is written \xNN. So a record stays one line,
+// no field forges a cell, and no control sequence reaches the terminal. The printed text can be read back without loss.
+func cell(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && size == 1:
+			fmt.Fprintf(&b, `\x%02x`, s[i])
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case unicode.IsControl(r):
+			fmt.Fprintf(&b, `\x%02x`, r)
+		default:
+			b.WriteString(s[i : i+size])
+		}
+		i += size
+	}
+	return b.String()
 }
 
 // auditDetails prints the stored details as key=value pairs, in key order, and nothing else.
@@ -47,7 +72,7 @@ func auditDetails(d map[string]any) string {
 	sort.Strings(keys)
 	pairs := make([]string, 0, len(keys))
 	for _, k := range keys {
-		pairs = append(pairs, auditField(k)+"="+auditField(fmt.Sprint(d[k])))
+		pairs = append(pairs, cell(k)+"="+cell(fmt.Sprint(d[k])))
 	}
 	return strings.Join(pairs, " ")
 }
@@ -128,8 +153,8 @@ func adminAudit(args []string, stdout, stderr io.Writer) int {
 		if target == "" {
 			target = "-"
 		}
-		fmt.Fprintf(stdout, "%s\t%s\t%s:%s\t%s\t%s\t%s\n", e.Time.UTC().Format(time.RFC3339), acc,
-			auditField(e.ActorKind), auditField(e.ActorID), auditField(e.Action), auditField(target), auditDetails(e.Details))
+		fmt.Fprintf(stdout, "%s\t%s\t%s:%s\t%s\t%s\t%s\n", e.Time.UTC().Format(time.RFC3339), cell(acc),
+			cell(e.ActorKind), cell(e.ActorID), cell(e.Action), cell(target), auditDetails(e.Details))
 	}
 	return 0
 }

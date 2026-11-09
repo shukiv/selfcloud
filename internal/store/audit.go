@@ -212,7 +212,10 @@ func (s *Store) AdminAuditEntries(ctx context.Context, q AdminAuditQuery) ([]*Au
 		e.AccountID = acc.String
 		e.PrivateUserID = private.String
 		if details.Valid {
-			if err := json.Unmarshal([]byte(details.String), &e.Details); err != nil {
+			// UseNumber keeps each number as the text stored, so 1073741824 is not read back as a float.
+			dec := json.NewDecoder(strings.NewReader(details.String))
+			dec.UseNumber()
+			if err := dec.Decode(&e.Details); err != nil {
 				return nil, err
 			}
 		}

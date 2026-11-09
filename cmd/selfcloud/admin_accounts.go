@@ -96,7 +96,7 @@ func adminAccounts(args []string, stdout, stderr io.Writer) int {
 			if a.QuotaBytes != 0 {
 				quota = strconv.FormatInt(a.QuotaBytes, 10)
 			}
-			fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%d\t%d\t%s\n", a.ID, a.Name, a.Status, ext,
+			fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%d\t%d\t%s\n", cell(a.ID), cell(a.Name), cell(a.Status), cell(ext),
 				a.CreatedAt.UTC().Format(time.RFC3339), users, a.UsedBytes, quota)
 		}
 		if next == "" {

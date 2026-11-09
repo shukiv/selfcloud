@@ -181,6 +181,13 @@ func adminCreateAccount(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "selfcloud admin create-account: -name is required")
 		return 2
 	}
+	// The same rule as the API's: a name and an external ID hold no control character and are valid UTF-8.
+	for _, check := range []struct{ field, value string }{{"name", label}, {"external_id", *ext}} {
+		if err := api.CheckText(check.field, check.value); err != nil {
+			fmt.Fprintln(stderr, "selfcloud admin create-account:", err)
+			return 2
+		}
+	}
 	now := store.Now()
 	acc := &store.Account{ID: id.New("acc"), ExternalID: *ext, Name: label, Status: store.AccountActive,
 		QuotaBytes: int64(quota), CreatedAt: now, UpdatedAt: now}
