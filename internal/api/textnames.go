@@ -94,9 +94,9 @@ func binaryMedia(mt string) bool {
 // type: a binary file that a PUT makes text is checked. A binary request type never switches the rule off for a text
 // file, and a checked file keeps its stored type unless the request names a text type (the handler's rule). newType is
 // the type the request would store, and it is not consulted.
-func utf8Required(name, stored, header, newType string) bool {
-	st, hd := mediaType(stored), mediaType(header)
-	named := codeNamed(name) || textMedia(st) || textMedia(hd)
+func utf8Required(name, stored, header, want string) bool {
+	st, hd, wt := mediaType(stored), mediaType(header), mediaType(want)
+	named := codeNamed(name) || textMedia(st) || textMedia(hd) || textMedia(wt)
 	exempt := binaryMedia(st) && !textMedia(hd)
 	return named && !exempt
 }
