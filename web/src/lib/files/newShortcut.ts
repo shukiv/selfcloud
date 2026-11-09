@@ -65,7 +65,8 @@ export function readChord(state: ChordState, e: ChordEvent, now: number, blocked
 
 // The elements that mean an overlay is open: a dialog, a drawer, a menu, a modal. A closed one is hidden (antd's hidden classes or
 // display none), and is not counted.
-const OVERLAY = '[role="dialog"], [role="menu"], .ant-drawer-open, .ant-modal-wrap, .ant-dropdown';
+// A menu is an overlay only when it is a popup: the sidebar's navigation is an antd Menu (class ant-menu), always shown, and is not.
+const OVERLAY = '[role="dialog"], [role="menu"]:not(.ant-menu), .ant-drawer-open, .ant-modal-wrap, .ant-dropdown';
 const HIDDEN = ".ant-dropdown-hidden, .ant-modal-wrap-hidden, [hidden]";
 
 // shown is true when the element and each ancestor is drawn: none of them has display none (a class from a stylesheet counts too).
