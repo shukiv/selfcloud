@@ -11,6 +11,7 @@ const m = vi.hoisted(() => ({
   setTemplatesFolder: vi.fn(),
   statOrNull: vi.fn(),
   myFolders: vi.fn(),
+  pick: { folder: "fld_abcdefgh", dir: "nod_abcdefgh" as string | null },
 }));
 vi.mock("../../lib/files/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../lib/files/api")>();
@@ -24,7 +25,7 @@ vi.mock("../../lib/files/templates", async (importOriginal) => {
 // The folder picker is a stub: it offers one directory and reports the choice.
 vi.mock("../files/PickDestination", () => ({
   default: ({ onPick }: { onPick: (d: { folder: string; dir: string | null }) => void }) => (
-    <button type="button" data-testid="pick-stub" onClick={() => onPick({ folder: "fld_abcdefgh", dir: "nod_abcdefgh" })}>
+    <button type="button" data-testid="pick-stub" onClick={() => onPick(m.pick)}>
       pick
     </button>
   ),
@@ -59,6 +60,7 @@ beforeEach(() => {
   m.setTemplatesFolder.mockReset();
   m.statOrNull.mockReset();
   m.myFolders.mockReset();
+  m.pick = { folder: "fld_abcdefgh", dir: "nod_abcdefgh" };
   m.getTemplatesFolder.mockResolvedValue("nod_abcdefgh");
   m.statOrNull.mockResolvedValue({ id: "nod_abcdefgh", name: "Templates" });
   m.myFolders.mockResolvedValue([]);
@@ -86,6 +88,18 @@ describe("TemplatesFolderSetting", () => {
     fireEvent.click(screen.getByRole("button", { name: /change|choose|pick/i }));
     fireEvent.click(await screen.findByTestId("pick-stub"));
     await waitFor(() => expect(m.setTemplatesFolder).toHaveBeenCalledWith(ACC, "nod_abcdefgh"));
+  });
+
+  // A space's root is picked with dir null: the folder list gives the root node, and that is what is saved (nt2 review, MED-3).
+  it("saves the root node of a space picked at its root", async () => {
+    m.setTemplatesFolder.mockResolvedValue(null);
+    m.myFolders.mockResolvedValue([{ id: "fld_abcdefgh", name: "Team", kind: "team", access: "write", role: "manager", root_node_id: "nod_rootroot" }]);
+    m.pick = { folder: "fld_abcdefgh", dir: null };
+    renderFor(signed("member", true));
+    await screen.findByText("Templates");
+    fireEvent.click(screen.getByRole("button", { name: /change|choose|pick/i }));
+    fireEvent.click(await screen.findByTestId("pick-stub"));
+    await waitFor(() => expect(m.setTemplatesFolder).toHaveBeenCalledWith(ACC, "nod_rootroot"));
   });
 
   it("clears the setting with null", async () => {
