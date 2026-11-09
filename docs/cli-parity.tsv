@@ -87,6 +87,7 @@ fn	lib/files/thumbnail.ts:watchThumbnail	-	cli11	planned, cli11
 fn	lib/files/tus.ts:createUpload	-	cli6	planned, cli6
 fn	lib/files/tus.ts:deleteUpload	-	cli6	planned, cli6
 fn	lib/files/tus.ts:headOffset	-	cli6	planned, cli6
+fn	lib/files/tus.ts:sendChunk	-	cli6	planned, cli6
 fn	lib/files/zips.ts:zipStatus	-	cli12	planned, cli12
 fn	lib/impersonation.ts:adoptSession	-	-	browser session only; whoami reads GET /folders
 fn	lib/impersonation.ts:endImpersonation	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password

@@ -2,42 +2,27 @@
 
 // The parity guard of the web client (design section 5.2). Every /api/v1 path in web/src has a route row in
 // docs/cli-parity.tsv, and every exported function in web/src/lib that makes a request has an fn row, and every fn row
-// names such a function. The rules are the ones that wrote the table: a function makes a request when its body calls
-// fetch, or api, or a request helper of its module (a private function that calls fetch or api). A function that only
-// calls an exported function is covered by that function's own row.
+// names such a function. The rules are the ones that wrote the table, read with the TypeScript compiler, not with lines.
+//
+// A unit is a top-level function, an arrow or function expression bound to a const, a member of an object-literal
+// export, or a method of a class. A unit makes a request when its own code (nested functions included) calls fetch,
+// api, or sendBeacon, or names XMLHttpRequest, EventSource or WebSocket. A private unit (not exported, a private or
+// protected method, a member of an unexported object) that makes a request is a helper: a unit that calls a helper
+// makes a request too, at any depth. An exported unit that makes a request, directly or through helpers, is a row. A
+// call to an exported unit that is not api does not make the caller a row: that unit has its own row.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, posix, relative, sep } from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 // The tests run with web/ as the working directory, as the other tests here do.
 const SRC = join(process.cwd(), 'src');
 const TABLE = join(process.cwd(), '..', 'docs', 'cli-parity.tsv');
-const API_FILE = 'lib/api.ts';
+const API_KEY = 'lib/api.ts:api';
+const TABLE_HEADER = 'kind\tkey\tcommand\tslice\treason';
 
 // Sources maps a path under src, with / as the separator, to its text.
 export type Sources = Record<string, string>;
-
-interface Decl {
-  key: string;
-  name: string;
-  file: string;
-  exported: boolean;
-  fn: boolean;
-  body: string;
-}
-
-interface Import {
-  file: string;
-  name: string;
-}
-
-// A top-level declaration starts at column 0; a body runs to the next one.
-const TOP = /^(export |function |async function |const |let |var |class |type |interface |import |enum )/;
-const FN_DECL = /^(export )?(?:async )?function (\w+)/;
-const CONST_DECL = /^(export )?const (\w+)\s*(?::[^=]*)?=\s*(.*)/;
-const ARROW = /^(async\s*)?(\([^)]*\)|\w+)\s*(?::[^=]*)?=>/;
-const FN_START = /^(async\s*)?function/;
-const IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["'](\.[^"']+)["']/g;
 
 // loadSources reads every non-test module under src.
 export function loadSources(): Sources {
@@ -55,84 +40,184 @@ export function loadSources(): Sources {
   return out;
 }
 
-// requestRows returns the keys (file:name) of the exported functions in lib that make a request, sorted.
+const hasModifier = (n: ts.Node, kind: ts.SyntaxKind) =>
+  (ts.canHaveModifiers(n) ? ts.getModifiers(n) : undefined)?.some((m) => m.kind === kind) ?? false;
+const isExported = (n: ts.Node) => hasModifier(n, ts.SyntaxKind.ExportKeyword);
+const unwrap = (e: ts.Expression): ts.Expression =>
+  ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e) ? unwrap(e.expression) : e;
+const isFunctionLike = (e: ts.Expression): e is ts.ArrowFunction | ts.FunctionExpression =>
+  ts.isArrowFunction(e) || ts.isFunctionExpression(e);
+
+// REQUEST_GLOBALS are the browser objects that send a request when they are made or used.
+const REQUEST_GLOBALS = new Set(['XMLHttpRequest', 'EventSource', 'WebSocket']);
+
+interface Unit {
+  key: string;
+  file: string;
+  exported: boolean;
+  direct: boolean;
+  calls: string[];
+}
+
+interface Target {
+  file: string;
+  name: string;
+}
+
+// requestRows returns the keys (file:name, file:Class.method, file:object.member) of the exported units in lib that make
+// a request, sorted.
 export function requestRows(sources: Sources): string[] {
   const libFiles = Object.keys(sources).filter((f) => f.startsWith('lib/')).sort();
-  const decls: Decl[] = [];
-  const declsIn = new Map<string, Map<string, Decl>>();
-  const importsIn = new Map<string, Map<string, Import>>();
+  const topNames = new Map<string, Set<string>>();
+  const importsIn = new Map<string, Map<string, Target>>();
+  const trees = new Map<string, ts.SourceFile>();
   for (const f of libFiles) {
-    const src = sources[f];
-    const lines = src.split('\n').filter((l) => !/^\s*\/\//.test(l));
-    const starts: number[] = [];
-    lines.forEach((l, i) => {
-      if (TOP.test(l)) starts.push(i);
-    });
-    const local = new Map<string, Decl>();
-    declsIn.set(f, local);
-    starts.forEach((s, k) => {
-      const line = lines[s];
-      const fm = FN_DECL.exec(line);
-      const cm = CONST_DECL.exec(line);
-      if (!fm && !cm) return;
-      const name = fm ? fm[2] : cm![2];
-      const end = k + 1 < starts.length ? starts[k + 1] : lines.length;
-      const rest = cm ? cm[3] : '';
-      const decl: Decl = {
-        key: `${f}:${name}`,
-        name,
-        file: f,
-        exported: !!(fm ? fm[1] : cm![1]),
-        fn: !!fm || ARROW.test(rest) || FN_START.test(rest),
-        body: lines.slice(s, end).join('\n'),
-      };
-      decls.push(decl);
-      local.set(name, decl);
-    });
-    const imp = new Map<string, Import>();
+    const sf = ts.createSourceFile(f, sources[f], ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    trees.set(f, sf);
+    const names = new Set<string>();
+    const imp = new Map<string, Target>();
+    for (const st of sf.statements) {
+      if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) && st.name) names.add(st.name.text);
+      else if (ts.isVariableStatement(st)) {
+        for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name)) names.add(d.name.text);
+      } else if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
+        const spec = st.moduleSpecifier.text;
+        const bindings = st.importClause?.namedBindings;
+        if (!spec.startsWith('.') || !bindings || !ts.isNamedImports(bindings)) continue;
+        const base = posix.normalize(posix.join(posix.dirname(f), spec));
+        const target = [`${base}.ts`, `${base}/index.ts`].find((p) => sources[p] !== undefined) ?? base;
+        for (const el of bindings.elements) {
+          imp.set(el.name.text, { file: target, name: (el.propertyName ?? el.name).text });
+        }
+      }
+    }
+    topNames.set(f, names);
     importsIn.set(f, imp);
-    for (const m of src.matchAll(IMPORT)) {
-      const base = posix.normalize(posix.join(posix.dirname(f), m[2]));
-      const target = [`${base}.ts`, `${base}/index.ts`].find((p) => sources[p] !== undefined) ?? base;
-      for (const spec of m[1].split(',')) {
-        const s = spec.trim().replace(/^type\s+/, '');
-        if (!s) continue;
-        const [orig, alias] = s.split(/\s+as\s+/);
-        imp.set(alias || orig, { file: target, name: orig });
+  }
+  // resolve is the top-level declaration a name means in a file: a local one, or an imported one.
+  const resolve = (file: string, name: string): Target | undefined =>
+    topNames.get(file)?.has(name) ? { file, name } : importsIn.get(file)?.get(name);
+
+  const units = new Map<string, Unit>();
+  // scan records what a unit's code does: the requests it makes itself, and the units it calls.
+  const scan = (u: Unit, root: ts.Node, file: string, cls?: string) => {
+    const visit = (n: ts.Node): void => {
+      if (ts.isIdentifier(n)) {
+        if (REQUEST_GLOBALS.has(n.text)) u.direct = true;
+        const isProperty = ts.isPropertyAccessExpression(n.parent) && n.parent.name === n;
+        if (n.text === 'fetch' && !isProperty) u.direct = true;
+      }
+      // A member named fetch or sendBeacon is a request too: the browser's, or one a unit gets through its deps
+      // (watchPreview calls deps.fetch, and the live deps pass the browser's fetch).
+      if (ts.isPropertyAccessExpression(n) && (n.name.text === 'fetch' || n.name.text === 'sendBeacon')) u.direct = true;
+      if (ts.isCallExpression(n)) {
+        const callee = n.expression;
+        if (ts.isIdentifier(callee)) {
+          const t = resolve(file, callee.text);
+          if (t) u.calls.push(`${t.file}:${t.name}`);
+        } else if (ts.isPropertyAccessExpression(callee)) {
+          const member = callee.name.text;
+          const owner = callee.expression;
+          if (owner.kind === ts.SyntaxKind.ThisKeyword && cls !== undefined) {
+            u.calls.push(`${file}:${cls}.${member}`);
+          } else if (ts.isIdentifier(owner)) {
+            const t = resolve(file, owner.text);
+            if (t) u.calls.push(`${t.file}:${t.name}.${member}`);
+          }
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(root);
+  };
+  const add = (file: string, name: string, exported: boolean, body: ts.Node, cls?: string) => {
+    const key = `${file}:${name}`;
+    const u: Unit = { key, file, exported, direct: false, calls: [] };
+    units.set(key, u);
+    scan(u, body, file, cls);
+  };
+
+  for (const [file, sf] of trees) {
+    for (const st of sf.statements) {
+      if (ts.isFunctionDeclaration(st) && st.name && st.body) {
+        add(file, st.name.text, isExported(st), st);
+      } else if (ts.isClassDeclaration(st) && st.name) {
+        const cls = st.name.text;
+        for (const m of st.members) {
+          if (!ts.isMethodDeclaration(m) || !m.body || !ts.isIdentifier(m.name)) continue;
+          const priv = ts.isPrivateIdentifier(m.name) || hasModifier(m, ts.SyntaxKind.PrivateKeyword) ||
+            hasModifier(m, ts.SyntaxKind.ProtectedKeyword);
+          add(file, `${cls}.${m.name.text}`, isExported(st) && !priv, m, cls);
+        }
+      } else if (ts.isVariableStatement(st)) {
+        const exp = isExported(st);
+        for (const d of st.declarationList.declarations) {
+          if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+          const init = unwrap(d.initializer);
+          if (isFunctionLike(init)) {
+            add(file, d.name.text, exp, init);
+          } else if (ts.isObjectLiteralExpression(init)) {
+            for (const p of init.properties) {
+              if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && isFunctionLike(unwrap(p.initializer))) {
+                add(file, `${d.name.text}.${p.name.text}`, exp, p.initializer);
+              } else if (ts.isMethodDeclaration(p) && ts.isIdentifier(p.name) && p.body) {
+                add(file, `${d.name.text}.${p.name.text}`, exp, p);
+              }
+            }
+          }
+        }
       }
     }
   }
 
-  // resolveName is the declaration a name means in a file: a local one, or an imported one.
-  const resolveName = (file: string, name: string): Decl | undefined => {
-    const local = declsIn.get(file)?.get(name);
-    if (local) return local;
-    const i = importsIn.get(file)?.get(name);
-    return i ? declsIn.get(i.file)?.get(i.name) : undefined;
+  // A unit makes a request when it does so itself, or calls a helper that does. A helper is a unit that is not exported,
+  // or api, the one request function every call goes through.
+  const requesting = new Set([...units.values()].filter((u) => u.direct).map((u) => u.key));
+  const helper = (key: string) => {
+    const u = units.get(key);
+    return u !== undefined && (!u.exported || key === API_KEY);
   };
-  const apiDecl = declsIn.get(API_FILE)?.get('api');
-  const apiVisible = (file: string) => apiDecl !== undefined && resolveName(file, 'api') === apiDecl;
-  const callsName = (body: string, name: string) => new RegExp(`(?<![\\w.])${name}(?:<.+?>)?\\(`).test(body);
-  const directReq = (u: Decl) => u.fn && (/\bfetch\(/.test(u.body) || (apiVisible(u.file) && callsName(u.body, 'api')));
-  const isHelper = (u: Decl) => directReq(u) && (!u.exported || u === apiDecl);
-  const identsIn = (body: string) => [...new Set([...body.matchAll(/(?<![\w.])([A-Za-z_]\w*)/g)].map((m) => m[1]))];
-  const callsHelper = (d: Decl) =>
-    identsIn(d.body).some((name) => {
-      const u = resolveName(d.file, name);
-      return u !== undefined && u !== d && isHelper(u) && callsName(d.body, name);
-    });
-  const isRow = (d: Decl) => d.exported && d.fn && (directReq(d) || callsHelper(d));
-  return decls.filter(isRow).map((d) => d.key).sort();
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const u of units.values()) {
+      if (!requesting.has(u.key) && u.calls.some((c) => requesting.has(c) && helper(c))) {
+        requesting.add(u.key);
+        changed = true;
+      }
+    }
+  }
+  return [...units.values()].filter((u) => u.exported && requesting.has(u.key)).map((u) => u.key).sort();
 }
 
-// readTable splits docs/cli-parity.tsv into its rows, without the header, and reports each problem it finds.
+// readTable reads docs/cli-parity.tsv: the header, then one row per line, five tab-separated fields each, LF line ends, and
+// no key twice. It returns the rows without the header, and each problem it finds.
 export function readTable(text: string): { rows: string[][]; problems: string[] } {
-  const rows = text
-    .split('\n')
-    .filter((l) => l !== '')
-    .slice(1)
-    .map((l) => l.split('\t'));
-  return { rows, problems: [] };
+  const problems: string[] = [];
+  const lines = text.split('\n');
+  if (lines[lines.length - 1] === '') lines.pop();
+  const rows: string[][] = [];
+  const seen = new Set<string>();
+  lines.forEach((line, i) => {
+    const at = `line ${i + 1}`;
+    if (line.includes('\r')) {
+      problems.push(`${at}: a carriage return; the table uses LF line ends`);
+      return;
+    }
+    if (i === 0) {
+      if (line !== TABLE_HEADER) problems.push(`${at}: the header is not ${JSON.stringify(TABLE_HEADER)}`);
+      return;
+    }
+    const cells = line.split('\t');
+    if (cells.length !== 5) {
+      problems.push(`${at}: ${cells.length} fields, want 5`);
+      return;
+    }
+    const key = `${cells[0]}\t${cells[1]}`;
+    if (seen.has(key)) problems.push(`${at}: ${cells[0]} ${JSON.stringify(cells[1])} is repeated`);
+    seen.add(key);
+    rows.push(cells);
+  });
+  return { rows, problems };
 }
 
 // componentProblems checks the files outside lib, the components and the pages. They make no request of their own: a
@@ -172,13 +257,17 @@ const literalsIn = (text: string) =>
   [...text.replace(/\$\{[^}]*\}/g, '{x}').matchAll(/\/api\/v1\/[^'"`\s?)]*/g)].map((m) => cleanPath(m[0]));
 const normalize = (p: string) => p.replace(/\{[^}]*\}/g, '{}');
 
-const { rows: table } = readTable(readFileSync(TABLE, 'utf8'));
+const table = readTable(readFileSync(TABLE, 'utf8'));
 const routePaths = new Set(
-  table.filter((r) => r[0] === 'route').map((r) => normalize(r[1].slice(r[1].indexOf(' ') + 1))),
+  table.rows.filter((r) => r[0] === 'route').map((r) => normalize(r[1].slice(r[1].indexOf(' ') + 1))),
 );
-const fnKeys = new Set(table.filter((r) => r[0] === 'fn').map((r) => r[1]));
+const fnKeys = new Set(table.rows.filter((r) => r[0] === 'fn').map((r) => r[1]));
 
 describe('cli parity', () => {
+  it('the table is well formed', () => {
+    expect(table.problems).toEqual([]);
+  });
+
   it('every /api/v1 path in web/src has a route row in docs/cli-parity.tsv', () => {
     const sources = loadSources();
     const unmatched: string[] = [];
@@ -241,21 +330,36 @@ describe('the guard sees every kind of request function', () => {
       "export const probeObj = {\n  go: (p: string) => fetch(p),\n  name: 'probe',\n};",
       ['lib/a.ts:probeObj.go'],
     ],
+    [
+      'a request through an injected fetch',
+      'export function watch(p: string, deps: { fetch: typeof fetch }) {\n  return deps.fetch(p);\n}',
+      ['lib/a.ts:watch'],
+    ],
+    [
+      'a call to an exported function does not make the caller a row',
+      "export function plain(p: string) {\n  return fetch(p);\n}\nexport function caller(p: string) {\n  return plain(p);\n}",
+      ['lib/a.ts:plain'],
+    ],
+    [
+      'a private method of an exported class is a helper',
+      "export class Client {\n  private go(p: string) {\n    return fetch(p);\n  }\n  list(p: string) {\n    return this.go(p);\n  }\n}",
+      ['lib/a.ts:Client.list'],
+    ],
   ];
   for (const [name, src, want] of cases) {
     it(`counts ${name}`, () => {
-      const rows = requestRows({ 'lib/api.ts': API_STUB, 'lib/a.ts': src }).filter((k) => k.startsWith('lib/a.ts'));
+      // A case is a file of lib that imports api, as every file that calls it does.
+      const file = `import { api } from './api';\n${src}`;
+      const rows = requestRows({ 'lib/api.ts': API_STUB, 'lib/a.ts': file }).filter((k) => k.startsWith('lib/a.ts'));
       expect(rows).toEqual(want);
     });
   }
 });
 
 describe('the table reader refuses a bad table', () => {
-  const header = 'kind\tkey\tcommand\tslice\treason\n';
+  const header = `${TABLE_HEADER}\n`;
   it('refuses a repeated key', () => {
-    const { problems } = readTable(
-      `${header}fn\tlib/x.ts:f\t-\t-\tone\nfn\tlib/x.ts:f\t-\t-\ttwo\n`,
-    );
+    const { problems } = readTable(`${header}fn\tlib/x.ts:f\t-\t-\tone\nfn\tlib/x.ts:f\t-\t-\ttwo\n`);
     expect(problems.length).toBeGreaterThan(0);
   });
   it('refuses a row without five fields', () => {
