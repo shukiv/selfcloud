@@ -81,14 +81,32 @@ func TrashCursor(n *Node) string {
 // narrows the list to one folder when it is set. The caller decides which of them it may see: a page
 // may therefore hold fewer than its limit of items the caller can use.
 func (s *Store) TrashRoots(ctx context.Context, accountID, folderID string, p Page) ([]*Node, error) {
+	return s.TrashRootsFiltered(ctx, accountID, folderID, ListFilter{}, p)
+}
+
+// TrashCursorOf is TrashCursor for a list narrowed by filter f: the cursor carries the filter's tag (decision 110).
+func TrashCursorOf(n *Node, f ListFilter) string {
+	return encodeFilteredCursor(f, strconv.FormatInt(millis(*n.TrashedAt), 10), n.ID)
+}
+
+// TrashRootsFiltered is TrashRoots narrowed by a list filter (decision 110): a type and a modified range. A kind type
+// narrows the roots to that kind; a file group narrows them to files of the group.
+func (s *Store) TrashRootsFiltered(ctx context.Context, accountID, folderID string, f ListFilter, p Page) ([]*Node, error) {
+	if err := f.Validate(); err != nil {
+		return nil, err
+	}
 	query := nodeSelect + " WHERE n.account_id = ? AND n.trashed_at IS NOT NULL"
 	args := []any{accountID}
 	if folderID != "" {
 		query += " AND n.folder_id = ?"
 		args = append(args, folderID)
 	}
+	if fsql, fargs := f.Where("n"); fsql != "" {
+		query += fsql
+		args = append(args, fargs...)
+	}
 	if p.Cursor != "" {
-		parts, err := decodeCursor(p.Cursor, 2)
+		parts, err := decodeFilteredCursor(p.Cursor, 2, f)
 		if err != nil {
 			return nil, err
 		}

@@ -69,6 +69,32 @@ func (f ListFilter) Tag() string {
 	return "k=" + f.Kind + ";g=" + f.Group + ";a=" + bound(f.ModAfter) + ";b=" + bound(f.ModBefore)
 }
 
+// encodeFilteredCursor is encodeCursor with the filter's tag as one more part, when the filter narrows anything. With no
+// filter the cursor is the plain one, so cursors from before the filters still open.
+func encodeFilteredCursor(f ListFilter, parts ...string) string {
+	if t := f.Tag(); t != "" {
+		parts = append(parts, t)
+	}
+	return encodeCursor(parts...)
+}
+
+// decodeFilteredCursor reads a cursor of n parts for filter f. With a filter, the cursor has one part more, the filter's
+// tag, which must be the same; a plain cursor and a tagged one do not open under the other's filter.
+func decodeFilteredCursor(c string, n int, f ListFilter) ([]string, error) {
+	t := f.Tag()
+	if t == "" {
+		return decodeCursor(c, n)
+	}
+	parts, err := decodeCursor(c, n+1)
+	if err != nil {
+		return nil, err
+	}
+	if parts[n] != t {
+		return nil, ErrBadCursor
+	}
+	return parts[:n], nil
+}
+
 func bound(v *int64) string {
 	if v == nil {
 		return ""

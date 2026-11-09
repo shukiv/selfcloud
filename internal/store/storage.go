@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -185,11 +186,27 @@ func (s *Store) LargestFiles(ctx context.Context, accountID, folderID, kind stri
 
 // LargestFilesOf is LargestFiles with a file kind as well (fileKind, one of fileKindCond's keys, or "" for any).
 func (s *Store) LargestFilesOf(ctx context.Context, accountID, folderID, kind, fileKind string, p Page) ([]LargeFile, string, error) {
+	return s.LargestFiltered(ctx, accountID, folderID, kind, fileKind, ListFilter{}, p)
+}
+
+// LargestFiltered is LargestFilesOf narrowed by a list filter (decision 110): a file group and a modified range. A folder
+// or shortcut type is ErrBadFilter, since the list holds files only. The page's cursor carries the filter's tag.
+func (s *Store) LargestFiltered(ctx context.Context, accountID, folderID, kind, fileKind string, f ListFilter, p Page) ([]LargeFile, string, error) {
 	if !FileKindOK(fileKind) {
 		return nil, "", ErrBadKind
 	}
+	if f.Kind != "" {
+		return nil, "", fmt.Errorf("%w: a file list takes a file type only", ErrBadFilter)
+	}
+	if err := f.Validate(); err != nil {
+		return nil, "", err
+	}
 	var args []any
 	cond := ""
+	if fsql, fargs := f.Where("n"); fsql != "" {
+		cond += fsql
+		args = append(args, fargs...)
+	}
 	if folderID != "" {
 		cond += " AND n.folder_id = ?"
 		args = append(args, folderID)
@@ -202,7 +219,7 @@ func (s *Store) LargestFilesOf(ctx context.Context, accountID, folderID, kind, f
 		cond += " AND " + strings.ReplaceAll(fileKindCond[fileKind], "{base}", baseMimeSQL)
 	}
 	if p.Cursor != "" {
-		parts, err := decodeCursor(p.Cursor, 2)
+		parts, err := decodeFilteredCursor(p.Cursor, 2, f)
 		if err != nil {
 			return nil, "", err
 		}
@@ -256,7 +273,7 @@ func (s *Store) LargestFilesOf(ctx context.Context, accountID, folderID, kind, f
 	if len(out) > p.Limit {
 		out = out[:p.Limit]
 		last := out[len(out)-1]
-		next = encodeCursor(strconv.FormatInt(last.Size, 10), last.ID)
+		next = encodeFilteredCursor(f, strconv.FormatInt(last.Size, 10), last.ID)
 	}
 	return out, next, nil
 }
