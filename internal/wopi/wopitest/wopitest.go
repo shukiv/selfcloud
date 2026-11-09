@@ -205,6 +205,7 @@ func discoveryXML(origin string, cur, old *rsa.PrivateKey, onlyEdit bool) string
             <action default="true" ext="docx" name="edit" urlsrc="%[1]s/browser/42745e44dd/cool.html?"/>
             %[6]s
             <action ext="docx" name="editnew" urlsrc="%[1]s/browser/42745e44dd/cool.html?"/>
+            <action ext="json" name="edit" urlsrc="%[1]s/browser/42745e44dd/cool.html?"/>
         </app>
         <app name="calc">
             <action default="true" ext="xlsx" name="edit" urlsrc="%[1]s/browser/42745e44dd/cool.html?"/>
