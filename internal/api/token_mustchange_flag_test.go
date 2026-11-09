@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -39,11 +38,12 @@ func TestWOPIRefusesAMustChangeUser(t *testing.T) {
 	tok := fx.openToken(t, "edit")
 	setMustChange(t, fx.s, fx.acc.ID, fx.ann.ID, true)
 	t.Run("read is refused", func(t *testing.T) {
-		wantError(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), tok, nil, nil), 401, apierr.Unauthenticated)
+		// A WOPI refusal is a bare status, not the JSON error body, so only the status is checked.
+		wantStatus(t, fx.wopiCall(t, "GET", nodeRoute(fx.doc.ID), tok, nil, nil), 401)
 	})
 	t.Run("save is refused", func(t *testing.T) {
-		wantError(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID)+"/contents", tok, strings.NewReader("changed"),
-			map[string]string{"X-WOPI-Override": "PUT"}), 401, apierr.Unauthenticated)
+		wantStatus(t, fx.wopiCall(t, "POST", nodeRoute(fx.doc.ID)+"/contents", tok, strings.NewReader("changed"),
+			map[string]string{"X-WOPI-Override": "PUT"}), 401)
 		if got := fx.fileText(t, fx.doc.ID); got != "hello" {
 			t.Errorf("the file reads %q after a refused save, want %q", got, "hello")
 		}
