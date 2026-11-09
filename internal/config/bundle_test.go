@@ -32,10 +32,10 @@ func TestBundleRefusals(t *testing.T) {
 		mutate func(*BundleConfig)
 		want   string
 	}{
-		"no disk budget":        {func(b *BundleConfig) { b.MaxDisk = 0 }, "bundle.max_disk"},
-		"negative disk budget":  {func(b *BundleConfig) { b.MaxDisk = -1 }, "bundle.max_disk"},
-		"no account share":      {func(b *BundleConfig) { b.MaxDiskPerAccount = 0 }, "bundle.max_disk_per_account"},
-		"share over the budget": {func(b *BundleConfig) { b.MaxDiskPerAccount = b.MaxDisk + 1 }, "bundle.max_disk_per_account"},
+		"no disk budget":            {func(b *BundleConfig) { b.MaxDisk = 0 }, "bundle.max_disk"},
+		"negative disk budget":      {func(b *BundleConfig) { b.MaxDisk = -1 }, "bundle.max_disk"},
+		"no account share":          {func(b *BundleConfig) { b.MaxDiskPerAccount = 0 }, "bundle.max_disk_per_account"},
+		"share over the budget":     {func(b *BundleConfig) { b.MaxDiskPerAccount = b.MaxDisk + 1 }, "bundle.max_disk_per_account"},
 		"share over a small budget": {func(b *BundleConfig) { b.MaxDisk = 1 << 20; b.MaxDiskPerAccount = 2 << 20 }, "bundle.max_disk_per_account"},
 	}
 	for name, c := range cases {

@@ -66,13 +66,13 @@ func TestJobReadableCurrentRuleUnchanged(t *testing.T) {
 		p    *auth.Principal
 		want bool
 	}{
-		"the maker":           {&auth.Principal{Kind: auth.KindUser, ID: "usr_a", AccountID: "acc_a", UserID: "usr_a", Role: "member"}, true},
-		"an admin key":        {&auth.Principal{Kind: auth.KindAdminKey, ID: "key_admin"}, true},
-		"the account owner":   {&auth.Principal{Kind: auth.KindUser, ID: "usr_o", AccountID: "acc_a", UserID: "usr_o", Role: auth.RoleOwner}, true},
-		"another member":      {&auth.Principal{Kind: auth.KindUser, ID: "usr_c", AccountID: "acc_a", UserID: "usr_c", Role: "member"}, false},
-		"maker's token":       {&auth.Principal{Kind: auth.KindUser, ID: "usr_a", AccountID: "acc_a", UserID: "usr_a", Role: "member", Token: &auth.TokenScope{All: true}}, false},
-		"another account":     {&auth.Principal{Kind: auth.KindAccountKey, ID: "key_b", AccountID: "acc_b"}, false},
-		"no caller at all":    {nil, false},
+		"the maker":         {&auth.Principal{Kind: auth.KindUser, ID: "usr_a", AccountID: "acc_a", UserID: "usr_a", Role: "member"}, true},
+		"an admin key":      {&auth.Principal{Kind: auth.KindAdminKey, ID: "key_admin"}, true},
+		"the account owner": {&auth.Principal{Kind: auth.KindUser, ID: "usr_o", AccountID: "acc_a", UserID: "usr_o", Role: auth.RoleOwner}, true},
+		"another member":    {&auth.Principal{Kind: auth.KindUser, ID: "usr_c", AccountID: "acc_a", UserID: "usr_c", Role: "member"}, false},
+		"maker's token":     {&auth.Principal{Kind: auth.KindUser, ID: "usr_a", AccountID: "acc_a", UserID: "usr_a", Role: "member", Token: &auth.TokenScope{All: true}}, false},
+		"another account":   {&auth.Principal{Kind: auth.KindAccountKey, ID: "key_b", AccountID: "acc_b"}, false},
+		"no caller at all":  {nil, false},
 	}
 	for name, c := range cases {
 		if got := jobReadable(job, c.p); got != c.want {
