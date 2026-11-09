@@ -182,8 +182,10 @@ variables. Each setting's variable is `SELFCLOUD_` plus its YAML path in upper c
 | `derived.max_bytes` | `10GiB` | Budget for the thumbnails of all accounts together; the least recently used go first. |
 | `zip.max_entries` | `100000` | Most nodes one zip may read and hold, across all its roots; nodes left out for access count too. A larger walk is refused with `too_large`. |
 | `zip.max_bytes` | `10GiB` | Most bytes of files one zip may hold, counted on the tree as it was read. |
-| `zip.max_disk` | `30GiB` | Disk for all stored zips together, ready and unfinished; a zip that would pass it is refused before it writes. |
+| `zip.max_disk` | `30GiB` | Disk for all stored zips together, ready and unfinished; a zip that would pass it is refused before it writes. The server's disk rule also counts a pending zip's reservation, so an upload or import can be refused while a zip reserves the disk, and a zip start can be refused while uploads hold it. |
 | `zip.max_disk_per_account` | `10GiB` | One account's share of `zip.max_disk`; refused with `storage_full` when its zips would pass it. |
+| `bundle.max_disk` | `30GiB` | Disk for all bundles together (zips made from items in the drive), ready and unfinished. A bundle that would pass it is refused before it writes. Separate from `zip.max_disk`, since bundles do not expire. |
+| `bundle.max_disk_per_account` | `10GiB` | One account's share of `bundle.max_disk`. Must be at most `bundle.max_disk`. |
 | `zip.ttl` | `24h` | How long a finished zip is kept after it is made. |
 | `imports.enabled` | `true` | Turns background imports on. Off, no import can be started and the source list is empty. |
 | `imports.max_concurrent_jobs` | `2` | Import jobs that run at once across the installation, each in a worker of its own (1 to 32). |
