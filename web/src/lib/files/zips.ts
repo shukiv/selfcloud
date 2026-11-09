@@ -57,14 +57,35 @@ export interface ZipStatus {
   skipped: number;
 }
 
-// zipStatus reads the zip's headers without its body. 202 means the zip is still being made; 200 means it is ready.
+// zipStatus asks for the zip's first byte, so the answer carries the server's error body on a refusal. 202 means the zip
+// is still being made; 206 (or 200, where a server ignores Range) means it is ready. A refusal is named by its code in
+// the body, so a 403 for a disabled user or a suspended account keeps its own code.
 export async function zipStatus(zip: string): Promise<ZipStatus> {
-  const res = await fetch(zipPath(zip), { method: 'HEAD', credentials: 'same-origin', cache: 'no-store' });
-  if (res.status === 202) return { ready: false, skipped: 0 };
-  // The zip routes answer 403 only for the no-download rule (a demoted maker), and a HEAD has no body to name it.
-  if (res.status === 403) throw new ApiError(403, 'download_restricted', {}, 0);
-  if (res.status !== 200) throw new ApiError(res.status, res.status === 404 ? 'not_found' : 'internal', {}, 0);
-  return { ready: true, skipped: parseSkipped(res.headers.get('X-Selfcloud-Skipped')) };
+  const res = await fetch(zipPath(zip), {
+    method: 'GET',
+    headers: { Range: 'bytes=0-0' },
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  if (res.status === 202) {
+    await res.body?.cancel();
+    return { ready: false, skipped: 0 };
+  }
+  if (res.status === 200 || res.status === 206) {
+    await res.body?.cancel();
+    return { ready: true, skipped: parseSkipped(res.headers.get('X-Selfcloud-Skipped')) };
+  }
+  throw await refusalOf(res);
+}
+
+// refusalOf reads the error a zip route answered: its status, and the code and details of its JSON body. A body that is
+// not an error envelope gives the code internal, as api() does.
+async function refusalOf(res: Response): Promise<ApiError> {
+  const data = await res.json().catch(() => null) as { error?: { code?: unknown; details?: unknown } } | null;
+  const code = typeof data?.error?.code === 'string' ? data.error.code : 'internal';
+  const raw = data?.error?.details;
+  const details = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  return new ApiError(res.status, code, details, 0);
 }
 
 // parseSkipped reads the left-out count from a zip's header. Only a whole, non-negative number counts; any other value

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Modal, Space, Spin, theme as antdTheme } from "antd";
 import { downloadAgain, type ZipPhase } from "../../lib/files/zips";
 import { translatePlural, useLang, useT } from "../../lib/i18n";
@@ -17,7 +17,22 @@ export default function ZipDialog({ phase, onClose }: { phase: ZipPhase; onClose
   const { token } = antdTheme.useToken();
   const [live, setLive] = useState(false);
   const [againText, setAgainText] = useState<string | null>(null);
+  // busy is set while a Download again check runs; the ref stops a second click that lands before the render.
+  const [busy, setBusy] = useState(false);
+  const againRunning = useRef(false);
   useEffect(() => setLive(true), []);
+  const again = (zip: string) => {
+    if (againRunning.current) return;
+    againRunning.current = true;
+    setBusy(true);
+    setAgainText(null);
+    downloadAgain(zip, lang)
+      .then(setAgainText)
+      .finally(() => {
+        againRunning.current = false;
+        setBusy(false);
+      });
+  };
   return (
     <Modal
       open
@@ -28,7 +43,9 @@ export default function ZipDialog({ phase, onClose }: { phase: ZipPhase; onClose
       footer={
         <Space>
           {phase.kind === "ready" && (
-            <Button onClick={() => downloadAgain(phase.zip, lang).then(setAgainText)}>{t("files.zip.again")}</Button>
+            <Button disabled={busy} onClick={() => again(phase.zip)}>
+              {t("files.zip.again")}
+            </Button>
           )}
           <Button type="primary" onClick={onClose}>
             {t("common.close")}

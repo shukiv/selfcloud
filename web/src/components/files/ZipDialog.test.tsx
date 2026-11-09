@@ -82,7 +82,7 @@ describe("ZipDialog", () => {
     fireEvent.click(button);
     fireEvent.click(button);
     expect(downloadAgain).toHaveBeenCalledTimes(1);
-    expect(button).toBeDisabled();
+    expect((button as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("labels the spinner, and keeps the status text in a live region that exists before the text", async () => {
