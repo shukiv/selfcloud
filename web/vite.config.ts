@@ -93,7 +93,19 @@ export default defineConfig({
               name: "antd-shared",
               // The antd modal and skeleton and rc-util's useId, which the first load reached through the main i18n chunk, go
               // into one shared chunk of their own, so the first load preloads one file for them and not five (r7b review).
-              test: (id: string) => /[\\/]node_modules[\\/](antd[\\/]es[\\/](modal|skeleton|input[\\/]style|checkbox[\\/]style|style[\\/]motion[\\/]move)[\\/]|rc-util[\\/]es[\\/]hooks[\\/]useId\.js|rc-dropdown[\\/]|rc-menu[\\/]|@ant-design[\\/]icons[\\/]es[\\/]icons[\\/](EllipsisOutlined|LeftOutlined)\.js)/.test(id),
+              // The tooltip is in too (nt2, decision 108): the sidebar's New button puts it on the first-load path, and once a lazy
+              // page (the template gallery) shares it, the bundler split it into a chunk of its own, which the first load then preloads.
+              // The motion helpers move and slide (nt2) are files, not folders, so they are named by file (decision 108).
+              test: (id: string) => /[\\/]node_modules[\\/](antd[\\/]es[\\/](modal|skeleton|tooltip|input[\\/]style|checkbox[\\/]style|style[\\/]motion[\\/](move|slide)\.js|style[\\/]motion[\\/]move[\\/])|rc-tooltip[\\/]|rc-util[\\/]es[\\/]hooks[\\/]useId\.js|rc-dropdown[\\/]|rc-menu[\\/]|@ant-design[\\/]icons[\\/]es[\\/]icons[\\/](EllipsisOutlined|LeftOutlined)\.js)/.test(id),
+            },
+            {
+              // The small app modules the first load and the lazy pages both use (nt2, decision 108): the files API client, the
+              // route parser, the thumbnail limiter and the PWA busy flag. Their own dependencies stay where they are, so the group
+              // holds only these four files (includeDependenciesRecursively is off).
+              name: "files-shared",
+              priority: 1,
+              includeDependenciesRecursively: false,
+              test: (id: string) => /[\\/]src[\\/](lib[\\/]files[\\/](api|route|limiter)\.ts|lib[\\/]pwa[\\/]busy\.ts)$/.test(id),
             },
           ],
         },

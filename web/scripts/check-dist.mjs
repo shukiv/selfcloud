@@ -19,7 +19,9 @@ const PLACEHOLDER = '__SELFCLOUD_CSP_NONCE__';
 const BUDGET = {
   entry: 290 * 1024, // the entry chunk: every page is in it, and so is antd's core
   chunk: 120 * 1024, // any other JavaScript chunk
-  language: 25 * 1024, // one language's catalogue or antd locale
+  // one language's catalogue or antd locale. 26 KB is the owner's choice of 2026-11-08 (decision 108), which adds the New menu's and
+  // the template gallery's words to the catalogues.
+  language: 26 * 1024,
   firstLoad: 330 * 1024, // every JavaScript file index.html names: scripts and module preloads, together
 };
 const LANGUAGES = ['ar', 'en', 'es', 'fr', 'he', 'pt', 'ru'];
@@ -118,6 +120,9 @@ const GROUP_MARKERS = [
   { marker: 'PureComponent=', chunk: 'vendor', what: 'React' },
   { marker: '__reactFiber$', chunk: 'vendor', what: 'react-dom' },
   { marker: 'meta[property="csp-nonce"]', chunk: 'csp', what: 'src/csp/nonce.ts' },
+  // antd's Tooltip sits in antd-shared (nt2, decision 108): the sidebar's New button puts it on the first-load path, and a
+  // separate chunk for it would be preloaded on its own.
+  { marker: 'rc-tooltip', chunk: 'antd-shared', what: 'antd Tooltip (rc-tooltip)' },
 ];
 for (const { marker, chunk, what } of GROUP_MARKERS) {
   const where = [...jsText].filter(([, text]) => text.includes(marker)).map(([name]) => basename(name));
