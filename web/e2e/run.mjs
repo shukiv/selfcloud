@@ -23,7 +23,7 @@ import * as p5 from './p5.mjs';
 import * as s4a from './s4a.mjs';
 import * as s4b from './s4b.mjs';
 import { startConvertFake } from './convertFake.mjs';
-import { refusedOnPurpose } from './refusals.mjs';
+import { refusedOnPurpose, restrictedOnPurpose } from './refusals.mjs';
 import { sortChecks } from './sort.mjs';
 import { accountName, E2E_ACCENT, mediaChecks, setTheme } from './media.mjs';
 import { mailSink, waitForMail } from './mailsink.mjs';
@@ -85,6 +85,9 @@ function check(ok, what) {
 // The node IDs the s4b section refuses on purpose. The section fills it right before each refusal, so a 415 counts as
 // expected only for a node the section refused.
 const s4bRefused = new Set();
+// The node IDs the ce1 section locks with the no-download rule. The section fills it before the read the server refuses, so an
+// inline 403 counts as expected only for a node the section locked.
+const ce1Locked = new Set();
 
 // The answers the run causes on purpose: the start-up probe of an anonymous visitor, and a sign-in link
 // used a second time. The browser logs each as a failed request; the run counts them instead.
@@ -160,10 +163,10 @@ const EXPECTED = [
     matches: (e) => e.source === 'network' && /\/api\/v1\/zips\/[^/?]+$/.test(e.url ?? '') && /status of 403\b/.test(e.text ?? ''),
   },
   // A text read the no-download rule refuses: the code viewer sniffs a file stored as octet-stream, the server answers 403, and
-  // the viewer says the file is restricted (ce1Checks, decision 115).
+  // the viewer says the file is restricted (ce1Checks, decision 115). Only a node the section locked counts.
   {
     name: 'restricted read',
-    matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+\/content\?disposition=inline$/.test(e.url ?? '') && /status of 403\b/.test(e.text ?? ''),
+    matches: (e) => restrictedOnPurpose(e, ce1Locked),
   },
   // The member's upload over its limit is refused by the server.
   {

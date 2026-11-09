@@ -12,3 +12,11 @@ export function refusedOnPurpose(entry, refusedIDs) {
   const m = /\/api\/v1\/nodes\/([^/?#]+)\/(?:preview|exports)(?:[/?#]|$)/.exec(entry.url ?? '');
   return m !== null && refusedIDs.has(m[1]);
 }
+
+// restrictedOnPurpose says whether a browser log entry is the 403 the ce1 section causes on purpose: the code viewer's inline
+// read of a file the no-download rule locks for the member.
+//
+// entry: a browser log entry with source, url and text. lockedIDs: the node IDs the section has locked.
+export function restrictedOnPurpose(entry, lockedIDs) {
+  return entry.source === 'network' && /\/api\/v1\/nodes\/[^/]+\/content\?disposition=inline$/.test(entry.url ?? '') && /status of 403\b/.test(entry.text ?? '');
+}
