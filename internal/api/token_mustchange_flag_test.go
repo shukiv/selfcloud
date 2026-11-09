@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -48,4 +49,20 @@ func TestWOPIRefusesAMustChangeUser(t *testing.T) {
 			t.Errorf("the file reads %q after a refused save, want %q", got, "hello")
 		}
 	})
+}
+
+// Clearing the flag restores the same token at once: the flag is read on every use, and no cut-off moved. No API path
+// clears the flag without voiding the user's tokens (a password change does that), so the flag is cleared in the store.
+func TestClearedFlagRestoresTheSameToken(t *testing.T) {
+	t.Parallel()
+	m := newMemberFixture(t) // ann: write on the folder f
+	s, accID := m.s, m.acc.ID
+	tok := mintFor(t, s, m.key, accID, map[string]any{"folders": []string{m.f.ID}, "user": m.ann.ID, "permissions": "write"})
+	read := childrenPath(m.f.ID)
+	wantStatus(t, getWith(t, s, tok, read), 200)
+	setMustChange(t, s, accID, m.ann.ID, true)
+	wantError(t, getWith(t, s, tok, read), 403, apierr.Forbidden)
+	setMustChange(t, s, accID, m.ann.ID, false)
+	wantStatus(t, getWith(t, s, tok, read), 200)
+	wantStatus(t, tokenMkdir(t, s, tok, m.f.ID, "/again"), 201)
 }

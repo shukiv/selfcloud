@@ -44,13 +44,11 @@ func TestDelegatedTokenOfMustChangeUser(t *testing.T) {
 	boss, _ := verifiedUser(t, s, fx.accKey, fx.acc.ID, "boss@example.com")
 	grantWrite(boss.ID)
 
-	// The admin types a password for the member, which sets the must-change flag. The reset voids the tokens issued
-	// before it, so the token below is minted after the reset, by the account key, as an integration would mint it.
-	const typed = "a password the admin typed"
-	wantStatus(t, callSession(t, s, fx.adminSess, "POST", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.member.ID+"/password",
-		map[string]any{"password": typed, "admin_password": testPassword}), 204)
-	time.Sleep(2 * time.Millisecond)
+	// The token is minted first, and then the flag is set in the store with no cut-off moved. The token is live, so only
+	// the must-change check can refuse it. The API's typed password ends the token and refuses a mint instead; see
+	// TestMintRefusesAMustChangeUser.
 	tok := mintFor(t, s, fx.accKey, fx.acc.ID, map[string]any{"folders": []string{f.ID}, "user": fx.member.ID, "permissions": "write"})
+	setMustChange(t, s, fx.acc.ID, fx.member.ID, true)
 	read := childrenPath(f.ID)
 
 	t.Run("read is refused", func(t *testing.T) { wantMustChangeRefusal(t, getWith(t, s, tok, read)) })
@@ -73,11 +71,11 @@ func TestDelegatedTokenOfMustChangeUser(t *testing.T) {
 
 	// The member changes the password. The change voids the tokens issued before it (the existing cut-off), so the
 	// token above stays void, and a token minted after the change works.
-	rec := login(t, s, "member@example.com", typed, "")
+	rec := login(t, s, "member@example.com", testPassword, "")
 	wantStatus(t, rec, 200)
 	memSess := sessionFrom(t, s, rec)
 	wantStatus(t, callSession(t, s, memSess, "POST", "/api/v1/me/password",
-		map[string]any{"current_password": typed, "new_password": "the member's own password"}), 204)
+		map[string]any{"current_password": testPassword, "new_password": "the member's own password"}), 204)
 	wantError(t, getWith(t, s, tok, read), 401, apierr.Unauthenticated)
 	time.Sleep(2 * time.Millisecond)
 	fresh := mintFor(t, s, fx.accKey, fx.acc.ID, map[string]any{"folders": []string{f.ID}, "user": fx.member.ID, "permissions": "write"})
