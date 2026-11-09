@@ -3353,7 +3353,7 @@ paths:
         most 1000 children of the folder, and a larger folder continues on the next page. `next_cursor` is present only
         when a further usable file (or a child to scan) follows, and is the `after` of the next page. A built-in has
         `source: builtin`, the ID `builtin:<name>` and the name the copy takes, in the caller's language. An account file
-        has `source: account`, its node ID as `id` and as `node_id`, and `has_thumbnail` (an office file has none yet).
+        has `source: account`, its node ID as `id` and as `node_id`, and `has_thumbnail`, which is always false on an account file (it has no picture yet).
         Office editing must be on; otherwise the route answers `not_found`. A 400 is a missing or unknown `kind`, a
         `limit` outside 1 to 100, and an `after` that is not a cursor from this listing.
       security: [{ bearer: [] }, { session: [] }]
@@ -6136,7 +6136,7 @@ components:
         source: { type: string, enum: [builtin, account] }
         node_id: { type: string, description: "Account files only." }
         category: { type: string, enum: [letters, resumes, reports, workbooks, presentations, designs], description: "Built-ins only (nt2): the gallery section." }
-        has_thumbnail: { type: boolean, description: "Every built-in has a picture (GET /api/v1/templates/{id}/thumbnail); account files have none yet." }
+        has_thumbnail: { type: boolean, description: "Every built-in has a picture (GET /api/v1/templates/{id}/thumbnail); an account file is false, as it has no picture yet." }
     TemplatesFolder:
       type: object
       description: "The account's templates folder (decision 105): its directory's node ID, or null for none."
