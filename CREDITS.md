@@ -45,10 +45,11 @@ and `internal/templates/files/lo-letter-serif.docx`. Each keeps its document con
 fields are removed, and the e-mail domains in the presentations' descriptions are removed (the author's name or handle stays).
 
 Original author. The sans-serif letter's source metadata names **Eric Lavarde** as its creator (`dc:creator` and
-`meta:initial-creator`). The serif letter's source metadata names no author, and the source carries no copyright notice, so its
-original author and copyright holder are not stated in the source. This file is still to be settled; see the note below.
+`meta:initial-creator`). The serif letter's source metadata names no author, and the source carries no copyright notice. It is a file of the
+LibreOffice project, which credits its templates to the project as a whole, so the serif letter is credited to **The Document
+Foundation and the LibreOffice contributors**, under the Mozilla Public License 2.0. No individual is named for it.
 
-- `lo-letter-serif.docx`: `extras/source/templates/officorr/Modern_business_letter_serif.ott`, "Modern business letter serif" (original author and holder: not stated in the source)
+- `lo-letter-serif.docx`: `extras/source/templates/officorr/Modern_business_letter_serif.ott`, "Modern business letter serif" (credited to The Document Foundation and the LibreOffice contributors, MPL-2.0)
 - `lo-letter-sans-serif.docx`: `extras/source/templates/officorr/Modern_business_letter_sans_serif.ott`, "Modern business letter sans-serif" (original author: Eric Lavarde)
 
 ## Pictures
