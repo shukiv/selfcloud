@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -84,7 +85,7 @@ func TestAccountListsCountUsers(t *testing.T) {
 		}
 		for _, acc := range list {
 			if acc.UserCount == nil || *acc.UserCount != want[acc.ID] {
-				t.Errorf("%s: %s has user count %v, want %d", where, acc.Name, acc.UserCount, want[acc.ID])
+				t.Errorf("%s: %s has user count %s, want %d", where, acc.Name, userCountText(acc.UserCount), want[acc.ID])
 			}
 		}
 	}
@@ -106,4 +107,12 @@ func TestAccountListsCountUsers(t *testing.T) {
 	if one.UserCount != nil {
 		t.Errorf("a single account read counts its users (%d); only the lists do", *one.UserCount)
 	}
+}
+
+// userCountText is an account's user count as a test message shows it: the number, or "none".
+func userCountText(n *int64) string {
+	if n == nil {
+		return "none"
+	}
+	return strconv.FormatInt(*n, 10)
 }

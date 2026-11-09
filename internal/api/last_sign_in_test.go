@@ -3,6 +3,7 @@
 package api
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -81,7 +82,7 @@ func TestListAccountsCountsUsers(t *testing.T) {
 		}
 		for _, a := range page.Items {
 			if a.UserCount == nil || *a.UserCount != want[a.ID] {
-				t.Errorf("%q: %s has user_count %v, want %d", q, a.Name, a.UserCount, want[a.ID])
+				t.Errorf("%q: %s has user_count %s, want %d", q, a.Name, userCountJSON(a.UserCount), want[a.ID])
 			}
 		}
 	}
@@ -90,4 +91,12 @@ func TestListAccountsCountsUsers(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "user_count") {
 		t.Errorf("a single account's read has user_count: %s", rec.Body.String())
 	}
+}
+
+// userCountJSON is an account's user_count as a test message shows it: the number, or "absent".
+func userCountJSON(n *int64) string {
+	if n == nil {
+		return "absent"
+	}
+	return strconv.FormatInt(*n, 10)
 }
