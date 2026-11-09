@@ -48,6 +48,20 @@ describe("people of a tenant as a table", () => {
     expect(document.querySelector("ul[aria-label]")).toBeNull();
   });
 
+  // Review M3: the mockup's Last sign-in column, Never when the person has not signed in.
+  it("has a Last sign-in column with the date, or Never", async () => {
+    const active = person({ id: "usr_a", email: "mateo@example.com", display_name: "Mateo", role: "member", status: "active", last_sign_in_at: "2026-11-02T08:00:00Z" });
+    stubFetch(() => ({ status: 200, body: { items: [active, pendingOwner] } }));
+    renderUsers();
+    const region = await screen.findByRole("region", { name: "People" });
+    const heads = within(region).getAllByRole("columnheader").map((h) => h.textContent);
+    const col = heads.indexOf("Last sign-in");
+    expect(col).toBeGreaterThan(0);
+    const cell = (name: string) => (region.querySelector(`tr[aria-label="${name}"]`) as HTMLElement).querySelectorAll("td")[col];
+    expect(cell("Mateo").querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-02T08:00:00Z");
+    expect(cell("Owen").textContent).toBe("Never");
+  });
+
   it("on a phone a pending owner's New link is in the row's ⋮ menu", async () => {
     window.matchMedia = ((query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as unknown as typeof window.matchMedia;
     stubFetch(() => ({ status: 200, body: { items: [pendingOwner] } }));
@@ -136,6 +150,50 @@ describe("people of a tenant", () => {
     await act(async () => release({ status: 200, body: { ...pendingOwner, verification: { method: "email", sent: true } } }));
     await waitFor(() => expect(resend.disabled).toBe(false));
     expect(resend.isConnected).toBe(true);
+  });
+
+  // Review M2: the ⋮ menu's Disable and Enable (the mockup's), through the route the owner's People page uses.
+  it("the ⋮ menu disables an active person and enables a disabled one, and the list is read again", async () => {
+    const mateo = person({ id: "usr_a", email: "mateo@example.com", display_name: "Mateo", role: "member", status: "active" });
+    const gal = person({ id: "usr_g", email: "gal@example.com", display_name: "Gal", role: "member", status: "disabled" });
+    const { calls } = stubFetch((c: Call) => {
+      if (c.method === "PATCH") return { status: 200, body: { ...mateo, status: "disabled" } };
+      return { status: 200, body: { items: [mateo, gal] } };
+    });
+    renderUsers();
+    await screen.findByText("Mateo");
+    // A pending person has neither: there is nothing to disable until it has verified.
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Mateo" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Disable/ }));
+    await waitFor(() => expect(calls.find((c) => c.method === "PATCH")).toBeTruthy());
+    const patch = calls.find((c) => c.method === "PATCH") as Call;
+    expect(new URL(patch.url, "http://x").pathname).toBe("/api/v1/accounts/acc_1/users/usr_a");
+    expect(patch.body).toEqual({ status: "disabled" });
+    await waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.url.includes("/users")).length).toBeGreaterThan(1));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Gal" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Enable/ }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(2));
+    expect(calls.filter((c) => c.method === "PATCH")[1].body).toEqual({ status: "active" });
+  });
+
+  it("a pending person can be sent the invitation again by email, and has no Disable", async () => {
+    const dana = person({ id: "usr_d", email: "dana@example.com", display_name: "Dana", role: "member", status: "pending" });
+    const { calls } = stubFetch((c: Call) => {
+      if (c.url.includes("/verification")) return { status: 200, body: { ...dana, verification: { method: "email", sent: true } } };
+      return { status: 200, body: { items: [dana] } };
+    });
+    renderUsers();
+    await screen.findByText("Dana");
+    // A new link is an admin's way in only for a pending owner (decision 41); a member gets the email only.
+    expect(screen.queryByRole("button", { name: /New link/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Resend invitation: Dana" }));
+    await waitFor(() => expect(calls.find((c) => c.url.includes("/verification"))?.body).toEqual({ method: "email" }));
+    expect(await screen.findByText("The email was sent.")).toBeTruthy();
+    // Resend and Reset are inline, and nothing is left for a ⋮ menu: Disable waits until the person has verified.
+    expect(within(screen.getByRole("region", { name: "People" })).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Resend invitation: Dana",
+      "Reset password: Dana",
+    ]);
   });
 
   it("a refused resend shows the code's text and sends nothing more (guard: failureText)", async () => {

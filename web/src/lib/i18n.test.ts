@@ -147,6 +147,37 @@ describe('setLang', () => {
   });
 });
 
+// Every catalogue, the main one and each part (search, share, comments, notifications and any added later), has the same
+// keys in every language as in English (review M4): a key missing in one language shows English to its readers, and
+// check-keys.mjs reads only the English catalogue. The files are found by their folder, so a new part is checked too.
+describe('every catalogue has the same keys in every language', () => {
+  const files = import.meta.glob<{ default: Record<string, string> }>('../i18n/**/*.json', { eager: true });
+  const parts = new Map<string, Map<string, Record<string, string>>>();
+  for (const [path, mod] of Object.entries(files)) {
+    const m = /^\.\.\/i18n\/(?:(.+)\/)?([a-z]+)\.json$/.exec(path);
+    if (!m) continue;
+    const part = m[1] ?? 'main';
+    if (!parts.has(part)) parts.set(part, new Map());
+    parts.get(part)?.set(m[2], mod.default);
+  }
+
+  it('finds the main catalogue and its parts, each in all seven languages', () => {
+    expect([...parts.keys()].sort()).toEqual(expect.arrayContaining(['main', 'search', 'share', 'comments', 'notifications']));
+    for (const [part, langs] of parts) expect([...langs.keys()].sort(), part).toEqual([...LANGUAGES].sort());
+  });
+
+  it('no language lacks a key English has, or has one English lacks', () => {
+    for (const [part, langs] of parts) {
+      const english = Object.keys(langs.get('en') ?? {});
+      for (const [l, cat] of langs) {
+        if (l === 'en') continue;
+        expect(english.filter((k) => !(k in cat)), `${part}/${l} lacks`).toEqual([]);
+        expect(Object.keys(cat).filter((k) => !english.includes(k)), `${part}/${l} has more than English`).toEqual([]);
+      }
+    }
+  });
+});
+
 // The catalogue keys of the Starred and Recent pages and the star button. They were checked with the Home page's keys
 // until decision 53 removed Home; each must exist in all seven catalogues, and the placeholders the code fills must stay.
 describe('Starred, Recent and star catalogues', () => {

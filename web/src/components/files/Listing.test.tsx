@@ -3,7 +3,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
-import Listing, { ItemList, type Click, type ItemListProps, type ListingProps, type RowAct } from "./Listing";
+import Listing, { type Click, type ItemListingProps, type ListingProps, type RowAct } from "./Listing";
 
 function node(id: string, name: string, over: Partial<Node> = {}): Node {
   return {
@@ -654,19 +654,33 @@ describe("checkboxes on demand (decision 70)", () => {
   });
 });
 
-// The generic table (ItemList) is the one list of the admin pages and the other preset lists (tl1). It shares the look and
-// the phone rules of My files, and none of its behaviour. Its tests set the viewport themselves: the default mock is narrow.
+// The files preset's actions column has a name for a screen reader, shown to no one (review L4).
+describe("the files preset's actions column", () => {
+  it("has a visually hidden header name", () => {
+    const { container } = render(<Listing {...props()} />);
+    const heads = [...container.querySelectorAll("thead th")];
+    const last = heads[heads.length - 1];
+    expect(last.textContent).toBe("Actions");
+    expect(last.querySelector(".sr-only")?.textContent).toBe("Actions");
+  });
+});
+
+// A preset list: Listing with columns from its caller (design-tl 2.1). It is the same component as My files, with the same
+// frame: the region, antd's table at the middle size, the header cell, the row end and the band variables, under the shared
+// CSS group (.files-list, .item-list). Its tests set the viewport themselves: the default mock is narrow.
 type Row = { id: string; name: string; email: string; status: string; when: string };
 const people: Row[] = [
   { id: "r1", name: "Acme Studio", email: "acme@example.com", status: "Active", when: "Mar 3, 2026" },
   { id: "r2", name: "Beta Clinic", email: "beta@example.com", status: "Suspended", when: "Jun 18, 2026" },
+  { id: "r3", name: "Cedar Pine", email: "cedar@example.com", status: "Active", when: "Jan 9, 2026" },
 ];
-const viewport = (px: number) =>
+const viewport = (px: number, coarse = false) =>
   vi.stubGlobal("matchMedia", (query: string) => {
     const m = /min-width: (\d+)px/.exec(query);
-    return { matches: m ? px >= Number(m[1]) : false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
+    const matches = m ? px >= Number(m[1]) : coarse && query === "(pointer: coarse)";
+    return { matches, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
   });
-const itemProps = (over: Partial<ItemListProps<Row>> = {}): ItemListProps<Row> => ({
+const itemProps = (over: Partial<ItemListingProps<Row>> = {}): ItemListingProps<Row> => ({
   items: people,
   label: "Tenants",
   rowLabel: (r) => r.name,
@@ -680,37 +694,51 @@ const itemProps = (over: Partial<ItemListProps<Row>> = {}): ItemListProps<Row> =
   empty: <p>Nothing here</p>,
   ...over,
 });
+const itemRow = (name: string) => document.querySelector(`tbody tr[aria-label="${name}"]`) as HTMLElement;
+const act4 = (over: Partial<{ disabled: boolean }> = {}) => [
+  { key: "a", label: "Act A", icon: <span>a</span>, run: vi.fn(), ...over },
+  { key: "b", label: "Act B", icon: <span>b</span>, run: vi.fn() },
+  { key: "c", label: "Act C", icon: <span>c</span>, run: vi.fn() },
+  { key: "d", label: "Act D", icon: <span>d</span>, run: vi.fn() },
+];
 
-describe("ItemList: one table for the admin and preset lists", () => {
+describe("Listing with columns: a preset list in the one table", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("renders a region with the rows, the headers and no files-list class", () => {
+  it("renders the shared frame: a region of class item-list (never files-list) with the list's band variables, and labelled rows", () => {
     viewport(1200);
-    const { container } = render(<ItemList {...itemProps()} />);
+    const { container } = render(<Listing {...itemProps()} />);
     const region = screen.getByRole("region", { name: "Tenants" });
     expect(region.classList.contains("item-list")).toBe(true);
     expect(region.classList.contains("files-list")).toBe(false);
-    expect(container.querySelectorAll("tbody tr[aria-label]").length).toBe(2);
+    // The shared CSS reads these variables: without them the header tint and the hover band paint nothing.
+    for (const v of ["--sc-row-hover", "--sc-row-selected", "--sc-list-head", "--sc-list-head-tint", "--sc-list-top"]) {
+      expect(region.style.getPropertyValue(v), v).not.toBe("");
+    }
+    // Under the shell's header (56 px): a preset list has no toolbar row to pin under.
+    expect(region.style.getPropertyValue("--sc-list-top")).toBe("56px");
+    expect(container.querySelector(".ant-table-middle")).not.toBeNull();
+    expect(container.querySelectorAll('tbody tr[role="row"][aria-label]').length).toBe(3);
     expect(screen.getByRole("columnheader", { name: "Status" })).toBeTruthy();
   });
 
   it("shows a secondary column as its own column on a desktop, and as the name's second line on a phone", () => {
     viewport(1200);
-    const { unmount } = render(<ItemList {...itemProps()} />);
+    const { unmount } = render(<Listing {...itemProps()} />);
     expect(screen.getByRole("columnheader", { name: "Email" })).toBeTruthy();
+    expect(document.querySelector(".row-second")).toBeNull();
     unmount();
     viewport(375);
-    render(<ItemList {...itemProps()} />);
+    render(<Listing {...itemProps()} />);
     expect(screen.queryByRole("columnheader", { name: "Email" })).toBeNull();
-    const line = document.querySelector(".item-second");
-    expect(line?.textContent).toContain("acme@example.com");
-    expect(line?.textContent).toContain("Mar 3, 2026");
+    const line = itemRow("Acme Studio").querySelector(".row-second");
+    expect(line?.textContent).toBe("acme@example.com · Mar 3, 2026");
   });
 
   it("a sortable header is a button that reports its key, and carries aria-sort on its th", () => {
     viewport(1200);
     const onSort = vi.fn();
-    render(<ItemList {...itemProps({ sort: { key: "name", dir: "asc", onSort } })} />);
+    render(<Listing {...itemProps({ sort: { key: "name", dir: "asc", onSort } })} />);
     const head = screen.getByRole("columnheader", { name: /Name/ });
     expect(head.getAttribute("aria-sort")).toBe("ascending");
     fireEvent.click(within(head).getByRole("button", { name: "Name" }));
@@ -719,44 +747,158 @@ describe("ItemList: one table for the admin and preset lists", () => {
 
   it("a time column with no sort has aria-sort descending and no button", () => {
     viewport(1200);
-    render(<ItemList {...itemProps({ sort: { key: "name", dir: "asc", onSort: vi.fn() } })} />);
+    render(<Listing {...itemProps({ sort: { key: "name", dir: "asc", onSort: vi.fn() } })} />);
     const when = screen.getByRole("columnheader", { name: "Created" });
     expect(when.getAttribute("aria-sort")).toBe("descending");
     expect(within(when).queryByRole("button")).toBeNull();
   });
 
-  it("shows up to three inline icons on a desktop and sends the rest to the more menu", () => {
+  it("shows up to three inline icons on a desktop, sends the rest to the ⋮ menu, and names the actions column", () => {
     viewport(1200);
-    const acts = () => [
-      { key: "a", label: "Act A", icon: <span>a</span>, run: vi.fn() },
-      { key: "b", label: "Act B", icon: <span>b</span>, run: vi.fn() },
-      { key: "c", label: "Act C", icon: <span>c</span>, run: vi.fn() },
-      { key: "d", label: "Act D", icon: <span>d</span>, run: vi.fn() },
-    ];
-    render(<ItemList {...itemProps({ actions: () => acts().map((a) => ({ ...a, enabled: true })), menu: () => [{ key: "x", label: "Suspend", onSelect: vi.fn() }] })} />);
-    expect(screen.getAllByRole("button", { name: /^Act [ABC]$/ })).toHaveLength(6);
+    render(<Listing {...itemProps({ actions: () => act4(), menu: () => [{ key: "x", label: "Suspend", onSelect: vi.fn() }] })} />);
+    expect(within(itemRow("Acme Studio")).getAllByRole("button", { name: /^Act [ABC]$/ })).toHaveLength(3);
     expect(screen.queryByRole("button", { name: /Act D/ })).toBeNull();
+    const heads = screen.getAllByRole("columnheader");
+    expect(heads[heads.length - 1].textContent).toBe("Actions");
+    fireEvent.click(within(itemRow("Acme Studio")).getByRole("button", { name: "More for Acme Studio" }));
+    expect(screen.getByRole("menuitem", { name: /Act D/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Suspend/ })).toBeTruthy();
   });
 
-  it("on a phone shows the more menu alone, and its entries run", () => {
+  it("a list with no actions and no menu has no actions column", () => {
+    viewport(1200);
+    render(<Listing {...itemProps()} />);
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).not.toContain("Actions");
+  });
+
+  it("on a phone shows the ⋮ menu alone, and its entries run", () => {
     viewport(375);
     const onSelect = vi.fn();
-    render(<ItemList {...itemProps({ actions: () => [{ key: "a", label: "Act A", icon: <span>a</span>, enabled: true, run: vi.fn() }], menu: () => [{ key: "x", label: "Suspend", onSelect }] })} />);
+    const run = vi.fn();
+    render(<Listing {...itemProps({ actions: () => [{ key: "a", label: "Act A", icon: <span>a</span>, run }], menu: () => [{ key: "x", label: "Suspend", onSelect }] })} />);
     expect(screen.queryByRole("button", { name: /Act A/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "More for Acme Studio" }));
     fireEvent.click(screen.getByText("Suspend"));
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
-  it("an empty list shows the empty node the page passed, in the body", () => {
+  it("on a finger the actions are in the ⋮ menu too, whatever the width", () => {
+    viewport(1200, true);
+    render(<Listing {...itemProps({ actions: () => [{ key: "a", label: "Act A", icon: <span>a</span>, run: vi.fn() }] })} />);
+    expect(screen.queryByRole("button", { name: /Act A/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^More for/ })).toHaveLength(3);
+  });
+
+  // Review M1: a disabled action keeps its place. It is a disabled icon in the row, and a disabled entry in the ⋮ menu.
+  it("a disabled action stays in its place, disabled, inline and in the ⋮ menu", () => {
     viewport(1200);
-    render(<ItemList {...itemProps({ items: [], empty: <div role="status">Nothing here</div> })} />);
-    expect(screen.getByRole("status").textContent).toContain("Nothing here");
+    const acts = act4({ disabled: true });
+    const { unmount } = render(<Listing {...itemProps({ actions: () => acts })} />);
+    const a = within(itemRow("Acme Studio")).getByRole("button", { name: "Act A" }) as HTMLButtonElement;
+    expect(a.disabled).toBe(true);
+    const order = within(itemRow("Acme Studio")).getAllByRole("button").map((b) => b.getAttribute("aria-label"));
+    expect(order.slice(0, 3)).toEqual(["Act A", "Act B", "Act C"]);
+    fireEvent.click(a);
+    expect(acts[0].run).not.toHaveBeenCalled();
+    unmount();
+    viewport(375);
+    render(<Listing {...itemProps({ actions: () => acts })} />);
+    fireEvent.click(screen.getByRole("button", { name: "More for Acme Studio" }));
+    const entry = screen.getByRole("menuitem", { name: /Act A/ });
+    expect(entry.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  // Review L2: an entry with an address is a real link, so a middle or modified click opens it in a new tab.
+  it("a ⋮ entry with an address is a link: a plain click runs the entry and keeps the page, a modified click is the browser's", () => {
+    viewport(1200);
+    const onSelect = vi.fn();
+    render(<Listing {...itemProps({ menu: (r) => [{ key: "open", label: "Open", href: `/admin/tenants/${r.id}`, onSelect }] })} />);
+    fireEvent.click(within(itemRow("Acme Studio")).getByRole("button", { name: "More for Acme Studio" }));
+    const link = screen.getByRole("link", { name: "Open" });
+    expect(link.getAttribute("href")).toBe("/admin/tenants/r1");
+    expect(fireEvent.click(link, { ctrlKey: true })).toBe(true);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(fireEvent.click(link)).toBe(false);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  // Review L3: the empty node is in the table's body, not anywhere on the page.
+  it("an empty list shows the empty node the page passed, inside the table body", () => {
+    viewport(1200);
+    const { container } = render(<Listing {...itemProps({ items: [], empty: <div role="status">Nothing here</div> })} />);
+    const body = container.querySelector(".item-list tbody") as HTMLElement;
+    expect(within(body).getByRole("status").textContent).toBe("Nothing here");
+  });
+
+  it("Up and Down move the focus between rows, the focused row is the one tab stop, and Enter opens it", () => {
+    viewport(1200);
+    const onOpen = vi.fn();
+    render(<Listing {...itemProps({ onOpen })} />);
+    const [r1, r2, r3] = ["Acme Studio", "Beta Clinic", "Cedar Pine"].map(itemRow);
+    expect([r1.tabIndex, r2.tabIndex, r3.tabIndex]).toEqual([0, -1, -1]);
+    act(() => r1.focus());
+    fireEvent.keyDown(r1, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(r2);
+    expect([r1.tabIndex, r2.tabIndex]).toEqual([-1, 0]);
+    fireEvent.keyDown(r2, { key: "End" });
+    expect(document.activeElement).toBe(r3);
+    fireEvent.keyDown(r3, { key: "Enter" });
+    expect(onOpen).toHaveBeenCalledWith(people[2]);
+  });
+
+  it("a click on a row of a list that opens opens it; a click on a control in the row does not", () => {
+    viewport(1200);
+    const onOpen = vi.fn();
+    const run = vi.fn();
+    render(<Listing {...itemProps({ onOpen, actions: () => [{ key: "a", label: "Act A", icon: <span>a</span>, run }] })} />);
+    fireEvent.click(within(itemRow("Beta Clinic")).getByRole("button", { name: "Act A" }));
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.click(itemRow("Beta Clinic").querySelector("td") as HTMLElement);
+    expect(onOpen).toHaveBeenCalledWith(people[1]);
+  });
+
+  it("a list without selectable has no checkboxes and no aria-selected", () => {
+    viewport(1200);
+    const { container } = render(<Listing {...itemProps()} />);
+    expect(container.querySelectorAll('input[type="checkbox"]').length).toBe(0);
+    expect(itemRow("Acme Studio").hasAttribute("aria-selected")).toBe(false);
+  });
+
+  it("a selectable list: Space toggles a row, Shift with Down extends, the bar shows the count and the page's icons, Escape clears", () => {
+    viewport(1200);
+    const unstar = vi.fn();
+    render(<Listing {...itemProps({ selectable: true, bulk: (ids) => [{ key: "unstar", label: "Remove from Starred", icon: <span>u</span>, enabled: true, run: () => unstar(ids) }] })} />);
+    const [r1, r2] = ["Acme Studio", "Beta Clinic"].map(itemRow);
+    expect(r1.getAttribute("aria-selected")).toBe("false");
+    act(() => r1.focus());
+    fireEvent.keyDown(r1, { key: " " });
+    expect(itemRow("Acme Studio").getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(r1, { key: "ArrowDown", shiftKey: true });
+    expect(itemRow("Beta Clinic").getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(r2);
+    const bar = screen.getByTestId("selection-panel");
+    expect(bar.textContent).toContain("2 selected");
+    fireEvent.click(within(bar).getByRole("button", { name: "Remove from Starred" }));
+    expect(unstar).toHaveBeenCalledWith(["r1", "r2"]);
+    fireEvent.keyDown(r2, { key: "Escape" });
+    expect(screen.queryByTestId("selection-panel")).toBeNull();
+    expect(itemRow("Acme Studio").getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("a selectable list: a click selects the row, Ctrl adds one, and the mouse's checkbox toggles it", () => {
+    viewport(1200);
+    render(<Listing {...itemProps({ selectable: true })} />);
+    fireEvent.click(itemRow("Acme Studio").querySelector("td") as HTMLElement);
+    fireEvent.click(itemRow("Cedar Pine").querySelector("td") as HTMLElement, { ctrlKey: true });
+    expect(["Acme Studio", "Beta Clinic", "Cedar Pine"].map((n) => itemRow(n).getAttribute("aria-selected"))).toEqual(["true", "false", "true"]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Beta Clinic" }));
+    expect(itemRow("Beta Clinic").getAttribute("aria-selected")).toBe("true");
   });
 
   it("each row carries its label as aria-label", () => {
     viewport(1200);
-    const { container } = render(<ItemList {...itemProps()} />);
+    const { container } = render(<Listing {...itemProps()} />);
     expect(container.querySelector('tr[aria-label="Acme Studio"]')).not.toBeNull();
   });
 });

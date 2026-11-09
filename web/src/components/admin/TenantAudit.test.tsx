@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { session } from "../../lib/session";
@@ -34,6 +34,24 @@ describe("tenant audit table", () => {
     expect(when).not.toBeNull();
     expect(when.querySelector("button")).toBeNull();
     expect(region.querySelector("tbody")?.textContent).toContain("key.revoke");
+    // The event column is named as the filter above it names what it filters: Action.
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]);
+  });
+
+  // Review L4: a screen reader hears a row as its sentence, not as the action's code.
+  it("names each row by its sentence, not by the action code", async () => {
+    stubFetch((c: Call) =>
+      c.url.includes("/audit")
+        ? { status: 200, body: { items: [{ id: "e1", time: "2026-11-01T10:00:00Z", action: "key.revoke", actor: "usr_1", subject: "key_1" }] } }
+        : { status: 200, body: { items: [] } },
+    );
+    renderAudit();
+    const region = await screen.findByRole("region", { name: "Audit log" });
+    const row = region.querySelector("tbody tr[data-id]") as HTMLElement;
+    const label = row.getAttribute("aria-label") ?? "";
+    expect(label).not.toBe("key.revoke");
+    expect(label.length).toBeGreaterThan(5);
+    expect((row.querySelector("td")?.textContent ?? "").startsWith(label)).toBe(true);
   });
 });
 

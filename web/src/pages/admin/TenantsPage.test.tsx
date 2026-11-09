@@ -138,6 +138,37 @@ describe("a row's name and its actions", () => {
     expect(screen.getByRole("menuitem", { name: "Suspend" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Delete tenant…" })).toBeTruthy();
   });
+
+  // Review L2: Open in the ⋮ menu is a real link, so a middle or modified click opens the tenant in a new tab.
+  it("Open in the ⋮ menu is a link to the tenant", async () => {
+    stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [account()] } } : { status: 200, body: usage() }));
+    renderPage();
+    await screen.findByText("Acme Ltd");
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Acme Ltd" }));
+    const open = await screen.findByRole("menuitem", { name: "Open" });
+    expect(within(open).getByRole("link", { name: "Open" }).getAttribute("href")).toBe("/admin/tenants/acc_1");
+  });
+});
+
+// Review M3: the Users column of the approved mockup, read from user_count on each account of the list (no request per row).
+describe("the tenants table's Users column", () => {
+  it("shows each tenant's number of users, from the list itself", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: /min-width: (\d+)px/.test(query) && Number(/min-width: (\d+)px/.exec(query)?.[1]) <= 1200, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }));
+    const { calls } = stubFetch((c) =>
+      path(c).pathname === "/api/v1/accounts"
+        ? { status: 200, body: { items: [account({ user_count: 14 }), account({ id: "acc_2", name: "Beta", user_count: 0 })] } }
+        : fail(404, "not_found"),
+    );
+    renderPage();
+    const list = await screen.findByRole("region", { name: "Tenants" });
+    const heads = within(list).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(heads).toContain("Users");
+    const col = heads.indexOf("Users");
+    const cell = (name: string) => (list.querySelector(`tr[aria-label="${name}"]`) as HTMLElement).querySelectorAll("td")[col].textContent;
+    expect(cell("Acme Ltd")).toBe("14");
+    expect(cell("Beta")).toBe("0");
+    expect(calls.filter((c) => path(c).pathname !== "/api/v1/accounts")).toEqual([]);
+  });
 });
 
 describe("a change of person while a change is out", () => {

@@ -150,9 +150,41 @@ describe("the admins table marks the signed-in admin and has an empty state", ()
   it("an empty list shows the empty text in the table body (guard: EmptyState)", async () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderAdmins();
-    expect(await screen.findByText("No admins yet.")).toBeTruthy();
+    expect(await screen.findByText("No people yet.")).toBeTruthy();
     // The words are antd's Empty (decision 111), not a bare line: the picture and the description are its own.
-    expect(document.querySelector("tbody .ant-empty .ant-empty-description")?.textContent).toBe("No admins yet.");
+    expect(document.querySelector("tbody .ant-empty .ant-empty-description")?.textContent).toBe("No people yet.");
+  });
+
+  // Review M3: the mockup's Last sign-in column, from last_sign_in_at on each admin; Never when the admin has not signed in.
+  it("shows each admin's last sign-in as a date, and Never for one who has not signed in", async () => {
+    stubFetch(() => ({
+      status: 200,
+      body: {
+        items: [
+          person({ id: "admin_1", display_name: "Me", last_sign_in_at: "2026-11-06T09:40:00Z" }),
+          person({ id: "usr_3", email: "rina@example.com", display_name: "Rina", status: "pending", last_sign_in_at: null }),
+        ],
+      },
+    }));
+    renderAdmins();
+    const list = await screen.findByRole("region", { name: "Admins" });
+    const heads = within(list).getAllByRole("columnheader").map((h) => h.textContent);
+    const col = heads.indexOf("Last sign-in");
+    expect(col).toBeGreaterThan(0);
+    const cell = (name: string) => (list.querySelector(`tr[aria-label="${name}"]`) as HTMLElement).querySelectorAll("td")[col];
+    expect(cell("Me").querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-06T09:40:00Z");
+    expect(cell("Me").textContent).toContain("2026");
+    expect(cell("Rina").textContent).toBe("Never");
+  });
+
+  // The mockup's own row: no Remove, and the ⋮ menu has Change password, a link to the change-password page.
+  it("the signed-in admin's ⋮ menu has Change password, a link to its page", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [person({ id: "admin_1", display_name: "Me" })] } }));
+    renderAdmins();
+    await screen.findByRole("region", { name: "Admins" });
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Me" }));
+    const entry = await screen.findByRole("menuitem", { name: "Change password" });
+    expect(within(entry).getByRole("link").getAttribute("href")).toBe("/change-password");
   });
 });
 
