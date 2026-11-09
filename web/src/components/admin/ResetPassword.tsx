@@ -118,7 +118,7 @@ export default function ResetPassword({
   return (
     <Modal open title={t("tenant.reset.title", { name })} onCancel={onClose} maskClosable={false} footer={null} destroyOnClose>
       {offered.length === 0 ? (
-        <EmptyState size="compact" text={t("tenant.reset.none")} />
+        <EmptyState size="compact" role="status" text={t("tenant.reset.none")} />
       ) : (
         <form onSubmit={submit} noValidate style={{ display: "grid", gap: 16 }}>
           <fieldset style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
