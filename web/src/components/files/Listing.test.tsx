@@ -790,12 +790,15 @@ describe("Listing with columns: a preset list in the one table", () => {
   });
 
   // Review M1: a disabled action keeps its place. It is a disabled icon in the row, and a disabled entry in the ⋮ menu.
-  it("a disabled action stays in its place, disabled, inline and in the ⋮ menu", () => {
+  // The re-check: a real browser takes the focus from a button that turns disabled (the e2e found BODY focused), so the
+  // icon is aria-disabled, still focusable, and its click and its keys do nothing.
+  it("a disabled action stays in its place, aria-disabled and focusable, inline and in the ⋮ menu", () => {
     viewport(1200);
     const acts = act4({ disabled: true });
     const { unmount } = render(<Listing {...itemProps({ actions: () => acts })} />);
     const a = within(itemRow("Acme Studio")).getByRole("button", { name: "Act A" }) as HTMLButtonElement;
-    expect(a.disabled).toBe(true);
+    expect(a.getAttribute("aria-disabled")).toBe("true");
+    expect(a.disabled).toBe(false);
     const order = within(itemRow("Acme Studio")).getAllByRole("button").map((b) => b.getAttribute("aria-label"));
     expect(order.slice(0, 3)).toEqual(["Act A", "Act B", "Act C"]);
     fireEvent.click(a);

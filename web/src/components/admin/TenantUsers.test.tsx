@@ -140,11 +140,12 @@ describe("people of a tenant", () => {
     await waitFor(() => expect(screen.queryByDisplayValue(LINK)).toBeNull());
   });
 
-  // Review M1: a row with a request on its way keeps its icons where they are, disabled. A disabled icon keeps its place and
-  // its focus (IconButton's contract); an icon taken out of the row would move the others and drop the focus.
-  it("keeps a busy row's actions in place, disabled, and the pressed one keeps the focus", async () => {
+  // Review M1: a row with a request on its way keeps its icons where they are, disabled; an icon taken out of the row would
+  // move the others and drop the focus. The re-check: a real browser takes the focus from a button that turns disabled, so
+  // the icons are aria-disabled and stay focusable, and a second press does nothing (the e2e reads the focus in Chrome).
+  it("keeps a busy row's actions in place, aria-disabled, and the pressed one keeps the focus", async () => {
     let release: (a: Answer) => void = () => {};
-    stubFetch((c: Call) => {
+    const { calls } = stubFetch((c: Call) => {
       if (c.url.includes("/verification")) return new Promise<Answer>((r) => (release = r));
       return { status: 200, body: { items: [pendingOwner] } };
     });
@@ -154,14 +155,18 @@ describe("people of a tenant", () => {
     const newLink = screen.getByRole("button", { name: /New link/ }) as HTMLButtonElement;
     resend.focus();
     fireEvent.click(resend);
-    await waitFor(() => expect(resend.disabled).toBe(true));
+    await waitFor(() => expect(resend.getAttribute("aria-disabled")).toBe("true"));
+    expect(resend.disabled).toBe(false);
     expect(resend.isConnected).toBe(true);
     expect(newLink.isConnected).toBe(true);
-    expect(newLink.disabled).toBe(true);
+    expect(newLink.getAttribute("aria-disabled")).toBe("true");
     expect(document.activeElement).toBe(resend);
+    fireEvent.click(resend);
+    expect(calls.filter((c) => c.url.includes("/verification"))).toHaveLength(1);
     await act(async () => release({ status: 200, body: { ...pendingOwner, verification: { method: "email", sent: true } } }));
-    await waitFor(() => expect(resend.disabled).toBe(false));
+    await waitFor(() => expect(resend.getAttribute("aria-disabled")).toBeNull());
     expect(resend.isConnected).toBe(true);
+    expect(document.activeElement).toBe(resend);
   });
 
   // Review M2: the ⋮ menu's Disable and Enable (the mockup's), through the route the owner's People page uses.

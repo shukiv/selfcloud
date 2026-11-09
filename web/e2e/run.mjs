@@ -1051,7 +1051,7 @@ async function main() {
       await signOut(page);
       await signIn(page, ADMIN);
       if (onlySet.has('admin')) await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
-      if (onlySet.has('tl1')) await tl1Checks(h, { page, base, adminKey });
+      if (onlySet.has('tl1')) await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
     }
     if (only) {
       console.log(`only ${only}: passed`);
@@ -1073,7 +1073,7 @@ async function main() {
     await signIn(page, ADMIN);
     await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
     // Slice tl1 (design-tl): the admin's lists are tables. Checked on the admin's pages, while the admin is still signed in.
-    await tl1Checks(h, { page, base, adminKey });
+    await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
     await signOut(page);
     await signIn(page, MEMBER);
     await owner.memberNotFound(page, h);
