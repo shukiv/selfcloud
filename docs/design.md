@@ -2082,7 +2082,6 @@ Each slice ships with tests and leaves the server runnable.
 | r7b | Web interface for the bell with the unread count, the notifications page, and the notification email settings (decision 57) | Built |
 | s1 | Thumbnails: the derived store and files (migration 0028), the worker pool, the child process with its limits, the JPEG, PNG and GIF thumbnails, the `thumb` route and the content-origin link, `has_thumbnail`, the budget in the sweep, and the cleanup on blob removal and account deletion (decision 33) | Built |
 | s2 | Zip download: the stored zip job, its limits, `Range`, the routes, the `no_download` refusal (proposal s, questions 1, 7, 10; migration 0029, decision 35) | Built |
-| zr1 | The stored zip GET re-checks the no-download rule with the create route's copy rule, before the preconditions and `Range` (decision 117, which supersedes decision 35 on the GET) | In review |
 | s3 | Document previews and conversions through Collabora's conversion interface: the conversion client (`internal/office`), the preview and export routes, the converted kinds, the fake Collabora's conversion endpoint (proposal s, questions 2, 8; decision 10; decision 37). Run live against Collabora Online on 2026-10-31, with the operator settings decision 37 lists | Built |
 | s4a | The web interface's thumbnails in the grid, and Download as zip for a folder and a selection, with the zip job's error codes (migration 0031, decision 38) | Built |
 | s4c | The web interface's media viewer: a double click opens the item under the pointer, a tap opens on a phone, the selection bar leaves the rows in place, the play mark and the Play, View and Preview actions, video and audio that renew their signed link when it ends, and a clear message for a format the browser cannot play (decision 42) | Built |
@@ -2155,8 +2154,8 @@ Each slice ships with tests and leaves the server runnable.
 | em1 | Every empty state is antd's Empty, through one wrapper with two sizes, with the words each page had (decision 111; 107, 108 and 110 are not in this tree) | Built |
 | cli1 | Local admin recovery from the data folder: `admin reset-password` (a one-time link, or a generated temporary password printed once), `verify`, `users`, `enable`, `disable` with the last-admin guard, and `end-sessions`; the token and session-end steps move into `internal/recovery` (decision 112) | In review |
 | ce2a | The server refuses a PUT of content that is not UTF-8 text, or has a NUL byte, to a text file (decision 113); WOPI PutFile and uploads are not checked | Built, in review |
-| tk1 | A delegated token acting as a user whose password an admin typed, or who must change it, is refused on each route its session is refused on, with `password_change_required`; the flag comes from the delegation lookup (decision 116) | In review |
 | tk1 | A delegated token acting as a user whose password an admin typed, or who must change it, is refused on each route its session is refused on, with `password_change_required`; a WOPI token of such a user is refused, and a mint for one answers 409; the flag comes from the delegation lookup (decision 116) | In review |
+| zr1 | The stored zip GET re-checks the no-download rule with the create route's copy rule, before the preconditions and `Range` (decision 117, which supersedes decision 35 on the GET) | In review |
 
 **Slices w and x, approved by the owner on 2026-10-31.** The owner asked for the web interface to act like a normal file manager, with a built-in video and audio player, with a playlist and the rest. The owner's answers:
 
