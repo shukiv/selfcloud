@@ -430,6 +430,13 @@ func (s *Store) PeopleCounts(ctx context.Context, accountID string) (active, pen
 	return active, pending, rows.Err()
 }
 
+// CountAccountUsers returns how many users accountID has, whatever their status.
+func (s *Store) CountAccountUsers(ctx context.Context, accountID string) (int64, error) {
+	var n int64
+	err := s.r.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE account_id = ?", accountID).Scan(&n)
+	return n, err
+}
+
 // UserTokensNotBefore is the user's cut-off for delegated tokens and device cookies (sec1, decision 84): what was issued at
 // or before it no longer counts. The zero time means no cut-off. It is moved by a password change or reset, an admin's
 // set-password, and a disable (RevokeUserTokens). It returns ErrNotFound when accountID has no such user.

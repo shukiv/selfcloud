@@ -89,6 +89,10 @@ var adminCommands = []adminCommand{
                                  -disable-unreadable disables those endpoints. Run it before the previous
                                  key file is removed. Safe to run again
 `, run: adminRewrapSecrets},
+	{name: "accounts", help: `  accounts [-status active|suspended] [-name TEXT] [-external-id TEXT]
+                                 list accounts, oldest first, as a tab-separated table (id, name, status,
+                                 external ID, created, users, used bytes, quota bytes); no key is printed
+`, run: adminAccounts},
 }
 
 // adminUsage returns the usage text of the admin commands, built from adminCommands.
