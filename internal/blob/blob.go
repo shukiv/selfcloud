@@ -36,6 +36,9 @@ var ErrTooLarge = errors.New("blob: contents are larger than the limit")
 type Store interface {
 	// Create starts a new blob for accountID. The writer must end with Commit or Abort.
 	Create(ctx context.Context, accountID string, limit int64) (Writer, error)
+	// CreateNamed is Create with the temporary file's name chosen by the caller, so the caller can find and remove the
+	// partial after a restart. The name is exclusive: an existing file of that name is an error.
+	CreateNamed(ctx context.Context, accountID, name string, limit int64) (Writer, error)
 	// Open opens a committed blob for reading. It does not follow symbolic links.
 	Open(accountID, blobID string) (*os.File, error)
 	// Remove deletes a committed blob. A blob that is already gone is not an error.
@@ -139,6 +142,44 @@ func (d *Dir) Create(ctx context.Context, accountID string, limit int64) (Writer
 		return nil, fmt.Errorf("blob: %w", err)
 	}
 	f, err := os.CreateTemp(up, "tmp-*")
+	if err != nil {
+		return nil, fmt.Errorf("blob: %w", err)
+	}
+	return &writer{d: d, accountID: accountID, f: f, h: sha256.New(), limit: limit}, nil
+}
+
+// validPartialName reports whether name may be a partial's file name: 1 to 128 bytes of lowercase letters, digits,
+// underscores, hyphens and dots, not starting with a dot. It names a file directly under uploads/<account>, so a path
+// element is refused here.
+func validPartialName(name string) bool {
+	if name == "" || len(name) > 128 || name[0] == '.' {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '-' || c == '.') {
+			return false
+		}
+	}
+	return true
+}
+
+// CreateNamed implements Store. The file is made in uploads/<account> with O_EXCL and mode 0600, under name.
+func (d *Dir) CreateNamed(ctx context.Context, accountID, name string, limit int64) (Writer, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, err := d.accountDir(accountID); err != nil {
+		return nil, err
+	}
+	if !validPartialName(name) {
+		return nil, fmt.Errorf("blob: invalid partial name %q", name)
+	}
+	up := filepath.Join(d.dataDir, "uploads", accountID)
+	if err := os.MkdirAll(up, 0o700); err != nil {
+		return nil, fmt.Errorf("blob: %w", err)
+	}
+	f, err := os.OpenFile(filepath.Join(up, name), os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("blob: %w", err)
 	}
