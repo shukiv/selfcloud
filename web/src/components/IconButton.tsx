@@ -32,7 +32,10 @@ if (typeof document !== 'undefined') {
 // The tooltip shows on a mouse's hover and on keyboard focus, and not after a click: a press opens a menu, and a tooltip over
 // the menu would hide its first item. A touch never opens it, so a tap does not flash it. It closes when the pointer leaves or
 // the focus does. A disabled button has a tooltip too: the wrapper span, which is always rendered, takes the pointer events
-// (index.css makes a disabled icon button pass them through), and a button that turns disabled keeps its place, and its focus.
+// (index.css makes a disabled icon button pass them through), and a button that turns disabled keeps its place. It does not
+// keep its focus: in Chrome the focus moves to the page's body (jsdom keeps it, so a unit test cannot see this). A button
+// that must keep the focus while it waits is made aria-disabled instead, as Listing's row icons are (decision 114, which
+// corrects decision 68 on this).
 const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
   { label, tip, icon, pressed, disabled, danger, popupHost, className, style, onClick, 'aria-pressed': ariaPressed, ...rest },
   ref,
