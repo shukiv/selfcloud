@@ -26,8 +26,8 @@ const (
 	testAccent = "#053D8E"
 	iconSVG    = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#FF0000"/></svg>`
 	logoSVG    = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 10"><rect width="40" height="10" fill="#008000"/></svg>`
-	// faviconPolicy is the policy of an SVG file that a PNG favicon wraps: the logo's SVG policy, plus the data image.
-	faviconPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+	// wantFaviconPolicy is the policy of a PNG favicon's wrapper: the logo's SVG policy, plus the data image.
+	wantFaviconPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
 	// svgOnlyPolicy is the policy of an SVG served as it is.
 	svgOnlyPolicy = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
 )
@@ -389,8 +389,8 @@ func TestFaviconWrapsAPNG(t *testing.T) {
 	if !strings.Contains(body, `<image width="64" height="64" href="data:image/png;base64,`) {
 		t.Errorf("the favicon's image is not 64 by 64 with a PNG data URI: %.160s", body)
 	}
-	if got := rec.Header().Get("Content-Security-Policy"); got != faviconPolicy {
-		t.Errorf("the favicon's policy is %q, want %q", got, faviconPolicy)
+	if got := rec.Header().Get("Content-Security-Policy"); got != wantFaviconPolicy {
+		t.Errorf("the favicon's policy is %q, want %q", got, wantFaviconPolicy)
 	}
 	wrapped := wrappedPNG(t, body)
 	if b := wrapped.Bounds(); b.Dx() != 64 || b.Dy() != 64 {

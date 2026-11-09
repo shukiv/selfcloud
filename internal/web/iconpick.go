@@ -15,6 +15,7 @@ package web
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"image"
@@ -72,10 +73,17 @@ func decodeLogo(l *Logo) (image.Image, string) {
 // and only when the icons or the favicon would use it.
 func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
 	var p iconPick
-	iconPNG := icon != nil && icon.contentType == "image/png"
+	var iconPic image.Image
+	if icon != nil && icon.contentType == "image/png" {
+		img, err := png.Decode(bytes.NewReader(icon.data))
+		if err != nil {
+			return p, fmt.Errorf("web: ui.brand.icon_file cannot be decoded: %w", err)
+		}
+		iconPic = img
+	}
 	var logoPic image.Image
 	refused := false
-	if !iconPNG && logo != nil && logo.contentType == "image/png" {
+	if iconPic == nil && logo != nil && logo.contentType == "image/png" {
 		img, note := decodeLogo(logo)
 		if note != "" {
 			p.notes = append(p.notes, note)
@@ -89,12 +97,8 @@ func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
 	}
 
 	switch {
-	case iconPNG:
-		img, err := png.Decode(bytes.NewReader(icon.data))
-		if err != nil {
-			return p, fmt.Errorf("web: ui.brand.icon_file cannot be decoded: %w", err)
-		}
-		p.art = iconArt{src: img, bleed: true, label: "icon", sum: digest(icon.data)}
+	case iconPic != nil:
+		p.art = iconArt{src: iconPic, bleed: true, label: "icon", sum: digest(icon.data)}
 	case logoPic != nil:
 		p.art = iconArt{src: logoPic, label: "logo", sum: digest(logo.data)}
 	default:
@@ -104,14 +108,41 @@ func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
 		}
 	}
 
+	// The favicon: the icon file if it is set, else the logo, else the mark (decision 119). An SVG is served as it is; a PNG is
+	// wrapped.
+	var err error
 	p.favicon = brandSVG{body: faviconSVG(b), policy: svgPolicy}
 	switch {
 	case icon != nil && icon.contentType == "image/svg+xml":
 		p.favicon = brandSVG{body: icon.data, policy: svgPolicy}
+	case iconPic != nil:
+		p.favicon, err = faviconPNG(iconPic)
+	case icon == nil && logoPic != nil:
+		p.favicon, err = faviconPNG(logoPic)
 	case icon == nil && logo != nil && logo.contentType == "image/svg+xml":
 		p.favicon = brandSVG{body: logo.data, policy: svgPolicy}
 	}
+	if err != nil {
+		return p, fmt.Errorf("web: cannot draw the favicon: %w", err)
+	}
 	return p, nil
+}
+
+// faviconPolicy is the policy of a favicon that wraps a PNG: the logo's SVG policy, plus the data image the wrapper loads.
+const faviconPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+
+// faviconPNG wraps a picture as the favicon: an SVG of 64 units holding the picture as a PNG, scaled to fit 64 by 64 with its
+// aspect kept. The picture's transparency is kept, so a transparent part of it shows the tab's own colour (decision 119).
+func faviconPNG(img image.Image) (brandSVG, error) {
+	b := img.Bounds()
+	w, h := fitSize(b.Dx(), b.Dy(), 64)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, scaleTo(img, w, h)); err != nil {
+		return brandSVG{}, err
+	}
+	body := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><image width="64" height="64" href="data:image/png;base64,` +
+		base64.StdEncoding.EncodeToString(buf.Bytes()) + `"/></svg>`
+	return brandSVG{body: []byte(body), policy: faviconPolicy}, nil
 }
 
 // plainLogoSide is the side of a logo's longer side on a plain icon of size pixels: 80% of the width, a 10% margin on each side.
