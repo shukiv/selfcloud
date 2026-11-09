@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The admin lists' own strings: the descriptions of their empty tables (decision 114). They are a catalogue of their own,
+// The admin lists' own strings: the descriptions of their empty tables, and a tenant person's "Remove from account…" (decision
+// 114). They are a catalogue of their own,
 // loaded with the admin pages, so the main catalogues (which every page loads) do not grow with them: the Russian one is at
 // its budget. The keys are read with the main translator once loaded. English is loaded with each language, as the fallback.
 import { useEffect, useReducer } from "react";

@@ -3,5 +3,6 @@
   "admin.empty.admins": "Un administrateur gère cette installation et ses locataires.",
   "admin.empty.users": "Le propriétaire du locataire invite ses personnes, ou une application les ajoute via l’API.",
   "admin.empty.keys": "Une clé d’API permet à une application de gérer ce locataire via l’API.",
-  "admin.empty.audit": "Les connexions, les modifications des personnes et des clés, et les autres actions s’affichent ici."
+  "admin.empty.audit": "Les connexions, les modifications des personnes et des clés, et les autres actions s’affichent ici.",
+  "admin.removeFromAccount": "Retirer du compte…"
 }

@@ -3,5 +3,6 @@
   "admin.empty.admins": "Um administrador gere esta instalação e os seus clientes.",
   "admin.empty.users": "O proprietário do cliente convida as suas pessoas, ou uma aplicação adiciona-as através da API.",
   "admin.empty.keys": "Uma chave de API permite que uma aplicação gira este cliente através da API.",
-  "admin.empty.audit": "Aqui aparecem os inícios de sessão, as alterações a pessoas e chaves, e outras ações."
+  "admin.empty.audit": "Aqui aparecem os inícios de sessão, as alterações a pessoas e chaves, e outras ações.",
+  "admin.removeFromAccount": "Remover da conta…"
 }
