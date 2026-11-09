@@ -163,6 +163,17 @@ describe("chordBlocked: where the chord is ignored", () => {
     document.body.replaceChildren();
   });
 
+  // The sidebar's navigation is an antd Menu, which is role="menu" and always shown: it is not an open overlay, or the chord
+  // would be off on every page that has a sidebar.
+  it("is not blocked by the sidebar's navigation menu, which is always shown", () => {
+    const nav = document.createElement("ul");
+    nav.className = "ant-menu ant-menu-root ant-menu-inline";
+    nav.setAttribute("role", "menu");
+    document.body.appendChild(nav);
+    expect(overlayOpen(document)).toBe(false);
+    document.body.replaceChildren();
+  });
+
   it("is blocked while a drawer is open", () => {
     const drawer = document.createElement("div");
     drawer.className = "ant-drawer ant-drawer-open";
