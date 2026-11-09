@@ -4,9 +4,9 @@
 // from the installation's own brand, so each installation installs as itself. They exist only with the web interface:
 // the handler that serves them is the one the server builds when ui.enabled is on, and headless mode answers 404.
 //
-// The icons are drawn here with the standard library only: the accent is the background, and the white glyph of
-// pwa_glyph.go is drawn over it, each pixel blended by its coverage. A custom logo is not used as an icon; the
-// logo stays the sidebar's picture (decision 65).
+// The icons are drawn here with the standard library only. Each shows the installation's picture: its icon file, or its logo
+// (a PNG), or else the SelfCloud mark white on the accent (decisions 65 and 119; iconpick.go makes the choice). The picture is
+// scaled by scale.go. The sidebar still shows the logo as it did.
 
 package web
 
@@ -18,6 +18,7 @@ import (
 	"html"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/png"
 	"net/http"
 	"strconv"
@@ -67,8 +68,8 @@ type icon struct {
 	etag string
 }
 
-// brandInfo is the installation's name and accent, for the manifest and the icons. artwork says the icons and the favicon
-// carry the SelfCloud mark rather than the glyph (decision 109).
+// brandInfo is the installation's name and accent, for the manifest and the icons. artwork says the installation shows the
+// SelfCloud artwork, which is the wordmark in the sidebar (decision 109); the icons do not depend on it.
 type brandInfo struct {
 	name    string
 	accent  color.RGBA
@@ -114,23 +115,32 @@ func isPWAPath(p string) bool {
 	return false
 }
 
-// drawIcon draws one icon: the accent everywhere, and the white figure over it, each pixel blended by its coverage. The figure
-// is the mark for the artwork and the glyph otherwise.
-func drawIcon(size int, maskable bool, accent color.RGBA, artwork bool) *image.RGBA {
+// drawIcon draws one icon. With no picture it is the accent with the white SelfCloud mark over it, each pixel blended by its
+// coverage. With a picture it is drawn on white (decision 119): an icon file fills the icon, edge to edge, and a logo is fitted
+// inside a margin, the 80% of the width on a plain icon and the safe square on a maskable one. Either way the icon is opaque.
+func drawIcon(spec iconSpec, accent color.RGBA, art iconArt) *image.RGBA {
+	size := spec.size
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	var cover []float64
-	if artwork {
-		cover = markCoverage(size)
+	if art.src != nil {
+		draw.Draw(img, img.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+		if art.bleed {
+			draw.Draw(img, img.Bounds(), scaleTo(art.src, size, size), image.Point{}, draw.Over)
+			return img
+		}
+		side := plainLogoSide(size)
+		if spec.maskable {
+			side = maskableLogoSide(size)
+		}
+		b := art.src.Bounds()
+		w, h := fitSize(b.Dx(), b.Dy(), side)
+		x0, y0 := (size-w)/2, (size-h)/2
+		draw.Draw(img, image.Rect(x0, y0, x0+w, y0+h), scaleTo(art.src, w, h), image.Point{}, draw.Over)
+		return img
 	}
-	scale := glyphScale(size, maskable)
+	cover := markCoverage(size)
 	for py := 0; py < size; py++ {
 		for px := 0; px < size; px++ {
-			a := 0.0
-			if artwork {
-				a = cover[py*size+px]
-			} else {
-				a = glyphCoverage(px, py, size, scale)
-			}
+			a := cover[py*size+px]
 			img.SetRGBA(px, py, color.RGBA{
 				R: blend(accent.R, a),
 				G: blend(accent.G, a),
@@ -147,18 +157,14 @@ func blend(c uint8, a float64) uint8 {
 	return uint8(float64(c)*(1-a) + 255*a + 0.5)
 }
 
-// encodeIcon draws the icon and encodes it as a PNG. Its validator is a hash of the accent, the figure (the glyph, or the
-// mark's path for the artwork), the kind of icon and its size, so a change to any of them changes the ETag.
-func encodeIcon(spec iconSpec, b brandInfo) (icon, error) {
+// encodeIcon draws the icon and encodes it as a PNG. Its validator is a hash of the accent, the picture (the mark, or the icon
+// file or the logo, with the digest of its bytes), the icon's path and its size, so a change to any of them changes the ETag.
+func encodeIcon(spec iconSpec, b brandInfo, art iconArt) (icon, error) {
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, drawIcon(spec.size, spec.maskable, b.accent, b.artwork)); err != nil {
+	if err := png.Encode(&buf, drawIcon(spec, b.accent, art)); err != nil {
 		return icon{}, err
 	}
-	figure := glyphSpec()
-	if b.artwork {
-		figure = "mark=" + mark.d
-	}
-	sum := sha256.Sum256([]byte(b.hex + "\n" + figure + "\n" + spec.path + "\n" + strconv.Itoa(spec.size)))
+	sum := sha256.Sum256([]byte(b.hex + "\n" + art.label + "\n" + art.sum + "\n" + spec.path + "\n" + strconv.Itoa(spec.size)))
 	return icon{data: buf.Bytes(), etag: `"` + hex.EncodeToString(sum[:16]) + `"`}, nil
 }
 
@@ -285,24 +291,24 @@ func (h *Handler) servePWA(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// serveBrandSVG answers one of the brand's SVG files. Its ETag is a hash of the file, so a repeat request gets 304. It runs no
-// script and loads nothing, as the installation's logo does.
-func serveBrandSVG(w http.ResponseWriter, r *http.Request, body []byte) {
-	sum := sha256.Sum256(body)
+// serveBrandSVG answers one of the brand's SVG files, under the policy it was given. Its ETag is a hash of the file, so a repeat
+// request gets 304. Its policy runs no script and loads nothing, as the installation's logo does.
+func serveBrandSVG(w http.ResponseWriter, r *http.Request, f brandSVG) {
+	sum := sha256.Sum256(f.body)
 	hd := w.Header()
 	hd.Set("Content-Type", "image/svg+xml")
 	hd.Set("Cache-Control", "no-cache")
 	hd.Set("ETag", `"`+hex.EncodeToString(sum[:16])+`"`)
 	hd.Set("X-Content-Type-Options", "nosniff")
-	hd.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
-	http.ServeContent(w, r, "brand.svg", time.Time{}, bytes.NewReader(body))
+	hd.Set("Content-Security-Policy", f.policy)
+	http.ServeContent(w, r, "brand.svg", time.Time{}, bytes.NewReader(f.body))
 }
 
-// buildIcons draws every icon for the brand.
-func buildIcons(b brandInfo) (map[string]icon, error) {
+// buildIcons draws every icon for the brand, from the picture the rule chose (decision 119).
+func buildIcons(b brandInfo, art iconArt) (map[string]icon, error) {
 	out := make(map[string]icon, len(iconSpecs))
 	for _, s := range iconSpecs {
-		ic, err := encodeIcon(s, b)
+		ic, err := encodeIcon(s, b, art)
 		if err != nil {
 			return nil, err
 		}

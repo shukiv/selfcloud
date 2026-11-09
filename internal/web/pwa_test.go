@@ -118,9 +118,8 @@ func TestIconsAreDrawnInTheAccent(t *testing.T) {
 		if got := color.RGBAModel.Convert(img.At(0, 0)).(color.RGBA); got != accent {
 			t.Errorf("%s: corner %v, want the accent", s.path, got)
 		}
-		mid := s.size / 2
-		if got := color.RGBAModel.Convert(img.At(mid, mid)).(color.RGBA); got.R < 250 || got.G < 250 || got.B < 250 {
-			t.Errorf("%s: centre %v is not the white glyph", s.path, got)
+		if !hasWhite(img) {
+			t.Errorf("%s: no white of the mark on the icon", s.path)
 		}
 	}
 }

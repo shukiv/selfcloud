@@ -159,16 +159,29 @@ func quadrantsOK(t *testing.T, what string, img image.Image) {
 	}
 }
 
-// markOK checks an icon that shows the mark: the accent in the corner and white in the centre.
+// markOK checks an icon that shows the mark: the accent in the corner, and some white of the mark. The mark's centre is open,
+// so the white is searched for rather than read at the centre.
 func markOK(t *testing.T, what string, img image.Image) {
 	t.Helper()
-	n := img.Bounds().Dx()
 	if got := rgbaAt(img, 0, 0); got != (color.RGBA{R: 5, G: 61, B: 142, A: 255}) {
 		t.Errorf("%s: corner %v, want the accent", what, got)
 	}
-	if got := rgbaAt(img, n/2, n/2); got.R < 240 || got.G < 240 || got.B < 240 {
-		t.Errorf("%s: centre %v, want the mark's white", what, got)
+	if !hasWhite(img) {
+		t.Errorf("%s: no white of the mark on the icon", what)
 	}
+}
+
+// hasWhite reports whether some pixel of img is white.
+func hasWhite(img image.Image) bool {
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if c := rgbaAt(img, x, y); c.R >= 240 && c.G >= 240 && c.B >= 240 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // logoOK checks a 4:1 logo on a 512 icon: its colour in the centre, and white in the 10% margin on the left and at the top.

@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
-	"strings"
 )
 
 //go:embed brand/*.svg
@@ -195,56 +194,39 @@ func markCoverage(size int) []float64 {
 	return out
 }
 
-// figureSVG draws the picture for a viewBox of size units: the mark for the artwork, the glyph otherwise, in white, centred and
-// 60% of the width. It is used in the favicon and in the mark file the rail masks.
-func figureSVG(size float64, artwork bool) string {
-	if artwork {
-		k := markScale(size)
-		return fmt.Sprintf(`<path fill="#FFFFFF" fill-rule="evenodd" transform="translate(%.2f %.2f) scale(%.5f) translate(%.2f %.2f)" d="%s"/>`,
-			size/2, size/2, k, -mark.centreX, -mark.centreY, mark.d)
-	}
-	gx0, _, gx1, _ := glyphBounds()
-	cx, cy := glyphCentre()
-	k := glyphBoxShare * size / (gx1 - gx0)
-	px := func(v float64) float64 { return size/2 + (v-cx)*k }
-	py := func(v float64) float64 { return size/2 + (v-cy)*k }
-	var b strings.Builder
-	b.WriteString(`<g fill="#FFFFFF">`)
-	for _, c := range cloudCircles {
-		fmt.Fprintf(&b, `<circle cx="%.2f" cy="%.2f" r="%.2f"/>`, px(c.x), py(c.y), c.r*k)
-	}
-	fmt.Fprintf(&b, `<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" rx="%.2f"/>`,
-		px(cloudBase.x0), py(cloudBase.y0), (cloudBase.x1-cloudBase.x0)*k, (cloudBase.y1-cloudBase.y0)*k, cloudBase.r*k)
-	b.WriteString(`</g>`)
-	return b.String()
+// markFigure draws the SelfCloud mark for a viewBox of size units, in white, centred and 60% of the width. It is used in the
+// favicon when there is no picture of the installation's own.
+func markFigure(size float64) string {
+	k := markScale(size)
+	return fmt.Sprintf(`<path fill="#FFFFFF" fill-rule="evenodd" transform="translate(%.2f %.2f) scale(%.5f) translate(%.2f %.2f)" d="%s"/>`,
+		size/2, size/2, k, -mark.centreX, -mark.centreY, mark.d)
 }
 
-// faviconSVG is the favicon: the accent in a rounded square, with the figure in white (decision 109).
+// brandSVG is one of the SVG files the server answers: its bytes, and the policy it is served under.
+type brandSVG struct {
+	body   []byte
+	policy string
+}
+
+// faviconSVG is the favicon when the installation has no picture of its own: the accent in a rounded square, with the mark in
+// white (decision 119).
 func faviconSVG(b brandInfo) []byte {
 	var s bytes.Buffer
 	fmt.Fprintf(&s, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="%s"/>`, b.hex)
-	s.WriteString(figureSVG(32, b.artwork))
+	s.WriteString(markFigure(32))
 	s.WriteString(`</svg>`)
 	return s.Bytes()
 }
 
-// markSVG is the mark for the rail: the artwork's own mark file for the default brand, and the glyph for a custom name.
-func markSVG(b brandInfo) []byte {
-	if b.artwork {
-		return brandFile("selfcloud-mark.svg")
-	}
-	return []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">` + figureSVG(512, false) + `</svg>`)
-}
-
-// brandSVGs are the SVG files the server answers for a brand, by path.
-func brandSVGs(b brandInfo) map[string][]byte {
-	out := map[string][]byte{
-		faviconPath: faviconSVG(b),
-		markPath:    markSVG(b),
+// brandSVGs are the SVG files the server answers for a brand, by path. The favicon is the one the rule chose (decision 119).
+func brandSVGs(b brandInfo, favicon brandSVG) map[string]brandSVG {
+	out := map[string]brandSVG{
+		faviconPath: favicon,
+		markPath:    {body: brandFile("selfcloud-mark.svg"), policy: svgPolicy},
 	}
 	// The wordmark is the SelfCloud artwork's; a custom name shows its name as text, so it has none (decision 109).
 	if b.artwork {
-		out[wordmarkPath] = brandFile("selfcloud-logo-transparent.svg")
+		out[wordmarkPath] = brandSVG{body: brandFile("selfcloud-logo-transparent.svg"), policy: svgPolicy}
 	}
 	return out
 }

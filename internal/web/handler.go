@@ -59,6 +59,10 @@ type Options struct {
 	BrandAccent string
 	// BrandArtwork says the installation shows the SelfCloud artwork: the default name with no logo file (decision 109).
 	BrandArtwork bool
+	// IconFile is ui.brand.icon_file, read at start, or nil. LogoFile is ui.brand.logo_file, or nil. The icons and the
+	// favicon are drawn from them (decision 119); the server reads them with LoadIconFile and LoadLogo.
+	IconFile *Logo
+	LogoFile *Logo
 }
 
 // Handler serves the built files of the web interface.
@@ -74,8 +78,16 @@ type Handler struct {
 	// brand names the manifest and colours the icons; icons are the drawn icons by path (pwa.go).
 	brand brandInfo
 	icons map[string]icon
-	// svgs are the brand's SVG files by path: the favicon, the rail's mark and the wordmark (decision 109).
-	svgs map[string][]byte
+	// svgs are the brand's SVG files by path: the favicon, the rail's mark and the wordmark (decisions 109 and 119).
+	svgs map[string]brandSVG
+	// notes are the lines the server logs at start about the icons (decision 119).
+	notes []string
+}
+
+// IconNotes are the lines the server logs at start about the app icons and the favicon: why they show the mark, or that a logo
+// is refused for them. None is the usual case.
+func (h *Handler) IconNotes() []string {
+	return h.notes
 }
 
 // New returns a handler for files. The build's index.html is served at "/" and for client routes.
@@ -99,11 +111,16 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 		officeOrigin = " " + u.Scheme + "://" + u.Host
 	}
 	brand := newBrandInfo(opts.BrandName, opts.BrandAccent, opts.BrandArtwork)
-	icons, err := buildIcons(brand)
+	pick, err := pickIcons(opts.IconFile, opts.LogoFile, brand)
+	if err != nil {
+		return nil, fmt.Errorf("web: %w", err)
+	}
+	icons, err := buildIcons(brand, pick.art)
 	if err != nil {
 		return nil, fmt.Errorf("web: cannot draw the app icons: %w", err)
 	}
-	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin, brand: brand, icons: icons, svgs: brandSVGs(brand)}
+	h := &Handler{files: files, origins: origins, officeOrigin: officeOrigin, brand: brand, icons: icons,
+		svgs: brandSVGs(brand, pick.favicon), notes: pick.notes}
 	data, err := fs.ReadFile(files, "index.html")
 	if err == nil {
 		parts := strings.Split(string(data), cspNoncePlaceholder)

@@ -500,7 +500,13 @@ func New(opts Options) (*Server, error) {
 
 	if cfg.UI.Brand.LogoFile != "" {
 		if s.logo, err = web.LoadLogo(cfg.UI.Brand.LogoFile); err != nil {
-			return nil, fmt.Errorf("api: ui.brand.logo_file: %w", err)
+			return nil, fmt.Errorf("api: %w", err)
+		}
+	}
+	var iconFile *web.Logo
+	if cfg.UI.Brand.IconFile != "" {
+		if iconFile, err = web.LoadIconFile(cfg.UI.Brand.IconFile); err != nil {
+			return nil, fmt.Errorf("api: %w", err)
 		}
 	}
 	if cfg.Office.Enabled {
@@ -533,8 +539,12 @@ func New(opts Options) (*Server, error) {
 			officeURL = cfg.Office.DiscoveryURL
 		}
 		if s.ui, err = web.New(webassets.Assets(), web.Options{ContentURL: cfg.ContentURL, OfficeURL: officeURL,
-			BrandName: cfg.UI.Brand.Name, BrandAccent: cfg.UI.Brand.Accent, BrandArtwork: cfg.UI.Brand.Artwork()}); err != nil {
+			BrandName: cfg.UI.Brand.Name, BrandAccent: cfg.UI.Brand.Accent, BrandArtwork: cfg.UI.Brand.Artwork(),
+			IconFile: iconFile, LogoFile: s.logo}); err != nil {
 			return nil, fmt.Errorf("api: %w", err)
+		}
+		for _, note := range s.ui.IconNotes() {
+			log.Info(note)
 		}
 	}
 

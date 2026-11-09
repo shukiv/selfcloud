@@ -99,8 +99,8 @@ func TestArtworkMaskableStaysInTheSafeCircle(t *testing.T) {
 func TestCustomNameShowsTheMark(t *testing.T) {
 	h := pwaHandler(t, "Acme", "#053D8E")
 	img := decodePNG(t, get(t, h, http.MethodGet, "/brand/icon-512.png").Body.Bytes())
-	if c := color.RGBAModel.Convert(img.At(256, 256)).(color.RGBA); c.R < 240 {
-		t.Errorf("the mark's centre is %v, want white", c)
+	if !hasWhite(img) {
+		t.Error("the custom name's icon has no white of the mark")
 	}
 	artwork := get(t, artworkHandler(t, "#053D8E"), http.MethodGet, "/brand/icon-512.png").Header().Get("ETag")
 	if got := get(t, h, http.MethodGet, "/brand/icon-512.png").Header().Get("ETag"); got != artwork {
