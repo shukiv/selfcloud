@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { CHORD_WINDOW_MS, IDLE, overlayOpen, readChord, chordBlocked, type ChordEvent, type ChordState } from "./newShortcut";
+import { CHORD_WINDOW_MS, IDLE, overlayOpen, readChord, chordBlocked, chordNeedsOverlayCheck, type ChordEvent, type ChordState } from "./newShortcut";
 
 // A key press as the browser reports it: key is what the layout typed, code is the key's position.
 function press(code: string, extra: Partial<ChordEvent> & { key?: string } = {}): ChordEvent & { key: string } {
@@ -257,5 +257,26 @@ describe("overlayOpen: which menus and popovers are overlays", () => {
     pop.classList.add("ant-popover-hidden");
     expect(overlayOpen(document)).toBe(false);
     document.body.replaceChildren();
+  });
+});
+
+describe("the chord's text fields and its overlay check (F6, F7)", () => {
+  it("a contenteditable element blocks the chord, and so does a node inside it", () => {
+    const editable = document.createElement("div");
+    editable.setAttribute("contenteditable", "true");
+    const inner = document.createElement("span");
+    editable.appendChild(inner);
+    document.body.appendChild(editable);
+    expect(chordBlocked(editable)).toBe(true);
+    expect(chordBlocked(inner)).toBe(true);
+    document.body.replaceChildren();
+  });
+
+  it("looks at the overlays only for a key that could act: Alt+C, or a key while the chord is armed", () => {
+    expect(chordNeedsOverlayCheck(IDLE, press("KeyF"), 1000)).toBe(false);
+    expect(chordNeedsOverlayCheck(IDLE, press("KeyA"), 1000)).toBe(false);
+    expect(chordNeedsOverlayCheck(IDLE, alt("KeyC", "c"), 1000)).toBe(true);
+    expect(chordNeedsOverlayCheck({ armedAt: 1000 }, press("KeyF"), 1500)).toBe(true);
+    expect(chordNeedsOverlayCheck({ armedAt: 1000 }, press("KeyF"), 1000 + CHORD_WINDOW_MS + 1)).toBe(false);
   });
 });
