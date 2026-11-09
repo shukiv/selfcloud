@@ -18,6 +18,8 @@ const OPEN_ITEMS = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdo
 const NEW_MENU = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].find((d) => d.textContent.includes('New folder') && !d.classList.contains('ant-slide-up-leave'))";
 // NEW_MENU_SIZE is the New menu's width and its New folder row's height now, or null when there is no such menu.
 const NEW_MENU_SIZE = `(() => { const d = ${NEW_MENU}; if (!d) return null; const row = [...d.querySelectorAll('[role="menuitem"]')].find((x) => x.textContent.trim() === 'New folder'); if (!row) return null; return { w: Math.round(d.getBoundingClientRect().width), rowH: Math.round(row.getBoundingClientRect().height) }; })()`;
+// TITLE_HEIGHT is the rounded height of the open New menu's Document submenu title.
+const TITLE_HEIGHT = "Math.round([...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === 'Document').getBoundingClientRect().height)";
 // OPEN_MODAL is the modal that is displayed now (a closed one stays in the DOM, with display none).
 const OPEN_MODAL = "[...document.querySelectorAll('.ant-modal-wrap')].find((w) => getComputedStyle(w).display !== 'none')";
 // waitNoDropdown waits for the Escape to close every open dropdown; on failure it names the dropdowns still open.
@@ -107,7 +109,7 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)} && !!document.querySelector('.shell-sider [data-testid="new-button"]:not([disabled])')`, 15000);
 
     // Blank under Document makes a blank Word file in the folder and opens it in the editor (decision 102: a new tab).
-    await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
     await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click()`);
     const listing = page;
@@ -130,23 +132,27 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await waitNoDropdown(page);
 
     // The pointer kind sets the submenu title's height (MED-2): a mouse is 40 px, a finger (a coarse pointer) 44 px.
-    const titleHeight = () => page.evaluate(`Math.round([...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === 'Document').getBoundingClientRect().height)`);
     const reopenNew = async () => {
-      await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+      await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
       await waitNoDropdown(page);
       await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click()`);
       await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);
       await page.waitFor(`${OPEN_ITEMS}.every((x) => x.getBoundingClientRect().height > 0)`, 5000);
     };
+    // A coarse pointer is emulated with touch (setEmulatedMedia's pointer feature does not change the (pointer: coarse) query).
     await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }] });
+    await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
     await reopenNew();
-    const finger = await titleHeight();
+    check(await page.evaluate(`matchMedia('(pointer: coarse)').matches`), 'the coarse pointer is emulated for the title check');
+    // The title is scaled by the open animation (about 40.5 px at first, then 44 px): the wait returns the height once it is 44.
+    const finger = await page.waitFor(`(() => { const h = ${TITLE_HEIGHT}; return h === 44 ? h : null; })()`, 5000);
     check(finger === 44, `a submenu title on a coarse pointer is 44 px (${finger})`);
     await page.send('Emulation.setEmulatedMedia', { features: [] });
+    await page.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await reopenNew();
-    const mouse = await titleHeight();
+    const mouse = await page.waitFor(`(() => { const h = ${TITLE_HEIGHT}; return h === 40 ? h : null; })()`, 5000);
     check(mouse === 40, `a submenu title with a mouse is 40 px (${mouse})`);
-    await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     await waitNoDropdown(page);
 
     // The chord, with the menu closed: Alt+C then F opens the New folder dialog, and it opens nothing else.
