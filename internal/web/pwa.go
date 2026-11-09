@@ -157,6 +157,10 @@ func blend(c uint8, a float64) uint8 {
 	return uint8(float64(c)*(1-a) + 255*a + 0.5)
 }
 
+// iconRenderer is the version of how the icons' pixels are drawn: the scaler, the geometry and the mark. It is in every icon's
+// validator, so a change to the drawing refreshes the icons a client has cached. Bump it when the pixels change.
+const iconRenderer = 1
+
 // encodeIcon draws the icon and encodes it as a PNG. Its validator is a hash of the accent, the picture (the mark, or the icon
 // file or the logo, with the digest of its bytes), the icon's path and its size, so a change to any of them changes the ETag.
 func encodeIcon(spec iconSpec, b brandInfo, art iconArt) (icon, error) {
@@ -164,7 +168,8 @@ func encodeIcon(spec iconSpec, b brandInfo, art iconArt) (icon, error) {
 	if err := png.Encode(&buf, drawIcon(spec, b.accent, art)); err != nil {
 		return icon{}, err
 	}
-	sum := sha256.Sum256([]byte(b.hex + "\n" + art.label + "\n" + art.sum + "\n" + spec.path + "\n" + strconv.Itoa(spec.size)))
+	sum := sha256.Sum256([]byte(b.hex + "\n" + art.label + "\n" + art.sum + "\n" + spec.path + "\n" + strconv.Itoa(spec.size) +
+		"\nrender=" + strconv.Itoa(iconRenderer)))
 	return icon{data: buf.Bytes(), etag: `"` + hex.EncodeToString(sum[:16]) + `"`}, nil
 }
 

@@ -113,7 +113,7 @@ func New(files fs.FS, opts Options) (*Handler, error) {
 	brand := newBrandInfo(opts.BrandName, opts.BrandAccent, opts.BrandArtwork)
 	pick, err := pickIcons(opts.IconFile, opts.LogoFile, brand)
 	if err != nil {
-		return nil, fmt.Errorf("web: %w", err)
+		return nil, err
 	}
 	icons, err := buildIcons(brand, pick.art)
 	if err != nil {

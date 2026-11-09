@@ -90,6 +90,18 @@ func TestIconFileRefusesStartNamingTheSetting(t *testing.T) {
 	}
 }
 
+// TestTruncatedIconFileNamesItsSettingOnce: an icon file whose header reads but whose pixels were cut short refuses the start, and
+// the error names ui.brand.icon_file with one prefix, not a repeated web: prefix.
+func TestTruncatedIconFileNamesItsSettingOnce(t *testing.T) {
+	t.Parallel()
+	full := squarePNG(t, 512, 512)
+	var buf bytes.Buffer
+	_, err := startWithLog(t, &buf, func(c *config.Config) { c.UI.Brand.IconFile = iconTestFile(t, "cut.png", full[:len(full)/2]) })
+	if err == nil || !strings.Contains(err.Error(), "ui.brand.icon_file") || strings.Contains(err.Error(), "web: web:") {
+		t.Errorf("start returned %v, want a refusal that names ui.brand.icon_file with one prefix", err)
+	}
+}
+
 // TestLogoPNGStillStartsWhenTooBig: a logo of 3000 pixels starts the server, and one Info line says the icons show the mark.
 func TestLogoPNGStillStartsWhenTooBig(t *testing.T) {
 	t.Parallel()
