@@ -172,6 +172,29 @@ func TestShippedTemplatesKeepTheirCreator(t *testing.T) {
 	}
 }
 
+// Seven presentations name their picture author in their source only by an e-mail address (kka_libo_design@...). No part of that
+// address ships: the handle is not in any member of the file, and the shipped description keeps only the licence line.
+var emailOnlyAuthors = []string{"lo-beehive", "lo-blue-curve", "lo-forestbird", "lo-lights", "lo-nature-illustration", "lo-pencil", "lo-piano"}
+
+func TestShippedFilesShipNoPartOfAnEmailAddress(t *testing.T) {
+	t.Parallel()
+	for _, name := range emailOnlyAuthors {
+		tpl, ok := Get("builtin:" + name)
+		if !ok {
+			t.Fatalf("builtin:%s is not built in", name)
+		}
+		body, err := tpl.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for member, data := range parts(t, body) {
+			if bytes.Contains(data, []byte("kka_libo_design")) {
+				t.Errorf("%s: %s holds the e-mail-only author's handle", tpl.ID, member)
+			}
+		}
+	}
+}
+
 // Every built-in has a picture: a PNG, by its signature, and the six of ours are shipped with the shipped set.
 func TestEveryBuiltInHasAPNGThumbnail(t *testing.T) {
 	t.Parallel()
