@@ -23,108 +23,33 @@ import (
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
-const adminUsage = `Usage: selfcloud admin <command> [-config FILE] [flags]
-
-These commands work on the database directly, so they need no key. They are safe to run
-while the server is up.
-
-Commands:
-  create-key [-name NAME]        create an installation admin key and print it (shown once)
-  list-keys                      list installation admin keys
-  revoke-key KEY_ID              revoke an installation admin key
-  generate-key                   print a new admin key without storing it, for admin_key_file
-  create-account -name NAME [-external-id ID] [-quota SIZE]
-                                 create an account and an account key; print both
-  create-admin -email EMAIL [-name NAME]
-                                 create a pending admin user; print its set-password link and token
-  reset-password -user ID|EMAIL [-method link|temporary] [-enable] [-ttl DURATION]
-                 [-link-file FILE | -password-stdin] [-yes]
-                                 reset a password from the data folder, with no mail and no server. The
-                                 default is a one-time link (5m to 168h, default users.reset_ttl). The
-                                 temporary method sets a generated 24-character password, printed once,
-                                 ends the user's sessions and makes the user change it at the next use
-                                 (-yes is needed when stdin is not a terminal). -enable enables a disabled
-                                 user. -password-stdin reads the operator's own password from one line.
-  verify -user ID|EMAIL [-ttl DURATION] [-link-file FILE]
-                                 issue a fresh verification link for a pending user, voiding the earlier
-                                 one; an active user is refused
-  users [-account ID] [-admins] [-email EMAIL] [-status active|pending|disabled]
-                                 list users as a tab-separated table (id, email, role, status, account,
-                                 created, must_change); no secret is printed
-  enable -user ID|EMAIL          set a disabled user active again; audited
-  disable -user ID|EMAIL [-yes]  disable an active user and end its sessions, tokens and impersonations.
-                                 The last active installation admin cannot be disabled. -yes is needed
-                                 when stdin is not a terminal
-  end-sessions -user ID|EMAIL [-yes]
-                                 end a user's sessions, delegated tokens and impersonations now, without
-                                 changing the password or the status; audited
-  recount-usage [-account ID]    recompute usage and reserved bytes from the files and uploads
-                                 (all accounts unless -account is given), and print the change
-  search-rebuild                 empty the search index, including the text of files, and queue every folder
-                                 and every file's text, so the server's jobs make it again from the nodes
-                                 (the repair for full-text tables that disagree; the job runs in the server,
-                                 so searches stay partial until it has run, and a large file store takes
-                                 as long as its text takes to read)
-  new-signing-key -i-lost-the-old-key
-                                 make a new signing key when the old one is lost for good. It refuses
-                                 when a key exists, and it invalidates the webhook secrets, the signed
-                                 download links, the delegated tokens and the visitor credentials
-  rewrap-secrets                 seal each webhook secret that only the previous links key opens under
-                                 the current key. Exits 1 if a secret neither key opens, unless
-                                 -disable-unreadable disables those endpoints. Run it before the previous
-                                 key file is removed. Safe to run again
-`
-
 // cliActor is the audit log's name for these commands.
 const cliActor = "cli"
 
+// admin runs `selfcloud admin <command>`. The commands are the table adminCommands; help words print the usage.
 func admin(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, adminUsage)
+		fmt.Fprint(stderr, adminUsage())
 		return 2
 	}
 	cmd, args := args[0], args[1:]
 	switch cmd {
-	case "create-key":
-		return adminCreateKey(args, stdout, stderr)
-	case "list-keys":
-		return adminListKeys(args, stdout, stderr)
-	case "revoke-key":
-		return adminRevokeKey(args, stdout, stderr)
-	case "generate-key":
-		secret, _, _ := auth.NewKey(auth.AdminKeyPrefix)
-		fmt.Fprintln(stdout, secret)
-		return 0
-	case "create-account":
-		return adminCreateAccount(args, stdout, stderr)
-	case "create-admin":
-		return adminCreateAdmin(args, stdout, stderr)
-	case "recount-usage":
-		return adminRecountUsage(args, stdout, stderr)
-	case "search-rebuild":
-		return adminSearchRebuild(args, stdout, stderr)
-	case "rewrap-secrets":
-		return adminRewrapSecrets(args, stdout, stderr)
-	case "new-signing-key":
-		return adminNewSigningKey(args, stdout, stderr)
-	case "reset-password":
-		return adminResetPassword(args, stdout, stderr)
-	case "verify":
-		return adminVerify(args, stdout, stderr)
-	case "users":
-		return adminUsers(args, stdout, stderr)
-	case "enable":
-		return adminEnable(args, stdout, stderr)
-	case "disable":
-		return adminDisable(args, stdout, stderr)
-	case "end-sessions":
-		return adminEndSessions(args, stdout, stderr)
 	case "help", "-h", "-help", "--help":
-		fmt.Fprint(stdout, adminUsage)
+		fmt.Fprint(stdout, adminUsage())
 		return 0
 	}
-	fmt.Fprintf(stderr, "selfcloud admin: unknown command %q\n\n%s", cmd, adminUsage)
+	if c, ok := adminCommandNamed(cmd); ok {
+		return c.run(args, stdout, stderr)
+	}
+	fmt.Fprintf(stderr, "selfcloud admin: unknown command %q\n\n%s", cmd, adminUsage())
 	return 2
+}
+
+// adminGenerateKey prints a new admin key without storing it, for admin_key_file.
+func adminGenerateKey(args []string, stdout, stderr io.Writer) int {
+	secret, _, _ := auth.NewKey(auth.AdminKeyPrefix)
+	fmt.Fprintln(stdout, secret)
+	return 0
 }
 
 // adminStore loads the configuration and opens the database for an admin command.
