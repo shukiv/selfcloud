@@ -144,6 +144,16 @@ for (const ref of firstNames) {
   if (gz === undefined) problems.push(`index.html names ${ref}, which is not a built JavaScript file`);
   else firstLoad += gz;
 }
+// CodeMirror loads with the first text file the viewer shows, never with the page (decision 115). A static import of it from
+// the shell or a first-load page would put its view in a first-load file: the class name of its base theme is the marker.
+const LAZY_MARKERS = [{ marker: 'cm-scroller', what: 'CodeMirror' }];
+for (const { marker, what } of LAZY_MARKERS) {
+  for (const ref of firstNames) {
+    if (jsText.get(ref.replace(/^\//, ''))?.includes(marker)) {
+      problems.push(`${what} is in the first load (${ref}); it must load lazily, with the first text file shown (decision 115)`);
+    }
+  }
+}
 // An index.html that names no module script and no modulepreload would have a first load of 0 and pass the budget. The page
 // must load something, so an empty set fails.
 if (firstNames.size === 0) problems.push('first load is empty: index.html names no module script and no modulepreload link');

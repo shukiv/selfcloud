@@ -261,6 +261,12 @@ export function usePaletteOrLight(): Palette {
   return v ? v.palette : (LIGHT as Palette);
 }
 
+// useModeOrLight is the mode being painted, for a component that may render outside the provider (a unit test): light there.
+export function useModeOrLight(): Mode {
+  const v = useContext(ThemeCtx);
+  return v ? v.mode : "light";
+}
+
 /** The sidebar colours, with the brand applied. */
 export function useSidebar(): Sidebar {
   return useTheme().sidebar;

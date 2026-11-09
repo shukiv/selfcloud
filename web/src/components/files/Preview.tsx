@@ -2,12 +2,12 @@
 
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Alert, Button, Dropdown, Modal } from "antd";
-import { BookOpen, ChevronLeft, ChevronRight, FileOutput, Pencil, X, Download } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, FileOutput, Pencil, Search, X, Download } from "lucide-react";
 import IconButton from "../IconButton";
 import { ApiError } from "../../lib/apiError";
 import { coarsePointer, editorEntry, officeEdit, openEditorTab } from "../../lib/files/editor";
 import { go, location as routerLocation } from "../../lib/router";
-import { contentPath, signedLink } from "../../lib/files/api";
+import { signedLink } from "../../lib/files/api";
 import {
   exportFormatsFor,
   failureKey,
@@ -21,13 +21,20 @@ import { startDownload } from "../../lib/files/ops";
 import { startPlayback, type PlaybackSeed } from "../../lib/files/playback";
 import { downloadAllowed } from "../../lib/files/roles";
 import type { Node } from "../../lib/files/types";
+import { needsSniff } from "../../lib/code/kind";
+import { codeNamed } from "../../lib/code/names";
+import { readCode, sniffs, type Code } from "../../lib/code/read";
 import { useT } from "../../lib/i18n";
 import { get, useStore } from "../../lib/store";
+import { useModeOrLight } from "../../theme/theme";
+import type { FindAction } from "./CodeView";
 import ImageLightbox, { useKeysAfterStep } from "./ImageLightbox";
 import type { Link } from "./MediaPlayer";
 
 // The export dialog is loaded on first use, as the zip dialog is.
 const ExportDialog = lazy(() => import("./ExportDialog"));
+// The code viewer and CodeMirror load with the first text file shown, never with the page (decision 115).
+const CodeView = lazy(() => import("./CodeView"));
 
 // OfficeState is what a document's preview shows: nothing asked yet, the conversion being made, the PDF's address, a failure
 // by its name, or a conversion that has taken too long to wait for.
@@ -39,16 +46,22 @@ type OfficeState =
   | { status: "slow" };
 
 // Preview shows one file full screen. Images and PDFs load through a short signed link on the content origin. Text is
-// read on this origin, the first 1 MiB only, and shown as text, never as HTML. The Svelte page has no text editing, and
-// this one has none either. A video or audio file opens the playlist instead: the session (lib/files/playback.ts) is started
+// read on this origin and shown read-only in the code viewer (CodeView, decision 115), never as HTML. Which files open there is
+// the rule order of lib/code/kind.ts: a file the rules may take is sniffed first (its first 8 KiB), and only text is read for
+// showing, the first 1 MiB. A file the sniff finds binary keeps the viewer it had (a PDF's frame), or shows its card. There is
+// no editing here. A video or audio file opens the playlist instead: the session (lib/files/playback.ts) is started
 // here, and MediaHost shows it in the shell, as the viewer and then as the mini player for audio. This component draws
-// nothing for a media file. A picture is shown over the dimmed page (ImageLightbox). PDFs and text keep the steps described here.
-// Escape closes (antd's Modal calls onCancel); the arrows step through the items, mirrored in right-to-left.
-// Tab stays inside the dialog: antd's Modal traps focus, and the dialog takes focus when it opens.
+// nothing for a media file, except a media file whose name is in the code list (a .ts file stored as video/mp2t): it is
+// sniffed first, and shown as code when it is text. A picture is shown over the dimmed page (ImageLightbox). PDFs and text keep
+// the steps described here. Escape closes (antd's Modal calls onCancel); the arrows step through the items, mirrored in
+// right-to-left. Keys pressed in the code viewer (its caret, its find field) stay there. Tab stays inside the dialog: antd's
+// Modal traps focus, and the dialog takes focus when it opens.
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; link?: Link; text?: string; truncated?: boolean }
+  | { status: "ready"; link?: Link; code?: Code; truncated?: boolean }
+  // none: the file has no inline view (the sniff found no text, and nothing else shows it), so its card is shown.
+  | { status: "none" }
   | { status: "restricted" }
   | { status: "unsupported" }
   | { status: "error" };
@@ -108,9 +121,14 @@ export default function Preview({
   media?: MediaSeed;
 }) {
   const { t } = useT();
-  const mediaMode = media !== undefined;
+  const dark = useModeOrLight() === "dark";
+  // asText is the media file the sniff found to be text (a .ts file stored as video/mp2t): it shows here as code, not in the player.
+  const [asText, setAsText] = useState<string | null>(null);
+  const mediaMode = media !== undefined && asText !== media.start.id;
   const node = items[index] as Node | undefined;
   const [loaded, setLoaded] = useState<Loaded>({ id: null, state: { status: "loading" } });
+  // find is the code viewer's Find action while it shows the file, for the header's Find button.
+  const [find, setFind] = useState<FindAction | null>(null);
   // A newer request makes an older answer stale.
   const token = useRef(0);
   // The document's preview is asked for by the person, and watched until it is ready or has failed. A watch belongs to one file:
@@ -121,9 +139,29 @@ export default function Preview({
   const stopOffice = useRef<(() => void) | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
 
-  // A media file starts its session once, when it is opened. The viewer is MediaHost's, not this component's.
+  // A media file starts its session once, when it is opened. The viewer is MediaHost's, not this component's. A media file
+  // whose name is in the code list is sniffed first (rule 3 of lib/code/kind.ts): text shows here as code, anything else plays.
   useEffect(() => {
-    if (media) startPlayback(media, onClose);
+    if (!media) return;
+    const start = media.start;
+    if (!codeNamed(start.name)) {
+      startPlayback(media, onClose);
+      return;
+    }
+    let live = true;
+    sniffs(start).then(
+      (viewer) => {
+        if (!live) return;
+        if (viewer !== null && viewer !== "restricted") setAsText(start.id);
+        else startPlayback(media, onClose);
+      },
+      () => {
+        if (live) startPlayback(media, onClose);
+      },
+    );
+    return () => {
+      live = false;
+    };
     // The session starts for each seed. onClose is read as it was when the viewer opened.
   }, [media]);
 
@@ -162,7 +200,8 @@ export default function Preview({
     const put = (state: LoadState) => setLoaded({ id: nodeID, state });
     // A file the viewer cannot show gets its card at once; no link or read is made for it. The Svelte page asks
     // for a link here too, and the answer is never shown.
-    if (!previewable(node)) {
+    const sniffing = needsSniff(node);
+    if (!previewable(node) && !sniffing) {
       token.current++;
       put({ status: "ready" });
       return;
@@ -173,22 +212,23 @@ export default function Preview({
     void (async () => {
       const kind: Kind = kindOf(node);
       try {
-        if (kind === "text") {
-          const res = await fetch(contentPath(node.id, "inline"), {
-            credentials: "same-origin",
-            cache: "no-store",
-            headers: { Range: `bytes=0-${TEXT_PREVIEW_BYTES - 1}` },
-          });
+        if (sniffing) {
+          // The rule order of lib/code/kind.ts: text opens in the code viewer, the first 1 MiB of it.
+          const code = await readCode(node);
           if (stale()) return;
-          if (res.status === 403) {
+          if (code === "restricted") {
             put({ status: "restricted" });
             return;
           }
-          if (!res.ok && res.status !== 416) throw new ApiError(res.status, "internal", {}, 0);
-          const text = res.status === 416 ? "" : await res.text();
-          if (stale()) return;
-          put({ status: "ready", text, truncated: node.size > TEXT_PREVIEW_BYTES });
-          return;
+          if (code !== null) {
+            put({ status: "ready", code, truncated: node.size > TEXT_PREVIEW_BYTES });
+            return;
+          }
+          // Rule 6: not text. A file with a viewer of its own keeps it (a PDF); text that is binary, and the rest, show the card.
+          if (kind === "text" || !previewable(node)) {
+            put({ status: "none" });
+            return;
+          }
         }
         const link = await inlineLink(node.id);
         if (stale()) return;
@@ -202,7 +242,8 @@ export default function Preview({
         put(err instanceof ApiError && err.code === "download_restricted" ? { status: "restricted" } : { status: "error" });
       }
     })();
-  }, [node?.id]);
+    // A media file found to be text (asText) is read once it leaves media mode.
+  }, [node?.id, mediaMode]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   useKeysAfterStep(stageRef, node?.id);
@@ -215,6 +256,8 @@ export default function Preview({
   }
 
   function keydown(e: ReactKeyboardEvent) {
+    // The code viewer's own keys stay in it: its caret moves with the arrows, and so does its find field's.
+    if (e.target instanceof Element && e.target.closest(".cm-editor")) return;
     const forward = rtl() ? "ArrowLeft" : "ArrowRight";
     const back = rtl() ? "ArrowRight" : "ArrowLeft";
     if (e.key === forward) {
@@ -244,11 +287,13 @@ export default function Preview({
   // An office document has a preview and exports only while the server offers them (officeOn). Without the feature it is the
   // card it always was: no button, and nothing asked of the server.
   const officeFile = node !== undefined && officeOn && kindNow === "office";
-  const hasPreview = node ? previewable(node) || officeFile : false;
+  const hasPreview = node ? previewable(node) || officeFile || needsSniff(node) : false;
   const shownOffice: OfficeState = node && office.id === node.id ? office.state : { status: "idle" };
   // The editor's entry: Open in editor for a file the caller may edit, Open in viewer otherwise, and none while the feature is off.
   const editorMode = node ? editorEntry(node, editorOn) : null;
   const exportFormats = node && officeFile ? exportFormatsFor(node.name) : [];
+  // The header's Find button shows while the code viewer shows a file with text in it.
+  const codeShown = view.status === "ready" && view.code !== undefined && view.code.text !== "";
 
   if (node && kindNow === "image" && hasPreview) {
     return (
@@ -313,10 +358,11 @@ export default function Preview({
               <IconButton className="convert-btn" label={t("files.convert.export")} icon={<FileOutput size={18} aria-hidden="true" focusable="false" />} />
             </Dropdown>
           )}
+          {codeShown && find && <IconButton className="find-btn" label={find.label} onClick={find.run} icon={<Search size={18} aria-hidden="true" focusable="false" />} />}
           {canDownload && <IconButton label={t("files.act.download")} onClick={() => void download()} icon={<Download size={18} aria-hidden="true" focusable="false" />} />}
         </header>
-        <div style={{ flex: "1 1 auto", minHeight: 0, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {node && !hasPreview ? (
+        <div style={{ flex: "1 1 auto", minHeight: 0, minWidth: 0, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {(node && !hasPreview) || view.status === "none" ? (
             <div>
               <p>{t("files.preview.none")}</p>
               {canDownload && (
@@ -343,10 +389,12 @@ export default function Preview({
           ) : view.status === "ready" && node ? (
             kindNow === "pdf" && view.link ? (
               <iframe title={node.name} src={view.link.url} style={{ width: "100%", height: "100%", border: 0, background: "#fff" }} />
-            ) : kindNow === "text" ? (
-              <div style={{ alignSelf: "stretch", width: "100%" }}>
-                {view.truncated && <p>{t("files.preview.truncated")}</p>}
-                <pre style={{ margin: 0, padding: 16, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{view.text}</pre>
+            ) : view.code ? (
+              <div style={{ alignSelf: "stretch", width: "100%", minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                {view.truncated && <p style={{ margin: 0 }}>{t("files.preview.truncated")}</p>}
+                <Suspense fallback={<p role="status">{t("files.preview.loading")}</p>}>
+                  <CodeView text={view.code.text} pack={view.code.viewer.pack} name={node.name} dark={dark} onFind={setFind} />
+                </Suspense>
               </div>
             ) : null
           ) : null}

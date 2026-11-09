@@ -69,7 +69,8 @@ import { clearClip, clipboard, cutIDs, setClip } from "../lib/files/clipboard";
 import { trayRoom } from "../lib/files/trayRoom";
 import { can, downloadAllowed, atLeast } from "../lib/files/roles";
 import { shareCap } from "../lib/sharing/roles";
-import { kindOf, previewable } from "../lib/files/kind";
+import { kindOf } from "../lib/files/kind";
+import { opensInViewer } from "../lib/code/kind";
 import { tapOpens } from "../lib/files/tap";
 import { readPrefs, writePrefs, type ViewPrefs } from "../lib/files/viewPrefs";
 import { UndoStack } from "../lib/files/undo";
@@ -316,8 +317,9 @@ export default function FilesPage() {
   useNewChord(() => newChordOn.current(), (action) => newRun.current(action));
   const newGround = String(antdTheme.useToken().token.colorBgElevated);
   const impersonating = !!useStore(session)?.impersonation;
-  // viewable is a file the viewer opens: a previewable one, or an office document while its preview is offered.
-  const viewable = (n: Node) => previewable(n) || (officeOn && kindOf(n) === "office");
+  // viewable is a file the viewer opens: a previewable one, one the code viewer's sniff may find to be text (decision 115), or an
+  // office document while its preview is offered.
+  const viewable = (n: Node) => opensInViewer(n) || (officeOn && kindOf(n) === "office");
   // room is the space the upload tray covers at the bottom of the page: the last rows are scrolled clear of it.
   const room = useStore(trayRoom);
   // menu is the right-click menu while it is open (see onRowContext and onSpaceContext).
@@ -617,7 +619,7 @@ export default function FilesPage() {
     // this tab: a new tab needs a click, since the browser blocks a script's pop-up otherwise (oe1).
     const officeMode = q.get("preview") ? editorEntry(found, editorOn) : null;
     if (officeMode !== null) go(editorPath(found.id, officeMode, path), { replace: true });
-    else if (q.get("preview") && previewable(found)) openPreview(found);
+    else if (q.get("preview") && opensInViewer(found)) openPreview(found);
     // A notification's address asks for the file's details, which hold its comments (decision 55).
     else if (q.get("details") === "comments") {
       setTarget(found);

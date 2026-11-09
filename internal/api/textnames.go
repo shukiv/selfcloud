@@ -13,9 +13,9 @@ import (
 )
 
 // The server's copies of the editor's lists (decision 113). The web's copies are TEXT, OFFICE and
-// ARCHIVE in web/src/lib/files/kind.ts, and the code list in web/src/lib/code/names.ts, which ce1 adds. The two sides
-// must match. Nothing checks that yet: the cross-check (a Vitest test that compares the lists) comes with ce1, when
-// names.ts exists. Until then, change both sides in the same commit.
+// ARCHIVE in web/src/lib/files/kind.ts, and the code list in web/src/lib/code/names.ts. The two sides must match:
+// web/src/lib/code/names.test.ts reads this file and fails when they differ (decision 115). Change both sides in the
+// same commit, and keep each list a map literal of "name": true entries, which that test reads.
 
 // codeExtensions is the code list's extensions, without the dot and in lower case.
 var codeExtensions = map[string]bool{

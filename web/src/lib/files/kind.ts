@@ -5,8 +5,10 @@ import type { Node } from './types';
 // The kinds the interface shows an icon and a preview for.
 export type Kind = 'folder' | 'image' | 'pdf' | 'video' | 'audio' | 'text' | 'office' | 'archive' | 'file' | 'shortcut';
 
-const IMAGE = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml']);
-const TEXT = new Set([
+// The type sets are exported for the code viewer's rules (lib/code/kind.ts). TEXT, OFFICE and ARCHIVE have copies on the server
+// (internal/api/textnames.go, decision 113), and lib/code/names.test.ts fails when they differ.
+export const IMAGE: ReadonlySet<string> = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml']);
+export const TEXT: ReadonlySet<string> = new Set([
   'application/json',
   'application/xml',
   'application/javascript',
@@ -17,7 +19,7 @@ const TEXT = new Set([
   'application/sql',
   'application/x-httpd-php',
 ]);
-const OFFICE = new Set([
+export const OFFICE: ReadonlySet<string> = new Set([
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
@@ -28,7 +30,7 @@ const OFFICE = new Set([
   'application/vnd.oasis.opendocument.spreadsheet',
   'application/vnd.oasis.opendocument.presentation',
 ]);
-const ARCHIVE = new Set([
+export const ARCHIVE: ReadonlySet<string> = new Set([
   'application/zip',
   'application/x-tar',
   'application/gzip',
