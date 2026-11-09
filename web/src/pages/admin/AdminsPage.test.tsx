@@ -42,8 +42,21 @@ function hangingAdmins(signals: AbortSignal[]) {
 // The admin's session as the server sends it: mail_configured says whether mail can carry an invitation to a new admin.
 const adminSession = (mailConfigured: boolean) => ({ ...signedAs("admin"), mailConfigured }) as Session;
 
-beforeEach(() => session.set(adminSession(true)));
-afterEach(() => session.set(null));
+// These tests are about a desktop: the inline icons show there, and below md they move into the ⋮ menu (design-tl section 4).
+const desktop = (query: string) => {
+  const m = /min-width: (\d+)px/.exec(query);
+  return { matches: m ? 1200 >= Number(m[1]) : false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
+};
+let savedMatchMedia: typeof window.matchMedia;
+beforeEach(() => {
+  session.set(adminSession(true));
+  savedMatchMedia = window.matchMedia;
+  window.matchMedia = desktop as unknown as typeof window.matchMedia;
+});
+afterEach(() => {
+  session.set(null);
+  window.matchMedia = savedMatchMedia;
+});
 
 // openNew opens the new admin dialog once the list has loaded.
 async function openNew() {

@@ -712,8 +712,8 @@ export interface ItemListProps<T extends { id: string }> {
   items: T[];
   label: string;
   rowLabel: (row: T) => string;
-  // moreLabel names a row's ⋮ button, for a screen reader.
-  moreLabel: (row: T) => string;
+  // moreLabel names a row's ⋮ button, for a screen reader. A list with no ⋮ menu leaves it out.
+  moreLabel?: (row: T) => string;
   columns: ItemColumn<T>[];
   icon?: (row: T) => ReactNode;
   actions?: (row: T) => ItemAction[];
@@ -799,7 +799,7 @@ export function ItemList<T extends { id: string }>(p: ItemListProps<T>) {
             }}
           />
         ))}
-        {items && items.length > 0 && (
+        {items && items.length > 0 && p.moreLabel && (
           <Dropdown menu={{ items }} trigger={["click"]}>
             <IconButton
               aria-haspopup="menu"

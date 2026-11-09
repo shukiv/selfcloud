@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { UserMinus } from "lucide-react";
-import IconButton from "../../components/IconButton";
+import { ItemList, type ItemColumn } from "../../components/files/Listing";
+import EmptyState from "../../components/EmptyState";
 
-import { App, Alert, Button, Input, Modal } from "antd";
+import { App, Alert, Button, Input, Modal, Tag } from "antd";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { useLang, useT } from "../../lib/i18n";
@@ -18,7 +19,7 @@ import type { Person, PersonReply } from "../../lib/manage/types";
 import NotFoundPage from "../NotFoundPage";
 import Confirm from "../../components/Confirm";
 import StatusTag from "../../components/admin/StatusTag";
-import { field, form as formStyle, foot, list, more, muted, pageTitle, row, rowMain, rowTitle, toolbar } from "../../components/admin/adminStyles";
+import { field, form as formStyle, foot, more, pageTitle, toolbar } from "../../components/admin/adminStyles";
 import { useGuard, useOnSessionChange } from "../../components/admin/hooks";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -147,6 +148,33 @@ function AdminsView() {
   };
 
   const emailOk = EMAIL.test(email.trim());
+  // The signed-in admin's own row says so and has no Remove icon: an admin cannot remove themselves here (design-tl 3.1).
+  const selfID = useStore(session)?.user?.id;
+  const columns: ItemColumn<Person>[] = [
+    {
+      key: "name",
+      title: t("files.col.name"),
+      render: (a) => (
+        <span style={{ minWidth: 0 }}>
+          <span>
+            <bdi>{personLabel(a)}</bdi>
+            {a.id === selfID && (
+              <Tag style={{ marginInlineStart: 8 }}>{t("share.you")}</Tag>
+            )}
+          </span>
+          <span style={{ display: "block", fontSize: 13, overflowWrap: "anywhere", color: "var(--ant-color-text-secondary)" }}>
+            <bdi>{a.email}</bdi>
+          </span>
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      title: t("people.detail.status"),
+      width: 120,
+      render: (a) => <StatusTag tone={statusTone(a.status)}>{t(`people.status.${a.status}`)}</StatusTag>,
+    },
+  ];
 
   return (
     <div>
@@ -163,30 +191,29 @@ function AdminsView() {
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
       {/* The list stays on screen when a refetch fails: react-query keeps the data, so the error goes above it. */}
       {!firstFailed && q.data !== undefined && (
-        <ul style={list} aria-label={t("admin.admins.title")}>
-          {admins.map((a) => (
-            <li key={a.id} style={row}>
-              <div style={rowMain}>
-                <p style={rowTitle}>
-                  <bdi>{personLabel(a)}</bdi>
-                </p>
-                <p style={muted}>
-                  <bdi>{a.email}</bdi>
-                </p>
-              </div>
-              <div>
-                <StatusTag tone={statusTone(a.status)}>{t(`people.status.${a.status}`)}</StatusTag>
-              </div>
-              <div>
-                <IconButton label={`${t("admins.remove")}: ${personLabel(a)}`} tip={t("admins.remove")} danger
-                  onClick={() => {
-                    setRemoveError(null);
-                    setRemoving(a);
-                  }} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
-              </div>
-            </li>
-          ))}
-        </ul>
+        <ItemList
+          label={t("admin.admins.title")}
+          items={admins}
+          rowLabel={personLabel}
+          columns={columns}
+          actions={(a) =>
+            a.id === selfID
+              ? []
+              : [
+                  {
+                    key: "remove",
+                    label: `${t("admins.remove")}: ${personLabel(a)}`,
+                    icon: <UserMinus size={18} aria-hidden="true" focusable="false" />,
+                    enabled: true,
+                    run: () => {
+                      setRemoveError(null);
+                      setRemoving(a);
+                    },
+                  },
+                ]
+          }
+          empty={<EmptyState role="status" text={t("admins.empty")} />}
+        />
       )}
       {!firstFailed && q.hasNextPage && (
         <div style={more}>
