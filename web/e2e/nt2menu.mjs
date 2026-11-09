@@ -63,8 +63,13 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     check(JSON.stringify(order) === JSON.stringify(want), `the New menu's groups are in order: ${order.join(' / ')}`);
     const hints = await page.evaluate(`(() => { const row = [...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]')).find((x) => x.textContent.trim() === 'New folder'); return { keys: row?.getAttribute('aria-keyshortcuts'), hint: row?.querySelector('.menu-hint')?.getAttribute('data-hint') ?? null }; })()`);
     check(hints.keys === 'Alt+C F' && hints.hint === 'Alt+C, F', `New folder's row names its chord and shows the hint (${hints.keys}, ${hints.hint})`);
-    const rowHeight = await page.evaluate(`[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]')).find((x) => x.textContent.trim() === 'New folder').getBoundingClientRect().height`);
+    // The rows lay out during the menu's open animation (0 px at the first frame), so wait for a laid-out row first.
+    const rowSel = `[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]'))`;
+    await page.waitFor(`${rowSel}.every((x) => x.getBoundingClientRect().height > 0)`, 5000);
+    const rowHeight = await page.evaluate(`${rowSel}.find((x) => x.textContent.trim() === 'New folder').getBoundingClientRect().height`);
     check(Math.round(rowHeight) === 40, `a mouse's row is 40 px (${Math.round(rowHeight)})`);
+    const heights = await page.evaluate(`${rowSel}.map((x) => x.textContent.trim() + ':' + Math.round(x.getBoundingClientRect().height)).join(' | ')`);
+    check(!/:(?!40\b)\d+/.test(heights), `every row of the New menu, submenu titles too, is 40 px (${heights})`);
     const width = await page.evaluate(`Math.round(document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) > .ant-dropdown-menu').getBoundingClientRect().width)`);
     check(width >= 320 && width <= 400, `the menu is 320 to 400 px wide (${width})`);
 
