@@ -64,6 +64,22 @@ interface Target {
   name: string;
 }
 
+// dottedPath is the text of a name or a property chain (a, a.b, this.m, a.b.c), or undefined for any other expression.
+function dottedPath(e: ts.Expression): string | undefined {
+  if (ts.isIdentifier(e)) return e.text;
+  if (e.kind === ts.SyntaxKind.ThisKeyword) return 'this';
+  if (ts.isPropertyAccessExpression(e)) {
+    const base = dottedPath(e.expression);
+    return base === undefined ? undefined : `${base}.${e.name.text}`;
+  }
+  return undefined;
+}
+
+// memberKey is the key of the member chain rest of the declaration name in file: file:name.rest.
+function memberKey(file: string, name: string, rest: string[]): string {
+  return `${file}:${[name, ...rest].join('.')}`;
+}
+
 // requestRows returns the keys (file:name, file:Class.method, file:object.member) of the exported units in lib that make
 // a request, sorted.
 export function requestRows(sources: Sources): string[] {
@@ -116,13 +132,17 @@ export function requestRows(sources: Sources): string[] {
           const t = resolve(file, callee.text);
           if (t) u.calls.push(`${t.file}:${t.name}`);
         } else if (ts.isPropertyAccessExpression(callee)) {
-          const member = callee.name.text;
-          const owner = callee.expression;
-          if (owner.kind === ts.SyntaxKind.ThisKeyword && cls !== undefined) {
-            u.calls.push(`${file}:${cls}.${member}`);
-          } else if (ts.isIdentifier(owner)) {
-            const t = resolve(file, owner.text);
-            if (t) u.calls.push(`${t.file}:${t.name}.${member}`);
+          // a dotted path (this.m, obj.m, obj.inner.m) is named by its head: this is the unit's class, a name is a
+          // declaration of the file or an import. The rest of the path is the member chain.
+          const path = dottedPath(callee);
+          if (path !== undefined) {
+            const [head, ...rest] = path.split('.');
+            if (head === 'this') {
+              if (cls !== undefined) u.calls.push(memberKey(file, cls, rest));
+            } else {
+              const t = resolve(file, head);
+              if (t) u.calls.push(memberKey(t.file, t.name, rest));
+            }
           }
         }
       }
@@ -137,12 +157,34 @@ export function requestRows(sources: Sources): string[] {
     scan(u, body, file, cls);
   };
 
+  // addObject adds each method and each function member of an object literal as prefix.member, and each member of a
+  // nested object literal as prefix.member.member, at any depth.
+  const addObject = (file: string, prefix: string, exported: boolean, obj: ts.ObjectLiteralExpression): void => {
+    for (const p of obj.properties) {
+      if (ts.isMethodDeclaration(p) && ts.isIdentifier(p.name) && p.body) {
+        add(file, `${prefix}.${p.name.text}`, exported, p);
+      } else if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) {
+        const init = unwrap(p.initializer);
+        if (isFunctionLike(init)) add(file, `${prefix}.${p.name.text}`, exported, init);
+        else if (ts.isObjectLiteralExpression(init)) addObject(file, `${prefix}.${p.name.text}`, exported, init);
+      }
+    }
+  };
+
   for (const [file, sf] of trees) {
     for (const st of sf.statements) {
       if (ts.isFunctionDeclaration(st) && st.name && st.body) {
         add(file, st.name.text, isExported(st), st);
-      } else if (ts.isClassDeclaration(st) && st.name) {
-        const cls = st.name.text;
+      } else if (ts.isFunctionDeclaration(st) && !st.name && st.body && hasModifier(st, ts.SyntaxKind.DefaultKeyword)) {
+        // An anonymous default export is named default.
+        add(file, 'default', true, st);
+      } else if (ts.isExportAssignment(st) && !st.isExportEquals) {
+        // export default <expression>: a function, an arrow or an object literal, named default.
+        const e = unwrap(st.expression);
+        if (isFunctionLike(e)) add(file, 'default', true, e);
+        else if (ts.isObjectLiteralExpression(e)) addObject(file, 'default', true, e);
+      } else if (ts.isClassDeclaration(st) && (st.name || hasModifier(st, ts.SyntaxKind.DefaultKeyword))) {
+        const cls = st.name?.text ?? 'default';
         for (const m of st.members) {
           if (!ts.isMethodDeclaration(m) || !m.body || !ts.isIdentifier(m.name)) continue;
           const priv = ts.isPrivateIdentifier(m.name) || hasModifier(m, ts.SyntaxKind.PrivateKeyword) ||
@@ -157,13 +199,7 @@ export function requestRows(sources: Sources): string[] {
           if (isFunctionLike(init)) {
             add(file, d.name.text, exp, init);
           } else if (ts.isObjectLiteralExpression(init)) {
-            for (const p of init.properties) {
-              if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && isFunctionLike(unwrap(p.initializer))) {
-                add(file, `${d.name.text}.${p.name.text}`, exp, p.initializer);
-              } else if (ts.isMethodDeclaration(p) && ts.isIdentifier(p.name) && p.body) {
-                add(file, `${d.name.text}.${p.name.text}`, exp, p);
-              }
-            }
+            addObject(file, d.name.text, exp, init);
           }
         }
       }
