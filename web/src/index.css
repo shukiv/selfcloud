@@ -776,6 +776,13 @@ a {
 .media-queue-more {
   margin: 0;
 }
+/* The empty folder's box (decision 85, review 1): the dashed box that marks where files are dropped, around EmptyState. The radius
+   is RADIUS in theme/tokens.ts (a number token, so no CSS variable carries it). */
+.empty-folder-drop {
+  padding: 32px 16px;
+  border: 1px dashed var(--ant-color-border);
+  border-radius: 4px;
+}
 .media-add {
   display: flex;
   flex-direction: column;

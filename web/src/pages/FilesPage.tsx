@@ -2199,6 +2199,7 @@ export default function FilesPage() {
                 // The empty state (decision 111): "This folder is empty." on its own line, the hint under it, and the Upload button.
                 <EmptyState
                   testId="empty-folder"
+                  className="empty-folder-drop"
                   text={
                     <>
                       <h2 style={{ margin: 0, fontSize: "inherit", fontWeight: 600, color: token.colorText }}>{t("files.empty")}</h2>
@@ -2211,7 +2212,7 @@ export default function FilesPage() {
                   </Button>
                 </EmptyState>
               ) : (
-                <EmptyState role="status" text={t("files.empty")} />
+                <EmptyState role="status" className="empty-folder-drop" text={t("files.empty")} />
               )
             ) : (
               <>
