@@ -391,8 +391,10 @@ func principalOfToken(pl tokenPayload, d *store.Delegation) *auth.Principal {
 		ExpiresAt: time.UnixMilli(pl.ExpiresAt).UTC(),
 	}
 	if pl.UserID != "" {
+		// The user's must-change flag comes from the same Delegation read, so checkImpersonation refuses the token
+		// wherever it refuses the user's session (decision 116).
 		return &auth.Principal{Kind: auth.KindUser, ID: pl.UserID, AccountID: pl.AccountID, UserID: pl.UserID,
-			Role: d.UserRole, Token: scope}
+			Role: d.UserRole, Token: scope, MustChangePassword: d.UserMustChangePassword}
 	}
 	return &auth.Principal{Kind: auth.KindAccountKey, ID: pl.MintedBy, AccountID: pl.AccountID, Token: scope}
 }
