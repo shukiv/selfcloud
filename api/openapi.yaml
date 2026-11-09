@@ -18,6 +18,11 @@ info:
     from allowed origins are answered before routing and authentication. The headers a page may
     read are listed in `docs/design.md` section 7.
 
+    **A user who must change its password.** Such a user reaches only `GET /me`, `POST /me/password` and
+    sign-out, as its browser session does. A delegated token acting as that user gets `403 forbidden` with
+    `details.reason = password_change_required` on every other route. Those three routes take a session only,
+    so a token gets `401 unauthenticated` there (decision 116).
+
     This document grows with each slice of the build. Only what it lists is implemented.
 servers:
   - url: /
@@ -931,7 +936,8 @@ paths:
         then the token's intersected with the user's grants), and as the key otherwise. It reaches
         only `folders`, and at most at `permissions`; it never manages the account. Its lifetime is
         `ttl`, capped by `tokens.max_ttl`. The token is in this response and nowhere else. The audit
-        log records the mint without it. Rate-limited per account key.
+        log records the mint without it. Rate-limited per account key. A token acting as a user who must change its
+        password is refused on each route as that user's session is; see the introduction.
       security: [{ bearer: [] }]
       requestBody:
         required: true
