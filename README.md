@@ -11,7 +11,9 @@ can be up to 100 GB, uploaded in resumable pieces.
 
 **Status: early development.** The design is in [docs/design.md](docs/design.md) and is being
 built in slices. The API document at [api/openapi.yaml](api/openapi.yaml) lists only what works
-today.
+today. The file lists (recent, starred, shared, trash, folder listings, the largest files and
+search) take `type` (a file group, `folder` or `shortcut`) and a `modified_after` / `modified_before`
+range.
 
 ## Build and run
 
