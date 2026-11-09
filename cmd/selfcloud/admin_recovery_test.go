@@ -230,9 +230,9 @@ func TestResetLinkRedeemsThroughTheRoute(t *testing.T) {
 				t.Fatalf("output = %q; want user_id=%s method=link", out, tc.u.ID)
 			}
 			tok := tokenOf(t, kvs["link"])
-			expires, err := time.Parse(time.RFC3339, kvs["expires"])
+			expires, err := time.Parse(time.RFC3339, kvs["expires_at"])
 			if err != nil {
-				t.Fatalf("expires %q: %v", kvs["expires"], err)
+				t.Fatalf("expires_at %q: %v", kvs["expires_at"], err)
 			}
 			if d := time.Until(expires) - f.cfg.Users.ResetTTL.D(); d > time.Minute || d < -time.Minute {
 				t.Errorf("expires %v is not the reset TTL from now", expires)
@@ -351,7 +351,7 @@ func TestTemporaryPasswordIsGeneratedAndEndsEverything(t *testing.T) {
 		t.Fatalf("temporary = %d %q %q", code, out, errOut)
 	}
 	pw := kv(out)["password"]
-	if len(pw) != 24 || strings.ContainsAny(pw, "0O1lI") || strings.Count(out, pw) != 1 || strings.Contains(errOut, pw) {
+	if len(pw) != 24 || !inTempAlphabet(pw) || strings.Count(out, pw) != 1 || strings.Contains(errOut, pw) {
 		t.Fatalf("password %q: want 24 characters from the unambiguous alphabet, printed once", pw)
 	}
 	if got := f.reload(u); !got.MustChangePassword {
@@ -479,7 +479,7 @@ func TestResetTTLBounds(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("-ttl 5m = %d %q", code, errOut)
 	}
-	expires, _ := time.Parse(time.RFC3339, kv(out)["expires"])
+	expires, _ := time.Parse(time.RFC3339, kv(out)["expires_at"])
 	if d := time.Until(expires) - 5*time.Minute; d > time.Minute || d < -time.Minute {
 		t.Errorf("-ttl 5m expires %v", expires)
 	}
