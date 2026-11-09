@@ -93,6 +93,10 @@ var adminCommands = []adminCommand{
                                  list accounts, oldest first, as a tab-separated table (id, name, status,
                                  external ID, created, users, used bytes, quota bytes); no key is printed
 `, run: adminAccounts},
+	{name: "audit", help: `  audit [-account ID] [-user ID|EMAIL] [-action PREFIX] [-since RFC3339|DURATION] [-limit N]
+                                 list audit entries, newest first, as a tab-separated table (time, account,
+                                 actor, action, target, details); -limit defaults to 100 and is 1 to 10000
+`, run: adminAudit},
 }
 
 // adminUsage returns the usage text of the admin commands, built from adminCommands.

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -152,6 +153,72 @@ func (s *Store) AuditLogFiltered(ctx context.Context, accountID, viewerUserID st
 		next = encodeCursor(strconv.FormatInt(out[len(out)-1].ID, 10))
 	}
 	return out, next, nil
+}
+
+// AdminAuditQuery narrows the listing of `selfcloud admin audit`, which reads every account and the installation. Empty
+// fields do not narrow. Every value is bound as a parameter; only the placeholders are built.
+type AdminAuditQuery struct {
+	AccountID    string    // one account's entries; "" for every entry, the installation-wide ones included
+	UserIDs      []string  // entries whose actor or target is one of these user IDs
+	ActionPrefix string    // entries whose action starts with this text, matched literally
+	Since        time.Time // entries at or after this time; the zero time does not narrow
+	Limit        int       // the most entries to return
+}
+
+// AdminAuditEntries lists the audit entries that q narrows to, newest first, at most q.Limit of them.
+func (s *Store) AdminAuditEntries(ctx context.Context, q AdminAuditQuery) ([]*AuditEntry, error) {
+	where := []string{"1 = 1"}
+	var args []any
+	if q.AccountID != "" {
+		where = append(where, "account_id = ?")
+		args = append(args, q.AccountID)
+	}
+	if len(q.UserIDs) > 0 {
+		marks := strings.TrimSuffix(strings.Repeat("?,", len(q.UserIDs)), ",")
+		where = append(where, "(actor_id IN ("+marks+") OR target IN ("+marks+"))")
+		for _, u := range q.UserIDs {
+			args = append(args, u)
+		}
+		for _, u := range q.UserIDs {
+			args = append(args, u)
+		}
+	}
+	if q.ActionPrefix != "" {
+		where = append(where, `action LIKE ? ESCAPE '\'`)
+		args = append(args, likeEscaper.Replace(q.ActionPrefix)+"%")
+	}
+	if !q.Since.IsZero() {
+		where = append(where, "time >= ?")
+		args = append(args, millis(q.Since))
+	}
+	args = append(args, q.Limit)
+	rows, err := s.r.QueryContext(ctx, `SELECT id, time, account_id, actor_kind, actor_id, action,
+		target, ip, user_agent, outcome, details, private_user_id FROM audit_log
+		WHERE `+strings.Join(where, " AND ")+` ORDER BY id DESC LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		var t int64
+		var acc, details, private sql.NullString
+		if err := rows.Scan(&e.ID, &t, &acc, &e.ActorKind, &e.ActorID, &e.Action, &e.Target, &e.IP,
+			&e.UserAgent, &e.Outcome, &details, &private); err != nil {
+			return nil, err
+		}
+		e.Time = fromMillis(t)
+		e.AccountID = acc.String
+		e.PrivateUserID = private.String
+		if details.Valid {
+			if err := json.Unmarshal([]byte(details.String), &e.Details); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, &e)
+	}
+	return out, rows.Err()
 }
 
 // PruneAccountAudit removes up to batch audit entries of one account and reports how many it removed. The deletion of

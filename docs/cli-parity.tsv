@@ -1,5 +1,6 @@
 kind	key	command	slice	reason
 cmd	accounts	accounts	cli2	local only (design 4.6)
+cmd	audit	audit	cli2	local only (design 4.6)
 cmd	create-account	create-account	pre-cli1	local only (design 4.6)
 cmd	create-admin	create-admin	pre-cli1	local only (design 4.6)
 cmd	create-key	create-key	pre-cli1	local only (design 4.6)
