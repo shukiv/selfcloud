@@ -55,7 +55,7 @@ func exec(s *Store, q string, args ...any) error {
 	return err
 }
 
-func names(kids []*Node) []string {
+func nameList(kids []*Node) []string {
 	var out []string
 	for _, k := range kids {
 		out = append(out, k.Name)
@@ -95,7 +95,7 @@ func TestChildrenFilteredByType(t *testing.T) {
 		if more {
 			t.Errorf("%s: more with a limit of 10", c.name)
 		}
-		if got := names(kids); !reflect.DeepEqual(got, c.want) {
+		if got := nameList(kids); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: %v, want %v", c.name, got, c.want)
 		}
 	}
@@ -106,12 +106,13 @@ func TestChildrenFilteredByModifiedRange(t *testing.T) {
 	s := filteredFixture(t)
 	f := ListFilter{ModAfter: i64p(2000), ModBefore: i64p(3000)}
 	kids, _ := listFiltered(t, s, ChildSort{Key: SortName}, 10, nil, f)
-	if got := names(kids); !reflect.DeepEqual(got, []string{"b.docx"}) {
+	if got := nameList(kids); !reflect.DeepEqual(got, []string{"b.docx"}) {
 		t.Errorf("[2000, 3000): %v, want [b.docx]", got)
 	}
 	kids, _ = listFiltered(t, s, ChildSort{Key: SortName}, 10, nil, ListFilter{ModAfter: i64p(2000)})
-	if got := names(kids); !reflect.DeepEqual(got, []string{"Folder", "Link", "b.docx", "c.jpg"}) {
-		t.Errorf("from 2000 on: %v, want the folder, the shortcut, b.docx and c.jpg", got)
+	// The range applies to every kind: the folder is modified at 1000 and the shortcut at 0, so neither is from 2000 on.
+	if got := nameList(kids); !reflect.DeepEqual(got, []string{"b.docx", "c.jpg"}) {
+		t.Errorf("from 2000 on: %v, want [b.docx c.jpg]", got)
 	}
 }
 
@@ -134,7 +135,7 @@ func TestChildrenFilteredPagesOnce(t *testing.T) {
 	var after *ChildPos
 	for pages := 0; pages < 10; pages++ {
 		kids, more := listFiltered(t, s, ChildSort{Key: SortName}, 2, after, f)
-		got = append(got, names(kids)...)
+		got = append(got, nameList(kids)...)
 		if !more {
 			break
 		}
@@ -164,7 +165,8 @@ func TestChildrenFilteredSizeOrder(t *testing.T) {
 			files = append(files, k.Name)
 		}
 	}
-	if !reflect.DeepEqual(files, []string{"c.jpg", "a.pdf", "b.docx"}) {
+	// b.docx keeps the helper's size of 10, which is above c.jpg's 9 and a.pdf's 5.
+	if !reflect.DeepEqual(files, []string{"b.docx", "c.jpg", "a.pdf"}) {
 		t.Errorf("size desc: %v", files)
 	}
 }

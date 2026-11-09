@@ -67,8 +67,18 @@ func (s ChildSort) PosOf(n *Node) ChildPos {
 // the first page). more says whether a child follows the last one returned. Folders come first, then shortcuts, then
 // files, each kind in the order s; the kinds are read one after another, each from its own index.
 func (s *Store) ChildrenSorted(ctx context.Context, accountID, parentID string, order ChildSort, limit int, after *ChildPos) (out []*Node, more bool, err error) {
+	return s.ChildrenFiltered(ctx, accountID, parentID, order, limit, after, ListFilter{})
+}
+
+// ChildrenFiltered is ChildrenSorted narrowed by a list filter (decision 110). A kind the filter excludes is not read at
+// all: a folder or shortcut type reads only that kind, and a file group reads only files. The walk is the same as the
+// unfiltered one, so a page's cursor resumes the filtered walk where it stopped.
+func (s *Store) ChildrenFiltered(ctx context.Context, accountID, parentID string, order ChildSort, limit int, after *ChildPos, f ListFilter) (out []*Node, more bool, err error) {
 	if limit < 1 {
 		return nil, false, fmt.Errorf("store: limit %d is less than 1", limit)
+	}
+	if err := f.Validate(); err != nil {
+		return nil, false, err
 	}
 	start := 0
 	if after != nil {
@@ -77,11 +87,14 @@ func (s *Store) ChildrenSorted(ctx context.Context, accountID, parentID string, 
 		}
 	}
 	for i := start; i < len(childSegments) && len(out) <= limit; i++ {
+		if !f.admitsKind(childSegments[i]) {
+			continue
+		}
 		var from *ChildPos
 		if after != nil && i == start {
 			from = after
 		}
-		rows, err := s.childSegment(ctx, accountID, parentID, childSegments[i], order, limit+1-len(out), from)
+		rows, err := s.childSegment(ctx, accountID, parentID, childSegments[i], order, limit+1-len(out), from, f)
 		if err != nil {
 			return nil, false, err
 		}
@@ -97,12 +110,18 @@ func (s *Store) ChildrenSorted(ctx context.Context, accountID, parentID string, 
 // childSegmentSQL is the statement that reads one kind of a listing. Its placeholders are, in order: the account,
 // the parent, the kind, then (after a position) the position's bounds, then the limit. childSegmentArgs gives the bounds.
 func childSegmentSQL(order ChildSort, after bool) string {
+	return childSegmentSQLWhere(order, after, "")
+}
+
+// childSegmentSQLWhere is childSegmentSQL with the filter's clauses (ListFilter.Where) after the kind. Its placeholders
+// are, in order: the account, the parent, the kind, the filter's values, then the position's bounds, then the limit.
+func childSegmentSQLWhere(order ChildSort, after bool, where string) string {
 	col, _ := childKeyColumn(order.Key)
 	dir := "ASC"
 	if order.Desc {
 		dir = "DESC"
 	}
-	query := nodeSelect + " WHERE n.account_id = ? AND n.parent_id = ? AND n.trashed_at IS NULL AND n.kind = ?"
+	query := nodeSelect + " WHERE n.account_id = ? AND n.parent_id = ? AND n.trashed_at IS NULL AND n.kind = ?" + where
 	if after {
 		if order.Key == SortName {
 			// The planner uses a range on a column with a collation, but not a row value that includes one. So the
@@ -133,16 +152,17 @@ func childSegmentArgs(order ChildSort, from ChildPos) []any {
 }
 
 // childSegment reads up to limit children of one kind, after from when it is set.
-func (s *Store) childSegment(ctx context.Context, accountID, parentID, kind string, order ChildSort, limit int, from *ChildPos) ([]*Node, error) {
+func (s *Store) childSegment(ctx context.Context, accountID, parentID, kind string, order ChildSort, limit int, from *ChildPos, f ListFilter) ([]*Node, error) {
 	if _, err := childKeyColumn(order.Key); err != nil {
 		return nil, err
 	}
-	args := []any{accountID, parentID, kind}
+	where, fargs := f.Where("n")
+	args := append([]any{accountID, parentID, kind}, fargs...)
 	if from != nil {
 		args = append(args, childSegmentArgs(order, *from)...)
 	}
 	args = append(args, limit)
-	rows, err := s.r.QueryContext(ctx, childSegmentSQL(order, from != nil), args...)
+	rows, err := s.r.QueryContext(ctx, childSegmentSQLWhere(order, from != nil, where), args...)
 	if err != nil {
 		return nil, err
 	}
