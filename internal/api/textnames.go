@@ -28,8 +28,9 @@ var codeExtensions = map[string]bool{
 	"txt": true, "csv": true, "tsv": true, "log": true,
 }
 
-// codeNames is the code list's file names that have no extension. The match is exact.
-var codeNames = map[string]bool{"Dockerfile": true, "Makefile": true}
+// codeNames is the code list's file names that have no extension, in lower case. The match is in any case, as the
+// extensions are.
+var codeNames = map[string]bool{"dockerfile": true, "makefile": true}
 
 // textTypes is the TEXT set: media types that are text whatever the name says. A text/* type is text as well.
 var textTypes = map[string]bool{
@@ -67,7 +68,7 @@ func mediaType(v string) string {
 
 // codeNamed reports whether a file name is in the code list: its whole name, or its extension (any case).
 func codeNamed(name string) bool {
-	if codeNames[name] {
+	if codeNames[strings.ToLower(name)] {
 		return true
 	}
 	ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
