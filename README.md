@@ -105,6 +105,19 @@ its flag, or a last admin or owner; 2 for bad usage, a missing `-yes`, an email 
 have (the command lists their IDs), or a password that fails the rules. `selfcloud admin help` lists
 the flags. In Docker, prefix each command with `docker exec <container>`.
 
+### Listing accounts and the audit log
+
+`selfcloud admin accounts` lists the accounts, oldest first: id, name, status, external ID, created, users,
+used bytes and quota bytes. It filters by `-status active|suspended`, by `-name` (a part of the name, case and
+accents ignored) and by `-external-id` (exact). `selfcloud admin audit` lists the audit entries of every account
+and of the installation, newest first, with `-account ID`, `-user ID|EMAIL` (the actor or the target),
+`-action PREFIX`, `-since RFC3339|DURATION` and `-limit N` (100 by default, 1 to 10000). Both print a tab-separated
+table with a header line, need no key, and write no audit row. Exit 2 is a usage error.
+
+The commands are listed in `docs/cli-parity.tsv`, which pairs every route, every web client function that calls
+the API and every admin command with its CLI command or a reason. A new route or API function adds its row in the
+same commit; the Go and web tests fail without it.
+
 ## Checking the data directory
 
 `selfcloud fsck` compares the files under the data directory with the database. It changes no blob, row or derived file, except that `--repair` renames orphan blobs into quarantine; it can run
