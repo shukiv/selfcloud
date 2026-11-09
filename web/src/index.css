@@ -1612,13 +1612,24 @@ tr[data-drop-state="refused"] > td {
   flex: none;
 }
 /* A disabled icon button passes its pointer events to its wrapper, which opens the tooltip (IconButton.tsx): a browser may not
-   deliver them to a disabled control. */
+   deliver them to a disabled control. An aria-disabled one (a busy row's icon, which keeps the focus; decision 114) does the
+   same, so it gets no hover background: antd gives that to a text button that is not :disabled (tl1 round 4). */
 .icon-btn-wrap > .icon-btn:disabled {
+  pointer-events: none;
+}
+.icon-btn-wrap > .icon-btn[aria-disabled="true"] {
   pointer-events: none;
 }
 /* The wrapper takes the pointer for a disabled button, so it shows the cursor the button would have (ic2, decision 71). */
 .icon-btn-wrap:has(> .icon-btn:disabled) {
   cursor: not-allowed;
+}
+.icon-btn-wrap:has(> .icon-btn[aria-disabled="true"]) {
+  cursor: not-allowed;
+}
+/* An aria-disabled icon button is drawn in the disabled colour, as antd draws a disabled one. */
+.icon-btn.ant-btn.ant-btn[aria-disabled="true"] {
+  color: var(--ant-color-text-disabled);
 }
 @media (pointer: coarse) {
   .icon-btn.ant-btn.ant-btn {

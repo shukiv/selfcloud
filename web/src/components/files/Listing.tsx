@@ -330,7 +330,9 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   // rowIcon is one of a row's icons. Its click is its own: it does not reach the row. A disabled one keeps its place and the
   // focus: it is aria-disabled, drawn in the disabled colour, and its click and keys do nothing. It is not a disabled button,
   // since a browser takes the focus from a button that turns disabled (the re-check's e2e found the focus on BODY), and the
-  // row's icons turn disabled under the pressed one while its request is on its way (decision 114).
+  // row's icons turn disabled under the pressed one while its request is on its way (decision 114). index.css passes its
+  // pointer to the wrapper, as for a disabled one, so it has no hover background and shows the not-allowed cursor; its colour is
+  // set here too, so it wins over a danger icon's, which IconButton sets inline.
   const rowIcon = (a: { key: string; label: string; icon: ReactNode; run: () => void; disabled?: boolean; danger?: boolean }, tab?: number) => (
     <IconButton
       key={a.key}
@@ -339,7 +341,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       tabIndex={tab}
       aria-disabled={a.disabled ? true : undefined}
       danger={a.danger}
-      style={a.disabled ? { color: token.colorTextDisabled, cursor: "not-allowed" } : undefined}
+      style={a.disabled ? { color: token.colorTextDisabled } : undefined}
       onClick={(e) => {
         e.stopPropagation();
         if (a.disabled) return;
