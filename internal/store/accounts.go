@@ -158,6 +158,20 @@ func (s AccountSort) PosOf(a *Account) AccountPos {
 // first page). more says whether an account follows the last one returned. The sort key is a fixed column, never caller
 // text, so no value of a sort reaches the SQL as text.
 func (s *Store) AccountsSorted(ctx context.Context, f AccountFilter, order AccountSort, limit int, after *AccountPos) (out []*Account, more bool, err error) {
+	query, args := accountsSortedSQL(f, order, limit, after)
+	out, err = s.listedAccounts(ctx, query, args)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(out) > limit {
+		return out[:limit], true, nil
+	}
+	return out, false, nil
+}
+
+// accountsSortedSQL is the query of AccountsSorted and its arguments. It reads one account more than limit, which says
+// whether another page follows.
+func accountsSortedSQL(f AccountFilter, order AccountSort, limit int, after *AccountPos) (string, []any) {
 	where, args := accountFilterWhere(f)
 	key, dir, op := "created_at", "ASC", ">"
 	if order.ByName {
@@ -176,59 +190,39 @@ func (s *Store) AccountsSorted(ctx context.Context, f AccountFilter, order Accou
 		}
 	}
 	args = append(args, limit+1)
-	rows, err := s.r.QueryContext(ctx, "SELECT "+accountListCols+" FROM accounts WHERE "+where+
-		" ORDER BY "+key+" "+dir+", id "+dir+" LIMIT ?", args...)
-	if err != nil {
-		return nil, false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		a, err := scanListedAccount(rows)
-		if err != nil {
-			return nil, false, err
-		}
-		out = append(out, a)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, false, err
-	}
-	if len(out) > limit {
-		return out[:limit], true, nil
-	}
-	return out, false, nil
+	return "SELECT " + accountListCols + " FROM accounts WHERE " + where +
+		" ORDER BY " + key + " " + dir + ", id " + dir + " LIMIT ?", args
 }
 
-// AccountsFiltered lists the accounts that f narrows to, oldest first, one page at a time.
-func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) ([]*Account, string, error) {
-	where, args := accountFilterWhere(f)
-	if p.Cursor != "" {
-		parts, err := decodeCursor(p.Cursor, 2)
-		if err != nil {
-			return nil, "", err
-		}
-		ms, err := strconv.ParseInt(parts[0], 10, 64)
-		if err != nil {
-			return nil, "", ErrBadCursor
-		}
-		where += " AND (created_at, id) > (?, ?)"
-		args = append(args, ms, parts[1])
-	}
-	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, "SELECT "+accountListCols+" FROM accounts WHERE "+
-		where+" ORDER BY created_at, id LIMIT ?", args...)
+// listedAccounts runs a query of an account list and reads its rows.
+func (s *Store) listedAccounts(ctx context.Context, query string, args []any) ([]*Account, error) {
+	rows, err := s.r.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	defer rows.Close()
 	var out []*Account
 	for rows.Next() {
 		a, err := scanListedAccount(rows)
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 		out = append(out, a)
 	}
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AccountsFiltered lists the accounts that f narrows to, oldest first, one page at a time.
+func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) ([]*Account, string, error) {
+	query, args, err := accountsFilteredSQL(f, p)
+	if err != nil {
+		return nil, "", err
+	}
+	out, err := s.listedAccounts(ctx, query, args)
+	if err != nil {
 		return nil, "", err
 	}
 	next := ""
@@ -238,6 +232,26 @@ func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) (
 		next = encodeCursor(strconv.FormatInt(millis(last.CreatedAt), 10), last.ID)
 	}
 	return out, next, nil
+}
+
+// accountsFilteredSQL is the query of AccountsFiltered and its arguments, oldest first, resuming after p's cursor. It reads
+// one account more than the page, which says whether another page follows.
+func accountsFilteredSQL(f AccountFilter, p Page) (string, []any, error) {
+	where, args := accountFilterWhere(f)
+	if p.Cursor != "" {
+		parts, err := decodeCursor(p.Cursor, 2)
+		if err != nil {
+			return "", nil, err
+		}
+		ms, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return "", nil, ErrBadCursor
+		}
+		where += " AND (created_at, id) > (?, ?)"
+		args = append(args, ms, parts[1])
+	}
+	args = append(args, p.Limit+1)
+	return "SELECT " + accountListCols + " FROM accounts WHERE " + where + " ORDER BY created_at, id LIMIT ?", args, nil
 }
 
 // InsertAccount adds a. It returns ErrConflict if the external ID is taken.
