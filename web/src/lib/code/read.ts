@@ -50,10 +50,12 @@ async function readUpTo(body: ReadableStream<Uint8Array>, n: number): Promise<Ui
   return out.slice(0, got);
 }
 
-// Code is a file's text as the viewer shows it, and how it shows.
+// Code is a file's text as the viewer shows it, and how it shows. utf8 is false when the bytes are not valid UTF-8: the text
+// then has U+FFFD for each bad sequence, and the viewer says so (design-ce 2.3).
 export interface Code {
   text: string;
   viewer: Viewer;
+  utf8: boolean;
 }
 
 // sniffs reads a file's first bytes and applies the rule order: the viewer it opens in, null when it does not open in the
@@ -70,7 +72,7 @@ export async function sniffs(node: Node): Promise<Viewer | null | "restricted"> 
 export async function readCode(node: Node): Promise<Code | null | "restricted"> {
   if (node.size === 0) {
     const viewer = viewerOf(node, "text");
-    return viewer && { text: "", viewer };
+    return viewer && { text: "", viewer, utf8: true };
   }
   const head = await readHead(node.id, SNIFF_BYTES);
   if (head === "restricted") return head;
@@ -79,5 +81,6 @@ export async function readCode(node: Node): Promise<Code | null | "restricted"> 
   // A file no larger than the sniff was read whole by it.
   const bytes = node.size <= SNIFF_BYTES ? head : await readHead(node.id, TEXT_PREVIEW_BYTES);
   if (bytes === "restricted") return bytes;
-  return { text: decodeText(bytes, bytes.length < node.size).text, viewer };
+  const { text, utf8 } = decodeText(bytes, bytes.length < node.size);
+  return { text, viewer, utf8 };
 }

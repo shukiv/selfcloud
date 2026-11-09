@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The code viewer's own strings, in the seven languages (decision 115). They are TypeScript, not a JSON catalogue: they load
-// with the viewer's chunk, which is not named after a language, so check-dist does not count them against a language's
-// budget, and the main catalogues do not grow (design-ce 3.3). text.test.ts checks every language has every string.
+// with the preview and the viewer, whose chunks are not named after a language, so check-dist does not count them against a
+// language's budget, and the main catalogues do not grow (design-ce 3.3). text.test.ts checks every language has every string.
 import type { Lang } from "../i18n";
 
 export interface CodeText {
@@ -21,6 +21,8 @@ export interface CodeText {
   go: string;
   // The empty file's state.
   empty: string;
+  // The notice over a file that is not valid UTF-8 (design-ce 2.3). The character is the one shown for each bad sequence.
+  notUtf8: string;
 }
 
 export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
@@ -38,6 +40,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     goToLine: "Go to line",
     go: "go",
     empty: "This file is empty.",
+    notUtf8: "This file is not UTF-8 text. Characters that could not be read show as �.",
   },
   es: {
     find: "Buscar",
@@ -53,6 +56,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     goToLine: "Ir a la línea",
     go: "ir",
     empty: "Este archivo está vacío.",
+    notUtf8: "Este archivo no es texto UTF-8. Los caracteres que no se pudieron leer se muestran como �.",
   },
   fr: {
     find: "Rechercher",
@@ -68,6 +72,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     goToLine: "Aller à la ligne",
     go: "aller",
     empty: "Ce fichier est vide.",
+    notUtf8: "Ce fichier n’est pas du texte UTF-8. Les caractères qui n’ont pas pu être lus s’affichent sous la forme �.",
   },
   pt: {
     find: "Localizar",
@@ -83,6 +88,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     goToLine: "Ir para a linha",
     go: "ir",
     empty: "Este ficheiro está vazio.",
+    notUtf8: "Este ficheiro não é texto UTF-8. Os caracteres que não foi possível ler aparecem como �.",
   },
   ru: {
     find: "Найти",
@@ -98,6 +104,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     goToLine: "Перейти к строке",
     go: "перейти",
     empty: "Этот файл пуст.",
+    notUtf8: "Этот файл не в кодировке UTF-8. Символы, которые не удалось прочитать, показаны как �.",
   },
   ar: {
     find: "بحث",
@@ -113,6 +120,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     goToLine: "الانتقال إلى السطر",
     go: "انتقال",
     empty: "هذا الملف فارغ.",
+    notUtf8: "هذا الملف ليس نصًا بترميز UTF-8. تظهر الأحرف التي تعذّرت قراءتها بالشكل �.",
   },
   he: {
     find: "חיפוש",
@@ -128,6 +136,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     goToLine: "מעבר לשורה",
     go: "מעבר",
     empty: "הקובץ הזה ריק.",
+    notUtf8: "הקובץ הזה אינו טקסט בקידוד UTF-8. תווים שלא ניתן היה לקרוא מוצגים כ־�.",
   },
 };
 

@@ -24,7 +24,8 @@ import type { Node } from "../../lib/files/types";
 import { needsSniff } from "../../lib/code/kind";
 import { codeNamed } from "../../lib/code/names";
 import { readCode, sniffs, type Code } from "../../lib/code/read";
-import { useT } from "../../lib/i18n";
+import { codeText } from "../../lib/code/text";
+import { useLang, useT } from "../../lib/i18n";
 import { get, useStore } from "../../lib/store";
 import { useModeOrLight } from "../../theme/theme";
 import type { FindAction } from "./CodeView";
@@ -121,6 +122,7 @@ export default function Preview({
   media?: MediaSeed;
 }) {
   const { t } = useT();
+  const lang = useLang();
   const dark = useModeOrLight() === "dark";
   // asText is the media file the sniff found to be text (a .ts file stored as video/mp2t): it shows here as code, not in the player.
   const [asText, setAsText] = useState<string | null>(null);
@@ -393,6 +395,21 @@ export default function Preview({
               <iframe title={node.name} src={view.link.url} style={{ width: "100%", height: "100%", border: 0, background: "#fff" }} />
             ) : view.code ? (
               <div style={{ alignSelf: "stretch", width: "100%", minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* A file that is not UTF-8 still shows, read-only, with a notice and its download (design-ce 2.3). */}
+                {!view.code.utf8 && (
+                  <Alert
+                    type="warning"
+                    role="status"
+                    message={codeText(lang).notUtf8}
+                    action={
+                      canDownload ? (
+                        <Button size="small" onClick={() => void download()}>
+                          {t("files.act.download")}
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                )}
                 {view.truncated && <p style={{ margin: 0 }}>{t("files.preview.truncated")}</p>}
                 <Suspense fallback={<p role="status">{t("files.preview.loading")}</p>}>
                   <CodeView text={view.code.text} pack={view.code.viewer.pack} name={node.name} dark={dark} onFind={setFind} />
