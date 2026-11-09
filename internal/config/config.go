@@ -595,7 +595,8 @@ type UploadConfig struct {
 	// or under 90MiB.
 	MaxChunkSize ByteSize `yaml:"max_chunk_size"`
 	// MaxSmallFileSize caps a file written in one request (a create or an edit of a file under
-	// it). Larger files go through resumable uploads.
+	// it). Larger files go through resumable uploads. A PUT of a text file is checked for UTF-8 after the
+	// body is spooled (decision 113), so a larger cap makes a large refused text PUT take longer.
 	MaxSmallFileSize ByteSize `yaml:"max_small_file_size"`
 	// BodyTimeout is the time a request body may take to arrive, plus one second per MiB of the
 	// size cap, so a slow client cannot hold a write open for ever.
