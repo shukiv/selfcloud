@@ -151,6 +151,11 @@ const EXPECTED = [
     name: 'who-viewed switch off',
     matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+\/viewers(\?[^/]*)?$/.test(e.url ?? '') && /status of 403\b/.test(e.text ?? ''),
   },
+  // A demoted maker's "Download again" checks the zip first, and the server refuses it with 403 (zr1eChecks).
+  {
+    name: 'zip refused',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/zips\/[^/?]+$/.test(e.url ?? '') && /status of 403\b/.test(e.text ?? ''),
+  },
   // The member's upload over its limit is refused by the server.
   {
     name: 'over the limit',
