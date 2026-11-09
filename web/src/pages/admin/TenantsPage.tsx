@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { App, Alert, Button, Dropdown, Input } from "antd";
+import { App, Alert, Button, Input } from "antd";
 import { useFlight } from "../../lib/flight";
-import { MoreVertical } from "lucide-react";
-import IconButton from "../../components/IconButton";
-import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useLang, useT } from "../../lib/i18n";
 import { brand } from "../../lib/brand";
@@ -14,7 +12,7 @@ import { isAdmin, session, sessionChanged } from "../../lib/session";
 import { queryKey } from "../../lib/query";
 import { formatDate } from "../../lib/files/format";
 import { debounce, SEARCH_DELAY } from "../../lib/sharing/combobox";
-import { listAccounts, updateAccount, usage } from "../../lib/manage/api";
+import { listAccounts, updateAccount } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
 import { tenantQuery, tenantSearch, type TenantStatus } from "../../lib/manage/admin";
 import type { Account, PersonReply } from "../../lib/manage/types";
@@ -25,7 +23,8 @@ import NewTenant from "../../components/admin/NewTenant";
 import ShowOnce from "../../components/admin/ShowOnce";
 import StatusTag from "../../components/admin/StatusTag";
 import UsageMeter from "../../components/UsageMeter";
-import { list, more, muted, pageTitle, row, rowMain, rowTitle, toolbar } from "../../components/admin/adminStyles";
+import { ItemList, type ItemColumn, type ItemSort } from "../../components/files/Listing";
+import { more, pageTitle, toolbar } from "../../components/admin/adminStyles";
 import { useGuard, useOnSessionChange } from "../../components/admin/hooks";
 import EmptyState from "../../components/EmptyState";
 
@@ -88,25 +87,32 @@ function TenantsView() {
     document.title = `${t("admin.tenants.title")} · ${brandName}`;
   }, [t, brandName]);
 
+  // The list is sorted on the server by name or by creation time (decision A1). Name, ascending, is the default.
+  const [sort, setSort] = useState<{ key: "name" | "created"; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
   const q = useInfiniteQuery({
-    queryKey: queryKey("admin-tenants", query, status),
+    queryKey: queryKey("admin-tenants", query, status, sort.key, sort.dir),
     queryFn: ({ pageParam }) =>
-      listAccounts({ q: query || undefined, status: status === "all" ? undefined : status, cursor: pageParam }),
+      listAccounts({
+        q: query || undefined,
+        status: status === "all" ? undefined : status,
+        sort: sort.key,
+        order: sort.dir,
+        cursor: pageParam,
+      }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor || undefined,
     refetchOnMount: "always",
+    // A new sort or search keeps the list on screen until its first page is in, so the table does not vanish and come back.
+    placeholderData: keepPreviousData,
   });
   const accounts: Account[] = q.data?.pages.flatMap((p) => p.items) ?? [];
   const firstFailed = q.isError && q.data === undefined;
 
-  // Each row's usage is read as the row appears. A row whose usage cannot be read shows no meter.
-  const usages = useQueries({
-    queries: accounts.map((a) => ({
-      queryKey: queryKey("usage", a.id),
-      queryFn: () => usage(a.id),
-      retry: false,
-    })),
-  });
+  // A header click sorts by its key; a new key starts ascending, and the same key turns the direction over.
+  const sortBy = (key: string) => {
+    if (key !== "name" && key !== "created") return;
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  };
 
   const refreshList = () => qc.invalidateQueries({ queryKey: tenantsKey });
 
@@ -149,35 +155,68 @@ function TenantsView() {
     go(`/admin/tenants/${account.id}`);
   };
 
-  const menuFor = (a: Account) => ({
-    items: [
-      {
-        // A real link: a middle click or a modified click opens the tenant in a new tab, as the browser does for a link.
-        key: "open",
-        label: (
-          <a
-            href={`/admin/tenants/${a.id}`}
-            onClick={(e) => {
-              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              go(`/admin/tenants/${a.id}`);
-            }}
-          >
-            {t("tenants.open")}
+  // The ⋮ menu of a tenant: Open, Suspend (or Resume) and Delete. The name is the link that opens the tenant in a new tab.
+  const menuFor = (a: Account) => [
+    { key: "open", label: t("tenants.open"), onSelect: () => go(`/admin/tenants/${a.id}`) },
+    {
+      key: "suspend",
+      label: a.status === "suspended" ? t("tenant.resume") : t("tenant.suspend"),
+      onSelect: () => {
+        setSuspendError(null);
+        setSuspending(a);
+      },
+    },
+    { key: "delete", danger: true, label: t("tenant.delete.open"), onSelect: () => setDeleting(a) },
+  ];
+
+  // The columns of the tenants list (design-tl section 3.1). Name and Created sort on the server; Usage reads the account's
+  // own used and quota bytes, so the list makes no request per tenant.
+  const columns: ItemColumn<Account>[] = [
+    {
+      key: "name",
+      title: t("files.col.name"),
+      sortKey: "name",
+      render: (a) => (
+        <span style={{ minWidth: 0 }}>
+          <a href={`/admin/tenants/${a.id}`}>
+            <bdi>{a.name}</bdi>
           </a>
-        ),
-      },
-      {
-        key: "suspend",
-        label: a.status === "suspended" ? t("tenant.resume") : t("tenant.suspend"),
-        onClick: () => {
-          setSuspendError(null);
-          setSuspending(a);
-        },
-      },
-      { key: "delete", danger: true, label: t("tenant.delete.open"), onClick: () => setDeleting(a) },
-    ],
-  });
+          {a.external_id && (
+            <span style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 13, overflowWrap: "anywhere", color: "var(--ant-color-text-secondary)" }}>
+              <bdi>{a.external_id}</bdi>
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      title: t("people.detail.status"),
+      width: 120,
+      render: (a) => (
+        <StatusTag tone={a.status === "active" ? "ok" : a.status === "suspended" ? "danger" : "neutral"}>{t(`tenant.status.${a.status}`)}</StatusTag>
+      ),
+    },
+    {
+      key: "usage",
+      title: t("tenant.overview.usage"),
+      secondary: true,
+      render: (a) => <UsageMeter used={a.used_bytes} quota={a.quota_bytes > 0 ? a.quota_bytes : null} />,
+    },
+    {
+      key: "created",
+      title: t("tenant.overview.created"),
+      sortKey: "created",
+      secondary: true,
+      width: 150,
+      render: (a) => (
+        <time dateTime={a.created_at} title={formatDate(a.created_at, lang)}>
+          {formatDate(a.created_at, lang)}
+        </time>
+      ),
+    },
+  ];
+  const itemSort: ItemSort = { key: sort.key, dir: sort.dir, onSort: sortBy };
 
   const emptyText = query || status !== "all" ? t("tenants.noMatch") : t("tenants.empty");
 
@@ -218,53 +257,17 @@ function TenantsView() {
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 12 }} />}
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {q.isSuccess && accounts.length === 0 && (
-        <EmptyState role="status" text={emptyText} />
-      )}
-      {!firstFailed && accounts.length > 0 && (
-        <ul style={list} aria-label={t("admin.tenants.title")}>
-          {accounts.map((a, i) => {
-            const u = usages[i]?.data;
-            return (
-              <li key={a.id} style={row}>
-                <div style={rowMain}>
-                  <p style={rowTitle}>
-                    <a href={`/admin/tenants/${a.id}`}>
-                      <bdi>{a.name}</bdi>
-                    </a>
-                  </p>
-                  {a.external_id && (
-                    <p style={{ margin: 0, fontFamily: "ui-monospace, monospace", overflowWrap: "anywhere" }}>
-                      <bdi>{a.external_id}</bdi>
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <StatusTag tone={a.status === "active" ? "ok" : a.status === "suspended" ? "danger" : "neutral"}>
-                    {t(`tenant.status.${a.status}`)}
-                  </StatusTag>
-                </div>
-                <div style={{ flex: "2 1 220px", minWidth: 180 }}>
-                  {u ? (
-                    <UsageMeter used={u.used_bytes} quota={u.quota_bytes} />
-                  ) : usages[i]?.isError ? (
-                    <span style={muted}>{t("usage.failed")}</span>
-                  ) : (
-                    <span style={muted}>{t("usage.loading")}</span>
-                  )}
-                </div>
-                <div>
-                  <time dateTime={a.created_at} title={formatDate(a.created_at, lang)}>
-                    {formatDate(a.created_at, lang)}
-                  </time>
-                </div>
-                <Dropdown menu={menuFor(a)} trigger={["click"]}>
-                  <IconButton aria-haspopup="menu" label={t("tenants.actionsFor", { name: a.name })} tip={t("files.selection.more")} icon={<MoreVertical size={18} aria-hidden="true" focusable="false" />} />
-                </Dropdown>
-              </li>
-            );
-          })}
-        </ul>
+      {!firstFailed && q.data !== undefined && (
+        <ItemList
+          label={t("admin.tenants.title")}
+          items={accounts}
+          rowLabel={(a) => a.name}
+          moreLabel={(a) => t("tenants.actionsFor", { name: a.name })}
+          columns={columns}
+          menu={menuFor}
+          sort={itemSort}
+          empty={<EmptyState role="status" text={emptyText} />}
+        />
       )}
       {!firstFailed && q.hasNextPage && (
         <div style={more}>

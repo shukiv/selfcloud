@@ -38,6 +38,7 @@ afterEach(() => {
   // The tenants list writes its search and filter into the address; the next test must start from the bare list.
   window.history.replaceState(null, "", "/");
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("who sees the tenants list", () => {
@@ -73,6 +74,8 @@ describe("who sees the tenants list", () => {
 
   // The list's order is the server's: Name is the default, asc, and a header click asks the server for the other key.
   it("Name is the default sort, and a click on Created asks the server to sort by created", async () => {
+    // A desktop: Created is a column with a header button here, and a phone line below md.
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: /min-width: (\d+)px/.test(query) && Number(/min-width: (\d+)px/.exec(query)?.[1]) <= 1200, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }));
     const { calls } = stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [account()] } } : fail(404, "not_found")));
     renderPage();
     const list = await screen.findByRole("region", { name: "Tenants" });
@@ -80,7 +83,7 @@ describe("who sees the tenants list", () => {
     expect(within(list).getByRole("columnheader", { name: /Name/ }).getAttribute("aria-sort")).toBe("ascending");
     fireEvent.click(within(list).getByRole("button", { name: "Created" }));
     await waitFor(() => expect(calls.some((c) => path(c).searchParams.get("sort") === "created")).toBe(true));
-    expect(within(list).getByRole("columnheader", { name: /Created/ }).getAttribute("aria-sort")).toBe("ascending");
+    expect(within(screen.getByRole("region", { name: "Tenants" })).getByRole("columnheader", { name: /Created/ }).getAttribute("aria-sort")).toBe("ascending");
   });
 });
 

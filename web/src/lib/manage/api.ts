@@ -37,8 +37,8 @@ const acc = (id: string) => `/api/v1/accounts/${id}`;
 
 // ---- installation (admin) ----
 
-export function listAccounts(p: { q?: string; status?: string; cursor?: string }): Promise<Page<Account>> {
-  return api<Page<Account>>('GET', `/api/v1/accounts${query({ q: p.q, status: p.status, cursor: p.cursor, limit: PAGE_SIZE })}`);
+export function listAccounts(p: { q?: string; status?: string; cursor?: string; sort?: 'name' | 'created'; order?: 'asc' | 'desc' }): Promise<Page<Account>> {
+  return api<Page<Account>>('GET', `/api/v1/accounts${query({ q: p.q, status: p.status, sort: p.sort, order: p.order, cursor: p.cursor, limit: PAGE_SIZE })}`);
 }
 
 export function getAccount(id: string): Promise<Account> {
