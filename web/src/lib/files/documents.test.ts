@@ -34,8 +34,9 @@ describe("New documents (decision 91)", () => {
   // (decision 102, round 2 R5).
   // The menu offers the kinds only while office editing is on, and in a place that takes new files with a node to hold them.
   it("offers the three kinds only with office editing on, in a place that takes new files", () => {
-    expect(documentKinds(writable, true)).toEqual(["docx", "xlsx", "pptx"]);
-    expect(documentKinds(writable, false)).toEqual([]);
+    expect(documentKinds(writable, true)).toEqual(["docx", "xlsx", "pptx", "odg", "txt"]);
+    // The empty text file is made with office editing off too (the server makes txt either way); the Office kinds and Drawing need it.
+    expect(documentKinds(writable, false)).toEqual(["txt"]);
     expect(documentKinds({ ...writable, readOnly: true, canUpload: false }, true)).toEqual([]);
     expect(documentKinds({ ...writable, canUpload: false }, true)).toEqual([]);
     expect(documentKinds({ ...writable, nodeID: null }, true)).toEqual([]);

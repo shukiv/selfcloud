@@ -2,16 +2,16 @@
 
 import { describe, expect, it } from "vitest";
 import { newMenuTree, newMenuItems, type NewMenuNode, KIND_INK } from "./newMenu";
-import { newEntries, myFilesPlace, type NewPlace, type DocKind } from "./newPlace";
+import { newEntries, myFilesPlace, type NewPlace, type BlankKind } from "./newPlace";
 import { PALETTE, SIDEBAR } from "../../theme/tokens";
 import { antdTokens } from "../../theme/theme";
 import { contrast } from "../brand";
 
-const ALL: DocKind[] = ["docx", "xlsx", "pptx"];
+const ALL: BlankKind[] = ["docx", "xlsx", "pptx", "odg", "txt"];
 const writable: NewPlace = myFilesPlace("fld_mine");
 const viewer: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
 
-function tree(p: NewPlace, blanks: DocKind[] = ALL) {
+function tree(p: NewPlace, blanks: BlankKind[] = ALL) {
   return newMenuTree({ entries: newEntries(p), blanks, hints: !p.readOnly });
 }
 // shape gives each top-level node as a short label, so the order is one readable line.
@@ -58,12 +58,16 @@ describe("the New menu, one list for the sidebar and the files page", () => {
     expect(shape(tree(writable, []))).toEqual(["newFolder", "|", "upload", "uploadFolder"]);
   });
 
-  it("a place that offers only Spreadsheet keeps its order and only its kind", () => {
+  it("a place that offers only Spreadsheet keeps its order and only its kind (no More: Drawing and Text file need no kind of its own)", () => {
     expect(shape(tree(writable, ["xlsx"]))).toEqual([
       "newFolder", "|", "upload", "uploadFolder", "|",
       "spreadsheet>[blank:xlsx,template:spreadsheet]",
-      "more>[blank:odg,blank:txt]",
     ]);
+  });
+
+  // With office editing off the server still makes the empty text file, so More holds Text file alone (nt2 review, LOW).
+  it("with office editing off, More holds only Text file", () => {
+    expect(shape(tree(writable, ["txt"]))).toEqual(["newFolder", "|", "upload", "uploadFolder", "|", "more>[blank:txt]"]);
   });
 
   it("a read-only place (a viewer) shows its three actions disabled and no chord hints", () => {
