@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { newMenuTree, type NewMenuNode, KIND_INK } from "./newMenu";
+import { newMenuTree, newMenuItems, type NewMenuNode, KIND_INK } from "./newMenu";
 import { newEntries, myFilesPlace, type NewPlace, type DocKind } from "./newPlace";
 import { PALETTE, SIDEBAR } from "../../theme/tokens";
 import { antdTokens } from "../../theme/theme";
@@ -94,5 +94,25 @@ describe("the New menu, one list for the sidebar and the files page", () => {
     const dark = String(antdTokens("dark", PALETTE.dark, SIDEBAR).token?.colorBgElevated);
     expect(contrast(KIND_INK.light[kind], light)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(KIND_INK.dark[kind], dark)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+// The row height is the same for every row of the menu, submenu titles included (design-nt2 section 3: 40 px, 44 on a coarse
+// pointer). A submenu title with no height of its own is drawn at antd's 32 px, so this test pins it.
+describe("the New menu's rows are the same height in every row", () => {
+  const text = { newFolder: "New folder", upload: "Upload files", uploadFolder: "Upload folder", document: "Document", spreadsheet: "Spreadsheet", presentation: "Presentation", more: "More", drawing: "Drawing", textFile: "Text file", blank: "Blank", fromTemplate: "From a template", shortcut: "Shortcut" };
+  function heights(coarse: boolean): (string | number | undefined)[] {
+    const items = newMenuItems(tree(writable), { text, dark: false, coarse, onRun: () => undefined });
+    return items.flatMap((item) => (item && "type" in item && item.type === "divider" ? [] : [(item as { style?: { height?: number } }).style?.height]));
+  }
+  it("every top-level row is 40 px on a fine pointer, submenu titles too", () => {
+    const h = heights(false);
+    expect(h.length).toBeGreaterThan(0);
+    expect(h.every((x) => x === 40)).toBe(true);
+  });
+  it("every top-level row is 44 px on a coarse pointer, submenu titles too", () => {
+    const h = heights(true);
+    expect(h.length).toBeGreaterThan(0);
+    expect(h.every((x) => x === 44)).toBe(true);
   });
 });
