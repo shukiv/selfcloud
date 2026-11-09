@@ -47,7 +47,7 @@ afterEach(() => session.set(null));
 
 // openNew opens the new admin dialog once the list has loaded.
 async function openNew() {
-  await screen.findByRole("list", { name: "Admins" });
+  await screen.findByRole("region", { name: "Admins" });
   fireEvent.click(screen.getByRole("button", { name: "New admin" }));
 }
 
@@ -107,12 +107,36 @@ describe("who sees the admins page", () => {
   });
 });
 
+// tl1: the admins list is a table. The signed-in admin's own row says so and has no Remove icon (owner-approved, design-tl 3.1).
+describe("the admins table marks the signed-in admin and has an empty state", () => {
+  it("the signed-in admin's row has a You badge and no Remove; another admin's row has a Remove icon", async () => {
+    stubFetch(() => ({
+      status: 200,
+      body: { items: [person({ id: "admin_1", email: "me@example.com", display_name: "Me" }), person({ id: "usr_2", email: "other@example.com", display_name: "Other" })] },
+    }));
+    renderAdmins();
+    const list = await screen.findByRole("region", { name: "Admins" });
+    const mine = list.querySelector('tr[aria-label="Me"]') as HTMLElement;
+    expect(within(mine).getByText("You")).toBeTruthy();
+    expect(within(mine).queryByRole("button", { name: /^Remove/ })).toBeNull();
+    const other = list.querySelector('tr[aria-label="Other"]') as HTMLElement;
+    expect(within(other).queryByText("You")).toBeNull();
+    expect(within(other).getByRole("button", { name: "Remove: Other" })).toBeTruthy();
+  });
+
+  it("an empty list shows the empty text in the table body (guard: EmptyState)", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderAdmins();
+    expect(await screen.findByText("No admins yet.")).toBeTruthy();
+  });
+});
+
 describe("the admins list", () => {
   it("a failed first load shows the error and no list (guard: firstFailed)", async () => {
     stubFetch(() => fail(500, "internal"));
     renderAdmins();
     expect((await screen.findByRole("alert")).textContent).toContain("The server had a problem");
-    expect(screen.queryByRole("list", { name: "Admins" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Admins" })).toBeNull();
   });
 
   // The page does not decide who is the last admin: it sees only the pages loaded so far, and the server counts every admin
@@ -207,7 +231,7 @@ describe("the new admin form", () => {
     const signals: AbortSignal[] = [];
     vi.stubGlobal("fetch", hangingAdmins(signals));
     renderAdmins();
-    await screen.findByRole("list", { name: "Admins" });
+    await screen.findByRole("region", { name: "Admins" });
     fireEvent.click(screen.getByRole("button", { name: "New admin" }));
     fireEvent.change(document.getElementById("admin-email") as HTMLInputElement, { target: { value: "bo@example.com" } });
     fireEvent.click(document.querySelector('form button[type="submit"]') as HTMLButtonElement);
@@ -223,7 +247,7 @@ describe("the new admin form", () => {
   it("a session change closes the form with what was typed (guard: the form closes on a session change)", async () => {
     stubFetch(() => ({ status: 200, body: { items: [person()] } }));
     renderAdmins();
-    await screen.findByRole("list", { name: "Admins" });
+    await screen.findByRole("region", { name: "Admins" });
     fireEvent.click(screen.getByRole("button", { name: "New admin" }));
     fireEvent.change(document.getElementById("admin-email") as HTMLInputElement, { target: { value: "typed@example.com" } });
     act(() => session.set(signedAs("admin", "admin_2")));
