@@ -151,6 +151,8 @@ describe("the admins table marks the signed-in admin and has an empty state", ()
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderAdmins();
     expect(await screen.findByText("No admins yet.")).toBeTruthy();
+    // The words are antd's Empty (decision 111), not a bare line: the picture and the description are its own.
+    expect(document.querySelector("tbody .ant-empty .ant-empty-description")?.textContent).toBe("No admins yet.");
   });
 });
 
