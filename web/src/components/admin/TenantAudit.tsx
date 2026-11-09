@@ -3,15 +3,16 @@
 import { Alert, Button, Select } from "antd";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useLang, useT } from "../../lib/i18n";
+import { translate, useLang, useT } from "../../lib/i18n";
+import { formatDate } from "../../lib/files/format";
 import { auditLog } from "../../lib/manage/api";
 import { AUDIT_ACTIONS } from "../../lib/manage/actions";
 import { failureText } from "../../lib/manage/failure";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { queryKey } from "../../lib/query";
-import { type AuditEntry, type Names } from "../../lib/audit/sentence";
-import AuditItem from "../manage/AuditItem";
-import { list, more, sectionTitle, toolbar } from "./adminStyles";
+import { renderSentence, sentence, type AuditEntry, type Names } from "../../lib/audit/sentence";
+import { ItemList } from "../files/Listing";
+import { more, sectionTitle, toolbar } from "./adminStyles";
 import EmptyState from "../EmptyState";
 
 type Entry = AuditEntry & { id: string; time: string };
@@ -59,13 +60,37 @@ export default function TenantAudit({ account }: { account: string }) {
 
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 12 }} />}
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {q.isSuccess && entries.length === 0 && <EmptyState role="status" size="compact" text={t("audit.empty")} />}
-      {!firstFailed && entries.length > 0 && (
-        <ul style={list} aria-label={t("tenant.audit.title")}>
-          {entries.map((entry) => (
-            <AuditItem key={entry.id} entry={entry} names={names} />
-          ))}
-        </ul>
+      {/* Newest first, so the When column says so with aria-sort and no button (design-tl section 7). Event is the sentence and its code. */}
+      {!firstFailed && q.data !== undefined && (
+        <ItemList
+          label={t("tenant.audit.title")}
+          items={entries}
+          rowLabel={(e) => e.action}
+          columns={[
+            {
+              key: "event",
+              title: t("audit.col.event"),
+              render: (e) => (
+                <span style={{ display: "block", minWidth: 0 }}>
+                  <span style={{ display: "block", overflowWrap: "anywhere" }}>{renderSentence(sentence(e, names), (key, params) => translate(lang, key, params))}</span>
+                  <span style={{ display: "block", fontFamily: "monospace", fontSize: 12, color: "var(--ant-color-text-secondary)" }}>{e.action}</span>
+                </span>
+              ),
+            },
+            {
+              key: "when",
+              title: t("audit.col.when"),
+              ariaSort: "descending",
+              width: 180,
+              render: (e) => (
+                <time dateTime={e.time} style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
+                  {formatDate(e.time, lang)}
+                </time>
+              ),
+            },
+          ]}
+          empty={<EmptyState role="status" size="compact" text={t("audit.empty")} />}
+        />
       )}
       {!firstFailed && q.hasNextPage && (
         <div style={more}>

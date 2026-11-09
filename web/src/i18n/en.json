@@ -711,6 +711,8 @@
   "audit.filter": "Action",
   "audit.allActions": "All actions",
   "audit.empty": "Nothing recorded yet.",
+  "audit.col.event": "Event",
+  "audit.col.when": "When",
   "audit.namesPartial": "The account has too many people to look up every name here, so some entries show a general word.",
   "audit.someone": "Someone",
   "audit.viaAdmin": "Done by the installation admin {admin}, signed in as this user.",
