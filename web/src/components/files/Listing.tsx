@@ -546,7 +546,13 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
             emptyText: (
               <EmptyState role="status" size="table" text={q.empty.title} description={q.empty.description}>
                 {q.empty.action && (
-                  <Button type="primary" icon={<Plus size={16} aria-hidden="true" focusable="false" />} style={{ height: 36 }} onClick={q.empty.action.onClick}>
+                  // The mockup's action: 36 high, padded 16 at each side with no border (antd's is 15 inside a 1-pixel border).
+                  <Button
+                    type="primary"
+                    icon={<Plus size={16} aria-hidden="true" focusable="false" />}
+                    style={{ height: 36, paddingInline: token.padding, borderWidth: 0 }}
+                    onClick={q.empty.action.onClick}
+                  >
                     {q.empty.action.label}
                   </Button>
                 )}

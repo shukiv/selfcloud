@@ -1308,6 +1308,12 @@ tr[data-drop-state="refused"] > td {
   overflow: visible;
 }
 
+/* An empty preset list's body cell has no padding: its EmptyState (size "table") is the mockup's block, 48 pixels under the header
+   row and 56 under its action (decision 114, tl1 round 4). antd's middle table pads every body cell by 12. */
+.item-list .ant-table-wrapper .ant-table .ant-table-tbody > tr.ant-table-placeholder > td {
+  padding: 0;
+}
+
 /* The list's column header is pinned in the list's own table (Listing: no sticky holder), so it shares the rows' columns in every
    frame (decision 77, item fu3b). The pin is to the window, under the shell's header and the toolbar (--sc-list-top, set by Listing).
    The header's background is the list's (--sc-list-head). */

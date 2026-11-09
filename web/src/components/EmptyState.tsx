@@ -29,15 +29,25 @@ export default function EmptyState({
 }) {
   const { token } = antdTheme.useToken();
   if (size === "table") {
-    // The approved mockup's empty table: 48 and 56 pixels above and below, 6 between the lines, the title at weight 600.
+    // The approved mockup's empty table (Main.dc.html, measured in tl1's e2e): one centred column, 48 pixels below the header row
+    // and 56 under its last part, 16 at each side, 6 between its parts; the simple picture at its own 64 by 41; the title 8 more
+    // below the picture, at weight 600; the description in the muted colour, at most 420 wide; the action 10 more below it. The
+    // column is antd Empty's own root, so antd's block margins (8 under the picture, 16 over the footer) and its 40-pixel
+    // picture height give way to the mockup's numbers. The table's body cell has no padding of its own (index.css).
     return (
-      <div role={role} className={["empty-table", className ?? ""].filter(Boolean).join(" ")} data-testid={testId} style={{ padding: "48px 16px 56px" }}>
+      <div
+        role={role}
+        className={["empty-table", className ?? ""].filter(Boolean).join(" ")}
+        data-testid={testId}
+        style={{ paddingBlock: "48px 56px", paddingInline: token.padding }}
+      >
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          style={{ margin: 0 }}
+          style={{ margin: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
+          styles={{ image: { height: 41, marginBlockEnd: 0 }, footer: { marginBlockStart: 10 } }}
           description={
             <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <span className="empty-title" style={{ fontWeight: 600, color: token.colorText, marginTop: 8 }}>
+              <span className="empty-title" style={{ fontWeight: 600, color: token.colorText, marginBlockStart: token.marginXS }}>
                 {text}
               </span>
               {description !== undefined && description !== null && (
