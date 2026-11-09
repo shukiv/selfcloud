@@ -7,7 +7,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
-import { emptyStateProblems } from './emptyStateGuard.mjs';
+import { emptyStateProblems, isScanned } from './emptyStateGuard.mjs';
 
 const root = fileURLToPath(new URL('../src/', import.meta.url));
 
@@ -155,7 +155,7 @@ for (const path of (await files(join(root, 'components'))).filter((p) => /\.tsx?
 // importing EmptyState. The empty folder's heading and hint are the description of its EmptyState, so FilesPage may draw them
 // in its own lines and nowhere else. Outcome messages (preview, playlist stops, the share status) are not in this list.
 // The empty-state guard (decision 111) is in emptyStateGuard.mjs, with its fixtures in emptyStateGuard.test.mjs.
-for (const path of (await files(root)).filter((p) => /\.tsx$/.test(p) && !/\.test\.tsx$/.test(p))) {
+for (const path of (await files(root)).filter(isScanned)) {
   const file = relative(root, path);
   problems.push(...emptyStateProblems(file, await readFile(path, 'utf8')));
 }
