@@ -11,6 +11,11 @@ import { sleep } from './media.mjs';
 const q = (v) => JSON.stringify(v);
 
 // key sends one key press (down and up) to the focused element, with the modifiers the chord needs (Alt is 1).
+// OPEN_ITEMS is the menu items of the dropdowns that are open now: not a closed dropdown, and not a submenu popup that is hidden
+// (a stale Blank from a closed submenu was clicked before, MED-7).
+const OPEN_ITEMS = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role=\"menuitem\"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]'))";
+// OPEN_MODAL is the modal that is displayed now (a closed one stays in the DOM, with display none).
+const OPEN_MODAL = "[...document.querySelectorAll('.ant-modal-wrap')].find((w) => getComputedStyle(w).display !== 'none')";
 async function key(page, { code, key: name, vk, alt = false }) {
   const modifiers = alt ? 1 : 0;
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code, windowsVirtualKeyCode: vk, modifiers });
@@ -26,12 +31,12 @@ async function openSubmenu(page, kind) {
   await page.evaluate(`${title}.focus()`);
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
-  await page.waitFor(`[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]')).some((x) => x.textContent.trim() === 'Blank')`, 10000);
+  await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Blank')`, 10000);
 }
 
 // clickItem clicks the open menu's entry with this text, with a user gesture (a new tab needs one).
 async function clickItem(page, text) {
-  const item = `[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]')).filter((x) => x.textContent.trim() === ${q(text)})`;
+  const item = `${OPEN_ITEMS}.filter((x) => x.textContent.trim() === ${q(text)})`;
   await page.waitFor(`${item}.length > 0`, 10000);
   await page.send('Runtime.evaluate', { expression: `${item}[0].click()`, userGesture: true, returnByValue: true, awaitPromise: true });
 }
@@ -61,10 +66,10 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     const order = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) > .ant-dropdown-menu > li')].map((li) => (li.classList.contains('ant-dropdown-menu-item-divider') ? '|' : li.textContent.trim()))`);
     const want = ['New folder', '|', 'Upload files', 'Upload folder', '|', 'Document', 'Spreadsheet', 'Presentation', 'More'];
     check(JSON.stringify(order) === JSON.stringify(want), `the New menu's groups are in order: ${order.join(' / ')}`);
-    const hints = await page.evaluate(`(() => { const row = [...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]')).find((x) => x.textContent.trim() === 'New folder'); return { keys: row?.getAttribute('aria-keyshortcuts'), hint: row?.querySelector('.menu-hint')?.getAttribute('data-hint') ?? null }; })()`);
+    const hints = await page.evaluate(`(() => { const row = ${OPEN_ITEMS}.find((x) => x.textContent.trim() === 'New folder'); return { keys: row?.getAttribute('aria-keyshortcuts'), hint: row?.querySelector('.menu-hint')?.getAttribute('data-hint') ?? null }; })()`);
     check(hints.keys === 'Alt+C F' && hints.hint === 'Alt+C, F', `New folder's row names its chord and shows the hint (${hints.keys}, ${hints.hint})`);
     // The rows lay out during the menu's open animation (0 px at the first frame), so wait for a laid-out row first.
-    const rowSel = `[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]'))`;
+    const rowSel = `${OPEN_ITEMS}`;
     // Wait until the menu's open animation has settled: the New folder row reads 40 px (the animation shows it shorter first).
     await page.waitFor(`Math.round(${rowSel}.find((x) => x.textContent.trim() === 'New folder').getBoundingClientRect().height) === 40`, 5000);
     const rowHeight = await page.evaluate(`${rowSel}.find((x) => x.textContent.trim() === 'New folder').getBoundingClientRect().height`);
@@ -102,6 +107,26 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     page = listing;
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
 
+    // The pointer kind sets the submenu title's height (MED-2): a mouse is 40 px, a finger (a coarse pointer) 44 px.
+    const titleHeight = () => page.evaluate(`Math.round([...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === 'Document').getBoundingClientRect().height)`);
+    const reopenNew = async () => {
+      await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+      await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
+      await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click()`);
+      await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);
+      await page.waitFor(`${OPEN_ITEMS}.every((x) => x.getBoundingClientRect().height > 0)`, 5000);
+    };
+    await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }] });
+    await reopenNew();
+    const finger = await titleHeight();
+    check(finger === 44, `a submenu title on a coarse pointer is 44 px (${finger})`);
+    await page.send('Emulation.setEmulatedMedia', { features: [] });
+    await reopenNew();
+    const mouse = await titleHeight();
+    check(mouse === 40, `a submenu title with a mouse is 40 px (${mouse})`);
+    await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
+
     // The chord, with the menu closed: Alt+C then F opens the New folder dialog, and it opens nothing else.
     // The listing was in the background while the editor opened, so the Blank menu's close animation had not run: a closing
     // dropdown still counts as open, and the chord (rightly) waits for it. Bring the listing to front, and wait for the close.
@@ -110,8 +135,9 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await page.evaluate(`document.body.focus()`);
     await key(page, { code: 'KeyC', key: 'c', vk: 67, alt: true });
     await key(page, { code: 'KeyF', key: 'f', vk: 70 });
-    await page.waitFor(`!!document.querySelector('.ant-modal-wrap:not(.ant-modal-wrap-hidden) input, [role="dialog"] input')`, 10000);
-    const title = await page.evaluate(`(document.querySelector('.ant-modal-title, [role="dialog"] h2, [role="dialog"] .ant-modal-title')?.textContent ?? '').trim()`);
+    // The open dialog only: the one modal that is displayed, with its input (a closed modal stays in the DOM).
+    await page.waitFor(`!!${OPEN_MODAL}?.querySelector('input')`, 10000);
+    const title = await page.evaluate(`(${OPEN_MODAL}?.querySelector('.ant-modal-title')?.textContent ?? '').trim()`);
     check(title === 'New folder', `Alt+C then F opens the New folder dialog with the menu closed (${title})`);
     check(await page.evaluate(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')`), 'the chord opened no menu');
     // Cancel closes the dialog, as the other sections close it (the Escape key did not close it in this section's runs).

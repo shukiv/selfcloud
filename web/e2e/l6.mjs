@@ -11,8 +11,11 @@ import { openedTab, tabIds } from './cdp.mjs';
 const q = (v) => JSON.stringify(v);
 
 // pickMenuItem clicks the entry with this text in a dropdown that is open now (antd marks a closed one ant-dropdown-hidden).
+// OPEN_ITEMS is the menu items of the dropdowns that are open now: not a closed dropdown, and not a submenu popup that is hidden
+// (a stale Blank from a closed submenu was clicked before, MED-7).
+const OPEN_ITEMS = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role=\"menuitem\"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]'))";
 async function pickMenuItem(page, text) {
-  const visible = `[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]')).filter((x) => x.textContent.trim() === ${q(text)})`;
+  const visible = `${OPEN_ITEMS}.filter((x) => x.textContent.trim() === ${q(text)})`;
   await page.waitFor(`${visible}.length > 0`, 10000);
   // With a user gesture, as a person's click is: the new document's tab is a pop-up, which the browser blocks without one.
   await page.send('Runtime.evaluate', { expression: `${visible}[0].click()`, userGesture: true, returnByValue: true, awaitPromise: true });
@@ -26,7 +29,7 @@ async function pickBlank(page, kind) {
   await page.evaluate(`${title}.focus()`);
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
-  await page.waitFor(`[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]')).some((x) => x.textContent.trim() === 'Blank')`, 10000);
+  await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Blank')`, 10000);
   await pickMenuItem(page, 'Blank');
 }
 
