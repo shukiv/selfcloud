@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -97,7 +98,16 @@ func readParity(t *testing.T) []parityRow {
 // row, a reason on every row whose command is "-", no row twice, and the sort order (kind, then key). A malformed record
 // is an error; the other checks are returned as problems.
 func parseParity(in io.Reader) ([]parityRow, []string, error) {
-	r := csv.NewReader(in)
+	// A carriage return anywhere is an error: the table uses LF line ends, as the web reader requires. encoding/csv would
+	// strip it without a word.
+	data, err := io.ReadAll(in)
+	if err != nil {
+		return nil, nil, err
+	}
+	if bytes.ContainsRune(data, '\r') {
+		return nil, nil, fmt.Errorf("a carriage return; the table uses LF line ends")
+	}
+	r := csv.NewReader(bytes.NewReader(data))
 	r.Comma = '\t'
 	r.LazyQuotes = false
 	r.FieldsPerRecord = 5
