@@ -9,7 +9,7 @@ import { useT } from "../../lib/i18n";
 import { newEntries, type BlankKind, type NewKey, type NewPlace } from "../../lib/files/newPlace";
 import { MENU_ROW_HEIGHT, menuIsDark, newMenuItems, newMenuTree, type NewBlank, type NewMenuNode } from "../../lib/files/newMenu";
 import { newURL } from "../../lib/files/newRoute";
-import { IDLE, chordBlocked, readChord, type ChordState, type NewChordAction } from "../../lib/files/newShortcut";
+import { IDLE, chordBlocked, chordNeedsOverlayCheck, readChord, type ChordState, type NewChordAction } from "../../lib/files/newShortcut";
 import type { UploadWhere } from "../../lib/files/ops";
 import type { Sidebar } from "../../theme/tokens";
 
@@ -53,13 +53,24 @@ export function useNewChord(enabled: () => boolean, run: (action: NewChordAction
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.defaultPrevented || !latest.current.enabled()) return;
-      const step = readChord(chord.current, e, Date.now(), chordBlocked(e.target));
+      const now = Date.now();
+      // The overlays are read only for a key that could act (F7); the chord is otherwise idle, and a key that is not in it passes.
+      const blocked = chordNeedsOverlayCheck(chord.current, e, now) && chordBlocked(e.target);
+      const step = readChord(chord.current, e, now, blocked);
       chord.current = step.state;
       if (step.consume) e.preventDefault();
       if (step.action) latest.current.run(step.action);
     };
+    // Leaving the window (a blur) cancels an armed chord, so the letter typed after the focus comes back is not taken (F6).
+    const onBlur = () => {
+      chord.current = IDLE;
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
   }, []);
 }
 

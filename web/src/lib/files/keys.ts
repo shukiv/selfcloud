@@ -44,7 +44,9 @@ export type KeyAction =
 // element. A checkbox or a button is not one, so a key on it still acts on the page.
 export function isTextField(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  // A node inside a contenteditable counts too: closest() reads the attribute, which jsdom and older engines do not give isContentEditable.
+  if (target.isContentEditable || target.closest('[contenteditable]:not([contenteditable="false"])')) return true;
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
   return target instanceof HTMLInputElement && !["checkbox", "radio", "button", "submit"].includes(target.type);
 }
 

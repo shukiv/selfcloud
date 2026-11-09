@@ -85,6 +85,14 @@ export function overlayOpen(root: ParentNode = document): boolean {
   return [...root.querySelectorAll(OVERLAY)].some(shown);
 }
 
+// chordNeedsOverlayCheck says whether the overlays must be read for this key: only for Alt+C, or for a key while the chord is armed.
+// Any other key cannot act, so the (costly) style reads are skipped for it (F7).
+export function chordNeedsOverlayCheck(state: ChordState, e: ChordEvent, now: number): boolean {
+  if (e.ctrlKey || e.metaKey) return false;
+  if (e.code === "KeyC" && e.altKey) return true;
+  return state.armedAt !== null && now - state.armedAt <= CHORD_WINDOW_MS;
+}
+
 // chordBlocked says whether the chord is ignored for a key on target: a text field, or any open overlay.
 export function chordBlocked(target: EventTarget | null, root: ParentNode = document): boolean {
   return isTextField(target) || overlayOpen(root);
