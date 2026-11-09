@@ -28,7 +28,7 @@ import { useT } from "../../lib/i18n";
 import { get, useStore } from "../../lib/store";
 import { useModeOrLight } from "../../theme/theme";
 import type { FindAction } from "./CodeView";
-import ImageLightbox, { useKeysAfterStep } from "./ImageLightbox";
+import ImageLightbox, { type ImageView, useKeysAfterStep } from "./ImageLightbox";
 import type { Link } from "./MediaPlayer";
 
 // The export dialog is loaded on first use, as the zip dialog is.
@@ -296,11 +296,13 @@ export default function Preview({
   const codeShown = view.status === "ready" && view.code !== undefined && view.code.text !== "";
 
   if (node && kindNow === "image" && hasPreview) {
+    // A picture is never sniffed, so its state is never "none"; the type cannot see that.
+    const imageView: ImageView = view.status === "none" ? { status: "unsupported" } : view;
     return (
       <ImageLightbox
         items={items}
         index={index}
-        view={view}
+        view={imageView}
         canDownload={canDownload}
         onClose={() => onClose(node)}
         onIndex={onIndex}
