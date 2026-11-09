@@ -1261,15 +1261,10 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 	if live != nil {
 		return &store.LockedError{Current: live.LockID, Reason: "the file is open in an office editor"}
 	}
-	mt := mimeOf(r.Header.Get("Content-Type"), n.Name)
-	// A text file takes only UTF-8 text with no NUL byte (decision 113). The rule is here and not in replaceContent,
-	// which WOPI PutFile also calls, so an office save is unchanged.
-	mustBeText := utf8Required(n.Name, n.MimeType, r.Header.Get("Content-Type"), mt)
-	if mustBeText && !textMedia(mt) {
-		// A checked file keeps its stored type unless the request names a text type: a content save never turns a
-		// checked file into a non-text one, so the rule keeps applying to the next PUT.
-		mt = n.MimeType
-	}
+	// The rule of decision 113 (putRule): whether the body must be UTF-8 text, and the type the file is stored as. The
+	// check is here and not in replaceContent, which WOPI PutFile also calls, so an office save is unchanged.
+	hdr := r.Header.Get("Content-Type")
+	mustBeText, mt := putRule(n.Name, n.MimeType, hdr, mimeOf(hdr, n.Name))
 	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Upload.MaxSmallFileSize), n.Size)
 	if err != nil {
 		return err

@@ -101,6 +101,36 @@ func utf8Required(name, stored, header, want string) bool {
 	return named && !exempt
 }
 
+// putRule is the rule of decision 113 for a PUT of content. st is the file's type before the PUT, header the request's
+// Content-Type (empty when there is none), and want the type the request would store (mimeOf of the header and the name).
+// It returns whether the body is checked for UTF-8, and the type the file is stored as. Two invariants hold:
+//
+//   - I1: a PUT stores a text type only when its body passed the check;
+//   - I2: a PUT to a checked file never leaves it with a non-text type it did not already have.
+//
+// A checked file stores the name's type when that is text, and keeps st otherwise. An exempt file (stored as binary, with a
+// Content-Type that is not text) stores the new type only when that is binary, and keeps st otherwise; it never stores a
+// text or octet type. A file that is neither checked nor exempt stores the new type, which is not text there.
+func putRule(name, st, header, want string) (checked bool, stored string) {
+	stt, hd, wt := mediaType(st), mediaType(header), mediaType(want)
+	checked = utf8Required(name, stt, hd, wt)
+	exempt := binaryMedia(stt) && !textMedia(hd)
+	switch {
+	case checked:
+		if textMedia(wt) {
+			return true, wt
+		}
+		return true, stt
+	case exempt:
+		if binaryMedia(wt) {
+			return false, wt
+		}
+		return false, stt
+	default:
+		return false, wt
+	}
+}
+
 // requireUTF8 refuses a committed blob unless it is UTF-8 text with no NUL byte. It reads the blob from disk in chunks
 // (search.ValidText), so the body is not held in memory a second time.
 func (s *Server) requireUTF8(accountID, blobID string) error {
