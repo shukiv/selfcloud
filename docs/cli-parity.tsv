@@ -51,6 +51,7 @@ fn	lib/files/api.ts:emptyTrashStep	-	cli5	planned, cli5
 fn	lib/files/api.ts:getJob	-	cli10	planned, cli10
 fn	lib/files/api.ts:getMe	-	-	browser session only; whoami reads GET /folders
 fn	lib/files/api.ts:getResume	-	-	media playback position: a player feature
+fn	lib/files/api.ts:inlineRange	-	-	the browser viewer's range read of a file: the text preview and the subtitles
 fn	lib/files/api.ts:listSubtitles	-	-	playback subtitles: a player feature
 fn	lib/files/api.ts:listTrash	-	cli5	planned, cli5
 fn	lib/files/api.ts:listVersions	-	cli11	planned, cli11
@@ -61,11 +62,13 @@ fn	lib/files/api.ts:myFolders	-	cli8	planned, cli8
 fn	lib/files/api.ts:purgeTrashed	-	cli5	planned, cli5
 fn	lib/files/api.ts:putResume	-	-	media playback position: a player feature
 fn	lib/files/api.ts:renameNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:requestOfficeEditor	-	-	opens the Collabora editor in a browser tab
 fn	lib/files/api.ts:restoreNode	-	cli5	planned, cli5
 fn	lib/files/api.ts:restoreVersion	-	cli11	planned, cli11
 fn	lib/files/api.ts:serverLimits	-	cli3	planned, cli3
 fn	lib/files/api.ts:signedLink	-	cli7	planned, cli7
 fn	lib/files/api.ts:statNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:unlockNode	-	cli5	planned, cli5
 fn	lib/files/api.ts:updateAppearance	-	cli5	planned, cli5
 fn	lib/files/api.ts:updateVersion	-	cli11	planned, cli11
 fn	lib/files/convert.ts:watchPreview	-	-	HTTP HEAD, rendered preview for the browser viewer

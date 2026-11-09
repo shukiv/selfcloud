@@ -12,7 +12,6 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import IconButton from "../components/IconButton";
 import Sentence from "../components/Sentence";
-import { api } from "../lib/api";
 import { ApiError } from "../lib/apiError";
 
 import { brand } from "../lib/brand";
@@ -21,7 +20,7 @@ import { session } from "../lib/session";
 import { useT } from "../lib/i18n";
 import { go } from "../lib/router";
 import { useStore } from "../lib/store";
-import { childrenPage, statNode } from "../lib/files/api";
+import { childrenPage, requestOfficeEditor, statNode } from "../lib/files/api";
 import {
   EDITOR_FRAME,
   type SaveAsAsk,
@@ -50,13 +49,6 @@ import {
 import type { Node } from "../lib/files/types";
 import { sessionChanged } from "../lib/session";
 import NotFoundPage from "./NotFoundPage";
-
-// The editor's answer to POST /api/v1/nodes/{nod}/office. The token is held only until the form has carried it.
-interface OfficeAnswer {
-  url: string;
-  token: string;
-  expires_at: string;
-}
 
 // The failure the page shows is chosen by the status and never by the server's text.
 type Failure = "notFound" | "forbidden" | "notSupported" | "unavailable" | "failed";
@@ -206,7 +198,7 @@ export default function OfficeEditPage() {
     void (async () => {
       try {
         const node = await statNode(nod);
-        const answer = await api<OfficeAnswer>("POST", `/api/v1/nodes/${nod}/office`, { body: { mode } });
+        const answer = await requestOfficeEditor(nod, mode);
         if (cancelled) return;
         const origin = editorOrigin(answer.url);
         if (origin === null) {
@@ -325,7 +317,7 @@ export default function OfficeEditPage() {
     // not compared: every read moves it, and a rename's read would then drop the renewal of the file still on screen.
     const node = nodRef.current;
     try {
-      const answer = await api<OfficeAnswer>("POST", `/api/v1/nodes/${node}/office`, { body: { mode: modeRef.current } });
+      const answer = await requestOfficeEditor(node, modeRef.current);
       if (copyLostRef.current || nodRef.current !== node) return;
       if (watchRef.current?.() ?? false) {
         setNotice("sessionEnded");

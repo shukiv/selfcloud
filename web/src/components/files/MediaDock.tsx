@@ -5,7 +5,7 @@ import { Alert, ConfigProvider, Slider, theme } from "antd";
 import { Maximize2, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
 import HeadDownload from "./HeadDownload";
 import IconButton from "../IconButton";
-import { contentPath, getResume, listSubtitles, putResume } from "../../lib/files/api";
+import { getResume, inlineRange, listSubtitles, putResume } from "../../lib/files/api";
 import { kindOf } from "../../lib/files/kind";
 import { startDownload } from "../../lib/files/ops";
 import { downloadAllowed } from "../../lib/files/roles";
@@ -77,11 +77,7 @@ function saveSession(n: Node, position: number, duration: number, who: string): 
 // subtitlesSession reads the subtitle files beside a video, each through its own content route with the person's session.
 async function subtitlesSession(n: Node): Promise<SubtitleTrack[]> {
   const files = await listSubtitles(n.id);
-  return readTracks(
-    files,
-    (id, range) => fetch(contentPath(id, "inline"), { credentials: "same-origin", cache: "no-store", headers: { Range: range } }),
-    currentLang(),
-  );
+  return readTracks(files, inlineRange, currentLang());
 }
 
 export default function MediaDock() {

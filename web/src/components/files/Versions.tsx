@@ -5,7 +5,7 @@ import { Alert, Button, Checkbox, Drawer, Input, List, Space, Typography } from 
 import { Download, RotateCcw, Trash2 } from "lucide-react";
 import IconButton from "../IconButton";
 import { ApiError } from "../../lib/apiError";
-import { contentPath, deleteVersion, listVersions, restoreVersion, statNode, updateVersion } from "../../lib/files/api";
+import { contentPath, deleteVersion, listVersions, restoreVersion, statNode, updateVersion, versionContentPath } from "../../lib/files/api";
 import { fileErrorText } from "../../lib/files/fileErrors";
 import { formatBytes, formatDate } from "../../lib/files/format";
 import { startDownloadURL } from "../../lib/files/ops";
@@ -104,7 +104,7 @@ export default function Versions({
   }
 
   async function download(v: Version) {
-    const url = v.current ? contentPath(node.id) : `/api/v1/nodes/${node.id}/versions/${v.id}/content?disposition=attachment`;
+    const url = v.current ? contentPath(node.id) : versionContentPath(node.id, v.id);
     const ok = await startDownloadURL(url);
     if (!ok) setError(t("files.err.downloadRestricted"));
   }

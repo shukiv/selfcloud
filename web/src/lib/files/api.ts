@@ -151,6 +151,35 @@ export function contentPath(nod: string, disposition: 'attachment' | 'inline' = 
   return `/api/v1/nodes/${nod}/content?disposition=${disposition}`;
 }
 
+// versionContentPath is the download address of a past version of a file, as an attachment.
+export function versionContentPath(nod: string, ver: string): string {
+  return `/api/v1/nodes/${nod}/versions/${ver}/content?disposition=attachment`;
+}
+
+// inlineRange reads part of a file's contents for the browser's viewers: the first bytes of a text preview, or a subtitle
+// file. It is the content route with the range the caller asks for.
+export function inlineRange(nod: string, range: string): Promise<Response> {
+  return fetch(contentPath(nod, 'inline'), { credentials: 'same-origin', cache: 'no-store', headers: { Range: range } });
+}
+
+// unlockNode ends the editing session the person holds on a file.
+export async function unlockNode(nod: string, signal?: AbortSignal): Promise<void> {
+  await api('POST', `/api/v1/nodes/${nod}/unlock`, { signal });
+}
+
+// OfficeAnswer is the server's answer to a request for a file's editor: the editor's address and the token to post to it.
+export interface OfficeAnswer {
+  url: string;
+  token: string;
+  expires_at: string;
+}
+
+// requestOfficeEditor asks for a Collabora editor of a file, in the mode given. The page carries the token to the editor
+// in a browser tab, and the token is not kept.
+export function requestOfficeEditor(nod: string, mode: string): Promise<OfficeAnswer> {
+  return api<OfficeAnswer>('POST', `/api/v1/nodes/${nod}/office`, { body: { mode } });
+}
+
 // signedLink asks for a short-lived link to a file's contents. The URL is for the caller to use at once;
 // it is never stored or shown.
 export function signedLink(nod: string, disposition: 'attachment' | 'inline', ttl: number): Promise<SignedLink> {

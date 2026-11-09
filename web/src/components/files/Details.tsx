@@ -2,13 +2,13 @@
 
 import { lazy, Suspense, useState, type CSSProperties } from "react";
 import { App, Button, Drawer } from "antd";
-import { api } from "../../lib/api";
 import { useFlight } from "../../lib/flight";
 import { ApiError } from "../../lib/apiError";
 import Confirm from "../Confirm";
 import { useT, useLang } from "../../lib/i18n";
 import { session } from "../../lib/session";
 import { useStore } from "../../lib/store";
+import { statNode, unlockNode } from "../../lib/files/api";
 import { formatBytes, formatDate } from "../../lib/files/format";
 import { detailsPersonLabel } from "../../lib/files/people";
 import { kindOf } from "../../lib/files/kind";
@@ -57,7 +57,7 @@ export default function Details({
     if (request.abort()) {
       void message.warning(t("common.cancelledMaybe"));
       // The unlock may have gone through: the file is read again, so the drawer does not show it as still being edited (fu4 review 3).
-      void api<Node>("GET", `/api/v1/nodes/${node.id}`).then((fresh) => onChanged?.(fresh), () => undefined);
+      void statNode(node.id).then((fresh) => onChanged?.(fresh), () => undefined);
     }
     setEndError(null);
     setEnding(false);
@@ -67,7 +67,7 @@ export default function Details({
     setEndBusy(true);
     setEndError(null);
     try {
-      await api("POST", `/api/v1/nodes/${node.id}/unlock`, { signal });
+      await unlockNode(node.id, signal);
       setEnding(false);
       onChanged?.({ ...node, editing: false, editing_by: undefined });
     } catch (err) {
