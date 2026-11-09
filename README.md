@@ -91,10 +91,19 @@ admin must change it at the next sign-in:
 selfcloud admin reset-password -user admin@example.com -method temporary -yes
 ```
 
+`-ttl` sets how long a link works instead of `users.reset_ttl`, from 5m to 168h (link method only).
+`-enable` makes a disabled user active again, and only for a user who verified once; a user who
+never verified needs `admin verify -enable` first, which sets it back to pending.
+
 The other recovery commands are `selfcloud admin verify -user ID|EMAIL` (a fresh verification link
-for a pending user), `enable`, `disable` (which refuses the last active installation admin) and
-`end-sessions`. `selfcloud admin help` lists them with their flags. In Docker, prefix each with
-`docker exec <container>`.
+for a pending user, with the same `-ttl`), `enable`, `disable` and `end-sessions`. `disable` refuses
+the last active installation admin and the last active owner of an account, with no override flag.
+`disable` and `end-sessions` ask for `-yes` when stdin is not a terminal.
+
+Exit codes: 0 when done; 1 for a refused or failed action, such as a pending or disabled user without
+its flag, or a last admin or owner; 2 for bad usage, a missing `-yes`, an email that several users
+have (the command lists their IDs), or a password that fails the rules. `selfcloud admin help` lists
+the flags. In Docker, prefix each command with `docker exec <container>`.
 
 ## Checking the data directory
 
