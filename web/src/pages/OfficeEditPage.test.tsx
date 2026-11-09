@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/apiError";
 
@@ -11,7 +11,7 @@ const goMock = vi.hoisted(() => vi.fn());
 const createMock = vi.hoisted(() => vi.fn());
 vi.mock("../lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../lib/api")>()), api: apiMock }));
 // nodesMock answers the page's reads of the file tree by id: the source, and the copy a Save As makes (ef1).
-const nodesMock = vi.hoisted(() => ({ byId: new Map<string, unknown>(), children: [] as unknown[], pending: false }));
+const nodesMock = vi.hoisted(() => ({ byId: new Map<string, unknown>(), children: [] as unknown[], pending: false, listFails: false }));
 const announceMock = vi.hoisted(() => vi.fn());
 vi.mock("../lib/files/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/files/api")>()),
@@ -21,7 +21,7 @@ vi.mock("../lib/files/api", async (importOriginal) => ({
     const n = nodesMock.byId.get(nod);
     return n === undefined ? Promise.reject(new Error(`no node ${nod}`)) : Promise.resolve(n);
   },
-  childrenPage: () => Promise.resolve({ items: nodesMock.children }),
+  childrenPage: () => (nodesMock.listFails ? Promise.reject(new Error("list failed")) : Promise.resolve({ items: nodesMock.children })),
 }));
 vi.mock("../lib/router", () => ({ go: goMock }));
 vi.mock("../lib/files/officeSync", async (importOriginal) => ({
@@ -319,6 +319,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     ]);
     nodesMock.children = [];
     nodesMock.pending = false;
+    nodesMock.listFails = false;
     posted = [];
     submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(function (this: HTMLFormElement) {
       posted.push(this);
@@ -358,8 +359,12 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     return apiMock.mock.calls.filter((c) => c[0] === "POST");
   }
 
-  // saveAsAsk opens the Save As dialog from the editor's own request, and confirms it; it returns the frame's spy.
-  async function confirmSaveAs(name: string) {
+  // confirmSaveAs opens the Save As dialog from the editor's own request, and confirms it; it returns the frame's spy once the
+  // request has gone to the editor. The folder's files are read before the request, so the copy is hidden until it is sent:
+  // it is then in the folder, as a copy the editor made is. presentAtRequest keeps the files as they are for the request.
+  async function confirmSaveAs(name: string, presentAtRequest = false) {
+    const saved = nodesMock.children;
+    if (!presentAtRequest) nodesMock.children = [];
     from({ MessageId: "UI_SaveAs", Values: {} });
     const input = await screen.findByLabelText("File name");
     act(() => {
@@ -369,7 +374,13 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     act(() => {
       screen.getByRole("button", { name: "Save copy" }).click();
     });
+    await waitFor(() => expect(spy.mock.calls.some((c) => String(c[0]).includes("Action_SaveAs"))).toBe(true));
+    nodesMock.children = saved;
     return spy;
+  }
+  // flush lets the pending reads of the page finish, without any timer.
+  async function flush() {
+    for (let i = 0; i < 5; i++) await act(async () => undefined);
   }
 
   it("F1: a rename in the editor shows the new name in the bar, from the file's own read", async () => {
@@ -596,5 +607,140 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await confirmSaveAs("letter (2)");
     from({ MessageId: "Doc_Title", Values: { DocName: "letter (2).docx", Title: "letter (2).docx - Writer" } });
     await waitFor(() => expect(announceMock).toHaveBeenCalledWith("nod_c2", "fld_b", "nod_dir"));
+  });
+
+  // ef1 round 2 (decision 107): the window of a Save As is bounded in time, ends with its answer or a rename or a new node,
+  // is closed for one copy only, and a Save As cannot start while another is pending. A plain save's answer names nothing.
+  it("a Save As window ends a minute after the request: an answer after that binds nothing", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    nodesMock.children = [];
+    from({ MessageId: "UI_SaveAs", Values: {} });
+    fireEvent.change(screen.getByLabelText("File name"), { target: { value: "letter (2)" } });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const spy = vi.spyOn(frame().contentWindow as Window, "postMessage");
+      act(() => {
+        screen.getByRole("button", { name: "Save copy" }).click();
+      });
+      await flush();
+      expect(spy.mock.calls.some((c) => String(c[0]).includes("Action_SaveAs"))).toBe(true);
+      nodesMock.children = [COPY];
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+      await flush();
+      expect(window.location.pathname).toBe("/edit/nod_a1");
+      expect(screen.queryByText("The copy was saved, but it is not shown here. Open its folder to find it.")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("once a title has bound the copy, a later title naming a sibling does not move the page again", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    from({ MessageId: "Doc_Title", Values: { DocName: "letter (2).docx", Title: "letter (2).docx - Writer" } });
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
+    nodesMock.children = [COPY, { ...COPY, id: "nod_o1", name: "letter (2) (1).docx" }];
+    from({ MessageId: "Doc_Title", Values: { DocName: "letter (2) (1).docx", Title: "letter (2) (1).docx - Writer" } });
+    await flush();
+    expect(window.location.pathname).toBe("/edit/nod_c2");
+  });
+
+  it("a rename of the file during a pending Save As ends its window: the copy is not bound after it", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    from({ MessageId: "File_Rename", Values: { NewName: "renamed" } });
+    await flush();
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await flush();
+    expect(window.location.pathname).toBe("/edit/nod_a1");
+  });
+
+  it("a copy already in the folder when the Save As was asked is not bound, even with a recent creation time", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter (2)", true);
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await flush();
+    expect(window.location.pathname).toBe("/edit/nod_a1");
+  });
+
+  it("a plain save's answer, with no name, does not end a pending Save As: the answer that names the copy still binds it", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    from({ MessageId: "Action_Save_Resp", Values: { success: true } });
+    await flush();
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
+  });
+
+  it("while a Save As is pending, the dialog's Save copy is disabled, and says why", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    from({ MessageId: "UI_SaveAs", Values: {} });
+    await screen.findByLabelText("File name");
+    const button = screen.getByRole("button", { name: "Save copy" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("A copy is already being made. Wait for it to finish.");
+  });
+
+  it("a Save As whose folder cannot be read in full is not asked, and the page says the copy did not start", async () => {
+    nodesMock.listFails = true;
+    await openEditor();
+    from({ MessageId: "UI_SaveAs", Values: {} });
+    fireEvent.change(await screen.findByLabelText("File name"), { target: { value: "letter (2)" } });
+    const spy = vi.spyOn(frame().contentWindow as Window, "postMessage");
+    act(() => {
+      screen.getByRole("button", { name: "Save copy" }).click();
+    });
+    expect(await screen.findByText("The copy was not started, because this folder could not be read. Try again.")).toBeTruthy();
+    expect(spy.mock.calls.some((c) => String(c[0]).includes("Action_SaveAs"))).toBe(false);
+  });
+
+  // A change of node (the address moves to another file) ends a pending window and blocks a late bind (decision 107, round 2).
+  it("a change of node while a Save As is pending ends its window, and a late answer does not move the page", async () => {
+    nodesMock.children = [COPY];
+    const navRef: { go: ((to: string) => void) | null } = { go: null };
+    function NavCapture() {
+      const nav = useNavigate();
+      navRef.go = (to: string) => nav(to);
+      return null;
+    }
+    nodesMock.byId.set("nod_x", { ...NODE, id: "nod_x", name: "other.docx", parent_id: "nod_dir" });
+    nodesMock.children = [];
+    window.history.replaceState(null, "", "/edit/nod_a1?mode=edit&from=%2Ffiles%2Ffld_b");
+    rtlRender(
+      <MemoryRouter initialEntries={["/edit/nod_a1?mode=edit&from=%2Ffiles%2Ffld_b"]}>
+        <NavCapture />
+        <Routes>
+          <Route path="*" element={<OfficeEditPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText("Opening the editor…")).toBeNull());
+    await confirmSaveAs("letter (2)");
+    // The copy appears in the folder after the request, as a copy the editor made does.
+    nodesMock.children = [COPY];
+    act(() => {
+      navRef.go?.("/edit/nod_x?mode=edit&from=%2Ffiles%2Ffld_b");
+    });
+    // The editor reopens on the new node (a second form post), and the address this page shows does not move.
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
+    await flush();
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await flush();
+    expect(window.location.pathname).toBe("/edit/nod_a1");
+    // The window itself has ended: a new Save As is not held back by the old one (its OK is enabled).
+    from({ MessageId: "UI_SaveAs", Values: {} });
+    await screen.findByLabelText("File name");
+    expect((screen.getByRole("button", { name: "Save copy" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

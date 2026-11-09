@@ -45,6 +45,7 @@ import {
   decodeEditorName,
   displayName,
   isSameName,
+  listDirectory,
 } from "../lib/files/officeSync";
 import type { Node } from "../lib/files/types";
 import { sessionChanged } from "../lib/session";
@@ -66,13 +67,18 @@ type State =
   | { status: "failed"; why: Failure };
 
 // SaveAsPending is a Save As this page started: the name it asked for, and when it was asked (decision 107).
+// before is the set of the folder's file ids when the Save As was asked (empty until then); at is when the request went to the
+// editor (0 until then). answered says the editor's answer naming the file has come; dead says the window has ended.
 interface SaveAsPending {
   filename: string;
   at: number;
+  before: ReadonlySet<string>;
+  answered: boolean;
+  dead: boolean;
 }
 
 // Notice is a note the bar shows about the session or a copy (ef1). Its words are the catalogue key after files.editor.
-type Notice = "sessionEnded" | "tokenRefreshFailed" | "copyNotShown";
+type Notice = "sessionEnded" | "tokenRefreshFailed" | "copyNotShown" | "copyNotStarted";
 
 const NOD = /^nod_[A-Za-z0-9_-]+$/;
 
@@ -134,17 +140,25 @@ export default function OfficeEditPage() {
   // saveAsRef is the Save As this page started and is waiting for its copy (decision 107), with its timer in saveAsTimerRef.
   const saveAsRef = useRef<SaveAsPending | null>(null);
   const saveAsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // copyBusy is true while a Save As is pending: the Save As dialog cannot start another one (decision 107).
+  const [copyBusy, setCopyBusy] = useState(false);
 
-  // endSaveAs closes the window in which a copy can be bound. The window ends at the editor's answer, or after SAVE_AS_WINDOW_MS.
-  const endSaveAs = () => {
-    saveAsRef.current = null;
+  // finishSaveAs ends the window of a Save As: the copy is bound, not found, superseded, or timed out. A window ends once.
+  const finishSaveAs = (win: SaveAsPending) => {
+    win.dead = true;
+    if (saveAsRef.current === win) saveAsRef.current = null;
     if (saveAsTimerRef.current !== null) {
       clearTimeout(saveAsTimerRef.current);
       saveAsTimerRef.current = null;
     }
+    setCopyBusy(false);
+  };
+  // supersede ends the pending window, if any, because the page moves on to another file (a read, a new node).
+  const supersede = () => {
+    if (saveAsRef.current !== null) finishSaveAs(saveAsRef.current);
   };
 
-  useEffect(() => () => endSaveAs(), []);
+  useEffect(() => () => supersede(), []);
 
   useEffect(() => {
     stateRef.current = state;
@@ -153,6 +167,9 @@ export default function OfficeEditPage() {
   useEffect(() => {
     if (!on || !valid) return;
     let cancelled = false;
+    // A new node ends the Save As window and any bind in flight: neither may move the page to the old folder (decision 107).
+    supersede();
+    seqRef.current++;
     nodRef.current = nod;
     watchRef.current = sessionChanged();
     setState({ status: "opening" });
@@ -191,19 +208,24 @@ export default function OfficeEditPage() {
   };
 
   // bindCopy moves the page to the copy that a Save As this page started has made (decision 107). It runs only while that
-  // Save As is pending (win), and only for a candidate of it: a file named exactly as the request or its free form, made at or
-  // after the request (copyCandidates). signal is the name the editor gave (the title's or the answer's); it picks among the
-  // candidates and never makes one. last says the answer has come, so the pending Save As ends with this check.
+  // Save As's window is open (win), and only for a candidate of it (copyCandidates): a file that was not in the folder when the
+  // request was asked, named exactly as the request or its free form, made at or after the request. signal is the name the
+  // editor gave (the title's or the answer's); it picks among the candidates and never makes one. last says the answer has
+  // come, so the window ends with this check whatever it finds.
   const bindCopy = async (win: SaveAsPending, signal: string, last: boolean) => {
+    if (win.at === 0) return; // the request has not gone to the editor yet: nothing is a candidate
     const seq = ++seqRef.current;
     let cur: Node;
     try {
       cur = await statNode(nodRef.current);
     } catch {
-      if (last) endSaveAs();
+      if (last) {
+        finishSaveAs(win);
+        setNotice("copyNotShown");
+      }
       return;
     }
-    if (seq !== seqRef.current) return;
+    if (win.dead || seq !== seqRef.current) return;
     let items: Node[] = [];
     if (cur.parent_id !== null) {
       try {
@@ -212,16 +234,17 @@ export default function OfficeEditPage() {
         items = [];
       }
     }
-    if (seq !== seqRef.current || saveAsRef.current !== win) return;
-    const hit = copyCandidates(items, win.filename, win.at).find((n) => n.name === signal);
+    if (win.dead || seq !== seqRef.current) return;
+    const want = signal.normalize("NFC");
+    const hit = copyCandidates(items, win.filename, win.at, win.before).find((n) => n.name.normalize("NFC") === want);
     if (hit === undefined) {
       if (last) {
-        endSaveAs();
+        finishSaveAs(win);
         setNotice("copyNotShown");
       }
       return;
     }
-    endSaveAs();
+    finishSaveAs(win);
     nodRef.current = hit.id;
     window.history.replaceState(window.history.state, "", `/edit/${hit.id}${window.location.search}`);
     authNameRef.current = hit.name;
@@ -236,6 +259,7 @@ export default function OfficeEditPage() {
   // is not a Save As: the file's own read is shown, and nothing else is looked for.
   const readName = async () => {
     const seq = ++seqRef.current;
+    supersede();
     try {
       const cur = await statNode(nodRef.current);
       if (seq === seqRef.current) applyName(cur);
@@ -336,17 +360,19 @@ export default function OfficeEditPage() {
       // tells the page to read its own file again, which never moves the page (decision 107).
       if (msg.id === "Doc_Title" && typeof msg.values?.DocName === "string" && msg.values.DocName !== "") {
         const pending = saveAsRef.current;
-        if (pending !== null) void bindCopy(pending, msg.values.DocName, false);
-        else if (!isSameName(authNameRef.current, msg.values.DocName)) void readName();
+        if (pending !== null) {
+          if (!pending.answered) void bindCopy(pending, msg.values.DocName, false);
+        } else if (!isSameName(authNameRef.current, msg.values.DocName)) void readName();
       }
-      // The answer to a Save As this page started names the copy (the request asked for it with Notify). Without a pending
-      // Save As, the answer is ignored for binding.
+      // The answer to a Save As this page started names the copy (the request asked for it with Notify). Only an answer that
+      // names a file is that answer: a plain save's answer has no name, and neither has a failed Save As (Socket.ts), so
+      // those leave the window open, and its timer ends it. Without a pending Save As, the answer is ignored.
       if (msg.id === "Action_Save_Resp") {
         const pending = saveAsRef.current;
-        if (pending !== null) {
-          const named = typeof msg.values?.fileName === "string" && msg.values.fileName !== "" ? msg.values.fileName : null;
-          if (named === null) endSaveAs();
-          else void bindCopy(pending, named, true);
+        const named = typeof msg.values?.fileName === "string" && msg.values.fileName !== "" ? msg.values.fileName : null;
+        if (pending !== null && !pending.answered && named !== null) {
+          pending.answered = true;
+          void bindCopy(pending, named, true);
         }
       }
       if (msg.id === "App_TokenExpiring" || msg.id === "App_TokenExpired") void renew();
@@ -371,15 +397,37 @@ export default function OfficeEditPage() {
   // confirmSaveAs sends the copy's name to the editor, which makes the copy with PutRelativeFile. The dialog closes; the
   // editor keeps the file it has open.
   const confirmSaveAs = () => {
-    if (saveAs === null || origin === null || !saveAsNameOk(saveAsName)) return;
-    const filename = saveAsFilename(saveAsName, saveAs.ext);
-    // The window for the copy opens with the request. It ends at the answer, or after SAVE_AS_WINDOW_MS: the editor answers in
-    // seconds, and a longer window would let a late or unrelated title bind a file the person did not ask for.
-    endSaveAs();
-    saveAsRef.current = { filename, at: Date.now() };
-    saveAsTimerRef.current = setTimeout(endSaveAs, SAVE_AS_WINDOW_MS);
-    frameRef.current?.contentWindow?.postMessage(editorMessage("Action_SaveAs", { Filename: filename, Notify: true }), origin);
+    if (saveAs === null || origin === null || saveAsRef.current !== null || !saveAsNameOk(saveAsName)) return;
+    const filename = saveAsFilename(saveAsName, saveAs.ext).normalize("NFC");
+    // The window opens with the request and ends at the answer, or after SAVE_AS_WINDOW_MS. Before the request goes to the
+    // editor, the folder's files are read in full: the copy must be one that was not there (copyCandidates). A folder that
+    // cannot be read in full is no basis, so the Save As is not asked and the page says so.
+    const win: SaveAsPending = { filename, at: 0, before: new Set(), answered: false, dead: false };
+    saveAsRef.current = win;
+    saveAsTimerRef.current = setTimeout(() => finishSaveAs(win), SAVE_AS_WINDOW_MS);
+    setCopyBusy(true);
     setSaveAs(null);
+    void (async () => {
+      let items: Node[] | null = null;
+      try {
+        const node = await statNode(nodRef.current);
+        if (node.parent_id !== null) {
+          const dir = node.parent_id;
+          items = await listDirectory((cursor) => childrenPage(node.folder_id, dir, cursor, { key: "modified", dir: "desc" }));
+        }
+      } catch {
+        items = null;
+      }
+      if (win.dead) return;
+      if (items === null) {
+        finishSaveAs(win);
+        setNotice("copyNotStarted");
+        return;
+      }
+      win.before = new Set(items.map((n) => n.id));
+      win.at = Date.now();
+      frameRef.current?.contentWindow?.postMessage(editorMessage("Action_SaveAs", { Filename: filename, Notify: true }), origin);
+    })();
   };
 
   if (!on || !valid) return <NotFoundPage />;
@@ -466,7 +514,10 @@ export default function OfficeEditPage() {
           title={t("files.editor.saveAsTitle")}
           okText={t("files.editor.saveAsOk")}
           cancelText={t("common.cancel")}
-          okButtonProps={{ disabled: !saveAsNameOk(saveAsName) }}
+          okButtonProps={{
+            disabled: copyBusy || !saveAsNameOk(saveAsName),
+            title: copyBusy ? t("files.editor.saveAsBusy") : undefined,
+          }}
           onOk={confirmSaveAs}
           onCancel={() => setSaveAs(null)}
         >

@@ -32,10 +32,22 @@ export function decodeEditorName(raw: unknown): string | null {
   return v === "" ? null : v;
 }
 
-// extOf is a name's extension, with its dot; "" when the name has none (a dot first is not an extension).
+// MAX_NAME_BYTES and MAX_EXT_BYTES are the server's limits (internal/api/transfer.go, office_saveas.go): a name is at most 255
+// UTF-8 bytes, and an extension, with its dot, at most 32. A dot first is not an extension.
+export const MAX_NAME_BYTES = 255;
+export const MAX_EXT_BYTES = 32;
+
+function utf8Len(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
+
+// extOf is a name's extension, with its dot; "" when the name has none, or when the ending is longer than MAX_EXT_BYTES (the
+// server then keeps the whole name as the base).
 export function extOf(name: string): string {
   const i = name.lastIndexOf(".");
-  return i > 0 ? name.slice(i) : "";
+  if (i <= 0) return "";
+  const ext = name.slice(i);
+  return utf8Len(ext) <= MAX_EXT_BYTES ? ext : "";
 }
 
 // displayName is a name the editor sent, with the extension of the file it was before when the editor sent it without one.
@@ -63,20 +75,51 @@ function escapeRe(v: string): string {
   return v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// copyCandidates lists the files a Save As with this requested name may have made: a file whose name is the requested name, or
-// the free form the server gives a taken name ("base (n).ext"), exactly and in its case, and whose creation time is at or after
-// the request, less COPY_SKEW_MS. The creation time is the node's created_at. A node without a usable time is no candidate.
-// The editor's answer chooses among these; it cannot make a file a candidate.
-export function copyCandidates(items: Node[], requested: string, requestedAtMs: number): Node[] {
-  const ext = extOf(requested);
-  const base = ext === "" ? requested : requested.slice(0, requested.length - ext.length);
-  const free = new RegExp(`^${escapeRe(base)} \\(\\d+\\)${escapeRe(ext)}$`);
+// parseCreated reads a node's created_at. The server's clock may write more fraction digits than the three a JavaScript date
+// is sure to read, so the fraction is cut or padded to three first. Anything else, or an unreadable time, is NaN.
+export function parseCreated(v: string): number {
+  const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/.exec(v);
+  if (m === null) return NaN;
+  const frac = (m[2] ?? "").padEnd(3, "0").slice(0, 3);
+  return Date.parse(`${m[1]}.${frac}${m[3]}`);
+}
+
+// copyCandidates lists the files a Save As with this requested name may have made in its folder. A candidate is a file that
+// was not in the folder when the Save As was asked (before: the ids then listed, see listDirectory), whose name is the requested
+// name or the free form the server gives a taken name, and whose creation time is at or after the request less COPY_SKEW_MS.
+// Names are compared in NFC, the form the server stores. The free form is "base (n).ext" with n from 1 to 1000; when
+// "base (1000).ext" would not fit MAX_NAME_BYTES the server cuts the base, so no free form is a candidate then. The editor's
+// answer chooses among these; it cannot make a file a candidate.
+export function copyCandidates(items: Node[], requested: string, requestedAtMs: number, before: ReadonlySet<string>): Node[] {
+  const req = requested.normalize("NFC");
+  const ext = extOf(req);
+  const base = ext === "" ? req : req.slice(0, req.length - ext.length);
+  const freeFits = utf8Len(`${base} (1000)${ext}`) <= MAX_NAME_BYTES;
+  const free = new RegExp(`^${escapeRe(base)} \\((?:[1-9]\\d{0,2}|1000)\\)${escapeRe(ext)}$`);
   return items.filter((n) => {
-    if (n.kind !== "file") return false;
-    if (n.name !== requested && !free.test(n.name)) return false;
-    const made = Date.parse(n.created_at);
+    if (n.kind !== "file" || before.has(n.id)) return false;
+    const name = n.name.normalize("NFC");
+    if (name !== req && !(freeFits && free.test(name))) return false;
+    const made = parseCreated(n.created_at);
     return Number.isFinite(made) && made >= requestedAtMs - COPY_SKEW_MS;
   });
+}
+
+// listDirectory reads every child of a directory, page by page, through read (one page for a cursor). It throws when the
+// directory holds more than cap children, or when a read fails: a caller then knows nothing of the directory and fails closed.
+export async function listDirectory(
+  read: (cursor?: string) => Promise<{ items: Node[]; next_cursor?: string | null }>,
+  cap = 2000,
+): Promise<Node[]> {
+  const out: Node[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await read(cursor);
+    out.push(...page.items);
+    if (out.length > cap) throw new Error("directory over the listing cap");
+    if (!page.next_cursor) return out;
+    cursor = page.next_cursor;
+  }
 }
 
 // NodeChanged is the announcement of a changed file: the node, its folder and its parent directory, and the user it is for.

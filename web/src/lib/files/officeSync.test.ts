@@ -147,6 +147,7 @@ describe("makeReceiver", () => {
 // ef1 (decision 107): a Save As copy is one whose name is the requested name or its free form, made at or after the request.
 describe("copyCandidates", () => {
   const REQUEST = Date.parse("2026-11-08T10:00:00Z");
+  const NONE = new Set<string>();
   function made(id: string, name: string, created: string): Node {
     return { ...file(id, name), created_at: created } as Node;
   }
@@ -156,12 +157,12 @@ describe("copyCandidates", () => {
       made("nod_c2", "letter (2).docx", "2026-11-08T10:00:05Z"),
       made("nod_c3", "letter.docx", "2026-11-08T10:00:06Z"),
     ];
-    expect(copyCandidates(items, "letter.docx", REQUEST).map((n) => n.id)).toEqual(["nod_c2", "nod_c3"]);
+    expect(copyCandidates(items, "letter.docx", REQUEST, NONE).map((n) => n.id)).toEqual(["nod_c2", "nod_c3"]);
   });
 
   it("takes a name whose free form was asked for (the request is 'letter (2).docx')", () => {
     const items = [made("nod_c4", "letter (2) (2).docx", "2026-11-08T10:00:05Z")];
-    expect(copyCandidates(items, "letter (2).docx", REQUEST).map((n) => n.id)).toEqual(["nod_c4"]);
+    expect(copyCandidates(items, "letter (2).docx", REQUEST, NONE).map((n) => n.id)).toEqual(["nod_c4"]);
   });
 
   it("refuses any other name, including the same name in another case, and a folder", () => {
@@ -170,25 +171,75 @@ describe("copyCandidates", () => {
       made("nod_o2", "Letter.docx", "2026-11-08T10:00:05Z"),
       { ...made("nod_d", "letter.docx", "2026-11-08T10:00:05Z"), kind: "dir" } as Node,
     ];
-    expect(copyCandidates(items, "letter.docx", REQUEST)).toEqual([]);
+    expect(copyCandidates(items, "letter.docx", REQUEST, NONE)).toEqual([]);
   });
 
   it("refuses a copy made before the request, beyond the clock allowance", () => {
     const items = [made("nod_old", "letter.docx", "2026-10-01T00:00:00Z")];
-    expect(copyCandidates(items, "letter.docx", REQUEST)).toEqual([]);
+    expect(copyCandidates(items, "letter.docx", REQUEST, NONE)).toEqual([]);
     // Thirty seconds before the request is inside the allowance for clock skew; a minute before is not.
-    expect(copyCandidates([made("nod_skew", "letter.docx", "2026-11-08T09:59:40Z")], "letter.docx", REQUEST).length).toBe(1);
-    expect(copyCandidates([made("nod_early", "letter.docx", "2026-11-08T09:59:00Z")], "letter.docx", REQUEST)).toEqual([]);
+    expect(copyCandidates([made("nod_skew", "letter.docx", "2026-11-08T09:59:40Z")], "letter.docx", REQUEST, NONE).length).toBe(1);
+    expect(copyCandidates([made("nod_early", "letter.docx", "2026-11-08T09:59:00Z")], "letter.docx", REQUEST, NONE)).toEqual([]);
   });
 
   it("refuses a node with no usable creation time", () => {
     const items = [made("nod_x", "letter.docx", "")];
-    expect(copyCandidates(items, "letter.docx", REQUEST)).toEqual([]);
+    expect(copyCandidates(items, "letter.docx", REQUEST, NONE)).toEqual([]);
   });
 
   it("reads the dot and the brackets of a name as plain characters", () => {
     const items = [made("nod_y", "a.b (2).docx", "2026-11-08T10:00:05Z"), made("nod_z", "aXb (2).docx", "2026-11-08T10:00:05Z")];
     // "a.b (2).docx" is the free form of "a.b.docx"; "aXb (2).docx" is not, since the dot is a dot.
-    expect(copyCandidates(items, "a.b.docx", REQUEST).map((n) => n.id)).toEqual(["nod_y"]);
+    expect(copyCandidates(items, "a.b.docx", REQUEST, NONE).map((n) => n.id)).toEqual(["nod_y"]);
+  });
+
+  it("takes a name the editor types in another Unicode form (NFD), since the server stores NFC", () => {
+    const nfd = "cafe\u0301.docx";
+    expect(copyCandidates([made("nod_n", "caf\u00e9.docx", "2026-11-08T10:00:05Z")], nfd, REQUEST, NONE).map((n) => n.id)).toEqual(["nod_n"]);
+    expect(copyCandidates([made("nod_f", "caf\u00e9 (2).docx", "2026-11-08T10:00:05Z")], nfd, REQUEST, NONE).map((n) => n.id)).toEqual(["nod_f"]);
+  });
+
+  it("takes the free form only for n from 1 to 1000, the range the server counts", () => {
+    const at = "2026-11-08T10:00:05Z";
+    for (const name of ["letter (1).docx", "letter (9).docx", "letter (10).docx", "letter (100).docx", "letter (1000).docx"]) {
+      expect(copyCandidates([made("nod", name, at)], "letter.docx", REQUEST, NONE).length, name).toBe(1);
+    }
+    for (const name of ["letter (0).docx", "letter (01).docx", "letter (1001).docx", "letter (9999).docx"]) {
+      expect(copyCandidates([made("nod", name, at)], "letter.docx", REQUEST, NONE), name).toEqual([]);
+    }
+  });
+
+  it("splits off an extension only when it is 32 bytes or less, with its dot, as the server does", () => {
+    const at = "2026-11-08T10:00:05Z";
+    const longExt = "." + "x".repeat(32); // 33 bytes with the dot: no extension, so the free form is the whole name plus " (1)"
+    const name = "a" + longExt;
+    expect(copyCandidates([made("nod_l", `${name} (1)`, at)], name, REQUEST, NONE).map((n) => n.id)).toEqual(["nod_l"]);
+    expect(copyCandidates([made("nod_w", `a (1)${longExt}`, at)], name, REQUEST, NONE)).toEqual([]);
+    const okExt = "." + "x".repeat(31); // 32 bytes: split
+    expect(copyCandidates([made("nod_s", `a (1)${okExt}`, at)], "a" + okExt, REQUEST, NONE).map((n) => n.id)).toEqual(["nod_s"]);
+  });
+
+  it("fails closed on a free form the server would cut to fit 255 bytes, and still takes the exact name", () => {
+    const at = "2026-11-08T10:00:05Z";
+    const req = "b".repeat(245) + ".docx"; // "b...b (1000).docx" would be 257 bytes, so the server cuts the base
+    const items = [made("nod_e", req, at), made("nod_f", "b".repeat(245) + " (1).docx", at)];
+    expect(copyCandidates(items, req, REQUEST, NONE).map((n) => n.id)).toEqual(["nod_e"]);
+  });
+
+  it("refuses a file that was in the folder when the Save As was asked", () => {
+    const at = "2026-11-08T10:00:05Z";
+    const before = new Set(["nod_old"]);
+    const items = [made("nod_old", "letter (1).docx", at), made("nod_new", "letter (2).docx", at)];
+    expect(copyCandidates(items, "letter.docx", REQUEST, before).map((n) => n.id)).toEqual(["nod_new"]);
+  });
+
+  it("reads a creation time with more than three fraction digits, and refuses one that is not a time", () => {
+    const items = [made("nod_p", "letter.docx", "2026-11-08T10:00:05.123456789Z"), made("nod_q", "letter.docx", "not a time")];
+    expect(copyCandidates(items, "letter.docx", REQUEST, NONE).map((n) => n.id)).toEqual(["nod_p"]);
+  });
+
+  it("allows exactly thirty seconds of clock skew, not a millisecond more", () => {
+    expect(copyCandidates([made("nod_b", "letter.docx", "2026-11-08T09:59:30.000Z")], "letter.docx", REQUEST, NONE).length).toBe(1);
+    expect(copyCandidates([made("nod_c", "letter.docx", "2026-11-08T09:59:29.999Z")], "letter.docx", REQUEST, NONE)).toEqual([]);
   });
 });
