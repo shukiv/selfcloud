@@ -204,7 +204,8 @@ describe("people of a tenant", () => {
     renderUsers();
     await screen.findByText("Mateo");
     fireEvent.click(screen.getByRole("button", { name: "More actions for Mateo" }));
-    const entry = await screen.findByRole("menuitem", { name: /Remove/ });
+    // The mockup's words, from the admin catalogue part (the lead, after the re-check).
+    const entry = await screen.findByRole("menuitem", { name: "Remove from account…" });
     expect(entry.className).toContain("ant-dropdown-menu-item-danger");
     fireEvent.click(entry);
     const dialog = await screen.findByRole("dialog");
@@ -240,7 +241,7 @@ describe("people of a tenant", () => {
       "More actions for Dana",
     ]);
     fireEvent.click(screen.getByRole("button", { name: "More actions for Dana" }));
-    expect((await screen.findAllByRole("menuitem")).map((m) => m.textContent)).toEqual(["Remove…"]);
+    expect((await screen.findAllByRole("menuitem")).map((m) => m.textContent)).toEqual(["Remove from account…"]);
   });
 
   it("a refused resend shows the code's text and sends nothing more (guard: failureText)", async () => {
