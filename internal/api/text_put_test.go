@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http/httptest"
@@ -276,6 +277,102 @@ func TestPutTextTypeOnABinaryFileIsChecked(t *testing.T) {
 
 	wantStatus(t, putContentAs(t, fx, n, "image/png", notUTF8), 200)
 	wantContent(t, fx, n.ID, notUTF8)
+}
+
+// TestPutBinaryFileWithNoTypeKeepsItsType: a file stored as binary keeps its type when a PUT names no type, or a
+// non-text one, even with a body that is not text. The name's extension (.txt) must not make it text (invariant I1).
+func TestPutBinaryFileWithNoTypeKeepsItsType(t *testing.T) {
+	t.Parallel()
+	for _, hd := range []string{"", "application/octet-stream"} {
+		fx := newSharingFixture(t)
+		n := storeFileAs(t, fx, "pic.txt", "image/png", "old")
+		rec := putContentAs(t, fx, n, hd, notUTF8)
+		wantStatus(t, rec, 200)
+		if got := decode[nodeJSON](t, rec).MimeType; got != "image/png" {
+			t.Errorf("Content-Type %q: stored type %q, want image/png", hd, got)
+		}
+	}
+}
+
+// TestPutBinaryNameWithNoTypeKeepsItsType: a binary file named for a text extension that the system MIME table maps to
+// text keeps its binary type with no Content-Type. The result does not depend on the MIME table.
+func TestPutBinaryNameWithNoTypeKeepsItsType(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	n := storeFileAs(t, fx, "clip.ts", "video/mp2t", "old")
+	rec := putContentAs(t, fx, n, "", binaryNoNUL)
+	wantStatus(t, rec, 200)
+	if got := decode[nodeJSON](t, rec).MimeType; got != "video/mp2t" {
+		t.Errorf("stored type %q, want video/mp2t", got)
+	}
+}
+
+// TestPutWithNoTypeGetsTheNameType: a checked text file (stored as octet-stream) that a PUT with no Content-Type gives a
+// .json name takes the name's text type, so the stored type is text.
+func TestPutWithNoTypeGetsTheNameType(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	n := storeFileAs(t, fx, "data.json", "application/octet-stream", "old")
+	rec := putContentAs(t, fx, n, "", "{\"a\": 1}")
+	wantStatus(t, rec, 200)
+	if got := decode[nodeJSON](t, rec).MimeType; got != "application/json" {
+		t.Errorf("stored type %q, want application/json", got)
+	}
+}
+
+// TestPutInvariantsHoldForEveryCombination is the contract of decision 113, over every stored type, Content-Type and body,
+// for one code-listed name and one that is not. I1: a PUT stores a text type only when its body passed the check. I2: a
+// PUT to a file stored as text never leaves it with a non-text type. A refused PUT (400) changes nothing. An exempt PUT
+// (a binary file, with a Content-Type that is not text) stores a binary type. A checked PUT stores the name's text type
+// when the request names none.
+func TestPutInvariantsHoldForEveryCombination(t *testing.T) {
+	t.Parallel()
+	stored := []string{"text/plain", "application/json", "application/octet-stream", "image/png", "video/mp2t"}
+	headers := []string{"", "text/plain", "image/png", "application/octet-stream"}
+	bodies := []struct{ label, body string }{{"valid", "{\"a\": 1}"}, {"invalid", notUTF8}}
+	for _, name := range []string{"a.json", "a.bin"} {
+		for _, st := range stored {
+			for _, hd := range headers {
+				for _, b := range bodies {
+					name, st, hd, b := name, st, hd, b
+					t.Run(fmt.Sprintf("%s/stored=%s/header=%q/%s", name, st, hd, b.label), func(t *testing.T) {
+						t.Parallel()
+						fx := newSharingFixture(t)
+						n := storeFileAs(t, fx, name, st, "old")
+						before := decode[nodeJSON](t, call(t, fx.s, "GET", "/api/v1/nodes/"+n.ID, fx.key, nil))
+						rec := putContentAs(t, fx, n, hd, b.body)
+						after := decode[nodeJSON](t, call(t, fx.s, "GET", "/api/v1/nodes/"+n.ID, fx.key, nil))
+						exempt := binaryMedia(st) && !textMedia(mediaType(hd))
+						switch rec.Code {
+						case 400:
+							if b.label == "valid" {
+								t.Errorf("a valid body was refused: %s", rec.Body.String())
+							}
+							if after.MimeType != st || after.ETag != before.ETag || fileBody(t, fx.s, fx.key, n.ID) != "old" {
+								t.Errorf("a refused PUT changed the file: type %q, want %q", after.MimeType, st)
+							}
+						case 200:
+							final := after.MimeType
+							if textMedia(final) && b.label == "invalid" {
+								t.Errorf("I1: stored text type %q for an invalid body", final)
+							}
+							if textMedia(st) && !textMedia(final) {
+								t.Errorf("I2: a text file became %q", final)
+							}
+							if exempt && !binaryMedia(final) {
+								t.Errorf("an exempt PUT stored %q, want a binary type", final)
+							}
+							if want := mimeOf(hd, name); !exempt && textMedia(want) && final != want {
+								t.Errorf("a checked PUT stored %q, want the name's type %q", final, want)
+							}
+						default:
+							t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+						}
+					})
+				}
+			}
+		}
+	}
 }
 
 // TestPutOnALockedFileWithAnOversizedBodyIsStill409: the lock is answered before the body is read, so a body over the

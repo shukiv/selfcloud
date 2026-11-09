@@ -67,6 +67,8 @@ func TestUTF8RuleTable(t *testing.T) {
 		{"pic.txt", "image/png", "text/plain", "text/plain", true},
 		{"pic.txt", "image/png", "image/png", "image/png", false},
 		{"notes.bin", "text/plain", "application/octet-stream", "application/octet-stream", true},
+		{"a.rst", "application/octet-stream", "", "text/x-rst", true},
+		{"clip.ts", "video/mp2t", "", "text/vnd.trolltech.linguist", false},
 		{"pic.txt", "image/png", "", "image/png", false},
 		{"notes.txt", "text/plain", "image/png", "image/png", true},
 		{"data.json", "application/json", "image/png", "image/png", true},
