@@ -15,6 +15,8 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/config"
@@ -159,20 +161,42 @@ func confirmed(yes bool, want string, stderr io.Writer) bool {
 	if yes {
 		return true
 	}
-	f, ok := adminStdin.(*os.File)
-	if !ok {
+	if !stdinIsTerminal(adminStdin) {
 		return false
 	}
-	fi, err := f.Stat()
-	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
-		return false
-	}
+	f := adminStdin.(*os.File)
 	fmt.Fprintf(stderr, "Type %s to confirm: ", want)
 	line, _ := bufio.NewReader(f).ReadString('\n')
 	return strings.TrimSpace(line) == want
 }
 
-// readPasswordLine reads one line from r and strips its line ending. The line is not otherwise changed.
+// stdinIsTerminal reports whether r is a character device, such as a terminal, where what is typed is shown. Anything
+// else, a pipe or a file, is not.
+func stdinIsTerminal(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// typeablePassword checks that a password read from stdin is UTF-8 with no control characters, so a browser can type
+// it to sign in. A password that fails would be one the person could not enter.
+func typeablePassword(s string) error {
+	if !utf8.ValidString(s) {
+		return errors.New("the password must be UTF-8 text")
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return errors.New("the password must not hold control characters; a browser cannot type them")
+		}
+	}
+	return nil
+}
+
+// readPasswordLine reads one line from r and strips its line ending. The line is not otherwise changed, and it must be
+// typeable.
 func readPasswordLine(r io.Reader) (string, error) {
 	line, err := bufio.NewReader(io.LimitReader(r, maxStdinLine+1)).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -184,6 +208,9 @@ func readPasswordLine(r io.Reader) (string, error) {
 	line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
 	if line == "" {
 		return "", errors.New("no password on stdin")
+	}
+	if err := typeablePassword(line); err != nil {
+		return "", err
 	}
 	return line, nil
 }
@@ -369,6 +396,11 @@ func resetWithLink(ctx context.Context, st *store.Store, cfg *config.Config, u *
 // unless it came from stdin.
 func resetWithTemporary(ctx context.Context, st *store.Store, u *store.User, enable, passStdin, yes bool, stdout, stderr io.Writer) int {
 	const name = "reset-password"
+	if passStdin && stdinIsTerminal(adminStdin) {
+		fmt.Fprintf(stderr, "selfcloud admin %s: -password-stdin needs the password on a pipe or redirected into stdin "+
+			"(pipe or redirect the password); at a terminal it would be shown as it is typed\n", name)
+		return 2
+	}
 	if !confirmed(yes, u.Email, stderr) {
 		fmt.Fprintf(stderr, "selfcloud admin %s: refused: the temporary method ends the user's sessions; pass -yes to "+
 			"confirm when stdin is not a terminal\n", name)
