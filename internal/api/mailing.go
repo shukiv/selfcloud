@@ -6,14 +6,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
-	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/mail"
+	"github.com/shukiv/selfcloud/internal/recovery"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -115,31 +114,17 @@ func (s *Server) checkVerificationMethod(r *http.Request, method string, t linkT
 // issueToken makes a token of the given purpose for u, inside tx. It voids the user's earlier
 // tokens of that purpose, so only the newest one works.
 func (s *Server) issueToken(ctx context.Context, tx *store.Tx, u *store.User, purpose string, now time.Time) (*issuedToken, error) {
-	ttl, tmpl := s.cfg.Users.VerificationTTL.D(), s.cfg.Users.VerifyURLTemplate
-	switch purpose {
-	case store.PurposeReset:
-		ttl, tmpl = s.cfg.Users.ResetTTL.D(), s.cfg.Users.ResetURLTemplate
-	case store.PurposeEmailChange:
-		// A confirmation of a new address lives as long as a verification does (decision 89).
-		tmpl = s.cfg.Users.EmailChangeURLTemplate
-	}
-	if err := tx.DeleteVerifications(ctx, u.ID, purpose, ""); err != nil {
-		return nil, err
-	}
-	secret, hash := auth.NewToken()
-	it := &issuedToken{purpose: purpose, token: secret, link: s.tokenLink(tmpl, secret), expires: now.Add(ttl)}
-	err := tx.InsertVerification(ctx, &store.Verification{ID: id.New("vrf"), UserID: u.ID,
-		Purpose: purpose, TokenHash: hash, ExpiresAt: it.expires, CreatedAt: now})
+	ttl, tmpl := recovery.DefaultLifetime(s.cfg.Users, purpose)
+	t, err := recovery.Issue(ctx, tx, u, purpose, ttl, tmpl, s.cfg.PublicURL, now)
 	if err != nil {
 		return nil, err
 	}
-	return it, nil
+	return &issuedToken{purpose: purpose, token: t.Secret, link: t.Link, expires: t.Expires}, nil
 }
 
-// tokenLink fills a link template. The token is URL-escaped; the templates put it in the fragment,
-// so it is never sent to a server or written to a log.
+// tokenLink fills a link template. See recovery.TokenLink.
 func (s *Server) tokenLink(tmpl, token string) string {
-	return strings.NewReplacer("{public_url}", s.cfg.PublicURL, "{token}", url.QueryEscape(token)).Replace(tmpl)
+	return recovery.TokenLink(tmpl, s.cfg.PublicURL, token)
 }
 
 // sendToken mails a token's link to u, in u's locale.

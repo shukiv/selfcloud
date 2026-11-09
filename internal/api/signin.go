@@ -15,6 +15,7 @@ import (
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/recovery"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -37,12 +38,9 @@ func loginScope(account string) string {
 // One message covers all of them, so a link reveals nothing about its history.
 var errBadLink = apierr.New(apierr.InvalidRequest, "the link is not valid or has expired")
 
-// checkPassword checks a password someone is setting.
+// checkPassword checks a password someone is setting. See recovery.CheckPassword.
 func checkPassword(p string) error {
-	if err := auth.ValidPassword(p); err != nil {
-		return apierr.New(apierr.InvalidRequest, err.Error())
-	}
-	return nil
+	return recovery.CheckPassword(p)
 }
 
 // newSession makes a session for u, begun now by r's client. short marks a session the browser did not keep
@@ -682,16 +680,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 		if err := tx.DeleteVerifications(ctx, found.ID, store.PurposeReset, ""); err != nil {
 			return err
 		}
-		if err := s.endImpersonations(ctx, tx, found.ID, "password_reset"); err != nil {
-			return err
-		}
-		if err := s.endAdminImpersonations(ctx, tx, found.ID, "admin_sessions_ended"); err != nil {
-			return err
-		}
-		if err := tx.DeleteUserSessions(ctx, found.ID); err != nil {
-			return err
-		}
-		c, err := endUserTokens(ctx, tx, found.AccountID, found.ID)
+		c, err := recovery.EndSessions(ctx, tx, found, "password_reset")
 		if err != nil {
 			return err
 		}

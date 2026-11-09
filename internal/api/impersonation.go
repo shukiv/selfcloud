@@ -11,6 +11,7 @@ import (
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/recovery"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -399,29 +400,14 @@ func impersonated(p *auth.Principal, details map[string]any) map[string]any {
 	return out
 }
 
-// impersonationEnd is the audit entry for an impersonation's end. It is under the admin who began it.
+// impersonationEnd is the audit entry for an impersonation's end. See recovery.ImpersonationEnd.
 func impersonationEnd(sess *store.Session, reason string) *store.AuditEntry {
-	return &store.AuditEntry{Time: store.Now(), AccountID: sess.AccountID, ActorKind: string(auth.KindUser),
-		ActorID: sess.ImpersonatorID, Action: "impersonation.end", Target: sess.UserID,
-		Details: map[string]any{"reason": reason}}
+	return recovery.ImpersonationEnd(sess, reason)
 }
 
-// endImpersonations ends each impersonation in which userID is the person signed in as, and audits each end under
-// the admin who began it. It runs inside tx, before the user's sessions are deleted.
+// endImpersonations ends each impersonation in which userID is the person signed in as. See recovery.EndImpersonations.
 func (s *Server) endImpersonations(ctx context.Context, tx *store.Tx, userID, reason string) error {
-	rows, err := tx.ImpersonationsOf(ctx, userID)
-	if err != nil {
-		return err
-	}
-	for _, sess := range rows {
-		if err := tx.DeleteSession(ctx, sess.IDHash); err != nil {
-			return err
-		}
-		if err := tx.InsertAudit(ctx, impersonationEnd(sess, reason)); err != nil {
-			return err
-		}
-	}
-	return nil
+	return recovery.EndImpersonations(ctx, tx, userID, reason)
 }
 
 // endAccountImpersonations ends every impersonation of a member of the account, when the account is deleted (fu2,
@@ -451,23 +437,9 @@ func (s *Server) endAccountImpersonations(ctx context.Context, tx *store.Tx, acc
 	return nil
 }
 
-// endAdminImpersonations ends every impersonation the admin began, when the admin is removed, signs out, changes or loses
-// its sessions (reason says which). It runs inside tx, before
-// the admin's row is deleted, which would otherwise take the impersonations with it unaudited.
+// endAdminImpersonations ends every impersonation the admin began. See recovery.EndAdminImpersonations.
 func (s *Server) endAdminImpersonations(ctx context.Context, tx *store.Tx, adminID, reason string) error {
-	rows, err := tx.ImpersonationsBy(ctx, adminID)
-	if err != nil {
-		return err
-	}
-	for _, sess := range rows {
-		if err := tx.DeleteSession(ctx, sess.IDHash); err != nil {
-			return err
-		}
-		if err := tx.InsertAudit(ctx, impersonationEnd(sess, reason)); err != nil {
-			return err
-		}
-	}
-	return nil
+	return recovery.EndAdminImpersonations(ctx, tx, adminID, reason)
 }
 
 // returnCookieName is the name of the parked admin session. A __Secure- prefix, not __Host-, because __Host- forbids a

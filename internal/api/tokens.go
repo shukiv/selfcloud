@@ -34,6 +34,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/id"
+	"github.com/shukiv/selfcloud/internal/recovery"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -722,12 +723,7 @@ func userPrincipal(accID string, u *store.User) *auth.Principal {
 // status it was issued under (sec1, decision 84). It returns the cut-off now in force, which a device cookie made in the
 // same transaction must be stamped after (sec1, decision 84, review F9).
 func endUserTokens(ctx context.Context, tx *store.Tx, accountID, userID string) (time.Time, error) {
-	cut, err := tx.RevokeUserTokens(ctx, accountID, userID, store.Now())
-	if err != nil {
-		return time.Time{}, err
-	}
-	_, err = tx.RevokeWOPISessions(ctx, accountID, userID, cut)
-	return cut, err
+	return recovery.EndUserTokens(ctx, tx, accountID, userID)
 }
 
 // handleRevokeUserTokens ends every delegated token of one user of the account, issued up to now. The

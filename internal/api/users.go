@@ -17,6 +17,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/names"
+	"github.com/shukiv/selfcloud/internal/recovery"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -418,16 +419,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 				u.Status = store.UserActive
 			case store.UserDisabled:
 				u.Status = store.UserDisabled
-				if err := s.endImpersonations(ctx, tx, u.ID, "disabled"); err != nil {
-					return err
-				}
-				if err := s.endAdminImpersonations(ctx, tx, u.ID, "admin_sessions_ended"); err != nil {
-					return err
-				}
-				if err := tx.DeleteUserSessions(ctx, u.ID); err != nil {
-					return err
-				}
-				if _, err := endUserTokens(ctx, tx, u.AccountID, u.ID); err != nil {
+				if _, err := recovery.EndSessions(ctx, tx, u, "disabled"); err != nil {
 					return err
 				}
 			default:
