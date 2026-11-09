@@ -3,7 +3,7 @@
 // The e2e brand's icon file (decision 119): a square PNG with a green edge and a red square in the middle. The harness writes it
 // with Node's zlib and a CRC-32 of its own, so it needs no image library. pwa.mjs checks that Chromium draws the app icons and the
 // favicon from it.
-import { deflateSync } from 'node:zlib';
+import { deflateSync, inflateSync } from 'node:zlib';
 
 export const ICON_SIZE = 512;
 // ICON_INNER is the middle of the picture, and ICON_OUTER its edge.
@@ -34,6 +34,61 @@ function chunk(type, data) {
   const crc = Buffer.alloc(4);
   crc.writeUInt32BE(crc32(typed));
   return Buffer.concat([length, typed, crc]);
+}
+
+// pngPixel reads one pixel of a non-interlaced 8-bit RGB or RGBA PNG, as [r, g, b, a]. The check of a screenshot uses it: a
+// screenshot is read here, not by the page, so a picture the page cannot draw still shows what the screen showed.
+export function pngPixel(png, x, y) {
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let colour = 0;
+  const idat = [];
+  while (offset < png.length) {
+    const length = png.readUInt32BE(offset);
+    const type = png.toString('latin1', offset + 4, offset + 8);
+    const data = png.subarray(offset + 8, offset + 8 + length);
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      if (data[8] !== 8 || (data[9] !== 2 && data[9] !== 6) || data[12] !== 0) throw new Error('pngPixel: not an 8-bit RGB or RGBA PNG');
+      colour = data[9];
+    }
+    if (type === 'IDAT') idat.push(data);
+    offset += 12 + length;
+  }
+  const bpp = colour === 6 ? 4 : 3;
+  const stride = width * bpp;
+  const raw = inflateSync(Buffer.concat(idat));
+  const out = Buffer.alloc(stride * height);
+  for (let row = 0; row < height; row++) {
+    const filter = raw[row * (stride + 1)];
+    for (let i = 0; i < stride; i++) {
+      const input = raw[row * (stride + 1) + 1 + i];
+      const left = i >= bpp ? out[row * stride + i - bpp] : 0;
+      const up = row > 0 ? out[(row - 1) * stride + i] : 0;
+      const upLeft = row > 0 && i >= bpp ? out[(row - 1) * stride + i - bpp] : 0;
+      let value;
+      switch (filter) {
+        case 0: value = input; break;
+        case 1: value = input + left; break;
+        case 2: value = input + up; break;
+        case 3: value = input + ((left + up) >> 1); break;
+        case 4: {
+          const p = left + up - upLeft;
+          const pa = Math.abs(p - left);
+          const pb = Math.abs(p - up);
+          const pc = Math.abs(p - upLeft);
+          value = input + (pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft);
+          break;
+        }
+        default: throw new Error(`pngPixel: filter ${filter}`);
+      }
+      out[row * stride + i] = value & 0xff;
+    }
+  }
+  const at = y * stride + x * bpp;
+  return [out[at], out[at + 1], out[at + 2], bpp === 4 ? out[at + 3] : 255];
 }
 
 // brandIconPng is the icon file: an 8-bit RGB PNG, size pixels square, with the inner colour in the middle half of each side.

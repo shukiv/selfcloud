@@ -10,6 +10,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { click, setLanguage, setPhone, shot, sleep } from './media.mjs';
+import { pngPixel } from './icon.mjs';
 
 const q = (v) => JSON.stringify(v);
 
@@ -340,6 +341,19 @@ export async function pwaChecks(h, { page, base, brand, dir, check, wsUrl }) {
     await setPhone(page, false);
   }
   await page.send('Emulation.setEmulatedMedia', { features: [] });
+  await page.goto(`${base}/files`);
+  await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') || location.pathname === '/login'`, 15000);
+
+  // The favicon opened as a page of its own, so that its own response policy applies (decision 119). A tab loads the favicon as an
+  // image, and the image is drawn under the page's policy, so the canvas check above does not prove the wrapper's own policy. This
+  // one navigates to /favicon.svg and reads the middle of a screenshot: without the data image the picture is not drawn, and the
+  // middle of the screen is white.
+  await page.goto(`${base}/favicon.svg`);
+  await sleep(300);
+  const view = await page.evaluate(`({ width: innerWidth, height: innerHeight })`);
+  const { data: shotData } = await page.send('Page.captureScreenshot', { format: 'png' });
+  const middle = pngPixel(Buffer.from(shotData, 'base64'), Math.floor(view.width / 2), Math.floor(view.height / 2));
+  check(isRed(middle), `/favicon.svg opened as a page draws its picture under its own policy: the middle of the screen is ${middle}`);
   await page.goto(`${base}/files`);
   await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') || location.pathname === '/login'`, 15000);
   check(true, 'the install entries, the iPhone steps, the update offer and the offline page are checked');
