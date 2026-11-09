@@ -21,6 +21,8 @@ export async function zr1eChecks(h, { page, base, accountKey, accountID, memberI
   await api(base, 'PATCH', `/api/v1/nodes/${top.id}`, accountKey, { no_download: true });
   await api(base, 'PUT', `/api/v1/nodes/${top.id}/permissions/${memberID}`, accountKey, { role: 'contributor', notify: false });
 
+  // The shared page is signed in as a member already, and the sign-in page is only shown to a visitor: sign out first.
+  await h.signOut(page);
   await signIn(page, MEMBER);
   const downloads = join(dir, 'zr1e-downloads');
   await mkdir(downloads, { recursive: true });
