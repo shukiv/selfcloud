@@ -954,7 +954,7 @@ paths:
         "409":
           description: |
             `conflict`: the user must change its password first (`reason = password_change_required`). A user that
-            is not verified or is disabled gets `forbidden`, as before.
+            is not verified gets `user_not_verified` and a disabled user gets `user_disabled`, both 403, as before.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
