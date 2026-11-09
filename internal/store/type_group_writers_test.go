@@ -36,7 +36,9 @@ func TestTypeGroupInsertAndUpdateWriters(t *testing.T) {
 		return n
 	}
 
-	must(s.Write(ctx, func(tx *Tx) error { return tx.InsertNode(ctx, file("nod_up", "Report.PDF", "application/octet-stream")) }))
+	must(s.Write(ctx, func(tx *Tx) error {
+		return tx.InsertNode(ctx, file("nod_up", "Report.PDF", "application/octet-stream"))
+	}))
 	if got := typeGroupOf(t, s, "nod_up"); got != "pdf" {
 		t.Errorf("insert (upload path): type_group %q, want pdf", got)
 	}
@@ -93,21 +95,23 @@ func TestTypeGroupRawWriters(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	var rootID string
 	must(fx.s.Write(ctx, func(tx *Tx) error {
 		cur, err := tx.CopyJobOf(ctx, "job_1")
 		if err != nil {
 			return err
 		}
-		if _, err := tx.q.ExecContext(ctx, `UPDATE nodes SET kind = 'file', mime_type = 'application/octet-stream' WHERE id = ?`, cur.RootID); err != nil {
+		rootID = cur.RootID
+		if _, _, err := tx.StagedCopyBatch(ctx, cur, 10, true, "key_1", Now()); err != nil {
 			return err
 		}
-		if _, _, err := tx.StagedCopyBatch(ctx, cur, 10, true, "key_1", Now()); err != nil {
+		if _, err := tx.q.ExecContext(ctx, `UPDATE nodes SET kind = 'file', mime_type = 'application/octet-stream' WHERE id = ?`, cur.RootID); err != nil {
 			return err
 		}
 		return tx.PublishStaged(ctx, cur, "fld_a", "nod_root", "copy.pdf", "copy.pdf", Now())
 	}))
 	var publishedGroup string
-	if err := fx.s.r.QueryRowContext(ctx, `SELECT type_group FROM nodes WHERE id = (SELECT root_id FROM copy_jobs WHERE id = 'job_1')`).Scan(&publishedGroup); err != nil {
+	if err := fx.s.r.QueryRowContext(ctx, `SELECT type_group FROM nodes WHERE id = ?`, rootID).Scan(&publishedGroup); err != nil {
 		t.Fatal(err)
 	}
 	if publishedGroup != "pdf" {

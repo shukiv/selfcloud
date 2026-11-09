@@ -422,8 +422,12 @@ func (tx *Tx) PublishStaged(ctx context.Context, j *CopyJob, folderID, parentID,
 		folderID, folderID, j.AccountID, j.StagingFolderID); err != nil {
 		return err
 	}
-	if err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET parent_id = ?, name = ?, name_key = ?, modified_at = ?
-		WHERE account_id = ? AND id = ?`, parentID, name, key, millis(at), j.AccountID, j.RootID)); err != nil {
+	group, err := typeGroupFor(ctx, tx.q, j.AccountID, j.RootID, name)
+	if err != nil {
+		return err
+	}
+	if err := rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET parent_id = ?, name = ?, name_key = ?, modified_at = ?,
+		type_group = ? WHERE account_id = ? AND id = ?`, parentID, name, key, millis(at), group, j.AccountID, j.RootID)); err != nil {
 		return err
 	}
 	blobs, err := tx.textBlobsOf(ctx, j.AccountID, "n.folder_id = ?", j.StagingFolderID)

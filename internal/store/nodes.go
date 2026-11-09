@@ -49,6 +49,9 @@ type Node struct {
 	Kind      string // KindDir, KindFile or KindShortcut
 	Size      int64
 	MimeType  string
+	// TypeGroup is the file type group (filetype.go): set from the kind, name and media type on every write by
+	// InsertNodeNoIndex and UpdateNodeHeld. "" for a folder, a shortcut or a type no group knows.
+	TypeGroup string
 	BlobID    string // files only
 	SHA256    string // files only; from the blob
 	ETag      string // files only; changes with every write
@@ -96,12 +99,12 @@ func (n *Node) IsRoot() bool { return n.ParentID == "" }
 const nodeSelect = `SELECT n.id, n.account_id, n.folder_id, n.parent_id, n.name, n.name_key, n.kind,
 	n.size, n.mime_type, n.blob_id, COALESCE(b.sha256, ''), n.etag, n.content_tag, n.created_at, n.modified_at,
 	n.created_by, n.modified_by, n.owner_id, n.no_download, n.editors_can_share,
-	n.trashed_at, n.trashed_by, n.trashed_name_key, n.color, n.description, n.target_id
+	n.trashed_at, n.trashed_by, n.trashed_name_key, n.color, n.description, n.target_id, n.type_group
 	FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id AND b.account_id = n.account_id`
 
 const nodeCols = `id, account_id, folder_id, parent_id, name, name_key, kind, size, mime_type, blob_id,
 	etag, content_tag, created_at, modified_at, created_by, modified_by, owner_id, no_download, editors_can_share,
-	color, description, target_id`
+	color, description, target_id, type_group`
 
 func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	var n Node
@@ -112,7 +115,7 @@ func scanNode(row interface{ Scan(...any) error }) (*Node, error) {
 	var color, desc, target sql.NullString
 	err := row.Scan(&n.ID, &n.AccountID, &n.FolderID, &parent, &n.Name, &n.NameKey, &n.Kind, &n.Size,
 		&n.MimeType, &blob, &n.SHA256, &n.ETag, &n.ContentTag, &created, &modified, &n.CreatedBy, &n.ModifiedBy, &n.OwnerID,
-		&noDownload, &editorsCanShare, &trashed, &n.TrashedBy, &n.TrashedNameKey, &color, &desc, &target)
+		&noDownload, &editorsCanShare, &trashed, &n.TrashedBy, &n.TrashedNameKey, &color, &desc, &target, &n.TypeGroup)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -316,14 +319,15 @@ func (tx *Tx) InsertNodeNoIndex(ctx context.Context, n *Node) error {
 		// A new file has new content, so it gets a new tag whatever the caller copied from.
 		n.ContentTag = NewContentTag()
 	}
+	n.TypeGroup = groupOf(n.Kind, n.Name, n.MimeType)
 	_, err := tx.q.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			COALESCE((SELECT owner_user_id FROM folders WHERE id = ? AND kind = 'personal'), ?), ?, ?,
-			?, ?, ?)`,
+			?, ?, ?, ?)`,
 		n.ID, n.AccountID, n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Kind, n.Size,
 		n.MimeType, nullString(n.BlobID), n.ETag, n.ContentTag, millis(n.CreatedAt), millis(n.ModifiedAt),
 		n.CreatedBy, n.ModifiedBy, n.FolderID, owner, boolInt(n.NoDownload), boolInt(n.EditorsCanShare),
-		nullString(n.Color), nullString(n.Description), nullString(n.TargetID))
+		nullString(n.Color), nullString(n.Description), nullString(n.TargetID), n.TypeGroup)
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
@@ -348,6 +352,7 @@ func (tx *Tx) UpdateNode(ctx context.Context, n *Node) error {
 // then write its own file. The write is refused with *LockedError while any other live lock holds n or, for a
 // folder, a file below it (wopi_locks.go). "" holds none, so UpdateNode is refused on any locked file.
 func (tx *Tx) UpdateNodeHeld(ctx context.Context, n *Node, holder string) error {
+	n.TypeGroup = groupOf(n.Kind, n.Name, n.MimeType)
 	changes, err := tx.changesLockedPlace(ctx, n)
 	if err != nil {
 		return err
@@ -364,11 +369,11 @@ func (tx *Tx) UpdateNodeHeld(ctx context.Context, n *Node, holder string) error 
 	err = rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET folder_id = ?, parent_id = ?, name = ?,
 		name_key = ?, size = ?, mime_type = ?, blob_id = ?, etag = ?, content_tag = ?, modified_at = ?, modified_by = ?,
 		owner_id = CASE WHEN ? = '' THEN owner_id ELSE ? END, no_download = ?, editors_can_share = ?,
-		color = ?, description = ?
+		color = ?, description = ?, type_group = ?
 		WHERE account_id = ? AND id = ?`,
 		n.FolderID, nullString(n.ParentID), n.Name, n.NameKey, n.Size, n.MimeType, nullString(n.BlobID),
 		n.ETag, n.ContentTag, millis(n.ModifiedAt), n.ModifiedBy, n.OwnerID, n.OwnerID, boolInt(n.NoDownload),
-		boolInt(n.EditorsCanShare), nullString(n.Color), nullString(n.Description), n.AccountID, n.ID))
+		boolInt(n.EditorsCanShare), nullString(n.Color), nullString(n.Description), n.TypeGroup, n.AccountID, n.ID))
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}

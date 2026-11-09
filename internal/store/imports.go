@@ -705,8 +705,12 @@ func (tx *Tx) StagedTopLevel(ctx context.Context, accountID, stagingFolder, root
 // SetStagedParent places a staged top-level node under parentID, named name, in this transaction. Only a node of the
 // staging folder is changed: a node of a live folder that the ID names is not found (round 6).
 func (tx *Tx) SetStagedParent(ctx context.Context, accountID, stagingFolder, nodeID, parentID, name, key string, at time.Time) error {
-	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET parent_id = ?, name = ?, name_key = ?, modified_at = ?
-		WHERE account_id = ? AND folder_id = ? AND id = ?`, parentID, name, key, millis(at), accountID, stagingFolder, nodeID))
+	group, err := typeGroupFor(ctx, tx.q, accountID, nodeID, name)
+	if err != nil {
+		return err
+	}
+	return rowsAffected(tx.q.ExecContext(ctx, `UPDATE nodes SET parent_id = ?, name = ?, name_key = ?, modified_at = ?,
+		type_group = ? WHERE account_id = ? AND folder_id = ? AND id = ?`, parentID, name, key, millis(at), group, accountID, stagingFolder, nodeID))
 }
 
 // MoveStagedTree moves every staged node of the staging folder into folderID, in this transaction, and queues the search

@@ -2,7 +2,12 @@
 
 package store
 
-import "strings"
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"strings"
+)
 
 // fileGroup is one type group of the file lists (decision 110, design ff1 section 3). The extensions decide first; the
 // media types (lower case, parameters dropped) decide when no extension is known; the prefixes come last.
@@ -77,4 +82,19 @@ func groupOf(kind, name, mime string) string {
 		}
 	}
 	return ""
+}
+
+// typeGroupFor returns the group node id of accountID gets when it is named name. Its kind and media type are read in
+// the caller's transaction, for a raw writer that sets a name without UpdateNodeHeld. A node that is not there gives ""
+// and the caller's UPDATE reports it as not found.
+func typeGroupFor(ctx context.Context, q querier, accountID, id, name string) (string, error) {
+	var kind, mime string
+	err := q.QueryRowContext(ctx, `SELECT kind, mime_type FROM nodes WHERE account_id = ? AND id = ?`, accountID, id).Scan(&kind, &mime)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return groupOf(kind, name, mime), nil
 }
