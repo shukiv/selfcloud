@@ -184,7 +184,7 @@ describe("chordBlocked: where the chord is ignored", () => {
 });
 
 // The closed drawer and the closed submenu are hidden by the stylesheet, not by an inline style or an antd class on the
-// element itself: the test puts the rule in a <style> element, so the computed display (not the attribute) is what says hidden.
+// element itself: the test puts the rule in a style element, so the computed display (not the attribute) is what says hidden.
 describe("overlayOpen: a stylesheet hides the overlay", () => {
   function withStyle(css: string, build: (root: HTMLElement) => void): () => void {
     const style = document.createElement("style");
