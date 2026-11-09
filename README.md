@@ -72,6 +72,30 @@ curl -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
 
 `selfcloud admin create-account -name Example` does both in one step.
 
+### Recovering an admin who forgot the password
+
+The `admin` commands work on the data folder, so they need no key, no mail and no running browser
+session. With the server running or stopped, an admin who forgot the password can get a new one:
+
+```sh
+selfcloud admin users -admins                        # find the admin's ID
+selfcloud admin reset-password -user usr_... -link-file reset-link.txt
+```
+
+Open the link in a browser and choose a new password. The link works once and expires after
+`users.reset_ttl`. The file is created new with mode 0600, and the command refuses to overwrite it.
+On a server console with no browser, the temporary method prints a generated password once, and the
+admin must change it at the next sign-in:
+
+```sh
+selfcloud admin reset-password -user admin@example.com -method temporary -yes
+```
+
+The other recovery commands are `selfcloud admin verify -user ID|EMAIL` (a fresh verification link
+for a pending user), `enable`, `disable` (which refuses the last active installation admin) and
+`end-sessions`. `selfcloud admin help` lists them with their flags. In Docker, prefix each with
+`docker exec <container>`.
+
 ## Checking the data directory
 
 `selfcloud fsck` compares the files under the data directory with the database. It changes no blob, row or derived file, except that `--repair` renames orphan blobs into quarantine; it can run
