@@ -85,11 +85,15 @@ describe("CodeView", () => {
   it("offers Find, and Escape closes the find panel without reaching the viewer around it", async () => {
     const got: { find: FindAction | null } = { find: null };
     const outer = vi.fn();
-    render(
+    // The panel is gone by the time the key bubbles on, so React finds no handler for it either way; a listener of the page's
+    // own (the listing's shortcuts are one) still hears it unless CodeMirror stops it.
+    const page = vi.fn();
+    const { container } = render(
       <div onKeyDown={outer}>
         <CodeView text={"alpha\nbeta"} pack="text" name="a.txt" dark={false} onFind={(f) => (got.find = f)} />
       </div>,
     );
+    container.addEventListener("keydown", page);
     const find = got.find as FindAction | null;
     expect(find).not.toBeNull();
     expect(find!.label).toBe("Find");
@@ -99,9 +103,11 @@ describe("CodeView", () => {
     fireEvent.keyDown(field, { key: "Escape", code: "Escape", keyCode: 27 });
     expect(document.querySelector(".cm-search")).toBeNull();
     expect(outer).not.toHaveBeenCalled();
+    expect(page).not.toHaveBeenCalled();
     // With no panel open, Escape goes on to the viewer, which closes.
     fireEvent.keyDown(document.querySelector(".cm-content")!, { key: "Escape", code: "Escape", keyCode: 27 });
     expect(outer).toHaveBeenCalledTimes(1);
+    expect(page).toHaveBeenCalledTimes(1);
   });
 
   it("tells the viewer the find action is gone when it unmounts", () => {
