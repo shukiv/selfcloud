@@ -115,6 +115,10 @@ func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	filter, err := listFilterParams(r)
+	if err != nil {
+		return err
+	}
 	ctx := r.Context()
 	var out []trashItemJSON
 	var positions []string
@@ -123,13 +127,13 @@ func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) error {
 	next := ""
 scan:
 	for {
-		batch, err := s.store.TrashRoots(ctx, p.AccountID, fld, store.Page{Limit: trashPage, Cursor: cursor})
+		batch, err := s.store.TrashRootsFiltered(ctx, p.AccountID, fld, filter, store.Page{Limit: trashPage, Cursor: cursor})
 		if err != nil {
 			return storeErr(err)
 		}
 		for _, n := range batch {
 			examined++
-			cursor = store.TrashCursor(n)
+			cursor = store.TrashCursorOf(n, filter)
 			item, ok, err := s.trashItem(ctx, p, n)
 			if err != nil {
 				return err
