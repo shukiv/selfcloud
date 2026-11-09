@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
 	"github.com/shukiv/selfcloud/internal/mail"
@@ -31,6 +32,9 @@ func TestListAccountsSortedWalk(t *testing.T) {
 	admin := adminKey(t, s)
 	for _, n := range []string{"gamma", "Alpha", "beta"} {
 		wantStatus(t, call(t, s, "POST", "/api/v1/accounts", admin, map[string]any{"name": n}), 201)
+		// Accounts made in one millisecond tie on creation time, and a tie breaks on the random ID: the order of the created
+		// walk is then not the order of the test, so each account is made a few milliseconds after the last.
+		time.Sleep(3 * time.Millisecond)
 	}
 	walk := func(sortQuery string) []string {
 		t.Helper()
@@ -84,6 +88,9 @@ func TestListAccountsSortCursor(t *testing.T) {
 	admin := adminKey(t, s)
 	for _, n := range []string{"gamma", "Alpha", "beta"} {
 		wantStatus(t, call(t, s, "POST", "/api/v1/accounts", admin, map[string]any{"name": n}), 201)
+		// Accounts made in one millisecond tie on creation time, and a tie breaks on the random ID: the order of the created
+		// walk is then not the order of the test, so each account is made a few milliseconds after the last.
+		time.Sleep(3 * time.Millisecond)
 	}
 	_, byName := accountNames(t, s, admin, "?limit=1&sort=name")
 	_, byCreated := accountNames(t, s, admin, "?limit=1&sort=created")
