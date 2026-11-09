@@ -18,10 +18,10 @@ func viewsFixture(t *testing.T) *Store {
 		`INSERT INTO users (id, account_id, email, email_key, role, status, created_at, updated_at)
 			VALUES ('usr_a', 'acc_a', 'a@test.invalid', 'a@test.invalid', 'member', 'active', 0, 0)`,
 		`INSERT INTO recent (user_id, node_id, account_id, viewed_at, edited_at, last_at) VALUES
-			('usr_a', 'nod_pdf', 'acc_a', NULL, NULL, 300),
-			('usr_a', 'nod_dir', 'acc_a', NULL, NULL, 400),
-			('usr_a', 'nod_docx', 'acc_a', NULL, NULL, 200),
-			('usr_a', 'nod_jpg', 'acc_a', NULL, NULL, 100)`,
+			('usr_a', 'nod_pdf', 'acc_a', 300, NULL, 300),
+			('usr_a', 'nod_dir', 'acc_a', 400, NULL, 400),
+			('usr_a', 'nod_docx', 'acc_a', 200, NULL, 200),
+			('usr_a', 'nod_jpg', 'acc_a', 100, NULL, 100)`,
 		`INSERT INTO stars (user_id, node_id, account_id, created_at) VALUES
 			('usr_a', 'nod_pdf', 'acc_a', 300),
 			('usr_a', 'nod_dir', 'acc_a', 400),

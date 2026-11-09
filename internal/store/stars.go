@@ -53,10 +53,31 @@ func StarCursor(st Star) string {
 // StarsPage lists user's stars, newest first, p.Limit at a time, after the cursor if one is given. Stars are not
 // filtered here: the caller drops the ones it may not list, and pages on with StarCursor.
 func (s *Store) StarsPage(ctx context.Context, userID string, p Page) ([]Star, error) {
+	return s.StarsPageFiltered(ctx, userID, ListFilter{}, p)
+}
+
+// StarCursorOf is StarCursor for a list narrowed by filter f: the cursor carries the filter's tag (decision 110).
+func StarCursorOf(st Star, f ListFilter) string {
+	return encodeFilteredCursor(f, strconv.FormatInt(millis(st.CreatedAt), 10), st.NodeID)
+}
+
+// StarsPageFiltered is StarsPage narrowed by a list filter (decision 110). With a filter, each star is joined to its node,
+// so the type and the modified range are the node's; with none, the query is the one StarsPage always ran.
+func (s *Store) StarsPageFiltered(ctx context.Context, userID string, f ListFilter, p Page) ([]Star, error) {
+	if err := f.Validate(); err != nil {
+		return nil, err
+	}
 	query := `SELECT node_id, account_id, created_at FROM stars WHERE user_id = ?`
 	args := []any{userID}
+	if f.Active() {
+		query = `SELECT st.node_id, st.account_id, st.created_at FROM stars st
+			JOIN nodes n ON n.id = st.node_id AND n.account_id = st.account_id WHERE st.user_id = ?`
+		fsql, fargs := f.Where("n")
+		query += fsql
+		args = append(args, fargs...)
+	}
 	if p.Cursor != "" {
-		parts, err := decodeCursor(p.Cursor, 2)
+		parts, err := decodeFilteredCursor(p.Cursor, 2, f)
 		if err != nil {
 			return nil, err
 		}
@@ -64,11 +85,19 @@ func (s *Store) StarsPage(ctx context.Context, userID string, p Page) ([]Star, e
 		if err != nil {
 			return nil, ErrBadCursor
 		}
-		query += ` AND (created_at < ? OR (created_at = ? AND node_id < ?))`
+		if f.Active() {
+			query += ` AND (st.created_at < ? OR (st.created_at = ? AND st.node_id < ?))`
+		} else {
+			query += ` AND (created_at < ? OR (created_at = ? AND node_id < ?))`
+		}
 		args = append(args, at, at, parts[1])
 	}
 	args = append(args, p.Limit)
-	rows, err := s.r.QueryContext(ctx, query+` ORDER BY created_at DESC, node_id DESC LIMIT ?`, args...)
+	order := ` ORDER BY created_at DESC, node_id DESC LIMIT ?`
+	if f.Active() {
+		order = ` ORDER BY st.created_at DESC, st.node_id DESC LIMIT ?`
+	}
+	rows, err := s.r.QueryContext(ctx, query+order, args...)
 	if err != nil {
 		return nil, err
 	}

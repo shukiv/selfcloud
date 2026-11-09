@@ -90,10 +90,31 @@ func RecentCursor(r RecentRow) string {
 // RecentPage lists user's recent entries, newest first, p.Limit at a time, after the cursor if one is given. The
 // entries are not filtered here: the caller drops the ones it may not list.
 func (s *Store) RecentPage(ctx context.Context, userID string, p Page) ([]RecentRow, error) {
+	return s.RecentPageFiltered(ctx, userID, ListFilter{}, p)
+}
+
+// RecentCursorOf is RecentCursor for a list narrowed by filter f: the cursor carries the filter's tag (decision 110).
+func RecentCursorOf(r RecentRow, f ListFilter) string {
+	return encodeFilteredCursor(f, strconv.FormatInt(millis(r.LastAt), 10), r.NodeID)
+}
+
+// RecentPageFiltered is RecentPage narrowed by a list filter (decision 110). With a filter, each entry is joined to its
+// node, so the type and the modified range are the node's; with none, the query is the one RecentPage always ran.
+func (s *Store) RecentPageFiltered(ctx context.Context, userID string, f ListFilter, p Page) ([]RecentRow, error) {
+	if err := f.Validate(); err != nil {
+		return nil, err
+	}
 	query := `SELECT node_id, account_id, viewed_at, edited_at, last_at FROM recent WHERE user_id = ?`
 	args := []any{userID}
+	if f.Active() {
+		query = `SELECT r.node_id, r.account_id, r.viewed_at, r.edited_at, r.last_at FROM recent r
+			JOIN nodes n ON n.id = r.node_id AND n.account_id = r.account_id WHERE r.user_id = ?`
+		fsql, fargs := f.Where("n")
+		query += fsql
+		args = append(args, fargs...)
+	}
 	if p.Cursor != "" {
-		parts, err := decodeCursor(p.Cursor, 2)
+		parts, err := decodeFilteredCursor(p.Cursor, 2, f)
 		if err != nil {
 			return nil, err
 		}
@@ -101,11 +122,19 @@ func (s *Store) RecentPage(ctx context.Context, userID string, p Page) ([]Recent
 		if err != nil {
 			return nil, ErrBadCursor
 		}
-		query += ` AND (last_at < ? OR (last_at = ? AND node_id < ?))`
+		if f.Active() {
+			query += ` AND (r.last_at < ? OR (r.last_at = ? AND r.node_id < ?))`
+		} else {
+			query += ` AND (last_at < ? OR (last_at = ? AND node_id < ?))`
+		}
 		args = append(args, at, at, parts[1])
 	}
 	args = append(args, p.Limit)
-	rows, err := s.r.QueryContext(ctx, query+` ORDER BY last_at DESC, node_id DESC LIMIT ?`, args...)
+	order := ` ORDER BY last_at DESC, node_id DESC LIMIT ?`
+	if f.Active() {
+		order = ` ORDER BY r.last_at DESC, r.node_id DESC LIMIT ?`
+	}
+	rows, err := s.r.QueryContext(ctx, query+order, args...)
 	if err != nil {
 		return nil, err
 	}
