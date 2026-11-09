@@ -195,6 +195,7 @@ function AdminsView() {
           label={t("admin.admins.title")}
           items={admins}
           rowLabel={personLabel}
+          moreLabel={(a) => t("tenants.actionsFor", { name: personLabel(a) })}
           columns={columns}
           actions={(a) =>
             a.id === selfID

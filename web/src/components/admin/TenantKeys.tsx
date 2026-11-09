@@ -3,7 +3,9 @@
 import { App, Alert, Button } from "antd";
 import { useFlight } from "../../lib/flight";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Ban } from "lucide-react";
+import { ItemList, type ItemColumn, type ItemSort } from "../files/Listing";
 import { useLang, useT } from "../../lib/i18n";
 import { formatDate } from "../../lib/files/format";
 import { listKeys, revokeKey } from "../../lib/manage/api";
@@ -15,7 +17,7 @@ import Confirm from "../Confirm";
 import NewKey from "./NewKey";
 import ShowOnce from "./ShowOnce";
 import { useOnSessionChange } from "./hooks";
-import { list, muted, row, rowMain, rowTitle, sectionTitle, toolbar } from "./adminStyles";
+import { sectionTitle, toolbar } from "./adminStyles";
 import EmptyState from "../EmptyState";
 
 // TenantKeys: the API keys of a tenant. A new key is shown once, in a dialog that holds it only while open. The key is
@@ -31,8 +33,26 @@ export default function TenantKeys({ account }: { account: string }) {
     queryFn: async () => (await listKeys(account)).items,
     refetchOnMount: "always",
   });
-  const keys: ApiKey[] = q.data ?? [];
+  const loaded: ApiKey[] = q.data ?? [];
   const firstFailed = q.isError && q.data === undefined;
+  // The keys are loaded whole, so they are sorted here (design-tl section 5). The first state is the order the server sent.
+  const [sort, setSort] = useState<{ key: "" | "name" | "created" | "last"; dir: "asc" | "desc" }>({ key: "", dir: "asc" });
+  const sortBy = (key: string) => {
+    if (key !== "name" && key !== "created" && key !== "last") return;
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  };
+  const keys: ApiKey[] = useMemo(() => {
+    if (sort.key === "") return loaded;
+    const when = (iso: string | null) => (iso ? new Date(iso).getTime() : 0);
+    const by = (k: ApiKey) => (sort.key === "name" ? k.name : sort.key === "created" ? when(k.created_at) : when(k.last_used_at));
+    const sign = sort.dir === "asc" ? 1 : -1;
+    return [...loaded].sort((a, b) => {
+      const x = by(a);
+      const y = by(b);
+      const order = typeof x === "string" && typeof y === "string" ? x.localeCompare(y, lang) : (x as number) - (y as number);
+      return order * sign || a.id.localeCompare(b.id);
+    });
+  }, [loaded, sort, lang]);
   const [creating, setCreating] = useState(false);
   const [shown, setShown] = useState<NewKeyReply | null>(null);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
@@ -54,6 +74,49 @@ export default function TenantKeys({ account }: { account: string }) {
     if (k.expires_at && new Date(k.expires_at).getTime() < Date.now()) return t("keys.state.expired");
     return t("keys.state.active");
   };
+
+  const columns: ItemColumn<ApiKey>[] = [
+    {
+      key: "name",
+      title: t("files.col.name"),
+      sortKey: "name",
+      render: (k) => (
+        <span style={{ minWidth: 0 }}>
+          <span>
+            <bdi>{k.name}</bdi>
+          </span>
+          <span style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 13, overflowWrap: "anywhere", color: "var(--ant-color-text-secondary)" }}>{k.prefix}…</span>
+        </span>
+      ),
+    },
+    {
+      key: "created",
+      title: t("keys.created"),
+      sortKey: "created",
+      secondary: true,
+      render: (k) => <time dateTime={k.created_at}>{formatDate(k.created_at, lang)}</time>,
+    },
+    {
+      key: "last",
+      title: t("keys.lastUsed"),
+      sortKey: "last",
+      secondary: true,
+      render: (k) =>
+        k.last_used_at ? <time dateTime={k.last_used_at}>{formatDate(k.last_used_at, lang)}</time> : <span>{t("keys.neverUsed")}</span>,
+    },
+    {
+      key: "expires",
+      title: t("keys.new.expires"),
+      secondary: true,
+      render: (k) => (k.expires_at ? <time dateTime={k.expires_at}>{formatDate(k.expires_at, lang)}</time> : <span>{t("keys.noExpiry")}</span>),
+    },
+    {
+      key: "state",
+      title: t("people.detail.status"),
+      width: 120,
+      render: (k) => <span style={{ borderRadius: 999, padding: "0 8px", background: "var(--ant-color-fill-secondary)" }}>{keyState(k)}</span>,
+    },
+  ];
 
   // cancelRevoke closes the dialog at once, busy or not: the revoke on its way is aborted, and the keys are read again, since
   // the key may have been revoked (fu4, decision 76's rule for writes).
@@ -105,59 +168,33 @@ export default function TenantKeys({ account }: { account: string }) {
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 12 }} />}
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {q.isSuccess && keys.length === 0 && <EmptyState role="status" size="compact" text={t("keys.empty")} />}
-      {!firstFailed && keys.length > 0 && (
-        <ul style={list} aria-label={t("tenant.keys.title")}>
-          {keys.map((k) => (
-            <li key={k.id} style={row}>
-              <div style={rowMain}>
-                <p style={rowTitle}>
-                  <bdi>{k.name}</bdi>
-                </p>
-                <p style={{ ...muted, fontFamily: "ui-monospace, monospace" }}>{k.prefix}…</p>
-              </div>
-              <div style={muted}>
-                {t("keys.created")} <time dateTime={k.created_at}>{formatDate(k.created_at, lang)}</time>
-              </div>
-              <div style={muted}>
-                {k.last_used_at ? t("keys.lastUsed") : t("keys.neverUsed")}
-                {k.last_used_at && (
-                  <>
-                    {" "}
-                    <time dateTime={k.last_used_at}>{formatDate(k.last_used_at, lang)}</time>
-                  </>
-                )}
-              </div>
-              <div style={muted}>
-                {k.expires_at ? t("keys.expiresOn") : t("keys.noExpiry")}
-                {k.expires_at && (
-                  <>
-                    {" "}
-                    <time dateTime={k.expires_at}>{formatDate(k.expires_at, lang)}</time>
-                  </>
-                )}
-              </div>
-              <div>
-                <span style={{ borderRadius: 999, padding: "0 8px", background: "var(--ant-color-fill-secondary)" }}>{keyState(k)}</span>
-              </div>
-              {!k.revoked_at && (
-                <div>
-                  <Button
-                    size="small"
-                    danger
-                    onClick={() => {
+      {/* The keys table (design-tl section 3.1): Name with the prefix, Created, Last used, Expires, State, and a Revoke icon. */}
+      {!firstFailed && q.data !== undefined && (
+        <ItemList
+          label={t("tenant.keys.title")}
+          items={keys}
+          rowLabel={(k) => k.name}
+          moreLabel={(k) => t("tenants.actionsFor", { name: k.name })}
+          columns={columns}
+          sort={{ key: sort.key, dir: sort.dir, onSort: sortBy } satisfies ItemSort}
+          actions={(k) =>
+            k.revoked_at
+              ? []
+              : [
+                  {
+                    key: "revoke",
+                    label: `${t("keys.revoke")}: ${k.name}`,
+                    icon: <Ban size={18} aria-hidden="true" focusable="false" />,
+                    enabled: true,
+                    run: () => {
                       setRevokeError(null);
                       setRevoking(k);
-                    }}
-                  >
-                    {t("keys.revoke")}
-                    <span className="sr-only">: {k.name}</span>
-                  </Button>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+                    },
+                  },
+                ]
+          }
+          empty={<EmptyState role="status" size="compact" text={t("keys.empty")} />}
+        />
       )}
 
       {creating && (
