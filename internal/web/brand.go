@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The SelfCloud artwork (decision 109): the logo of the default brand, the wordmark at the top of the sidebar, the mark in the
-// rail, the favicon and the icons. The SVGs under brand/ are the ones in docs/brand, byte for byte (a test checks it). The mark's
-// outline is read from its path data, flattened, and drawn with the same 4 by 4 sample grid as the glyph (pwa_glyph.go).
+// rail, and the mark on the favicon and the icons when the installation has no picture of its own (decision 119). The SVGs
+// under brand/ are the ones in docs/brand, byte for byte (a test checks it). The mark's outline is read from its path data,
+// flattened, and drawn with a 4 by 4 sample grid per pixel.
 
 package web
 
@@ -24,9 +25,15 @@ const (
 	faviconPath = "/favicon.svg"
 	// wordmarkPath is the SelfCloud wordmark with no background, for the sidebar's top.
 	wordmarkPath = "/brand/wordmark.svg"
-	// markPath is the mark alone: the artwork's mark, or the glyph for a custom name. The rail shows it as a mask.
+	// markPath is the mark alone, for every name. The rail shows it as a mask.
 	markPath = "/brand/mark.svg"
 )
+
+// markBoxShare is the mark's width as a share of a plain icon's width: 60%.
+const markBoxShare = 0.60
+
+// markSamples is the sample grid per side inside each pixel of the mark's coverage: 4 by 4 gives 16 coverage levels per pixel.
+const markSamples = 4
 
 // brandFile returns an embedded brand file. The names are fixed, so a missing one is a build error, not a run-time one.
 func brandFile(name string) []byte {
@@ -144,14 +151,14 @@ func parseMark(svg []byte) markShape {
 // mark is the mark's outline, read once from the embedded file.
 var mark = parseMark(brandFile("selfcloud-mark.svg"))
 
-// markScale is the pixels per mark unit for an icon or favicon of size: the mark's box is glyphBoxShare of the width, as the
-// glyph's is. The outline's farthest point from the centre is inside the maskable circle at this scale (a test measures it).
+// markScale is the pixels per mark unit for an icon or favicon of size: the mark's box is markBoxShare of the width. The outline's
+// farthest point from the centre is inside the maskable circle at this scale (a test measures it).
 func markScale(size float64) float64 {
-	return glyphBoxShare * size / mark.width
+	return markBoxShare * size / mark.width
 }
 
 // markCoverage returns the share of each pixel of a size by size icon that the mark covers, from 0 to 1. Each pixel is a 4 by 4
-// grid of samples, as the glyph's is. Each sample row is a scanline: the crossings of the edges are sorted, and the samples
+// grid of samples. Each sample row is a scanline: the crossings of the edges are sorted, and the samples
 // between each pair of crossings are inside (even-odd, which is the path's fill rule).
 func markCoverage(size int) []float64 {
 	k := markScale(float64(size))
@@ -164,11 +171,11 @@ func markCoverage(size int) []float64 {
 			half + (e[2]-mark.centreX)*k, half + (e[3]-mark.centreY)*k,
 		})
 	}
-	n := size * glyphSamples
+	n := size * markSamples
 	hits := make([]int, size*size)
 	var xs []float64
 	for sy := 0; sy < n; sy++ {
-		y := (float64(sy) + 0.5) / glyphSamples
+		y := (float64(sy) + 0.5) / markSamples
 		xs = xs[:0]
 		for _, s := range segs {
 			if (s.y0 <= y) == (s.y1 <= y) {
@@ -178,18 +185,18 @@ func markCoverage(size int) []float64 {
 		}
 		sort.Float64s(xs)
 		for i := 0; i+1 < len(xs); i += 2 {
-			// The sample s is at (s+0.5)/glyphSamples, so it is inside when lo <= s < hi.
-			lo := int(math.Ceil(xs[i]*glyphSamples - 0.5))
-			hi := int(math.Ceil(xs[i+1]*glyphSamples - 0.5))
+			// The sample s is at (s+0.5)/markSamples, so it is inside when lo <= s < hi.
+			lo := int(math.Ceil(xs[i]*markSamples - 0.5))
+			hi := int(math.Ceil(xs[i+1]*markSamples - 0.5))
 			lo, hi = max(lo, 0), min(hi, n)
 			for sx := lo; sx < hi; sx++ {
-				hits[(sy/glyphSamples)*size+sx/glyphSamples]++
+				hits[(sy/markSamples)*size+sx/markSamples]++
 			}
 		}
 	}
 	out := make([]float64, len(hits))
 	for i, h := range hits {
-		out[i] = float64(h) / (glyphSamples * glyphSamples)
+		out[i] = float64(h) / (markSamples * markSamples)
 	}
 	return out
 }

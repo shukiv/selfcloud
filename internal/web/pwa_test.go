@@ -99,7 +99,7 @@ func TestManifestNameDefaults(t *testing.T) {
 }
 
 // TestIconsAreDrawnInTheAccent: every icon is a PNG of its size, its corner is the accent, and its centre is the white
-// glyph. The apple icon is 180 pixels.
+// mark. The apple icon is 180 pixels.
 func TestIconsAreDrawnInTheAccent(t *testing.T) {
 	h := pwaHandler(t, "Acme", "#053D8E")
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
@@ -124,9 +124,9 @@ func TestIconsAreDrawnInTheAccent(t *testing.T) {
 	}
 }
 
-// TestMaskableIconKeepsTheGlyphInTheSafeZone: outside the central circle (80% of the width) a maskable icon is only the
-// accent, so a platform that crops to the circle never cuts the glyph.
-func TestMaskableIconKeepsTheGlyphInTheSafeZone(t *testing.T) {
+// TestMaskableIconKeepsTheMarkInTheSafeZone: outside the central circle (80% of the width) a maskable icon is only the
+// accent, so a platform that crops to the circle never cuts the mark.
+func TestMaskableIconKeepsTheMarkInTheSafeZone(t *testing.T) {
 	h := pwaHandler(t, "Acme", "#053D8E")
 	img := decodePNG(t, get(t, h, http.MethodGet, "/brand/icon-512-maskable.png").Body.Bytes())
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
@@ -208,24 +208,24 @@ func TestCSPAllowsOnlyTheManifestAndWorkerFromSelf(t *testing.T) {
 	}
 }
 
-// glyphAlphaAt reads the glyph's coverage at (x, y) from a drawn icon: the white share of the pixel over the accent R channel.
-func glyphAlphaAt(img image.Image, x, y int) float64 {
+// markAlphaAt reads the mark's coverage at (x, y) from a drawn icon: the white share of the pixel over the accent R channel.
+func markAlphaAt(img image.Image, x, y int) float64 {
 	const accentR = 5 // #053D8E
 	r, _, _, _ := img.At(x, y).RGBA()
 	a := (float64(r>>8) - accentR) / (255 - accentR)
 	return math.Min(1, math.Max(0, a))
 }
 
-// TestGlyphEdgeIsAntiAliased: the glyph's edge has intermediate alpha at 180, 192 and 512, so the edge is smooth. The band of
-// intermediate pixels is thin next to the solid glyph, which keeps it crisp rather than blurred.
-func TestGlyphEdgeIsAntiAliased(t *testing.T) {
+// TestMarkEdgeIsAntiAliased: the mark's edge has intermediate alpha at 180, 192 and 512, so the edge is smooth. The band of
+// intermediate pixels is thin next to the solid mark, which keeps it crisp rather than blurred.
+func TestMarkEdgeIsAntiAliased(t *testing.T) {
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
 	for _, size := range []int{180, 192, 512} {
 		img := drawIcon(iconSpec{path: "test", size: size}, accent, iconArt{})
 		solid, partial := 0, 0
 		for y := 0; y < size; y++ {
 			for x := 0; x < size; x++ {
-				a := glyphAlphaAt(img, x, y)
+				a := markAlphaAt(img, x, y)
 				switch {
 				case a >= 0.999:
 					solid++
@@ -243,16 +243,16 @@ func TestGlyphEdgeIsAntiAliased(t *testing.T) {
 	}
 }
 
-// TestGlyphBoundingBoxIsSixtyPercentOfWidth: on a plain icon the glyph's box is 60% of the width, centred in the icon, at
-// 180, 192 and 512. The box is read from the pixels that are at least half glyph, to within two pixels.
-func TestGlyphBoundingBoxIsSixtyPercentOfWidth(t *testing.T) {
+// TestMarkBoundingBoxIsSixtyPercentOfWidth: on a plain icon the mark's box is 60% of the width, centred in the icon, at
+// 180, 192 and 512. The box is read from the pixels that are at least half mark, to within two pixels.
+func TestMarkBoundingBoxIsSixtyPercentOfWidth(t *testing.T) {
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
 	for _, size := range []int{180, 192, 512} {
 		img := drawIcon(iconSpec{path: "test", size: size}, accent, iconArt{})
 		minX, minY, maxX, maxY := size, size, -1, -1
 		for y := 0; y < size; y++ {
 			for x := 0; x < size; x++ {
-				if glyphAlphaAt(img, x, y) >= 0.5 {
+				if markAlphaAt(img, x, y) >= 0.5 {
 					minX, maxX = min(minX, x), max(maxX, x)
 					minY, maxY = min(minY, y), max(maxY, y)
 				}
@@ -260,29 +260,29 @@ func TestGlyphBoundingBoxIsSixtyPercentOfWidth(t *testing.T) {
 		}
 		want := 0.60 * float64(size)
 		if w := float64(maxX - minX + 1); math.Abs(w-want) > 2 {
-			t.Errorf("size %d: glyph width %v px, want %.1f (60%%)", size, w, want)
+			t.Errorf("size %d: mark width %v px, want %.1f (60%%)", size, w, want)
 		}
 		cx, cy := float64(minX+maxX+1)/2, float64(minY+maxY+1)/2
 		if math.Abs(cx-float64(size)/2) > 2 || math.Abs(cy-float64(size)/2) > 2 {
-			t.Errorf("size %d: glyph centre (%v, %v), want the icon's centre", size, cx, cy)
+			t.Errorf("size %d: mark centre (%v, %v), want the icon's centre", size, cx, cy)
 		}
 	}
 }
 
-// TestMaskableGlyphIsInsideTheSafeCircle: every pixel of the glyph on a maskable icon lies within the circle of radius 40% of
+// TestMaskableMarkIsInsideTheSafeCircle: every pixel of the mark on a maskable icon lies within the circle of radius 40% of
 // the size, so no platform crop cuts it.
-func TestMaskableGlyphIsInsideTheSafeCircle(t *testing.T) {
+func TestMaskableMarkIsInsideTheSafeCircle(t *testing.T) {
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
 	const n = 512
 	img := drawIcon(iconSpec{path: "test", size: n, maskable: true}, accent, iconArt{})
 	limit := 0.40 * n
 	for y := 0; y < n; y++ {
 		for x := 0; x < n; x++ {
-			if glyphAlphaAt(img, x, y) <= 0 {
+			if markAlphaAt(img, x, y) <= 0 {
 				continue
 			}
 			if d := math.Hypot(float64(x)+0.5-n/2, float64(y)+0.5-n/2); d > limit {
-				t.Fatalf("glyph pixel (%d,%d) at radius %.1f is outside the safe circle (%.1f)", x, y, d, limit)
+				t.Fatalf("mark pixel (%d,%d) at radius %.1f is outside the safe circle (%.1f)", x, y, d, limit)
 			}
 		}
 	}

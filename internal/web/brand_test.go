@@ -108,7 +108,7 @@ func TestCustomNameShowsTheMark(t *testing.T) {
 	}
 }
 
-// TestFaviconFollowsTheBrand: /favicon.svg is built from the brand. The default brand has the mark, the custom name the glyph,
+// TestFaviconFollowsTheBrand: /favicon.svg is built from the brand. The default brand and a custom name both have the mark,
 // both on the accent; a repeat with the ETag gets 304.
 func TestFaviconFollowsTheBrand(t *testing.T) {
 	art := artworkHandler(t, "#0F766E")
@@ -159,7 +159,7 @@ func TestIndexCarriesTheInstallationsName(t *testing.T) {
 	}
 }
 
-// TestBrandSVGsAreServed: the mark is the mark for the default brand and the glyph for a custom name. The wordmark is served
+// TestBrandSVGsAreServed: the mark is the mark for the default brand and for a custom name. The wordmark is served
 // only for the default brand, since a custom name shows its name as text. All of them need the web interface, like the icons.
 func TestBrandSVGsAreServed(t *testing.T) {
 	art := artworkHandler(t, "#053D8E")
