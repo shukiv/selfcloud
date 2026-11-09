@@ -40,8 +40,16 @@ modification of the original file under the Mozilla Public License 2.0. The text
 `internal/templates/licenses/MPL-2.0.txt` (a copy of LibreOffice's COPYING.MPL). Each letter has a logo placeholder and
 lorem ipsum text, and no branding.
 
-- `lo-letter-serif.docx`: `extras/source/templates/officorr/Modern_business_letter_serif.ott`, "Modern business letter serif"
-- `lo-letter-sans-serif.docx`: `extras/source/templates/officorr/Modern_business_letter_sans_serif.ott`, "Modern business letter sans-serif"
+The modified files are shipped in this repository in the form Selfcloud embeds: `internal/templates/files/lo-letter-sans-serif.docx`
+and `internal/templates/files/lo-letter-serif.docx`. Each keeps its document content unchanged. In `docProps/core.xml` the personal creator and last-modified
+fields are removed, and the e-mail domains in the presentations' descriptions are removed (the author's name or handle stays).
+
+Original author. The sans-serif letter's source metadata names **Eric Lavarde** as its creator (`dc:creator` and
+`meta:initial-creator`). The serif letter's source metadata names no author, and the source carries no copyright notice, so its
+original author and copyright holder are not stated in the source. This file is still to be settled; see the note below.
+
+- `lo-letter-serif.docx`: `extras/source/templates/officorr/Modern_business_letter_serif.ott`, "Modern business letter serif" (original author and holder: not stated in the source)
+- `lo-letter-sans-serif.docx`: `extras/source/templates/officorr/Modern_business_letter_sans_serif.ott`, "Modern business letter sans-serif" (original author: Eric Lavarde)
 
 ## Pictures
 
