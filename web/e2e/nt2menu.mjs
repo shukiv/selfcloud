@@ -14,8 +14,21 @@ const q = (v) => JSON.stringify(v);
 // OPEN_ITEMS is the menu items of the dropdowns that are open now, and of the submenu popups (a submenu popup is not inside a
 // .ant-dropdown: it is its own .ant-dropdown-menu-submenu-popup). A closed dropdown or a hidden popup is not counted (MED-7).
 const OPEN_ITEMS = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role=\"menuitem\"], .ant-dropdown-menu-submenu-popup [role=\"menuitem\"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]'))";
+// NEW_MENU is the open New menu: the open dropdown with the New folder row, and not one that is closing (its leave animation).
+const NEW_MENU = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].find((d) => d.textContent.includes('New folder') && !d.classList.contains('ant-slide-up-leave'))";
+// NEW_MENU_SIZE is the New menu's width and its New folder row's height now, or null when there is no such menu.
+const NEW_MENU_SIZE = `(() => { const d = ${NEW_MENU}; if (!d) return null; const row = [...d.querySelectorAll('[role="menuitem"]')].find((x) => x.textContent.trim() === 'New folder'); if (!row) return null; return { w: Math.round(d.getBoundingClientRect().width), rowH: Math.round(row.getBoundingClientRect().height) }; })()`;
 // OPEN_MODAL is the modal that is displayed now (a closed one stays in the DOM, with display none).
 const OPEN_MODAL = "[...document.querySelectorAll('.ant-modal-wrap')].find((w) => getComputedStyle(w).display !== 'none')";
+// waitNoDropdown waits for the Escape to close every open dropdown; on failure it names the dropdowns still open.
+async function waitNoDropdown(page) {
+  try {
+    await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
+  } catch {
+    const open = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)')].map((d) => d.className + ' | ' + d.textContent.trim().slice(0, 60))`).catch(() => 'unreadable');
+    throw new Error(`Escape did not close the menu; open: ${JSON.stringify(open)}`);
+  }
+}
 async function key(page, { code, key: name, vk, alt = false }) {
   const modifiers = alt ? 1 : 0;
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code, windowsVirtualKeyCode: vk, modifiers });
@@ -76,17 +89,14 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     check(JSON.stringify(order) === JSON.stringify(want), `the New menu's groups are in order: ${order.join(' / ')}`);
     const hints = await page.evaluate(`(() => { const row = ${OPEN_ITEMS}.find((x) => x.textContent.trim() === 'New folder'); return { keys: row?.getAttribute('aria-keyshortcuts'), hint: row?.querySelector('.menu-hint')?.getAttribute('data-hint') ?? null }; })()`);
     check(hints.keys === 'Alt+C F' && hints.hint === 'Alt+C, F', `New folder's row names its chord and shows the hint (${hints.keys}, ${hints.hint})`);
-    // The rows lay out during the menu's open animation (0 px at the first frame), so wait for a laid-out row first.
-    const rowSel = `${OPEN_ITEMS}`;
-    // Wait until the menu's open animation has settled: the New folder row reads 40 px (the animation shows it shorter first).
-    await page.waitFor(`Math.round(${rowSel}.find((x) => x.textContent.trim() === 'New folder').getBoundingClientRect().height) === 40`, 5000);
-    const rowHeight = await page.evaluate(`${rowSel}.find((x) => x.textContent.trim() === 'New folder').getBoundingClientRect().height`);
-    check(Math.round(rowHeight) === 40, `a mouse's row is 40 px (${Math.round(rowHeight)})`);
+    // The rows lay out during the menu's open animation (0 px at the first frame, shorter while it runs). The wait returns the
+    // New menu's size only once its New folder row is 40 px, so the size it returns is the one that was checked.
+    const size = await page.waitFor(`(() => { const s = ${NEW_MENU_SIZE}; return s && s.rowH === 40 ? s : null; })()`, 5000);
+    check(size.rowH === 40, `a mouse's row is 40 px (${size.rowH})`);
     // Every top-level row of the open New menu, submenu titles included (a submenu's row is its title, a child of its item).
-    const heights = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) > .ant-dropdown-menu > li:not(.ant-dropdown-menu-item-divider)')].map((li) => { const row = li.matches('[role="menuitem"]') ? li : li.querySelector(':scope > [role="menuitem"]'); return (row ? row.textContent.trim() : '?') + ':' + Math.round(row ? row.getBoundingClientRect().height : -1); }).join(' | ')`);
+    const heights = await page.evaluate(`[...(${NEW_MENU})?.querySelectorAll(':scope > .ant-dropdown-menu > li:not(.ant-dropdown-menu-item-divider)') ?? []].map((li) => { const row = li.matches('[role="menuitem"]') ? li : li.querySelector(':scope > [role="menuitem"]'); return (row ? row.textContent.trim() : '?') + ':' + Math.round(row ? row.getBoundingClientRect().height : -1); }).join(' | ')`);
     check(!/:(?!40\b)-?\d+/.test(heights) && !heights.includes('?'), `every row of the New menu, submenu titles too, is 40 px (${heights})`);
-    const width = await page.evaluate(`Math.round(document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) > .ant-dropdown-menu').getBoundingClientRect().width)`);
-    check(width >= 320 && width <= 400, `the menu is 320 to 400 px wide (${width})`);
+    check(size.w >= 320 && size.w <= 400, `the menu is 320 to 400 px wide (${size.w})`);
 
     // From a template, under Document, goes to the gallery at this folder, with the kind.
     await openSubmenu(page, 'Document');
@@ -114,12 +124,16 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     page.close();
     page = listing;
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
+    // The listing was in the background while the editor opened, and a background tab does not run the Blank menu's close
+    // animation, so the menu stayed open (leave state). Bring the listing to front and wait for the close, as the chord step does.
+    await page.send('Page.bringToFront');
+    await waitNoDropdown(page);
 
     // The pointer kind sets the submenu title's height (MED-2): a mouse is 40 px, a finger (a coarse pointer) 44 px.
     const titleHeight = () => page.evaluate(`Math.round([...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === 'Document').getBoundingClientRect().height)`);
     const reopenNew = async () => {
       await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-      await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
+      await waitNoDropdown(page);
       await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click()`);
       await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);
       await page.waitFor(`${OPEN_ITEMS}.every((x) => x.getBoundingClientRect().height > 0)`, 5000);
@@ -133,7 +147,7 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     const mouse = await titleHeight();
     check(mouse === 40, `a submenu title with a mouse is 40 px (${mouse})`);
     await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-    await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
+    await waitNoDropdown(page);
 
     // The chord, with the menu closed: Alt+C then F opens the New folder dialog, and it opens nothing else.
     // The listing was in the background while the editor opened, so the Blank menu's close animation had not run: a closing
