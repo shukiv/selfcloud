@@ -53,6 +53,11 @@ var reviewedNodeKindSites = map[string]int{
 	"internal/api/import_job.go": 3,
 	"internal/store/imports.go":  5,
 
+	// Slice ff1 (part 1), decision 110: admitsKind compares a child's kind with the filter's kind, so a listing skips a
+	// kind the filter excludes. It narrows the rows that a listing reads and decides no access: every page still passes
+	// the access checks of its route, as before.
+	"internal/store/listfilter.go": 2,
+
 	"internal/api/access.go":          2,
 	"internal/api/playlists.go":       2,
 	"internal/api/access_requests.go": 1,

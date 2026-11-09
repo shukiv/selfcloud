@@ -72,6 +72,9 @@ func storeErr(err error) error {
 	if errors.Is(err, store.ErrBadCursor) {
 		return apierr.New(apierr.InvalidRequest, "the cursor is not valid")
 	}
+	if errors.Is(err, store.ErrBadFilter) {
+		return filterBad
+	}
 	return err
 }
 

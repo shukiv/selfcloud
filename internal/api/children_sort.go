@@ -79,8 +79,13 @@ func childSortTag(order store.ChildSort) string {
 }
 
 // childCursorAAD binds a sorted cursor to its account, its caller, its directory and its sort.
-func childCursorAAD(p *auth.Principal, dirID string, order store.ChildSort) []byte {
-	return []byte(strings.Join([]string{p.AccountID, string(p.Kind), p.ID, dirID, childSortTag(order)}, "\x00"))
+func childCursorAAD(p *auth.Principal, dirID string, order store.ChildSort, f store.ListFilter) []byte {
+	parts := []string{p.AccountID, string(p.Kind), p.ID, dirID, childSortTag(order)}
+	// The filter's tag joins the data only when a filter is set, so an unfiltered cursor keeps its data (decision 110).
+	if t := f.Tag(); t != "" {
+		parts = append(parts, t)
+	}
+	return []byte(strings.Join(parts, "\x00"))
 }
 
 // childCursorAEAD returns the cipher that seals sorted cursors, made from the current links key on each use.
@@ -97,7 +102,7 @@ func (s *Server) childCursorAEAD() (cipher.AEAD, error) {
 }
 
 // sealChildCursor returns the cursor that resumes the sorted walk of dirID for p after pos.
-func (s *Server) sealChildCursor(p *auth.Principal, dirID string, order store.ChildSort, pos store.ChildPos) (string, error) {
+func (s *Server) sealChildCursor(p *auth.Principal, dirID string, order store.ChildSort, f store.ListFilter, pos store.ChildPos) (string, error) {
 	aead, err := s.childCursorAEAD()
 	if err != nil {
 		return "", err
@@ -107,13 +112,13 @@ func (s *Server) sealChildCursor(p *auth.Principal, dirID string, order store.Ch
 		return "", err
 	}
 	plain := strings.Join([]string{pos.Kind, pos.Text, strconv.FormatInt(pos.Num, 10), pos.ID}, "\x00")
-	sealed := aead.Seal(nonce, nonce, []byte(plain), childCursorAAD(p, dirID, order))
+	sealed := aead.Seal(nonce, nonce, []byte(plain), childCursorAAD(p, dirID, order, f))
 	return childCursorPrefix + base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
 // openChildCursor returns the position a sorted cursor resumes after. A cursor that does not open, for any reason,
 // is invalid_request.
-func (s *Server) openChildCursor(p *auth.Principal, dirID string, order store.ChildSort, c string) (store.ChildPos, error) {
+func (s *Server) openChildCursor(p *auth.Principal, dirID string, order store.ChildSort, f store.ListFilter, c string) (store.ChildPos, error) {
 	aead, err := s.childCursorAEAD()
 	if err != nil {
 		return store.ChildPos{}, err
@@ -126,7 +131,7 @@ func (s *Server) openChildCursor(p *auth.Principal, dirID string, order store.Ch
 		return store.ChildPos{}, childCursorBad
 	}
 	nonce, sealed := raw[:aead.NonceSize()], raw[aead.NonceSize():]
-	plain, err := aead.Open(nil, nonce, sealed, childCursorAAD(p, dirID, order))
+	plain, err := aead.Open(nil, nonce, sealed, childCursorAAD(p, dirID, order, f))
 	if err != nil {
 		return store.ChildPos{}, childCursorBad
 	}
@@ -142,25 +147,25 @@ func (s *Server) openChildCursor(p *auth.Principal, dirID string, order store.Ch
 }
 
 // sortedChildren reads one page of dir's children in the order order. page.Cursor, when set, is a sorted cursor.
-func (s *Server) sortedChildren(r *http.Request, dir *store.Node, order store.ChildSort, page store.Page) ([]*store.Node, string, error) {
+func (s *Server) sortedChildren(r *http.Request, dir *store.Node, order store.ChildSort, f store.ListFilter, page store.Page) ([]*store.Node, string, error) {
 	ctx := r.Context()
 	p := principalOf(r)
 	var after *store.ChildPos
 	if page.Cursor != "" {
-		pos, err := s.openChildCursor(p, dir.ID, order, page.Cursor)
+		pos, err := s.openChildCursor(p, dir.ID, order, f, page.Cursor)
 		if err != nil {
 			return nil, "", err
 		}
 		after = &pos
 	}
-	kids, more, err := s.store.ChildrenSorted(ctx, dir.AccountID, dir.ID, order, page.Limit, after)
+	kids, more, err := s.store.ChildrenFiltered(ctx, dir.AccountID, dir.ID, order, page.Limit, after, f)
 	if err != nil {
 		return nil, "", storeErr(err)
 	}
 	if !more {
 		return kids, "", nil
 	}
-	next, err := s.sealChildCursor(p, dir.ID, order, order.PosOf(kids[len(kids)-1]))
+	next, err := s.sealChildCursor(p, dir.ID, order, f, order.PosOf(kids[len(kids)-1]))
 	if err != nil {
 		return nil, "", err
 	}

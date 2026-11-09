@@ -125,6 +125,7 @@ type nodeJSON struct {
 	Kind       string    `json:"kind"`
 	Size       int64     `json:"size"`
 	MimeType   string    `json:"mime_type,omitempty"`
+	Type       string    `json:"type"` // the file type group (decision 110); "" for a folder, a shortcut or an unknown type
 	ETag       string    `json:"etag,omitempty"`
 	SHA256     string    `json:"sha256,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -240,7 +241,7 @@ func (s *Server) addPeopleNames(ctx context.Context, p *auth.Principal, accountI
 }
 
 func toNodeJSON(n *store.Node) nodeJSON {
-	out := nodeJSON{ID: n.ID, FolderID: n.FolderID, Name: n.Name, Kind: n.Kind, Size: n.Size,
+	out := nodeJSON{ID: n.ID, FolderID: n.FolderID, Name: n.Name, Kind: n.Kind, Size: n.Size, Type: n.TypeGroup,
 		CreatedAt: n.CreatedAt, ModifiedAt: n.ModifiedAt, NoDownload: n.NoDownload,
 		EditorsCanShare: n.EditorsCanShare, CreatedBy: n.CreatedBy, OwnerID: n.OwnerID,
 		Color: n.Color, Description: n.Description}
@@ -586,10 +587,16 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 	if err != nil {
 		return err
 	}
+	filter, err := listFilterParams(r)
+	if err != nil {
+		return err
+	}
+	// A filter forces the sorted walk (decision 110): with no sort it is name ascending, so the cursor always has a place.
+	sorted = sorted || filter.Active()
 	var kids []*store.Node
 	var next string
 	if sorted {
-		kids, next, err = s.sortedChildren(r, dir, order, page)
+		kids, next, err = s.sortedChildren(r, dir, order, filter, page)
 	} else {
 		if isSortedCursor(page.Cursor) {
 			return childCursorBad
