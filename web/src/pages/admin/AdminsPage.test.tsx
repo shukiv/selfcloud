@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import { person, signedAs } from "../../test/adminFixtures";
+import { expectEmptyTable } from "../../test/emptyTable";
 import AdminsPage from "./AdminsPage";
 
 function renderAdmins() {
@@ -147,12 +148,19 @@ describe("the admins table marks the signed-in admin and has an empty state", ()
     expect(await screen.findByRole("menuitem", { name: "Remove: Other" })).toBeTruthy();
   });
 
-  it("an empty list shows the empty text in the table body (guard: EmptyState)", async () => {
+  // The owner's rule of 2026-11-09 (decision 114): the empty table keeps its headers, and its Empty offers New admin.
+  it("an empty list keeps its header row, and its Empty in the table offers New admin, which opens the form", async () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderAdmins();
-    expect(await screen.findByText("No people yet.")).toBeTruthy();
-    // The words are antd's Empty (decision 111), not a bare line: the picture and the description are its own.
-    expect(document.querySelector("tbody .ant-empty .ant-empty-description")?.textContent).toBe("No people yet.");
+    const add = await expectEmptyTable("Admins", {
+      headers: ["Name", "Status", "Last sign-in"],
+      title: "No people yet.",
+      description: "An admin runs this installation and its tenants.",
+      action: "New admin",
+    });
+    fireEvent.click(add as HTMLElement);
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(document.getElementById("admin-email")).toBeTruthy();
   });
 
   // Review M3: the mockup's Last sign-in column, from last_sign_in_at on each admin; Never when the admin has not signed in.

@@ -7,6 +7,7 @@ import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import TenantUsers from "./TenantUsers";
 import { LINK, person, signedAs } from "../../test/adminFixtures";
+import { expectEmptyTable } from "../../test/emptyTable";
 
 const pendingOwner = person({ id: "usr_owner", email: "owen@example.com", display_name: "Owen", role: "owner", status: "pending" });
 
@@ -60,6 +61,17 @@ describe("people of a tenant as a table", () => {
     const cell = (name: string) => (region.querySelector(`tr[aria-label="${name}"]`) as HTMLElement).querySelectorAll("td")[col];
     expect(cell("Mateo").querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-02T08:00:00Z");
     expect(cell("Owen").textContent).toBe("Never");
+  });
+
+  // The owner's rule of 2026-11-09 (decision 114): the empty table keeps its headers; an admin adds no one here, so no action.
+  it("an empty list keeps its header row, and its Empty in the table has no action", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderUsers();
+    await expectEmptyTable("People", {
+      headers: ["Name", "Role", "Status", "Last sign-in"],
+      title: "No people yet.",
+      description: "The tenant's owner invites its people, or an app adds them through the API.",
+    });
   });
 
   it("on a phone a pending owner's New link is in the row's ⋮ menu", async () => {

@@ -691,7 +691,7 @@ const itemProps = (over: Partial<ItemListingProps<Row>> = {}): ItemListingProps<
     { key: "status", title: "Status", render: (r) => r.status },
     { key: "when", title: "Created", render: (r) => r.when, secondary: true, ariaSort: "descending" },
   ],
-  empty: <p>Nothing here</p>,
+  empty: { title: "Nothing here" },
   ...over,
 });
 const itemRow = (name: string) => document.querySelector(`tbody tr[aria-label="${name}"]`) as HTMLElement;
@@ -822,12 +822,45 @@ describe("Listing with columns: a preset list in the one table", () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
-  // Review L3: the empty node is in the table's body, not anywhere on the page.
-  it("an empty list shows the empty node the page passed, inside the table body", () => {
+  // The owner's rule of 2026-11-09 (decision 114), and review L3: an empty list keeps its table and its header row, with the
+  // column titles and the sort mark; inside the body, antd's simple Empty, a bold title, one muted line, and the page's create
+  // action, a primary button with a + icon.
+  it("an empty list keeps its header row, and shows the Empty with its title, description and action inside the table body", () => {
     viewport(1200);
-    const { container } = render(<Listing {...itemProps({ items: [], empty: <div role="status">Nothing here</div> })} />);
+    const onClick = vi.fn();
+    const { container } = render(
+      <Listing
+        {...itemProps({
+          items: [],
+          sort: { key: "name", dir: "asc", onSort: vi.fn() },
+          empty: { title: "No tenants yet.", description: "A tenant is an organisation.", action: { label: "New tenant", onClick } },
+        })}
+      />,
+    );
+    const table = container.querySelector(".item-list table") as HTMLElement;
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Email", "Status", "Created"]);
+    expect(within(table).getByRole("columnheader", { name: "Name" }).getAttribute("aria-sort")).toBe("ascending");
     const body = container.querySelector(".item-list tbody") as HTMLElement;
-    expect(within(body).getByRole("status").textContent).toBe("Nothing here");
+    const empty = within(body).getByRole("status");
+    expect(empty.querySelector(".ant-empty.ant-empty-normal .ant-empty-image svg")).not.toBeNull();
+    const title = empty.querySelector(".empty-title") as HTMLElement;
+    expect(title.textContent).toBe("No tenants yet.");
+    expect(title.style.fontWeight).toBe("600");
+    expect((empty.querySelector(".empty-desc") as HTMLElement).textContent).toBe("A tenant is an organisation.");
+    const button = within(empty).getByRole("button", { name: "New tenant" });
+    expect(button.className).toContain("ant-btn-primary");
+    expect(button.querySelector("svg.lucide-plus")).not.toBeNull();
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("an empty list without a description or an action shows the title alone", () => {
+    viewport(1200);
+    const { container } = render(<Listing {...itemProps({ items: [], empty: { title: "Nothing recorded yet." } })} />);
+    const body = container.querySelector(".item-list tbody") as HTMLElement;
+    expect((body.querySelector(".empty-title") as HTMLElement).textContent).toBe("Nothing recorded yet.");
+    expect(body.querySelector(".empty-desc")).toBeNull();
+    expect(within(body).queryByRole("button")).toBeNull();
   });
 
   it("Up and Down move the focus between rows, the focused row is the one tab stop, and Enter opens it", () => {

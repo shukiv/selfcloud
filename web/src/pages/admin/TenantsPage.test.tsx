@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import { account, signedAs, usage, LINK } from "../../test/adminFixtures";
+import { expectEmptyTable } from "../../test/emptyTable";
 import TenantsPage from "./TenantsPage";
 
 // A client that does not retry, so a refused read shows at once.
@@ -109,6 +110,23 @@ describe("a failed read", () => {
     expect(screen.getByText("Acme Ltd")).toBeTruthy();
   });
 
+  // The owner's rule of 2026-11-09 (decision 114): the empty table keeps its headers, and its Empty offers New tenant; a
+  // filter that matches nothing says so, with no action.
+  it("an empty list keeps its header row, and its Empty in the table offers New tenant, which opens the form", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: /min-width: (\d+)px/.test(query) && Number(/min-width: (\d+)px/.exec(query)?.[1]) <= 1200, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }));
+    stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [] } } : { status: 200, body: usage() }));
+    renderPage();
+    const add = await expectEmptyTable("Tenants", {
+      headers: ["Name", "Status", "Storage", "Users", "Created"],
+      title: "No tenants yet.",
+      description: "A tenant is an organisation with its own users and folders.",
+      action: "New tenant",
+    });
+    fireEvent.click(add as HTMLElement);
+    await waitFor(() => expect(document.getElementById("new-tenant-name")).toBeTruthy());
+    vi.unstubAllGlobals();
+  });
+
   it("the status filter is sent to the server and shown as pressed", async () => {
     const { calls } = stubFetch((c) => (path(c).pathname === "/api/v1/accounts" ? { status: 200, body: { items: [] } } : { status: 200, body: usage() }));
     renderPage();
@@ -116,6 +134,11 @@ describe("a failed read", () => {
     fireEvent.click(screen.getByRole("button", { name: "Suspended" }));
     await waitFor(() => expect(calls.some((c) => path(c).searchParams.get("status") === "suspended")).toBe(true));
     expect(screen.getByRole("button", { name: "Suspended" }).getAttribute("aria-pressed")).toBe("true");
+    // Nothing matches the filter: the table says so, and offers no New tenant in its body.
+    const body = (await screen.findByRole("region", { name: "Tenants" })).querySelector("tbody") as HTMLElement;
+    await waitFor(() => expect(body.querySelector(".empty-title")?.textContent).not.toBe("No tenants yet."));
+    expect(body.querySelector(".empty-desc")).toBeNull();
+    expect(within(body).queryByRole("button")).toBeNull();
   });
 });
 
@@ -276,7 +299,7 @@ describe("the owner link of a new tenant", () => {
       return renderPage();
     })();
     await screen.findByText(/No tenants yet/);
-    fireEvent.click(screen.getByRole("button", { name: "New tenant" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New tenant" })[0]);
     await screen.findByRole("dialog");
     setField("new-tenant-name", "New Co");
     setField("new-tenant-owner-email", "o@example.com");
@@ -302,7 +325,7 @@ describe("the owner link of a new tenant", () => {
     });
     renderPage();
     await screen.findByText(/No tenants yet/);
-    fireEvent.click(screen.getByRole("button", { name: "New tenant" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New tenant" })[0]);
     await screen.findByRole("dialog");
     setField("new-tenant-name", "New Co");
     setField("new-tenant-owner-email", "o@example.com");
@@ -410,7 +433,8 @@ describe("the new tenant form after a change of person", () => {
   it("a session change closes the new tenant form with what was typed (guard: the form closes on a session change)", async () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "New tenant" }));
+    // The toolbar's New tenant, the first one: an empty table offers its own too (decision 114).
+    fireEvent.click((await screen.findAllByRole("button", { name: "New tenant" }))[0]);
     fireEvent.change(document.getElementById("new-tenant-name") as HTMLInputElement, { target: { value: "Typed" } });
     act(() => session.set(signedAs("admin", "admin_2")));
     await waitFor(() => expect(document.getElementById("new-tenant-name")).toBeNull());

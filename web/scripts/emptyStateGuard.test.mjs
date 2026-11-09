@@ -70,6 +70,23 @@ export default function Page() {
 }
 `,
   },
+  // Decision 114: a Listing's empty prop counts only for the imported Listing; a local one is not it.
+  'an empty prop of a Listing that is not the imported component': page(
+    '      <Listing items={[]} empty={{ title: t("keys.empty") }} />',
+    '  const Listing = (p) => <p>{p.empty.title}</p>;\n',
+  ),
+  // A key in another prop of the imported Listing is not drawn through EmptyState.
+  'a key in another prop of the imported Listing': {
+    name: 'pages/Fixture.tsx',
+    src: `import Listing from "../components/files/Listing";
+import { useT } from "../lib/i18n";
+
+export default function Page() {
+  const { t } = useT();
+  return <Listing items={[]} label={t("keys.empty")} empty={{ title: "x" }} />;
+}
+`,
+  },
   // A helper in a .ts file hands the key out, and a page renders it. The key must not leave a .ts file at all.
   'a key returned by a .ts helper': { name: 'lib/copy.ts', src: 'export const copy = () => t("starred.empty");\n' },
   // A local component named EmptyState is not the imported one.
@@ -107,6 +124,23 @@ const allowed = {
     '      <EmptyState text={copy.empty} />',
     '  const copy = { empty: t("starred.empty") };\n',
   ),
+  // Decision 114: a preset list's empty table is drawn by Listing through EmptyState, from its empty prop's words.
+  'a key in the empty prop of the imported Listing, a ternary too': {
+    name: 'pages/Fixture.tsx',
+    src: `import Listing from "../components/files/Listing";
+import { useT } from "../lib/i18n";
+
+export default function Page({ q }) {
+  const { t } = useT();
+  return (
+    <Listing
+      items={[]}
+      empty={{ title: q ? t("tenants.noMatch") : t("tenants.empty"), action: { label: "New", onClick: () => undefined } }}
+    />
+  );
+}
+`,
+  },
   'the read-only empty folder in FilesPage': {
     name: 'pages/FilesPage.tsx',
     src: page('      <EmptyState role="status" className="empty-folder-drop" text={t("files.empty")} />'),

@@ -7,6 +7,7 @@ import { session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import TenantAudit from "./TenantAudit";
 import { signedAs } from "../../test/adminFixtures";
+import { expectEmptyTable } from "../../test/emptyTable";
 
 function renderAudit() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -61,6 +62,17 @@ describe("tenant audit log", () => {
     renderAudit();
     expect((await screen.findByRole("alert")).textContent).toContain("The server had a problem");
     expect(screen.queryByText("Nothing recorded yet.")).toBeNull();
+  });
+
+  // The owner's rule of 2026-11-09 (decision 114): the empty table keeps its headers; the audit log has no create action.
+  it("an empty log keeps its header row, and its Empty in the table has no action", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderAudit();
+    await expectEmptyTable("Audit log", {
+      headers: ["Action", "When"],
+      title: "Nothing recorded yet.",
+      description: "Sign-ins, changes to people and keys, and other actions show here.",
+    });
   });
 
   it("the action filter is sent to the server", async () => {

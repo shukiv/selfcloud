@@ -8,6 +8,7 @@ import { session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import TenantKeys from "./TenantKeys";
 import { key, signedAs } from "../../test/adminFixtures";
+import { expectEmptyTable } from "../../test/emptyTable";
 
 const SECRET = "scl_SECRET-KEY-VALUE-1234567890";
 
@@ -67,7 +68,8 @@ describe("the keys table sorts on the client", () => {
 // Making a key from an admin's session needs the admin's own password (decision 84). The prompt is the sign-in-as dialog,
 // which opens on Create key; the key is sent only once the password is confirmed.
 function fillKeyAndCreate(name = "CI") {
-  fireEvent.click(screen.getByRole("button", { name: "New key" }));
+  // The toolbar's New key, the first one: an empty table offers its own too (decision 114).
+  fireEvent.click(screen.getAllByRole("button", { name: "New key" })[0]);
   fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: name } });
   fireEvent.click(screen.getByRole("button", { name: "Create key" }));
 }
@@ -77,6 +79,22 @@ function confirmWith(password: string) {
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 }
 
+// The owner's rule of 2026-11-09 (decision 114): the empty table keeps its headers, and its Empty offers New key.
+describe("an empty keys table", () => {
+  it("keeps its header row, and its Empty in the table offers New key, which opens the form", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderKeys();
+    const add = await expectEmptyTable("API keys", {
+      headers: ["Name", "Created", "Last used", "Expires", "Status"],
+      title: "No API keys yet.",
+      description: "An API key lets an app manage this tenant through the API.",
+      action: "New key",
+    });
+    fireEvent.click(add as HTMLElement);
+    await waitFor(() => expect(document.getElementById("new-key-name")).toBeTruthy());
+  });
+});
+
 describe("a new key needs the admin's password", () => {
   it("asks for the password before anything is sent, then sends it with the key", async () => {
     const { calls } = stubFetch((c: Call) => {
@@ -85,8 +103,8 @@ describe("a new key needs the admin's password", () => {
     });
     renderKeys();
     await screen.findByText("No API keys yet.");
-    // The empty list is antd's Empty, compact, with its words (decision 111).
-    expect(document.querySelector(".ant-empty.ant-empty-normal .ant-empty-description")?.textContent).toBe("No API keys yet.");
+    // The empty list is antd's Empty, with the simple picture, in the table (decisions 111 and 114).
+    expect(document.querySelector("tbody .ant-empty.ant-empty-normal .empty-title")?.textContent).toBe("No API keys yet.");
     fillKeyAndCreate();
     expect(document.getElementById("new-key-admin")).toBeTruthy();
     expect(calls.some((c) => c.method === "POST")).toBe(false);
@@ -110,7 +128,7 @@ describe("the new key dialog's name is not an ambiguous Name", () => {
   it("labels the field Key name", async () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderKeys();
-    fireEvent.click(await screen.findByRole("button", { name: "New key" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "New key" }))[0]);
     expect(document.querySelector('label[for="new-key-name"]')?.textContent).toBe("Key name");
   });
 });
@@ -130,7 +148,7 @@ describe("API keys of a tenant", () => {
     });
     const qc = renderKeys();
     await screen.findByText("CI");
-    fireEvent.click(screen.getByRole("button", { name: "New key" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New key" })[0]);
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "Deploy" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
     confirmWith("admin-pass-1");
@@ -148,7 +166,7 @@ describe("API keys of a tenant", () => {
     });
     renderKeys();
     await screen.findByText("No API keys yet.");
-    fireEvent.click(screen.getByRole("button", { name: "New key" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New key" })[0]);
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "CI" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
     confirmWith("admin-pass-1");
@@ -233,7 +251,7 @@ describe("API keys of a tenant", () => {
     stubFetch((c: Call) => (c.method === "GET" ? { status: 200, body: { items: [] } } : { status: 201, body: key() }));
     renderKeys();
     await screen.findByText("No API keys yet.");
-    fireEvent.click(screen.getByRole("button", { name: "New key" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New key" })[0]);
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "typed by Ada" } });
     act(() => session.set(signedAs("admin", "admin_2")));
     await waitFor(() => expect(document.getElementById("new-key-name")).toBeNull());
@@ -247,7 +265,7 @@ describe("the new key dialog while a key is being created", () => {
     const { calls } = stubFetch((c: Call) => (c.method === "POST" ? new Promise<Answer>(() => undefined) : { status: 200, body: { items: [] } }));
     renderKeys();
     await screen.findByText("No API keys yet.");
-    fireEvent.click(screen.getByRole("button", { name: "New key" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New key" })[0]);
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "Deploy" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
     confirmWith("admin-pass-1");
