@@ -61,6 +61,7 @@ fn	lib/files/api.ts:moveNode	-	cli5	planned, cli5
 fn	lib/files/api.ts:myFolders	-	cli8	planned, cli8
 fn	lib/files/api.ts:purgeTrashed	-	cli5	planned, cli5
 fn	lib/files/api.ts:putResume	-	-	media playback position: a player feature
+fn	lib/files/api.ts:refreshNode	-	cli5	planned, cli5
 fn	lib/files/api.ts:renameNode	-	cli5	planned, cli5
 fn	lib/files/api.ts:requestOfficeEditor	-	-	opens the Collabora editor in a browser tab
 fn	lib/files/api.ts:restoreNode	-	cli5	planned, cli5

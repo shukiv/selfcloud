@@ -24,6 +24,8 @@ const announceMock = vi.hoisted(() => vi.fn());
 vi.mock("../lib/files/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/files/api")>()),
   createDocument: createMock,
+  // The page's office request goes through this lib function, which posts through the mocked api above.
+  requestOfficeEditor: (nod: string, mode: string) => apiMock("POST", `/api/v1/nodes/${nod}/office`, { body: { mode } }),
   statNode: (nod: string) => {
     if (nodesMock.pending) return new Promise(() => undefined);
     const n = nodesMock.byId.get(nod);

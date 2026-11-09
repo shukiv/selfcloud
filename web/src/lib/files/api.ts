@@ -162,6 +162,12 @@ export function inlineRange(nod: string, range: string): Promise<Response> {
   return fetch(contentPath(nod, 'inline'), { credentials: 'same-origin', cache: 'no-store', headers: { Range: range } });
 }
 
+// refreshNode reads a file's record again after a session end that may have gone through. It does not check the session
+// first: the drawer that asks may be closing, and a read that fails is ignored.
+export function refreshNode(nod: string): Promise<Node> {
+  return api<Node>('GET', `/api/v1/nodes/${nod}`);
+}
+
 // unlockNode ends the editing session the person holds on a file.
 export async function unlockNode(nod: string, signal?: AbortSignal): Promise<void> {
   await api('POST', `/api/v1/nodes/${nod}/unlock`, { signal });
