@@ -137,6 +137,16 @@ describe("the admins table marks the signed-in admin and has an empty state", ()
     expect(within(other).getByRole("button", { name: "Remove: Other" })).toBeTruthy();
   });
 
+  // On a phone the inline icons move into the ⋮ menu (design-tl 4), so another admin's Remove is reached through it.
+  it("on a phone, another admin's Remove is in that row's ⋮ menu", async () => {
+    window.matchMedia = ((query: string) => ({ ...desktop(query), matches: false })) as unknown as typeof window.matchMedia;
+    stubFetch(() => ({ status: 200, body: { items: [person({ id: "usr_2", email: "other@example.com", display_name: "Other" })] } }));
+    renderAdmins();
+    await screen.findByRole("region", { name: "Admins" });
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Other" }));
+    expect(await screen.findByRole("menuitem", { name: "Remove: Other" })).toBeTruthy();
+  });
+
   it("an empty list shows the empty text in the table body (guard: EmptyState)", async () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderAdmins();
