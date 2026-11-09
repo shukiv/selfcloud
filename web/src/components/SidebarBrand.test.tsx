@@ -6,7 +6,7 @@ import SidebarBrand from "./SidebarBrand";
 import { brand, brandLoaded, DEFAULT_ACCENT } from "../lib/brand";
 
 // The brand at the top of the sidebar (decision 109). Expanded: the wordmark, the custom logo, or the name as text. Folded to the
-// rail: the mark (the artwork's mark, or the glyph for a custom name), or the custom logo small. Its block is the one the New button
+// rail: the SelfCloud mark for every name (decision 119), or the custom logo small. Its block is the one the New button
 // sits under: a 10 px top edge (6 px on a finger), then the picture, then a 10 px gap (6 px on a finger).
 const SIDEBAR_BLUE = "#053D8E";
 function renderBrand(collapsed: boolean, coarse = false, text = "#FFFFFF", background = SIDEBAR_BLUE) {
@@ -65,7 +65,7 @@ describe("SidebarBrand (decision 109)", () => {
     expect(container.textContent).toBe("Acme Drive");
   });
 
-  it("shows a custom name as text, and the glyph in the rail", () => {
+  it("shows a custom name as text, and the mark in the rail", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
     const expanded = renderBrand(false).container;
     expect(expanded.textContent).toBe("Acme Drive");
