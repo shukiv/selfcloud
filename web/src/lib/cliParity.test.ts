@@ -331,6 +331,31 @@ describe('the guard sees every kind of request function', () => {
       ['lib/a.ts:probeObj.go'],
     ],
     [
+      'a member of a nested object-literal export',
+      "export const probeApi = {\n  files: {\n    list: (p: string) => fetch(p),\n  },\n};",
+      ['lib/a.ts:probeApi.files.list'],
+    ],
+    [
+      'a call through a nested member of a private object',
+      "const inner = {\n  files: {\n    list: (p: string) => fetch(p),\n  },\n};\nexport function viaInner(p: string) {\n  return inner.files.list(p);\n}",
+      ['lib/a.ts:viaInner'],
+    ],
+    [
+      'an anonymous default export function',
+      'export default function (p: string) {\n  return fetch(p);\n}',
+      ['lib/a.ts:default'],
+    ],
+    [
+      'an anonymous default export arrow',
+      "export default async (p: string) => api('GET', p);",
+      ['lib/a.ts:default'],
+    ],
+    [
+      'an anonymous default export object',
+      "export default {\n  go: (p: string) => fetch(p),\n};",
+      ['lib/a.ts:default.go'],
+    ],
+    [
       'a request through an injected fetch',
       'export function watch(p: string, deps: { fetch: typeof fetch }) {\n  return deps.fetch(p);\n}',
       ['lib/a.ts:watch'],
