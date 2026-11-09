@@ -700,6 +700,10 @@ type BrandConfig struct {
 	// LogoFile optionally names a PNG or SVG file, read at start (at most 256 KiB). Its path is
 	// never sent to clients; they get the URL /brand/logo instead.
 	LogoFile string `yaml:"logo_file"`
+	// IconFile optionally names a square PNG of 512 to 2048 pixels on a side, or an SVG file, read at start (at most 256 KiB).
+	// It is used for the app icons and the browser's tab icon, and for nothing else (decision 119). Its path is never sent to
+	// clients.
+	IconFile string `yaml:"icon_file"`
 	// Palette overrides colour tokens of the default look, one set per theme. An unset token keeps
 	// the default; the interface derives the rest of the accent family from Accent.
 	Palette BrandPalette `yaml:"palette"`
@@ -1278,6 +1282,13 @@ func (b BrandConfig) validate() error {
 		case ".png", ".svg":
 		default:
 			return fmt.Errorf("logo_file %q must be a .png or .svg file", b.LogoFile)
+		}
+	}
+	if b.IconFile != "" {
+		switch strings.ToLower(filepath.Ext(b.IconFile)) {
+		case ".png", ".svg":
+		default:
+			return fmt.Errorf("icon_file %q must be a .png or .svg file", b.IconFile)
 		}
 	}
 	return nil
