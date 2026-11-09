@@ -28,6 +28,11 @@ import (
 // adminStdin is what the local recovery commands read a password line or a confirmation from. Tests replace it.
 var adminStdin io.Reader = os.Stdin
 
+// testHookBeforeWrite, when a test sets it, runs in a recovery command after its pre-check and before its write. It is
+// nil in production. A test uses it to change the user's state, or to close the store, so the re-check inside the write
+// is reached.
+var testHookBeforeWrite func(st *store.Store, userID string)
+
 const (
 	methodLinkRecovery      = "link"
 	methodTemporaryRecovery = "temporary"
