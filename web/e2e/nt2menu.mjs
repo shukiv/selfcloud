@@ -115,7 +115,8 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     check(title === 'New folder', `Alt+C then F opens the New folder dialog with the menu closed (${title})`);
     check(await page.evaluate(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')`), 'the chord opened no menu');
     await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
-    await page.waitFor(`!document.querySelector('.ant-modal-wrap:not(.ant-modal-wrap-hidden)')`, 10000);
+    // A closed modal stays in the DOM with display none (antd's close animation ends with it), so wait for that, not for a class.
+    await page.waitFor(`[...document.querySelectorAll('.ant-modal-wrap')].every((w) => getComputedStyle(w).display === 'none')`, 10000);
   } finally {
     page.close();
     launch.proc.kill();
