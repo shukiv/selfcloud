@@ -35,12 +35,13 @@ const rowButton = (name, label) => `${personRow(name)}?.querySelector('button[ar
 const focusNow = (page) =>
   page.evaluate(`(() => { const a = document.activeElement; return a ? a.tagName + (a.getAttribute('aria-label') ? ':' + a.getAttribute('aria-label') : '') : 'none'; })()`);
 
-// holdRequests pauses the browser's requests whose address matches pattern until the returned release is called. paused
-// resolves at the first one. The listener and the interception are removed by release.
+// holdRequests pauses the browser's requests whose address matches pattern until the returned release is called. paused()
+// resolves at the first one, and fails after ms (15 s) with the pattern in its message, so a request that is never sent
+// fails the section at once instead of hanging the run. The listener and the interception are removed by release.
 async function holdRequests(page, pattern) {
   const held = [];
   let first;
-  const paused = new Promise((resolve) => (first = resolve));
+  const arrived = new Promise((resolve) => (first = resolve));
   const onPaused = (p) => {
     held.push(p.requestId);
     first();
@@ -48,7 +49,17 @@ async function holdRequests(page, pattern) {
   page.on('Fetch.requestPaused', onPaused);
   await page.send('Fetch.enable', { patterns: [{ urlPattern: pattern, requestStage: 'Request' }] });
   return {
-    paused,
+    paused: async (ms = 15000) => {
+      let timer;
+      const late = new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`the request ${pattern} was not sent within ${ms / 1000} s`)), ms);
+      });
+      try {
+        await Promise.race([arrived, late]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     release: async () => {
       page.off('Fetch.requestPaused', onPaused);
       for (const id of held) await page.send('Fetch.continueRequest', { requestId: id }).catch(() => undefined);
@@ -76,7 +87,7 @@ async function tenantPeopleChecks(h, { page, base, accountID, accountKey }) {
     hold = await holdRequests(page, `*/api/v1/accounts/${accountID}/users/${patID}/verification*`);
     await page.evaluate(`${rowButton(pat.display_name, resend)}.focus()`);
     await pressKey(page, 'Enter', 'Enter', 13);
-    await hold.paused;
+    await hold.paused();
     await page.waitFor(`(() => { const b = ${rowButton(pat.display_name, resend)}; return !!b && (b.disabled || b.getAttribute('aria-disabled') === 'true'); })()`, 5000);
     const busyFocus = await focusNow(page);
     check(busyFocus === `BUTTON:${resend}`, `while the row is busy, the pressed Resend icon keeps the focus, disabled (${busyFocus})`);
@@ -90,9 +101,9 @@ async function tenantPeopleChecks(h, { page, base, accountID, accountKey }) {
     // 5. Remove from account: the ⋮ entry is a danger one, the dialog asks, and its footer's danger button removes.
     await h.clickOn(page, `[role="region"] tbody tr[aria-label=${q(pat.display_name)}] button[aria-label=${q(`More actions for ${pat.display_name}`)}]`);
     await page.waitFor(
-      `(() => { const e = [...document.querySelectorAll('.ant-dropdown-menu-item')].find((x) => x.textContent.trim() === ${q('Remove…')}); if (!e) return false; window.__tl1Danger = e.classList.contains('ant-dropdown-menu-item-danger'); e.click(); return true; })()`,
+      `(() => { const e = [...document.querySelectorAll('.ant-dropdown-menu-item')].find((x) => x.textContent.trim() === ${q('Remove from account…')}); if (!e) return false; window.__tl1Danger = e.classList.contains('ant-dropdown-menu-item-danger'); e.click(); return true; })()`,
     );
-    check(await page.evaluate(`window.__tl1Danger === true`), 'the ⋮ menu has Remove, a danger entry');
+    check(await page.evaluate(`window.__tl1Danger === true`), 'the ⋮ menu has Remove from account, a danger entry');
     await page.waitFor(`[...document.querySelectorAll('.ant-modal-title')].some((x) => x.textContent.trim() === ${q(`Remove ${pat.display_name}?`)})`, 10000);
     const footerDanger = await page.evaluate(`(() => { const b = document.querySelector('.ant-modal-footer .ant-btn-dangerous'); return b ? b.textContent.trim() : null; })()`);
     check(footerDanger === 'Remove', `the confirmation's footer has the danger button Remove (${footerDanger})`);
