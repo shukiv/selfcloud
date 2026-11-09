@@ -128,7 +128,7 @@ describe("the New menu offers documents to an editor or a manager only (decision
 
   it("the directory shown decides: an editor of the folder who is only a contributor of the directory gets none", () => {
     expect(documentKinds(placeOfHere(hereWith("editor", "contributor"), true, true), true)).toEqual([]);
-    expect(documentKinds(placeOfHere(hereWith("contributor", "manager"), true, true), true)).toEqual(["docx", "xlsx", "pptx"]);
+    expect(documentKinds(placeOfHere(hereWith("contributor", "manager"), true, true), true)).toEqual(["docx", "xlsx", "pptx", "odg", "txt"]);
   });
 
   it("a place that is not an editor's offers none, whatever else it allows", () => {
@@ -139,7 +139,7 @@ describe("the New menu offers documents to an editor or a manager only (decision
 describe("no documents while an installation admin is signed in as a user (decision 91, round 2)", () => {
   it("the menu offers none while impersonating, even in a folder the person edits", () => {
     expect(documentKinds(writable, true, true)).toEqual([]);
-    expect(documentKinds(writable, true, false)).toEqual(["docx", "xlsx", "pptx"]);
+    expect(documentKinds(writable, true, false)).toEqual(["docx", "xlsx", "pptx", "odg", "txt"]);
   });
 });
 

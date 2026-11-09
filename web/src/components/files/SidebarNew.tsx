@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { useMenuHeaderInks } from "../menuHeader";
 import { useT } from "../../lib/i18n";
-import { newEntries, type DocKind, type NewKey, type NewPlace } from "../../lib/files/newPlace";
+import { newEntries, type BlankKind, type NewKey, type NewPlace } from "../../lib/files/newPlace";
 import { MENU_ROW_HEIGHT, menuIsDark, newMenuItems, newMenuTree, type NewBlank, type NewMenuNode } from "../../lib/files/newMenu";
 import { newURL } from "../../lib/files/newRoute";
 import { IDLE, chordBlocked, readChord, type ChordState, type NewChordAction } from "../../lib/files/newShortcut";
@@ -30,7 +30,7 @@ export interface SidebarNewProps {
   onPick: (kind: "files" | "folders", where: UploadWhere) => void;
   onFolder: (where: UploadWhere) => void;
   // documents are the blank Office documents the menu offers here (documentKinds: none unless office editing is on, decision 91).
-  documents: DocKind[];
+  documents: BlankKind[];
   // onDocument makes a blank file of kind: an Office kind, or Drawing (odg) or Text file (txt) from More.
   onDocument: (kind: NewBlank) => void;
 }

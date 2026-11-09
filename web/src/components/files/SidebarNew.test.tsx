@@ -296,7 +296,7 @@ describe("the New menu's submenus, template link, and chord", () => {
   });
 
   it("Drawing and Text file are direct items under More, and each calls onDocument with its kind", async () => {
-    const { onDocument } = renderNew(myFilesPlace("fld_mine"), false, false, ["docx"]);
+    const { onDocument } = renderNew(myFilesPlace("fld_mine"), false, false, ["docx", "odg", "txt"]);
     fireEvent.click(screen.getByRole("button", { name: "New" }));
     fireEvent.mouseEnter(await screen.findByText("More"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Drawing" }));

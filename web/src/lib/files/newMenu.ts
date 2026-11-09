@@ -9,12 +9,12 @@ import type { MenuProps } from "antd";
 import { AlignLeft, FilePlus, FileSpreadsheet, FileText, FolderPlus, FolderUp, LayoutTemplate, MoreHorizontal, Palette, Presentation, Upload } from "lucide-react";
 import { CHORD_LETTER, type NewChordAction } from "./newShortcut";
 import { contrast } from "../brand";
-import { DOC_KINDS, type DocKind, type NewEntry, type NewKey } from "./newPlace";
+import { DOC_KINDS, type BlankKind, type DocKind, type NewEntry, type NewKey } from "./newPlace";
 import type { NewGalleryKind } from "./newRoute";
 
 // NewBlank is a blank file the menu makes: an Office kind (through its submenu, or direct), or the two OpenDocument and text kinds
 // that are direct items under More (they have no template).
-export type NewBlank = DocKind | "odg" | "txt";
+export type NewBlank = BlankKind;
 
 // NewSubmenu is a submenu of the menu: one per Office kind, and More (Drawing and Text file).
 export type NewSubmenu = "document" | "spreadsheet" | "presentation" | "more";
@@ -31,7 +31,7 @@ export type NewMenuNode =
 // shows the chord hints (a writable place only: a viewer sees none).
 export interface NewMenuInput {
   entries: NewEntry[];
-  blanks: DocKind[];
+  blanks: BlankKind[];
   hints: boolean;
 }
 
@@ -66,7 +66,9 @@ export function newMenuTree(input: NewMenuInput): NewMenuNode[] {
       { type: "template" as const, kind: KIND_SUBMENU[k].gallery },
     ],
   }));
-  const more: NewMenuNode[] = input.blanks.length > 0 ? [{ type: "submenu", key: "more", children: MORE_KINDS.map((kind) => ({ type: "blank" as const, kind })) }] : [];
+  // More holds the blank kinds the place offers from MORE_KINDS (Drawing, then Text file): with office editing off, Text file alone.
+  const moreKinds = MORE_KINDS.filter((k) => input.blanks.includes(k));
+  const more: NewMenuNode[] = moreKinds.length > 0 ? [{ type: "submenu", key: "more", children: moreKinds.map((kind) => ({ type: "blank" as const, kind })) }] : [];
   const groups = [folder, uploads, [...kinds, ...more]].filter((g) => g.length > 0);
   return groups.flatMap((g, i) => (i === 0 ? g : [{ type: "divider" as const }, ...g]));
 }
