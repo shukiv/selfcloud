@@ -7549,6 +7549,7 @@ components:
         | upload_expired | 410 | The upload expired; start again. |
         | link_expired | 410 | The signed link's time has run out; ask for a new one. |
         | unsupported_media_type | 415 | A tus piece must be application/offset+octet-stream. |
+        | encrypted_archive | 415 | An archive whose entries are encrypted cannot be read. No route answers it yet. |
         | too_many_uploads | 429 | The caller, the account or the drop link holds the most unfinished uploads it may; `details.scope` (`caller`, `account`, `link`) says which. |
         | precondition_required | 428 | A write that needs If-Match sent none. |
         | precondition_failed | 412 | Stale ETag in If-Match. |
@@ -7579,6 +7580,7 @@ components:
         - upload_expired
         - link_expired
         - unsupported_media_type
+        - encrypted_archive
         - too_many_uploads
         - precondition_failed
         - precondition_required

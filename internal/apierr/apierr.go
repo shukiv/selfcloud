@@ -50,6 +50,9 @@ const (
 	// DownloadRestricted refuses a download, a signed link or a copy that the node's no-download rule
 	// forbids the caller. It is a 403 the caller can understand without a retry.
 	DownloadRestricted Code = "download_restricted"
+	// EncryptedArchive refuses an archive whose entries are encrypted, which the server cannot read (design 3.3). It is an
+	// unsupported media type, so it is a 415.
+	EncryptedArchive Code = "encrypted_archive"
 )
 
 // StatusChecksumMismatch is the status the tus protocol defines for a failed piece checksum.
@@ -73,6 +76,7 @@ var statuses = map[Code]int{
 	UploadExpired:        http.StatusGone,
 	LinkExpired:          http.StatusGone,
 	UnsupportedMedia:     http.StatusUnsupportedMediaType,
+	EncryptedArchive:     http.StatusUnsupportedMediaType,
 	TooManyUploads:       http.StatusTooManyRequests,
 	PreconditionFailed:   http.StatusPreconditionFailed,
 	PreconditionRequired: http.StatusPreconditionRequired,
