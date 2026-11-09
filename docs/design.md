@@ -1457,8 +1457,11 @@ admin cannot be removed; that answers `conflict` with `details.reason` `last_adm
 
 **Small-file edit.** `PUT /nodes/{nod}/content` requires `If-Match` with the ETag the editor
 read; a stale ETag gets `412 precondition_failed`, so two editors cannot overwrite each other,
-and a missing one gets `428 precondition_required`. Every write checks the caller's access again
-inside its transaction, so a grant revoked or a node moved while a body was arriving stops it.
+and a missing one gets `428 precondition_required`. A text file (its name is in the code list, its stored
+type is text, or the request's `Content-Type` is `text/*`) takes only UTF-8 text with no NUL byte: any other
+body gets `400 invalid_request` with the message "the file must be UTF-8 text", and the file is unchanged
+(decision 113). Every write checks the caller's access again inside its transaction, so a grant revoked or a
+node moved while a body was arriving stops it.
 `on_conflict: replace` on move and copy replaces a file with a file only; a folder on either side
 is a `conflict`.
 
@@ -2149,6 +2152,7 @@ Each slice ships with tests and leaves the server runnable.
 | sd1 | Drag a folder of the sidebar's tree onto the places a listing drag uses (another folder of the tree, a space's root, a folder row or tile, a breadcrumb); the sidebar's Trash takes a drop, which is the Delete action with its confirmation and Undo; the sidebar scrolls at its edge while a drag holds there (decision 104; 99 is fl1, 100 is fsck, 101 is ci1) | Built |
 | br1 | The SelfCloud default brand: the artwork at the top of the sidebar, in the rail and on the sign-in page, the favicon and the icons drawn from the mark, the name SelfCloud in the API and the interface (decision 109; it reverses 69's no-logo rule and changes 65) | Built |
 | cli1 | Local admin recovery from the data folder: `admin reset-password` (a one-time link, or a generated temporary password printed once), `verify`, `users`, `enable`, `disable` with the last-admin guard, and `end-sessions`; the token and session-end steps move into `internal/recovery` (decision 112) | In review |
+| ce2a | The server refuses a PUT of content that is not UTF-8 text, or has a NUL byte, to a text file (decision 113); WOPI PutFile and uploads are not checked | Built, in review |
 
 **Slices w and x, approved by the owner on 2026-10-31.** The owner asked for the web interface to act like a normal file manager, with a built-in video and audio player, with a playlist and the rest. The owner's answers:
 
@@ -5173,3 +5177,13 @@ Tests: `internal/store/wopi_release_test.go`, `internal/api/office_lock_release_
    - *The last admin counts accounts, not keys.* The CLI's last-admin rule counts active installation-admin accounts and ignores admin keys. The API's rule (`internal/api/admins.go`, lines 124 to 131) also counts unexpiring admin keys, so it is looser. The CLI keeps its stricter rule on purpose: local recovery counts admin accounts, not keys.
    - *Accepted, one line each.* An empty file with mode 0600 is left behind if the process dies between creating a link file and removing it after a failed commit; the next run refuses to overwrite it, so the operator removes it. The typeable check rejects control characters but not format characters such as U+200B, so a password with one is accepted, and a browser can type it.
    - Server, API and docs only: no migration, no new dependency. The command is `selfcloud admin …`, local to the data folder, and works while the server runs.
+
+113. **The server refuses a PUT of non-text bytes to a text file, slice ce2a** (2026-11-09). The owner asked for a code editor for code and JSON files. The editor saves with `PUT /api/v1/nodes/{nod}/content`, so the server must not let a text file hold bytes that are not text. Numbers 107, 108, 110, 111 and 112 are on branches not yet merged, so this decision takes 113; if another change merges with 113 first, renumber this one.
+
+The rule. A replacement is checked when the file is text and not binary. The file is text when its name is in the code list (its extension, in any case, or the whole name `Dockerfile` or `Makefile`), or its stored type is `text/*` or a text type such as `application/json`, or the request's `Content-Type` is `text/*`. It is not binary when neither the stored type nor the new type is an image, audio, video, PDF, office document or archive. So an MPEG-TS `.ts` file stored as `video/mp2t` keeps taking binary. When the rule applies, the body must be UTF-8 text with no NUL byte. Otherwise the answer is `400 invalid_request` with the message "the file must be UTF-8 text", and the file is unchanged. A UTF-8 byte order mark is valid, and it is kept.
+
+Where. The check is in the PUT handler, after the body is written to a blob and before the write transaction. It reads that blob from disk in chunks (`search.ValidText`), so the body is not held in memory twice. It is not in `replaceContent`, which WOPI PutFile also calls, so a save from Collabora is unchanged. Uploads are unchanged.
+
+The contract change, for every client. A PUT that replaces a text file with bytes that are not UTF-8 text, or that hold a NUL byte, now gets 400. This applies to the web editor, to the CLI if its `put` replaces a file by PUT, and to scripts. Binary content sent to a name in the code list gets 400 too. Uploads, WOPI PutFile and Save As are not affected.
+
+The lists. The server's copy of the code list, the text types and the binary types is in `internal/api/textnames.go`, and a test pins its contents. The web's copy is checked against it when the web's code list exists; until then the two must be changed in the same commit. Storage, quota and the existing checks (`If-Match`, the role, the live lock, the 16 MiB cap) are unchanged. There is no migration and no new dependency.
