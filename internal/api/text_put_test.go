@@ -98,7 +98,7 @@ func wantRefusedUTF8(t *testing.T, fx *sharingFixture, rec *httptest.ResponseRec
 }
 
 // TestPutRefusesNonUTF8ToTextFiles: a replacement of a text-named file whose body is not UTF-8 text is refused with 400,
-// and the file is unchanged. Accepted bodies are kept as sent. Design ce section 9.3.
+// and the file is unchanged. Accepted bodies are kept as sent (decision 113).
 func TestPutRefusesNonUTF8ToTextFiles(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

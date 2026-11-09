@@ -78,6 +78,14 @@ func cleanRune(r rune) bool {
 	return !(r < 0x20 || (r >= 0x7f && r <= 0x9f))
 }
 
+// ValidText reads all of r and reports whether its bytes are text by the definition of ErrNotText: no NUL byte, and no
+// byte sequence that is not valid UTF-8. A byte order mark is valid. The answer is ErrNotText, another read error, or nil.
+// It reads in chunks and keeps one chunk in memory, whatever the size of r.
+func ValidText(r io.Reader) error {
+	_, _, err := ReadText(r, 1)
+	return err
+}
+
 // ReadText reads all of r, which holds at most limit bytes of the file, and returns its text: the kept runes, cut to
 // textMax bytes at a rune boundary. It returns ErrNotText when the bytes are not text: a NUL, or a byte sequence that is
 // not valid UTF-8 anywhere in the file. truncated reports that the text was longer than textMax. The whole source is

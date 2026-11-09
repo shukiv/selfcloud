@@ -1252,13 +1252,22 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 	if n.ETag != ifMatch {
 		return apierr.New(apierr.PreconditionFailed, "the file changed since it was read; read it again")
 	}
+	mt := mimeOf(r.Header.Get("Content-Type"), n.Name)
+	// A text file takes only UTF-8 text with no NUL byte (decision 113). The rule is here and not in replaceContent,
+	// which WOPI PutFile also calls, so an office save is unchanged.
+	mustBeText := utf8Required(n.Name, n.MimeType, r.Header.Get("Content-Type"), mt)
 	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Upload.MaxSmallFileSize), n.Size)
 	if err != nil {
 		return err
 	}
+	if mustBeText {
+		if err := s.requireUTF8(n.AccountID, c.ID); err != nil {
+			s.discardBlob(n.AccountID, c.ID)
+			return err
+		}
+	}
 	ctx := r.Context()
 	p := principalOf(r)
-	mt := mimeOf(r.Header.Get("Content-Type"), n.Name)
 	var out *store.Node
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {

@@ -5,6 +5,7 @@ package search
 import (
 	"bytes"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -188,3 +189,44 @@ func FuzzReadText(f *testing.F) {
 		}
 	})
 }
+
+// ValidText answers by the same definition as ReadText: a NUL or invalid UTF-8 is not text, and a BOM is.
+func TestValidTextUsesTheDefinitionOfNotText(t *testing.T) {
+	t.Parallel()
+	straddle := append(bytes.Repeat([]byte("a"), 64<<10-1), []byte("é")...) // a two-byte rune cut by the chunk size
+	late := append(bytes.Repeat([]byte("a"), 2<<20), 0xff)                  // invalid only after the first megabyte
+	cases := []struct {
+		name string
+		in   []byte
+		want error
+	}{
+		{"empty", nil, nil},
+		{"ascii", []byte("{\"a\": 1}\n"), nil},
+		{"utf-8 text", []byte("héllo 世界"), nil},
+		{"a BOM is valid", []byte("\xef\xbb\xbf{}"), nil},
+		{"a rune across the chunk boundary", straddle, nil},
+		{"a NUL", []byte("a\x00b"), ErrNotText},
+		{"an invalid byte", []byte("a\xffb"), ErrNotText},
+		{"a truncated sequence at the end", []byte("a\xe4\xb8"), ErrNotText},
+		{"invalid after a megabyte", late, ErrNotText},
+	}
+	for _, c := range cases {
+		if err := ValidText(bytes.NewReader(c.in)); !errors.Is(err, c.want) {
+			t.Errorf("%s: ValidText = %v, want %v", c.name, err, c.want)
+		}
+	}
+}
+
+// A read error from the source is returned as it is, not as ErrNotText.
+func TestValidTextReturnsAReadError(t *testing.T) {
+	t.Parallel()
+	boom := errors.New("connection reset")
+	if err := ValidText(io.MultiReader(strings.NewReader("abc"), errReader{boom})); !errors.Is(err, boom) {
+		t.Errorf("ValidText = %v, want the read error", err)
+	}
+}
+
+// errReader is a reader that fails with err.
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
