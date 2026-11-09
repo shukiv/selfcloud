@@ -50,6 +50,10 @@ describe("the ways to reset a password", () => {
     expect(document.querySelector(".ant-empty.ant-empty-normal .ant-empty-description")?.textContent).toBe(
       "No reset is set up here. Mail must be configured, or the tenant access setting turned on.",
     );
+    // The notice took the old Alert's role="alert" out of the question; the empty state announces itself as a status.
+    expect(screen.getByRole("status").querySelector(".ant-empty-description")?.textContent).toBe(
+      "No reset is set up here. Mail must be configured, or the tenant access setting turned on.",
+    );
   });
 
   it("says what will happen before the admin confirms, for each way", () => {
