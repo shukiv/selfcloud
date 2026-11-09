@@ -67,7 +67,8 @@ export async function nt2GalleryChecks(h, { base, accountKey, teamA, dir, browse
       `(() => { const r = document.querySelector(${q('[data-template="builtin:letter"]')}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`,
     );
     await tap(page, at);
-    await page.waitFor(`location.pathname.startsWith('/edit/')`, 30000);
+    // The tab first shows the wait page (/edit/wait), then replaces itself with the editor's address, which carries from.
+    await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/wait'`, 30000);
     const nodeID = await page.evaluate(`location.pathname.split('/')[2]`);
     check(true, 'a tap on a built-in opens the made file in this tab, at its editor address');
     const back = await page.evaluate(`new URLSearchParams(location.search).get('from')`);
