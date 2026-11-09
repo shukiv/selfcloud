@@ -11,7 +11,15 @@ const goMock = vi.hoisted(() => vi.fn());
 const createMock = vi.hoisted(() => vi.fn());
 vi.mock("../lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../lib/api")>()), api: apiMock }));
 // nodesMock answers the page's reads of the file tree by id: the source, and the copy a Save As makes (ef1).
-const nodesMock = vi.hoisted(() => ({ byId: new Map<string, unknown>(), children: [] as unknown[], pending: false, listFails: false }));
+const nodesMock = vi.hoisted(() => ({
+  byId: new Map<string, unknown>(),
+  children: [] as unknown[],
+  pending: false,
+  listFails: false,
+  // While hold is set, each statNode read waits until the test releases it (ok resolves it, fail rejects it).
+  hold: null as null | Array<{ ok: () => void; fail: () => void }>,
+  listed: [] as Array<string | null>,
+}));
 const announceMock = vi.hoisted(() => vi.fn());
 vi.mock("../lib/files/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/files/api")>()),
@@ -19,9 +27,21 @@ vi.mock("../lib/files/api", async (importOriginal) => ({
   statNode: (nod: string) => {
     if (nodesMock.pending) return new Promise(() => undefined);
     const n = nodesMock.byId.get(nod);
+    const hold = nodesMock.hold;
+    if (hold !== null) {
+      return new Promise((resolve, reject) => {
+        hold.push({
+          ok: () => (n === undefined ? reject(new Error(`no node ${nod}`)) : resolve(n)),
+          fail: () => reject(new Error("read failed")),
+        });
+      });
+    }
     return n === undefined ? Promise.reject(new Error(`no node ${nod}`)) : Promise.resolve(n);
   },
-  childrenPage: () => (nodesMock.listFails ? Promise.reject(new Error("list failed")) : Promise.resolve({ items: nodesMock.children })),
+  childrenPage: (_folder: string, dir: string | null) => {
+    nodesMock.listed.push(dir);
+    return nodesMock.listFails ? Promise.reject(new Error("list failed")) : Promise.resolve({ items: nodesMock.children });
+  },
 }));
 vi.mock("../lib/router", () => ({ go: goMock }));
 vi.mock("../lib/files/officeSync", async (importOriginal) => ({
@@ -320,6 +340,8 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     nodesMock.children = [];
     nodesMock.pending = false;
     nodesMock.listFails = false;
+    nodesMock.hold = null;
+    nodesMock.listed = [];
     posted = [];
     submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(function (this: HTMLFormElement) {
       posted.push(this);
@@ -688,7 +710,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await screen.findByLabelText("File name");
     const button = screen.getByRole("button", { name: "Save copy" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.title).toBe("A copy is already being made. Wait for it to finish.");
+    expect(screen.getByText("A copy is already being made. Wait for it to finish.")).toBeTruthy();
   });
 
   it("a Save As whose folder cannot be read in full is not asked, and the page says the copy did not start", async () => {
@@ -742,5 +764,134 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     from({ MessageId: "UI_SaveAs", Values: {} });
     await screen.findByLabelText("File name");
     expect((screen.getByRole("button", { name: "Save copy" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  // Round 3 (decision 107): a window ends once, and only its own timer and busy flag are its to clear; a copy the page
+  // could not bind stops the renewals for the original; a file's directory is its own parent; an answer before the request
+  // does not consume the window; one title check runs at a time.
+  const COPY_NOT_SHOWN = "The copy was saved, but it is not shown here. Open its folder to find it.";
+  const REOPEN = "The editor could not renew its session, so the latest changes may not be saved. Reopen the file.";
+
+  it("round 3: a bind that reads after a rename and a new Save As cannot end the new window's timer or busy flag", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    nodesMock.hold = [];
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } }); // bind read 1, held
+    from({ MessageId: "File_Rename", Values: { NewName: "renamed" } }); // ends window 1; its read 2, held
+    const held = nodesMock.hold ?? [];
+    nodesMock.hold = null;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      nodesMock.children = [];
+      from({ MessageId: "UI_SaveAs", Values: {} });
+      fireEvent.change(screen.getByLabelText("File name"), { target: { value: "letter (2)" } });
+      const spy = vi.spyOn(frame().contentWindow as Window, "postMessage");
+      act(() => {
+        screen.getByRole("button", { name: "Save copy" }).click();
+      });
+      await flush();
+      expect(spy.mock.calls.some((c) => String(c[0]).includes("Action_SaveAs"))).toBe(true);
+      nodesMock.children = [COPY];
+      // Window 1's bind read fails now, after window 2 has started.
+      act(() => {
+        held[0]?.fail();
+      });
+      await flush();
+      expect(screen.queryByText(COPY_NOT_SHOWN)).toBeNull();
+      from({ MessageId: "UI_SaveAs", Values: {} });
+      expect((screen.getByRole("button", { name: "Save copy" }) as HTMLButtonElement).disabled).toBe(true);
+      // Window 2 still ends at its own timer: after a minute a late answer for its copy binds nothing.
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+      await flush();
+      expect(window.location.pathname).toBe("/edit/nod_a1");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("round 3: a bind whose listing fails says the copy is not shown, and the window ends", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    nodesMock.listFails = true;
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    expect(await screen.findByText(COPY_NOT_SHOWN)).toBeTruthy();
+    nodesMock.listFails = false;
+    from({ MessageId: "UI_SaveAs", Values: {} });
+    expect((screen.getByRole("button", { name: "Save copy" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("round 3: after a copy is not shown, a renewal mints nothing for the original, and asks for a reopen", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    await confirmSaveAs("letter (2)", true);
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    expect(await screen.findByText(COPY_NOT_SHOWN)).toBeTruthy();
+    const before = officePosts().length;
+    from({ MessageId: "App_TokenExpired", Values: {} });
+    await flush();
+    expect(officePosts()).toHaveLength(before);
+    expect(screen.getByText(REOPEN)).toBeTruthy();
+  });
+
+  it("round 3: a file in a folder's root is listed in its own parent, which is not null, for the request and the bind", async () => {
+    nodesMock.byId.set("nod_a1", { ...NODE, name: "letter.docx", parent_id: "nod_root" });
+    nodesMock.children = [COPY];
+    await openEditor();
+    nodesMock.listed = [];
+    await confirmSaveAs("letter (2)");
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
+    expect(nodesMock.listed).toEqual(["nod_root", "nod_root"]);
+  });
+
+  it("round 3: an answer that names a file before the request is sent does not consume the window", async () => {
+    nodesMock.children = [COPY];
+    await openEditor();
+    nodesMock.children = [];
+    nodesMock.hold = [];
+    from({ MessageId: "UI_SaveAs", Values: {} });
+    fireEvent.change(await screen.findByLabelText("File name"), { target: { value: "letter (2)" } });
+    const spy = vi.spyOn(frame().contentWindow as Window, "postMessage");
+    act(() => {
+      screen.getByRole("button", { name: "Save copy" }).click();
+    });
+    await flush();
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await flush();
+    const held = nodesMock.hold ?? [];
+    nodesMock.hold = null;
+    act(() => {
+      held.forEach((h) => h.ok());
+    });
+    await waitFor(() => expect(spy.mock.calls.some((c) => String(c[0]).includes("Action_SaveAs"))).toBe(true));
+    nodesMock.children = [COPY];
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
+  });
+
+  it("round 3: five titles while one check is in flight start one read and one listing", async () => {
+    nodesMock.children = [];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    nodesMock.listed = [];
+    nodesMock.hold = [];
+    for (let i = 0; i < 5; i++) {
+      from({ MessageId: "Doc_Title", Values: { DocName: "Copy", Title: "Copy - Writer" } });
+    }
+    await flush();
+    const held = nodesMock.hold ?? [];
+    nodesMock.hold = null;
+    // One check at a time: one read of the file is in flight, not one per title.
+    expect(held).toHaveLength(1);
+    act(() => {
+      held.forEach((h) => h.ok());
+    });
+    await flush();
+    expect(nodesMock.listed).toHaveLength(1);
   });
 });
