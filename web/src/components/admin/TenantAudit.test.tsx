@@ -20,6 +20,23 @@ function renderAudit() {
 beforeEach(() => session.set(signedAs("admin")));
 afterEach(() => session.set(null));
 
+// tl1: the audit is a table, newest first. When carries aria-sort descending with no button; Event holds the sentence and its code.
+describe("tenant audit table", () => {
+  it("is a region whose When header says descending and has no button, and whose rows show the action code", async () => {
+    stubFetch((c: Call) =>
+      c.url.includes("/audit")
+        ? { status: 200, body: { items: [{ id: "e1", time: "2026-11-01T10:00:00Z", action: "key.revoke", actor: "usr_1", subject: "key_1" }] } }
+        : { status: 200, body: { items: [] } },
+    );
+    renderAudit();
+    const region = await screen.findByRole("region", { name: "Audit log" });
+    const when = region.querySelector('th[aria-sort="descending"]') as HTMLElement;
+    expect(when).not.toBeNull();
+    expect(when.querySelector("button")).toBeNull();
+    expect(region.querySelector("tbody")?.textContent).toContain("key.revoke");
+  });
+});
+
 describe("tenant audit log", () => {
   it("a failed first load shows the error and no empty state (guard: firstFailed)", async () => {
     stubFetch((c: Call) => (c.url.includes("/audit") ? fail(500, "internal") : { status: 200, body: { items: [] } }));
