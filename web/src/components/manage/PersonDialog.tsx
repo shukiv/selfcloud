@@ -219,7 +219,7 @@ export default function PersonDialog({ account, person, names, onclose }: Person
                 {t("people.detail.spaces")}
               </h3>
               {d.spaces.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>{t("people.detail.noSpaces")}</p>
+                <EmptyState size="compact" text={t("people.detail.noSpaces")} />
               ) : (
                 <ul style={{ margin: 0, paddingInlineStart: 16 }}>
                   {d.spaces.map((s) => (
@@ -235,7 +235,7 @@ export default function PersonDialog({ account, person, names, onclose }: Person
                 {t("people.detail.groups")}
               </h3>
               {d.groups.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>{t("people.detail.noGroups")}</p>
+                <EmptyState size="compact" text={t("people.detail.noGroups")} />
               ) : (
                 <ul style={{ margin: 0, paddingInlineStart: 16 }}>
                   {d.groups.map((g) => (

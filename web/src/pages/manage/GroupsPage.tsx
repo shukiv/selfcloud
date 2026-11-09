@@ -205,7 +205,7 @@ function GroupsView() {
           {memberError !== null && <Alert type="error" showIcon role="alert" message={memberError} style={{ marginBottom: 12 }} />}
           {members.isError && <Alert type="error" showIcon role="alert" message={failureText(members.error, lang)} style={{ marginBottom: 12 }} />}
           {members.data !== undefined && members.data.length === 0 && (
-            <p style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>{t("groups.noMembers")}</p>
+            <EmptyState size="compact" text={t("groups.noMembers")} />
           )}
           {members.data !== undefined && members.data.length > 0 && (
             <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
