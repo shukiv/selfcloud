@@ -40,6 +40,14 @@ describe("the new folder dialog", () => {
     expect(input.id).toBe("newfolder-name");
   });
 
+  // nt2 round 3: the name input has focus as soon as the dialog mounts. A person who types right after Alt+C then F must not lose the
+  // first letters to the New button, so the focus does not wait for antd's open animation (afterOpenChange).
+  it("has the focus on the name input as soon as the dialog renders, not after its open animation", async () => {
+    renderDialog();
+    const input = screen.getByLabelText("Folder name");
+    await waitFor(() => expect(document.activeElement).toBe(input));
+  });
+
   // Slice fu3b (decision 77, item 4): the files page's own dialog is this one. A folder made re-reads the branch it is in, which is
   // where the page's listing comes from, so the page shows it without a reload of its own.
   it("re-reads the branch the folder was made in, and closes (fu3b)", async () => {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useState } from "react";
-import { App, Button, Form, Input, Modal } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { App, Button, Form, Input, Modal, type InputRef } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useT, useLang } from "../../lib/i18n";
@@ -23,6 +23,13 @@ export default function NewFolderDialog({ where, openable, onClose }: { where: U
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [name, setName] = useState("");
+  // antd moves the focus into the dialog as it opens, after the field has mounted (as InviteDialog notes). The name field takes the
+  // focus once that has happened, so a person who types at once (Alt+C, then F) keeps the first letters in the field.
+  const nameRef = useRef<InputRef>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => nameRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -79,13 +86,11 @@ export default function NewFolderDialog({ where, openable, onClose }: { where: U
       confirmLoading={busy}
       maskClosable={false}
       destroyOnClose
-      afterOpenChange={(open) => {
-        if (open) document.getElementById("newfolder-name")?.focus();
-      }}
     >
       <Form layout="vertical" onFinish={() => void create()}>
         <Form.Item htmlFor="newfolder-name" label={t("files.newFolder.label")} validateStatus={error ? "error" : undefined} help={error ?? undefined}>
           <Input
+            ref={nameRef}
             id="newfolder-name"
             value={name}
             onChange={(e) => {
