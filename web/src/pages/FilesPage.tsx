@@ -7,7 +7,7 @@ import { App, Alert, Button, ConfigProvider, Dropdown, Modal, Skeleton, theme as
 import IconButton from "../components/IconButton";
 import SelectionBar from "../components/files/SelectionBar";
 import { useNewChord } from "../components/files/SidebarNew";
-import { menuIsDark, newMenuItems, newMenuTree, type NewMenuNode } from "../lib/files/newMenu";
+import { MENU_ROW_HEIGHT, menuIsDark, newMenuItems, newMenuTree, type NewMenuNode } from "../lib/files/newMenu";
 import { newURL } from "../lib/files/newRoute";
 import type { NewChordAction } from "../lib/files/newShortcut";
 import {
@@ -1995,7 +1995,7 @@ export default function FilesPage() {
     );
   };
   // On a touch screen the toolbar buttons and the menus' items are a finger's size, 44 pixels.
-  const menuTheme = coarse ? { components: { Menu: { itemHeight: 44 } } } : {};
+  const menuTheme = coarse ? { components: { Menu: { itemHeight: MENU_ROW_HEIGHT.coarse } } } : {};
   // A toolbar button is a 44 pixel target on a finger, icon-only ones included (their width is set too).
   const touchSize = coarse ? { minHeight: 44, minWidth: 44 } : undefined;
   // A menu item is 44 pixels tall: its padding is taken out of the height, so the item is not taller than the target.

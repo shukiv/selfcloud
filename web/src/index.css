@@ -346,16 +346,19 @@ a {
 /* A dropdown's submenu title (the New menu's Document, Spreadsheet, Presentation and More, and the file menu's submenus) is
    drawn by antd at 32 px, beside 40 px rows. The row style of its item lands on the wrapper, not on this title, so the title
    takes the row height here: 40 px, or 44 px on a coarse pointer (nt2, decision 108). */
-.ant-dropdown-menu-submenu-title {
-  block-size: 40px;
-  line-height: 40px;
-  box-sizing: border-box;
+/* The New menu's row height, in pixels: 40, or 44 on a coarse pointer (MENU_ROW_HEIGHT in newMenu.ts holds the same values). */
+:root {
+  --menu-row-height: 40px;
 }
 @media (pointer: coarse) {
-  .ant-dropdown-menu-submenu-title {
-    block-size: 44px;
-    line-height: 44px;
+  :root {
+    --menu-row-height: 44px;
   }
+}
+.ant-dropdown-menu-submenu-title {
+  block-size: var(--menu-row-height);
+  line-height: var(--menu-row-height);
+  box-sizing: border-box;
 }
 
 /* The desktop sidebar is a column: the brand and menu take the height that is left, and the rail

@@ -7,7 +7,7 @@ import { Plus } from "lucide-react";
 import { useMenuHeaderInks } from "../menuHeader";
 import { useT } from "../../lib/i18n";
 import { newEntries, type DocKind, type NewKey, type NewPlace } from "../../lib/files/newPlace";
-import { menuIsDark, newMenuItems, newMenuTree, type NewBlank, type NewMenuNode } from "../../lib/files/newMenu";
+import { MENU_ROW_HEIGHT, menuIsDark, newMenuItems, newMenuTree, type NewBlank, type NewMenuNode } from "../../lib/files/newMenu";
 import { newURL } from "../../lib/files/newRoute";
 import { IDLE, chordBlocked, readChord, type ChordState, type NewChordAction } from "../../lib/files/newShortcut";
 import type { UploadWhere } from "../../lib/files/ops";
@@ -180,7 +180,7 @@ export default function SidebarNew({ place, failure, collapsed, coarse, sidebar,
   return (
     // The top edge is the search box's top edge in the top bar: (56 - 36) / 2 = 10 px, or (56 - 44) / 2 = 6 px on a finger.
     <div onKeyDown={takeEscape} style={{ display: "flex", justifyContent: "flex-start", marginBlockStart: coarse ? 6 : 10, marginBlockEnd: 16, minInlineSize: 0 }}>
-      <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? 44 : 40 } } }}>
+      <ConfigProvider theme={{ components: { Menu: { itemHeight: coarse ? MENU_ROW_HEIGHT.coarse : MENU_ROW_HEIGHT.fine } } }}>
         {reason && <span id={waitId} className="sr-only" aria-hidden="true">{reason}</span>}
         <Tooltip title={reason ?? undefined}>
           <span data-testid="new-tip" style={{ display: "inline-flex", maxInlineSize: "100%", minInlineSize: 0 }}>
