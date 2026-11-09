@@ -40,3 +40,24 @@ describe("useNewChord: the chord is cancelled by blur and by Escape (F6)", () =>
     expect(run).toHaveBeenCalledWith("newFolder");
   });
 });
+
+describe("useNewChord: a plain key with no chord armed reads no overlay (F7)", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+    vi.restoreAllMocks();
+  });
+
+  it("sends plain keys while an overlay is on the page, and reads no style", () => {
+    // An open dialog is on the page, so a read of the overlays would call getComputedStyle for it.
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    document.body.appendChild(dialog);
+    const style = vi.spyOn(window, "getComputedStyle");
+    const run = vi.fn();
+    renderHook(() => useNewChord(() => true, run));
+    press("KeyA");
+    press("KeyF");
+    expect(style).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+});
