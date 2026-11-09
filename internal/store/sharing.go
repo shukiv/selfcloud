@@ -119,13 +119,15 @@ func subtreeHasNoDownload(ctx context.Context, q querier, accountID, nodeID stri
 	return ok, err
 }
 
-// subtreeNoDownloadSQL is subtreeHasNoDownload's query. It takes the account and node IDs, then the account again.
-const subtreeNoDownloadSQL = `WITH RECURSIVE sub(id) AS (
-			SELECT id FROM nodes WHERE account_id = ? AND id = ?
+// subtreeNoDownloadSQL is subtreeHasNoDownload's query. It takes the account and node IDs, then the account again. The walk
+// carries each node's no_download flag, so the answer is read from the walk and the nodes table is not joined again: that
+// join was a scan of the whole table on every check (the plan test in zr1_restrict_plan_test.go).
+const subtreeNoDownloadSQL = `WITH RECURSIVE sub(id, no_download) AS (
+			SELECT id, no_download FROM nodes WHERE account_id = ? AND id = ?
 			UNION ALL
-			SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.id WHERE c.account_id = ?
+			SELECT c.id, c.no_download FROM nodes c JOIN sub ON c.parent_id = sub.id WHERE c.account_id = ?
 		)
-		SELECT EXISTS (SELECT 1 FROM sub JOIN nodes n ON n.id = sub.id WHERE n.no_download = 1)`
+		SELECT EXISTS (SELECT 1 FROM sub WHERE no_download = 1)`
 
 // SubtreeHasNoDownload is subtreeHasNoDownload read outside a transaction.
 func (s *Store) SubtreeHasNoDownload(ctx context.Context, accountID, nodeID string) (bool, error) {
