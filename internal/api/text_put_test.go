@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
 )
@@ -233,7 +234,8 @@ func TestPutRequestContentTypeTextIsChecked(t *testing.T) {
 }
 
 // TestPutBinaryContentTypeKeepsTheRule: a Content-Type that is binary does not switch the rule off for a text file. The
-// refused body changes nothing, and a valid body keeps the stored type (a save never changes the type).
+// refused body changes nothing, and a valid body keeps the stored type: a checked file keeps its stored type unless the
+// request names a text type.
 func TestPutBinaryContentTypeKeepsTheRule(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
@@ -247,6 +249,48 @@ func TestPutBinaryContentTypeKeepsTheRule(t *testing.T) {
 		t.Errorf("a binary Content-Type changed the stored type to %q", got.MimeType)
 	}
 	wantContent(t, fx, n.ID, "{\"a\": 1}")
+}
+
+// TestPutTextFileKeepsItsTextType: a valid PUT of a checked text file sent as a non-text type (application/octet-stream)
+// keeps the stored text type, so the next PUT with bad bytes is still refused (the two-step bypass for a non-binary type).
+func TestPutTextFileKeepsItsTextType(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	n := storeFileAs(t, fx, "notes.bin", "text/plain", "old")
+	after := decode[nodeJSON](t, putContentAs(t, fx, n, "application/octet-stream", "new"))
+	if after.MimeType != "text/plain" {
+		t.Fatalf("an octet-stream PUT changed the stored type to %q", after.MimeType)
+	}
+	snap := snapWrites(t, fx.s, fx.key, fx.acc.ID, after.ID)
+	wantRefusedUTF8(t, fx, putContentAs(t, fx, after, "application/octet-stream", notUTF8), after, "new", snap)
+}
+
+// TestPutTextTypeOnABinaryFileIsChecked: a file stored as binary is exempt, but a PUT that names a text type is checked:
+// the bad bytes are refused, and the stored type stays binary. A binary request type keeps the exemption.
+func TestPutTextTypeOnABinaryFileIsChecked(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	n := storeFileAs(t, fx, "pic.txt", "image/png", "old")
+	snap := snapWrites(t, fx.s, fx.key, fx.acc.ID, n.ID)
+	wantRefusedUTF8(t, fx, putContentAs(t, fx, n, "text/plain", notUTF8), n, "old", snap)
+
+	wantStatus(t, putContentAs(t, fx, n, "image/png", notUTF8), 200)
+	wantContent(t, fx, n.ID, notUTF8)
+}
+
+// TestPutOnALockedFileWithAnOversizedBodyIsStill409: the lock is answered before the body is read, so a body over the
+// small-file cap on a locked file gets 409, not 413. The cap is set low so the body is over it.
+func TestPutOnALockedFileWithAnOversizedBodyIsStill409(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t, func(c *config.Config) { c.Upload.MaxSmallFileSize = 1024 })
+	n := createFile(t, fx.s, fx.key, fx.fld.ID, "/notes.json", "application/json", "{}")
+	fx.grant(t, n.ID, fx.ann.ID, "editor")
+	rec := fx.open(t, fx.annSess, n.ID, "edit")
+	wantStatus(t, rec, 200)
+	tok := decode[officeJSON](t, rec).Token
+	fx.lockNodeFor(t, n.ID, tok, "L1")
+
+	wantStatus(t, apiPut(t, fx.s, fx.key, n.ID, n.ETag, strings.Repeat("a", 2048)), 409)
 }
 
 // TestPutBinaryContentTypeCannotTurnTheRuleOff: the bypass in two steps. A valid PUT sent as image/png must not make the
