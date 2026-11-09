@@ -88,7 +88,7 @@ func TestListAccountsSortedWalk(t *testing.T) {
 	key := decode[createdKey](t, rec).Key
 	f := newFolder(t, s, key, apple, "Docs")
 	wantStatus(t, writeFile(t, s, key, f.ID, "a.txt", "four"), 201)
-	page :=decode[listResponse[accountJSON]](t, call(t, s, "GET", "/api/v1/accounts?sort=name", admin, nil))
+	page := decode[listResponse[accountJSON]](t, call(t, s, "GET", "/api/v1/accounts?sort=name", admin, nil))
 	if len(page.Items) != 3 {
 		t.Fatalf("sorted page has %d accounts, want 3", len(page.Items))
 	}

@@ -22,8 +22,8 @@ import (
 // GET /accounts takes ?sort= and ?order=, as a children listing does (children_sort.go, decision 47). Neither given keeps
 // the list in creation order, with the plain cursor it has always had. Given either, the list is sorted: a missing sort is
 // created, and a missing order is asc. A sorted cursor is sealed as a children cursor is: AES-GCM under a key derived from
-// the links key, with the caller and the sort as its additional data. It opens only for the same walk, and a cursor from
-// another walk is refused as one fixed invalid_request.
+// the links key, with the caller, the sort and the filters as its additional data. It opens only for the same walk, and a
+// cursor from another walk is refused as one fixed invalid_request.
 
 const accountCursorLabel = "selfcloud accounts cursor v1"
 
@@ -68,10 +68,13 @@ func accountSortParams(r *http.Request) (order store.AccountSort, sorted bool, e
 	return order, true, nil
 }
 
-// accountCursorAAD binds a sorted cursor to its caller and its sort.
-func accountCursorAAD(p *auth.Principal, order store.AccountSort) []byte {
+// accountCursorAAD binds a sorted cursor to its caller, its sort and its filters (the status, the search text and the
+// external ID), so a cursor resumes only the walk that made it (review L1). Each filter value is quoted, so a NUL or a
+// separator in the search text cannot make two filters read alike.
+func accountCursorAAD(p *auth.Principal, order store.AccountSort, f store.AccountFilter) []byte {
 	tag := fmt.Sprintf("%t/%t", order.ByName, order.Desc)
-	return []byte(strings.Join([]string{p.AccountID, string(p.Kind), p.ID, tag}, "\x00"))
+	filter := strconv.Quote(f.Status) + "/" + strconv.Quote(f.Query) + "/" + strconv.Quote(f.ExternalID)
+	return []byte(strings.Join([]string{p.AccountID, string(p.Kind), p.ID, tag, filter}, "\x00"))
 }
 
 // accountCursorAEAD returns the cipher that seals sorted account cursors, made from the current links key on each use.
@@ -87,8 +90,8 @@ func (s *Server) accountCursorAEAD() (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// sealAccountCursor returns the cursor that resumes the sorted account list for p after pos.
-func (s *Server) sealAccountCursor(p *auth.Principal, order store.AccountSort, pos store.AccountPos) (string, error) {
+// sealAccountCursor returns the cursor that resumes the sorted account list that f narrows to, for p, after pos.
+func (s *Server) sealAccountCursor(p *auth.Principal, order store.AccountSort, f store.AccountFilter, pos store.AccountPos) (string, error) {
 	aead, err := s.accountCursorAEAD()
 	if err != nil {
 		return "", err
@@ -99,13 +102,13 @@ func (s *Server) sealAccountCursor(p *auth.Principal, order store.AccountSort, p
 	}
 	// The name is last, so a name with a NUL in it still splits into the same three parts.
 	plain := strings.Join([]string{strconv.FormatInt(pos.Created, 10), pos.ID, pos.Name}, "\x00")
-	sealed := aead.Seal(nonce, nonce, []byte(plain), accountCursorAAD(p, order))
+	sealed := aead.Seal(nonce, nonce, []byte(plain), accountCursorAAD(p, order, f))
 	return accountCursorPrefix + base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
-// openAccountCursor returns the position a sorted account cursor resumes after. A cursor that does not open, for any
-// reason, is invalid_request.
-func (s *Server) openAccountCursor(p *auth.Principal, order store.AccountSort, c string) (store.AccountPos, error) {
+// openAccountCursor returns the position a sorted account cursor resumes after, in the walk that f narrows to. A cursor
+// that does not open, for any reason (another caller, sort or filter among them), is invalid_request.
+func (s *Server) openAccountCursor(p *auth.Principal, order store.AccountSort, f store.AccountFilter, c string) (store.AccountPos, error) {
 	if !strings.HasPrefix(c, accountCursorPrefix) {
 		return store.AccountPos{}, accountCursorBad
 	}
@@ -118,7 +121,7 @@ func (s *Server) openAccountCursor(p *auth.Principal, order store.AccountSort, c
 		return store.AccountPos{}, accountCursorBad
 	}
 	nonce, sealed := raw[:aead.NonceSize()], raw[aead.NonceSize():]
-	plain, err := aead.Open(nil, nonce, sealed, accountCursorAAD(p, order))
+	plain, err := aead.Open(nil, nonce, sealed, accountCursorAAD(p, order, f))
 	if err != nil {
 		return store.AccountPos{}, accountCursorBad
 	}
@@ -139,7 +142,7 @@ func (s *Server) writeSortedAccounts(w http.ResponseWriter, r *http.Request, f s
 	p := principalOf(r)
 	var after *store.AccountPos
 	if page.Cursor != "" {
-		pos, err := s.openAccountCursor(p, order, page.Cursor)
+		pos, err := s.openAccountCursor(p, order, f, page.Cursor)
 		if err != nil {
 			return err
 		}
@@ -154,7 +157,7 @@ func (s *Server) writeSortedAccounts(w http.ResponseWriter, r *http.Request, f s
 		out.Items = append(out.Items, toAccountJSON(a))
 	}
 	if more {
-		next, err := s.sealAccountCursor(p, order, order.PosOf(accounts[len(accounts)-1]))
+		next, err := s.sealAccountCursor(p, order, f, order.PosOf(accounts[len(accounts)-1]))
 		if err != nil {
 			return err
 		}
