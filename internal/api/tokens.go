@@ -544,6 +544,11 @@ func (s *Server) handleMintToken(w http.ResponseWriter, r *http.Request) error {
 			case store.UserDisabled:
 				return apierr.New(apierr.UserDisabled, "the user is disabled")
 			}
+			// The same answer sign-in-as gives a must-change user (decision 116): no token is made for one.
+			if u.MustChangePassword {
+				return apierr.New(apierr.Conflict, "the user must change the password it was given first").
+					With("reason", reasonPasswordChangeRequired)
+			}
 			user = u
 		}
 		for _, f := range folders {
