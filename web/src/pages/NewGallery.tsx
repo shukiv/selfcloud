@@ -245,11 +245,14 @@ export default function NewGallery() {
           style={{ marginBottom: 16 }}
         />
       )}
+      {/* Blank does not need the template list, so it stays when the list fails (the error and its retry are above). */}
+      {!tplQ.isPending && (
+        <section data-section="blank" style={{ marginBottom: 24 }}>
+          <div style={gridStyle}>{blankTile}</div>
+        </section>
+      )}
       {tplQ.isSuccess && (
         <>
-          <section data-section="blank" style={{ marginBottom: 24 }}>
-            <div style={gridStyle}>{blankTile}</div>
-          </section>
           {sections.map((s) => {
             const items = all.filter((x) => x.source === "builtin" && x.category === s.key);
             if (items.length === 0) return null;
