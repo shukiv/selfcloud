@@ -501,6 +501,197 @@ func adminUsers(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// userStateCommand loads the user that -user names, for the commands that change a user's status. It prints and returns
+// the exit code when the user cannot be found.
+func userStateCommand(ctx context.Context, cfg *config.Config, ref, name string, stderr io.Writer) (*store.Store, *store.User, int) {
+	st, c := adminStoreFor(cfg, stderr, name)
+	if st == nil {
+		return nil, nil, c
+	}
+	userID, code := resolveUserRef(ctx, st, ref, stderr, name)
+	if code != 0 {
+		st.Close()
+		return nil, nil, code
+	}
+	u, err := loadUser(ctx, st, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		fmt.Fprintf(stderr, "selfcloud admin %s: no user %s\n", name, userID)
+		st.Close()
+		return nil, nil, 1
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+		st.Close()
+		return nil, nil, 1
+	}
+	return st, u, 0
+}
+
+// adminEnable sets a disabled user back to active. A pending user is verified first, and an active user is already
+// enabled. The change is audited.
+func adminEnable(args []string, stdout, stderr io.Writer) int {
+	var user *string
+	cfg, _, code := loadConfig("admin enable", args, stderr, 0, func(fs *flag.FlagSet) {
+		user = fs.String("user", "", "the user's ID, or an email that exactly one user has (required)")
+	})
+	if cfg == nil {
+		return code
+	}
+	const name = "enable"
+	if *user == "" || !validUserRef(*user) {
+		fmt.Fprintf(stderr, "selfcloud admin %s: -user must be a user ID or an email address\n", name)
+		return 2
+	}
+	ctx := context.Background()
+	st, u, code := userStateCommand(ctx, cfg, *user, name, stderr)
+	if st == nil {
+		return code
+	}
+	defer st.Close()
+	if u.Status != store.UserDisabled {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %s is %s; only a disabled user is enabled\n", name, u.ID, u.Status)
+		return 1
+	}
+	err := st.Write(ctx, func(tx *store.Tx) error {
+		cur, err := tx.UserByID(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if cur.Status != store.UserDisabled {
+			return fmt.Errorf("%s is %s; only a disabled user is enabled", cur.ID, cur.Status)
+		}
+		if cur.VerifiedAt == nil {
+			return fmt.Errorf("%s has not verified the email address yet", cur.ID)
+		}
+		cur.Status = store.UserActive
+		cur.UpdatedAt = store.Now()
+		if err := tx.UpdateUser(ctx, cur); err != nil {
+			return err
+		}
+		return tx.InsertAudit(ctx, recoveryAudit(cur.AccountID, "user.enable", cur.ID, map[string]any{}))
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "user_id=%s\nstatus=%s\n", u.ID, store.UserActive)
+	return 0
+}
+
+// adminDisable disables an active user and ends its sessions, tokens and impersonations, as the API's disable does. It
+// refuses the last active installation admin, so the installation keeps one that can sign in. It asks for -yes, or for
+// the user's email at a terminal, because it ends the user's sessions.
+func adminDisable(args []string, stdout, stderr io.Writer) int {
+	var user *string
+	var yes *bool
+	cfg, _, code := loadConfig("admin disable", args, stderr, 0, func(fs *flag.FlagSet) {
+		user = fs.String("user", "", "the user's ID, or an email that exactly one user has (required)")
+		yes = fs.Bool("yes", false, "confirm the disable when stdin is not a terminal")
+	})
+	if cfg == nil {
+		return code
+	}
+	const name = "disable"
+	if *user == "" || !validUserRef(*user) {
+		fmt.Fprintf(stderr, "selfcloud admin %s: -user must be a user ID or an email address\n", name)
+		return 2
+	}
+	ctx := context.Background()
+	st, u, code := userStateCommand(ctx, cfg, *user, name, stderr)
+	if st == nil {
+		return code
+	}
+	defer st.Close()
+	if u.Status != store.UserActive {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %s is %s; only an active user is disabled\n", name, u.ID, u.Status)
+		return 1
+	}
+	if !confirmed(*yes, u.Email, stderr) {
+		fmt.Fprintf(stderr, "selfcloud admin %s: refused: the disable ends the user's sessions; pass -yes to confirm "+
+			"when stdin is not a terminal\n", name)
+		return 2
+	}
+	err := st.Write(ctx, func(tx *store.Tx) error {
+		cur, err := tx.UserByID(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if cur.Status != store.UserActive {
+			return fmt.Errorf("%s is %s; only an active user is disabled", cur.ID, cur.Status)
+		}
+		if cur.AccountID == "" && cur.Role == store.RoleAdmin {
+			others, err := tx.CountActiveAdmins(ctx, cur.ID)
+			if err != nil {
+				return err
+			}
+			if others == 0 {
+				return fmt.Errorf("%s is the last active installation admin and cannot be disabled", cur.ID)
+			}
+		}
+		cur.Status = store.UserDisabled
+		cur.UpdatedAt = store.Now()
+		if err := tx.UpdateUser(ctx, cur); err != nil {
+			return err
+		}
+		if _, err := recovery.EndSessions(ctx, tx, cur, "disabled"); err != nil {
+			return err
+		}
+		return tx.InsertAudit(ctx, recoveryAudit(cur.AccountID, "user.disable", cur.ID, map[string]any{}))
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "user_id=%s\nstatus=%s\n", u.ID, store.UserDisabled)
+	return 0
+}
+
+// adminEndSessions ends a user's sessions, delegated tokens and impersonations now, without changing the password or
+// the status. It asks for -yes, or for the user's email at a terminal.
+func adminEndSessions(args []string, stdout, stderr io.Writer) int {
+	var user *string
+	var yes *bool
+	cfg, _, code := loadConfig("admin end-sessions", args, stderr, 0, func(fs *flag.FlagSet) {
+		user = fs.String("user", "", "the user's ID, or an email that exactly one user has (required)")
+		yes = fs.Bool("yes", false, "confirm the end when stdin is not a terminal")
+	})
+	if cfg == nil {
+		return code
+	}
+	const name = "end-sessions"
+	if *user == "" || !validUserRef(*user) {
+		fmt.Fprintf(stderr, "selfcloud admin %s: -user must be a user ID or an email address\n", name)
+		return 2
+	}
+	ctx := context.Background()
+	st, u, code := userStateCommand(ctx, cfg, *user, name, stderr)
+	if st == nil {
+		return code
+	}
+	defer st.Close()
+	if !confirmed(*yes, u.Email, stderr) {
+		fmt.Fprintf(stderr, "selfcloud admin %s: refused: this ends the user's sessions; pass -yes to confirm "+
+			"when stdin is not a terminal\n", name)
+		return 2
+	}
+	err := st.Write(ctx, func(tx *store.Tx) error {
+		cur, err := tx.UserByID(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if _, err := recovery.EndSessions(ctx, tx, cur, "sessions_ended"); err != nil {
+			return err
+		}
+		return tx.InsertAudit(ctx, recoveryAudit(cur.AccountID, "user.sessions_ended", cur.ID, map[string]any{}))
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "user_id=%s\nsessions=ended\n", u.ID)
+	return 0
+}
+
 // openLinkFile creates a new file for a link, with mode 0600. It refuses a file that is already there, so an earlier
 // link is never overwritten.
 func openLinkFile(path string) (*os.File, error) {

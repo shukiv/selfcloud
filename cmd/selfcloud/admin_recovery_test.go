@@ -635,6 +635,15 @@ func TestDisableAndEnable(t *testing.T) {
 	if code, _ := login(t, ts, c, u.Email, "old passphrase"); code == 200 {
 		t.Error("a disabled user signed in")
 	}
+	// The session the user had before the disable is ended too; c still holds its cookie.
+	resp, err := c.Get(ts.URL + "/api/v1/me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 {
+		t.Errorf("the session from before the disable = %d, want 401", resp.StatusCode)
+	}
 	if code, _, _ := runCmd(t, "admin", "disable", "-user", u.ID, "-yes"); code != 1 {
 		t.Errorf("disable of a disabled user = %d, want 1", code)
 	}

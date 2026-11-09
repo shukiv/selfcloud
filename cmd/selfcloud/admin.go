@@ -51,6 +51,13 @@ Commands:
   users [-account ID] [-admins] [-email EMAIL] [-status active|pending|disabled]
                                  list users as a tab-separated table (id, email, role, status, account,
                                  created, must_change); no secret is printed
+  enable -user ID|EMAIL          set a disabled user active again; audited
+  disable -user ID|EMAIL [-yes]  disable an active user and end its sessions, tokens and impersonations.
+                                 The last active installation admin cannot be disabled. -yes is needed
+                                 when stdin is not a terminal
+  end-sessions -user ID|EMAIL [-yes]
+                                 end a user's sessions, delegated tokens and impersonations now, without
+                                 changing the password or the status; audited
   recount-usage [-account ID]    recompute usage and reserved bytes from the files and uploads
                                  (all accounts unless -account is given), and print the change
   search-rebuild                 empty the search index, including the text of files, and queue every folder
@@ -106,6 +113,12 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return adminVerify(args, stdout, stderr)
 	case "users":
 		return adminUsers(args, stdout, stderr)
+	case "enable":
+		return adminEnable(args, stdout, stderr)
+	case "disable":
+		return adminDisable(args, stdout, stderr)
+	case "end-sessions":
+		return adminEndSessions(args, stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, adminUsage)
 		return 0
