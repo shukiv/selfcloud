@@ -367,19 +367,25 @@ func resetWithLink(ctx context.Context, st *store.Store, cfg *config.Config, u *
 			}
 		}
 		return tx.InsertAudit(ctx, recoveryAudit(cur.AccountID, "user.password_reset", cur.ID,
-			map[string]any{"method": methodLinkRecovery, "ttl": int64(ttl / time.Second), "enabled": enabled}))
+			map[string]any{"method": methodLinkRecovery, "ttl": int64(ttl / time.Second), "enabled": enabled,
+				"stage": "issued"}))
 	})
-	if f != nil {
-		if cerr := f.Close(); err == nil && cerr != nil {
-			err = cerr
-		}
-	}
 	if err != nil {
-		if linkFile != "" {
+		if f != nil {
+			_ = f.Close()
 			_ = os.Remove(linkFile) // created above by this run, so nothing else is removed
 		}
 		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
 		return 1
+	}
+	// The reset has committed. A failed close after that keeps the file, and says so, rather than removing it.
+	if f != nil {
+		if cerr := f.Close(); cerr != nil {
+			fmt.Fprintf(stderr, "selfcloud admin %s: the reset committed (user_id=%s, expires_at=%s), but %s could not be "+
+				"closed: %v; the file is kept and may be incomplete\n", name, u.ID, tok.Expires.UTC().Format(time.RFC3339),
+				linkFile, cerr)
+			return 1
+		}
 	}
 	fmt.Fprintf(stdout, "user_id=%s\nmethod=%s\n", u.ID, methodLinkRecovery)
 	if linkFile != "" {
@@ -387,7 +393,7 @@ func resetWithLink(ctx context.Context, st *store.Store, cfg *config.Config, u *
 	} else {
 		fmt.Fprintf(stdout, "link=%s\n", tok.Link)
 	}
-	fmt.Fprintf(stdout, "expires=%s\n", tok.Expires.UTC().Format(time.RFC3339))
+	fmt.Fprintf(stdout, "expires_at=%s\n", tok.Expires.UTC().Format(time.RFC3339))
 	return 0
 }
 
@@ -874,19 +880,25 @@ func adminVerify(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		return tx.InsertAudit(ctx, recoveryAudit(cur.AccountID, "user.verification_issued", cur.ID,
-			map[string]any{"purpose": store.PurposeVerify, "ttl": int64(ttl / time.Second), "from_disabled": fromDisabled}))
+			map[string]any{"purpose": store.PurposeVerify, "ttl": int64(ttl / time.Second), "from_disabled": fromDisabled,
+				"stage": "issued"}))
 	})
-	if f != nil {
-		if cerr := f.Close(); err == nil && cerr != nil {
-			err = cerr
-		}
-	}
 	if err != nil {
-		if *linkFile != "" {
+		if f != nil {
+			_ = f.Close()
 			_ = os.Remove(*linkFile) // created above by this run, so nothing else is removed
 		}
 		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
 		return 1
+	}
+	// The verification has committed. A failed close after that keeps the file, and says so, rather than removing it.
+	if f != nil {
+		if cerr := f.Close(); cerr != nil {
+			fmt.Fprintf(stderr, "selfcloud admin %s: the verification link committed (user_id=%s, expires_at=%s), but %s "+
+				"could not be closed: %v; the file is kept and may be incomplete\n", name, u.ID,
+				tok.Expires.UTC().Format(time.RFC3339), *linkFile, cerr)
+			return 1
+		}
 	}
 	fmt.Fprintf(stdout, "user_id=%s\n", u.ID)
 	if *linkFile != "" {
@@ -894,6 +906,6 @@ func adminVerify(args []string, stdout, stderr io.Writer) int {
 	} else {
 		fmt.Fprintf(stdout, "link=%s\n", tok.Link)
 	}
-	fmt.Fprintf(stdout, "expires=%s\n", tok.Expires.UTC().Format(time.RFC3339))
+	fmt.Fprintf(stdout, "expires_at=%s\n", tok.Expires.UTC().Format(time.RFC3339))
 	return 0
 }
