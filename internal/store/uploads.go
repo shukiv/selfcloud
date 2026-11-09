@@ -247,11 +247,21 @@ func (tx *Tx) UnwrittenBytes(ctx context.Context, accountID string) (mine, total
 	return unwrittenBytes(ctx, tx.q, accountID)
 }
 
+// unwrittenBytes counts what every unfinished writer still has to put on disk (design 2.6a). Uploads hold length less
+// what they wrote. A drop upload is left out: it reserves only the bytes it has received, and its disk is charged as they
+// arrive (slice o3, reserve as received). A bundle holds its reservation less what it wrote, while pending or cancelling,
+// since a cancelling bundle keeps the reservation until its cancel write runs. An unfinished import holds its current
+// entry in full. A pending stored zip holds its reservation; a ready zip or bundle is on disk already, so it counts nothing.
 func unwrittenBytes(ctx context.Context, q querier, accountID string) (mine, total int64, err error) {
-	// A drop upload reserves only the bytes it has received, and its disk is charged as they arrive, so it has
-	// no unwritten bytes to hold back (slice o3, reserve as received).
-	err = q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN account_id = ? THEN length - durable_offset END), 0),
-		COALESCE(SUM(length - durable_offset), 0) FROM uploads WHERE visitor_id = ''`, accountID).Scan(&mine, &total)
+	err = q.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN account_id = ? THEN n END), 0), COALESCE(SUM(n), 0) FROM (
+		SELECT account_id, length - durable_offset AS n FROM uploads WHERE visitor_id = ''
+		UNION ALL
+		SELECT account_id, MAX(reserved_bytes - written_bytes, 0) FROM bundle_jobs WHERE state IN ('pending', 'cancelling')
+		UNION ALL
+		SELECT account_id, reserved_bytes FROM import_jobs WHERE state IN ('queued', 'running', 'paused')
+		UNION ALL
+		SELECT account_id, reserved FROM zips WHERE state = 'pending'
+	)`, accountID).Scan(&mine, &total)
 	return mine, total, err
 }
 

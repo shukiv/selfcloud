@@ -614,7 +614,7 @@ func (s *Server) diskUsable() (usable int64, ok bool, err error) {
 func (s *Server) checkDisk(usable, mine, total int64, creating bool) error {
 	if total > usable {
 		return apierr.New(apierr.StorageFull, "the server's disk does not have room for this upload").
-			With("required_bytes", total).With("available_bytes", usable).With("scope", "server")
+			With("required_bytes", total).With("available_bytes", usable).With("scope", "server").With("reason", "disk")
 	}
 	if creating {
 		share := usable * int64(s.cfg.Upload.MaxDiskSharePercent) / 100
@@ -639,6 +639,20 @@ func (s *Server) checkDiskNow(ctx context.Context, accountID string, size int64)
 	}
 	// The bytes about to be written count too, so a single entry larger than the usable space is refused before any byte
 	// of it is written (round 3, F5).
+	return s.checkDisk(usable, mine, total+size, false)
+}
+
+// checkDiskTx is checkDiskNow inside a write: the unwritten bytes are read through tx, so the check and the reservation
+// it allows see the same totals (design 2.6a, N1). size is the full reservation the write is about to take.
+func (s *Server) checkDiskTx(ctx context.Context, tx *store.Tx, accountID string, size int64) error {
+	usable, ok, err := s.diskUsable()
+	if err != nil || !ok {
+		return err
+	}
+	mine, total, err := tx.UnwrittenBytes(ctx, accountID)
+	if err != nil {
+		return err
+	}
 	return s.checkDisk(usable, mine, total+size, false)
 }
 

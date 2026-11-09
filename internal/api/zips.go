@@ -503,6 +503,11 @@ func (s *Server) startZip(ctx context.Context, z *store.Zip, p *auth.Principal) 
 		if aReady+aReserved+total > int64(s.cfg.Zip.MaxDiskPerAccount) {
 			return errZipAccountDisk()
 		}
+		// The disk must hold what every unfinished writer still needs and this zip's full reservation (design 2.6b).
+		// It is checked before the reservation is written, so a refused zip reserves nothing.
+		if err := s.checkDiskTx(ctx, tx, z.AccountID, total); err != nil {
+			return err
+		}
 		return tx.SetZipSnapshot(ctx, z.ID, total, len(plan), skipped, now)
 	})
 	if err != nil {
