@@ -140,7 +140,7 @@ async function clickButton(page, label, scope = 'body', exact = true, timeout = 
 // carries a visually hidden suffix with the name.
 async function clickRowButton(page, name, label) {
   await page.waitFor(
-    `(() => { const row = [...document.querySelectorAll('li')].find((r) => r.textContent.includes(${q(name)}) && [...r.querySelectorAll('button')].some((b) => (b.getAttribute('aria-label') || b.textContent.trim()).startsWith(${q(label)})));
+    `(() => { const row = [...document.querySelectorAll('tbody tr')].find((r) => r.textContent.includes(${q(name)}) && [...r.querySelectorAll('button')].some((b) => (b.getAttribute('aria-label') || b.textContent.trim()).startsWith(${q(label)})));
       if (!row) return false; [...row.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') || b.textContent.trim()).startsWith(${q(label)})).click(); return true; })()`,
     10000,
   );
@@ -318,8 +318,8 @@ async function runSteps(page, { base, accountID, sink }) {
   await open(page, tenantUsers);
   await waitText(page, MATEO.name);
   check(
-    (await page.evaluate(`[...document.querySelectorAll('li')].some((r) => r.textContent.includes(${q(MATEO.name)}) && [...r.querySelectorAll('button')].some((b) => (b.getAttribute('aria-label') || b.textContent).includes(${q(L('tenant.users.reset'))})))`)) &&
-      (await page.evaluate(`[...document.querySelectorAll('li')].some((r) => r.textContent.includes(${q(MATEO.name)}) && [...r.querySelectorAll('button')].some((b) => (b.getAttribute('aria-label') || b.textContent).includes(${q(L('tenant.users.signInAs'))})))`)),
+    (await page.evaluate(`[...document.querySelectorAll('tbody tr')].some((r) => r.textContent.includes(${q(MATEO.name)}) && [...r.querySelectorAll('button')].some((b) => (b.getAttribute('aria-label') || b.textContent).includes(${q(L('tenant.users.reset'))})))`)) &&
+      (await page.evaluate(`[...document.querySelectorAll('tbody tr')].some((r) => r.textContent.includes(${q(MATEO.name)}) && [...r.querySelectorAll('button')].some((b) => (b.getAttribute('aria-label') || b.textContent).includes(${q(L('tenant.users.signInAs'))})))`)),
     'the admin sees reset and sign-in actions on a tenant member',
   );
   await shot(page, '01-tenant-people');

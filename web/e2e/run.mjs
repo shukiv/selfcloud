@@ -62,6 +62,7 @@ import { sec2Checks } from './sec2.mjs';
 import { stChecks } from './st.mjs';
 import { em1Checks } from './em1.mjs';
 import { ce1Checks } from './ce1.mjs';
+import { tl1Checks } from './tl1.mjs';
 import { menuHeaderText, pickMenuEntry } from './menu.mjs';
 import { saveFailure } from './diag.mjs';
 
@@ -1063,6 +1064,8 @@ async function main() {
     await signOut(page);
     await signIn(page, ADMIN);
     await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
+    // Slice tl1 (design-tl): the admin's lists are tables. Checked on the admin's pages, while the admin is still signed in.
+    if (!only || onlySet.has('tl1')) await tl1Checks(h, { page });
     await signOut(page);
     await signIn(page, MEMBER);
     await owner.memberNotFound(page, h);
