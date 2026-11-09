@@ -225,3 +225,37 @@ describe("overlayOpen: a stylesheet hides the overlay", () => {
     done();
   });
 });
+
+// The sidebar's own menu is the .shell-menu; another antd menu, shown in a popover or a popup, is an open overlay. A popover
+// (Popover and Popconfirm) is open when it is shown and not when its ant-popover-hidden class is set (nt2 review, LOW).
+describe("overlayOpen: which menus and popovers are overlays", () => {
+  function shownMenu(className: string): HTMLElement {
+    const ul = document.createElement("ul");
+    ul.className = className;
+    ul.setAttribute("role", "menu");
+    document.body.appendChild(ul);
+    return ul;
+  }
+
+  it("the sidebar's own menu (.shell-menu) is not an overlay", () => {
+    shownMenu("ant-menu ant-menu-root shell-menu");
+    expect(overlayOpen(document)).toBe(false);
+    document.body.replaceChildren();
+  });
+
+  it("another antd menu that is shown is an overlay, even when it has the ant-menu class", () => {
+    shownMenu("ant-menu ant-menu-root ant-menu-vertical");
+    expect(overlayOpen(document)).toBe(true);
+    document.body.replaceChildren();
+  });
+
+  it("a shown popover is an overlay, and a popover with ant-popover-hidden is not", () => {
+    const pop = document.createElement("div");
+    pop.className = "ant-popover ant-popover-placement-bottom";
+    document.body.appendChild(pop);
+    expect(overlayOpen(document)).toBe(true);
+    pop.classList.add("ant-popover-hidden");
+    expect(overlayOpen(document)).toBe(false);
+    document.body.replaceChildren();
+  });
+});
