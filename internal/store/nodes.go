@@ -523,7 +523,8 @@ func (tx *Tx) OrphanUnreferenced(ctx context.Context, deleteAfter time.Time) (in
 	res, err := tx.q.ExecContext(ctx, `UPDATE blobs SET state = 'orphan', delete_after = ?
 		WHERE state = 'live' AND NOT EXISTS (SELECT 1 FROM nodes WHERE nodes.blob_id = blobs.id)
 		AND NOT EXISTS (SELECT 1 FROM versions WHERE versions.blob_id = blobs.id)
-		AND NOT EXISTS (SELECT 1 FROM import_jobs WHERE import_jobs.archive_blob_id = blobs.id)`,
+		AND NOT EXISTS (SELECT 1 FROM import_jobs WHERE import_jobs.archive_blob_id = blobs.id)
+		AND NOT EXISTS (SELECT 1 FROM import_jobs WHERE import_jobs.source_blob_id = blobs.id)`,
 		millis(deleteAfter))
 	if err != nil {
 		return 0, err

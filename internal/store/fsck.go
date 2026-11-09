@@ -168,7 +168,7 @@ func (s *Snapshot) BlobNamed(ctx context.Context, blobID string) (bool, error) {
 		OR EXISTS (SELECT 1 FROM nodes WHERE blob_id = ?1)
 		OR EXISTS (SELECT 1 FROM versions WHERE blob_id = ?1)
 		OR EXISTS (SELECT 1 FROM uploads WHERE blob_id = ?1)
-		OR EXISTS (SELECT 1 FROM import_jobs WHERE archive_blob_id = ?1)`, blobID).Scan(&named)
+		OR EXISTS (SELECT 1 FROM import_jobs WHERE archive_blob_id = ?1 OR source_blob_id = ?1)`, blobID).Scan(&named)
 	if err != nil {
 		return false, fmt.Errorf("store: %w", err)
 	}
@@ -182,7 +182,7 @@ func (s *Snapshot) BlobReferenced(ctx context.Context, blobID string) (bool, err
 	err := s.tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM nodes WHERE blob_id = ?1)
 		OR EXISTS (SELECT 1 FROM versions WHERE blob_id = ?1)
 		OR EXISTS (SELECT 1 FROM uploads WHERE blob_id = ?1)
-		OR EXISTS (SELECT 1 FROM import_jobs WHERE archive_blob_id = ?1)`, blobID).Scan(&named)
+		OR EXISTS (SELECT 1 FROM import_jobs WHERE archive_blob_id = ?1 OR source_blob_id = ?1)`, blobID).Scan(&named)
 	if err != nil {
 		return false, fmt.Errorf("store: %w", err)
 	}
@@ -222,7 +222,9 @@ func (s *Snapshot) UnrecordedBlobsAfter(ctx context.Context, afterBlob, afterAcc
 				WHERE blob_id IS NOT NULL AND blob_id NOT IN (SELECT id FROM blobs)
 			UNION SELECT account_id, blob_id FROM versions WHERE blob_id NOT IN (SELECT id FROM blobs)
 			UNION SELECT account_id, archive_blob_id FROM import_jobs
-				WHERE archive_blob_id <> '' AND archive_blob_id NOT IN (SELECT id FROM blobs))
+				WHERE archive_blob_id <> '' AND archive_blob_id NOT IN (SELECT id FROM blobs)
+			UNION SELECT account_id, source_blob_id FROM import_jobs
+				WHERE source_blob_id <> '' AND source_blob_id NOT IN (SELECT id FROM blobs))
 		WHERE blob_id > ?1 OR (blob_id = ?1 AND account_id > ?2)
 		ORDER BY blob_id, account_id LIMIT ?3`, afterBlob, afterAccount, limit)
 	if err != nil {

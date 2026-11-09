@@ -113,6 +113,35 @@ func TestArchiveMigrationsApplyOnAFreshStore(t *testing.T) {
 	}
 }
 
+// TestNodeSourceBlobIsPinned: a drive file an import reads is held by the import's source_blob_id, so the blob collector
+// does not orphan it while the import can still read it (design 3.2). The blob is live, with no node naming it.
+func TestNodeSourceBlobIsPinned(t *testing.T) {
+	s, ctx := archiveSetup(t)
+	rows := []string{
+		`INSERT INTO blobs (id, account_id, size, sha256, state, created_at) VALUES ('blb_src', 'acc_a', 3, '00', 'live', 0)`,
+		`INSERT INTO import_jobs (id, job_id, account_id, user_id, source, folder_id, on_conflict, state, source_kind, source_node_id, source_blob_id, created_at, updated_at)
+			VALUES ('imp_n', 'job_n', 'acc_a', 'usr_a', 'archive', 'fld_a', 'rename', 'running', 'node', 'nod_x', 'blb_src', 0, 0)`,
+	}
+	for _, q := range rows {
+		if _, err := s.w.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Write(ctx, func(tx *Tx) error {
+		_, err := tx.OrphanUnreferenced(ctx, Now())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := s.r.QueryRowContext(ctx, `SELECT state FROM blobs WHERE id = 'blb_src'`).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "live" {
+		t.Errorf("the source blob of a running import is %q, want live", state)
+	}
+}
+
 // migrationNumber is the leading number of a migration file name.
 var migrationNumber = regexp.MustCompile(`^(\d{4})_`)
 
