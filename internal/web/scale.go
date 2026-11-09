@@ -50,6 +50,41 @@ func to8(v float32) uint8 {
 	return uint8(min(max(v, 0), 1)*255 + 0.5)
 }
 
+// readRow fills row with the premultiplied colour of the source's row y, four floats a pixel. An RGBA or NRGBA picture (what the
+// PNG decoder returns for the kinds of file the icons take) is read from its pixel bytes, which is what makes a start with a
+// 2048 pixel file quick; any other colour model is read through its colour, so every PNG kind comes out right.
+func readRow(src image.Image, b image.Rectangle, y int, row []float32) {
+	sw := b.Dx()
+	switch s := src.(type) {
+	case *image.RGBA:
+		off := s.PixOffset(b.Min.X, b.Min.Y+y)
+		for x := 0; x < sw; x++ {
+			p := s.Pix[off+x*4 : off+x*4+4 : off+x*4+4]
+			for c := 0; c < 4; c++ {
+				row[x*4+c] = float32(p[c]) / 255
+			}
+		}
+	case *image.NRGBA:
+		off := s.PixOffset(b.Min.X, b.Min.Y+y)
+		for x := 0; x < sw; x++ {
+			p := s.Pix[off+x*4 : off+x*4+4 : off+x*4+4]
+			a := float32(p[3]) / 255
+			row[x*4] = float32(p[0]) / 255 * a
+			row[x*4+1] = float32(p[1]) / 255 * a
+			row[x*4+2] = float32(p[2]) / 255 * a
+			row[x*4+3] = a
+		}
+	default:
+		for x := 0; x < sw; x++ {
+			r, g, bl, a := src.At(b.Min.X+x, b.Min.Y+y).RGBA()
+			row[x*4] = float32(r) / 0xffff
+			row[x*4+1] = float32(g) / 0xffff
+			row[x*4+2] = float32(bl) / 0xffff
+			row[x*4+3] = float32(a) / 0xffff
+		}
+	}
+}
+
 // scaleTo resamples src to dw by dh pixels. Its colours are straight and its alpha is kept.
 func scaleTo(src image.Image, dw, dh int) *image.NRGBA {
 	b := src.Bounds()
@@ -62,13 +97,7 @@ func scaleTo(src image.Image, dw, dh int) *image.NRGBA {
 	inter := make([]float32, sh*dw*4)
 	row := make([]float32, sw*4)
 	for y := 0; y < sh; y++ {
-		for x := 0; x < sw; x++ {
-			r, g, bl, a := src.At(b.Min.X+x, b.Min.Y+y).RGBA()
-			row[x*4] = float32(r) / 0xffff
-			row[x*4+1] = float32(g) / 0xffff
-			row[x*4+2] = float32(bl) / 0xffff
-			row[x*4+3] = float32(a) / 0xffff
-		}
+		readRow(src, b, y, row)
 		for ox := 0; ox < dw; ox++ {
 			var acc [4]float32
 			for _, t := range xt[ox] {

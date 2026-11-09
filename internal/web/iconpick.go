@@ -79,7 +79,9 @@ func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
 		if err != nil {
 			return p, fmt.Errorf("web: ui.brand.icon_file cannot be decoded: %w", err)
 		}
-		iconPic = img
+		// The picture is reduced once, to the largest size an icon or the favicon uses, and every size is drawn from that: a 2048
+		// pixel file is read in full once, not once per icon.
+		iconPic = scaleTo(img, fullIconPixels, fullIconPixels)
 	}
 	var logoPic image.Image
 	refused := false
@@ -94,6 +96,13 @@ func pickIcons(icon, logo *Logo, b brandInfo) (iconPick, error) {
 				p.notes = append(p.notes, fmt.Sprintf("ui.brand.logo_file is %dx%d pixels, smaller than the %d pixel icon, so the app icons enlarge it; a square PNG of %d pixels or more in ui.brand.icon_file gives sharper icons", w, h, fullIconPixels, fullIconPixels))
 			}
 		}
+	}
+
+	if logoPic != nil {
+		// The logo is reduced once, to the largest box a plain icon fits it in; the smaller sizes are drawn from that.
+		b := logoPic.Bounds()
+		w, h := fitSize(b.Dx(), b.Dy(), plainLogoSide(fullIconPixels))
+		logoPic = scaleTo(logoPic, w, h)
 	}
 
 	switch {
