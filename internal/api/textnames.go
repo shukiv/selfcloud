@@ -89,13 +89,14 @@ func binaryMedia(mt string) bool {
 
 // utf8Required reports whether a PUT of a file must send UTF-8 text with no NUL byte (decision 113). The file
 // is text-named when its name is in the code list, or its stored type is text, or the request's Content-Type is text.
-// It is not binary when neither the stored type nor newType is binary, so an MPEG-TS .ts file stored as video/mp2t
-// keeps taking binary. stored is the file's type before the PUT, header the request's Content-Type and newType the
-// type the content is stored as.
+// The exemption reads the stored type only: a file stored as binary (an MPEG-TS .ts file stored as video/mp2t, say)
+// keeps taking binary. The request's Content-Type cannot switch the rule off, because a PUT that is checked never makes
+// the stored type binary (the handler keeps the stored type when the request names a binary one). newType is the type
+// the request would store, and it is not consulted.
 func utf8Required(name, stored, header, newType string) bool {
-	st, nt := mediaType(stored), mediaType(newType)
+	st := mediaType(stored)
 	named := codeNamed(name) || textMedia(st) || textMedia(mediaType(header))
-	return named && !binaryMedia(st) && !binaryMedia(nt)
+	return named && !binaryMedia(st)
 }
 
 // requireUTF8 refuses a committed blob unless it is UTF-8 text with no NUL byte. It reads the blob from disk in chunks
