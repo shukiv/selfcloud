@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { KeyRound, Link, LogIn, Send } from "lucide-react";
-import IconButton from "../IconButton";
 
 import { Alert, Button } from "antd";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -17,7 +16,8 @@ import AdminPassword from "./AdminPassword";
 import ShowOnce from "./ShowOnce";
 import { useOnSessionChange } from "./hooks";
 import StatusTag from "./StatusTag";
-import { list, more, muted, row, rowMain, rowTitle } from "./adminStyles";
+import { more } from "./adminStyles";
+import { ItemList } from "../files/Listing";
 import EmptyState from "../EmptyState";
 
 // The two dialogs load on first use: a first load of the tenant's people does not need them.
@@ -106,50 +106,54 @@ export default function TenantUsers({ account }: { account: string }) {
       {notice !== null && <Alert type="success" showIcon role="status" message={notice} style={{ marginBlockEnd: 12 }} />}
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {q.isSuccess && people.length === 0 && <EmptyState role="status" size="compact" text={t("tenant.users.empty")} />}
-      {!firstFailed && people.length > 0 && (
-        <ul style={list} aria-label={t("tenant.users.title")}>
-          {people.map((p) => {
+      {/* The people table (design-tl 3.1, A3): Name with the email, Role, Status and the row's actions. The first three actions
+          show inline on a desktop and the rest in the ⋮ menu; a phone has the ⋮ menu alone. Each action shows only where it applies. */}
+      {!firstFailed && q.data !== undefined && (
+        <ItemList
+          label={t("tenant.users.title")}
+          items={people}
+          rowLabel={personLabel}
+          moreLabel={(p) => t("tenants.actionsFor", { name: personLabel(p) })}
+          columns={[
+            {
+              key: "name",
+              title: t("files.col.name"),
+              render: (p) => (
+                <span style={{ minWidth: 0 }}>
+                  <span>
+                    <bdi>{personLabel(p)}</bdi>
+                  </span>
+                  <span style={{ display: "block", fontSize: 13, overflowWrap: "anywhere", color: "var(--ant-color-text-secondary)" }}>
+                    <bdi>{p.email}</bdi>
+                  </span>
+                </span>
+              ),
+            },
+            { key: "role", title: t("people.detail.role"), secondary: true, render: (p) => t(`people.role.${p.role}`) },
+            {
+              key: "status",
+              title: t("people.detail.status"),
+              width: 120,
+              render: (p) => <StatusTag tone={statusTone(p.status)}>{t(`people.status.${p.status}`)}</StatusTag>,
+            },
+          ]}
+          actions={(p) => {
             const ownerPending = p.role === "owner" && p.status === "pending";
             const canReset = mailConfigured || tenantAccess;
             const canSignIn = tenantAccess && p.status === "active";
             // A pending owner's invitation: by email only with mail, and as a new link only with tenant access (decision 41).
             const canResend = ownerPending && mailConfigured;
             const canNewLink = ownerPending && tenantAccess;
-            return (
-              <li key={p.id} style={row}>
-                <div style={rowMain}>
-                  <p style={rowTitle}>
-                    <bdi>{personLabel(p)}</bdi>
-                  </p>
-                  <p style={muted}>
-                    <bdi>{p.email}</bdi>
-                  </p>
-                </div>
-                <div>{t(`people.role.${p.role}`)}</div>
-                <div>
-                  <StatusTag tone={statusTone(p.status)}>{t(`people.status.${p.status}`)}</StatusTag>
-                </div>
-                {(canResend || canNewLink || canReset || canSignIn) && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {canResend && (
-                      <IconButton label={`${t("tenant.users.resend")}: ${personLabel(p)}`} tip={t("tenant.users.resend")} disabled={busy === p.id} onClick={() => void resend(p)} icon={<Send className="icon-dir" size={18} aria-hidden="true" focusable="false" />} />
-                    )}
-                    {canNewLink && (
-                      <IconButton label={`${t("tenant.users.newLink")}: ${personLabel(p)}`} tip={t("tenant.users.newLink")} disabled={busy === p.id} onClick={() => setLinkFor(p)} icon={<Link size={18} aria-hidden="true" focusable="false" />} />
-                    )}
-                    {canReset && (
-                      <IconButton label={`${t("tenant.users.reset")}: ${personLabel(p)}`} tip={t("tenant.users.reset")} disabled={busy === p.id} onClick={() => setResetFor(p)} icon={<KeyRound size={18} aria-hidden="true" focusable="false" />} />
-                    )}
-                    {canSignIn && (
-                      <IconButton label={`${t("tenant.users.signInAs")}: ${personLabel(p)}`} tip={t("tenant.users.signInAs")} disabled={busy === p.id} onClick={() => setSignInFor(p)} icon={<LogIn className="icon-dir" size={18} aria-hidden="true" focusable="false" />} />
-                    )}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+            const acts = [
+              canResend && { key: "resend", label: `${t("tenant.users.resend")}: ${personLabel(p)}`, icon: <Send className="icon-dir" size={18} aria-hidden="true" focusable="false" />, run: () => void resend(p) },
+              canNewLink && { key: "newlink", label: `${t("tenant.users.newLink")}: ${personLabel(p)}`, icon: <Link size={18} aria-hidden="true" focusable="false" />, run: () => setLinkFor(p) },
+              canReset && { key: "reset", label: `${t("tenant.users.reset")}: ${personLabel(p)}`, icon: <KeyRound size={18} aria-hidden="true" focusable="false" />, run: () => setResetFor(p) },
+              canSignIn && { key: "signin", label: `${t("tenant.users.signInAs")}: ${personLabel(p)}`, icon: <LogIn className="icon-dir" size={18} aria-hidden="true" focusable="false" />, run: () => setSignInFor(p) },
+            ];
+            return acts.flatMap((a) => (a ? [{ ...a, enabled: busy !== p.id }] : []));
+          }}
+          empty={<EmptyState role="status" size="compact" text={t("tenant.users.empty")} />}
+        />
       )}
       {!firstFailed && q.hasNextPage && (
         <div style={more}>

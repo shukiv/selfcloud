@@ -25,10 +25,20 @@ function adminWith(switches: { tenantAccess: boolean; mailConfigured: boolean })
   session.set({ ...signedAs("admin"), ...switches });
 }
 
+// The inline icons show on a desktop; below md they are in the ⋮ menu (design-tl section 4), so these tests pin a desktop.
+let savedMatchMedia: typeof window.matchMedia;
 beforeEach(() => {
   stubFetch(() => ({ status: 200, body: { items: [active, pending] } }));
+  savedMatchMedia = window.matchMedia;
+  window.matchMedia = ((query: string) => {
+    const m = /min-width: (\d+)px/.exec(query);
+    return { matches: m ? 1200 >= Number(m[1]) : false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
+  }) as unknown as typeof window.matchMedia;
 });
-afterEach(() => session.set(null));
+afterEach(() => {
+  session.set(null);
+  window.matchMedia = savedMatchMedia;
+});
 
 // A pending owner's invitation: resend by email needs mail, and a new link to an admin's session needs tenant access
 // (decision 41). The server refuses the other way, so the page offers only these.
