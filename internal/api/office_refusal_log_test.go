@@ -175,12 +175,20 @@ func macOf(t *testing.T, tok string) []byte {
 func TestWOPITamperedSignatureChangesTheMAC(t *testing.T) {
 	t.Parallel()
 	fx := newOfficeFixture(t)
-	tok := fx.openToken(t, "edit")
+	// One real open gives the payload. The tokens below are signed in process by the same signer the open route uses,
+	// so the loop makes no HTTP call and spends no office.open rate limit (tf1: the old loop of opens hit the limit).
+	pl := payloadOf(t, fx.openToken(t, "edit"))
+	tok := ""
 	for i := 0; i < 4000 && !strings.HasSuffix(tok, "A"); i++ {
-		tok = fx.openToken(t, "edit")
+		pl.IssuedAt++
+		signed, err := fx.s.wopiTokens.sign(pl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok = signed
 	}
 	if !strings.HasSuffix(tok, "A") {
-		t.Skip("no token ending in A was made")
+		t.Fatal("no token ending in A was minted in 4000 tries")
 	}
 	if bytes.Equal(macOf(t, tamperSignature(t, tok)), macOf(t, tok)) {
 		t.Fatalf("the tampered token decodes to the same signature as the original; it would still be valid")
