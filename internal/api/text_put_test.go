@@ -326,10 +326,10 @@ func TestPutWithNoTypeGetsTheNameType(t *testing.T) {
 func TestPutKeepsAStoredParameter(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
-	n := storeFileAs(t, fx, "data.json", "application/json; charset=utf-8", "{}")
-	rec := putContentAs(t, fx, n, "application/octet-stream", "{\"a\": 1}")
+	n := storeFileAs(t, fx, "notes.bin", "text/plain; charset=utf-8", "old")
+	rec := putContentAs(t, fx, n, "application/octet-stream", "new")
 	wantStatus(t, rec, 200)
-	if got := decode[nodeJSON](t, rec).MimeType; got != "application/json; charset=utf-8" {
+	if got := decode[nodeJSON](t, rec).MimeType; got != "text/plain; charset=utf-8" {
 		t.Errorf("a checked PUT kept %q, want the stored type exactly", got)
 	}
 

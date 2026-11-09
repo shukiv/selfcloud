@@ -120,12 +120,12 @@ func putRule(name, st, header, want string) (checked bool, stored string) {
 		if textMedia(wt) {
 			return true, wt
 		}
-		return true, stt
+		return true, st
 	case exempt:
 		if binaryMedia(wt) {
 			return false, wt
 		}
-		return false, stt
+		return false, st
 	default:
 		return false, wt
 	}
