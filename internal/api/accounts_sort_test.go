@@ -5,6 +5,7 @@ package api
 import (
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,6 +135,45 @@ func TestListAccountsSortCursor(t *testing.T) {
 	// The cursor opens for its own sort.
 	if names, _ := accountNames(t, s, admin, "?limit=1&sort=name&cursor="+url.QueryEscape(byName)); len(names) != 1 || names[0] != "Banana" {
 		t.Errorf("name cursor resumed at %v, want [Banana]", names)
+	}
+}
+
+// TestListAccountsSortCursorFilter checks that a sorted cursor is bound to the walk's filters as well as its sort: a cursor
+// from one status, search or external ID resumes no walk of another, and is refused as invalid_request (review L1).
+func TestListAccountsSortCursorFilter(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	for _, n := range []string{"amber one", "amber two", "birch one", "birch two"} {
+		rec := call(t, s, "POST", "/api/v1/accounts", admin, map[string]any{"name": n, "external_id": "ext-" + strings.ReplaceAll(n, " ", "-")})
+		wantStatus(t, rec, 201)
+		if strings.HasSuffix(n, "two") {
+			wantStatus(t, call(t, s, "PATCH", "/api/v1/accounts/"+decode[accountJSON](t, rec).ID, admin, map[string]any{"status": "suspended"}), 200)
+		}
+	}
+	_, active := accountNames(t, s, admin, "?limit=1&sort=name&status=active")
+	_, amber := accountNames(t, s, admin, "?limit=1&sort=name&q=amber")
+	_, all := accountNames(t, s, admin, "?limit=1&sort=name")
+	if active == "" || amber == "" || all == "" {
+		t.Fatalf("expected a cursor from each walk: active %q, amber %q, all %q", active, amber, all)
+	}
+	refused := []string{
+		"?limit=1&sort=name&status=suspended&cursor=" + url.QueryEscape(active),
+		"?limit=1&sort=name&cursor=" + url.QueryEscape(active),
+		"?limit=1&sort=name&q=birch&cursor=" + url.QueryEscape(amber),
+		"?limit=1&sort=name&q=amber&status=active&cursor=" + url.QueryEscape(amber),
+		"?limit=1&sort=name&external_id=ext-amber-one&cursor=" + url.QueryEscape(all),
+		"?limit=1&sort=name&status=active&cursor=" + url.QueryEscape(all),
+	}
+	for _, q := range refused {
+		wantError(t, call(t, s, "GET", "/api/v1/accounts"+q, admin, nil), 400, apierr.InvalidRequest)
+	}
+	// Each cursor still opens for its own walk.
+	if names, _ := accountNames(t, s, admin, "?limit=1&sort=name&status=active&cursor="+url.QueryEscape(active)); len(names) != 1 || names[0] != "birch one" {
+		t.Errorf("active cursor resumed at %v, want [birch one]", names)
+	}
+	if names, _ := accountNames(t, s, admin, "?limit=1&sort=name&q=amber&cursor="+url.QueryEscape(amber)); len(names) != 1 || names[0] != "amber two" {
+		t.Errorf("amber cursor resumed at %v, want [amber two]", names)
 	}
 }
 
