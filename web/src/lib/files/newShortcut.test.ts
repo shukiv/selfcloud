@@ -167,7 +167,7 @@ describe("chordBlocked: where the chord is ignored", () => {
   // would be off on every page that has a sidebar.
   it("is not blocked by the sidebar's navigation menu, which is always shown", () => {
     const nav = document.createElement("ul");
-    nav.className = "ant-menu ant-menu-root ant-menu-inline";
+    nav.className = "ant-menu ant-menu-root ant-menu-inline shell-menu";
     nav.setAttribute("role", "menu");
     document.body.appendChild(nav);
     expect(overlayOpen(document)).toBe(false);
