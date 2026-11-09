@@ -115,15 +115,17 @@ func (tx *Tx) NoDownloadApplies(ctx context.Context, accountID, nodeID string) (
 // no_download itself. A copy of the subtree takes the flags along, so a copy is refused when this holds.
 func subtreeHasNoDownload(ctx context.Context, q querier, accountID, nodeID string) (bool, error) {
 	var ok bool
-	err := q.QueryRowContext(ctx, `WITH RECURSIVE sub(id) AS (
+	err := q.QueryRowContext(ctx, subtreeNoDownloadSQL, accountID, nodeID, accountID).Scan(&ok)
+	return ok, err
+}
+
+// subtreeNoDownloadSQL is subtreeHasNoDownload's query. It takes the account and node IDs, then the account again.
+const subtreeNoDownloadSQL = `WITH RECURSIVE sub(id) AS (
 			SELECT id FROM nodes WHERE account_id = ? AND id = ?
 			UNION ALL
 			SELECT c.id FROM nodes c JOIN sub ON c.parent_id = sub.id WHERE c.account_id = ?
 		)
-		SELECT EXISTS (SELECT 1 FROM sub JOIN nodes n ON n.id = sub.id WHERE n.no_download = 1)`,
-		accountID, nodeID, accountID).Scan(&ok)
-	return ok, err
-}
+		SELECT EXISTS (SELECT 1 FROM sub JOIN nodes n ON n.id = sub.id WHERE n.no_download = 1)`
 
 // SubtreeHasNoDownload is subtreeHasNoDownload read outside a transaction.
 func (s *Store) SubtreeHasNoDownload(ctx context.Context, accountID, nodeID string) (bool, error) {
