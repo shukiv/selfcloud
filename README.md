@@ -114,9 +114,19 @@ and of the installation, newest first, with `-account ID`, `-user ID|EMAIL` (the
 `-action PREFIX`, `-since RFC3339|DURATION` and `-limit N` (100 by default, 1 to 10000). Both print a tab-separated
 table with a header line, need no key, and write no audit row. Exit 2 is a usage error.
 
-The commands are listed in `docs/cli-parity.tsv`, which pairs every route, every web client function that calls
-the API and every admin command with its CLI command or a reason. A new route or API function adds its row in the
-same commit; the Go and web tests fail without it.
+`create-account` refuses a name or an external ID with a control character or invalid UTF-8 (exit 2), and `accounts`
+and `audit` write each text field with its control characters escaped (`\t`, `\n`, `\r`, `\\`, `\xNN`), so a record is
+always one line.
+
+`docs/cli-parity.tsv` pairs each route, each request function of `web/src/lib` and each admin command with its CLI
+command or a reason. The Go tests check that every route the server mounts has a route row and each route row names a
+mounted route, that a row with no command has a reason, and that the admin commands match their rows. The web test
+(`web/src/lib/cliParity.test.ts`) checks that every `/api/v1` path in `web/src` has a route row, that every exported
+request function of `web/src/lib` has an `fn` row and every `fn` row names one, that the table has five fields per
+line with no repeated key and LF line ends, and that no file outside `web/src/lib` makes a request or builds an
+`/api/v1` path, except as an `href` or `src` address. A new route or request function adds its row in the same commit.
+The web rule reads the syntax tree and the names in it: a request made under another name, or through a dynamic
+property, is not seen.
 
 ## Checking the data directory
 
