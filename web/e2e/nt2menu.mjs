@@ -11,9 +11,9 @@ import { sleep } from './media.mjs';
 const q = (v) => JSON.stringify(v);
 
 // key sends one key press (down and up) to the focused element, with the modifiers the chord needs (Alt is 1).
-// OPEN_ITEMS is the menu items of the dropdowns that are open now: not a closed dropdown, and not a submenu popup that is hidden
-// (a stale Blank from a closed submenu was clicked before, MED-7).
-const OPEN_ITEMS = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role=\"menuitem\"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]'))";
+// OPEN_ITEMS is the menu items of the dropdowns that are open now, and of the submenu popups (a submenu popup is not inside a
+// .ant-dropdown: it is its own .ant-dropdown-menu-submenu-popup). A closed dropdown or a hidden popup is not counted (MED-7).
+const OPEN_ITEMS = "[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role=\"menuitem\"], .ant-dropdown-menu-submenu-popup [role=\"menuitem\"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-dropdown-menu-submenu-hidden, .ant-menu-hidden, [hidden]'))";
 // OPEN_MODAL is the modal that is displayed now (a closed one stays in the DOM, with display none).
 const OPEN_MODAL = "[...document.querySelectorAll('.ant-modal-wrap')].find((w) => getComputedStyle(w).display !== 'none')";
 async function key(page, { code, key: name, vk, alt = false }) {
