@@ -148,8 +148,9 @@ export default function OfficeEditPage() {
   // copyBusy is true while a Save As is pending: the Save As dialog cannot start another one (decision 107).
   const [copyBusy, setCopyBusy] = useState(false);
 
-  // copyLostRef is true once a Save As's copy could not be bound (copyNotShown): the editor may then show the copy, so the page
-  // mints no token for the original (renew). It is cleared when the page opens a file, or binds a copy.
+  // copyLostRef is true once a Save As's copy is lost: a copy could not be bound (copyNotShown), or the window timed out after its
+  // request went out (saveAsTimedOut). The editor may then show the copy, so the page mints no token for the original (renew).
+  // It is cleared when the page opens a file, or binds a copy.
   const copyLostRef = useRef(false);
 
   // finishSaveAs ends a window of a Save As: the copy is bound, not found, superseded, or timed out. A window ends once, and only
@@ -319,10 +320,13 @@ export default function OfficeEditPage() {
       return;
     }
     renewingRef.current = true;
+    // The token is for the node the editor shows when the renewal starts. If the page has moved to another file (a copy, or a
+    // new node) by the time it returns, the token is not posted, and no note is replaced (rounds 5 and 6). The sequence number is
+    // not compared: every read moves it, and a rename's read would then drop the renewal of the file still on screen.
+    const node = nodRef.current;
     try {
-      const answer = await api<OfficeAnswer>("POST", `/api/v1/nodes/${nodRef.current}/office`, { body: { mode: modeRef.current } });
-      // The copy was lost while this renewal was in flight: no token goes to the original, and no note is replaced (round 5).
-      if (copyLostRef.current) return;
+      const answer = await api<OfficeAnswer>("POST", `/api/v1/nodes/${node}/office`, { body: { mode: modeRef.current } });
+      if (copyLostRef.current || nodRef.current !== node) return;
       if (watchRef.current?.() ?? false) {
         setNotice("sessionEnded");
         return;
@@ -460,8 +464,15 @@ export default function OfficeEditPage() {
     // The window's timer ends it. Once the request has gone to the editor, a timeout may leave a copy the page never heard of, so
     // the copy is lost (copyLost): the page then mints no token for the original. A window that never sent its request is only ended.
     win.timer = setTimeout(() => {
-      if (win.at !== 0) copyLost(win, true);
-      else finishSaveAs(win);
+      // An answer has come: its read ends the window, however long the read takes (round 6), so the timer does nothing.
+      if (win.answered) return;
+      // Still listing the folder: no request has gone out, so no copy can exist, and the copy did not start.
+      if (win.at === 0) {
+        finishSaveAs(win);
+        setNotice("copyNotStarted");
+        return;
+      }
+      copyLost(win, true);
     }, SAVE_AS_WINDOW_MS);
     setCopyBusy(true);
     setSaveAs(null);
