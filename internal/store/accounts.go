@@ -41,11 +41,19 @@ type Account struct {
 const accountCols = `id, external_id, name, status, quota_bytes, used_bytes, used_files,
 	reserved_bytes, tokens_not_before, created_at, updated_at, user_quota_bytes`
 
-// accountListCols is accountCols for the account lists, with each account's number of users. The count is a subquery of
-// the list's own query, which the users_list index answers, so a page of accounts is one query, not one per account.
-const accountListCols = accountCols + `, (SELECT COUNT(*) FROM users u WHERE u.account_id = accounts.id) AS user_count`
+// accountListSQL is the query of an account list: the accounts that where narrows to, in the order order, up to the
+// LIMIT the last argument gives, each with its number of users (decision 114). The accounts are read, sorted and limited
+// in a MATERIALIZED page first, and the users are counted in the query over that page, so the count runs for the page's
+// rows only, not for every account the sort reads (the tl1 re-check: in name order it ran for all of them before the
+// sort). The users_list index answers each count. The outer query keeps the page's order, and the page is one query, not
+// one per account.
+func accountListSQL(where, order string) string {
+	return "WITH page AS MATERIALIZED (SELECT " + accountCols + " FROM accounts WHERE " + where +
+		" ORDER BY " + order + " LIMIT ?) SELECT " + accountCols +
+		", (SELECT COUNT(*) FROM users u WHERE u.account_id = page.id) AS user_count FROM page ORDER BY " + order
+}
 
-// scanListedAccount reads a row of accountListCols.
+// scanListedAccount reads a row of accountListSQL.
 func scanListedAccount(row interface{ Scan(...any) error }) (*Account, error) {
 	var n int64
 	a, err := scanAccount(row, &n)
@@ -190,8 +198,7 @@ func accountsSortedSQL(f AccountFilter, order AccountSort, limit int, after *Acc
 		}
 	}
 	args = append(args, limit+1)
-	return "SELECT " + accountListCols + " FROM accounts WHERE " + where +
-		" ORDER BY " + key + " " + dir + ", id " + dir + " LIMIT ?", args
+	return accountListSQL(where, key+" "+dir+", id "+dir), args
 }
 
 // listedAccounts runs a query of an account list and reads its rows.
@@ -251,7 +258,7 @@ func accountsFilteredSQL(f AccountFilter, p Page) (string, []any, error) {
 		args = append(args, ms, parts[1])
 	}
 	args = append(args, p.Limit+1)
-	return "SELECT " + accountListCols + " FROM accounts WHERE " + where + " ORDER BY created_at, id LIMIT ?", args, nil
+	return accountListSQL(where, "created_at, id"), args, nil
 }
 
 // InsertAccount adds a. It returns ErrConflict if the external ID is taken.
