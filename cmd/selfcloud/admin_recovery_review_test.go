@@ -31,6 +31,22 @@ func (f *recoveryFixture) setStatus(u *store.User, status string) {
 	}
 }
 
+// clearVerified removes the verification time, so a user is one that never verified.
+func (f *recoveryFixture) clearVerified(u *store.User) {
+	f.t.Helper()
+	err := f.st.Write(f.ctx, func(tx *store.Tx) error {
+		cur, err := tx.UserByID(f.ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		cur.VerifiedAt = nil
+		return tx.UpdateUser(f.ctx, cur)
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+}
+
 // authedRequest sends a request with a bearer token and returns the status and the body.
 func authedRequest(t *testing.T, method, url, token string, body any) (int, string) {
 	t.Helper()
@@ -72,6 +88,7 @@ func TestEnableRefusesANeverVerifiedUser(t *testing.T) {
 	f := newRecoveryFixture(t)
 	acc := f.seedAccount("Acme")
 	u := f.seedUser(acc.ID, "new@example.com", store.RoleMember, store.UserDisabled, "")
+	f.clearVerified(u)
 
 	code, out, errOut := runCmd(t, "admin", "reset-password", "-user", u.ID, "-enable")
 	if code != 1 || !strings.Contains(errOut, "admin verify") || strings.Contains(out, "link=") {
@@ -95,6 +112,7 @@ func TestVerifyDisabledNeverVerified(t *testing.T) {
 	f := newRecoveryFixture(t)
 	acc := f.seedAccount("Acme")
 	u := f.seedUser(acc.ID, "new@example.com", store.RoleMember, store.UserDisabled, "")
+	f.clearVerified(u)
 
 	if code, _, errOut := runCmd(t, "admin", "verify", "-user", u.ID); code != 1 || !strings.Contains(errOut, "-enable") {
 		t.Fatalf("verify of a disabled never-verified user = %d %q; want 1 naming -enable", code, errOut)

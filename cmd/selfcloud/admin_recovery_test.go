@@ -67,7 +67,8 @@ func (f *recoveryFixture) seedUser(accountID, email, role, status, password stri
 	now := store.Now()
 	u := &store.User{ID: id.New("usr"), AccountID: accountID, Email: email, EmailKey: strings.ToLower(email),
 		DisplayName: "Test", Locale: "en", Role: role, Status: status, CreatedAt: now, UpdatedAt: now}
-	if status == store.UserActive {
+	// A user that is not pending was verified once, as a disabled user is after its verification.
+	if status != store.UserPending {
 		u.VerifiedAt = &now
 	}
 	if password != "" {

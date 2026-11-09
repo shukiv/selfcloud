@@ -115,6 +115,40 @@ func checkRecoveryState(u *store.User, enable bool) error {
 		if !enable {
 			return fmt.Errorf("%s is disabled; pass -enable to enable it with the reset", u.ID)
 		}
+		if u.VerifiedAt == nil {
+			return neverVerifiedErr(u.ID)
+		}
+	}
+	return nil
+}
+
+// neverVerifiedErr refuses to enable a user who never verified its email. Requirement 4 holds: every user is verified
+// before it signs in, so enabling must not skip the verification.
+func neverVerifiedErr(userID string) error {
+	return fmt.Errorf("%s has never verified its email; verify it first with `selfcloud admin verify -enable`", userID)
+}
+
+// disableGuards refuses to disable the last active installation admin, or the last active owner of an account, as the
+// API's disable does. It runs before the prompt, so a refusal is never preceded by a request for a confirmation, and again
+// inside the write.
+func disableGuards(ctx context.Context, tx *store.Tx, cur *store.User) error {
+	if cur.AccountID == "" && cur.Role == store.RoleAdmin {
+		others, err := tx.CountActiveAdmins(ctx, cur.ID)
+		if err != nil {
+			return err
+		}
+		if others == 0 {
+			return fmt.Errorf("%s is the last active installation admin and cannot be disabled", cur.ID)
+		}
+	}
+	if cur.AccountID != "" && cur.Role == store.RoleOwner {
+		others, err := tx.CountActiveOwners(ctx, cur.AccountID, cur.ID)
+		if err != nil {
+			return err
+		}
+		if others == 0 {
+			return fmt.Errorf("%s is the last active owner of its account and cannot be disabled", cur.ID)
+		}
 	}
 	return nil
 }
@@ -561,7 +595,7 @@ func adminEnable(args []string, stdout, stderr io.Writer) int {
 			return fmt.Errorf("%s is %s; only a disabled user is enabled", cur.ID, cur.Status)
 		}
 		if cur.VerifiedAt == nil {
-			return fmt.Errorf("%s has not verified the email address yet", cur.ID)
+			return neverVerifiedErr(cur.ID)
 		}
 		cur.Status = store.UserActive
 		cur.UpdatedAt = store.Now()
@@ -606,6 +640,10 @@ func adminDisable(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "selfcloud admin %s: %s is %s; only an active user is disabled\n", name, u.ID, u.Status)
 		return 1
 	}
+	if err := st.Write(ctx, func(tx *store.Tx) error { return disableGuards(ctx, tx, u) }); err != nil {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+		return 1
+	}
 	if !confirmed(*yes, u.Email, stderr) {
 		fmt.Fprintf(stderr, "selfcloud admin %s: refused: the disable ends the user's sessions; pass -yes to confirm "+
 			"when stdin is not a terminal\n", name)
@@ -619,14 +657,8 @@ func adminDisable(args []string, stdout, stderr io.Writer) int {
 		if cur.Status != store.UserActive {
 			return fmt.Errorf("%s is %s; only an active user is disabled", cur.ID, cur.Status)
 		}
-		if cur.AccountID == "" && cur.Role == store.RoleAdmin {
-			others, err := tx.CountActiveAdmins(ctx, cur.ID)
-			if err != nil {
-				return err
-			}
-			if others == 0 {
-				return fmt.Errorf("%s is the last active installation admin and cannot be disabled", cur.ID)
-			}
+		if err := disableGuards(ctx, tx, cur); err != nil {
+			return err
 		}
 		cur.Status = store.UserDisabled
 		cur.UpdatedAt = store.Now()
@@ -702,14 +734,20 @@ func openLinkFile(path string) (*os.File, error) {
 	return f, err
 }
 
-// checkVerifyState refuses a user that a verify link may not be issued for: only a pending user is verified. An active
-// user is already verified, and a disabled one is enabled by admin enable, not verified.
-func checkVerifyState(u *store.User) error {
+// checkVerifyState refuses a user that a verify link may not be issued for. An active user is already verified. A user
+// who was verified and is disabled goes back through admin enable. A user who never verified and is disabled needs
+// -enable, and then it goes back to pending, never active: the verify route activates it.
+func checkVerifyState(u *store.User, enable bool) error {
 	switch u.Status {
 	case store.UserActive:
 		return fmt.Errorf("%s is already verified", u.ID)
 	case store.UserDisabled:
-		return fmt.Errorf("%s is disabled; use `selfcloud admin enable`", u.ID)
+		if u.VerifiedAt != nil {
+			return fmt.Errorf("%s is disabled; use `selfcloud admin enable`", u.ID)
+		}
+		if !enable {
+			return fmt.Errorf("%s is disabled and never verified; pass -enable to set it back to pending and issue the link", u.ID)
+		}
 	}
 	return nil
 }
@@ -718,10 +756,12 @@ func checkVerifyState(u *store.User) error {
 // covers an admin whose create-admin link was lost. The link is printed, or written to -link-file.
 func adminVerify(args []string, stdout, stderr io.Writer) int {
 	var user, ttlText, linkFile *string
+	var enable *bool
 	cfg, _, code := loadConfig("admin verify", args, stderr, 0, func(fs *flag.FlagSet) {
 		user = fs.String("user", "", "the user's ID, or an email that exactly one user has (required)")
 		ttlText = fs.String("ttl", "", "how long the link works, from 5m to 168h (default users.verification_ttl)")
 		linkFile = fs.String("link-file", "", "write the link to this new file (mode 0600) instead of stdout")
+		enable = fs.Bool("enable", false, "for a disabled user who never verified: set it back to pending and issue the link")
 	})
 	if cfg == nil {
 		return code
@@ -757,7 +797,7 @@ func adminVerify(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
 		return 1
 	}
-	if err := checkVerifyState(u); err != nil {
+	if err := checkVerifyState(u, *enable); err != nil {
 		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
 		return 1
 	}
@@ -779,10 +819,20 @@ func adminVerify(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return err
 		}
-		if err := checkVerifyState(cur); err != nil {
+		if err := checkVerifyState(cur, *enable); err != nil {
 			return err
 		}
-		tok, err = recovery.Issue(ctx, tx, cur, store.PurposeVerify, ttl, tmpl, cfg.PublicURL, store.Now())
+		fromDisabled := cur.Status == store.UserDisabled
+		now := store.Now()
+		if fromDisabled {
+			// Back to pending, never active: the verify route makes it active once the link is used.
+			cur.Status = store.UserPending
+			cur.UpdatedAt = now
+			if err := tx.UpdateUser(ctx, cur); err != nil {
+				return err
+			}
+		}
+		tok, err = recovery.Issue(ctx, tx, cur, store.PurposeVerify, ttl, tmpl, cfg.PublicURL, now)
 		if err != nil {
 			return err
 		}
@@ -792,7 +842,7 @@ func adminVerify(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		return tx.InsertAudit(ctx, recoveryAudit(cur.AccountID, "user.verification_issued", cur.ID,
-			map[string]any{"purpose": store.PurposeVerify, "ttl": int64(ttl / time.Second)}))
+			map[string]any{"purpose": store.PurposeVerify, "ttl": int64(ttl / time.Second), "from_disabled": fromDisabled}))
 	})
 	if f != nil {
 		if cerr := f.Close(); err == nil && cerr != nil {
