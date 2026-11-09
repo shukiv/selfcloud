@@ -217,3 +217,27 @@ func TestMPLTextIsShipped(t *testing.T) {
 		t.Error("licenses/MPL-2.0.txt is not the MPL 2.0 text")
 	}
 }
+
+// The CC0 presentations keep their licence statement in the documents (the metadata scrub removes personal fields only, and
+// the description carries the licence and the names of the image authors, which the scrub had removed; decision 108).
+func TestShippedPresentationsKeepTheirLicence(t *testing.T) {
+	t.Parallel()
+	for _, s := range shippedNames {
+		if s.category != "designs" {
+			continue
+		}
+		tpl, _ := Get("builtin:" + s.name)
+		body, err := tpl.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		core, ok := parts(t, body)["docProps/core.xml"]
+		if !ok {
+			t.Errorf("%s: no docProps/core.xml", tpl.ID)
+			continue
+		}
+		if !bytes.Contains(core, []byte("Creative Commons")) {
+			t.Errorf("%s: docProps/core.xml lost its Creative Commons licence statement", tpl.ID)
+		}
+	}
+}
