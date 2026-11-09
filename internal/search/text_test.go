@@ -195,6 +195,8 @@ func TestValidTextUsesTheDefinitionOfNotText(t *testing.T) {
 	t.Parallel()
 	straddle := append(bytes.Repeat([]byte("a"), 64<<10-1), []byte("é")...) // a two-byte rune cut by the chunk size
 	late := append(bytes.Repeat([]byte("a"), 2<<20), 0xff)                  // invalid only after the first megabyte
+	lead := append(bytes.Repeat([]byte("a"), 64<<10-1), []byte("\xe4A")...) // a lead byte, then a non-continuation at the boundary
+	cut := append(bytes.Repeat([]byte("a"), 64<<10-2), []byte("世")...)      // a 3-byte rune split by the chunk boundary, valid
 	cases := []struct {
 		name string
 		in   []byte
@@ -209,6 +211,8 @@ func TestValidTextUsesTheDefinitionOfNotText(t *testing.T) {
 		{"an invalid byte", []byte("a\xffb"), ErrNotText},
 		{"a truncated sequence at the end", []byte("a\xe4\xb8"), ErrNotText},
 		{"invalid after a megabyte", late, ErrNotText},
+		{"a lead byte cut by the chunk boundary, then ASCII", lead, ErrNotText},
+		{"a 3-byte rune split by the chunk boundary", cut, nil},
 	}
 	for _, c := range cases {
 		if err := ValidText(bytes.NewReader(c.in)); !errors.Is(err, c.want) {
