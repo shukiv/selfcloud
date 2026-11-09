@@ -95,16 +95,7 @@ func (s *Store) TrashRootsFiltered(ctx context.Context, accountID, folderID stri
 	if err := f.Validate(); err != nil {
 		return nil, err
 	}
-	query := nodeSelect + " WHERE n.account_id = ? AND n.trashed_at IS NOT NULL"
-	args := []any{accountID}
-	if folderID != "" {
-		query += " AND n.folder_id = ?"
-		args = append(args, folderID)
-	}
-	if fsql, fargs := f.Where("n"); fsql != "" {
-		query += fsql
-		args = append(args, fargs...)
-	}
+	var after *trashAfter
 	if p.Cursor != "" {
 		parts, err := decodeFilteredCursor(p.Cursor, 2, f)
 		if err != nil {
@@ -114,11 +105,10 @@ func (s *Store) TrashRootsFiltered(ctx context.Context, accountID, folderID stri
 		if err != nil {
 			return nil, ErrBadCursor
 		}
-		query += " AND (n.trashed_at < ? OR (n.trashed_at = ? AND n.id < ?))"
-		args = append(args, at, at, parts[1])
+		after = &trashAfter{At: at, ID: parts[1]}
 	}
-	args = append(args, p.Limit)
-	rows, err := s.r.QueryContext(ctx, query+" ORDER BY n.trashed_at DESC, n.id DESC LIMIT ?", args...)
+	query, args := trashRootsSQL(accountID, folderID, f, after, p.Limit)
+	rows, err := s.r.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +122,33 @@ func (s *Store) TrashRootsFiltered(ctx context.Context, accountID, folderID stri
 		out = append(out, n)
 	}
 	return out, rows.Err()
+}
+
+// trashAfter is the position a trash page resumes after: the root's trashed time and ID.
+type trashAfter struct {
+	At int64
+	ID string
+}
+
+// trashRootsSQL builds the trash page query and its arguments: at most limit explicit trash roots of accountID, newest
+// first, narrowed by the folder and the filter, and after the position when one is given. Every value is an argument.
+func trashRootsSQL(accountID, folderID string, f ListFilter, after *trashAfter, limit int) (string, []any) {
+	query := nodeSelect + " WHERE n.account_id = ? AND n.trashed_at IS NOT NULL"
+	args := []any{accountID}
+	if folderID != "" {
+		query += " AND n.folder_id = ?"
+		args = append(args, folderID)
+	}
+	if fsql, fargs := f.Where("n"); fsql != "" {
+		query += fsql
+		args = append(args, fargs...)
+	}
+	if after != nil {
+		query += " AND (n.trashed_at < ? OR (n.trashed_at = ? AND n.id < ?))"
+		args = append(args, after.At, after.At, after.ID)
+	}
+	args = append(args, limit)
+	return query + " ORDER BY n.trashed_at DESC, n.id DESC LIMIT ?", args
 }
 
 // ExpiredTrash lists up to limit explicit trash roots, of any account, that were trashed at or before

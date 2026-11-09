@@ -201,23 +201,7 @@ func (s *Store) LargestFiltered(ctx context.Context, accountID, folderID, kind, 
 	if err := f.Validate(); err != nil {
 		return nil, "", err
 	}
-	var args []any
-	cond := ""
-	if fsql, fargs := f.Where("n"); fsql != "" {
-		cond += fsql
-		args = append(args, fargs...)
-	}
-	if folderID != "" {
-		cond += " AND n.folder_id = ?"
-		args = append(args, folderID)
-	}
-	if kind != "" {
-		cond += " AND f.kind = ?"
-		args = append(args, kind)
-	}
-	if fileKind != "" {
-		cond += " AND " + strings.ReplaceAll(fileKindCond[fileKind], "{base}", baseMimeSQL)
-	}
+	var after *largestAfter
 	if p.Cursor != "" {
 		parts, err := decodeFilteredCursor(p.Cursor, 2, f)
 		if err != nil {
@@ -227,28 +211,10 @@ func (s *Store) LargestFiltered(ctx context.Context, accountID, folderID, kind, 
 		if err != nil {
 			return nil, "", ErrBadCursor
 		}
-		cond += " AND (n.size, n.id) < (?, ?)"
-		args = append(args, size, parts[1])
+		after = &largestAfter{Size: size, ID: parts[1]}
 	}
-	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, `WITH RECURSIVE trashed(nid) AS (
-			SELECT id FROM nodes WHERE account_id = ? AND trashed_at IS NOT NULL
-			UNION ALL
-			SELECT c.id FROM nodes c JOIN trashed t ON c.parent_id = t.nid WHERE c.account_id = ?
-		), page AS (
-			SELECT n.id, n.folder_id, n.parent_id, n.name, n.size, n.modified_at, n.mime_type,
-				n.id IN (SELECT nid FROM trashed) AS trashed
-			FROM nodes n JOIN folders f ON f.id = n.folder_id AND f.staged = 0
-			WHERE n.account_id = ? AND n.kind = 'file'`+cond+`
-			ORDER BY n.size DESC, n.id DESC LIMIT ?
-		)
-		SELECT pg.id, pg.folder_id, f.name, pg.name, pg.size,
-			(SELECT COALESCE(SUM(v.size), 0) FROM versions v WHERE v.node_id = pg.id),
-			pg.modified_at, pg.trashed, COALESCE(pg.mime_type, ''), COALESCE(par.name, '')
-		FROM page pg JOIN folders f ON f.id = pg.folder_id AND f.staged = 0
-		LEFT JOIN nodes par ON par.id = pg.parent_id
-		ORDER BY pg.size DESC, pg.id DESC`,
-		append([]any{accountID, accountID, accountID}, args...)...)
+	query, args := largestPageSQL(accountID, folderID, kind, fileKind, f, after, p.Limit+1)
+	rows, err := s.r.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, "", err
 	}
@@ -276,6 +242,58 @@ func (s *Store) LargestFiltered(ctx context.Context, accountID, folderID, kind, 
 		next = encodeFilteredCursor(f, strconv.FormatInt(last.Size, 10), last.ID)
 	}
 	return out, next, nil
+}
+
+// largestAfter is the position a Largest page resumes after: the last row's size and ID.
+type largestAfter struct {
+	Size int64
+	ID   string
+}
+
+// largestPageSQL builds the Largest page query and its arguments: at most limit files of accountID, largest first,
+// narrowed by the folder, the kind, the file kind and the filter, and after the position when one is given. Every value
+// is an argument, except the fixed clauses of fileKindCond and the filter's clauses, which hold no user text.
+func largestPageSQL(accountID, folderID, kind, fileKind string, f ListFilter, after *largestAfter, limit int) (string, []any) {
+	var args []any
+	cond := ""
+	if fsql, fargs := f.Where("n"); fsql != "" {
+		cond += fsql
+		args = append(args, fargs...)
+	}
+	if folderID != "" {
+		cond += " AND n.folder_id = ?"
+		args = append(args, folderID)
+	}
+	if kind != "" {
+		cond += " AND f.kind = ?"
+		args = append(args, kind)
+	}
+	if fileKind != "" {
+		cond += " AND " + strings.ReplaceAll(fileKindCond[fileKind], "{base}", baseMimeSQL)
+	}
+	if after != nil {
+		cond += " AND (n.size, n.id) < (?, ?)"
+		args = append(args, after.Size, after.ID)
+	}
+	args = append(args, limit)
+	query := `WITH RECURSIVE trashed(nid) AS (
+			SELECT id FROM nodes WHERE account_id = ? AND trashed_at IS NOT NULL
+			UNION ALL
+			SELECT c.id FROM nodes c JOIN trashed t ON c.parent_id = t.nid WHERE c.account_id = ?
+		), page AS (
+			SELECT n.id, n.folder_id, n.parent_id, n.name, n.size, n.modified_at, n.mime_type,
+				n.id IN (SELECT nid FROM trashed) AS trashed
+			FROM nodes n JOIN folders f ON f.id = n.folder_id AND f.staged = 0
+			WHERE n.account_id = ? AND n.kind = 'file'` + cond + `
+			ORDER BY n.size DESC, n.id DESC LIMIT ?
+		)
+		SELECT pg.id, pg.folder_id, f.name, pg.name, pg.size,
+			(SELECT COALESCE(SUM(v.size), 0) FROM versions v WHERE v.node_id = pg.id),
+			pg.modified_at, pg.trashed, COALESCE(pg.mime_type, ''), COALESCE(par.name, '')
+		FROM page pg JOIN folders f ON f.id = pg.folder_id AND f.staged = 0
+		LEFT JOIN nodes par ON par.id = pg.parent_id
+		ORDER BY pg.size DESC, pg.id DESC`
+	return query, append([]any{accountID, accountID, accountID}, args...)
 }
 
 // StorageBreakdown splits a folder's used bytes (decision 79): the old versions of its files that are not in the
