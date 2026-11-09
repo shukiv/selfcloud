@@ -866,8 +866,9 @@ async function main() {
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
     // fb runs the file browser's checks alone (the section that owns the read-only New menu, decision 95); a full run runs them in order.
     if (!only || onlySet.has('fb')) await fileBrowserChecks(page, { base, dir, teamA, teamB });
+    // fbx runs the dropped-connection and resume checks alone (fileBrowserExtraChecks), so a subset can leave the same uploads a full run does.
+    if (!only || onlySet.has('fbx')) await fileBrowserExtraChecks(page, { dir, teamA });
     if (!only) {
-      await fileBrowserExtraChecks(page, { dir, teamA });
       await s4a.s4aChecks(h, { page, base, accountKey, teamA, dir });
       await sortChecks(h, { page, base, accountKey, teamA });
     }
