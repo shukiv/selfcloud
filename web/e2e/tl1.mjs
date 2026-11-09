@@ -120,8 +120,12 @@ async function emptyTableChecks(h, { page, base, adminKey }) {
   let tenantID = null;
   try {
     tenantID = (await h.api(base, 'POST', '/api/v1/accounts', adminKey, { name: 'Empty Tables Ltd' })).id;
+    // The tenant page keeps the tab it had when the address moves to another tenant inside the app, so the keys tab is
+    // chosen as a person would, with its own button.
     await navigateTo(page, `/admin/tenants/${tenantID}?tab=keys`);
-    const region = `[...document.querySelectorAll('[role="region"]')].find((r) => r.getAttribute('aria-label') === ${q('API keys')})`;
+    await page.waitFor(`location.pathname === ${q(`/admin/tenants/${tenantID}`)} && !!document.getElementById('tab-keys')`, 15000);
+    await h.clickOn(page, '#tab-keys');
+    const region =`[...document.querySelectorAll('[role="region"]')].find((r) => r.getAttribute('aria-label') === ${q('API keys')})`;
     await page.waitFor(`!!${region}?.querySelector('tbody .ant-empty .empty-title')`, 15000);
     const seen = await page.evaluate(`(() => {
       const r = ${region};
@@ -139,7 +143,10 @@ async function emptyTableChecks(h, { page, base, adminKey }) {
     await page.evaluate(`${region}.querySelector('tbody .ant-empty button').click()`);
     await page.waitFor(`!!document.getElementById('new-key-name')`, 10000);
     check(true, 'the empty table\'s New key opens the new key form');
-    await pressKey(page, 'Escape', 'Escape', 27);
+    // The form's own Cancel closes it.
+    await page.evaluate(
+      `[...document.getElementById('new-key-name').closest('.ant-modal').querySelectorAll('button')].find((b) => b.textContent.trim() === ${q('Cancel')}).click()`,
+    );
     await page.waitFor(`!document.getElementById('new-key-name')`, 10000);
   } finally {
     if (tenantID) await h.api(base, 'DELETE', `/api/v1/accounts/${tenantID}`, adminKey).catch(() => undefined);
