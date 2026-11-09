@@ -3,6 +3,7 @@
 import "../../test/rangeRects";
 import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { EditorView } from "@codemirror/view";
 import { ApiError } from "../../lib/apiError";
 import type { PlaybackSeed } from "../../lib/files/playback";
 import type { Node } from "../../lib/files/types";
@@ -129,6 +130,27 @@ describe("Preview", () => {
       expect(init.credentials).toBe("same-origin");
       expect(init.cache).toBe("no-store");
     }
+  });
+
+  it("leaves out a character the 1 MiB cut splits, rather than showing it as a bad sequence", async () => {
+    const MiB = 1024 * 1024;
+    // Lines of 63 letters, then the first two bytes of "€" (E2 82 AC): its third byte is past the cut.
+    const read = new Uint8Array(MiB);
+    for (let i = 0; i < MiB - 2; i++) read[i] = i % 64 === 63 ? 0x0a : 0x61;
+    read[MiB - 2] = 0xe2;
+    read[MiB - 1] = 0x82;
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) =>
+      new Response((init.headers as Record<string, string>).Range === "bytes=0-8191" ? read.slice(0, 8192) : read, { status: 206 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Preview items={[file("big.log", "text/plain", 2 * MiB)]} index={0} onClose={() => {}} onIndex={() => {}} />);
+    await codeShown();
+    const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);
+    const text = view?.state.doc.toString() ?? "";
+    expect(text.length).toBe(MiB - 2);
+    expect(text.includes("�")).toBe(false);
+    expect(document.querySelector(".ant-alert")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("reads a file no larger than the sniff once, and shows no notice", async () => {
