@@ -283,7 +283,8 @@ order (decision 115):
 6. Anything else keeps its viewer (PDF, video, audio), or shows its card with Download.
 
 The check reads the first 8 KiB: a NUL byte means binary, and a UTF-16 byte order mark means the file is not UTF-8 text.
-The viewer reads the first 1 MiB and says so when the file is larger. A line longer than 2,000 characters turns line
+The viewer reads the first 1 MiB and says so when the file is larger. A file that is not valid UTF-8
+still opens, read-only, with a notice that it is not UTF-8 text and a Download button. A line longer than 2,000 characters turns line
 wrapping off, and the code area scrolls sideways. Markdown, CSV and logs show as text, without colours. A browser that sends
 a CSV file as `application/vnd.ms-excel` stores it with that office type, so it opens in the office editor (rule 1).
 Editing in the browser is not built yet. The server keeps its own copy of the code list (`internal/api/textnames.go`): a
