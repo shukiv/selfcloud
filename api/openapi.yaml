@@ -246,7 +246,10 @@ paths:
       tags: [Accounts]
       operationId: listAccounts
       summary: List accounts
-      description: Installation admin only (an admin key or an admin session). Oldest first.
+      description: |
+        Installation admin only (an admin key or an admin session). Oldest first, unless `sort` or `order` is given. Each
+        account carries `used_bytes` and `quota_bytes`, so a list of tenants with their usage needs no request per account.
+        A sorted list's `next_cursor` opens only for the same `sort` and `order`; any other cursor is `400 invalid_request`.
       security: [{ bearer: [] }]
       parameters:
         - name: external_id
@@ -261,6 +264,17 @@ paths:
           in: query
           description: Only accounts in this status.
           schema: { type: string, enum: [active, suspended] }
+        - name: sort
+          in: query
+          description: |
+            Sorts the accounts on the server. `name` orders by name, case folded as the children listing folds it; `created`
+            orders by creation time. A tie is broken by ID in the same direction. Given `sort` or `order`, a missing `sort`
+            is `created` and a missing `order` is `asc`.
+          schema: { type: string, enum: [name, created] }
+        - name: order
+          in: query
+          description: Ascending or descending. Used with `sort`, or alone to sort by creation time.
+          schema: { type: string, enum: [asc, desc], default: asc }
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
       responses:
