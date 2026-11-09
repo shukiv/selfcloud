@@ -1265,8 +1265,9 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 	// A text file takes only UTF-8 text with no NUL byte (decision 113). The rule is here and not in replaceContent,
 	// which WOPI PutFile also calls, so an office save is unchanged.
 	mustBeText := utf8Required(n.Name, n.MimeType, r.Header.Get("Content-Type"), mt)
-	if mustBeText && binaryMedia(mt) {
-		// A checked file stays text: a save never makes its stored type binary, so the rule keeps applying.
+	if mustBeText && !textMedia(mt) {
+		// A checked file keeps its stored type unless the request names a text type: a content save never turns a
+		// checked file into a non-text one, so the rule keeps applying to the next PUT.
 		mt = n.MimeType
 	}
 	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Upload.MaxSmallFileSize), n.Size)
