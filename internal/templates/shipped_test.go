@@ -148,6 +148,28 @@ func TestShippedFilesCarryNoAuthor(t *testing.T) {
 	}
 }
 
+// A shipped template keeps the author its source names: the sans-serif letter's source (its .ott metadata) names Eric Lavarde as
+// creator, and the shipped file keeps that name (decision 108; CREDITS.md). The serif letter's source names no author.
+var keptCreators = map[string]string{"lo-letter-sans-serif": "Eric Lavarde"}
+
+func TestShippedTemplatesKeepTheirCreator(t *testing.T) {
+	t.Parallel()
+	for name, want := range keptCreators {
+		tpl, ok := Get("builtin:" + name)
+		if !ok {
+			t.Fatalf("builtin:%s is not built in", name)
+		}
+		body, err := tpl.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		core := parts(t, body)["docProps/core.xml"]
+		if !bytes.Contains(core, []byte("<dc:creator>"+want+"</dc:creator>")) {
+			t.Errorf("%s: docProps/core.xml does not name its creator %q as the source does", tpl.ID, want)
+		}
+	}
+}
+
 // Every built-in has a picture: a PNG, by its signature, and the six of ours are shipped with the shipped set.
 func TestEveryBuiltInHasAPNGThumbnail(t *testing.T) {
 	t.Parallel()
