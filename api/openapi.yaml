@@ -3828,9 +3828,10 @@ paths:
         A text file takes only UTF-8 text with no NUL byte. A file is text when its name is in the code list
         (for example `.json`, `.yaml`, `.go`, `Dockerfile`, `Makefile`; names and extensions are matched in any
         case), or its stored type is `text/*` or a text type such as `application/json`, or the request's
-        `Content-Type` is `text/*`. The rule does not apply when the stored type is an image, audio, video, PDF,
-        office document or archive; the request's `Content-Type` does not change this, and a checked file keeps
-        its stored type. A live lock is answered first, with `409`. Uploads, WOPI PutFile, create, version
+        `Content-Type` is `text/*`. A file stored as an image, audio, video, PDF, office document or archive is
+        exempt unless the request names a text type. A binary `Content-Type` does not exempt a text file, and a
+        checked file keeps its stored type unless the request names a text type. A live lock is answered first,
+        with `409`, whatever the body and its size. Uploads, WOPI PutFile, create, version
         restore, Save As, move and copy are not checked. The body is checked once it has arrived, and a refused
         body is discarded.
       security: [{ bearer: [] }, { session: [] }]
