@@ -316,7 +316,11 @@ func (s *Server) handleAccountLargest(w http.ResponseWriter, r *http.Request) er
 			return apierr.New(apierr.Forbidden, "a member's My files are not listed to the owner")
 		}
 	}
-	files, next, err := s.store.LargestFiles(ctx, acc.ID, folderID, kind, page)
+	fileKind, filter, err := largestParams(r, false)
+	if err != nil {
+		return err
+	}
+	files, next, err := s.store.LargestFiltered(ctx, acc.ID, folderID, kind, fileKind, filter, page)
 	if err != nil {
 		return storeErr(err)
 	}
@@ -324,8 +328,49 @@ func (s *Server) handleAccountLargest(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
+// largestParams reads the filter of a Largest list (decision 110). The file kind is the trash when source=trash (or the
+// legacy kind=trash), the legacy document set for kind=document, and "" otherwise. The group is the type, or the legacy
+// kind when it names one of audio, video and image (me only: the account route takes no kind). The kind and the type
+// (or the source) given together, a folder or shortcut type, and any other value are invalid_request.
+func largestParams(r *http.Request, legacyKind bool) (fileKind string, f store.ListFilter, err error) {
+	q := r.URL.Query()
+	kind := ""
+	if legacyKind {
+		kind = q.Get("kind")
+	}
+	if kind != "" && !store.FileKindOK(kind) && kind != "audio" && kind != "video" && kind != "image" {
+		return "", f, apierr.New(apierr.InvalidRequest, "kind must be one of audio, video, image, document, trash")
+	}
+	if len(q["source"]) > 1 {
+		return "", f, apierr.New(apierr.InvalidRequest, "source may be given once")
+	}
+	source, hasSource := q.Get("source"), q.Has("source")
+	if kind != "" && (q.Has(paramType) || hasSource) {
+		return "", f, apierr.New(apierr.InvalidRequest, "give one of kind or type, and one of kind or source")
+	}
+	if f, err = listFilterParams(r); err != nil {
+		return "", store.ListFilter{}, err
+	}
+	switch kind {
+	case "trash":
+		fileKind = "trash"
+	case "document":
+		fileKind = "document"
+	case "audio", "video", "image":
+		f.Group = kind
+	}
+	if hasSource {
+		if source != "trash" {
+			return "", store.ListFilter{}, apierr.New(apierr.InvalidRequest, "source must be trash")
+		}
+		fileKind = "trash"
+	}
+	return fileKind, f, nil
+}
+
 // handleMyLargest lists the caller's own largest files: its My files, with their trash marks. ?kind= narrows it to
 // one kind of file (audio, video, image, document) or to the trash (trash); a kind not in that list is refused.
+// ?type= and ?source= are the same filters (decision 110), and the modified range narrows it by date.
 func (s *Server) handleMyLargest(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	ctx := r.Context()
@@ -333,9 +378,9 @@ func (s *Server) handleMyLargest(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	fileKind := r.URL.Query().Get("kind")
-	if !store.FileKindOK(fileKind) {
-		return apierr.New(apierr.InvalidRequest, "kind must be one of audio, video, image, document, trash")
+	fileKind, filter, err := largestParams(r, true)
+	if err != nil {
+		return err
 	}
 	pf, err := s.store.PersonalFolder(ctx, p.AccountID, p.UserID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -345,7 +390,7 @@ func (s *Server) handleMyLargest(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	files, next, err := s.store.LargestFilesOf(ctx, p.AccountID, pf.ID, "", fileKind, page)
+	files, next, err := s.store.LargestFiltered(ctx, p.AccountID, pf.ID, "", fileKind, filter, page)
 	if err != nil {
 		return storeErr(err)
 	}
