@@ -68,8 +68,11 @@ export async function em1Checks(h, { page, base, accountKey, shotsDir = process.
     await clickOn(page, '.ant-modal .ant-modal-footer button:last-child');
   }
   await page.waitFor(`document.body.innerText.includes(${q(recentText)})`, 15000);
+  // Empty trash shows only once the folder list says the member manages one, after the page has loaded, so the page's load
+  // state cannot decide whether to empty: wait for the button or the empty words, as Recent does above.
+  const trashText = PAGES.find((p) => p.key === 'trash').text;
   await navigateTo(page, '/trash');
-  await page.waitFor(`document.readyState === 'complete'`, 10000);
+  await page.waitFor(`!!Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Empty trash' && !b.disabled) || document.body.innerText.includes(${q(trashText)})`, 15000);
   if (await page.evaluate(`!!Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Empty trash')`)) {
     await clickButton(page, 'Empty trash');
     await page.waitFor(`!!document.querySelector('.ant-modal .ant-modal-footer button:last-child')`, 10000);
