@@ -72,6 +72,7 @@ type Config struct {
 	Search    SearchConfig    `yaml:"search"`
 	Copy      CopyConfig      `yaml:"copy"`
 	Imports   ImportsConfig   `yaml:"imports"`
+	Bundle    BundleConfig    `yaml:"bundle"`
 	Sharing   SharingConfig   `yaml:"sharing"`
 	Trash     TrashConfig     `yaml:"trash"`
 	Audit     AuditConfig     `yaml:"audit"`
@@ -388,6 +389,29 @@ type SearchConfig struct {
 	// read for it. 0 means no cap. The text is not charged to the tenant's quota.
 	MaxTextPerAccount ByteSize `yaml:"max_text_per_account"`
 	MaxTextTotal      ByteSize `yaml:"max_text_total"`
+}
+
+// BundleConfig is the disk for bundles (the compress feature, design section 2.6). A bundle's zip is kept until its owner
+// deletes it, so its disk is a budget of its own: one budget shared with the stored zips, which expire, would let the
+// two crowd each other (design D3). The caps on a bundle's entries and bytes are the import's (imports.archive).
+type BundleConfig struct {
+	// MaxDisk is the disk for all bundles together: the ready ones and the bytes the unfinished ones reserve. A bundle that
+	// would pass it is refused before it writes anything. The default, 30 GiB, is a placeholder.
+	MaxDisk ByteSize `yaml:"max_disk"`
+	// MaxDiskPerAccount is the share of MaxDisk one account's bundles may hold, ready and reserved together. The default,
+	// 10 GiB, is a placeholder.
+	MaxDiskPerAccount ByteSize `yaml:"max_disk_per_account"`
+}
+
+// validateBundle checks the bundle block. A zero budget would refuse every bundle, and a share above the budget could
+// never be used in full, so each must be positive and the share at most the budget.
+func validateBundle(b BundleConfig, bad func(string, ...any)) {
+	if b.MaxDisk <= 0 {
+		bad("bundle.max_disk must be positive")
+	}
+	if b.MaxDiskPerAccount <= 0 || b.MaxDiskPerAccount > b.MaxDisk {
+		bad("bundle.max_disk_per_account must be positive and at most bundle.max_disk")
+	}
 }
 
 // validateImports checks the imports block (decision 92). A zero or negative cap would refuse every archive, so each cap
@@ -761,7 +785,8 @@ func Defaults() *Config {
 			Timeout: Duration(2 * time.Second), RatePerMinute: 60,
 			FullTextMaxBytes: ByteSize(50 << 20), TextMaxBytes: ByteSize(1 << 20),
 			MaxTextPerAccount: ByteSize(64 << 20), MaxTextTotal: ByteSize(1 << 30)},
-		Copy: CopyConfig{MaxNodes: 50000},
+		Copy:   CopyConfig{MaxNodes: 50000},
+		Bundle: BundleConfig{MaxDisk: 30 * GiB, MaxDiskPerAccount: 10 * GiB},
 		Imports: ImportsConfig{Enabled: true, MaxConcurrentJobs: 2, JobRetentionDays: 30,
 			MaxUnfinishedPerUser: 3, PausedExpiryDays: 14, MaxArchiveUploadsPerUser: 3, UnclaimedExpiryHours: 24,
 			Archive: ArchiveImportConfig{Enabled: true, MaxEntries: 50000, MaxDepth: 32, MaxRatio: 100,
@@ -923,6 +948,7 @@ func (c *Config) Validate() error {
 		bad("copy.max_nodes must be positive")
 	}
 	validateImports(c.Imports, bad)
+	validateBundle(c.Bundle, bad)
 	if c.Sharing.MaxExpiry < 0 {
 		bad("sharing.max_expiry is negative; use 0 for no cap")
 	}
