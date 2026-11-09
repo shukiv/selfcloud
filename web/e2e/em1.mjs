@@ -11,8 +11,9 @@ import { readFileSync } from 'node:fs';
 import { setLanguage, setTheme, shot, sleep } from './media.mjs';
 
 const PAGES = [
-  { key: 'starred', path: '/starred', text: 'Nothing is starred yet. Star a file or folder to find it here.' },
-  { key: 'recent', path: '/recent', text: 'Nothing here yet. Files you open or change appear here.' },
+  // wrapClass: the class the old element had, which owner.mjs waits for on Recent (`.empty`), kept on EmptyState's wrapper.
+  { key: 'starred', path: '/starred', text: 'Nothing is starred yet. Star a file or folder to find it here.', wrapClass: 'empty' },
+  { key: 'recent', path: '/recent', text: 'Nothing here yet. Files you open or change appear here.', wrapClass: 'empty' },
   { key: 'trash', path: '/trash', text: 'The trash is empty.' },
 ];
 const VERSIONS_TEXT = 'There are no earlier versions.';
@@ -36,7 +37,7 @@ async function setWidth(page, width) {
 }
 
 export async function em1Checks(h, { page, base, accountKey, shotsDir = process.env.SELFCLOUD_E2E_SHOTS || null }) {
-  const { check, navigateTo, rowAppears, selectRow, clickButton, clickOn, rawPut } = h;
+  const { check, api, navigateTo, rowAppears, selectRow, clickButton, clickOn, rawPut } = h;
   const suffix = Date.now().toString(36);
   const name = `em1-note-${suffix}.txt`;
   if (shotsDir) await mkdir(shotsDir, { recursive: true });
@@ -51,7 +52,8 @@ export async function em1Checks(h, { page, base, accountKey, shotsDir = process.
     await page.waitFor(`document.body.innerText.includes(${q(p.text)})`, 15000);
     await sleep(300);
     await snap(`em1-${p.key}-${label}.png`);
-    found.push({ what: `${p.key} (${label})`, text: p.text, status: true, empty: await emptyOf(page), sideways: sidewaysToo ? await sideways(page) : null });
+    const wrapClass = p.wrapClass ? await page.evaluate(`!!document.querySelector('.${p.wrapClass} .ant-empty')`) : null;
+    found.push({ what: `${p.key} (${label})`, text: p.text, status: true, empty: await emptyOf(page), sideways: sidewaysToo ? await sideways(page) : null, wrapClass });
   };
 
   // The earlier sections of a full run leave the member's Recent and trash with items. Recent is cleared and the trash emptied
@@ -114,9 +116,40 @@ export async function em1Checks(h, { page, base, accountKey, shotsDir = process.
     await page.waitFor(`!document.querySelector('[data-testid="versions"]')`, 10000);
   }
 
+  // The empty folder's drop box (decision 85, review 1): a dashed box around the Empty, at both widths and in both themes.
+  const made = await api(base, 'POST', `/api/v1/folders/${pf}/directories`, accountKey, { path: `/em1-empty-${suffix}`, parents: false });
+  await navigateTo(page, `/files/${pf}/${made.id}`);
+  await page.waitFor(`!!document.querySelector('[data-testid="empty-folder"]')`, 15000);
+  await sleep(300);
+  const readBox = () =>
+    page.evaluate(`(() => { const b = document.querySelector('[data-testid="empty-folder"]'); if (!b) return null; return { cls: b.classList.contains('empty-folder-drop'), border: getComputedStyle(b).borderTopStyle, desc: b.querySelector('.ant-empty .ant-empty-description')?.textContent.trim() ?? null, sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth }; })()`);
+  const shotBox = async (name, width, theme) => {
+    await snap(`em1-emptyfolder-${width}-${theme}.png`);
+    const r = await readBox();
+    found.push({ what: `empty folder drop box at ${width} px, ${theme}`, text: null, status: null, empty: r && r.desc ? { text: r.desc, status: null } : null, sideways: r ? r.sideways : null, border: r ? r.border : null, cls: r ? r.cls : null, name });
+  };
+  await setWidth(page, 1280);
+  await setTheme(page, 'Dark');
+  await shotBox('dark', 1280, 'dark');
+  await setTheme(page, 'Light');
+  await shotBox('light', 1280, 'light');
+  await setWidth(page, 375);
+  await shotBox('light', 375, 'light');
+  await setWidth(page, 1280);
+  await setTheme(page, 'Dark');
+  await setWidth(page, 375);
+  await shotBox('dark', 375, 'dark');
+  await setWidth(page, 1280);
+
+  for (const f of found) {
+    if (f.border !== undefined && f.border !== null) check(f.border === 'dashed', `em1: ${f.what} has its dashed border (${f.border})`);
+    if (f.cls !== undefined && f.cls !== null) check(f.cls === true, `em1: ${f.what} carries the drop box class`);
+    if (f.wrapClass !== undefined && f.wrapClass !== null) check(f.wrapClass === true, `em1: ${f.what} keeps the class its old element had, around antd's Empty`);
+  }
   for (const f of found) {
     if (!f.empty) check(false, `em1: ${f.what} shows antd's Empty (none on the page: ${JSON.stringify(f.empty ?? null)})`);
-    check(f.empty.text === f.text, `em1: ${f.what} shows antd's Empty with its words (${f.empty.text})`);
+    if (f.name) check(f.empty.text.startsWith('This folder is empty.'), `em1: ${f.what} shows the heading and the hint in antd's Empty (${f.empty.text})`);
+    else check(f.empty.text === f.text, `em1: ${f.what} shows antd's Empty with its words (${f.empty.text})`);
     if (f.status !== null) check(f.empty.status === true, `em1: ${f.what} keeps its status region`);
     if (f.sideways !== null) check(f.sideways === false, `em1: ${f.what} does not scroll sideways`);
     if (f.rtl !== undefined) check(f.rtl === 'rtl', `em1: ${f.what} is right to left (${f.rtl})`);
