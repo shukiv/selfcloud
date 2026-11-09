@@ -248,7 +248,8 @@ Content search keeps the words of each file in the database. Deleting the text o
 | `ui.brand.accent` | `#053D8E` | Primary colour, as `#rrggbb`. The web interface derives its accent family from it. |
 | `ui.brand.palette.light` / `.dark` | none | Colour tokens of each theme (`accent`, `accent_fill`, `accent_fill_hover`, `accent_fill_active`, `accent_text`, `accent_soft`, `accent_border`), each `#rrggbb`. Unset tokens keep the default. |
 | `ui.brand.sidebar` | none | Sidebar colours (`bg`, `text`, `caption`, `active`, `on_active`), each `#rrggbb`. Unset ones keep the default. |
-| `ui.brand.logo_file` | none | A PNG or SVG logo, at most 256 KiB, read at start and served at `/brand/logo`. Installation-wide only. |
+| `ui.brand.logo_file` | none | A PNG or SVG logo, at most 256 KiB, read at start and served at `/brand/logo`. It is also the favicon and the app icons when no `icon_file` is set (a PNG of at most 2048 pixels a side, for the icons). Installation-wide only. |
+| `ui.brand.icon_file` | none | A square PNG of 512 to 2048 pixels a side, or an SVG, at most 256 KiB, read at start. It is the favicon and the app icons, and nothing else. An SVG is the tab's icon as it is, so it needs a `viewBox`, or a tab shows it blank; the app icons then come from a PNG logo, or show the SelfCloud mark. Installation-wide only. |
 | `log.level`, `log.format` | `info`, `json` | |
 
 ## Office editing and conversion (Collabora Online)
@@ -336,7 +337,8 @@ start and the offline page are off.
 With the web interface on, the server serves these paths, each named for the installation's own name and colour:
 
 - `/manifest.webmanifest`, the app manifest;
-- `/brand/icon-192.png`, `/brand/icon-512.png`, `/brand/icon-512-maskable.png` and `/brand/apple-touch-icon.png`, the icons;
+- `/brand/icon-192.png`, `/brand/icon-512.png`, `/brand/icon-512-maskable.png` and `/brand/apple-touch-icon.png`, the icons: the
+  `icon_file` when it is a PNG, else a PNG `logo_file`, else the SelfCloud mark on the accent;
 - `/sw.js`, the service worker, which keeps the app's own files for a fast start and shows `/offline.html` when the
   network is gone. It never keeps API answers, file content, links or share pages.
 
