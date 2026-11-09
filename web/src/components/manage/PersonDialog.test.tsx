@@ -135,4 +135,13 @@ describe("the person dialog", () => {
     observer.disconnect();
     expect(seen.some((s) => s.includes("Limit saved.") && s.includes(formatBytes(GB, "en")))).toBe(false);
   });
+
+  it("an empty team spaces list and an empty groups list are antd's compact Empty, with their words (decision 111)", async () => {
+    renderDialog((c) => (c.url.includes("/users/usr_ada") ? { status: 200, body: { ...person, effective_quota_bytes: null, quota_bytes: null } } : { status: 200, body: { items: [] } }));
+    await screen.findByText("No team spaces.");
+    const spaces = document.querySelector('section[aria-labelledby="person-spaces"] .ant-empty.ant-empty-normal .ant-empty-description');
+    expect(spaces?.textContent).toBe("No team spaces.");
+    const groups = document.querySelector('section[aria-labelledby="person-groups"] .ant-empty.ant-empty-normal .ant-empty-description');
+    expect(groups?.textContent).toBe("No groups.");
+  });
 });

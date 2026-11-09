@@ -139,5 +139,18 @@ describe("the open group after a rename", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(document.getElementById("members-title")?.textContent).toBe("Accounts"));
   });
+
+  it("a group with no members shows antd's compact Empty with its words (decision 111)", async () => {
+    stubFetch((c) => {
+      if (c.url.includes("/groups/grp_1/members")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/groups")) return { status: 200, body: { items: [GROUP] } };
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Members.*Finance/ }));
+    await screen.findByText("No members yet.");
+    const region = document.querySelector('section[aria-labelledby="members-title"]');
+    expect(region?.querySelector(".ant-empty.ant-empty-normal .ant-empty-description")?.textContent).toBe("No members yet.");
+  });
 });
 
