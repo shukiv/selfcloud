@@ -2999,6 +2999,15 @@ describe("an empty folder says how to add files (decision 85)", () => {
     expect(box.classList.contains("empty-folder-drop")).toBe(true);
   });
 
+  it("a folder the person can only read shows antd's Empty with its words, and no upload (decision 111)", async () => {
+    place.role = "viewer";
+    api.childrenPage.mockResolvedValue({ items: [], next_cursor: undefined });
+    renderAt(FOLDER);
+    await screen.findByText(translate("en", "files.empty"));
+    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe(translate("en", "files.empty"));
+    expect(screen.queryByRole("button", { name: /upload files/i })).toBeNull();
+  });
+
   it("on a finger the instruction says to tap Upload, and the mouse instruction is not shown", async () => {
     stubPointer(true);
     api.childrenPage.mockResolvedValue({ items: [], next_cursor: undefined });
