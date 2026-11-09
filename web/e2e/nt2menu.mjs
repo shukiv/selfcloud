@@ -168,10 +168,14 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     const title = await page.evaluate(`(${OPEN_MODAL}?.querySelector('.ant-modal-title')?.textContent ?? '').trim()`);
     check(title === 'New folder', `Alt+C then F opens the New folder dialog with the menu closed (${title})`);
     check(await page.evaluate(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')`), 'the chord opened no menu');
-    // Cancel closes the dialog, as the other sections close it (the Escape key did not close it in this section's runs).
-    await page.evaluate(`[...document.querySelectorAll('.ant-modal button')].find((b) => b.textContent.trim() === 'Cancel')?.click()`);
+    // A keyboard user's Escape closes the dialog the chord opened. The name field takes the focus at once (NewFolderDialog, a zero-delay
+    // focus after mount, since antd moves the focus after its open animation), so the wait for focus is short.
+    const inDialog = await page.waitFor(`!!${OPEN_MODAL} && ${OPEN_MODAL}.contains(document.activeElement)`, 500);
+    check(inDialog === true, 'focus moves into the New folder dialog');
+    await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     // A closed modal stays in the DOM with display none (antd's close animation ends with it), so wait for that, not for a class.
     await page.waitFor(`[...document.querySelectorAll('.ant-modal-wrap')].every((w) => getComputedStyle(w).display === 'none')`, 10000);
+    check(true, 'Escape closes the New folder dialog with focus in it');
   } finally {
     page.close();
     launch.proc.kill();

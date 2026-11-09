@@ -9,6 +9,12 @@ import { setLanguage, setTheme, sleep } from './media.mjs';
 import { openedTab, tabIds } from './cdp.mjs';
 
 const q = (v) => JSON.stringify(v);
+// key sends one real key press (down and up) to the focused element, as a keyboard user's key does.
+async function key(page, { code, key: name, vk }) {
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code, windowsVirtualKeyCode: vk, modifiers: 0 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: name, code, windowsVirtualKeyCode: vk, modifiers: 0 });
+  await sleep(120);
+}
 
 // pickMenuItem clicks the entry with this text in a dropdown that is open now (antd marks a closed one ant-dropdown-hidden).
 // OPEN_ITEMS is the menu items of the dropdowns that are open now, and of the submenu popups (a submenu popup is not inside a
@@ -68,7 +74,7 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     // The fake's record is read from here on: the editor may call CheckFileInfo as soon as the file opens.
     const before = fake.editor.length;
     // A dropdown left open by an earlier step would be the one the pick reads: close every open dropdown first.
-    await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
     await page.evaluate(`document.querySelector('[data-testid="new-button"]').click()`);
     // The new document opens in its own tab (decision 102, round 2 R5): the listing stays here; the file's editor is there.
@@ -107,7 +113,7 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
 
     // The page's own New (FilesPage's entry, not the sidebar's) makes the second file in the same folder; the name takes the
     // first free number. Back lists both files.
-    await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     await page.waitFor(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden)').length === 0`, 10000);
     // FilesPage's own New is shown where the sidebar does not hold the New button: a narrow window, as an icon labelled New.
     await size(400, 800);
