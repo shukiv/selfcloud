@@ -54,7 +54,10 @@ const REQUEST_GLOBALS = new Set(['XMLHttpRequest', 'EventSource', 'WebSocket']);
 interface Unit {
   key: string;
   file: string;
-  exported: boolean;
+  // name is the unit's own name in its file, the one calls resolve to. names are the exported names it has: a row is
+  // file:name for each of them. A unit with no exported name is a helper.
+  name: string;
+  names: string[];
   direct: boolean;
   calls: string[];
 }
@@ -152,7 +155,7 @@ export function requestRows(sources: Sources): string[] {
   };
   const add = (file: string, name: string, exported: boolean, body: ts.Node, cls?: string) => {
     const key = `${file}:${name}`;
-    const u: Unit = { key, file, exported, direct: false, calls: [] };
+    const u: Unit = { key, file, name, names: exported ? [name] : [], direct: false, calls: [] };
     units.set(key, u);
     scan(u, body, file, cls);
   };
@@ -171,10 +174,15 @@ export function requestRows(sources: Sources): string[] {
     }
   };
 
+  // renames are the export lists and the default exports that name a local unit, applied once every unit is known.
+  const renames: { file: string; local: string; exported: string }[] = [];
   for (const [file, sf] of trees) {
     for (const st of sf.statements) {
       if (ts.isFunctionDeclaration(st) && st.name && st.body) {
-        add(file, st.name.text, isExported(st), st);
+        // A named default export is exported as default only: export default function go gives no name go.
+        const isDefault = hasModifier(st, ts.SyntaxKind.DefaultKeyword);
+        add(file, st.name.text, isExported(st) && !isDefault, st);
+        if (isDefault) renames.push({ file, local: st.name.text, exported: 'default' });
       } else if (ts.isFunctionDeclaration(st) && !st.name && st.body && hasModifier(st, ts.SyntaxKind.DefaultKeyword)) {
         // An anonymous default export is named default.
         add(file, 'default', true, st);
@@ -183,13 +191,22 @@ export function requestRows(sources: Sources): string[] {
         const e = unwrap(st.expression);
         if (isFunctionLike(e)) add(file, 'default', true, e);
         else if (ts.isObjectLiteralExpression(e)) addObject(file, 'default', true, e);
+        else if (ts.isIdentifier(e)) renames.push({ file, local: e.text, exported: 'default' });
+      } else if (ts.isExportDeclaration(st) && !st.moduleSpecifier && st.exportClause && ts.isNamedExports(st.exportClause)) {
+        // export { go } and export { go as other }: each element exports the local name it names, under its exported name.
+        for (const el of st.exportClause.elements) {
+          renames.push({ file, local: (el.propertyName ?? el.name).text, exported: el.name.text });
+        }
       } else if (ts.isClassDeclaration(st) && (st.name || hasModifier(st, ts.SyntaxKind.DefaultKeyword))) {
         const cls = st.name?.text ?? 'default';
+        // A named default class is exported as default: its members are renamed below, as the default export's are.
+        const isDefault = hasModifier(st, ts.SyntaxKind.DefaultKeyword);
+        if (isDefault && st.name) renames.push({ file, local: cls, exported: 'default' });
         for (const m of st.members) {
           if (!ts.isMethodDeclaration(m) || !m.body || !ts.isIdentifier(m.name)) continue;
           const priv = ts.isPrivateIdentifier(m.name) || hasModifier(m, ts.SyntaxKind.PrivateKeyword) ||
             hasModifier(m, ts.SyntaxKind.ProtectedKeyword);
-          add(file, `${cls}.${m.name.text}`, isExported(st) && !priv, m, cls);
+          add(file, `${cls}.${m.name.text}`, isExported(st) && !priv && !(isDefault && st.name), m, cls);
         }
       } else if (ts.isVariableStatement(st)) {
         const exp = isExported(st);
@@ -208,10 +225,19 @@ export function requestRows(sources: Sources): string[] {
 
   // A unit makes a request when it does so itself, or calls a helper that does. A helper is a unit that is not exported,
   // or api, the one request function every call goes through.
+  // An export list or a default export names a local unit: the unit gets the exported name, and an object or a class it
+  // names gives the same prefix to its members. The unit keeps its own key for the calls in its file.
+  for (const r of renames) {
+    for (const u of units.values()) {
+      if (u.file !== r.file) continue;
+      if (u.name === r.local) u.names.push(r.exported);
+      else if (u.name.startsWith(`${r.local}.`)) u.names.push(r.exported + u.name.slice(r.local.length));
+    }
+  }
   const requesting = new Set([...units.values()].filter((u) => u.direct).map((u) => u.key));
   const helper = (key: string) => {
     const u = units.get(key);
-    return u !== undefined && (!u.exported || key === API_KEY);
+    return u !== undefined && (u.names.length === 0 || key === API_KEY);
   };
   for (let changed = true; changed; ) {
     changed = false;
@@ -222,7 +248,11 @@ export function requestRows(sources: Sources): string[] {
       }
     }
   }
-  return [...units.values()].filter((u) => u.exported && requesting.has(u.key)).map((u) => u.key).sort();
+  const rows = new Set<string>();
+  for (const u of units.values()) {
+    if (requesting.has(u.key)) for (const n of u.names) rows.add(`${u.file}:${n}`);
+  }
+  return [...rows].sort();
 }
 
 // readTable reads docs/cli-parity.tsv: the header, then one row per line, five tab-separated fields each, LF line ends, and
