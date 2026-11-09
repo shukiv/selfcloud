@@ -123,7 +123,7 @@ func TestShippedFilesOpenAsTheirMediaType(t *testing.T) {
 	}
 }
 
-// The shipped files carry no author: docProps/core.xml names no e-mail address, no creator and no last editor.
+// The shipped files name no e-mail address and no last editor; a creator is shipped only where the source names one (keptCreators).
 func TestShippedFilesCarryNoAuthor(t *testing.T) {
 	t.Parallel()
 	for _, s := range shippedNames {
@@ -140,10 +140,12 @@ func TestShippedFilesCarryNoAuthor(t *testing.T) {
 		if bytes.Contains(core, []byte("@")) {
 			t.Errorf("%s: docProps/core.xml holds an \"@\"", tpl.ID)
 		}
-		for _, tag := range []string{"<dc:creator", "<cp:lastModifiedBy"} {
-			if bytes.Contains(core, []byte(tag)) {
-				t.Errorf("%s: docProps/core.xml has %s", tpl.ID, tag)
-			}
+		if bytes.Contains(core, []byte("<cp:lastModifiedBy")) {
+			t.Errorf("%s: docProps/core.xml has <cp:lastModifiedBy", tpl.ID)
+		}
+		// A creator is kept only where the source names one (keptCreators); any other creator is an author we did not ship.
+		if _, kept := keptCreators[s.name]; !kept && bytes.Contains(core, []byte("<dc:creator")) {
+			t.Errorf("%s: docProps/core.xml has <dc:creator", tpl.ID)
 		}
 	}
 }

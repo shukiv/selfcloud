@@ -41,8 +41,14 @@ modification of the original file under the Mozilla Public License 2.0. The text
 lorem ipsum text, and no branding.
 
 The modified files are shipped in this repository in the form Selfcloud embeds: `internal/templates/files/lo-letter-sans-serif.docx`
-and `internal/templates/files/lo-letter-serif.docx`. Each keeps its document content unchanged. In `docProps/core.xml` the personal creator and last-modified
-fields are removed, and the e-mail domains in the presentations' descriptions are removed (the author's name or handle stays).
+and `internal/templates/files/lo-letter-serif.docx`. Each keeps its document content unchanged.
+
+Author metadata rule. A shipped template keeps the creator its source names in `docProps/core.xml` (`dc:creator`): the sans-serif
+letter keeps **Eric Lavarde**, and the serif letter has none to keep. The last editor field is removed, and no e-mail address is
+shipped. The presentations' descriptions keep their licence and the names of the picture authors, with the e-mail domains removed.
+Known gap: the presentations' sources name their authors in the OpenDocument `meta:initial-creator` field, which the conversion does
+not carry, so the shipped presentations name no author. One of those sources names an e-mail address, which must not ship. Whether
+to carry the names over is open for the lead.
 
 Original author. The sans-serif letter's source metadata names **Eric Lavarde** as its creator (`dc:creator` and
 `meta:initial-creator`). The serif letter's source metadata names no author, and the source carries no copyright notice. It is a file of the
