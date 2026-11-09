@@ -126,6 +126,14 @@ export class Page {
       this.ws.onerror = () => reject(new Error('cannot open the page socket'));
     });
     this.ws.onmessage = (ev) => this.dispatch(JSON.parse(ev.data));
+    // A socket that closes (the tab is gone, or its renderer died) answers nothing more: every call waiting on it fails now,
+    // with that named, instead of waiting out its timeout.
+    this.ws.onclose = () => {
+      for (const [id, p] of this.pending) {
+        this.pending.delete(id);
+        p.reject(new Error('the page socket closed'));
+      }
+    };
   }
 
   dispatch(msg) {
@@ -208,12 +216,23 @@ export class Page {
     });
     this.on('Network.loadingFinished', (p) => this.inflight.delete(p.requestId));
     this.on('Network.loadingFailed', (p) => this.inflight.delete(p.requestId));
+    // A JavaScript dialog (alert, confirm, or a beforeunload "Leave site?") holds the page until it is answered, and every evaluate
+    // waits behind it, so a wait on that page fails with no sign of why. The run records the dialog by type and message, and
+    // dismisses it: the page stays where it is, and the wait that met the dialog fails with the dialog on record.
+    this.on('Page.javascriptDialogOpening', (p) => {
+      this.errors.push(`dialog(${p.type}): ${p.message || '(no message)'} at ${p.url ?? ''}`);
+      this.send('Page.handleJavaScriptDialog', { accept: false }, 0).catch(() => undefined);
+    });
+    this.on('Inspector.targetCrashed', () => this.errors.push('the page renderer crashed'));
+    this.on('Inspector.detached', (p) => this.errors.push(`the page was detached (${p.reason ?? 'no reason'})`));
     await this.send('Runtime.enable');
     // Async stacks, so a request's initiator shows the code that awaited its way to the fetch.
     await this.send('Runtime.setAsyncCallStackDepth', { maxDepth: 8 });
     await this.send('Log.enable');
     await this.send('Network.enable');
+    // Page.enable is what makes the dialog events flow; Inspector.enable is what makes a renderer's crash an event.
     await this.send('Page.enable');
+    await this.send('Inspector.enable');
     await this.send('DOM.enable');
     // Every page this tab loads reports its content-policy violations as console errors, which the
     // run then counts. Both the enforced and the report-only policy are covered: a report-only
@@ -293,10 +312,25 @@ export class Page {
       const value = await this.evaluate(expression, Math.max(1000, deadline - Date.now() + 5000)).catch(() => undefined);
       if (value) return value;
       if (Date.now() > deadline) {
-        const at = await this.evaluate('location.pathname', 5000).catch(() => 'unknown');
-        throw new Error(`timed out waiting for: ${expression} (the page is at ${at})`);
+        const at = await this.evaluate('location.pathname', 5000).catch((err) => `unknown (${err.message})`);
+        // The browser's own list of tabs answers even when a renderer does not, so the error names the tabs open now, and what
+        // the page recorded (a dialog, a crash) is on the error too.
+        const tabs = await this.openTabs();
+        const recorded = this.errors.slice(-3).join(' | ') || 'none';
+        throw new Error(`timed out waiting for: ${expression} (the page is at ${at}; open tabs: ${tabs}; page errors: ${recorded})`);
       }
       await sleep(100);
+    }
+  }
+
+  // openTabs lists the browser's page targets as paths, from the browser's own list (not the page's socket).
+  async openTabs() {
+    try {
+      const origin = `http://${new URL(this.ws.url).host}`;
+      const list = await (await fetch(`${origin}/json/list`, { signal: AbortSignal.timeout(3000) })).json();
+      return list.filter((t) => t.type === 'page').map((t) => t.url.replace(/^https?:\/\/[^/]+/, '') || '(blank)').join(', ') || 'none';
+    } catch (err) {
+      return `unknown (${err.message})`;
     }
   }
 
