@@ -49,6 +49,8 @@ export async function zr1eChecks(h, { page, base, accountKey, accountID, memberI
     15000,
   );
   check(true, 'a demoted maker\'s zip link shows the no-download refusal in the dialog');
+  // The refusal is the zip's own 403, which the browser logs; the run counts it as expected, not as a console error.
+  check(page.expectedAnswers.get('zip refused')?.length === 1, `the server refused the zip once, and the browser logged it (${page.expectedAnswers.get('zip refused')?.length ?? 0})`);
   await sleep(500);
   const after = (await readdir(downloads)).filter((f) => f.endsWith('.zip')).length;
   check(after === 1, `the refused link starts no download (${after} zip)`);
