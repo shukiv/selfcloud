@@ -932,7 +932,7 @@
   "tenants.all": "הכול",
   "tenants.active": "פעילים",
   "tenants.suspended": "מושעים",
-  "tenants.empty": "אין עדיין לקוחות. לקוח הוא ארגון עם משתמשים ותיקיות משלו.",
+  "tenants.empty": "אין עדיין לקוחות.",
   "tenants.noMatch": "אין לקוח תואם. שנו את החיפוש או את הסינון.",
   "tenants.open": "פתיחה",
   "tenants.actionsFor": "פעולות נוספות עבור {name}",

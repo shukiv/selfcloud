@@ -18,7 +18,7 @@ import { useOnSessionChange } from "./hooks";
 import StatusTag from "./StatusTag";
 import { more } from "./adminStyles";
 import Listing, { type ListAction, type ListMenuEntry } from "../files/Listing";
-import EmptyState from "../EmptyState";
+import { useAdminText } from "../../lib/manage/adminText";
 import LastSignIn from "./LastSignIn";
 
 // The dialogs load on first use: a first load of the tenant's people does not need them. Remove is the owner's People
@@ -51,6 +51,7 @@ export default function TenantUsers({ account }: { account: string }) {
   const [signInFor, setSignInFor] = useState<Person | null>(null);
   const [linkFor, setLinkFor] = useState<Person | null>(null);
   const [removing, setRemoving] = useState<Person | null>(null);
+  const adminText = useAdminText();
   // tenant_access and mail_configured are sent to an installation admin's own session only.
   const me = useStore(session);
   const tenantAccess = me?.tenantAccess === true;
@@ -206,7 +207,8 @@ export default function TenantUsers({ account }: { account: string }) {
               },
             },
           ]}
-          empty={<EmptyState role="status" size="compact" text={t("tenant.users.empty")} />}
+          // An admin page adds no one to a tenant, so its empty table has no action.
+          empty={{ title: t("tenant.users.empty"), description: adminText ? t("admin.empty.users") : undefined }}
         />
       )}
       {!firstFailed && q.hasNextPage && (

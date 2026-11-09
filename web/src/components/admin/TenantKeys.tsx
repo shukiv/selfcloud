@@ -18,7 +18,7 @@ import NewKey from "./NewKey";
 import ShowOnce from "./ShowOnce";
 import { useOnSessionChange } from "./hooks";
 import { sectionTitle, toolbar } from "./adminStyles";
-import EmptyState from "../EmptyState";
+import { useAdminText } from "../../lib/manage/adminText";
 
 // TenantKeys: the API keys of a tenant. A new key is shown once, in a dialog that holds it only while open. The key is
 // never put in the query cache: the list reads name no secret, and the reply of create is kept only in this page's state.
@@ -28,6 +28,7 @@ export default function TenantKeys({ account }: { account: string }) {
   const qc = useQueryClient();
   const inFlight = useRef(false);
   const keysKey = queryKey("tenant-keys", account);
+  const adminText = useAdminText();
   const q = useQuery({
     queryKey: keysKey,
     queryFn: async () => (await listKeys(account)).items,
@@ -193,7 +194,11 @@ export default function TenantKeys({ account }: { account: string }) {
                   },
                 ]
           }
-          empty={<EmptyState role="status" size="compact" text={t("keys.empty")} />}
+          empty={{
+            title: t("keys.empty"),
+            description: adminText ? t("admin.empty.keys") : undefined,
+            action: { label: t("keys.new.open"), onClick: () => setCreating(true) },
+          }}
         />
       )}
 

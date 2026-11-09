@@ -932,7 +932,7 @@
   "tenants.all": "Tous",
   "tenants.active": "Actifs",
   "tenants.suspended": "Suspendus",
-  "tenants.empty": "Aucun locataire pour l’instant. Un locataire est une organisation avec ses propres utilisateurs et dossiers.",
+  "tenants.empty": "Aucun locataire pour l’instant.",
   "tenants.noMatch": "Aucun locataire ne correspond. Modifiez la recherche ou le filtre.",
   "tenants.open": "Ouvrir",
   "tenants.actionsFor": "Plus d’actions pour {name}",

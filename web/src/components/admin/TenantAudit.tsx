@@ -13,7 +13,7 @@ import { queryKey } from "../../lib/query";
 import { renderSentence, sentence, type AuditEntry, type Names } from "../../lib/audit/sentence";
 import Listing from "../files/Listing";
 import { more, sectionTitle, toolbar } from "./adminStyles";
-import EmptyState from "../EmptyState";
+import { useAdminText } from "../../lib/manage/adminText";
 
 type Entry = AuditEntry & { id: string; time: string };
 
@@ -24,6 +24,7 @@ export default function TenantAudit({ account }: { account: string }) {
   const { t } = useT();
   const lang = useLang();
   const [action, setAction] = useState("");
+  const adminText = useAdminText();
   const namesQ = useQuery({
     queryKey: queryKey("tenant-names", account),
     queryFn: async () => (await loadNames(account)).names,
@@ -92,7 +93,8 @@ export default function TenantAudit({ account }: { account: string }) {
               ),
             },
           ]}
-          empty={<EmptyState role="status" size="compact" text={t("audit.empty")} />}
+          // The audit log has no create action.
+          empty={{ title: t("audit.empty"), description: adminText ? t("admin.empty.audit") : undefined }}
         />
       )}
       {!firstFailed && q.hasNextPage && (

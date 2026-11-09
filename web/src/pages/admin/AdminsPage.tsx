@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { UserMinus } from "lucide-react";
 import Listing, { type ListColumn } from "../../components/files/Listing";
-import EmptyState from "../../components/EmptyState";
+import { useAdminText } from "../../lib/manage/adminText";
 import LastSignIn from "../../components/admin/LastSignIn";
 import { go } from "../../lib/router";
 
@@ -54,6 +54,7 @@ function AdminsView() {
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const adminsKey = queryKey("admins");
+  const adminText = useAdminText();
 
   // The form belongs to the person who opened it: a change of person closes it.
   useOnSessionChange(() => {
@@ -220,9 +221,13 @@ function AdminsView() {
                   },
                 ]
           }
-          // The signed-in admin is always on this list, so it is empty only on a failure the error above names; the words are
-          // the tenant people list's (the language chunks are near their budget, decision 114).
-          empty={<EmptyState role="status" text={t("tenant.users.empty")} />}
+          // The signed-in admin is always on this list, so it is empty only on a failure the error above names; the title is
+          // the tenant people list's (the main language chunks are at their budget, decision 114).
+          empty={{
+            title: t("tenant.users.empty"),
+            description: adminText ? t("admin.empty.admins") : undefined,
+            action: { label: t("admins.new"), onClick: openNew },
+          }}
         />
       )}
       {!firstFailed && q.hasNextPage && (

@@ -17,7 +17,8 @@ import {
 } from "react";
 import { Button, Checkbox, Dropdown, Grid, Input, Table, theme as antdTheme, type MenuProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { ArrowDown, ArrowUp, EllipsisVertical, Link2, Star } from "lucide-react";
+import { ArrowDown, ArrowUp, EllipsisVertical, Link2, Plus, Star } from "lucide-react";
+import EmptyState from "../EmptyState";
 import IconButton from "../IconButton";
 import { translatePlural, useLang, useT } from "../../lib/i18n";
 import { formatBytes, formatDate } from "../../lib/files/format";
@@ -143,6 +144,15 @@ export interface ListSort {
   onSort: (key: string) => void;
 }
 
+// ListEmpty is what an empty preset list shows inside its table, under the column headers (the owner's rule of
+// 2026-11-09, decision 114): a bold title, one muted line of description, and the page's create action, a primary button
+// with a + icon, when the page has one.
+export interface ListEmpty {
+  title: string;
+  description?: string;
+  action?: { label: string; onClick: () => void };
+}
+
 // ItemListingProps are the props of a preset list: the admin, Manage and drive lists other than My files. Its columns,
 // rows, actions and menu come from the page; the selection and the keys are the shared hooks (lib/lists.ts).
 export interface ItemListingProps<T extends { id: string }> {
@@ -162,8 +172,8 @@ export interface ItemListingProps<T extends { id: string }> {
   sort?: ListSort;
   // onOpen opens a row: Enter on the row, or a click on it (a double click on a list with a selection).
   onOpen?: (row: T) => void;
-  // empty is what the body shows when there are no rows: the page's EmptyState (design-tl 2.5).
-  empty: ReactNode;
+  // empty is what the table's body shows when there are no rows, under the header row, which stays (design-tl 2.5).
+  empty: ListEmpty;
   // stickyTop is where the column header pins; the default is under the shell's header, as a preset list has no toolbar row.
   stickyTop?: number;
 }
@@ -525,7 +535,17 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           tableLayout="fixed"
           columns={columns}
           dataSource={q.items}
-          locale={{ emptyText: q.empty }}
+          locale={{
+            emptyText: (
+              <EmptyState role="status" size="table" text={q.empty.title} description={q.empty.description}>
+                {q.empty.action && (
+                  <Button type="primary" icon={<Plus size={16} aria-hidden="true" focusable="false" />} style={{ height: 36 }} onClick={q.empty.action.onClick}>
+                    {q.empty.action.label}
+                  </Button>
+                )}
+              </EmptyState>
+            ),
+          }}
           rowSelection={
             selectable && coarse
               ? {

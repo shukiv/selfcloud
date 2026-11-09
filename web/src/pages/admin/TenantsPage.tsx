@@ -26,7 +26,7 @@ import UsageMeter from "../../components/UsageMeter";
 import Listing, { type ListColumn, type ListMenuEntry, type ListSort } from "../../components/files/Listing";
 import { more, pageTitle, toolbar } from "../../components/admin/adminStyles";
 import { useGuard, useOnSessionChange } from "../../components/admin/hooks";
-import EmptyState from "../../components/EmptyState";
+import { useAdminText } from "../../lib/manage/adminText";
 
 // TenantsPage lists every tenant on this installation, for an installation admin only. The search text and the status
 // filter are in the address, so a search can be bookmarked. Names are searched on the server; the list is read a page
@@ -228,7 +228,9 @@ function TenantsView() {
   ];
   const listSort: ListSort = { key: sort.key, dir: sort.dir, onSort: sortBy };
 
-  const emptyText = query || status !== "all" ? t("tenants.noMatch") : t("tenants.empty");
+  // A search or a status that matches nothing says so, with no action; an installation with no tenant yet offers New tenant.
+  const filtered = query !== "" || status !== "all";
+  const adminText = useAdminText();
 
   return (
     <div>
@@ -278,7 +280,11 @@ function TenantsView() {
           sort={listSort}
           // A row opens its tenant: a click on it, or Enter (design-tl 2.3).
           onOpen={open}
-          empty={<EmptyState role="status" text={emptyText} />}
+          empty={{
+            title: filtered ? t("tenants.noMatch") : t("tenants.empty"),
+            description: !filtered && adminText ? t("admin.empty.tenants") : undefined,
+            action: filtered ? undefined : { label: t("tenant.new.open"), onClick: () => setCreating(true) },
+          }}
         />
       )}
       {!firstFailed && q.hasNextPage && (

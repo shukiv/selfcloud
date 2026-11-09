@@ -1,0 +1,7 @@
+{
+  "admin.empty.tenants": "Un cliente es una organización con sus propios usuarios y carpetas.",
+  "admin.empty.admins": "Un administrador gestiona esta instalación y sus clientes.",
+  "admin.empty.users": "El propietario del cliente invita a sus personas, o una aplicación las añade mediante la API.",
+  "admin.empty.keys": "Una clave de API permite que una aplicación gestione este cliente mediante la API.",
+  "admin.empty.audit": "Aquí aparecen los inicios de sesión, los cambios en personas y claves, y otras acciones."
+}

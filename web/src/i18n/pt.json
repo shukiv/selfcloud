@@ -932,7 +932,7 @@
   "tenants.all": "Todos",
   "tenants.active": "Ativos",
   "tenants.suspended": "Suspensos",
-  "tenants.empty": "Ainda não há clientes. Um cliente é uma organização com os seus próprios utilizadores e pastas.",
+  "tenants.empty": "Ainda não há clientes.",
   "tenants.noMatch": "Nenhum cliente corresponde. Altere a pesquisa ou o filtro.",
   "tenants.open": "Abrir",
   "tenants.actionsFor": "Mais ações para {name}",

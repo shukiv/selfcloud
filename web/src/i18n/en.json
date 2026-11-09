@@ -932,7 +932,7 @@
   "tenants.all": "All",
   "tenants.active": "Active",
   "tenants.suspended": "Suspended",
-  "tenants.empty": "No tenants yet. A tenant is an organisation with its own users and folders.",
+  "tenants.empty": "No tenants yet.",
   "tenants.noMatch": "No tenant matches. Change the search or the filter.",
   "tenants.open": "Open",
   "tenants.actionsFor": "More actions for {name}",

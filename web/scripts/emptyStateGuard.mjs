@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The empty-state guard (decision 111). check-source.mjs runs it on every shipped .ts and .tsx file, and emptyStateGuard.test.mjs
 // pins its behaviour on fixtures. An empty state is antd's Empty through EmptyState. Each string literal equal to a key in
-// EMPTY_KEYS must sit inside an EmptyState element (its text prop, or its children, which are the action slot), or be held in a
-// variable whose binding is read by an EmptyState's text prop in the same function. The EmptyState must be the default import
+// EMPTY_KEYS must sit inside an EmptyState element (its text prop, or its children, which are the action slot), or in the empty
+// prop of a preset Listing, which draws it through EmptyState (decision 114), or be held in a variable whose binding one of
+// those reads in the same function. The EmptyState (and the Listing) must be the default import
 // from a module named EmptyState, with no other binding of that name in the file. The check reads the TypeScript syntax tree,
 // so line breaks, multi-line tags and wrappers do not hide a key. The limits are written in decision 111.
 import ts from 'typescript';
@@ -37,6 +38,18 @@ function importedEmptyState(sf) {
       clause && clause.name?.text === 'EmptyState' && !clause.namedBindings &&
       ts.isStringLiteral(st.moduleSpecifier) && /(^|\/)EmptyState$/.test(st.moduleSpecifier.text)
     ) {
+      return clause;
+    }
+  }
+  return null;
+}
+
+// The default import of Listing from a module named Listing (components/files/Listing, or ./Listing), or null. A preset list
+// draws its empty table through EmptyState from the words of its empty prop (decision 114), so a key there is drawn through it.
+function importedListing(sf) {
+  for (const st of sf.statements) {
+    const clause = ts.isImportDeclaration(st) ? st.importClause : undefined;
+    if (clause && clause.name?.text === 'Listing' && ts.isStringLiteral(st.moduleSpecifier) && /(^|\/)Listing$/.test(st.moduleSpecifier.text)) {
       return clause;
     }
   }
@@ -85,6 +98,13 @@ export function emptyStateProblems(file, text) {
     bound && (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && ts.isIdentifier(node.tagName) && node.tagName.text === 'EmptyState';
   const isText = (node) =>
     ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.name.text === 'text' && ts.isJsxAttributes(node.parent) && isTag(node.parent.parent);
+  // A preset Listing's empty prop: Listing draws its title and description through EmptyState (decision 114). Only the
+  // imported Listing counts.
+  const listing = importedListing(sf) !== null;
+  const isListingEmpty = (node) =>
+    listing && ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && node.name.text === 'empty' && ts.isJsxAttributes(node.parent) &&
+    (ts.isJsxOpeningElement(node.parent.parent) || ts.isJsxSelfClosingElement(node.parent.parent)) &&
+    ts.isIdentifier(node.parent.parent.tagName) && node.parent.parent.tagName.text === 'Listing';
 
   // scopeOf is the nearest function, or the file, that a node sits in: where a const or a parameter is bound.
   const scopeOf = (node) => {
@@ -116,7 +136,7 @@ export function emptyStateProblems(file, text) {
   // is not a read of a variable called empty.
   const held = new Set();
   const collectHeld = (n) => {
-    if (isText(n) && n.initializer) {
+    if ((isText(n) || isListingEmpty(n)) && n.initializer) {
       const readRoots = (x) => {
         if (ts.isIdentifier(x)) {
           const p = x.parent;
@@ -135,7 +155,7 @@ export function emptyStateProblems(file, text) {
   const judge = (literal) => {
     let child = literal;
     for (let p = literal.parent; p && !ts.isSourceFile(p); child = p, p = p.parent) {
-      if (isText(p)) return { ok: true, holder: null };
+      if (isText(p) || isListingEmpty(p)) return { ok: true, holder: null };
       if (ts.isJsxElement(p) && child !== p.openingElement && isTag(p.openingElement)) return { ok: true, holder: null };
       if (ts.isFunctionLike(p)) return { ok: false, holder: null };
       if (ts.isVariableDeclaration(p)) return { ok: false, holder: ts.isIdentifier(p.name) ? p : null };

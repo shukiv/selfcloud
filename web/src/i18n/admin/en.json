@@ -1,0 +1,7 @@
+{
+  "admin.empty.tenants": "A tenant is an organisation with its own users and folders.",
+  "admin.empty.admins": "An admin runs this installation and its tenants.",
+  "admin.empty.users": "The tenant's owner invites its people, or an app adds them through the API.",
+  "admin.empty.keys": "An API key lets an app manage this tenant through the API.",
+  "admin.empty.audit": "Sign-ins, changes to people and keys, and other actions show here."
+}

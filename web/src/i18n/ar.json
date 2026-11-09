@@ -932,7 +932,7 @@
   "tenants.all": "الكل",
   "tenants.active": "نشطة",
   "tenants.suspended": "موقوفة",
-  "tenants.empty": "لا يوجد مستأجرون بعد. المستأجر منظمة لها مستخدموها ومجلداتها الخاصة.",
+  "tenants.empty": "لا يوجد مستأجرون بعد.",
   "tenants.noMatch": "لا يوجد مستأجر مطابق. غيّروا البحث أو التصفية.",
   "tenants.open": "فتح",
   "tenants.actionsFor": "إجراءات أخرى لـ {name}",
