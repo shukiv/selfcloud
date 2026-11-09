@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { session, type Session } from "../../lib/session";
@@ -21,8 +21,42 @@ function renderUsers() {
 }
 
 // Both switches on, so the pending owner offers resend by email and a new link (decision 41).
-beforeEach(() => session.set({ ...signedAs("admin"), tenantAccess: true, mailConfigured: true } as Session));
-afterEach(() => session.set(null));
+// These tests are about a desktop: the inline icons show there, and the Role column is a column (design-tl section 4).
+const desktop = (query: string) => {
+  const m = /min-width: (\d+)px/.exec(query);
+  return { matches: m ? 1200 >= Number(m[1]) : false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
+};
+let savedMatchMedia: typeof window.matchMedia;
+beforeEach(() => {
+  session.set({ ...signedAs("admin"), tenantAccess: true, mailConfigured: true } as Session);
+  savedMatchMedia = window.matchMedia;
+  window.matchMedia = desktop as unknown as typeof window.matchMedia;
+});
+afterEach(() => {
+  session.set(null);
+  window.matchMedia = savedMatchMedia;
+});
+
+// tl1: the people are a table (design-tl 3.1, A3). On a phone the inline icons move into the row's ⋮ menu (design-tl 4).
+describe("people of a tenant as a table", () => {
+  it("is a region with Name, Role and Status headers, and no list", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [pendingOwner] } }));
+    renderUsers();
+    const region = await screen.findByRole("region", { name: "People" });
+    expect(within(region).getByRole("columnheader", { name: "Role" })).toBeTruthy();
+    expect(within(region).getByRole("columnheader", { name: "Status" })).toBeTruthy();
+    expect(document.querySelector("ul[aria-label]")).toBeNull();
+  });
+
+  it("on a phone a pending owner's New link is in the row's ⋮ menu", async () => {
+    window.matchMedia = ((query: string) => ({ matches: false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as unknown as typeof window.matchMedia;
+    stubFetch(() => ({ status: 200, body: { items: [pendingOwner] } }));
+    renderUsers();
+    await screen.findByText("Owen");
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Owen" }));
+    expect(await screen.findByRole("menuitem", { name: /New link/ })).toBeTruthy();
+  });
+});
 
 describe("people of a tenant", () => {
   it("a failed first load shows the error and no empty state (guard: firstFailed)", async () => {
