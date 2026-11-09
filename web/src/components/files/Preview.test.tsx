@@ -278,7 +278,7 @@ describe("Preview drops a read that finishes after the person moved on", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => (release = resolve))));
     const { rerender } = render(<Preview items={[file("notes.txt", "text/plain")]} index={0} onClose={() => {}} onIndex={() => {}} />);
     rerender(<Preview items={[file("cat.png", "image/png")]} index={0} onClose={() => {}} onIndex={() => {}} />);
-    await act(async () => release(new Response("old text", { status: 200 })));
+    await act(async () => release(new Response("old text", { status: 206 })));
     await new Promise((r) => setTimeout(r, 20));
     expect(document.querySelector(".cm-editor")).toBeNull();
   });
@@ -286,19 +286,31 @@ describe("Preview drops a read that finishes after the person moved on", () => {
 describe("Preview keeps the text of the file on screen", () => {
   it("does not replace the file on screen with an earlier file's text that arrives late", async () => {
     // The first answer arrives at once, but its body is read slowly: the person moves on while the text is still read.
-    let releaseA!: (body: ArrayBuffer) => void;
-    const slowBody = { ok: true, status: 200, arrayBuffer: () => new Promise<ArrayBuffer>((resolve) => (releaseA = resolve)) } as unknown as Response;
+    let releaseA: ((text: string) => void) | undefined;
+    const slowBody = new ReadableStream<Uint8Array>(
+      {
+        pull: (c) =>
+          new Promise<void>((done) => {
+            releaseA = (text) => {
+              c.enqueue(new TextEncoder().encode(text));
+              c.close();
+              done();
+            };
+          }),
+      },
+      { highWaterMark: 0 },
+    );
     vi.stubGlobal(
       "fetch",
       vi.fn()
-        .mockImplementationOnce(async () => slowBody)
-        .mockImplementationOnce(async () => new Response("bee text", { status: 200 })),
+        .mockImplementationOnce(async () => new Response(slowBody, { status: 206 }))
+        .mockImplementationOnce(async () => new Response("bee text", { status: 206 })),
     );
     const { rerender } = render(<Preview items={[file("a.txt", "text/plain")]} index={0} onClose={() => {}} onIndex={() => {}} />);
     await waitFor(() => expect(releaseA).toBeDefined());
     rerender(<Preview items={[file("b.txt", "text/plain")]} index={0} onClose={() => {}} onIndex={() => {}} />);
     expect(await codeShown()).toBe("bee text");
-    await act(async () => releaseA(new TextEncoder().encode("ay text").buffer as ArrayBuffer));
+    await act(async () => releaseA?.("ay text"));
     await new Promise((r) => setTimeout(r, 20));
     expect(await codeShown()).toBe("bee text");
   });
