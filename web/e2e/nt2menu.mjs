@@ -65,7 +65,8 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     check(hints.keys === 'Alt+C F' && hints.hint === 'Alt+C, F', `New folder's row names its chord and shows the hint (${hints.keys}, ${hints.hint})`);
     // The rows lay out during the menu's open animation (0 px at the first frame), so wait for a laid-out row first.
     const rowSel = `[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]'))`;
-    await page.waitFor(`${rowSel}.every((x) => x.getBoundingClientRect().height > 0)`, 5000);
+    // Wait until the menu's open animation has settled: the New folder row reads 40 px (the animation shows it shorter first).
+    await page.waitFor(`Math.round(${rowSel}.find((x) => x.textContent.trim() === 'New folder').getBoundingClientRect().height) === 40`, 5000);
     const rowHeight = await page.evaluate(`${rowSel}.find((x) => x.textContent.trim() === 'New folder').getBoundingClientRect().height`);
     check(Math.round(rowHeight) === 40, `a mouse's row is 40 px (${Math.round(rowHeight)})`);
     // Every top-level row of the open New menu, submenu titles included (a submenu's row is its title, a child of its item).
