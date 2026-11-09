@@ -386,6 +386,7 @@ paths:
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 200 }, description: "Terms, separated by spaces. At most 8 terms, each at most 64 bytes, each at least 2 characters. Optional when a filter is given." }
         - { name: in, in: query, required: false, schema: { type: string, enum: [name, content] }, description: "Where to search: the names (the default), or the text of files (content, which needs q and finds files only)." }
         - { name: kind, in: query, required: false, schema: { type: string, enum: [file, dir, shortcut] } }
+        - $ref: "#/components/parameters/typeFilter"
         - { name: ext, in: query, required: false, schema: { type: string }, description: "Comma-separated extensions without dots, at most 8." }
         - { name: modified_after, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Unix milliseconds, inclusive." }
         - { name: modified_before, in: query, required: false, schema: { type: integer, minimum: 0 }, description: "Unix milliseconds, exclusive." }
@@ -637,6 +638,10 @@ paths:
         - { name: folder, in: query, schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: cursor, in: query, schema: { type: string } }
+        - $ref: "#/components/parameters/typeFilter"
+        - $ref: "#/components/parameters/modifiedAfter"
+        - $ref: "#/components/parameters/modifiedBefore"
+        - { name: source, in: query, required: false, schema: { type: string, enum: [trash] }, description: "trash lists the trashed files, descendants included. Absent: every file of the account (or of the folder), with the trash marks." }
       responses:
         "200":
           description: A page of files, largest first.
@@ -2649,6 +2654,11 @@ paths:
       parameters:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: cursor, in: query, schema: { type: string } }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [audio, video, image, document, trash] }, description: "Legacy (decision 79). audio, video and image are the type groups of those names; document is the legacy document set; trash is source=trash. Given with type or source, it is invalid_request." }
+        - $ref: "#/components/parameters/typeFilter"
+        - $ref: "#/components/parameters/modifiedAfter"
+        - $ref: "#/components/parameters/modifiedBefore"
+        - { name: source, in: query, required: false, schema: { type: string, enum: [trash] }, description: "trash lists the trashed files, descendants included. Absent: My files, with the trash marks. Given with kind, it is invalid_request." }
       responses:
         "200":
           description: A page of files, largest first.
@@ -2696,6 +2706,9 @@ paths:
         - $ref: "#/components/parameters/childOrder"
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/typeFilter"
+        - $ref: "#/components/parameters/modifiedAfter"
+        - $ref: "#/components/parameters/modifiedBefore"
       responses:
         "200":
           description: The children of the directory.
@@ -3080,13 +3093,16 @@ paths:
       tags: [Files]
       operationId: listChildren
       summary: List a directory by its ID
-      description: A visitor of a link that anyone can open may call this with its credential, below the link's node. `sort` and `order` work as on the folder route.
+      description: A visitor of a link that anyone can open may call this with its credential, below the link's node. `sort` and `order` work as on the folder route. `type`, `modified_after` and `modified_before` work as on the folder route (decision 110); a link visitor gets no shortcuts, so `type=shortcut` lists nothing.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - $ref: "#/components/parameters/childSort"
         - $ref: "#/components/parameters/childOrder"
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/typeFilter"
+        - $ref: "#/components/parameters/modifiedAfter"
+        - $ref: "#/components/parameters/modifiedBefore"
       responses:
         "200":
           description: The children of the directory, in name order unless `sort` is given.
@@ -4354,6 +4370,9 @@ paths:
       parameters:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/typeFilter"
+        - $ref: "#/components/parameters/modifiedAfter"
+        - $ref: "#/components/parameters/modifiedBefore"
         - name: order
           in: query
           description: "`recent` orders by `shared_at`, newest first. Left out: node ID order."
@@ -4697,6 +4716,9 @@ paths:
       parameters:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/typeFilter"
+        - $ref: "#/components/parameters/modifiedAfter"
+        - $ref: "#/components/parameters/modifiedBefore"
       responses:
         "200":
           description: The starred items.
@@ -5153,6 +5175,9 @@ paths:
       parameters:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/typeFilter"
+        - $ref: "#/components/parameters/modifiedAfter"
+        - $ref: "#/components/parameters/modifiedBefore"
       responses:
         "200":
           description: The recent items.
@@ -5455,6 +5480,9 @@ paths:
       parameters:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/typeFilter"
+        - $ref: "#/components/parameters/modifiedAfter"
+        - $ref: "#/components/parameters/modifiedBefore"
         - name: folder
           in: query
           required: false
@@ -6078,6 +6106,21 @@ components:
       in: query
       description: The `next_cursor` of the previous page. A cursor is for the sort and order it came from; another sort or order, or none, does not open it (`invalid_request`).
       schema: { type: string }
+    typeFilter:
+      name: type
+      in: query
+      description: "One value (decision 110). A file group (wordprocessing, spreadsheet, presentation, drawing, pdf, image, video, audio, archive), or folder or shortcut where the list holds those kinds. An unknown value, or a repeated one, is `invalid_request`."
+      schema: { type: string, enum: [wordprocessing, spreadsheet, presentation, drawing, pdf, image, video, audio, archive, folder, shortcut] }
+    modifiedAfter:
+      name: modified_after
+      in: query
+      description: "Unix milliseconds, inclusive. The node's modified time must be at or after it."
+      schema: { type: integer, minimum: 0 }
+    modifiedBefore:
+      name: modified_before
+      in: query
+      description: "Unix milliseconds, exclusive. Must be after `modified_after` when both are given; otherwise `invalid_request`."
+      schema: { type: integer, minimum: 0 }
     childSort:
       name: sort
       in: query
@@ -6494,6 +6537,7 @@ components:
         kind: { type: string, enum: [dir, file, shortcut], description: "A shortcut points to another node; see target." }
         size: { type: integer, minimum: 0, description: Bytes, for a file. }
         mime_type: { type: string, description: Files only. }
+        type: { type: string, description: "The file type group (decision 110): one of the group IDs in the type filter, or empty for a folder, a shortcut or a type no group knows." }
         etag: { type: string, description: "A strong ETag. A file's changes with every write to it, its contents and its record (a rename, a move, a flag). A directory's changes with every write to its record. Send it as If-Match to make a rename or move conditional." }
         sha256: { type: string, description: Files only. Hex SHA-256 of the contents. }
         created_at: { type: string, format: date-time }
