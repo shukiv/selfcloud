@@ -35,6 +35,17 @@ test('an index.html that names no module script and no modulepreload fails: the 
   assert.match(r.stderr, /first load is empty/);
 });
 
+test('CodeMirror in a first-load file fails: it must load with the first text file shown', () => {
+  const dir = fixture(
+    `<!doctype html><html><head>${NONCE_META}</head><body>` +
+      '<script type="module" nonce="__SELFCLOUD_CSP_NONCE__" src="/assets/index-AAAAAAAA.js"></script></body></html>',
+    { 'index-AAAAAAAA.js': 'const t={".cm-scroller":{display:"flex"}};' },
+  );
+  const r = check(dir);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /CodeMirror is in the first load \(\/assets\/index-AAAAAAAA\.js\)/);
+});
+
 test('a missing group marker says it may have changed with the minifier or React', () => {
   // One entry chunk and no vendor chunk: React's markers are in no chunk named vendor, so the guard fails.
   const dir = fixture(
