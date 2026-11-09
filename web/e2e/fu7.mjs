@@ -515,6 +515,8 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
     await focusP();
     await key('Enter', 13);
     await page.waitFor(`location.pathname.endsWith('${pID}')`, 10000).catch(() => undefined);
+    // The address changes before the tree re-renders, so the row's mark is waited for, not read at once.
+    await page.waitFor(`${SCOPE}?.querySelector('[data-testid="folder-tree"] [data-drop-name="${P}"]')?.parentElement?.getAttribute('aria-current') === 'location'`, 10000).catch(() => undefined);
     const shownNow = await treeRow(page, P, C);
     check((await page.evaluate(`location.pathname`)).endsWith(pID), `on the keyboard, Enter shows ${P}`);
     check(shownNow !== null && shownNow.expanded === 'true' && shownNow.current, `after Enter, ${P} is still open and marked as the folder shown (expanded ${shownNow?.expanded}, current ${shownNow?.current})`);
