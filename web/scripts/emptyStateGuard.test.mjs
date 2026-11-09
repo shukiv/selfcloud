@@ -3,7 +3,16 @@
 // the approved layout must pass. Run with: node --test scripts/emptyStateGuard.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyStateProblems } from './emptyStateGuard.mjs';
+import { emptyStateProblems, isScanned } from './emptyStateGuard.mjs';
+
+// The file set the guard reads: shipped .ts and .tsx files, never the tests.
+test('the guard scans shipped .ts and .tsx files, not tests or styles', () => {
+  assert.equal(isScanned('lib/copy.ts'), true);
+  assert.equal(isScanned('pages/A.tsx'), true);
+  assert.equal(isScanned('pages/A.test.tsx'), false);
+  assert.equal(isScanned('lib/copy.test.ts'), false);
+  assert.equal(isScanned('index.css'), false);
+});
 
 // page wraps a fixture's JSX in a component that imports EmptyState, as a real page does, so the bypasses are the only faults.
 const page = (body, pre = '') => `import EmptyState from "../components/EmptyState";
@@ -34,6 +43,54 @@ const bypass = {
     // The file name is FilesPage's own, where the old guard exempted the key for the whole file.
     { name: 'pages/FilesPage.tsx', src: page('      <p>{t("files.empty")}</p>') }
   ),
+  // Review 2 of em1: a name is not a binding. The text prop reads copy.empty, which is not the local empty.
+  'a variable with the same name as a property passed to EmptyState': page(
+    '      <p role="status">{empty}</p>\n      <EmptyState text={copy.empty} />',
+    '  const empty = t("starred.empty");\n  const copy = { empty: "plain" };\n',
+  ),
+  // The same name in another function is another binding.
+  'a variable of the same name in another function': {
+    name: 'pages/Fixture.tsx',
+    src: `import EmptyState from "../components/EmptyState";
+import { useT } from "../lib/i18n";
+
+export function held() {
+  const { t } = useT();
+  const empty = t("starred.empty");
+  return empty;
+}
+
+export default function Page() {
+  const empty = "plain";
+  return (
+    <main>
+      <EmptyState text={empty} />
+    </main>
+  );
+}
+`,
+  },
+  // A helper in a .ts file hands the key out, and a page renders it. The key must not leave a .ts file at all.
+  'a key returned by a .ts helper': { name: 'lib/copy.ts', src: 'export const copy = () => t("starred.empty");\n' },
+  // A local component named EmptyState is not the imported one.
+  'a local EmptyState that is not the imported component': {
+    name: 'pages/Fixture.tsx',
+    src: `import { useT } from "../lib/i18n";
+
+function EmptyState(p) {
+  return <p>{p.text}</p>;
+}
+
+export default function Page() {
+  const { t } = useT();
+  return (
+    <main>
+      <EmptyState text={t("starred.empty")} />
+    </main>
+  );
+}
+`,
+  },
 };
 
 // Shapes that are the approved layout and must pass.
@@ -42,6 +99,14 @@ const allowed = {
         <EmptyState text={t("comments.empty")} />
       </div>`),
   'EmptyState with its text on one line': page('      <EmptyState role="status" text={t("starred.empty")} />'),
+  'a key held in a variable that the same function passes to EmptyState': page(
+    '      <EmptyState text={empty} />',
+    '  const empty = t("starred.empty");\n',
+  ),
+  'a key held in an object property that the same function passes to EmptyState': page(
+    '      <EmptyState text={copy.empty} />',
+    '  const copy = { empty: t("starred.empty") };\n',
+  ),
   'the read-only empty folder in FilesPage': {
     name: 'pages/FilesPage.tsx',
     src: page('      <EmptyState role="status" className="empty-folder-drop" text={t("files.empty")} />'),
