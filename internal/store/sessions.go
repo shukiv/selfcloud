@@ -75,7 +75,9 @@ func scanSessionRow(row interface{ Scan(...any) error }) (*Session, error) {
 	return &sess, nil
 }
 
-// InsertSession adds sess.
+// InsertSession adds sess. A session of the user's own is a sign-in, so it also records the user's last sign-in
+// (users.last_sign_in_at, decision 114), which outlives the session. Every way of signing in makes its session here, so
+// none can miss it. A sign-in-as (a session with an impersonator) is the admin's, and records nothing on the user.
 func (tx *Tx) InsertSession(ctx context.Context, sess *Session) error {
 	_, err := tx.q.ExecContext(ctx, "INSERT INTO sessions ("+sessionCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		sess.IDHash, sess.UserID, nullString(sess.AccountID), sess.CSRFToken, millis(sess.CreatedAt),
@@ -84,6 +86,10 @@ func (tx *Tx) InsertSession(ctx context.Context, sess *Session) error {
 	if isUniqueViolation(err) {
 		return ErrConflict
 	}
+	if err != nil || sess.ImpersonatorID != "" {
+		return err
+	}
+	_, err = tx.q.ExecContext(ctx, "UPDATE users SET last_sign_in_at = ? WHERE id = ?", millis(sess.CreatedAt), sess.UserID)
 	return err
 }
 

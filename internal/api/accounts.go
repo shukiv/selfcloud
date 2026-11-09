@@ -28,12 +28,15 @@ type accountJSON struct {
 	UsedFiles  int64     `json:"used_files"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+	// UserCount is the number of the account's users, on the items of GET /accounts only (decision 114).
+	UserCount *int64 `json:"user_count,omitempty"`
 }
 
 func toAccountJSON(a *store.Account) accountJSON {
 	out := accountJSON{
 		ID: a.ID, Name: a.Name, Status: a.Status, QuotaBytes: a.QuotaBytes,
 		UsedBytes: a.UsedBytes, UsedFiles: a.UsedFiles, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		UserCount: a.UserCount,
 	}
 	if a.ExternalID != "" {
 		out.ExternalID = &a.ExternalID

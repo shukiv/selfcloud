@@ -37,11 +37,14 @@ type userJSON struct {
 	// PendingEmail is the new address a change of email waits for, until it is confirmed: null when there is none
 	// (decision 89). The address in Email is still the one that signs in.
 	PendingEmail *string `json:"pending_email"`
+	// LastSignInAt is when the user last signed in, its own sign-in and not a sign-in-as: null when it has not (decision 114).
+	LastSignInAt *time.Time `json:"last_sign_in_at"`
 }
 
 func toUserJSON(u *store.User) userJSON {
 	out := userJSON{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Locale: u.Locale, Role: u.Role,
-		Status: u.Status, VerifiedAt: u.VerifiedAt, QuotaBytes: u.QuotaBytes, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt}
+		Status: u.Status, VerifiedAt: u.VerifiedAt, QuotaBytes: u.QuotaBytes, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
+		LastSignInAt: u.LastSignInAt}
 	if u.ExternalID != "" {
 		out.ExternalID = &u.ExternalID
 	}

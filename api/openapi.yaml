@@ -248,8 +248,9 @@ paths:
       summary: List accounts
       description: |
         Installation admin only (an admin key or an admin session). Oldest first, unless `sort` or `order` is given. Each
-        account carries `used_bytes` and `quota_bytes`, so a list of tenants with their usage needs no request per account.
-        A sorted list's `next_cursor` opens only for the same `sort` and `order`; any other cursor is `400 invalid_request`.
+        account carries `used_bytes`, `quota_bytes` and `user_count`, so a list of tenants with their usage and their
+        number of users needs no request per account. A sorted list's `next_cursor` opens only for the same `sort`,
+        `order`, `status`, `q` and `external_id`; any other cursor is `400 invalid_request`.
       security: [{ bearer: [] }]
       parameters:
         - name: external_id
@@ -7621,6 +7622,12 @@ components:
         used_files: { type: integer, format: int64 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        user_count:
+          type: integer
+          format: int64
+          description: |
+            The number of the account's users, every status. On the items of `GET /accounts` only, counted in the list's
+            own query (decision 114); a single account's read leaves it out.
 
     AccountCreate:
       type: object
@@ -8002,7 +8009,7 @@ components:
 
     User:
       type: object
-      required: [id, external_id, email, pending_email, display_name, locale, role, status, verified_at, quota_bytes, created_at, updated_at]
+      required: [id, external_id, email, pending_email, display_name, locale, role, status, verified_at, quota_bytes, created_at, updated_at, last_sign_in_at]
       properties:
         id: { type: string, example: usr_5m2k8x1v0c3d9q7r4t6w8y0z2a }
         external_id:
@@ -8030,6 +8037,13 @@ components:
           description: The user's own limit on its My files. Null follows the account's default; 0 is no limit.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        last_sign_in_at:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            When the user last signed in (decision 114): a sign-in of its own (a password, a verification, reset or
+            sign-in link, a device confirmation, a password change), never an admin's sign-in-as. Kept on the user, so it
+            outlives the session. Null when the user has not signed in since the server recorded it.
 
     UserDetail:
       description: A user as one user route shows it, with the limit that applies to its My files.

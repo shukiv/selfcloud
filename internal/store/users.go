@@ -59,25 +59,29 @@ type User struct {
 	// PendingEmail is the address a change of email is waiting to have confirmed (decision 89). "" when
 	// there is none. The address in Email stays in use until it is confirmed.
 	PendingEmail string
+	// LastSignInAt is when the user last signed in: set by InsertSession for a session of the user's own, never by a
+	// sign-in-as (decision 114). nil when the user has not signed in. It is read only; InsertUser does not write it.
+	LastSignInAt *time.Time
 }
 
 const userCols = `id, account_id, external_id, email, email_key, display_name, locale, role, status,
 	password_hash, verified_at, created_at, updated_at, quota_bytes, must_change_password, pending_email`
 
 // userSelectCols is userCols for reads, with the end of the newest live email-change link as pending_until. A pending
-// address is shown only while its link is live (decision 89): scanUser drops it once the link has expired.
+// address is shown only while its link is live (decision 89): scanUser drops it once the link has expired. The last
+// sign-in is read here too: it is written by InsertSession, not with the user's other fields.
 const userSelectCols = userCols + `, (SELECT MAX(v.expires_at) FROM verifications v WHERE v.user_id = users.id
-	AND v.purpose = 'email_change' AND v.used_at IS NULL) AS pending_until`
+	AND v.purpose = 'email_change' AND v.used_at IS NULL) AS pending_until, last_sign_in_at`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var acc, ext, pw, pending sql.NullString
-	var verified, until sql.NullInt64
+	var verified, until, lastSignIn sql.NullInt64
 	var created, updated int64
 	var quota sql.NullInt64
 	var mustChange int64
 	err := row.Scan(&u.ID, &acc, &ext, &u.Email, &u.EmailKey, &u.DisplayName, &u.Locale,
-		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota, &mustChange, &pending, &until)
+		&u.Role, &u.Status, &pw, &verified, &created, &updated, &quota, &mustChange, &pending, &until, &lastSignIn)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -91,6 +95,7 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	}
 	u.PasswordHash = pw.String
 	u.VerifiedAt = fromNullMillis(verified)
+	u.LastSignInAt = fromNullMillis(lastSignIn)
 	u.CreatedAt = fromMillis(created)
 	u.UpdatedAt = fromMillis(updated)
 	u.MustChangePassword = mustChange == 1

@@ -33,17 +33,36 @@ type Account struct {
 	TokensNotBefore time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	// UserCount is the number of the account's users. The account lists set it, counted in their own query (decision
+	// 114); a single account's read leaves it nil.
+	UserCount *int64
 }
 
 const accountCols = `id, external_id, name, status, quota_bytes, used_bytes, used_files,
 	reserved_bytes, tokens_not_before, created_at, updated_at, user_quota_bytes`
 
-func scanAccount(row interface{ Scan(...any) error }) (*Account, error) {
+// accountListCols is accountCols for the account lists, with each account's number of users. The count is a subquery of
+// the list's own query, which the users_list index answers, so a page of accounts is one query, not one per account.
+const accountListCols = accountCols + `, (SELECT COUNT(*) FROM users u WHERE u.account_id = accounts.id) AS user_count`
+
+// scanListedAccount reads a row of accountListCols.
+func scanListedAccount(row interface{ Scan(...any) error }) (*Account, error) {
+	var n int64
+	a, err := scanAccount(row, &n)
+	if err != nil {
+		return nil, err
+	}
+	a.UserCount = &n
+	return a, nil
+}
+
+// scanAccount reads a row of accountCols. extra are the destinations of the columns the query adds after them.
+func scanAccount(row interface{ Scan(...any) error }, extra ...any) (*Account, error) {
 	var a Account
 	var ext sql.NullString
 	var tnb, created, updated int64
-	err := row.Scan(&a.ID, &ext, &a.Name, &a.Status, &a.QuotaBytes, &a.UsedBytes, &a.UsedFiles,
-		&a.ReservedBytes, &tnb, &created, &updated, &a.UserQuotaBytes)
+	err := row.Scan(append([]any{&a.ID, &ext, &a.Name, &a.Status, &a.QuotaBytes, &a.UsedBytes, &a.UsedFiles,
+		&a.ReservedBytes, &tnb, &created, &updated, &a.UserQuotaBytes}, extra...)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -157,14 +176,14 @@ func (s *Store) AccountsSorted(ctx context.Context, f AccountFilter, order Accou
 		}
 	}
 	args = append(args, limit+1)
-	rows, err := s.r.QueryContext(ctx, "SELECT "+accountCols+" FROM accounts WHERE "+where+
+	rows, err := s.r.QueryContext(ctx, "SELECT "+accountListCols+" FROM accounts WHERE "+where+
 		" ORDER BY "+key+" "+dir+", id "+dir+" LIMIT ?", args...)
 	if err != nil {
 		return nil, false, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		a, err := scanAccount(rows)
+		a, err := scanListedAccount(rows)
 		if err != nil {
 			return nil, false, err
 		}
@@ -195,7 +214,7 @@ func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) (
 		args = append(args, ms, parts[1])
 	}
 	args = append(args, p.Limit+1)
-	rows, err := s.r.QueryContext(ctx, "SELECT "+accountCols+" FROM accounts WHERE "+
+	rows, err := s.r.QueryContext(ctx, "SELECT "+accountListCols+" FROM accounts WHERE "+
 		where+" ORDER BY created_at, id LIMIT ?", args...)
 	if err != nil {
 		return nil, "", err
@@ -203,7 +222,7 @@ func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) (
 	defer rows.Close()
 	var out []*Account
 	for rows.Next() {
-		a, err := scanAccount(rows)
+		a, err := scanListedAccount(rows)
 		if err != nil {
 			return nil, "", err
 		}
