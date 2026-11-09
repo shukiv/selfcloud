@@ -43,12 +43,18 @@ export default function PickDestination({
   startAt,
   onPick,
   onClose,
+  heading,
+  action,
 }: {
   mode: "move" | "copy" | "shortcut" | "save";
   spaces: FolderAccess[];
   startAt?: string;
   onPick: (dest: Destination) => void;
   onClose: () => void;
+  // heading and action (nt2) replace the mode's title and submit words, for a choice the modes do not name (the account's
+  // templates folder). The mode still sets what may be chosen.
+  heading?: string;
+  action?: string;
 }) {
   const { t } = useT();
   const lang = useLang();
@@ -69,9 +75,9 @@ export default function PickDestination({
   // A shortcut goes in a directory, so a space's root cannot be chosen for it.
   const canPick = place !== undefined && atLeast(place.role, "contributor") && (mode !== "shortcut" || place.dir !== null);
   const title =
-    mode === "move" ? t("files.pick.move") : mode === "shortcut" ? t("files.pick.shortcut") : mode === "save" ? t("files.pick.save") : t("files.pick.copy");
+    heading ?? (mode === "move" ? t("files.pick.move") : mode === "shortcut" ? t("files.pick.shortcut") : mode === "save" ? t("files.pick.save") : t("files.pick.copy"));
   const submit =
-    mode === "move" ? t("files.pick.submitMove") : mode === "shortcut" ? t("files.pick.submitShortcut") : mode === "save" ? t("files.pick.submitSave") : t("files.pick.submitCopy");
+    action ?? (mode === "move" ? t("files.pick.submitMove") : mode === "shortcut" ? t("files.pick.submitShortcut") : mode === "save" ? t("files.pick.submitSave") : t("files.pick.submitCopy"));
 
   // loadChildren reads one page of a place's directories. A reset replaces the children, a later page adds to them.
   async function loadChildren(key: string, reset: boolean) {

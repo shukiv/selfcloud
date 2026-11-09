@@ -34,6 +34,7 @@ import ShareHold from "./components/share/ShareHold";
 // Pages beyond the shell and the auth pages load on first use, so the first load of sign-in stays small.
 const FilesPage = lazy(() => import("./pages/FilesPage"));
 const NodeLinkPage = lazy(() => import("./pages/NodeLinkPage"));
+const NewGalleryPage = lazy(() => import("./pages/NewGallery"));
 const OfficeEditPage = lazy(() => import("./pages/OfficeEditPage"));
 const NewDocumentWaitPage = lazy(() => import("./pages/NewDocumentWaitPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
@@ -66,18 +67,19 @@ const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 type View =
   | "login" | "verify" | "reset" | "confirm-device" | "forgot" | "sign-in" | "share-link" | "email-change"
   | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
-  | "edit" | "manage" | "admin" | "change-password" | "share" | "notfound";
+  | "edit" | "new" | "manage" | "admin" | "change-password" | "share" | "notfound";
 
 const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link", "email-change"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
-const DRIVE_VIEWS: View[] = ["files", "node", "edit", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share"];
+const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new","starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share"];
 
 export function viewFor(path: string): View {
   // The root is My files: the gate sends a person there (or to the admin's home) with a replace, so it is never drawn.
   if (path === "/" || path === "/files" || path.startsWith("/files/")) return "files";
   if (path.startsWith("/n/")) return "node";
   if (path.startsWith("/edit/")) return "edit";
+  if (path.startsWith("/new/")) return "new";
   const target = targetOf(path);
   if (target !== null) return target.area;
   switch (path) {
@@ -329,6 +331,7 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "files": return <FilesPage />;
     case "node": return <NodeLinkPage />;
     case "edit": return <OfficeEditPage />;
+    case "new": return <NewGalleryPage />;
     case "trash": return <TrashPage />;
     case "shared": return <SharedPage />;
     case "requests": return <RequestsPage />;

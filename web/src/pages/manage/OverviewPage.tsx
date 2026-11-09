@@ -15,6 +15,7 @@ import type { Usage } from "../../lib/manage/types";
 import UsageMeter from "../../components/UsageMeter";
 import AuditItem from "../../components/manage/AuditItem";
 import PublicLinksSwitch from "../../components/share/PublicLinksSwitch";
+import TemplatesFolderSetting from "../../components/manage/TemplatesFolderSetting";
 // The comments and who-viewed switches (decisions 39 and 51) are a chunk of their own, with the comments catalogue.
 const SharingSwitches = lazy(() => import("../../components/comments/SharingSwitches"));
 import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage/OwnerPage";
@@ -71,6 +72,8 @@ function OverviewView() {
       )}
 
       {q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
+
+      {account !== "" && <TemplatesFolderSetting account={account} />}
 
       {data && (
         <>
