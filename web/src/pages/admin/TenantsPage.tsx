@@ -280,9 +280,11 @@ function TenantsView() {
           sort={listSort}
           // A row opens its tenant: a click on it, or Enter (design-tl 2.3).
           onOpen={open}
+          // The titles have no full stop, as the mockup's; a search or filter that matches nothing says what to change in its
+          // description.
           empty={{
             title: filtered ? t("tenants.noMatch") : t("tenants.empty"),
-            description: !filtered && adminText ? t("admin.empty.tenants") : undefined,
+            description: !adminText ? undefined : filtered ? t("admin.empty.noMatch") : t("admin.empty.tenants"),
             action: filtered ? undefined : { label: t("tenant.new.open"), onClick: () => setCreating(true) },
           }}
         />
