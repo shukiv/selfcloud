@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "../../lib/i18n";
-import { myFilesPlace, placeOfHere, type DocKind, type NewPlace } from "../../lib/files/newPlace";
+import { myFilesPlace, placeOfHere, type BlankKind, type NewPlace } from "../../lib/files/newPlace";
 import { PALETTE, SIDEBAR } from "../../theme/tokens";
 import { ThemeProvider, antdTokens } from "../../theme/theme";
 import { contrast } from "../../lib/brand";
@@ -18,7 +18,7 @@ function Probe() {
   return <output data-testid="at">{loc.pathname + loc.search}</output>;
 }
 
-function renderNew(place: NewPlace | null, collapsed = false, coarse = false, documents: DocKind[] = [], failure: string | null = null) {
+function renderNew(place: NewPlace | null, collapsed = false, coarse = false, documents: BlankKind[] = [], failure: string | null = null) {
   const onPick = vi.fn();
   const onFolder = vi.fn();
   const onDocument = vi.fn();
