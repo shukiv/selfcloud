@@ -26,6 +26,8 @@ async function pickBlank(page, kind) {
   const title = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === ${q(kind)})`;
   await page.waitFor(`!!${title}`, 10000);
   // The keyboard opens it, as ArrowRight does in a menu (antd): the title is focused, then the key is sent to it.
+  // The menu animates in: its first frame is not ready for the keyboard, so the key is sent after the animation ends.
+  await page.waitFor(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)[class*="ant-slide-up-appear"]')`, 5000);
   await page.evaluate(`${title}.focus()`);
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
