@@ -170,12 +170,20 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     check(await page.evaluate(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')`), 'the chord opened no menu');
     // A keyboard user's Escape closes the dialog the chord opened. The name field takes the focus at once (NewFolderDialog, a zero-delay
     // focus after mount, since antd moves the focus after its open animation), so the wait for focus is short.
-    const inDialog = await page.waitFor(`!!${OPEN_MODAL} && ${OPEN_MODAL}.contains(document.activeElement)`, 500);
-    check(inDialog === true, 'focus moves into the New folder dialog');
+    const inDialog = await page.waitFor(`document.activeElement?.id === 'newfolder-name'`, 500);
+    check(inDialog === true, 'focus moves to the name field of the New folder dialog');
     await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
     // A closed modal stays in the DOM with display none (antd's close animation ends with it), so wait for that, not for a class.
     await page.waitFor(`[...document.querySelectorAll('.ant-modal-wrap')].every((w) => getComputedStyle(w).display === 'none')`, 10000);
     check(true, 'Escape closes the New folder dialog with focus in it');
+    // The menu's own row opens the same dialog, and the focus goes to the name field there too.
+    await page.evaluate(`document.querySelector('.shell-sider [data-testid="new-button"]').click()`);
+    await page.waitFor(`${OPEN_ITEMS}.length >= 6`, 10000);
+    await clickItem(page, 'New folder');
+    const fromMenu = await page.waitFor(`document.activeElement?.id === 'newfolder-name'`, 500);
+    check(fromMenu === true, 'New folder from the menu puts the focus in the name field');
+    await key(page, { code: 'Escape', key: 'Escape', vk: 27 });
+    await page.waitFor(`[...document.querySelectorAll('.ant-modal-wrap')].every((w) => getComputedStyle(w).display === 'none')`, 10000);
   } finally {
     page.close();
     launch.proc.kill();
