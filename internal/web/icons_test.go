@@ -4,7 +4,9 @@ package web
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/xml"
 	"image"
 	"image/color"
@@ -14,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -231,6 +234,8 @@ func pickCases(t *testing.T) []pickCase {
 		{label: "logo SVG", logo: svgLogo, favicon: "svg", art: "mark"},
 		{label: "icon SVG and logo PNG", icon: svgIcon, logo: pngLogo, favicon: "svg", art: "logo"},
 		{label: "icon PNG and logo SVG", icon: pngIcon, logo: svgLogo, favicon: "png", art: "quadrants"},
+		{label: "icon PNG and logo PNG", icon: pngIcon, logo: pngLogo, favicon: "png", art: "quadrants"},
+		{label: "icon SVG and logo SVG", icon: svgIcon, logo: svgLogo, favicon: "svg", art: "mark"},
 	}
 }
 
@@ -296,7 +301,7 @@ func TestLogoIsFittedWithItsMargin(t *testing.T) {
 // TestMaskableLogoStaysInTheSafeSquare: a logo on the maskable icon is inside the square inscribed in the 0.40 circle, so its
 // farthest non-white pixel is at most 0.40 of the width from the centre, plus one pixel. A square logo fills that square.
 func TestMaskableLogoStaysInTheSafeSquare(t *testing.T) {
-	for _, logo := range []*Logo{pngFile(solidPNG(t, 300, 300, color.NRGBA{R: 200, A: 255})), pngFile(logoPNG(t))} {
+	for i, logo := range []*Logo{pngFile(solidPNG(t, 300, 300, color.NRGBA{R: 200, A: 255})), pngFile(logoPNG(t))} {
 		h := brandHandler(t, "Acme Drive", nil, logo)
 		img := iconImage(t, h, "/brand/icon-512-maskable.png")
 		far := 0.0
@@ -310,6 +315,11 @@ func TestMaskableLogoStaysInTheSafeSquare(t *testing.T) {
 		}
 		if far > 0.40*512+1 {
 			t.Errorf("the farthest logo pixel is %.1f from the centre, want at most %.1f", far, 0.40*512+1)
+		}
+		// The square logo fills its box, so its corners reach the box's corner: 0.40 times the width, from below as well. A box of
+		// 0.40 times the width instead of 0.40 times root two would stop well short of it.
+		if i == 0 && far < 0.40*512-3 {
+			t.Errorf("the square logo's farthest pixel is %.1f from the centre, want at least %.1f: the box is too small", far, 0.40*512-3)
 		}
 	}
 }
@@ -424,6 +434,17 @@ func TestFaviconPolicyForSVGIsUnchanged(t *testing.T) {
 	}
 }
 
+// TestIconETagCarriesTheRenderer: the icons' validator is the hash of the accent, the picture's label and digest, the path, the
+// size and the renderer's version, so a change to how the pixels are drawn refreshes the icons a client has cached.
+func TestIconETagCarriesTheRenderer(t *testing.T) {
+	h := brandHandler(t, "Acme Drive", pngFile(quadrantPNG(t, 512)), nil)
+	want := sha256.Sum256([]byte(strings.ToUpper(testAccent) + "\n" + "icon" + "\n" + digest(quadrantPNG(t, 512)) + "\n" +
+		"/brand/icon-512.png" + "\n512\n" + "render=" + strconv.Itoa(iconRenderer)))
+	if got := get(t, h, http.MethodGet, "/brand/icon-512.png").Header().Get("ETag"); got != `"`+hex.EncodeToString(want[:16])+`"` {
+		t.Errorf("the icon's ETag %s is not the hash of the renderer %d", got, iconRenderer)
+	}
+}
+
 // TestIconETagFollowsTheSource: the icons' validator changes when the source's bytes change, and when the source changes from
 // the icon file to the logo, and stays the same for the same source.
 func TestIconETagFollowsTheSource(t *testing.T) {
@@ -516,6 +537,16 @@ func TestLogoPNGIsCheckedBeforeItIsUsed(t *testing.T) {
 	}
 }
 
+// TestLogoRefusedBeforeItsPixelsAreRead: a logo PNG of 3000 pixels that is cut short is refused for its size, not for a decode
+// error. The header is all that is read: the size check comes before the pixels, so a bomb is never decoded.
+func TestLogoRefusedBeforeItsPixelsAreRead(t *testing.T) {
+	full := encodePNG(t, image.NewNRGBA(image.Rect(0, 0, 3000, 3000)))
+	_, note := decodeLogo(pngFile(full[:200]))
+	if !strings.Contains(note, "more than 2048") {
+		t.Errorf("note %q: the pixels were read before the size", note)
+	}
+}
+
 // TestIconNotes: the start lines. An SVG with no PNG for the icons gets one line that names ui.brand.icon_file; no file and a
 // PNG icon get none; a logo PNG smaller than the 512 icon gets one that suggests an icon file of 512 pixels or more.
 func TestIconNotes(t *testing.T) {
@@ -531,6 +562,8 @@ func TestIconNotes(t *testing.T) {
 		{"icon PNG", pngFile(quadrantPNG(t, 512)), nil, 0, ""},
 		{"icon SVG", svgIcon, nil, 1, "ui.brand.icon_file"},
 		{"logo SVG", nil, svgFile(logoSVG), 1, "ui.brand.icon_file"},
+		// A refused logo PNG gives its own line, and the SVG-only line is not added to it.
+		{"icon SVG and a refused logo PNG", svgIcon, pngFile(encodePNG(t, image.NewNRGBA(image.Rect(0, 0, 3000, 3000)))), 1, "ui.brand.logo_file"},
 		{"logo PNG of 800 pixels", nil, pngFile(logoPNG(t)), 0, ""},
 		{"logo PNG of 200 pixels", nil, pngFile(solidPNG(t, 200, 50, color.NRGBA{A: 255})), 1, "512"},
 	}

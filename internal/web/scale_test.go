@@ -48,6 +48,18 @@ func TestScaleTransparentBlackDoesNotBleed(t *testing.T) {
 	}
 }
 
+// TestScaleOpaqueBlackBesideTransparentWhiteStaysBlack: a transparent white pixel beside an opaque black one must not put a white
+// halo on the edge. Averaging straight colours would give grey here, where the premultiplied average gives black.
+func TestScaleOpaqueBlackBesideTransparentWhiteStaysBlack(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 2, 1))
+	src.SetNRGBA(0, 0, color.NRGBA{A: 255})
+	src.SetNRGBA(1, 0, color.NRGBA{R: 255, G: 255, B: 255, A: 0})
+	got := scaleRGBA(scaleTo(src, 1, 1), 0, 0)
+	if got.R > 2 || got.G > 2 || got.B > 2 {
+		t.Errorf("the colour is %v: the transparent white bled into the black", got)
+	}
+}
+
 // TestScaleEnlargeKeepsColours: a solid colour enlarged by two is the same colour everywhere.
 func TestScaleEnlargeKeepsColours(t *testing.T) {
 	src := image.NewNRGBA(image.Rect(0, 0, 2, 2))
