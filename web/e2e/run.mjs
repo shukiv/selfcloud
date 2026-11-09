@@ -54,6 +54,8 @@ import { ksChecks } from './ks.mjs';
 import { fu3aChecks } from './fu3a.mjs';
 import { fu3bChecks } from './fu3b.mjs';
 import { oe1Checks } from './oe1.mjs';
+import { nt2MenuChecks } from './nt2menu.mjs';
+import { nt2GalleryChecks } from './nt2gallery.mjs';
 import { fu5Checks } from './fu5.mjs';
 import { sec2Checks } from './sec2.mjs';
 import { stChecks } from './st.mjs';
@@ -969,6 +971,10 @@ async function main() {
     if (!only || onlySet.has('fu3b')) await fu3bChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER });
     // Slice oe1 (decision 102, round 2 R3): a finger opens an office file in the same tab, full page, and Close goes back.
     if (!only || onlySet.has('oe1')) await oe1Checks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
+    // Slice nt2 (decision 108): the template gallery at a phone's width, a reload, a tap on a built-in and the file it makes.
+    // Slice nt2 (decision 108): the New menu at a desktop width, Blank opens its file, and the chord Alt+C then F makes a folder.
+    if (!only || onlySet.has('nt2menu')) await nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo, fake });
+    if (!only || onlySet.has('nt2gallery')) await nt2GalleryChecks(h, { base, accountKey, teamA, dir, browserBinary: await findBrowser(), MEMBER, EXPECTED, signIn, navigateTo });
     // The Storage page (slice st, decision 79): the member's My files, read in light, dark, Hebrew and at phone width.
     // The page is signed in as the member here (the sections above sign the member in last).
     if (!only || onlySet.has('st')) await stChecks(h, { page, base, accountKey, accountID, memberID, MEMBER, dir });

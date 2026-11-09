@@ -12,10 +12,22 @@ const q = (v) => JSON.stringify(v);
 
 // pickMenuItem clicks the entry with this text in a dropdown that is open now (antd marks a closed one ant-dropdown-hidden).
 async function pickMenuItem(page, text) {
-  const visible = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]')].filter((x) => x.textContent.trim() === ${q(text)})`;
+  const visible = `[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]')).filter((x) => x.textContent.trim() === ${q(text)})`;
   await page.waitFor(`${visible}.length > 0`, 10000);
   // With a user gesture, as a person's click is: the new document's tab is a pop-up, which the browser blocks without one.
   await page.send('Runtime.evaluate', { expression: `${visible}[0].click()`, userGesture: true, returnByValue: true, awaitPromise: true });
+}
+
+// pickBlank opens a kind's submenu (its title takes the keyboard's ArrowRight) and clicks its Blank entry (the New menu's submenus, nt2).
+async function pickBlank(page, kind) {
+  const title = `[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-submenu-title')].find((x) => x.textContent.trim() === ${q(kind)})`;
+  await page.waitFor(`!!${title}`, 10000);
+  // The keyboard opens it, as ArrowRight does in a menu (antd): the title is focused, then the key is sent to it.
+  await page.evaluate(`${title}.focus()`);
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+  await page.waitFor(`[...document.querySelectorAll('[role="menuitem"]')].filter((x) => !x.closest('.ant-dropdown-hidden, .ant-menu-hidden, [hidden]')).some((x) => x.textContent.trim() === 'Blank')`, 10000);
+  await pickMenuItem(page, 'Blank');
 }
 
 // l6Checks runs the section. opts: the member's page (an editor on Team A), the base address, the account key, the team folder
@@ -51,7 +63,7 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     // The new document opens in its own tab (decision 102, round 2 R5): the listing stays here; the file's editor is there.
     const listingPage = page;
     const before1 = await tabIds(listingPage);
-    await pickMenuItem(page, 'Document');
+    await pickBlank(page, 'Document');
     // The wait page may already have become the editor's address, so any new /edit/ tab is the one.
     page = await openedTab(listingPage, '/edit/', before1);
     await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/wait'`, 15000);
@@ -93,7 +105,7 @@ export async function l6Checks(h, { page, base, accountKey, teamA, fake }) {
     await page.evaluate(`${pageNew}.click()`);
     const listingPage2 = page;
     const before2 = await tabIds(listingPage2);
-    await pickMenuItem(page, 'Document');
+    await pickBlank(page, 'Document');
     page = await openedTab(listingPage2, '/edit/', before2);
     await page.waitFor(`location.pathname.startsWith('/edit/') && location.pathname !== '/edit/wait'`, 15000);
     const second = (await page.evaluate(`location.pathname`)).replace('/edit/', '');
