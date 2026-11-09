@@ -182,3 +182,46 @@ describe("chordBlocked: where the chord is ignored", () => {
     document.body.replaceChildren();
   });
 });
+
+// The closed drawer and the closed submenu are hidden by the stylesheet, not by an inline style or an antd class on the
+// element itself: the test puts the rule in a <style> element, so the computed display (not the attribute) is what says hidden.
+describe("overlayOpen: a stylesheet hides the overlay", () => {
+  function withStyle(css: string, build: (root: HTMLElement) => void): () => void {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+    const root = document.createElement("div");
+    build(root);
+    document.body.appendChild(root);
+    return () => {
+      style.remove();
+      document.body.replaceChildren();
+    };
+  }
+
+  it("a dialog inside a drawer wrapper that only the stylesheet hides (display none) is not open", () => {
+    const done = withStyle(".ant-drawer-content-wrapper-hidden { display: none; }", (root) => {
+      const wrap = document.createElement("div");
+      wrap.className = "ant-drawer-content-wrapper-hidden";
+      const dialog = document.createElement("div");
+      dialog.setAttribute("role", "dialog");
+      wrap.appendChild(dialog);
+      root.appendChild(wrap);
+    });
+    expect(overlayOpen(document)).toBe(false);
+    done();
+  });
+
+  it("a popup menu inside a submenu that only the stylesheet hides is not open", () => {
+    const done = withStyle(".ant-dropdown-menu-submenu-hidden { display: none; }", (root) => {
+      const hidden = document.createElement("div");
+      hidden.className = "ant-dropdown-menu-submenu-hidden";
+      const menu = document.createElement("ul");
+      menu.setAttribute("role", "menu");
+      hidden.appendChild(menu);
+      root.appendChild(hidden);
+    });
+    expect(overlayOpen(document)).toBe(false);
+    done();
+  });
+});
