@@ -265,6 +265,30 @@ again. Collabora converts unknown content as text rather than refusing it, so a 
 
 **Templates.** The New menu makes blank Word, Excel and PowerPoint files (and the OpenDocument kinds), and From a template makes a file from a built-in starter or from the account's templates folder (decision 108). Some built-in templates come from LibreOffice: 16 presentations under Creative Commons CC0, and two letters under MPL-2.0 (converted to .docx). Each file's source path, licence and origin are listed in [CREDITS.md](CREDITS.md). The MPL-2.0 text is in `internal/templates/licenses/MPL-2.0.txt`.
 
+## Text and code files
+
+The web interface shows text and code files read-only in its viewer, with colours, line numbers and Find (CodeMirror,
+loaded the first time a text file is shown). A double click, Enter or Preview opens it. Which files open there, in this
+order (decision 115):
+
+1. An office document (a Word, Excel, PowerPoint or OpenDocument type) goes to the office viewer and editor, as before.
+2. A picture, SVG included, opens in the picture viewer.
+3. A file whose name is in the code list opens as code, whatever type it is stored with, once the check below finds text:
+   `js` `mjs` `cjs` `jsx` `ts` `tsx` `json` `jsonc` `md` `markdown` `html` `htm` `xml` `svg` `css` `py` `go` `rb` `php`
+   `java` `c` `h` `cc` `cpp` `cxx` `hpp` `rs` `sh` `bash` `sql` `yml` `yaml` `toml` `ini` `conf` `cfg` `env` `properties`
+   `txt` `csv` `tsv` `log`, and the names `Dockerfile` and `Makefile`.
+4. Any other file stored as text (`text/*`, or JSON, XML, JavaScript, YAML, TOML, shell, SQL or PHP) opens as code, after
+   the same check.
+5. Any other file stored as `application/octet-stream` opens as plain text when the check finds text.
+6. Anything else keeps its viewer (PDF, video, audio), or shows its card with Download.
+
+The check reads the first 8 KiB: a NUL byte means binary, and a UTF-16 byte order mark means the file is not UTF-8 text.
+The viewer reads the first 1 MiB and says so when the file is larger. A line longer than 2,000 characters turns line
+wrapping off, and the code area scrolls sideways. Markdown, CSV and logs show as text, without colours. A browser that sends
+a CSV file as `application/vnd.ms-excel` stores it with that office type, so it opens in the office editor (rule 1).
+Editing in the browser is not built yet. The server keeps its own copy of the code list (`internal/api/textnames.go`): a
+`PUT` of content to a file it names must be UTF-8 text (decision 113).
+
 ## Off by default
 
 - **Links that anyone can open, and drop folders.** An account turns them on with its own public-link setting; it starts off.
