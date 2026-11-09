@@ -391,9 +391,8 @@ type SearchConfig struct {
 	MaxTextTotal      ByteSize `yaml:"max_text_total"`
 }
 
-// BundleConfig is the disk for bundles (the compress feature, design section 2.6). A bundle's zip is kept until its owner
-// deletes it, so its disk is a budget of its own: one budget shared with the stored zips, which expire, would let the
-// two crowd each other (design D3). The caps on a bundle's entries and bytes are the import's (imports.archive).
+// BundleConfig is the disk for bundles (decision 120). A bundle's zip is kept until its owner deletes it, so its disk is
+// a budget of its own: one budget shared with the stored zips, which expire, would let the two crowd each other. The caps on a bundle's entries and bytes are the import's (imports.archive).
 type BundleConfig struct {
 	// MaxDisk is the disk for all bundles together: the ready ones and the bytes the unfinished ones reserve. A bundle that
 	// would pass it is refused before it writes anything. The default, 30 GiB, is a placeholder.

@@ -14,7 +14,7 @@ import (
 )
 
 // TestUploadRefusedWhileZipReservesDisk: a stored zip that reserved 4 GiB while it is pending holds that disk. An upload
-// of 4 GiB on a disk with 5 GiB usable is refused as the disk rule refuses: storage_full, scope server (design 2.6b).
+// of 4 GiB on a disk with 5 GiB usable is refused as the disk rule refuses: storage_full, scope server (decision 120).
 func TestUploadRefusedWhileZipReservesDisk(t *testing.T) {
 	fx := zipFixture(t, func(c *config.Config) {
 		c.Storage.MinFree = 50
@@ -36,7 +36,7 @@ func TestUploadRefusedWhileZipReservesDisk(t *testing.T) {
 }
 
 // TestZipRefusedWhileUploadReservesDisk: an upload holds 900 KiB of a 1 MiB disk. A stored zip of 600 KiB needs the
-// same disk, so its start is refused: the job fails storage_full with reason disk (design 2.6b).
+// same disk, so its start is refused: the job fails storage_full with reason disk (decision 120).
 func TestZipRefusedWhileUploadReservesDisk(t *testing.T) {
 	fx := zipFixture(t, func(c *config.Config) {
 		c.Storage.MinFree = 50

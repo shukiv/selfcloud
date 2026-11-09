@@ -1,4 +1,4 @@
--- The archive source can now be a file already in the drive, not only an upload (design section 3.2).
+-- The archive source can now be a file already in the drive, not only an upload (decision 120).
 --
 -- source_kind says where the archive came from: 'upload' for an upload made for the import, as every existing row is,
 -- or 'node' for a drive file, named by source_node_id. For a node source the drive file's blob is held in

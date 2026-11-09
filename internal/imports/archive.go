@@ -430,7 +430,7 @@ func tarLimit(size int64, caps Caps, f Format) int64 {
 
 // OverRatio reports whether size is more than ratio times the larger of packed and ratioFloor. It divides rather than
 // multiplies, so a large packed size cannot overflow the product into a small one. A bundle and an import both use this
-// one definition (design 2.3), so they refuse the same entries.
+// one definition (decision 120), so they refuse the same entries.
 func OverRatio(size, packed, ratio int64) bool {
 	if ratio <= 0 {
 		return size > 0

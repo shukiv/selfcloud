@@ -643,7 +643,7 @@ func (s *Server) checkDiskNow(ctx context.Context, accountID string, size int64)
 }
 
 // checkDiskTx is checkDiskNow inside a write: the unwritten bytes are read through tx, so the check and the reservation
-// it allows see the same totals (design 2.6a, N1). size is the full reservation the write is about to take.
+// it allows see the same totals (decision 120). size is the full reservation the write is about to take.
 func (s *Server) checkDiskTx(ctx context.Context, tx *store.Tx, accountID string, size int64) error {
 	usable, ok, err := s.diskUsable()
 	if err != nil || !ok {

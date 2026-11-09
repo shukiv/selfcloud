@@ -114,7 +114,7 @@ func TestArchiveMigrationsApplyOnAFreshStore(t *testing.T) {
 }
 
 // TestNodeSourceBlobIsPinned: a drive file an import reads is held by the import's source_blob_id, so the blob collector
-// does not orphan it while the import can still read it (design 3.2). The blob is live, with no node naming it.
+// does not orphan it while the import can still read it (decision 120). The blob is live, with no node naming it.
 func TestNodeSourceBlobIsPinned(t *testing.T) {
 	s, ctx := archiveSetup(t)
 	rows := []string{
@@ -146,7 +146,7 @@ func TestNodeSourceBlobIsPinned(t *testing.T) {
 var migrationNumber = regexp.MustCompile(`^(\d{4})_`)
 
 // TestMigrationsForwardOnlyAdditive: the archive migrations (0050 on) only create tables and add columns. Nothing is
-// dropped or renamed, so a binary that predates them still reads the rows it knows (design 9.10).
+// dropped or renamed, so a binary that predates them still reads the rows it knows (decision 120).
 func TestMigrationsForwardOnlyAdditive(t *testing.T) {
 	entries, err := fs.ReadDir(migrationFS, "migrations")
 	if err != nil {

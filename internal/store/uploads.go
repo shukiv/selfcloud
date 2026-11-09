@@ -247,7 +247,7 @@ func (tx *Tx) UnwrittenBytes(ctx context.Context, accountID string) (mine, total
 	return unwrittenBytes(ctx, tx.q, accountID)
 }
 
-// unwrittenBytes counts what every unfinished writer still has to put on disk (design 2.6a). Uploads hold length less
+// unwrittenBytes counts what every unfinished writer still has to put on disk (decision 120). Uploads hold length less
 // what they wrote. A drop upload is left out: it reserves only the bytes it has received, and its disk is charged as they
 // arrive (slice o3, reserve as received). A bundle holds its reservation less what it wrote, while pending or cancelling,
 // since a cancelling bundle keeps the reservation until its cancel write runs. An unfinished import holds its current

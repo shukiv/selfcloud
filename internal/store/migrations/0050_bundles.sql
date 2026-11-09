@@ -1,4 +1,4 @@
--- Compress to a zip in the drive (design section 2, the archives feature). This file adds the bundle tables only.
+-- Compress to a zip in the drive (decision 120). This file adds the bundle tables only.
 --
 -- A bundle is made by a job of kind node.bundle whose target is the bundle's ID. The job reads the selected items as a
 -- snapshot first (bundle_items), then writes the zip through the blob writer, and publishes it in one write.
