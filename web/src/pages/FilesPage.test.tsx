@@ -2995,6 +2995,8 @@ describe("an empty folder says how to add files (decision 85)", () => {
     expect(box.querySelector(".ant-empty .ant-empty-description")?.textContent).toBe(
       translate("en", "files.empty") + translate("en", "files.emptyMouse"),
     );
+    // The drop target keeps its visible affordance: a dashed box, styled by its class (decision 111, review 1).
+    expect(box.classList.contains("empty-folder-drop")).toBe(true);
   });
 
   it("on a finger the instruction says to tap Upload, and the mouse instruction is not shown", async () => {
