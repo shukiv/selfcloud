@@ -338,6 +338,9 @@ func resetWithLink(ctx context.Context, st *store.Store, cfg *config.Config, u *
 		tok     *recovery.Token
 		enabled bool
 	)
+	if testHookBeforeWrite != nil {
+		testHookBeforeWrite(st, u.ID)
+	}
 	if linkFile != "" {
 		var err error
 		if f, err = openLinkFile(linkFile); err != nil {
@@ -441,6 +444,9 @@ func resetWithTemporary(ctx context.Context, st *store.Store, u *store.User, ena
 	if err != nil {
 		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
 		return 1
+	}
+	if testHookBeforeWrite != nil {
+		testHookBeforeWrite(st, u.ID)
 	}
 	enabled := false
 	err = st.Write(ctx, func(tx *store.Tx) error {
@@ -629,6 +635,9 @@ func adminEnable(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "selfcloud admin %s: %s is %s; only a disabled user is enabled\n", name, u.ID, u.Status)
 		return 1
 	}
+	if testHookBeforeWrite != nil {
+		testHookBeforeWrite(st, u.ID)
+	}
 	err := st.Write(ctx, func(tx *store.Tx) error {
 		cur, err := tx.UserByID(ctx, u.ID)
 		if err != nil {
@@ -686,6 +695,9 @@ func adminDisable(args []string, stdout, stderr io.Writer) int {
 	if err := st.Write(ctx, func(tx *store.Tx) error { return disableGuards(ctx, tx, u) }); err != nil {
 		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
 		return 1
+	}
+	if testHookBeforeWrite != nil {
+		testHookBeforeWrite(st, u.ID)
 	}
 	if !confirmed(*yes, u.Email, stderr) {
 		fmt.Fprintf(stderr, "selfcloud admin %s: refused: the disable ends the user's sessions; pass -yes to confirm "+
@@ -849,6 +861,9 @@ func adminVerify(args []string, stdout, stderr io.Writer) int {
 		ttl = defTTL
 	}
 
+	if testHookBeforeWrite != nil {
+		testHookBeforeWrite(st, u.ID)
+	}
 	var f *os.File
 	if *linkFile != "" {
 		if f, err = openLinkFile(*linkFile); err != nil {
