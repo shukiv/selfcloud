@@ -53,10 +53,11 @@ describe("useListSelection", () => {
   });
 });
 
-// key builds a key event as React gives it to a row's handler. on says whether the key came to the row itself.
-function key(k: string, mods: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {}, on: "row" | "button" = "row") {
+// key builds a key event as React gives it to a row's handler. on says where the key came from: the row itself, a button
+// in the row, or a menu the row opened, which React passes up to the row although it is not in the row's DOM.
+function key(k: string, mods: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {}, on: "row" | "button" | "menu" = "row") {
   const row = document.createElement("tr");
-  const target = on === "row" ? row : document.createElement("button");
+  const target = on === "row" ? row : on === "button" ? row.appendChild(document.createElement("button")) : document.createElement("li");
   const preventDefault = vi.fn();
   const e = { key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...mods, target, currentTarget: row, preventDefault };
   return e as unknown as KeyboardEvent<HTMLElement> & { preventDefault: typeof preventDefault };
@@ -93,6 +94,15 @@ describe("useListKeys", () => {
     expect(focusRow).toHaveBeenCalledTimes(1);
     expect(onOpen).not.toHaveBeenCalled();
     expect(selection.pick).not.toHaveBeenCalled();
+  });
+
+  it("a key from a menu the row opened (a portal outside the row) is the menu's: no key moves the rows from there", () => {
+    const { press, focusRow, onOpen, selection } = setup();
+    for (const k of ["ArrowDown", "ArrowUp", "Enter", " ", "Escape", "Home"]) press(key(k, {}, "menu"));
+    expect(focusRow).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(selection.pick).not.toHaveBeenCalled();
+    expect(selection.clear).not.toHaveBeenCalled();
   });
 
   it("Enter opens the focused row", () => {

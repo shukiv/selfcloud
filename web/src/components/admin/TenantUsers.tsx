@@ -2,10 +2,10 @@
 import { KeyRound, Link, LogIn, Send } from "lucide-react";
 
 import { Alert, Button } from "antd";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useRef, useState } from "react";
 import { useLang, useT } from "../../lib/i18n";
-import { listPeople, resendVerification } from "../../lib/manage/api";
+import { listPeople, resendVerification, updatePerson } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
 import { personLabel, statusTone } from "../../lib/manage/people";
 import { queryKey } from "../../lib/query";
@@ -17,8 +17,9 @@ import ShowOnce from "./ShowOnce";
 import { useOnSessionChange } from "./hooks";
 import StatusTag from "./StatusTag";
 import { more } from "./adminStyles";
-import { ItemList } from "../files/Listing";
+import Listing, { type ListAction, type ListMenuEntry } from "../files/Listing";
 import EmptyState from "../EmptyState";
+import LastSignIn from "./LastSignIn";
 
 // The two dialogs load on first use: a first load of the tenant's people does not need them.
 const ResetPassword = lazy(() => import("./ResetPassword"));
@@ -32,11 +33,13 @@ interface OnceLink {
 }
 
 // TenantUsers: the tenant's people. An admin does not manage a tenant's members day to day. It can resend the invitation of
-// an owner who has not verified yet, reset a person's password, and (when admin.tenant_access is on) sign in as the person.
-// The reset and sign-in actions are offered only as far as the installation allows; the server checks each one again.
+// a person who has not verified yet, reset a person's password, disable or enable a person, and (when admin.tenant_access
+// is on) sign in as the person. The actions are offered only as far as the installation allows; the server checks each one
+// again. One action runs at a time; while it runs, the row's actions stay where they are, disabled (review M1).
 export default function TenantUsers({ account }: { account: string }) {
   const { t } = useT();
   const lang = useLang();
+  const qc = useQueryClient();
   const inFlight = useRef(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -65,7 +68,8 @@ export default function TenantUsers({ account }: { account: string }) {
   const people: Person[] = q.data?.pages.flatMap((p) => p.items) ?? [];
   const firstFailed = q.isError && q.data === undefined;
 
-  const resend = async (p: Person) => {
+  // act runs one change on a row: one at a time, and an answer for a person who has gone is not shown.
+  const act = async (p: Person, fn: (changed: () => boolean) => Promise<void>) => {
     if (inFlight.current) return;
     inFlight.current = true;
     const changed = sessionChanged();
@@ -73,9 +77,7 @@ export default function TenantUsers({ account }: { account: string }) {
     setActionError(null);
     setNotice(null);
     try {
-      const reply = await resendVerification(account, p.id, "email");
-      if (changed()) return;
-      setNotice(reply.verification?.sent === false ? t("people.mailNotSent") : t("people.mailSent"));
+      await fn(changed);
     } catch (err) {
       if (changed()) return;
       setActionError(failureText(err, lang));
@@ -84,6 +86,21 @@ export default function TenantUsers({ account }: { account: string }) {
       setBusy(null);
     }
   };
+
+  const resend = (p: Person) =>
+    act(p, async (changed) => {
+      const reply = await resendVerification(account, p.id, "email");
+      if (changed()) return;
+      setNotice(reply.verification?.sent === false ? t("people.mailNotSent") : t("people.mailSent"));
+    });
+
+  // Disable and Enable go through the route the owner's People page uses (PATCH status); the list is read again after.
+  const changeStatus = (p: Person) =>
+    act(p, async (changed) => {
+      await updatePerson(account, p.id, { status: p.status === "disabled" ? "active" : "disabled" });
+      if (changed()) return;
+      await qc.invalidateQueries({ queryKey: queryKey("tenant-users", account) });
+    });
 
   // newLink asks the admin's password, then makes the link. The password goes with the request only; a refusal reaches the
   // prompt, which stays open (decision 84).
@@ -106,10 +123,11 @@ export default function TenantUsers({ account }: { account: string }) {
       {notice !== null && <Alert type="success" showIcon role="status" message={notice} style={{ marginBlockEnd: 12 }} />}
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {/* The people table (design-tl 3.1, A3): Name with the email, Role, Status and the row's actions. The first three actions
-          show inline on a desktop and the rest in the ⋮ menu; a phone has the ⋮ menu alone. Each action shows only where it applies. */}
+      {/* The people table (design-tl 3.1, A3, the approved mockup): Name with the email, Role, Status, Last sign-in and the row's
+          actions. The first three actions show inline on a desktop and the rest in the ⋮ menu; a phone has the ⋮ menu alone.
+          Each action shows only where it applies. */}
       {!firstFailed && q.data !== undefined && (
-        <ItemList
+        <Listing
           label={t("tenant.users.title")}
           items={people}
           rowLabel={personLabel}
@@ -136,22 +154,41 @@ export default function TenantUsers({ account }: { account: string }) {
               width: 120,
               render: (p) => <StatusTag tone={statusTone(p.status)}>{t(`people.status.${p.status}`)}</StatusTag>,
             },
+            { key: "last", title: t("people.lastSignIn"), secondary: true, width: 160, render: (p) => <LastSignIn at={p.last_sign_in_at} /> },
           ]}
           actions={(p) => {
-            const ownerPending = p.role === "owner" && p.status === "pending";
+            const pending = p.status === "pending";
+            const ownerPending = p.role === "owner" && pending;
             const canReset = mailConfigured || tenantAccess;
             const canSignIn = tenantAccess && p.status === "active";
-            // A pending owner's invitation: by email only with mail, and as a new link only with tenant access (decision 41).
-            const canResend = ownerPending && mailConfigured;
+            // A pending person's invitation goes again by email, with mail. A new link to an admin's session is only for a
+            // pending owner, and only with tenant access (decision 41): the server refuses the rest.
+            const canResend = pending && mailConfigured;
             const canNewLink = ownerPending && tenantAccess;
-            const acts = [
+            const busyRow = busy === p.id;
+            const acts: (ListAction | false)[] = [
               canResend && { key: "resend", label: `${t("tenant.users.resend")}: ${personLabel(p)}`, icon: <Send className="icon-dir" size={18} aria-hidden="true" focusable="false" />, run: () => void resend(p) },
               canNewLink && { key: "newlink", label: `${t("tenant.users.newLink")}: ${personLabel(p)}`, icon: <Link size={18} aria-hidden="true" focusable="false" />, run: () => setLinkFor(p) },
-              canReset && { key: "reset", label: `${t("tenant.users.reset")}: ${personLabel(p)}`, icon: <KeyRound size={18} aria-hidden="true" focusable="false" />, run: () => setResetFor(p) },
               canSignIn && { key: "signin", label: `${t("tenant.users.signInAs")}: ${personLabel(p)}`, icon: <LogIn className="icon-dir" size={18} aria-hidden="true" focusable="false" />, run: () => setSignInFor(p) },
+              canReset && { key: "reset", label: `${t("tenant.users.reset")}: ${personLabel(p)}`, icon: <KeyRound size={18} aria-hidden="true" focusable="false" />, run: () => setResetFor(p) },
             ];
-            return acts.flatMap((a) => (a ? [{ ...a, enabled: busy !== p.id }] : []));
+            // A row with a change on its way keeps its actions where they are, disabled (review M1).
+            return acts.flatMap((a) => (a ? [{ ...a, disabled: busyRow }] : []));
           }}
+          menu={(p): ListMenuEntry[] =>
+            // Disable and Enable (the mockup's ⋮): a pending person has not verified, so there is nothing to disable yet.
+            p.status === "pending"
+              ? []
+              : [
+                  {
+                    key: "status",
+                    label: p.status === "disabled" ? t("people.enable") : t("people.disable"),
+                    danger: p.status !== "disabled",
+                    disabled: busy === p.id,
+                    onSelect: () => void changeStatus(p),
+                  },
+                ]
+          }
           empty={<EmptyState role="status" size="compact" text={t("tenant.users.empty")} />}
         />
       )}

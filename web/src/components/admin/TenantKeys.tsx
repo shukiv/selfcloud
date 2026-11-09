@@ -5,7 +5,7 @@ import { useFlight } from "../../lib/flight";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { Ban } from "lucide-react";
-import { ItemList, type ItemColumn, type ItemSort } from "../files/Listing";
+import Listing, { type ListColumn, type ListSort } from "../files/Listing";
 import { useLang, useT } from "../../lib/i18n";
 import { formatDate } from "../../lib/files/format";
 import { listKeys, revokeKey } from "../../lib/manage/api";
@@ -75,7 +75,7 @@ export default function TenantKeys({ account }: { account: string }) {
     return t("keys.state.active");
   };
 
-  const columns: ItemColumn<ApiKey>[] = [
+  const columns: ListColumn<ApiKey>[] = [
     {
       key: "name",
       title: t("files.col.name"),
@@ -170,13 +170,13 @@ export default function TenantKeys({ account }: { account: string }) {
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
       {/* The keys table (design-tl section 3.1): Name with the prefix, Created, Last used, Expires, State, and a Revoke icon. */}
       {!firstFailed && q.data !== undefined && (
-        <ItemList
+        <Listing
           label={t("tenant.keys.title")}
           items={keys}
           rowLabel={(k) => k.name}
           moreLabel={(k) => t("tenants.actionsFor", { name: k.name })}
           columns={columns}
-          sort={{ key: sort.key, dir: sort.dir, onSort: sortBy } satisfies ItemSort}
+          sort={{ key: sort.key, dir: sort.dir, onSort: sortBy } satisfies ListSort}
           actions={(k) =>
             k.revoked_at
               ? []
@@ -185,7 +185,7 @@ export default function TenantKeys({ account }: { account: string }) {
                     key: "revoke",
                     label: `${t("keys.revoke")}: ${k.name}`,
                     icon: <Ban size={18} aria-hidden="true" focusable="false" />,
-                    enabled: true,
+                    danger: true,
                     run: () => {
                       setRevokeError(null);
                       setRevoking(k);

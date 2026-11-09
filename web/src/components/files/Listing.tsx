@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {
+  Fragment,
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -16,7 +19,7 @@ import { Button, Checkbox, Dropdown, Grid, Input, Table, theme as antdTheme, typ
 import type { ColumnsType } from "antd/es/table";
 import { ArrowDown, ArrowUp, EllipsisVertical, Link2, Star } from "lucide-react";
 import IconButton from "../IconButton";
-import { useLang, useT } from "../../lib/i18n";
+import { translatePlural, useLang, useT } from "../../lib/i18n";
 import { formatBytes, formatDate } from "../../lib/files/format";
 import { kindOf } from "../../lib/files/kind";
 import type { SortDir, SortKey } from "../../lib/files/sort";
@@ -24,10 +27,12 @@ import type { Node } from "../../lib/files/types";
 import type { ViewMode } from "../../lib/files/viewPrefs";
 import { isTextField } from "../../lib/files/keys";
 import { useCoarsePointer } from "../../lib/pointer";
-import { THEAD_H } from "../../lib/files/layout";
+import { HEADER_H, THEAD_H } from "../../lib/files/layout";
+import { useListKeys, useListSelection } from "../../lib/lists";
 import { getRowHover, setRowHover, subscribeRowHover } from "./rowHover";
 import Icon from "./Icon";
 import KindMarks from "./KindMarks";
+import SelectionBar, { type SelectionAction } from "./SelectionBar";
 import Thumb from "./Thumb";
 
 // The hook lives in lib/pointer, so the shell can use it without loading this listing; it is still exported from here.
@@ -53,7 +58,11 @@ export interface RowAct {
   run: () => void;
 }
 
+// ListingProps are the props of the files preset, My files (the default): the page owns the selection, the keys, the menu
+// and the rename, and Listing reports clicks, keys and focus. A caller that passes columns gets a preset list instead
+// (ItemListingProps); the files preset has none.
 export interface ListingProps {
+  columns?: undefined;
   items: Node[];
   view: ViewMode;
   selected: Set<string>;
@@ -86,6 +95,85 @@ export interface ListingProps {
   containerRef?: Ref<HTMLDivElement>;
 }
 
+// ListColumn is one column of a preset list (design-tl 2.1). The first column is the name cell: the row's icon, then what
+// the column renders. A secondary column is a column on a desktop; below md (768 px) its value is the name cell's second
+// line, after the ones before it.
+export interface ListColumn<T> {
+  key: string;
+  title: string;
+  render: (row: T) => ReactNode;
+  secondary?: boolean;
+  // sortKey is the key this header sorts by, when the list has a sort. Without it the header is not a button.
+  sortKey?: string;
+  // ariaSort marks a column the rows are in order of with no control, such as a time column that lists newest first.
+  ariaSort?: "descending";
+  align?: "start" | "end";
+  width?: number;
+}
+
+// ListAction is an icon at a row's end. Up to three show inline with a mouse on a desktop; the rest, and all of them on a
+// phone or a finger, are entries of the row's ⋮ menu. A page lists only the actions that apply to the row; a disabled one
+// (a request on its way) keeps its place, disabled, inline and in the menu.
+export interface ListAction {
+  key: string;
+  label: string;
+  icon: ReactNode;
+  run: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}
+
+// ListMenuEntry is one entry of a row's ⋮ menu, after the row's actions that do not fit inline. An entry with an href is
+// a real link: a middle or a modified click opens it in a new tab, as the browser does, and a plain click or a key runs
+// onSelect in this tab.
+export interface ListMenuEntry {
+  key: string;
+  label: string;
+  icon?: ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+  href?: string;
+  onSelect: () => void;
+}
+
+// ListSort is a preset list's sort: the key and the direction it is in, and what a header's click asks for.
+export interface ListSort {
+  key: string;
+  dir: "asc" | "desc";
+  onSort: (key: string) => void;
+}
+
+// ItemListingProps are the props of a preset list: the admin, Manage and drive lists other than My files. Its columns,
+// rows, actions and menu come from the page; the selection and the keys are the shared hooks (lib/lists.ts).
+export interface ItemListingProps<T extends { id: string }> {
+  items: T[];
+  // label names the list's region; rowLabel names each row, for a screen reader and for the row's checkbox.
+  label: string;
+  rowLabel: (row: T) => string;
+  columns: ListColumn<T>[];
+  // moreLabel names a row's ⋮ button. Without it the button is "More actions for" the row's label.
+  moreLabel?: (row: T) => string;
+  icon?: (row: T) => ReactNode;
+  actions?: (row: T) => ListAction[];
+  menu?: (row: T) => ListMenuEntry[];
+  // selectable gives the list a selection: checkboxes, the selection keys, and a selection bar with the bulk icons.
+  selectable?: boolean;
+  bulk?: (ids: string[]) => SelectionAction[];
+  sort?: ListSort;
+  // onOpen opens a row: Enter on the row, or a click on it (a double click on a list with a selection).
+  onOpen?: (row: T) => void;
+  // empty is what the body shows when there are no rows: the page's EmptyState (design-tl 2.5).
+  empty: ReactNode;
+  // stickyTop is where the column header pins; the default is under the shell's header, as a preset list has no toolbar row.
+  stickyTop?: number;
+}
+
+function isItems<T extends { id: string }>(p: ListingProps | ItemListingProps<T>): p is ItemListingProps<T> {
+  return p.columns !== undefined;
+}
+
+const NO_IDS: ReadonlySet<string> = new Set();
+
 // LONG_PRESS_MS is how long a finger rests on an item before it opens the item's menu. PRESS_SLOP_PX is how far it may move
 // meanwhile: a finger that moves is scrolling, not pressing.
 const LONG_PRESS_MS = 500;
@@ -106,8 +194,9 @@ const DEFAULT_STICKY_TOP = 104;
 
 type AriaSort = "ascending" | "descending" | "none";
 
-function ariaSort(current: SortKey, dir: SortDir, key: SortKey): AriaSort {
-  if (current !== key) return "none";
+// ariaSortOf is a header's aria-sort: the list's direction when it is sorted by the header's column, none when it is not.
+function ariaSortOf(dir: "asc" | "desc" | null): AriaSort {
+  if (dir === null) return "none";
   return dir === "asc" ? "ascending" : "descending";
 }
 
@@ -118,9 +207,13 @@ function RowActs({ id, show, children }: { id: string; show: boolean; children: 
   return hovered || show ? <>{children()}</> : null;
 }
 
-// Listing shows a folder's items: a table in list view, tiles in grid view. Keyboard handling belongs to
-// the page; this component reports clicks, keys and focus, and marks what is selected.
-export default function Listing(p: ListingProps) {
+// Listing is the one list of the web interface (design-tl, decision 114). Without columns it is the files preset, My files:
+// a folder's items, a table in list view and tiles in grid view, whose keyboard handling belongs to the page; it reports
+// clicks, keys and focus, and marks what is selected. With columns it is a preset list: the page's columns, rows, actions
+// and menu, with the shared selection and keys. Both are drawn in the same frame: the region and its band variables, antd's
+// table at the middle size with a fixed layout, the header cell, the row's icons and ⋮ button, and the shared CSS group
+// (.files-list, .item-list in index.css). A preset list never takes the files-list class, which e2e waits on.
+export default function Listing<T extends { id: string }>(p: ListingProps | ItemListingProps<T>) {
   const { t } = useT();
   const lang = useLang();
   const { token } = antdTheme.useToken();
@@ -128,9 +221,32 @@ export default function Listing(p: ListingProps) {
   const screens = Grid.useBreakpoint();
   const narrow = !screens.md;
   const coarse = useCoarsePointer();
-  const stickyTop = p.stickyTop ?? DEFAULT_STICKY_TOP;
+  const stickyTop = p.stickyTop ?? (isItems(p) ? HEADER_H : DEFAULT_STICKY_TOP);
   // A row or tile that the keyboard scrolls to keeps clear of the sticky header, the toolbar and, in the list, the column header.
-  const scrollMarginTop = stickyTop + (p.view === "list" ? THEAD_H : 0) + 4;
+  const scrollMarginTop = stickyTop + (isItems(p) || p.view === "list" ? THEAD_H : 0) + 4;
+  // A preset list's selection and keys (design-tl 2.4). My files keeps its own in FilesPage, and these are not used for it.
+  const rows = p.items as { id: string }[];
+  const ids = useMemo(() => rows.map((r) => r.id), [rows]);
+  const sel = useListSelection(ids);
+  const itemRef = useRef<HTMLDivElement>(null);
+  const focusRow = useCallback((id: string) => {
+    const tr = [...(itemRef.current?.querySelectorAll<HTMLElement>("tbody tr[data-id]") ?? [])].find((r) => r.dataset.id === id);
+    tr?.focus();
+  }, []);
+  const preset = isItems(p) ? p : null;
+  const openRow = preset?.onOpen;
+  const onItemKey = useListKeys({
+    ids,
+    focusID: sel.focusID,
+    focusRow,
+    onOpen: openRow
+      ? (id: string) => {
+          const row = preset?.items.find((r) => r.id === id);
+          if (row) openRow(row);
+        }
+      : undefined,
+    selection: preset?.selectable ? sel : undefined,
+  });
   // The kind of pointer that last went down on a row. Its click is the one that follows, so a finger's tap is known
   // to be a tap and a mouse's click is known to be a click, each by its own event.
   const pointer = useRef<string>("mouse");
@@ -162,6 +278,281 @@ export default function Listing(p: ListingProps) {
       window.removeEventListener("mousedown", stopLiftMouseDown, true);
     };
   }, []);
+
+  // ---- The frame both presets draw in. ----
+
+  // The bands read their colours from these variables on the list: the theme's tokens are passed in here, as the app does not
+  // define antd's CSS variables on the page, so a rule that reads them would paint nothing.
+  // The list's variables: its bands, its header's background, and the place the header is pinned at (under the toolbar).
+  const bandVars = {
+    "--sc-row-hover": token.colorFillSecondary,
+    "--sc-row-selected": token.colorPrimaryBg,
+    "--sc-accent": token.colorPrimary,
+    "--sc-list-head": token.colorBgContainer,
+    "--sc-list-head-tint": token.colorFillAlter,
+    "--sc-list-top": `${stickyTop}px`,
+  } as CSSProperties;
+
+  // A column's header. A sortable one is a button with the direction's arrow after its label; the arrow is decorative
+  // (aria-hidden), so the button's name stays the label alone, and its box is always there, so the label does not move when
+  // the sort changes. dir is the list's direction when it is sorted by this column, null when it is not.
+  const headCell = (label: string, dir: "asc" | "desc" | null, onSort: () => void) => ({
+    title: (
+      <Button type="text" size="small" onClick={onSort} style={{ fontWeight: 500, padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+        {label}
+        <span aria-hidden="true" style={{ display: "inline-flex", width: 14, height: 14, flex: "none" }}>
+          {dir === null ? null : dir === "asc" ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+        </span>
+      </Button>
+    ),
+    onHeaderCell: () => ({ "aria-sort": ariaSortOf(dir) }),
+  });
+
+  // The actions column's header: a name for a screen reader, shown to no one (review L4).
+  const actionsHead = <span className="sr-only">{t("storage.actions")}</span>;
+
+  // A row's icons and More button, and a tile's menu button, are IconButtons: 40 pixels with a mouse and 44 on a finger (index.css).
+  // Enter and Space stop at a button, so its own click is the one activation; the arrow keys reach the item's handler, so they move
+  // on from the button. A button is a tab stop only in the focused row or tile (the caller's tab value).
+  const keysStop = (e: { key: string; stopPropagation: () => void }) => {
+    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+  };
+  // rowIcon is one of a row's icons. Its click is its own: it does not reach the row. A disabled one keeps its place.
+  const rowIcon = (a: { key: string; label: string; icon: ReactNode; run: () => void; disabled?: boolean; danger?: boolean }, tab?: number) => (
+    <IconButton
+      key={a.key}
+      label={a.label}
+      icon={a.icon}
+      tabIndex={tab}
+      disabled={a.disabled}
+      danger={a.danger}
+      onClick={(e) => {
+        e.stopPropagation();
+        a.run();
+      }}
+      onKeyDown={keysStop}
+      onDoubleClick={(e) => e.stopPropagation()}
+    />
+  );
+  const moreIcon = <EllipsisVertical size={18} aria-hidden="true" focusable="false" />;
+
+  // ---- The preset list. ----
+
+  // menuItem is a ⋮ entry. An entry with an address is a real link: the browser opens a middle or a modified click in a new
+  // tab, and a plain click or a key runs the entry here, in this tab (review L2).
+  const menuItem = (e: ListMenuEntry): NonNullable<MenuProps["items"]>[number] => ({
+    key: e.key,
+    icon: e.icon,
+    danger: e.danger,
+    disabled: e.disabled,
+    label: e.href ? <a href={e.href}>{e.label}</a> : e.label,
+    onClick: ({ domEvent }) => {
+      if (e.href && "button" in domEvent && (domEvent.button !== 0 || domEvent.metaKey || domEvent.ctrlKey || domEvent.shiftKey || domEvent.altKey)) return;
+      domEvent.preventDefault();
+      e.onSelect();
+    },
+  });
+
+  const renderItems = (q: ItemListingProps<T>) => {
+    const [nameCol, ...others] = q.columns;
+    // Below md the secondary columns are the name's second line; a phone or a finger has the ⋮ menu alone (design-tl 4).
+    const seconds = narrow ? others.filter((c) => c.secondary) : [];
+    const shown = narrow ? others.filter((c) => !c.secondary) : others;
+    const menuOnly = narrow || coarse;
+    const selectable = q.selectable === true;
+    const picked = selectable ? sel.selected : NO_IDS;
+    const anyPicked = picked.size > 0;
+    const allPicked = q.items.length > 0 && q.items.every((r) => picked.has(r.id));
+    // Each row's end: up to three icons inline, and the rest with the page's menu in the ⋮ menu.
+    const ends = new Map(
+      q.items.map((r) => {
+        const acts = q.actions?.(r) ?? [];
+        const inline = menuOnly ? [] : acts.slice(0, 3);
+        const rest = menuOnly ? acts : acts.slice(3);
+        const entries: ListMenuEntry[] = [
+          ...rest.map((a) => ({ key: `act-${a.key}`, label: a.label, icon: a.icon, danger: a.danger, disabled: a.disabled, onSelect: a.run })),
+          ...(q.menu?.(r) ?? []),
+        ];
+        return [r.id, { inline, entries }] as const;
+      }),
+    );
+    const slots = Math.max(0, ...[...ends.values()].map((e) => e.inline.length));
+    const anyMenu = [...ends.values()].some((e) => e.entries.length > 0);
+    // The end column keeps room for the most icons any row has and the ⋮, so the rows' ends line up.
+    const endWidth = (slots + (anyMenu ? 1 : 0)) * ROW_ICON_PX + 16;
+    const head = (c: ListColumn<T>) => {
+      const sort = q.sort;
+      if (c.sortKey && sort) {
+        const key = c.sortKey;
+        return headCell(c.title, sort.key === key ? sort.dir : null, () => sort.onSort(key));
+      }
+      return { title: <span style={{ fontWeight: 500 }}>{c.title}</span>, onHeaderCell: () => (c.ariaSort ? { "aria-sort": c.ariaSort } : {}) };
+    };
+
+    // A mouse's checkbox takes the icon's place, as in My files: on a hovered or selected row, and on every row while
+    // anything is selected (the shared CSS decides). A finger keeps the checkbox column instead.
+    const check = (r: T) => (
+      <span className="row-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
+        <Checkbox checked={picked.has(r.id)} tabIndex={-1} aria-label={t("files.select.item", { name: q.rowLabel(r) })} onChange={() => sel.pick(r.id, { toggle: true })} />
+      </span>
+    );
+    const nameCell = (r: T) => (
+      <div style={{ minWidth: 0 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
+          {selectable && !coarse ? (
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", minWidth: 22, height: 22 }}>
+              {q.icon && <span className="row-icon">{q.icon(r)}</span>}
+              {check(r)}
+            </span>
+          ) : (
+            q.icon?.(r)
+          )}
+          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{nameCol.render(r)}</span>
+        </span>
+        {seconds.length > 0 && (
+          <div className="row-second" style={{ color: token.colorTextSecondary, fontSize: token.fontSizeSM, overflowWrap: "anywhere" }}>
+            {seconds.map((c, i) => (
+              <Fragment key={c.key}>
+                {i > 0 ? " · " : ""}
+                {c.render(r)}
+              </Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+    const rowEnd = (r: T) => {
+      const end = ends.get(r.id);
+      if (!end) return null;
+      return (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "nowrap" }}>
+          {end.inline.length > 0 && (
+            <span className="row-acts" style={{ display: "inline-flex", justifyContent: "flex-end" }}>
+              {end.inline.map((a) => rowIcon(a))}
+            </span>
+          )}
+          {end.entries.length > 0 && (
+            <Dropdown menu={{ items: end.entries.map(menuItem) }} trigger={["click"]}>
+              <IconButton
+                aria-haspopup="menu"
+                label={q.moreLabel?.(r) ?? t("files.tile.menu", { name: q.rowLabel(r) })}
+                tip={t("files.selection.more")}
+                icon={moreIcon}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              />
+            </Dropdown>
+          )}
+        </div>
+      );
+    };
+
+    const nameHead = head(nameCol);
+    const allBox = (
+      <span className="head-check" onClick={(e) => e.stopPropagation()} style={{ flex: "none" }}>
+        <Checkbox checked={allPicked} indeterminate={anyPicked && !allPicked} aria-label={t("files.selectAll.box")} onChange={(e) => (e.target.checked ? sel.selectAll() : sel.clear())} />
+      </span>
+    );
+    const columns: ColumnsType<T> = [
+      {
+        key: nameCol.key,
+        ...nameHead,
+        title:
+          selectable && !coarse ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              {allBox}
+              {nameHead.title}
+            </span>
+          ) : (
+            nameHead.title
+          ),
+        render: (_v, r) => nameCell(r),
+      },
+      ...shown.map<ColumnsType<T>[number]>((c) => ({
+        key: c.key,
+        ...head(c),
+        align: c.align,
+        width: c.width,
+        render: (_v: unknown, r: T) => c.render(r),
+      })),
+      ...(slots > 0 || anyMenu
+        ? [{ key: "actions", title: actionsHead, width: endWidth, align: "end" as const, render: (_v: unknown, r: T) => rowEnd(r) }]
+        : []),
+    ];
+
+    // A row is a roving tab stop, as in My files: the focused row takes Tab, and the arrows move between rows. A click on a
+    // control in the row is the control's; a click elsewhere selects (a list with a selection) or opens the row. React
+    // passes up clicks in a portal the row opened (its ⋮ menu), which are not the row's.
+    const isControl = (e: ReactMouseEvent<HTMLElement>) =>
+      !e.currentTarget.contains(e.target as globalThis.Node) ||
+      !!(e.target as HTMLElement).closest("a, button, input, label, .row-check, .ant-table-selection-column");
+    const rowProps = (r: T) => ({
+      role: "row",
+      "aria-label": q.rowLabel(r),
+      ...(selectable ? { "aria-selected": picked.has(r.id) } : {}),
+      tabIndex: sel.focusID === r.id ? 0 : -1,
+      "data-id": r.id,
+      onFocus: () => sel.setFocus(r.id),
+      onKeyDown: onItemKey,
+      onClick: (e: ReactMouseEvent<HTMLElement>) => {
+        if (isControl(e)) return;
+        if (selectable) sel.pick(r.id, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey });
+        else q.onOpen?.(r);
+      },
+      onDoubleClick: (e: ReactMouseEvent<HTMLElement>) => {
+        if (selectable && !isControl(e)) q.onOpen?.(r);
+      },
+      style: selectable ? { userSelect: "none" as const, scrollMarginTop } : { scrollMarginTop },
+    });
+
+    return (
+      <div role="region" aria-label={q.label} ref={itemRef} className="item-list" data-has-selection={anyPicked ? "true" : "false"} style={bandVars}>
+        {selectable && anyPicked && (
+          <SelectionBar
+            label={t("files.selection.label")}
+            countText={translatePlural(lang, "files.selected", picked.size)}
+            clearLabel={t("files.act.clear")}
+            onClear={sel.clear}
+            actions={q.bulk?.([...picked]) ?? []}
+            coarse={coarse}
+          />
+        )}
+        <Table<T>
+          rowKey="id"
+          size="middle"
+          pagination={false}
+          // The table is as wide as the page: a column that does not fit wraps, and the page never scrolls sideways.
+          tableLayout="fixed"
+          columns={columns}
+          dataSource={q.items}
+          locale={{ emptyText: q.empty }}
+          rowSelection={
+            selectable && coarse
+              ? {
+                  type: "checkbox",
+                  columnWidth: 44,
+                  columnTitle: (selectAll: ReactNode) => (
+                    <>
+                      {selectAll}
+                      <span className="sr-only">{t("files.col.select")}</span>
+                    </>
+                  ),
+                  getCheckboxProps: () => ({ tabIndex: -1 }),
+                  selectedRowKeys: [...picked],
+                  onSelect: (r) => sel.pick(r.id, { toggle: true }),
+                  onSelectAll: (checked) => (checked ? sel.selectAll() : sel.clear()),
+                }
+              : undefined
+          }
+          onRow={(r) => rowProps(r) as Record<string, unknown>}
+        />
+      </div>
+    );
+  };
+
+  if (isItems(p)) return renderItems(p);
+
+  // ---- The files preset (My files), as it was. ----
 
   // rowAttrs gives a row or a tile its role, name, selection state, roving focus and handlers. Both views use
   // it, so the keyboard model is the same in each.
@@ -298,17 +689,6 @@ export default function Listing(p: ListingProps) {
       </div>
     ) : null;
 
-  // The bands read their colours from these variables on the list: the theme's tokens are passed in here, as the app does not
-  // define antd's CSS variables on the page, so a rule that reads them would paint nothing.
-  // The list's variables: its bands, its header's background, and the place the header is pinned at (under the toolbar).
-  const bandVars = {
-    "--sc-row-hover": token.colorFillSecondary,
-    "--sc-row-selected": token.colorPrimaryBg,
-    "--sc-accent": token.colorPrimary,
-    "--sc-list-head": token.colorBgContainer,
-    "--sc-list-head-tint": token.colorFillAlter,
-    "--sc-list-top": `${stickyTop}px`,
-  } as CSSProperties;
   // indexOf is each item's place in the page's order, for the handlers that name a row by its index.
   const indexOf = new Map(p.items.map((n, i) => [n.id, i]));
   // rowCheck is a mouse's checkbox for a row. It takes the file icon's place when the row is hovered, or selected, or when
@@ -332,26 +712,9 @@ export default function Listing(p: ListingProps) {
     </span>
   );
 
-  // The active column shows its direction as an arrow after the label. The arrow is decorative (aria-hidden), so the button's
-  // name stays the label alone; its box is always there, so the label does not move when the sort changes.
-  const sortHead = (key: SortKey, label: string) => ({
-    title: (
-      <Button type="text" size="small" onClick={() => p.onSort(key)} style={{ fontWeight: 500, padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
-        {label}
-        <span aria-hidden="true" style={{ display: "inline-flex", width: 14, height: 14, flex: "none" }}>
-          {p.sortKey === key ? (p.sortDir === "asc" ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : null}
-        </span>
-      </Button>
-    ),
-    onHeaderCell: () => ({ "aria-sort": ariaSort(p.sortKey, p.sortDir, key) }),
-  });
+  // The active column shows its direction as an arrow after the label (headCell, the frame's header).
+  const sortHead = (key: SortKey, label: string) => headCell(label, p.sortKey === key ? p.sortDir : null, () => p.onSort(key));
 
-  // A row's icons and More button, and a tile's menu button, are IconButtons: 40 pixels with a mouse and 44 on a finger (index.css).
-  // Enter and Space stop at a button, so its own click is the one activation; the arrow keys reach the item's handler, so they move
-  // on from the button. A button is a tab stop only in the focused row or tile (the caller's tab value).
-  const keysStop = (e: { key: string; stopPropagation: () => void }) => {
-    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-  };
   // The More button opens the item's menu, where the right-click menu opens: at the button. A list row and a tile both have it.
   const moreButton = (n: Node, i: number, tab = -1) => (
     <IconButton
@@ -371,7 +734,7 @@ export default function Listing(p: ListingProps) {
       }}
       onKeyDown={keysStop}
       onDoubleClick={(e) => e.stopPropagation()}
-      icon={<EllipsisVertical size={18} aria-hidden="true" focusable="false" />}
+      icon={moreIcon}
     />
   );
   const tileMenu = (n: Node, i: number) => moreButton(n, i);
@@ -386,22 +749,9 @@ export default function Listing(p: ListingProps) {
           <span className="row-acts" style={{ display: "inline-flex", justifyContent: "flex-end", minWidth: ROW_ICON_PX * ROW_ICONS }}>
             <RowActs id={n.id} show={p.selected.has(n.id) || focused}>
               {() =>
-                (p.rowActs?.(n) ?? [])
-                  .filter((a) => a.enabled)
-                  .map((a) => (
-                    <IconButton
-                      key={a.key}
-                      label={a.label}
-                      icon={a.icon}
-                      tabIndex={focused ? 0 : -1}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        a.run();
-                      }}
-                      onKeyDown={keysStop}
-                      onDoubleClick={(e) => e.stopPropagation()}
-                    />
-                  ))
+                // A files action that is not enabled is one the item's menu does not offer, so it is not drawn (unlike a
+                // preset list's disabled action, which is one on its way).
+                (p.rowActs?.(n) ?? []).filter((a) => a.enabled).map((a) => rowIcon(a, focused ? 0 : -1))
               }
             </RowActs>
           </span>
@@ -474,7 +824,7 @@ export default function Listing(p: ListingProps) {
           ]),
       {
         key: "actions",
-        title: null,
+        title: actionsHead,
         width: coarse ? ROW_ICON_PX : ROW_ICON_PX * (ROW_ICONS + 1),
         align: "end",
         render: (_v, n) => rowEnd(n),
@@ -663,192 +1013,6 @@ export default function Listing(p: ListingProps) {
     <div role="listbox" aria-label={p.label} aria-multiselectable="true" tabIndex={-1} ref={p.containerRef} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
       {folders.length > 0 && <div role="presentation" style={band}>{folders.map(chip)}</div>}
       {files.length > 0 && <div role="presentation" style={band}>{files.map(card)}</div>}
-    </div>
-  );
-}
-
-// ItemColumn is one column of an ItemList. The first column is the name cell: it holds the row's name (and its link), with the
-// row's icon before it. A secondary column is a column on a desktop; on a phone its value is the name cell's second line.
-export interface ItemColumn<T> {
-  key: string;
-  title: string;
-  render: (row: T) => ReactNode;
-  secondary?: boolean;
-  // sortKey is the key this header sorts by, when the list has a sort. Without it the header is not a button.
-  sortKey?: string;
-  // ariaSort marks a column that is in order with no control, such as a time column that lists newest first.
-  ariaSort?: "descending";
-  align?: "start" | "end";
-  width?: number;
-}
-
-// ItemAction is an icon in a row's end. Up to three show inline on a desktop; the rest, and every action on a phone, go in the
-// row's ⋮ menu.
-export interface ItemAction {
-  key: string;
-  label: string;
-  icon: ReactNode;
-  enabled: boolean;
-  run: () => void;
-}
-
-// ItemMenuEntry is one line of a row's ⋮ menu, after the row's overflow actions.
-export interface ItemMenuEntry {
-  key: string;
-  label: string;
-  icon?: ReactNode;
-  danger?: boolean;
-  onSelect: () => void;
-}
-
-// ItemSort is the list's sort: the key and direction the page sorts by, and what a header click asks for.
-export interface ItemSort {
-  key: string;
-  dir: "asc" | "desc";
-  onSort: (key: string) => void;
-}
-
-export interface ItemListProps<T extends { id: string }> {
-  items: T[];
-  label: string;
-  rowLabel: (row: T) => string;
-  // moreLabel names a row's ⋮ button, for a screen reader. A list with no ⋮ menu leaves it out.
-  moreLabel?: (row: T) => string;
-  columns: ItemColumn<T>[];
-  icon?: (row: T) => ReactNode;
-  actions?: (row: T) => ItemAction[];
-  menu?: (row: T) => ItemMenuEntry[];
-  sort?: ItemSort;
-  // empty is the node the body shows with no rows: the page's EmptyState, built on the page side.
-  empty: ReactNode;
-}
-
-// ItemList is the one table of the admin and the other preset lists (design-tl). It is antd's Table with the look and the phone
-// rules of My files, and none of My files' behaviour: no selection, drag or tiles. The table's code is in this module, which
-// is loaded only by the pages that use it.
-export function ItemList<T extends { id: string }>(p: ItemListProps<T>) {
-  const { t } = useT();
-  const screens = Grid.useBreakpoint();
-  const narrow = !screens.md;
-  const [nameCol, ...others] = p.columns;
-  const seconds = narrow ? others.filter((c) => c.secondary) : [];
-  const cols = narrow ? others.filter((c) => !c.secondary) : others;
-
-  const headerFor = (c: ItemColumn<T>) => {
-    if (c.sortKey && p.sort) {
-      const sort = p.sort;
-      const active = sort.key === c.sortKey;
-      const aria: AriaSort = active ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
-      return {
-        title: (
-          <Button type="text" size="small" onClick={() => sort.onSort(c.sortKey as string)} style={{ fontWeight: 500, padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
-            {c.title}
-            <span aria-hidden="true" style={{ display: "inline-flex", width: 14, height: 14, flex: "none" }}>
-              {active ? (sort.dir === "asc" ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : null}
-            </span>
-          </Button>
-        ),
-        onHeaderCell: () => ({ "aria-sort": aria }),
-      };
-    }
-    return {
-      title: <span style={{ fontWeight: 500 }}>{c.title}</span>,
-      onHeaderCell: () => (c.ariaSort ? { "aria-sort": c.ariaSort } : {}),
-    };
-  };
-
-  const nameCell = (row: T) => (
-    <div style={{ minWidth: 0 }}>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%" }}>
-        {p.icon?.(row)}
-        <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{nameCol.render(row)}</span>
-      </span>
-      {seconds.length > 0 && (
-        <div className="item-second" style={{ color: "var(--ant-color-text-secondary)", fontSize: 13, overflowWrap: "anywhere" }}>
-          {seconds.map((c, i) => (
-            <span key={c.key}>
-              {i > 0 ? " · " : ""}
-              {c.render(row)}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
-  // The row end: up to three of the row's enabled actions inline (none on a phone), then the ⋮ menu with the rest.
-  const rowEnd = (row: T) => {
-    const enabled = (p.actions?.(row) ?? []).filter((a) => a.enabled);
-    const inline = narrow ? [] : enabled.slice(0, 3);
-    const overflow = narrow ? enabled : enabled.slice(3);
-    const entries = [
-      ...overflow.map((a) => ({ key: `act-${a.key}`, label: a.label, icon: a.icon, danger: false, onSelect: a.run })),
-      ...(p.menu?.(row) ?? []),
-    ];
-    const items: MenuProps["items"] = entries.map((e) => ({ key: e.key, label: e.label, icon: e.icon, danger: e.danger, onClick: () => e.onSelect() }));
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, flexWrap: "nowrap" }}>
-        {inline.map((a) => (
-          <IconButton
-            key={a.key}
-            label={a.label}
-            icon={a.icon}
-            onClick={(e) => {
-              e.stopPropagation();
-              a.run();
-            }}
-          />
-        ))}
-        {items && items.length > 0 && p.moreLabel && (
-          <Dropdown menu={{ items }} trigger={["click"]}>
-            <IconButton
-              aria-haspopup="menu"
-              label={p.moreLabel(row)}
-              tip={t("files.selection.more")}
-              icon={<EllipsisVertical size={18} aria-hidden="true" focusable="false" />}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </Dropdown>
-        )}
-      </div>
-    );
-  };
-
-  const columns: ColumnsType<T> = [
-    {
-      key: nameCol.key,
-      ...headerFor(nameCol),
-      render: (_v, row) => nameCell(row),
-    },
-    ...cols.map<ColumnsType<T>[number]>((c) => ({
-      key: c.key,
-      ...headerFor(c),
-      align: c.align,
-      width: c.width,
-      render: (_v: unknown, row: T) => c.render(row),
-    })),
-    {
-      key: "__actions",
-      title: null,
-      width: narrow ? ROW_ICON_PX : ROW_ICON_PX * 4,
-      align: "end",
-      render: (_v, row) => rowEnd(row),
-    },
-  ];
-
-  return (
-    <div role="region" aria-label={p.label} className="item-list">
-      <Table<T>
-        rowKey="id"
-        size="middle"
-        pagination={false}
-        // The table is as wide as the page: a column that does not fit wraps, and the page never scrolls sideways.
-        tableLayout="fixed"
-        columns={columns}
-        dataSource={p.items}
-        locale={{ emptyText: p.empty }}
-        onRow={(row) => ({ "aria-label": p.rowLabel(row) }) as Record<string, unknown>}
-      />
     </div>
   );
 }

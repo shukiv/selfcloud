@@ -858,6 +858,18 @@ describe("Listing with columns: a preset list in the one table", () => {
     expect(onOpen).toHaveBeenCalledWith(people[1]);
   });
 
+  // The ⋮ menu is a portal outside the row, but React passes its clicks up to the row: an entry's click is the entry's alone.
+  it("a click on a ⋮ entry runs the entry and does not open the row", () => {
+    viewport(1200);
+    const onOpen = vi.fn();
+    const onSelect = vi.fn();
+    render(<Listing {...itemProps({ onOpen, menu: () => [{ key: "x", label: "Suspend", onSelect }] })} />);
+    fireEvent.click(within(itemRow("Beta Clinic")).getByRole("button", { name: "More for Beta Clinic" }));
+    fireEvent.click(screen.getByText("Suspend"));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
   it("a list without selectable has no checkboxes and no aria-selected", () => {
     viewport(1200);
     const { container } = render(<Listing {...itemProps()} />);

@@ -1298,16 +1298,21 @@ tr[data-drop-state="refused"] > td {
   outline-color: var(--sc-side-text, #ffffff);
 }
 
-/* The file list pins its column header under the toolbar. A scrolling wrapper (the rule above, for narrow tables) would make the
+/* The lists of Listing (decision 114): My files (.files-list) and every preset list (.item-list) share the rules below, so they have
+   one header, one hover and one selected band. Only the files list hides a row's icons until the row is hovered, selected or
+   focused: a preset list's icons are always shown (the approved mockup), and only its checkboxes come on demand.
+   The list pins its column header under the toolbar. A scrolling wrapper (the rule above, for narrow tables) would make the
    header stick inside the wrapper and never to the window, so the list's wrapper does not scroll: its columns fit the window. */
-.files-list .ant-table-wrapper {
+.files-list .ant-table-wrapper,
+.item-list .ant-table-wrapper {
   overflow: visible;
 }
 
 /* The list's column header is pinned in the list's own table (Listing: no sticky holder), so it shares the rows' columns in every
    frame (decision 77, item fu3b). The pin is to the window, under the shell's header and the toolbar (--sc-list-top, set by Listing).
    The header's background is the list's (--sc-list-head). */
-.files-list .ant-table-thead > tr > th {
+.files-list .ant-table-thead > tr > th,
+.item-list .ant-table-thead > tr > th {
   position: sticky;
   top: var(--sc-list-top);
   z-index: 2;
@@ -1326,14 +1331,19 @@ tr[data-drop-state="refused"] > td {
    with a second one: both are matched here, with the row's selection read from aria-selected, so the list's bands win (review fix 3). */
 .files-list .ant-table-tbody > tr[aria-selected="true"] > td,
 .files-list .ant-table-tbody > tr[aria-selected="true"]:hover > td,
-.files-list .ant-table-tbody > tr[aria-selected="true"] > td.ant-table-cell-row-hover {
+.files-list .ant-table-tbody > tr[aria-selected="true"] > td.ant-table-cell-row-hover,
+.item-list .ant-table-tbody > tr[aria-selected="true"] > td,
+.item-list .ant-table-tbody > tr[aria-selected="true"]:hover > td,
+.item-list .ant-table-tbody > tr[aria-selected="true"] > td.ant-table-cell-row-hover {
   background: var(--sc-row-selected);
 }
 
 /* Hover is a mouse's (review fix 10): a finger's tap leaves no grey band and shows no icons or checkboxes. */
 @media (hover: hover) {
   .files-list .ant-table-tbody > tr:not([aria-selected="true"]):hover > td,
-  .files-list .ant-table-tbody > tr:not([aria-selected="true"]) > td.ant-table-cell-row-hover {
+  .files-list .ant-table-tbody > tr:not([aria-selected="true"]) > td.ant-table-cell-row-hover,
+  .item-list .ant-table-tbody > tr:not([aria-selected="true"]):hover > td,
+  .item-list .ant-table-tbody > tr:not([aria-selected="true"]) > td.ant-table-cell-row-hover {
     background: var(--sc-row-hover);
   }
 
@@ -1357,7 +1367,9 @@ tr[data-drop-state="refused"] > td {
 /* Checkboxes on demand, with a mouse: the box takes the file icon's place on a hovered row, on a selected row, on a row with the focus,
    and on every row while anything is selected. The select-all box shows on the header's hover and while anything is selected. */
 .files-list .row-check,
-.files-list .head-check {
+.files-list .head-check,
+.item-list .row-check,
+.item-list .head-check {
   display: none;
 }
 
@@ -1365,27 +1377,39 @@ tr[data-drop-state="refused"] > td {
 .files-list tr:focus-within .row-check,
 .files-list[data-has-selection="true"] .row-check,
 .files-list thead:focus-within .head-check,
-.files-list[data-has-selection="true"] .head-check {
+.files-list[data-has-selection="true"] .head-check,
+.item-list tr[aria-selected="true"] .row-check,
+.item-list tr:focus-within .row-check,
+.item-list[data-has-selection="true"] .row-check,
+.item-list thead:focus-within .head-check,
+.item-list[data-has-selection="true"] .head-check {
   display: inline-flex;
 }
 
-.files-list .row-icon {
+.files-list .row-icon,
+.item-list .row-icon {
   display: inline-flex;
 }
 
 /* The icon gives way wherever the box shows: a focused row too, or the two are drawn together (the owner, 2026-11-03). */
 .files-list tr[aria-selected="true"] .row-icon,
 .files-list tr:focus-within .row-icon,
-.files-list[data-has-selection="true"] .row-icon {
+.files-list[data-has-selection="true"] .row-icon,
+.item-list tr[aria-selected="true"] .row-icon,
+.item-list tr:focus-within .row-icon,
+.item-list[data-has-selection="true"] .row-icon {
   display: none;
 }
 
 @media (hover: hover) {
   .files-list tr:hover .row-check,
-  .files-list thead:hover .head-check {
+  .files-list thead:hover .head-check,
+  .item-list tr:hover .row-check,
+  .item-list thead:hover .head-check {
     display: inline-flex;
   }
-  .files-list tr:hover .row-icon {
+  .files-list tr:hover .row-icon,
+  .item-list tr:hover .row-icon {
     display: none;
   }
 }
@@ -1394,10 +1418,13 @@ tr[data-drop-state="refused"] > td {
    fix 10). */
 @media (any-pointer: coarse) {
   .files-list .row-check,
-  .files-list .head-check {
+  .files-list .head-check,
+  .item-list .row-check,
+  .item-list .head-check {
     display: inline-flex;
   }
-  .files-list .row-icon {
+  .files-list .row-icon,
+  .item-list .row-icon {
     display: none;
   }
 }

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { UserMinus } from "lucide-react";
-import { ItemList, type ItemColumn } from "../../components/files/Listing";
+import Listing, { type ListColumn } from "../../components/files/Listing";
 import EmptyState from "../../components/EmptyState";
+import LastSignIn from "../../components/admin/LastSignIn";
+import { go } from "../../lib/router";
 
 import { App, Alert, Button, Input, Modal, Tag } from "antd";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
@@ -149,8 +151,9 @@ function AdminsView() {
 
   const emailOk = EMAIL.test(email.trim());
   // The signed-in admin's own row says so and has no Remove icon: an admin cannot remove themselves here (design-tl 3.1).
+  // Its ⋮ menu has Change password instead, a link to the page that changes it (the approved mockup).
   const selfID = useStore(session)?.user?.id;
-  const columns: ItemColumn<Person>[] = [
+  const columns: ListColumn<Person>[] = [
     {
       key: "name",
       title: t("files.col.name"),
@@ -174,6 +177,7 @@ function AdminsView() {
       width: 120,
       render: (a) => <StatusTag tone={statusTone(a.status)}>{t(`people.status.${a.status}`)}</StatusTag>,
     },
+    { key: "last", title: t("people.lastSignIn"), secondary: true, width: 160, render: (a) => <LastSignIn at={a.last_sign_in_at} /> },
   ];
 
   return (
@@ -191,12 +195,15 @@ function AdminsView() {
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
       {/* The list stays on screen when a refetch fails: react-query keeps the data, so the error goes above it. */}
       {!firstFailed && q.data !== undefined && (
-        <ItemList
+        <Listing
           label={t("admin.admins.title")}
           items={admins}
           rowLabel={personLabel}
           moreLabel={(a) => t("tenants.actionsFor", { name: personLabel(a) })}
           columns={columns}
+          menu={(a) =>
+            a.id === selfID ? [{ key: "password", label: t("user.changePassword"), href: "/change-password", onSelect: () => go("/change-password") }] : []
+          }
           actions={(a) =>
             a.id === selfID
               ? []
@@ -205,7 +212,7 @@ function AdminsView() {
                     key: "remove",
                     label: `${t("admins.remove")}: ${personLabel(a)}`,
                     icon: <UserMinus size={18} aria-hidden="true" focusable="false" />,
-                    enabled: true,
+                    danger: true,
                     run: () => {
                       setRemoveError(null);
                       setRemoving(a);
@@ -213,7 +220,9 @@ function AdminsView() {
                   },
                 ]
           }
-          empty={<EmptyState role="status" text={t("admins.empty")} />}
+          // The signed-in admin is always on this list, so it is empty only on a failure the error above names; the words are
+          // the tenant people list's (the language chunks are near their budget, decision 114).
+          empty={<EmptyState role="status" text={t("tenant.users.empty")} />}
         />
       )}
       {!firstFailed && q.hasNextPage && (

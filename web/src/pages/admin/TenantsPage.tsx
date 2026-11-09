@@ -23,7 +23,7 @@ import NewTenant from "../../components/admin/NewTenant";
 import ShowOnce from "../../components/admin/ShowOnce";
 import StatusTag from "../../components/admin/StatusTag";
 import UsageMeter from "../../components/UsageMeter";
-import { ItemList, type ItemColumn, type ItemSort } from "../../components/files/Listing";
+import Listing, { type ListColumn, type ListMenuEntry, type ListSort } from "../../components/files/Listing";
 import { more, pageTitle, toolbar } from "../../components/admin/adminStyles";
 import { useGuard, useOnSessionChange } from "../../components/admin/hooks";
 import EmptyState from "../../components/EmptyState";
@@ -155,9 +155,11 @@ function TenantsView() {
     go(`/admin/tenants/${account.id}`);
   };
 
-  // The ⋮ menu of a tenant: Open, Suspend (or Resume) and Delete. The name is the link that opens the tenant in a new tab.
-  const menuFor = (a: Account) => [
-    { key: "open", label: t("tenants.open"), onSelect: () => go(`/admin/tenants/${a.id}`) },
+  // The ⋮ menu of a tenant: Open, Suspend (or Resume) and Delete. Open is a link, as the name is, so a middle or modified
+  // click opens the tenant in a new tab (review L2).
+  const open = (a: Account) => go(`/admin/tenants/${a.id}`);
+  const menuFor = (a: Account): ListMenuEntry[] => [
+    { key: "open", label: t("tenants.open"), href: `/admin/tenants/${a.id}`, onSelect: () => open(a) },
     {
       key: "suspend",
       label: a.status === "suspended" ? t("tenant.resume") : t("tenant.suspend"),
@@ -169,9 +171,9 @@ function TenantsView() {
     { key: "delete", danger: true, label: t("tenant.delete.open"), onSelect: () => setDeleting(a) },
   ];
 
-  // The columns of the tenants list (design-tl section 3.1). Name and Created sort on the server; Usage reads the account's
-  // own used and quota bytes, so the list makes no request per tenant.
-  const columns: ItemColumn<Account>[] = [
+  // The columns of the tenants list (design-tl section 3.1, the approved mockup). Name and Created sort on the server; Usage
+  // and Users read the account's own used and quota bytes and its user count, so the list makes no request per tenant.
+  const columns: ListColumn<Account>[] = [
     {
       key: "name",
       title: t("files.col.name"),
@@ -204,6 +206,14 @@ function TenantsView() {
       render: (a) => <UsageMeter used={a.used_bytes} quota={a.quota_bytes > 0 ? a.quota_bytes : null} />,
     },
     {
+      key: "users",
+      title: t("tenant.tab.users"),
+      secondary: true,
+      align: "end",
+      width: 88,
+      render: (a) => <span style={{ fontVariantNumeric: "tabular-nums" }}>{a.user_count ?? ""}</span>,
+    },
+    {
       key: "created",
       title: t("tenant.overview.created"),
       sortKey: "created",
@@ -216,7 +226,7 @@ function TenantsView() {
       ),
     },
   ];
-  const itemSort: ItemSort = { key: sort.key, dir: sort.dir, onSort: sortBy };
+  const listSort: ListSort = { key: sort.key, dir: sort.dir, onSort: sortBy };
 
   const emptyText = query || status !== "all" ? t("tenants.noMatch") : t("tenants.empty");
 
@@ -258,14 +268,16 @@ function TenantsView() {
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
       {!firstFailed && q.data !== undefined && (
-        <ItemList
+        <Listing
           label={t("admin.tenants.title")}
           items={accounts}
           rowLabel={(a) => a.name}
           moreLabel={(a) => t("tenants.actionsFor", { name: a.name })}
           columns={columns}
           menu={menuFor}
-          sort={itemSort}
+          sort={listSort}
+          // A row opens its tenant: a click on it, or Enter (design-tl 2.3).
+          onOpen={open}
           empty={<EmptyState role="status" text={emptyText} />}
         />
       )}

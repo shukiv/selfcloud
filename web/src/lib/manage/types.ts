@@ -13,6 +13,8 @@ export interface Account {
   used_files: number;
   created_at: string;
   updated_at: string;
+  // The number of the account's users, on the items of the accounts list only (decision 114).
+  user_count?: number;
 }
 
 export interface Usage {
@@ -40,6 +42,8 @@ export interface Person {
   updated_at: string;
   quota_bytes?: number | null;
   effective_quota_bytes?: number | null;
+  // When the person last signed in, its own sign-in and not an admin's sign-in-as; null when it has not (decision 114).
+  last_sign_in_at?: string | null;
 }
 
 // The one-time link a verification gives (method link). url is shown once and never stored.

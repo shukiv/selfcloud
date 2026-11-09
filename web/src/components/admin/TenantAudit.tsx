@@ -11,7 +11,7 @@ import { failureText } from "../../lib/manage/failure";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { queryKey } from "../../lib/query";
 import { renderSentence, sentence, type AuditEntry, type Names } from "../../lib/audit/sentence";
-import { ItemList } from "../files/Listing";
+import Listing from "../files/Listing";
 import { more, sectionTitle, toolbar } from "./adminStyles";
 import EmptyState from "../EmptyState";
 
@@ -39,6 +39,8 @@ export default function TenantAudit({ account }: { account: string }) {
   });
   const entries: Entry[] = q.data?.pages.flatMap((p) => p.items) ?? [];
   const firstFailed = q.isError && q.data === undefined;
+  // An entry's sentence, as text: the Event cell shows it, and a screen reader hears the row by it (review L4).
+  const said = (e: Entry) => renderSentence(sentence(e, names), (key, params) => translate(lang, key, params));
 
   return (
     <div>
@@ -60,19 +62,20 @@ export default function TenantAudit({ account }: { account: string }) {
 
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 12 }} />}
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {/* Newest first, so the When column says so with aria-sort and no button (design-tl section 7). Event is the sentence and its code. */}
+      {/* Newest first, so the When column says so with aria-sort and no button (design-tl section 7). The event column is the
+          sentence and its code, named Action as the filter above it is. */}
       {!firstFailed && q.data !== undefined && (
-        <ItemList
+        <Listing
           label={t("tenant.audit.title")}
           items={entries}
-          rowLabel={(e) => e.action}
+          rowLabel={said}
           columns={[
             {
               key: "event",
-              title: t("audit.col.event"),
+              title: t("audit.filter"),
               render: (e) => (
                 <span style={{ display: "block", minWidth: 0 }}>
-                  <span style={{ display: "block", overflowWrap: "anywhere" }}>{renderSentence(sentence(e, names), (key, params) => translate(lang, key, params))}</span>
+                  <span style={{ display: "block", overflowWrap: "anywhere" }}>{said(e)}</span>
                   <span style={{ display: "block", fontFamily: "monospace", fontSize: 12, color: "var(--ant-color-text-secondary)" }}>{e.action}</span>
                 </span>
               ),
