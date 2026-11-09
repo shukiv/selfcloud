@@ -825,7 +825,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     expect((screen.getByRole("button", { name: "Save copy" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("round 3: after a copy is not shown, a renewal mints nothing for the original, and asks for a reopen", async () => {
+  it("round 4: after a copy is not shown, a renewal mints nothing for the original, and the copy note stays", async () => {
     nodesMock.children = [COPY];
     await openEditor();
     await confirmSaveAs("letter (2)", true);
@@ -835,7 +835,8 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     from({ MessageId: "App_TokenExpired", Values: {} });
     await flush();
     expect(officePosts()).toHaveLength(before);
-    expect(screen.getByText(REOPEN)).toBeTruthy();
+    expect(screen.getByText(COPY_NOT_SHOWN)).toBeTruthy();
+    expect(screen.queryByText(REOPEN)).toBeNull();
   });
 
   it("round 3: a file in a folder's root is listed in its own parent, which is not null, for the request and the bind", async () => {
@@ -893,5 +894,90 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     });
     await flush();
     expect(nodesMock.listed).toHaveLength(1);
+  });
+
+  // Round 4 (decision 107): the newest title is always checked; a timed-out request leaves the copy note and no renewals;
+  // a title checks against the window it belongs to.
+  it("round 4: A, B, A queued behind an A check ends with a check of the last A", async () => {
+    nodesMock.children = [];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    nodesMock.listed = [];
+    nodesMock.hold = [];
+    from({ MessageId: "Doc_Title", Values: { DocName: "letter (2).docx", Title: "letter (2).docx - Writer" } });
+    from({ MessageId: "Doc_Title", Values: { DocName: "other.docx", Title: "other.docx - Writer" } });
+    from({ MessageId: "Doc_Title", Values: { DocName: "letter (2).docx", Title: "letter (2).docx - Writer" } });
+    await flush();
+    const held = nodesMock.hold ?? [];
+    expect(held).toHaveLength(1);
+    // The first A check finds no copy. The newest A was titled after it started, so it runs again, and finds the copy.
+    act(() => {
+      held[0]?.ok();
+    });
+    await flush();
+    nodesMock.children = [COPY];
+    await waitFor(() => expect(held).toHaveLength(2));
+    act(() => {
+      held[1]?.ok();
+    });
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
+  });
+
+  it("round 4: a window that times out after its request was sent leaves the copy note, and a renewal then mints nothing", async () => {
+    nodesMock.children = [];
+    await openEditor();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      from({ MessageId: "UI_SaveAs", Values: {} });
+      fireEvent.change(screen.getByLabelText("File name"), { target: { value: "letter (2)" } });
+      const spy = vi.spyOn(frame().contentWindow as Window, "postMessage");
+      act(() => {
+        screen.getByRole("button", { name: "Save copy" }).click();
+      });
+      await flush();
+      expect(spy.mock.calls.some((c) => String(c[0]).includes("Action_SaveAs"))).toBe(true);
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByText(COPY_NOT_SHOWN)).toBeTruthy();
+      const before = officePosts().length;
+      from({ MessageId: "App_TokenExpired", Values: {} });
+      await flush();
+      expect(officePosts()).toHaveLength(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("round 4: a rename during a Save As does not stop renewals of the file the editor shows", async () => {
+    nodesMock.children = [];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    from({ MessageId: "File_Rename", Values: { NewName: "renamed" } });
+    await flush();
+    const before = officePosts().length;
+    from({ MessageId: "App_TokenExpired", Values: {} });
+    await waitFor(() => expect(officePosts()).toHaveLength(before + 1));
+    expect(officePosts()[before]?.[1]).toBe("/api/v1/nodes/nod_a1/office");
+  });
+
+  it("round 4: a title of a new window is checked when the old window's check ends", async () => {
+    nodesMock.children = [];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    nodesMock.hold = [];
+    from({ MessageId: "Doc_Title", Values: { DocName: "Other.docx", Title: "Other.docx - Writer" } });
+    from({ MessageId: "File_Rename", Values: { NewName: "renamed" } });
+    const held = nodesMock.hold ?? [];
+    nodesMock.hold = null;
+    await confirmSaveAs("letter (2)");
+    nodesMock.children = [COPY];
+    from({ MessageId: "Doc_Title", Values: { DocName: "letter (2).docx", Title: "letter (2).docx - Writer" } });
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
+    act(() => {
+      held.forEach((h) => h.ok());
+    });
+    await flush();
+    expect(window.location.pathname).toBe("/edit/nod_c2");
   });
 });
