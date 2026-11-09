@@ -320,17 +320,40 @@ func TestPutWithNoTypeGetsTheNameType(t *testing.T) {
 	}
 }
 
+// TestPutKeepsAStoredParameter: a kept type is kept exactly as stored, parameters included. A checked PUT that keeps a
+// stored application/json with a charset, and an exempt PUT that keeps a stored image/png with a parameter, both keep the
+// parameter.
+func TestPutKeepsAStoredParameter(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	n := storeFileAs(t, fx, "data.json", "application/json; charset=utf-8", "{}")
+	rec := putContentAs(t, fx, n, "application/octet-stream", "{\"a\": 1}")
+	wantStatus(t, rec, 200)
+	if got := decode[nodeJSON](t, rec).MimeType; got != "application/json; charset=utf-8" {
+		t.Errorf("a checked PUT kept %q, want the stored type exactly", got)
+	}
+
+	p := storeFileAs(t, fx, "pic.txt", "image/png; name=x", "old")
+	rec = putContentAs(t, fx, p, "application/octet-stream", notUTF8)
+	wantStatus(t, rec, 200)
+	if got := decode[nodeJSON](t, rec).MimeType; got != "image/png; name=x" {
+		t.Errorf("an exempt PUT kept %q, want the stored type exactly", got)
+	}
+}
+
 // TestPutInvariantsHoldForEveryCombination is the contract of decision 113, over every stored type, Content-Type and body,
-// for one code-listed name and one that is not. I1: a PUT stores a text type only when its body passed the check. I2: a
-// PUT to a file stored as text never leaves it with a non-text type. A refused PUT (400) changes nothing. An exempt PUT
-// (a binary file, with a Content-Type that is not text) stores a binary type. A checked PUT stores the name's text type
-// when the request names none.
+// for a code-listed name, an unlisted name and a code-listed name for a binary file. I1 and I2 are the oracle: a PUT
+// stores a text type only when its body passed the check (I1), and a PUT to a file stored as text never leaves it with a
+// non-text type (I2). A refused PUT (400) changes nothing. The exempt assertions restate the exempt formula of
+// production's rule, so they are informative only: a regression in the formula alone shows up as an I1 or I2 failure.
+// A checked PUT stores the name's text type when the request names none.
 func TestPutInvariantsHoldForEveryCombination(t *testing.T) {
 	t.Parallel()
-	stored := []string{"text/plain", "application/json", "application/octet-stream", "image/png", "video/mp2t"}
+	stored := []string{"", "text/plain", "application/json", "application/octet-stream", "application/gzip", "image/png",
+		"video/mp2t"}
 	headers := []string{"", "text/plain", "image/png", "application/octet-stream"}
 	bodies := []struct{ label, body string }{{"valid", "{\"a\": 1}"}, {"invalid", notUTF8}}
-	for _, name := range []string{"a.json", "a.bin"} {
+	for _, name := range []string{"a.json", "a.bin", "pic.txt"} {
 		for _, st := range stored {
 			for _, hd := range headers {
 				for _, b := range bodies {
