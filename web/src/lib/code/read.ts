@@ -13,17 +13,41 @@ import { decodeText, sniff, SNIFF_BYTES } from "./encoding";
 import { viewerOf, type Viewer } from "./kind";
 
 // readHead reads the first n bytes of a file, or gives "restricted" when the server refuses the read (403). An empty file
-// answers 416, and gives no bytes.
+// answers 416, and gives no bytes. Only a 206 answer is read: a 200 is the whole file (a proxy that dropped the Range header),
+// which could be gigabytes, so it is refused unread. A 206 is read as a stream and no further than n bytes, whatever it sends.
 export async function readHead(id: string, n: number): Promise<Uint8Array | "restricted"> {
   const res = await fetch(contentPath(id, "inline"), {
     credentials: "same-origin",
     cache: "no-store",
     headers: { Range: `bytes=0-${n - 1}` },
   });
-  if (res.status === 403) return "restricted";
-  if (res.status === 416) return new Uint8Array(0);
-  if (!res.ok) throw new ApiError(res.status, "internal", {}, 0);
-  return new Uint8Array(await res.arrayBuffer());
+  if (res.status !== 206 || res.body === null) {
+    // The body of a refusal is not needed: let the connection go.
+    await res.body?.cancel().catch(() => undefined);
+    if (res.status === 403) return "restricted";
+    if (res.status === 416) return new Uint8Array(0);
+    throw new ApiError(res.status, "internal", {}, 0);
+  }
+  return readUpTo(res.body, n);
+}
+
+// readUpTo reads a body until it has n bytes or it ends, and cancels whatever is left.
+async function readUpTo(body: ReadableStream<Uint8Array>, n: number): Promise<Uint8Array> {
+  const reader = body.getReader();
+  const out = new Uint8Array(n);
+  let got = 0;
+  try {
+    while (got < n) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const take = Math.min(value.length, n - got);
+      out.set(value.subarray(0, take), got);
+      got += take;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return out.slice(0, got);
 }
 
 // Code is a file's text as the viewer shows it, and how it shows.
