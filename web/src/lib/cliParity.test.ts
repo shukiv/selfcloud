@@ -392,6 +392,26 @@ describe('the guard sees every kind of request function', () => {
       ['lib/a.ts:default.go'],
     ],
     [
+      'a local request function named in an export list',
+      'function go(p: string) {\n  return fetch(p);\n}\nexport { go };',
+      ['lib/a.ts:go'],
+    ],
+    [
+      'a local request function renamed in an export list',
+      'function go(p: string) {\n  return fetch(p);\n}\nexport { go as other };',
+      ['lib/a.ts:other'],
+    ],
+    [
+      'a local request function as the default export',
+      'function go(p: string) {\n  return fetch(p);\n}\nexport default go;',
+      ['lib/a.ts:default'],
+    ],
+    [
+      'a local request function exported as default in a list',
+      'function go(p: string) {\n  return fetch(p);\n}\nexport { go as default };',
+      ['lib/a.ts:default'],
+    ],
+    [
       'a request through an injected fetch',
       'export function watch(p: string, deps: { fetch: typeof fetch }) {\n  return deps.fetch(p);\n}',
       ['lib/a.ts:watch'],
