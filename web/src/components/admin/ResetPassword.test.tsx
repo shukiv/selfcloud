@@ -45,6 +45,13 @@ describe("the ways to reset a password", () => {
     expect(screen.getByLabelText("Type a new password")).toBeTruthy();
   });
 
+  it("with no way to reset, the list of ways is antd's compact Empty with its words (decision 111)", () => {
+    renderReset({ mailConfigured: false, tenantAccess: false });
+    expect(document.querySelector(".ant-empty.ant-empty-normal .ant-empty-description")?.textContent).toBe(
+      "No reset is set up here. Mail must be configured, or the tenant access setting turned on.",
+    );
+  });
+
   it("says what will happen before the admin confirms, for each way", () => {
     renderReset({ mailConfigured: true, tenantAccess: true });
     expect(screen.getByRole("status").textContent).toContain("An email with a reset link is sent to mateo@example.com.");
