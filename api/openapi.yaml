@@ -1251,9 +1251,10 @@ paths:
         Only the caller who made the zip, with the same credential (a token is read only by that token), may
         read it; for anyone else it is `404`. Each call re-checks
         that the caller can still read every node the zip was made from, and that none is in the trash:
-        a revoked or trashed one refuses the download, and so does an expired zip. The no-download rule
-        is not checked again: a zip stays until it expires once it is made. A zip still being made
-        answers `202`. A `Range` request resumes a download, and `If-Range` is honoured.
+        a revoked or trashed one refuses the download, and so does an expired zip. The no-download rule is
+        checked on every call too, with the rule the create route uses: a zip whose contents the caller may no
+        longer copy is refused with `download_restricted`, even if it was made earlier (decision 117). A zip still
+        being made answers `202`. A `Range` request resumes a download, and `If-Range` is honoured.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - name: Range
@@ -1284,7 +1285,7 @@ paths:
           description: The part of the zip asked for by `Range`.
         "304":
           description: "Not modified: the `If-None-Match` ETag is current."
-        "403": { $ref: "#/components/responses/Error" }
+        "403": { description: The no-download rule refuses the zip (`download_restricted`). }
         "404": { $ref: "#/components/responses/Error" }
         "416": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
