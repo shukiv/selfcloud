@@ -90,8 +90,8 @@ type AccountFilter struct {
 	Status string // AccountActive or AccountSuspended
 }
 
-// AccountsFiltered lists the accounts that f narrows to, oldest first, one page at a time.
-func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) ([]*Account, string, error) {
+// accountFilterWhere is the WHERE clause of f: its conditions joined by AND, and their arguments.
+func accountFilterWhere(f AccountFilter) (string, []any) {
 	where := []string{"1 = 1"}
 	var args []any
 	if f.ExternalID != "" {
@@ -106,6 +106,82 @@ func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) (
 		where = append(where, "status = ?")
 		args = append(args, f.Status)
 	}
+	return strings.Join(where, " AND "), args
+}
+
+// AccountSort orders an accounts list: by name, or by creation time (the order the list has always had). Desc reverses
+// either. The zero value is creation time, oldest first.
+type AccountSort struct {
+	ByName bool
+	Desc   bool
+}
+
+// AccountPos is the position of an account in a list sorted by an AccountSort: its name for a name sort, its creation
+// time for a creation sort, and its ID, which breaks a tie.
+type AccountPos struct {
+	Name    string
+	Created int64
+	ID      string
+}
+
+// PosOf returns the position of a in the list sorted by s, for the next page to resume after.
+func (s AccountSort) PosOf(a *Account) AccountPos {
+	pos := AccountPos{ID: a.ID}
+	if s.ByName {
+		pos.Name = a.Name
+	} else {
+		pos.Created = millis(a.CreatedAt)
+	}
+	return pos
+}
+
+// AccountsSorted lists up to limit accounts that f narrows to, in the order order, after the position after (nil for the
+// first page). more says whether an account follows the last one returned. The sort key is a fixed column, never caller
+// text, so no value of a sort reaches the SQL as text.
+func (s *Store) AccountsSorted(ctx context.Context, f AccountFilter, order AccountSort, limit int, after *AccountPos) (out []*Account, more bool, err error) {
+	where, args := accountFilterWhere(f)
+	key, dir, op := "created_at", "ASC", ">"
+	if order.ByName {
+		key = "name COLLATE " + NameCollation
+	}
+	if order.Desc {
+		dir, op = "DESC", "<"
+	}
+	if after != nil {
+		if order.ByName {
+			where += " AND (" + key + ", id) " + op + " (?, ?)"
+			args = append(args, after.Name, after.ID)
+		} else {
+			where += " AND (created_at, id) " + op + " (?, ?)"
+			args = append(args, after.Created, after.ID)
+		}
+	}
+	args = append(args, limit+1)
+	rows, err := s.r.QueryContext(ctx, "SELECT "+accountCols+" FROM accounts WHERE "+where+
+		" ORDER BY "+key+" "+dir+", id "+dir+" LIMIT ?", args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		a, err := scanAccount(rows)
+		if err != nil {
+			return nil, false, err
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(out) > limit {
+		return out[:limit], true, nil
+	}
+	return out, false, nil
+}
+
+// AccountsFiltered lists the accounts that f narrows to, oldest first, one page at a time.
+func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) ([]*Account, string, error) {
+	where, args := accountFilterWhere(f)
 	if p.Cursor != "" {
 		parts, err := decodeCursor(p.Cursor, 2)
 		if err != nil {
@@ -115,12 +191,12 @@ func (s *Store) AccountsFiltered(ctx context.Context, f AccountFilter, p Page) (
 		if err != nil {
 			return nil, "", ErrBadCursor
 		}
-		where = append(where, "(created_at, id) > (?, ?)")
+		where += " AND (created_at, id) > (?, ?)"
 		args = append(args, ms, parts[1])
 	}
 	args = append(args, p.Limit+1)
 	rows, err := s.r.QueryContext(ctx, "SELECT "+accountCols+" FROM accounts WHERE "+
-		strings.Join(where, " AND ")+" ORDER BY created_at, id LIMIT ?", args...)
+		where+" ORDER BY created_at, id LIMIT ?", args...)
 	if err != nil {
 		return nil, "", err
 	}

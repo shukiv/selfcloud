@@ -207,6 +207,13 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) erro
 	default:
 		return apierr.New(apierr.InvalidRequest, "status must be active or suspended")
 	}
+	order, sorted, err := accountSortParams(r)
+	if err != nil {
+		return err
+	}
+	if sorted {
+		return s.writeSortedAccounts(w, r, filter, order, page)
+	}
 	accounts, next, err := s.store.AccountsFiltered(r.Context(), filter, page)
 	if err != nil {
 		return storeErr(err)
