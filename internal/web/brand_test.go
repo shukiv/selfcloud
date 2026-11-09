@@ -94,17 +94,17 @@ func TestArtworkMaskableStaysInTheSafeCircle(t *testing.T) {
 	}
 }
 
-// TestCustomNameKeepsTheGlyph: an installation with its own name and no logo keeps the neutral cloud glyph, and its icon
-// has its own validator.
-func TestCustomNameKeepsTheGlyph(t *testing.T) {
+// TestCustomNameShowsTheMark: an installation with its own name and no logo file shows the SelfCloud mark on its icons, the
+// same picture as the default name (decision 119 removes the glyph), so the two share an ETag.
+func TestCustomNameShowsTheMark(t *testing.T) {
 	h := pwaHandler(t, "Acme", "#053D8E")
 	img := decodePNG(t, get(t, h, http.MethodGet, "/brand/icon-512.png").Body.Bytes())
 	if c := color.RGBAModel.Convert(img.At(256, 256)).(color.RGBA); c.R < 240 {
-		t.Errorf("the glyph's centre is %v, want white", c)
+		t.Errorf("the mark's centre is %v, want white", c)
 	}
 	artwork := get(t, artworkHandler(t, "#053D8E"), http.MethodGet, "/brand/icon-512.png").Header().Get("ETag")
-	if got := get(t, h, http.MethodGet, "/brand/icon-512.png").Header().Get("ETag"); got == artwork {
-		t.Errorf("the glyph and the mark share the ETag %q", got)
+	if got := get(t, h, http.MethodGet, "/brand/icon-512.png").Header().Get("ETag"); got != artwork {
+		t.Errorf("the custom name's icon has ETag %q, want the mark's %q", got, artwork)
 	}
 }
 
@@ -138,8 +138,8 @@ func TestFaviconFollowsTheBrand(t *testing.T) {
 		t.Errorf("repeat with the ETag: %d, want 304", again.Code)
 	}
 	custom := get(t, pwaHandler(t, "Acme", "#0F766E"), http.MethodGet, faviconPath).Body.String()
-	if !strings.Contains(custom, "<circle") || strings.Contains(custom, "M 252.24") {
-		t.Errorf("the custom favicon is not the glyph: %.120s", custom)
+	if strings.Contains(custom, "<circle") || !strings.Contains(custom, "M 252.24") {
+		t.Errorf("the custom favicon is not the mark: %.120s", custom)
 	}
 }
 
@@ -181,8 +181,8 @@ func TestBrandSVGsAreServed(t *testing.T) {
 	if m := get(t, art, http.MethodGet, markPath).Body.String(); !strings.Contains(m, "M 252.24 119.85") {
 		t.Error("the default mark is not the mark")
 	}
-	if m := get(t, pwaHandler(t, "Acme", "#053D8E"), http.MethodGet, markPath).Body.String(); !strings.Contains(m, "<circle") {
-		t.Error("a custom name's mark is not the glyph")
+	if m := get(t, pwaHandler(t, "Acme", "#053D8E"), http.MethodGet, markPath).Body.String(); !strings.Contains(m, "M 252.24 119.85") {
+		t.Error("a custom name's mark is not the mark")
 	}
 }
 

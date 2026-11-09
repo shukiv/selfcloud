@@ -43,6 +43,33 @@ func TestBrandFromEnvironment(t *testing.T) {
 	}
 }
 
+// TestIconFileExtension: ui.brand.icon_file is a .png or .svg file, as logo_file is, and it does not change the artwork (decision
+// 119): an installation with the default name and an icon file still shows the artwork in the sidebar.
+func TestIconFileExtension(t *testing.T) {
+	for _, tc := range []struct {
+		file, wantErr string
+	}{
+		{"/srv/icon.PNG", ""},
+		{"icon.svg", ""},
+		{"icon.jpg", "must be a .png or .svg"},
+		{"icon", "must be a .png or .svg"},
+	} {
+		cfg := Defaults()
+		cfg.DataDir = "data"
+		cfg.UI.Brand.IconFile = tc.file
+		err := cfg.Validate()
+		switch {
+		case tc.wantErr == "" && err != nil:
+			t.Errorf("icon_file %q refused: %v", tc.file, err)
+		case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "icon_file")):
+			t.Errorf("icon_file %q: %v, want %q naming icon_file", tc.file, err, tc.wantErr)
+		}
+	}
+	if !(BrandConfig{Name: DefaultBrandName, IconFile: "icon.png"}).Artwork() {
+		t.Error("an icon file turned the artwork off")
+	}
+}
+
 // TestBrandValidation refuses a brand that cannot be shown, and reports what is wrong.
 func TestBrandValidation(t *testing.T) {
 	cases := []struct {

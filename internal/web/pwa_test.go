@@ -222,7 +222,7 @@ func glyphAlphaAt(img image.Image, x, y int) float64 {
 func TestGlyphEdgeIsAntiAliased(t *testing.T) {
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
 	for _, size := range []int{180, 192, 512} {
-		img := drawIcon(size, false, accent, false)
+		img := drawIcon(iconSpec{path: "test", size: size}, accent, iconArt{})
 		solid, partial := 0, 0
 		for y := 0; y < size; y++ {
 			for x := 0; x < size; x++ {
@@ -249,7 +249,7 @@ func TestGlyphEdgeIsAntiAliased(t *testing.T) {
 func TestGlyphBoundingBoxIsSixtyPercentOfWidth(t *testing.T) {
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
 	for _, size := range []int{180, 192, 512} {
-		img := drawIcon(size, false, accent, false)
+		img := drawIcon(iconSpec{path: "test", size: size}, accent, iconArt{})
 		minX, minY, maxX, maxY := size, size, -1, -1
 		for y := 0; y < size; y++ {
 			for x := 0; x < size; x++ {
@@ -275,7 +275,7 @@ func TestGlyphBoundingBoxIsSixtyPercentOfWidth(t *testing.T) {
 func TestMaskableGlyphIsInsideTheSafeCircle(t *testing.T) {
 	accent := color.RGBA{R: 5, G: 61, B: 142, A: 255}
 	const n = 512
-	img := drawIcon(n, true, accent, false)
+	img := drawIcon(iconSpec{path: "test", size: n, maskable: true}, accent, iconArt{})
 	limit := 0.40 * n
 	for y := 0; y < n; y++ {
 		for x := 0; x < n; x++ {
