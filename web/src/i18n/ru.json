@@ -1539,6 +1539,7 @@
   "files.editor.sessionEnded": "Вход изменился. Войдите снова.",
   "files.editor.tokenRefreshFailed": "Сеанс не продлён. Откройте файл.",
   "files.editor.copyNotShown": "Копия сохранена. Откройте папку.",
+  "files.editor.saveAsTimedOut": "Копия не успела. Если она создана, ищите {name} в папке файла (возможно, с номером). Откройте файл заново.",
   "files.editor.copyNotStarted": "Копия не начата: папку не прочитать. Повторите.",
   "files.editor.saveAsBusy": "Копия уже делается. Дождитесь.",
   "files.editing.mark": "Редактируется",

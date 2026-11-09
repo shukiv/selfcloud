@@ -1539,6 +1539,7 @@
   "files.editor.sessionEnded": "La sesión ha cambiado, así que este editor ya no puede guardar. Inicie sesión de nuevo y vuelva a abrir el archivo.",
   "files.editor.tokenRefreshFailed": "El editor no pudo renovar su sesión, así que los últimos cambios podrían no guardarse. Vuelva a abrir el archivo.",
   "files.editor.copyNotShown": "La copia se guardó, pero no se muestra aquí. Abra su carpeta para encontrarla.",
+  "files.editor.saveAsTimedOut": "La copia no terminó a tiempo. Si se hizo una copia, busque {name} en la carpeta de este archivo (puede tener un número después del nombre). Reabra el archivo para seguir editándolo.",
   "files.editor.copyNotStarted": "No se inició la copia porque no se pudo leer esta carpeta. Inténtelo de nuevo.",
   "files.editor.saveAsBusy": "Ya se está creando una copia. Espere a que termine.",
   "files.editing.mark": "Se está editando",

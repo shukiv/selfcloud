@@ -82,7 +82,7 @@ interface SaveAsPending {
 }
 
 // Notice is a note the bar shows about the session or a copy (ef1). Its words are the catalogue key after files.editor.
-type Notice = "sessionEnded" | "tokenRefreshFailed" | "copyNotShown" | "copyNotStarted";
+type Notice = "sessionEnded" | "tokenRefreshFailed" | "copyNotShown" | "copyNotStarted" | "saveAsTimedOut";
 
 const NOD = /^nod_[A-Za-z0-9_-]+$/;
 
@@ -124,6 +124,8 @@ export default function OfficeEditPage() {
   const [saveAs, setSaveAs] = useState<SaveAsAsk | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
+  // noticeName is the copy's name, for the note that names it (saveAsTimedOut).
+  const [noticeName, setNoticeName] = useState("");
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const holderRef = useRef<HTMLDivElement | null>(null);
   // pending is the form built for the editor, until it is posted. It is cleared after the post.
@@ -165,10 +167,16 @@ export default function OfficeEditPage() {
     }
   };
   // copyLost ends a window whose copy the page could not show, and stops renewals for the original.
-  const copyLost = (win: SaveAsPending) => {
+  // A timeout names the copy the page asked for, since the copy may exist and the page has not seen it (decision 107).
+  const copyLost = (win: SaveAsPending, timedOut: boolean) => {
     finishSaveAs(win);
     copyLostRef.current = true;
-    setNotice("copyNotShown");
+    if (timedOut) {
+      setNoticeName(win.filename);
+      setNotice("saveAsTimedOut");
+    } else {
+      setNotice("copyNotShown");
+    }
   };
   // supersede ends the pending window, if any, because the page moves on to another file (a read, a new node).
   const supersede = () => {
@@ -238,7 +246,7 @@ export default function OfficeEditPage() {
       cur = await statNode(nodRef.current);
     } catch {
       if (win.dead || seq !== seqRef.current) return;
-      if (last) copyLost(win);
+      if (last) copyLost(win, false);
       return;
     }
     if (win.dead || seq !== seqRef.current) return;
@@ -254,7 +262,7 @@ export default function OfficeEditPage() {
     const want = signal.normalize("NFC");
     const hit = copyCandidates(items, win.filename, win.at, win.before).find((n) => n.name.normalize("NFC") === want);
     if (hit === undefined) {
-      if (last) copyLost(win);
+      if (last) copyLost(win, false);
       return;
     }
     finishSaveAs(win);
@@ -313,6 +321,8 @@ export default function OfficeEditPage() {
     renewingRef.current = true;
     try {
       const answer = await api<OfficeAnswer>("POST", `/api/v1/nodes/${nodRef.current}/office`, { body: { mode: modeRef.current } });
+      // The copy was lost while this renewal was in flight: no token goes to the original, and no note is replaced (round 5).
+      if (copyLostRef.current) return;
       if (watchRef.current?.() ?? false) {
         setNotice("sessionEnded");
         return;
@@ -328,7 +338,7 @@ export default function OfficeEditPage() {
       );
       setNotice(null);
     } catch {
-      setNotice(watchRef.current?.() ?? false ? "sessionEnded" : "tokenRefreshFailed");
+      if (!copyLostRef.current) setNotice(watchRef.current?.() ?? false ? "sessionEnded" : "tokenRefreshFailed");
     } finally {
       renewingRef.current = false;
     }
@@ -450,7 +460,7 @@ export default function OfficeEditPage() {
     // The window's timer ends it. Once the request has gone to the editor, a timeout may leave a copy the page never heard of, so
     // the copy is lost (copyLost): the page then mints no token for the original. A window that never sent its request is only ended.
     win.timer = setTimeout(() => {
-      if (win.at !== 0) copyLost(win);
+      if (win.at !== 0) copyLost(win, true);
       else finishSaveAs(win);
     }, SAVE_AS_WINDOW_MS);
     setCopyBusy(true);
@@ -531,7 +541,17 @@ export default function OfficeEditPage() {
       </header>
       {notice !== null && (
         <div style={{ padding: "8px 12px" }}>
-          <Alert type="warning" showIcon message={t(`files.editor.${notice}`)} />
+          <Alert
+            type="warning"
+            showIcon
+            message={
+              notice === "saveAsTimedOut" ? (
+                <Sentence template={t("files.editor.saveAsTimedOut")} names={{ name: noticeName }} />
+              ) : (
+                t(`files.editor.${notice}`)
+              )
+            }
+          />
         </div>
       )}
       {state.status === "failed" && (
