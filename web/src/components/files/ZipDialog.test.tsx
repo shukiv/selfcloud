@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { downloadAgain } from "../../lib/files/zips";
 import { LANGUAGES, setLang, translate, translatePlural, type Lang } from "../../lib/i18n";
 import ZipDialog from "./ZipDialog";
+
+// downloadAgain never answers here: the check stays in progress, so the dialog's busy state is what is under test.
+vi.mock("../../lib/files/zips", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/files/zips")>();
+  return { ...actual, downloadAgain: vi.fn(() => new Promise<string | null>(() => undefined)) };
+});
 
 // Counts that reach every plural form of the languages in use: zero, one, two, few, many and other.
 const COUNTS = [1, 2, 3, 5, 11, 21, 100];
@@ -65,6 +72,17 @@ describe("ZipDialog", () => {
       return !!el?.closest('[role="status"]');
     });
     expect(inRegion).toBe(true);
+  });
+
+  it("starts one check when Download again is clicked twice, and disables the button while it runs", async () => {
+    await setLang("en");
+    vi.mocked(downloadAgain).mockClear();
+    render(<ZipDialog phase={{ kind: "ready", skipped: 0, zip: "zip_1" }} onClose={vi.fn()} />);
+    const button = screen.getByRole("button", { name: translate("en", "files.zip.again") });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(downloadAgain).toHaveBeenCalledTimes(1);
+    expect(button).toBeDisabled();
   });
 
   it("labels the spinner, and keeps the status text in a live region that exists before the text", async () => {
