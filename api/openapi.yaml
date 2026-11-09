@@ -21,7 +21,8 @@ info:
     **A user who must change its password.** Such a user reaches only `GET /me`, `POST /me/password` and
     sign-out, as its browser session does. A delegated token acting as that user gets `403 forbidden` with
     `details.reason = password_change_required` on every other route. Those three routes take a session only,
-    so a token gets `401 unauthenticated` there (decision 116).
+    so a token gets `401 unauthenticated` there. A WOPI token of such a user gets `401` as a dead editor does
+    (decision 116).
 
     This document grows with each slice of the build. Only what it lists is implemented.
 servers:
@@ -936,8 +937,8 @@ paths:
         then the token's intersected with the user's grants), and as the key otherwise. It reaches
         only `folders`, and at most at `permissions`; it never manages the account. Its lifetime is
         `ttl`, capped by `tokens.max_ttl`. The token is in this response and nowhere else. The audit
-        log records the mint without it. Rate-limited per account key. A token acting as a user who must change its
-        password is refused on each route as that user's session is; see the introduction.
+        log records the mint without it. Rate-limited per account key. No token is made for a user who must change
+        its password: that is a `conflict` with `reason = password_change_required`, as sign-in-as answers (decision 116).
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -950,6 +951,13 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TokenCreated" }
+        "409":
+          description: |
+            `conflict`: the user must change its password first (`reason = password_change_required`). A user that
+            is not verified or is disabled gets `forbidden`, as before.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/accounts/{acc}/tokens/revoke:
