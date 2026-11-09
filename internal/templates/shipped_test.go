@@ -242,6 +242,12 @@ func TestMPLTextIsShipped(t *testing.T) {
 	}
 }
 
+// cc0Statement is the licence sentence the presentations carry in their description (the CC0 1.0 public-domain dedication), as
+// each source states it; the Focus source words it differently, and the test keeps its own wording.
+const cc0Statement = "This work is licensed under a Creative Commons 0 License."
+
+var cc0Wording = map[string]string{"lo-focus": "This work is licensed under a Creative Commons-0 licence."}
+
 // The CC0 presentations keep their licence statement in the documents (the metadata scrub removes personal fields only, and
 // the description carries the licence and the names of the image authors, which the scrub had removed; decision 108).
 func TestShippedPresentationsKeepTheirLicence(t *testing.T) {
@@ -260,8 +266,12 @@ func TestShippedPresentationsKeepTheirLicence(t *testing.T) {
 			t.Errorf("%s: no docProps/core.xml", tpl.ID)
 			continue
 		}
-		if !bytes.Contains(core, []byte("Creative Commons")) {
-			t.Errorf("%s: docProps/core.xml lost its Creative Commons licence statement", tpl.ID)
+		want := cc0Statement
+		if w, ok := cc0Wording[s.name]; ok {
+			want = w
+		}
+		if !bytes.Contains(core, []byte(want)) {
+			t.Errorf("%s: docProps/core.xml lost its CC0 licence statement %q", tpl.ID, want)
 		}
 	}
 }
