@@ -176,6 +176,33 @@ describe("people of a tenant", () => {
     expect(calls.filter((c) => c.method === "PATCH")[1].body).toEqual({ status: "active" });
   });
 
+  // Re-check item 2: the mockup's Remove from account, a danger entry of the ⋮ menu, through the route the owner's People
+  // page uses (DELETE). Nothing is sent until the confirmation's danger button, in the dialog's footer, is pressed.
+  it("the ⋮ menu removes a person after a confirmation, and the list is read again", async () => {
+    const mateo = person({ id: "usr_a", email: "mateo@example.com", display_name: "Mateo", role: "member", status: "active" });
+    const { calls } = stubFetch((c: Call) => {
+      if (c.method === "DELETE") return { status: 204 };
+      return { status: 200, body: { items: [mateo] } };
+    });
+    renderUsers();
+    await screen.findByText("Mateo");
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Mateo" }));
+    const entry = await screen.findByRole("menuitem", { name: /Remove/ });
+    expect(entry.className).toContain("ant-dropdown-menu-item-danger");
+    fireEvent.click(entry);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Remove Mateo?")).toBeTruthy();
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    const confirm = within(dialog).getByRole("button", { name: "Remove" });
+    expect(confirm.className).toContain("ant-btn-dangerous");
+    expect(confirm.closest(".ant-modal-footer")).not.toBeNull();
+    fireEvent.click(confirm);
+    await waitFor(() => expect(calls.find((c) => c.method === "DELETE")).toBeTruthy());
+    expect(new URL((calls.find((c) => c.method === "DELETE") as Call).url, "http://x").pathname).toBe("/api/v1/accounts/acc_1/users/usr_a");
+    expect(await screen.findByText("Mateo was removed.")).toBeTruthy();
+    await waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.url.includes("/users")).length).toBeGreaterThan(1));
+  });
+
   it("a pending person can be sent the invitation again by email, and has no Disable", async () => {
     const dana = person({ id: "usr_d", email: "dana@example.com", display_name: "Dana", role: "member", status: "pending" });
     const { calls } = stubFetch((c: Call) => {
@@ -189,11 +216,14 @@ describe("people of a tenant", () => {
     fireEvent.click(screen.getByRole("button", { name: "Resend invitation: Dana" }));
     await waitFor(() => expect(calls.find((c) => c.url.includes("/verification"))?.body).toEqual({ method: "email" }));
     expect(await screen.findByText("The email was sent.")).toBeTruthy();
-    // Resend and Reset are inline, and nothing is left for a ⋮ menu: Disable waits until the person has verified.
+    // Resend and Reset are inline, and the ⋮ menu has Remove alone: Disable waits until the person has verified.
     expect(within(screen.getByRole("region", { name: "People" })).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
       "Resend invitation: Dana",
       "Reset password: Dana",
+      "More actions for Dana",
     ]);
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Dana" }));
+    expect((await screen.findAllByRole("menuitem")).map((m) => m.textContent)).toEqual(["Remove…"]);
   });
 
   it("a refused resend shows the code's text and sends nothing more (guard: failureText)", async () => {
