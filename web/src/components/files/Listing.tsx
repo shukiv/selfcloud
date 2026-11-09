@@ -12,7 +12,7 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { Button, Checkbox, Grid, Input, Table, theme as antdTheme } from "antd";
+import { Button, Checkbox, Dropdown, Grid, Input, Table, theme as antdTheme, type MenuProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { ArrowDown, ArrowUp, EllipsisVertical, Link2, Star } from "lucide-react";
 import IconButton from "../IconButton";
@@ -663,6 +663,192 @@ export default function Listing(p: ListingProps) {
     <div role="listbox" aria-label={p.label} aria-multiselectable="true" tabIndex={-1} ref={p.containerRef} style={{ display: "flex", flexDirection: "column", gap: 16, padding: 12, outline: "none" }}>
       {folders.length > 0 && <div role="presentation" style={band}>{folders.map(chip)}</div>}
       {files.length > 0 && <div role="presentation" style={band}>{files.map(card)}</div>}
+    </div>
+  );
+}
+
+// ItemColumn is one column of an ItemList. The first column is the name cell: it holds the row's name (and its link), with the
+// row's icon before it. A secondary column is a column on a desktop; on a phone its value is the name cell's second line.
+export interface ItemColumn<T> {
+  key: string;
+  title: string;
+  render: (row: T) => ReactNode;
+  secondary?: boolean;
+  // sortKey is the key this header sorts by, when the list has a sort. Without it the header is not a button.
+  sortKey?: string;
+  // ariaSort marks a column that is in order with no control, such as a time column that lists newest first.
+  ariaSort?: "descending";
+  align?: "start" | "end";
+  width?: number;
+}
+
+// ItemAction is an icon in a row's end. Up to three show inline on a desktop; the rest, and every action on a phone, go in the
+// row's ⋮ menu.
+export interface ItemAction {
+  key: string;
+  label: string;
+  icon: ReactNode;
+  enabled: boolean;
+  run: () => void;
+}
+
+// ItemMenuEntry is one line of a row's ⋮ menu, after the row's overflow actions.
+export interface ItemMenuEntry {
+  key: string;
+  label: string;
+  icon?: ReactNode;
+  danger?: boolean;
+  onSelect: () => void;
+}
+
+// ItemSort is the list's sort: the key and direction the page sorts by, and what a header click asks for.
+export interface ItemSort {
+  key: string;
+  dir: "asc" | "desc";
+  onSort: (key: string) => void;
+}
+
+export interface ItemListProps<T extends { id: string }> {
+  items: T[];
+  label: string;
+  rowLabel: (row: T) => string;
+  // moreLabel names a row's ⋮ button, for a screen reader.
+  moreLabel: (row: T) => string;
+  columns: ItemColumn<T>[];
+  icon?: (row: T) => ReactNode;
+  actions?: (row: T) => ItemAction[];
+  menu?: (row: T) => ItemMenuEntry[];
+  sort?: ItemSort;
+  // empty is the node the body shows with no rows: the page's EmptyState, built on the page side.
+  empty: ReactNode;
+}
+
+// ItemList is the one table of the admin and the other preset lists (design-tl). It is antd's Table with the look and the phone
+// rules of My files, and none of My files' behaviour: no selection, drag or tiles. The table's code is in this module, which
+// is loaded only by the pages that use it.
+export function ItemList<T extends { id: string }>(p: ItemListProps<T>) {
+  const { t } = useT();
+  const screens = Grid.useBreakpoint();
+  const narrow = !screens.md;
+  const [nameCol, ...others] = p.columns;
+  const seconds = narrow ? others.filter((c) => c.secondary) : [];
+  const cols = narrow ? others.filter((c) => !c.secondary) : others;
+
+  const headerFor = (c: ItemColumn<T>) => {
+    if (c.sortKey && p.sort) {
+      const sort = p.sort;
+      const active = sort.key === c.sortKey;
+      const aria: AriaSort = active ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
+      return {
+        title: (
+          <Button type="text" size="small" onClick={() => sort.onSort(c.sortKey as string)} style={{ fontWeight: 500, padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+            {c.title}
+            <span aria-hidden="true" style={{ display: "inline-flex", width: 14, height: 14, flex: "none" }}>
+              {active ? (sort.dir === "asc" ? <ArrowUp size={14} /> : <ArrowDown size={14} />) : null}
+            </span>
+          </Button>
+        ),
+        onHeaderCell: () => ({ "aria-sort": aria }),
+      };
+    }
+    return {
+      title: <span style={{ fontWeight: 500 }}>{c.title}</span>,
+      onHeaderCell: () => (c.ariaSort ? { "aria-sort": c.ariaSort } : {}),
+    };
+  };
+
+  const nameCell = (row: T) => (
+    <div style={{ minWidth: 0 }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%" }}>
+        {p.icon?.(row)}
+        <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{nameCol.render(row)}</span>
+      </span>
+      {seconds.length > 0 && (
+        <div className="item-second" style={{ color: "var(--ant-color-text-secondary)", fontSize: 13, overflowWrap: "anywhere" }}>
+          {seconds.map((c, i) => (
+            <span key={c.key}>
+              {i > 0 ? " · " : ""}
+              {c.render(row)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // The row end: up to three of the row's enabled actions inline (none on a phone), then the ⋮ menu with the rest.
+  const rowEnd = (row: T) => {
+    const enabled = (p.actions?.(row) ?? []).filter((a) => a.enabled);
+    const inline = narrow ? [] : enabled.slice(0, 3);
+    const overflow = narrow ? enabled : enabled.slice(3);
+    const entries = [
+      ...overflow.map((a) => ({ key: `act-${a.key}`, label: a.label, icon: a.icon, danger: false, onSelect: a.run })),
+      ...(p.menu?.(row) ?? []),
+    ];
+    const items: MenuProps["items"] = entries.map((e) => ({ key: e.key, label: e.label, icon: e.icon, danger: e.danger, onClick: () => e.onSelect() }));
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, flexWrap: "nowrap" }}>
+        {inline.map((a) => (
+          <IconButton
+            key={a.key}
+            label={a.label}
+            icon={a.icon}
+            onClick={(e) => {
+              e.stopPropagation();
+              a.run();
+            }}
+          />
+        ))}
+        {items && items.length > 0 && (
+          <Dropdown menu={{ items }} trigger={["click"]}>
+            <IconButton
+              aria-haspopup="menu"
+              label={p.moreLabel(row)}
+              tip={t("files.selection.more")}
+              icon={<EllipsisVertical size={18} aria-hidden="true" focusable="false" />}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Dropdown>
+        )}
+      </div>
+    );
+  };
+
+  const columns: ColumnsType<T> = [
+    {
+      key: nameCol.key,
+      ...headerFor(nameCol),
+      render: (_v, row) => nameCell(row),
+    },
+    ...cols.map<ColumnsType<T>[number]>((c) => ({
+      key: c.key,
+      ...headerFor(c),
+      align: c.align,
+      width: c.width,
+      render: (_v: unknown, row: T) => c.render(row),
+    })),
+    {
+      key: "__actions",
+      title: null,
+      width: narrow ? ROW_ICON_PX : ROW_ICON_PX * 4,
+      align: "end",
+      render: (_v, row) => rowEnd(row),
+    },
+  ];
+
+  return (
+    <div role="region" aria-label={p.label} className="item-list">
+      <Table<T>
+        rowKey="id"
+        size="middle"
+        pagination={false}
+        // The table is as wide as the page: a column that does not fit wraps, and the page never scrolls sideways.
+        tableLayout="fixed"
+        columns={columns}
+        dataSource={p.items}
+        locale={{ emptyText: p.empty }}
+        onRow={(row) => ({ "aria-label": p.rowLabel(row) }) as Record<string, unknown>}
+      />
     </div>
   );
 }
