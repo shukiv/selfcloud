@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -65,4 +66,30 @@ func TestClearedFlagRestoresTheSameToken(t *testing.T) {
 	setMustChange(t, s, accID, m.ann.ID, false)
 	wantStatus(t, getWith(t, s, tok, read), 200)
 	wantStatus(t, tokenMkdir(t, s, tok, m.f.ID, "/again"), 201)
+}
+
+// A mint for a user whose password an admin typed is refused with 409 conflict and reason password_change_required, the
+// answer sign-in-as gives (impersonation.go). The typed password ends the user's earlier tokens, so a mint is the only
+// way such a token could be made. Once the flag is cleared the mint works again.
+func TestMintRefusesAMustChangeUser(t *testing.T) {
+	t.Parallel()
+	fx := newImpFix(t, true)
+	s := fx.s
+	f := newFolder(t, s, fx.accKey, fx.acc.ID, "Mine")
+	wantStatus(t, callSession(t, s, fx.adminSess, "POST", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.member.ID+"/password",
+		map[string]any{"password": "a password the admin typed", "admin_password": testPassword}), 204)
+	mint := func() *httptest.ResponseRecorder {
+		return call(t, s, "POST", "/api/v1/accounts/"+fx.acc.ID+"/tokens", fx.accKey,
+			map[string]any{"folders": []string{f.ID}, "user": fx.member.ID, "permissions": "write"})
+	}
+	t.Run("mint is refused", func(t *testing.T) {
+		e := wantError(t, mint(), 409, apierr.Conflict)
+		if e.Details["reason"] != reasonPasswordChangeRequired {
+			t.Errorf("reason = %v, want %s", e.Details["reason"], reasonPasswordChangeRequired)
+		}
+	})
+	t.Run("a cleared flag mints again", func(t *testing.T) {
+		setMustChange(t, s, fx.acc.ID, fx.member.ID, false)
+		wantStatus(t, mint(), 201)
+	})
 }
