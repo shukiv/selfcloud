@@ -68,8 +68,9 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await page.waitFor(`${rowSel}.every((x) => x.getBoundingClientRect().height > 0)`, 5000);
     const rowHeight = await page.evaluate(`${rowSel}.find((x) => x.textContent.trim() === 'New folder').getBoundingClientRect().height`);
     check(Math.round(rowHeight) === 40, `a mouse's row is 40 px (${Math.round(rowHeight)})`);
-    const heights = await page.evaluate(`${rowSel}.map((x) => x.textContent.trim() + ':' + Math.round(x.getBoundingClientRect().height)).join(' | ')`);
-    check(!/:(?!40\b)\d+/.test(heights), `every row of the New menu, submenu titles too, is 40 px (${heights})`);
+    // Every top-level row of the open New menu, submenu titles included (a submenu's row is its title, a child of its item).
+    const heights = await page.evaluate(`[...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) > .ant-dropdown-menu > li:not(.ant-dropdown-menu-item-divider)')].map((li) => { const row = li.matches('[role="menuitem"]') ? li : li.querySelector(':scope > [role="menuitem"]'); return (row ? row.textContent.trim() : '?') + ':' + Math.round(row ? row.getBoundingClientRect().height : -1); }).join(' | ')`);
+    check(!/:(?!40\b)-?\d+/.test(heights) && !heights.includes('?'), `every row of the New menu, submenu titles too, is 40 px (${heights})`);
     const width = await page.evaluate(`Math.round(document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden) > .ant-dropdown-menu').getBoundingClientRect().width)`);
     check(width >= 320 && width <= 400, `the menu is 320 to 400 px wide (${width})`);
 
