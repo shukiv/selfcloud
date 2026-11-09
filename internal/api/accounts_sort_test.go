@@ -5,7 +5,6 @@ package api
 import (
 	"net/url"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -24,14 +23,18 @@ func accountNames(t *testing.T, s *Server, admin, query string) ([]string, strin
 	return names, page.NextCursor
 }
 
+// sortNames are the accounts the sort tests make, in this order. Byte order (Banana, apple, cherry) and folded order (apple,
+// Banana, cherry) differ, so a name sort that loses the name collation fails here; the creation order is a third order.
+var sortNames = []string{"cherry", "Banana", "apple"}
+
 // TestListAccountsSortedWalk checks ?sort=name and ?sort=created with ?order=, walked a page at a time: each walk visits every
 // account once in its order, and a sorted page carries the usage fields the tenants list shows.
 func TestListAccountsSortedWalk(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
-	for _, n := range []string{"gamma", "Alpha", "beta"} {
-		wantStatus(t, call(t, s, "POST", "/api/v1/accounts", admin, map[string]any{"name": n}), 201)
+	for _, n := range sortNames {
+		wantStatus(t, call(t, s, "POST", "/api/v1/accounts", admin, map[string]any{"name": n, "quota_bytes": 5000}), 201)
 		// Accounts made in one millisecond tie on creation time, and a tie breaks on the random ID: the order of the created
 		// walk is then not the order of the test, so each account is made a few milliseconds after the last.
 		time.Sleep(3 * time.Millisecond)
@@ -59,11 +62,11 @@ func TestListAccountsSortedWalk(t *testing.T) {
 		query string
 		want  []string
 	}{
-		{"&sort=name", []string{"Alpha", "beta", "gamma"}},
-		{"&sort=name&order=asc", []string{"Alpha", "beta", "gamma"}},
-		{"&sort=name&order=desc", []string{"gamma", "beta", "Alpha"}},
-		{"&sort=created", []string{"gamma", "Alpha", "beta"}},
-		{"&sort=created&order=desc", []string{"beta", "Alpha", "gamma"}},
+		{"&sort=name", []string{"apple", "Banana", "cherry"}},
+		{"&sort=name&order=asc", []string{"apple", "Banana", "cherry"}},
+		{"&sort=name&order=desc", []string{"cherry", "Banana", "apple"}},
+		{"&sort=created", []string{"cherry", "Banana", "apple"}},
+		{"&sort=created&order=desc", []string{"apple", "Banana", "cherry"}},
 	}
 	for _, c := range cases {
 		if got := walk(c.query); !slices.Equal(got, c.want) {
@@ -71,11 +74,30 @@ func TestListAccountsSortedWalk(t *testing.T) {
 		}
 	}
 
-	rec := call(t, s, "GET", "/api/v1/accounts?sort=name", admin, nil)
-	wantStatus(t, rec, 200)
-	for _, key := range []string{`"used_bytes"`, `"quota_bytes"`} {
-		if !strings.Contains(rec.Body.String(), key) {
-			t.Errorf("sorted accounts list has no %s", key)
+	// A sorted page carries each account's usage and limit with their values, not only their names: the tenants list reads
+	// them, and makes no request per tenant. An upload to apple makes its used bytes more than zero.
+	apple := ""
+	for _, a := range decode[listResponse[accountJSON]](t, call(t, s, "GET", "/api/v1/accounts?sort=name", admin, nil)).Items {
+		if a.Name == "apple" {
+			apple = a.ID
+		}
+	}
+	rec := call(t, s, "POST", "/api/v1/accounts/"+apple+"/keys", admin, map[string]any{"name": "test"})
+	wantStatus(t, rec, 201)
+	key := decode[createdKey](t, rec).Key
+	f := newFolder(t, s, key, apple, "Docs")
+	wantStatus(t, writeFile(t, s, key, f.ID, "a.txt", "four"), 201)
+	page :=decode[listResponse[accountJSON]](t, call(t, s, "GET", "/api/v1/accounts?sort=name", admin, nil))
+	if len(page.Items) != 3 {
+		t.Fatalf("sorted page has %d accounts, want 3", len(page.Items))
+	}
+	for _, a := range page.Items {
+		wantUsed := int64(0)
+		if a.Name == "apple" {
+			wantUsed = 4
+		}
+		if a.QuotaBytes != 5000 || a.UsedBytes != wantUsed {
+			t.Errorf("%s: quota_bytes %d used_bytes %d, want 5000 and %d", a.Name, a.QuotaBytes, a.UsedBytes, wantUsed)
 		}
 	}
 }
@@ -86,7 +108,7 @@ func TestListAccountsSortCursor(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{})
 	admin := adminKey(t, s)
-	for _, n := range []string{"gamma", "Alpha", "beta"} {
+	for _, n := range sortNames {
 		wantStatus(t, call(t, s, "POST", "/api/v1/accounts", admin, map[string]any{"name": n}), 201)
 		// Accounts made in one millisecond tie on creation time, and a tie breaks on the random ID: the order of the created
 		// walk is then not the order of the test, so each account is made a few milliseconds after the last.
@@ -110,8 +132,8 @@ func TestListAccountsSortCursor(t *testing.T) {
 		wantError(t, call(t, s, "GET", "/api/v1/accounts"+q, admin, nil), 400, apierr.InvalidRequest)
 	}
 	// The cursor opens for its own sort.
-	if names, _ := accountNames(t, s, admin, "?limit=1&sort=name&cursor="+url.QueryEscape(byName)); len(names) != 1 || names[0] != "beta" {
-		t.Errorf("name cursor resumed at %v, want [beta]", names)
+	if names, _ := accountNames(t, s, admin, "?limit=1&sort=name&cursor="+url.QueryEscape(byName)); len(names) != 1 || names[0] != "Banana" {
+		t.Errorf("name cursor resumed at %v, want [Banana]", names)
 	}
 }
 
