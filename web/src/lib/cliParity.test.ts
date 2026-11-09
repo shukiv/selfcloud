@@ -412,6 +412,16 @@ describe('the guard sees every kind of request function', () => {
       ['lib/a.ts:default'],
     ],
     [
+      'a named default export function is keyed default',
+      'export default function go(p: string) {\n  return fetch(p);\n}',
+      ['lib/a.ts:default'],
+    ],
+    [
+      'a named default export class is keyed default',
+      'export default class Probe {\n  go(p: string) {\n    return fetch(p);\n  }\n}',
+      ['lib/a.ts:default.go'],
+    ],
+    [
       'a request through an injected fetch',
       'export function watch(p: string, deps: { fetch: typeof fetch }) {\n  return deps.fetch(p);\n}',
       ['lib/a.ts:watch'],
