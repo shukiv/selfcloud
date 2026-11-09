@@ -1285,7 +1285,7 @@ paths:
           description: The part of the zip asked for by `Range`.
         "304":
           description: "Not modified: the `If-None-Match` ETag is current."
-        "403": { description: The no-download rule refuses the zip (`download_restricted`). }
+        "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "416": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
