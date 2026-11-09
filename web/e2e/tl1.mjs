@@ -30,9 +30,10 @@ async function setWidth(page, width, scale = 1) {
 const OFF = { x: 1270, y: 790 };
 
 // hoverRead reads an element before and under the pointer. The pointer goes to OFF first, so the move onto the element's
-// middle is a real entry, and the reading waits out antd's 0.2 s transition. It reads the element's background before and
-// under the pointer, its colour, the colour of antd's colorTextDisabled, the cursor of what is under the pointer, and whether
-// the element's parent is hovered (the pointer really is there). The pointer goes back to OFF after.
+// middle is a real entry, and the reading waits out antd's 0.2 s transition. Under the pointer it reads the element's own
+// background, the colour seen there (before the pointer too), its colour, the colour of antd's colorTextDisabled, the cursor
+// of what is under the pointer, and whether the element's parent is hovered (the pointer really is there). The pointer goes
+// back to OFF after.
 async function hoverRead(page, el) {
   const read = `(() => {
     const e = ${el};
@@ -44,11 +45,14 @@ async function hoverRead(page, el) {
     const r = e.getBoundingClientRect();
     const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     const s = getComputedStyle(e);
-    return { background: s.backgroundColor, color: s.color, disabled, cursor: top ? getComputedStyle(top).cursor : null, entered: !!e.parentElement?.matches(':hover') };
+    // seen is the colour the eye gets there: the element's background, or, while it is transparent, its nearest ancestor's.
+    let seen = 'rgba(0, 0, 0, 0)';
+    for (let a = e; a && seen === 'rgba(0, 0, 0, 0)'; a = a.parentElement) seen = getComputedStyle(a).backgroundColor;
+    return { background: s.backgroundColor, seen, color: s.color, disabled, cursor: top ? getComputedStyle(top).cursor : null, entered: !!e.parentElement?.matches(':hover') };
   })()`;
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: OFF.x, y: OFF.y, button: 'none', buttons: 0 });
   await sleep(400);
-  const before = (await page.evaluate(read)).background;
+  const { seen: before } = await page.evaluate(read);
   const at = await page.evaluate(`(() => { const r = ${el}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, button: 'none', buttons: 0 });
   await sleep(500);
@@ -252,7 +256,8 @@ async function emptyTableChecks(h, { page, base, adminKey }) {
     );
     check(m.weight === '600' && m.maxWidth === '420px', `the title is at weight 600 and the description at most 420 px wide (${m.weight}, ${m.maxWidth})`);
     const blockHover = await hoverRead(page, `${region}.querySelector('tbody .ant-table-placeholder > td')`);
-    check(blockHover.entered && blockHover.background === blockHover.before, `the empty block shows no hover band (${blockHover.before} to ${blockHover.background})`);
+    // antd paints the empty row's cell in colorBgContainer under the pointer; what counts is the colour seen, which must not change.
+    check(blockHover.entered && blockHover.seen === blockHover.before, `the empty block shows no hover band (seen ${blockHover.before}, then ${blockHover.seen})`);
 
     // The picture for the owner: the empty keys table in the light theme, 1280 wide at twice the pixels.
     const shots = process.env.SELFCLOUD_E2E_SHOTS || null;
