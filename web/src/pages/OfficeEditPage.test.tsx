@@ -942,6 +942,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
         vi.advanceTimersByTime(60_000);
       });
       expect(screen.getByText(/did not finish in time/)).toBeTruthy();
+      expect(screen.getByText("letter (2).docx", { selector: "bdi" })).toBeTruthy();
       const before = officePosts().length;
       from({ MessageId: "App_TokenExpired", Values: {} });
       await flush();
@@ -1007,8 +1008,11 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
         return Promise.reject(new Error(`unexpected ${method} ${path}`));
       });
       const spy = vi.spyOn(frame().contentWindow as Window, "postMessage");
+      const asked = officePosts().length;
       from({ MessageId: "App_TokenExpiring", Values: { Timeout: 1000 } });
       await flush();
+      // The renewal is really in flight: it was asked for before the copy is lost.
+      expect(officePosts()).toHaveLength(asked + 1);
       act(() => {
         vi.advanceTimersByTime(60_000);
       });
@@ -1033,5 +1037,102 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
 
   it("round 5: a renewal in flight at the copy loss, refused, keeps the timed-out note and does not show the reopen note", async () => {
     await renewalInFlightAtLoss("refused");
+  });
+
+  // Round 6 (decision 107): an answer that arrives near the end of the window binds, whatever the read costs; a renewal in
+  // flight when the page moves to a copy posts nothing; a window that ends during the folder's listing says the copy did not start.
+  async function answerNearEnd(copyThere: boolean) {
+    nodesMock.children = [];
+    await openEditor();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      from({ MessageId: "UI_SaveAs", Values: {} });
+      fireEvent.change(screen.getByLabelText("File name"), { target: { value: "letter (2)" } });
+      act(() => {
+        screen.getByRole("button", { name: "Save copy" }).click();
+      });
+      await flush();
+      nodesMock.children = copyThere ? [COPY] : [];
+      nodesMock.hold = [];
+      act(() => {
+        vi.advanceTimersByTime(59_900);
+      });
+      from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+      await flush();
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      const held = nodesMock.hold ?? [];
+      nodesMock.hold = null;
+      act(() => {
+        held.forEach((h) => h.ok());
+      });
+      await flush();
+      expect(screen.queryByText(/did not finish in time/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("round 6: an answer at 59.9 s whose read outlasts the window binds the copy, and never shows the timed-out note", async () => {
+    await answerNearEnd(true);
+    expect(window.location.pathname).toBe("/edit/nod_c2");
+  });
+
+  it("round 6: an answer at 59.9 s naming a file that is not found shows the copy note, and never the timed-out note", async () => {
+    await answerNearEnd(false);
+    expect(screen.getByText(COPY_NOT_SHOWN)).toBeTruthy();
+  });
+
+  it("round 6: a renewal in flight when the page moves to a copy posts no token for the original", async () => {
+    nodesMock.children = [];
+    await openEditor();
+    await confirmSaveAs("letter (2)");
+    nodesMock.children = [COPY];
+    let resolveRenew: (v: unknown) => void = () => undefined;
+    apiMock.mockImplementation((method: string, path: string) => {
+      if (method === "POST" && path === "/api/v1/nodes/nod_a1/office")
+        return new Promise((res) => {
+          resolveRenew = res;
+        });
+      return Promise.reject(new Error(`unexpected ${method} ${path}`));
+    });
+    const spy = vi.spyOn(frame().contentWindow as Window, "postMessage");
+    from({ MessageId: "App_TokenExpiring", Values: { Timeout: 1000 } });
+    await flush();
+    from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
+    await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
+    resolveRenew({ url: ORIGIN + "/loleaflet/x", token: "tok-moved", expires_at: new Date(Date.now() + 3600_000).toISOString() });
+    await flush();
+    expect(spy.mock.calls.filter((c) => String(c[0]).includes("Reset_Access_Token"))).toHaveLength(0);
+  });
+
+  it("round 6: a window that ends while the folder is still listed says the copy did not start, and asks for no copy", async () => {
+    nodesMock.children = [];
+    await openEditor();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      nodesMock.hold = [];
+      from({ MessageId: "UI_SaveAs", Values: {} });
+      fireEvent.change(screen.getByLabelText("File name"), { target: { value: "letter (2)" } });
+      const spy = vi.spyOn(frame().contentWindow as Window, "postMessage");
+      act(() => {
+        screen.getByRole("button", { name: "Save copy" }).click();
+      });
+      await flush();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByText("The copy was not started, because this folder could not be read. Try again.")).toBeTruthy();
+      const held = nodesMock.hold ?? [];
+      nodesMock.hold = null;
+      act(() => {
+        held.forEach((h) => h.ok());
+      });
+      await flush();
+      expect(spy.mock.calls.some((c) => String(c[0]).includes("Action_SaveAs"))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
