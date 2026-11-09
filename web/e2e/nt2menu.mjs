@@ -103,6 +103,10 @@ export async function nt2MenuChecks(h, { base, accountKey, teamA, dir, browserBi
     await page.waitFor(`location.pathname === ${q(`/files/${teamA}/${folderID}`)}`, 15000);
 
     // The chord, with the menu closed: Alt+C then F opens the New folder dialog, and it opens nothing else.
+    // The listing was in the background while the editor opened, so the Blank menu's close animation had not run: a closing
+    // dropdown still counts as open, and the chord (rightly) waits for it. Bring the listing to front, and wait for the close.
+    await page.send('Page.bringToFront');
+    await page.waitFor(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')`, 10000);
     await page.evaluate(`document.body.focus()`);
     await key(page, { code: 'KeyC', key: 'c', vk: 67, alt: true });
     await key(page, { code: 'KeyF', key: 'f', vk: 70 });
