@@ -107,6 +107,13 @@ describe("readCode", () => {
     expect(await readCode(file("notes.txt", "text/plain", 6))).toMatchObject({ text: "café\n", utf8: true });
   });
 
+  it("keeps a UTF-8 byte order mark as a flag and leaves it out of the text the viewer shows", async () => {
+    vi.stubGlobal("fetch", answer(new Uint8Array([0xef, 0xbb, 0xbf, 0x68, 0x69]), 206));
+    expect(await readCode(file("notes.txt", "text/plain", 5))).toMatchObject({ text: "hi", utf8: true, bom: true });
+    vi.stubGlobal("fetch", answer(new TextEncoder().encode("hi"), 206));
+    expect(await readCode(file("notes.txt", "text/plain", 2))).toMatchObject({ text: "hi", utf8: true, bom: false });
+  });
+
   it("gives an empty file as empty UTF-8 text with no read", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

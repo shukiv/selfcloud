@@ -201,6 +201,14 @@ describe("Preview", () => {
     expect(within(notice.closest(".ant-alert") as HTMLElement).queryByRole("button")).toBeNull();
   });
 
+  it("hands CodeMirror the text without a UTF-8 byte order mark", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([0xef, 0xbb, 0xbf, 0x68, 0x69]), { status: 206 })));
+    render(<Preview items={[file("notes.txt", "text/plain", 5)]} index={0} onClose={() => {}} onIndex={() => {}} />);
+    expect(await codeShown()).toBe("hi");
+    const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);
+    expect(view?.state.doc.toString()).toBe("hi");
+  });
+
   it("shows no notice for UTF-8 text", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("café\n", { status: 206 })));
     render(<Preview items={[file("notes.txt", "text/plain", 6)]} index={0} onClose={() => {}} onIndex={() => {}} />);

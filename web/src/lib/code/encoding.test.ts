@@ -46,9 +46,16 @@ describe("decoding a read", () => {
     expect(decodeText(utf8("a = 'ש'\n"), false)).toEqual({ text: "a = 'ש'\n", bom: false, utf8: true });
   });
 
-  it("keeps a byte order mark in the text and records it", () => {
-    const got = decodeText(bytes(0xef, 0xbb, 0xbf, 0x61), false);
-    expect(got).toEqual({ text: "﻿a", bom: true, utf8: true });
+  it("records a byte order mark and leaves it out of the text the viewer shows", () => {
+    // CodeMirror would draw U+FEFF as a placeholder on the first line. The flag keeps it for the save (design-ce 4.8).
+    expect(decodeText(bytes(0xef, 0xbb, 0xbf, 0x61), false)).toEqual({ text: "a", bom: true, utf8: true });
+    expect(decodeText(bytes(0xef, 0xbb, 0xbf), false)).toEqual({ text: "", bom: true, utf8: true });
+    // Bytes that are not UTF-8 after the mark: the mark is still left out.
+    expect(decodeText(bytes(0xef, 0xbb, 0xbf, 0xe9), false)).toEqual({ text: "�", bom: true, utf8: false });
+  });
+
+  it("keeps a U+FEFF that is not at the start: it is part of the text", () => {
+    expect(decodeText(utf8("a﻿b"), false)).toEqual({ text: "a﻿b", bom: false, utf8: true });
   });
 
   it("says bytes that are not UTF-8 are not, and shows each bad sequence as U+FFFD without throwing", () => {
