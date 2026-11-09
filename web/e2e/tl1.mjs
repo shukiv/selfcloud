@@ -3,10 +3,14 @@
 // Slice tl1 (design-tl): the admin lists are tables. Checked on the signed-in admin's pages: the tenants list at 375 pixels
 // has no sideways scroll; the Tab key reaches a sortable header from the search box, and Enter there turns its aria-sort; on
 // the admins list a second admin's row has its Remove icon while the signed-in admin's own row has none; on a tenant's
-// people, a busy row keeps the focus on its pressed icon, and Remove asks first; an empty keys table keeps its headers and
-// its New key. The second admin, the pending person and the empty tenant are made through the API for the checks and
-// removed after them, and the desktop width comes back whatever happens.
+// people, a busy row keeps the focus on its pressed icon, which shows no hover disc under the pointer, and Remove asks first;
+// an empty keys table keeps its headers and its New key, and its empty block is measured against the approved mockup. The
+// second admin, the pending person and the empty tenant are made through the API for the checks and removed after them, and
+// the desktop width comes back whatever happens. With SELFCLOUD_E2E_SHOTS set (a folder), the run saves the empty keys table
+// there as empty-keys.png (1280 wide, at twice the pixels).
 // Run alone with SELFCLOUD_E2E_ONLY=tl1: run.mjs signs the admin in first.
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { sleep } from './media.mjs';
 import { pressKey } from './accountKeys.mjs';
 
@@ -15,10 +19,42 @@ const q = (v) => JSON.stringify(v);
 // sideways reads whether the page is wider than its window, which is a sideways scroll on a phone.
 const sideways = (page) => page.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth`);
 
-// setWidth gives the page a window of this width (a phone at 375 pixels, or the desktop at 1280).
-async function setWidth(page, width) {
-  await page.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: width < 800 });
+// setWidth gives the page a window of this width (a phone at 375 pixels, or the desktop at 1280), at scale device pixels to
+// each CSS pixel (2 for a picture).
+async function setWidth(page, width, scale = 1) {
+  await page.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: scale, mobile: width < 800 });
   await sleep(300);
+}
+
+// OFF is a point of the 1280 by 800 window with nothing under it that reacts to the pointer.
+const OFF = { x: 1270, y: 790 };
+
+// hoverRead reads an element before and under the pointer. The pointer goes to OFF first, so the move onto the element's
+// middle is a real entry, and the reading waits out antd's 0.2 s transition. It reads the element's background before and
+// under the pointer, its colour, the colour of antd's colorTextDisabled, the cursor of what is under the pointer, and whether
+// the element's parent is hovered (the pointer really is there). The pointer goes back to OFF after.
+async function hoverRead(page, el) {
+  const read = `(() => {
+    const e = ${el};
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--ant-color-text-disabled)';
+    document.body.append(probe);
+    const disabled = getComputedStyle(probe).color;
+    probe.remove();
+    const r = e.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    const s = getComputedStyle(e);
+    return { background: s.backgroundColor, color: s.color, disabled, cursor: top ? getComputedStyle(top).cursor : null, entered: !!e.parentElement?.matches(':hover') };
+  })()`;
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: OFF.x, y: OFF.y, button: 'none', buttons: 0 });
+  await sleep(400);
+  const before = (await page.evaluate(read)).background;
+  const at = await page.evaluate(`(() => { const r = ${el}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, button: 'none', buttons: 0 });
+  await sleep(500);
+  const under = await page.evaluate(read);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: OFF.x, y: OFF.y, button: 'none', buttons: 0 });
+  return { before, ...under };
 }
 
 // The Name header's cell, found by its label and its sort button.
@@ -91,6 +127,19 @@ async function tenantPeopleChecks(h, { page, base, accountID, accountKey }) {
     await page.waitFor(`(() => { const b = ${rowButton(pat.display_name, resend)}; return !!b && (b.disabled || b.getAttribute('aria-disabled') === 'true'); })()`, 5000);
     const busyFocus = await focusNow(page);
     check(busyFocus === `BUTTON:${resend}`, `while the row is busy, the pressed Resend icon keeps the focus, disabled (${busyFocus})`);
+    // Under the pointer the busy icon looks disabled (round 4, MED-2): antd gives a text button that is not :disabled its hover
+    // background, so an aria-disabled icon must be kept from it, and it shows the disabled colour and the not-allowed cursor.
+    const busyHover = await hoverRead(page, rowButton(pat.display_name, resend));
+    check(
+      busyHover.entered && busyHover.background === 'rgba(0, 0, 0, 0)',
+      `under the pointer, the busy Resend icon has no hover background (${busyHover.background}; pointer there: ${busyHover.entered})`,
+    );
+    check(
+      busyHover.color === busyHover.disabled && busyHover.cursor === 'not-allowed',
+      `under the pointer, the busy Resend icon has the disabled colour and the not-allowed cursor (${busyHover.color}, disabled ${busyHover.disabled}; ${busyHover.cursor})`,
+    );
+    const busyFocusAfterHover = await focusNow(page);
+    check(busyFocusAfterHover === `BUTTON:${resend}`, `the pointer leaves the focus on the busy Resend icon (${busyFocusAfterHover})`);
     await hold.release();
     hold = null;
     await page.waitFor(`document.body.textContent.includes(${q('The email was sent.')}) || document.body.textContent.includes(${q('The email could not be sent')})`, 15000);
@@ -151,6 +200,79 @@ async function emptyTableChecks(h, { page, base, adminKey }) {
       `an empty keys table keeps its header row (${seen.headers.join(', ')})`,
     );
     check(seen.title === 'No API keys yet.' && seen.action === 'New key', `its body has the Empty, with its title and New key (${seen.title}; ${seen.action})`);
+
+    // The empty block against the approved mockup's (Main.dc.html, the empty table; round 4, MED-1), in CSS pixels at 1280
+    // wide, each within 1 pixel: the picture 64 by 41; 14 from the picture to the title, 6 from the title to the description and
+    // 16 from the description to the button; the button 36 high, padded 16 on each side with no border, its + 16 by 16 and 16
+    // from its edge; the block 48 from the header row to the picture and 56 from the button to the block's end. The title is at
+    // weight 600, the description at most 420 wide, and the block shows no hover band (the mockup's has none).
+    const m = await page.evaluate(`(() => {
+      const r = ${region};
+      const box = (e) => e.getBoundingClientRect();
+      const td = r.querySelector('tbody .ant-table-placeholder > td');
+      const title = r.querySelector('tbody .empty-title');
+      const desc = r.querySelector('tbody .empty-desc');
+      const btn = r.querySelector('tbody .ant-empty button');
+      const img = box(r.querySelector('tbody .ant-empty-image svg'));
+      const glyph = box(btn.querySelector('svg'));
+      const b = box(btn), t = box(title), d = box(desc), c = box(td);
+      const bs = getComputedStyle(btn), cs = getComputedStyle(td);
+      return {
+        img: [img.width, img.height],
+        picTitle: t.top - img.bottom,
+        titleDesc: d.top - t.bottom,
+        descButton: b.top - d.bottom,
+        buttonH: b.height,
+        above: img.top - c.top - parseFloat(cs.borderTopWidth),
+        below: c.bottom - parseFloat(cs.borderBottomWidth) - b.bottom,
+        pad: [bs.paddingInlineStart, bs.paddingInlineEnd, bs.borderInlineStartWidth, bs.borderInlineEndWidth].join(' '),
+        inset: glyph.left - b.left,
+        glyph: [glyph.width, glyph.height],
+        weight: getComputedStyle(title).fontWeight,
+        maxWidth: getComputedStyle(desc).maxWidth,
+      };
+    })()`);
+    const near = (v, want) => Math.abs(v - want) <= 1;
+    const px = (v) => Math.round(v * 10) / 10;
+    // Every number on one line before the checks, so a failure shows them all (the checks stop at the first).
+    console.log(
+      `empty block, measured (mockup): picture ${m.img.map(px).join('x')} (64x41); picture-title ${px(m.picTitle)} (14); title-description ${px(m.titleDesc)} (6); ` +
+        `description-button ${px(m.descButton)} (16); button height ${px(m.buttonH)} (36); above ${px(m.above)} (48); below ${px(m.below)} (56); ` +
+        `button padding and border ${m.pad} (16px 16px 0px 0px); + inset ${px(m.inset)} (16); + ${m.glyph.map(px).join('x')} (16x16); title weight ${m.weight} (600); description max ${m.maxWidth} (420px)`,
+    );
+    check(near(m.img[0], 64) && near(m.img[1], 41), `the empty picture is 64 by 41, as the mockup's (${m.img.map(px).join(' by ')})`);
+    check(near(m.picTitle, 14), `14 px from the picture to the title, as the mockup's (${px(m.picTitle)})`);
+    check(near(m.titleDesc, 6), `6 px from the title to the description, as the mockup's (${px(m.titleDesc)})`);
+    check(near(m.descButton, 16), `16 px from the description to the button, as the mockup's (${px(m.descButton)})`);
+    check(near(m.buttonH, 36), `the button is 36 px high, as the mockup's (${px(m.buttonH)})`);
+    check(near(m.above, 48) && near(m.below, 56), `the empty block is 48 px from the header row to the picture and 56 from the button to its end, as the mockup's (${px(m.above)}, ${px(m.below)})`);
+    check(
+      m.pad === '16px 16px 0px 0px' && near(m.inset, 16) && near(m.glyph[0], 16) && near(m.glyph[1], 16),
+      `the button is padded 16 px on each side with no border, its + 16 by 16 at 16 from its edge, as the mockup's (${m.pad}; ${px(m.inset)}; ${m.glyph.map(px).join(' by ')})`,
+    );
+    check(m.weight === '600' && m.maxWidth === '420px', `the title is at weight 600 and the description at most 420 px wide (${m.weight}, ${m.maxWidth})`);
+    const blockHover = await hoverRead(page, `${region}.querySelector('tbody .ant-table-placeholder > td')`);
+    check(blockHover.entered && blockHover.background === blockHover.before, `the empty block shows no hover band (${blockHover.before} to ${blockHover.background})`);
+
+    // The picture for the owner: the empty keys table in the light theme, 1280 wide at twice the pixels.
+    const shots = process.env.SELFCLOUD_E2E_SHOTS || null;
+    if (shots) {
+      await mkdir(shots, { recursive: true });
+      await setWidth(page, 1280, 2);
+      await page.evaluate(`window.scrollTo(0, 0)`);
+      const theme = await page.evaluate(`document.documentElement.dataset.theme ?? null`);
+      const clip = await page.evaluate(`(() => {
+        const r = ${region};
+        const b = (r.closest('[role="tabpanel"]') ?? r).getBoundingClientRect();
+        const x = Math.max(0, b.left - 16), y = Math.max(0, b.top - 16);
+        return { x, y, width: Math.min(innerWidth - x, b.width + 32), height: Math.min(innerHeight - y, b.height + 32), scale: 1 };
+      })()`);
+      const { data } = await page.send('Page.captureScreenshot', { format: 'png', clip });
+      await writeFile(join(shots, 'empty-keys.png'), Buffer.from(data, 'base64'));
+      check(theme === 'light', `the empty keys table is saved as empty-keys.png, in the light theme (${theme})`);
+      await setWidth(page, 1280);
+    }
+
     await page.evaluate(`${region}.querySelector('tbody .ant-empty button').click()`);
     await page.waitFor(`!!document.getElementById('new-key-name')`, 10000);
     check(true, 'the empty table\'s New key opens the new key form');
