@@ -16,22 +16,22 @@ Each presentation's `meta.xml` states that it is "licensed under a Creative Comm
 Commons-0 licence"). CC0 1.0 deed: https://creativecommons.org/publicdomain/zero/1.0/ . Converted from LibreOffice's
 `.otp` to `.pptx` by LibreOffice 25.2.3.2.
 
-- `lo-beehive.pptx`: `extras/source/templates/presnt/Beehive`, "Beehive"
-- `lo-blue-curve.pptx`: `extras/source/templates/presnt/Blue_Curve`, "Blue Curve"
-- `lo-dna.pptx`: `extras/source/templates/presnt/DNA`, "DNA"
-- `lo-focus.pptx`: `extras/source/templates/presnt/Focus`, "Focus"
-- `lo-forestbird.pptx`: `extras/source/templates/presnt/Forestbird`, "Forestbird"
-- `lo-inspiration.pptx`: `extras/source/templates/presnt/Inspiration`, "Inspiration"
-- `lo-lights.pptx`: `extras/source/templates/presnt/Lights`, "Lights"
-- `lo-metropolis.pptx`: `extras/source/templates/presnt/Metropolis`, "Metropolis" (its pictures are a plain background and an SVG frame)
-- `lo-midnightblue.pptx`: `extras/source/templates/presnt/Midnightblue`, "Midnightblue"
-- `lo-nature-illustration.pptx`: `extras/source/templates/presnt/Nature_Illustration`, "Nature Illustration"
-- `lo-pencil.pptx`: `extras/source/templates/presnt/Pencil`, "Pencil"
-- `lo-piano.pptx`: `extras/source/templates/presnt/Piano`, "Piano"
-- `lo-portfolio.pptx`: `extras/source/templates/presnt/Portfolio`, "Portfolio"
-- `lo-progress.pptx`: `extras/source/templates/presnt/Progress`, "Progress"
-- `lo-sunset.pptx`: `extras/source/templates/presnt/Sunset`, "Sunset"
-- `lo-vivid.pptx`: `extras/source/templates/presnt/Vivid`, "Vivid"
+- `lo-beehive.pptx`: `extras/source/templates/presnt/Beehive`, "Beehive" (author named in the source by e-mail only)
+- `lo-blue-curve.pptx`: `extras/source/templates/presnt/Blue_Curve`, "Blue Curve" (author named in the source by e-mail only)
+- `lo-dna.pptx`: `extras/source/templates/presnt/DNA`, "DNA" (author named in the source: Alexander Wilms)
+- `lo-focus.pptx`: `extras/source/templates/presnt/Focus`, "Focus" (author named in the source: Zirk)
+- `lo-forestbird.pptx`: `extras/source/templates/presnt/Forestbird`, "Forestbird" (author named in the source by e-mail only)
+- `lo-inspiration.pptx`: `extras/source/templates/presnt/Inspiration`, "Inspiration" (author named in the source: Mateus Machado Luna)
+- `lo-lights.pptx`: `extras/source/templates/presnt/Lights`, "Lights" (author named in the source by e-mail only)
+- `lo-metropolis.pptx`: `extras/source/templates/presnt/Metropolis`, "Metropolis" (its pictures are a plain background and an SVG frame) (author named in the source: Alexander Wilms)
+- `lo-midnightblue.pptx`: `extras/source/templates/presnt/Midnightblue`, "Midnightblue" (author named in the source: Jun NOGATA)
+- `lo-nature-illustration.pptx`: `extras/source/templates/presnt/Nature_Illustration`, "Nature Illustration" (author named in the source by e-mail only)
+- `lo-pencil.pptx`: `extras/source/templates/presnt/Pencil`, "Pencil" (author named in the source by e-mail only)
+- `lo-piano.pptx`: `extras/source/templates/presnt/Piano`, "Piano" (author named in the source by e-mail only)
+- `lo-portfolio.pptx`: `extras/source/templates/presnt/Portfolio`, "Portfolio" (author named in the source: Mateus Machado Luna)
+- `lo-progress.pptx`: `extras/source/templates/presnt/Progress`, "Progress" (author named in the source: William Gathoye)
+- `lo-sunset.pptx`: `extras/source/templates/presnt/Sunset`, "Sunset" (author named in the source: Alexander Wilms)
+- `lo-vivid.pptx`: `extras/source/templates/presnt/Vivid`, "Vivid" (author named in the source: fsanchez)
 
 ## Shipped documents (MPL-2.0)
 
@@ -43,12 +43,11 @@ lorem ipsum text, and no branding.
 The modified files are shipped in this repository in the form Selfcloud embeds: `internal/templates/files/lo-letter-sans-serif.docx`
 and `internal/templates/files/lo-letter-serif.docx`. Each keeps its document content unchanged.
 
-Author metadata rule. A shipped template keeps the creator its source names in `docProps/core.xml` (`dc:creator`): the sans-serif
-letter keeps **Eric Lavarde**, and the serif letter has none to keep. The last editor field is removed, and no e-mail address is
-shipped. The presentations' descriptions keep their licence and the names of the picture authors, with the e-mail domains removed.
-Known gap: the presentations' sources name their authors in the OpenDocument `meta:initial-creator` field, which the conversion does
-not carry, so the shipped presentations name no author. One of those sources names an e-mail address, which must not ship. Whether
-to carry the names over is open for the lead.
+Author metadata rules (lead decision, 2026-11-09). An MPL-2.0 template keeps its source's creator metadata: the sans-serif letter
+keeps **Eric Lavarde** as `dc:creator`, and the serif letter has none to keep. A CC0 template is credited here, beside its file, by
+its author's name as the source names it; where the source gives only an e-mail address, the entry says so and no address is shipped.
+A CC0 template's file metadata is left as the conversion leaves it: the shipped presentations have no creator field. The last editor
+field is removed from every shipped file, and no e-mail address is shipped in any of them.
 
 Original author. The sans-serif letter's source metadata names **Eric Lavarde** as its creator (`dc:creator` and
 `meta:initial-creator`). The serif letter's source metadata names no author, and the source carries no copyright notice. It is a file of the
