@@ -48,6 +48,9 @@ Commands:
   verify -user ID|EMAIL [-ttl DURATION] [-link-file FILE]
                                  issue a fresh verification link for a pending user, voiding the earlier
                                  one; an active user is refused
+  users [-account ID] [-admins] [-email EMAIL] [-status active|pending|disabled]
+                                 list users as a tab-separated table (id, email, role, status, account,
+                                 created, must_change); no secret is printed
   recount-usage [-account ID]    recompute usage and reserved bytes from the files and uploads
                                  (all accounts unless -account is given), and print the change
   search-rebuild                 empty the search index, including the text of files, and queue every folder
@@ -101,6 +104,8 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return adminResetPassword(args, stdout, stderr)
 	case "verify":
 		return adminVerify(args, stdout, stderr)
+	case "users":
+		return adminUsers(args, stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, adminUsage)
 		return 0

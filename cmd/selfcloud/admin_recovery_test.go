@@ -598,8 +598,8 @@ func TestUsersTableAndFilters(t *testing.T) {
 	if rows := rowsOf("-email", "ANN@example.com"); len(rows) != 1 || !strings.Contains(rows[0], "ann@example.com") {
 		t.Errorf("-email = %q", rows)
 	}
-	if n := len(rowsOf("-admins", "-account", a.ID)); n != 0 {
-		t.Errorf("-admins with -account should be refused, got %d rows", n)
+	if code, _, _ := runCmd(t, "admin", "users", "-admins", "-account", a.ID); code != 2 {
+		t.Errorf("-admins with -account = %d, want 2", code)
 	}
 	for _, args := range [][]string{{"-status", "bogus"}, {"-account", "bad"}, {"-email", "nope"}} {
 		if code, _, _ := runCmd(t, append([]string{"admin", "users"}, args...)...); code != 2 {

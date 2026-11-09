@@ -408,6 +408,99 @@ func resetWithTemporary(ctx context.Context, st *store.Store, u *store.User, ena
 	return 0
 }
 
+// adminUsers lists users from the data folder as a tab-separated table: id, email, role, status, account, created and
+// must_change. It holds no hash and no secret. Without a filter it lists the installation admins and every account.
+func adminUsers(args []string, stdout, stderr io.Writer) int {
+	var account, email, status *string
+	var admins *bool
+	cfg, _, code := loadConfig("admin users", args, stderr, 0, func(fs *flag.FlagSet) {
+		account = fs.String("account", "", "list only this account's users (an account ID)")
+		admins = fs.Bool("admins", false, "list only the installation admins")
+		email = fs.String("email", "", "list only the user with this email address")
+		status = fs.String("status", "", "list only users with this status: active, pending or disabled")
+	})
+	if cfg == nil {
+		return code
+	}
+	const name = "users"
+	usage := func(msg string) int {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %s\n", name, msg)
+		return 2
+	}
+	if *account != "" && !id.Valid("acc", *account) {
+		return usage("-account must be an account ID")
+	}
+	if *admins && *account != "" {
+		return usage("-admins lists the installation admins, so it cannot be combined with -account")
+	}
+	if *email != "" && !parseBareEmail(*email) {
+		return usage("-email must be a bare email address")
+	}
+	switch *status {
+	case "", store.UserActive, store.UserPending, store.UserDisabled:
+	default:
+		return usage("-status must be active, pending or disabled")
+	}
+
+	ctx := context.Background()
+	st, c := adminStoreFor(cfg, stderr, name)
+	if st == nil {
+		return c
+	}
+	defer st.Close()
+	scopes := []string{""}
+	switch {
+	case *admins:
+	case *account != "":
+		scopes = []string{*account}
+	default:
+		for cursor := ""; ; {
+			accs, next, err := st.Accounts(ctx, "", store.Page{Limit: 200, Cursor: cursor})
+			if err != nil {
+				fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+				return 1
+			}
+			for _, a := range accs {
+				scopes = append(scopes, a.ID)
+			}
+			if next == "" {
+				break
+			}
+			cursor = next
+		}
+	}
+	filter := store.UserFilter{}
+	if *email != "" {
+		filter.EmailKey = strings.ToLower(*email)
+	}
+	fmt.Fprintln(stdout, "id\temail\trole\tstatus\taccount\tcreated\tmust_change")
+	for _, scope := range scopes {
+		for cursor := ""; ; {
+			users, next, err := st.Users(ctx, scope, filter, store.Page{Limit: 200, Cursor: cursor})
+			if err != nil {
+				fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+				return 1
+			}
+			for _, u := range users {
+				if *status != "" && u.Status != *status {
+					continue
+				}
+				acc := u.AccountID
+				if acc == "" {
+					acc = "-"
+				}
+				fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%t\n", u.ID, u.Email, u.Role, u.Status, acc,
+					u.CreatedAt.UTC().Format(time.RFC3339), u.MustChangePassword)
+			}
+			if next == "" {
+				break
+			}
+			cursor = next
+		}
+	}
+	return 0
+}
+
 // openLinkFile creates a new file for a link, with mode 0600. It refuses a file that is already there, so an earlier
 // link is never overwritten.
 func openLinkFile(path string) (*os.File, error) {
