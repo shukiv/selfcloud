@@ -22,10 +22,46 @@ function renderKeys(qc = new QueryClient({ defaultOptions: { queries: { retry: f
   return qc;
 }
 
-beforeEach(() => session.set(signedAs("admin")));
+// These tests are about a desktop: the Revoke icon shows inline there, and below md it moves into the ⋮ menu (design-tl 4).
+const desktop = (query: string) => {
+  const m = /min-width: (\d+)px/.exec(query);
+  return { matches: m ? 1200 >= Number(m[1]) : false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
+};
+let savedMatchMedia: typeof window.matchMedia;
+beforeEach(() => {
+  session.set(signedAs("admin"));
+  savedMatchMedia = window.matchMedia;
+  window.matchMedia = desktop as unknown as typeof window.matchMedia;
+});
 afterEach(() => {
   session.set(null);
+  window.matchMedia = savedMatchMedia;
   window.history.replaceState(null, "", "/");
+});
+
+// tl1: the keys are loaded whole, so the table sorts them on the client by name and by creation time (design-tl section 5).
+describe("the keys table sorts on the client", () => {
+  it("a header click on Name orders the rows by name, and Created by creation time", async () => {
+    stubFetch((c: Call) => {
+      if (c.method === "GET") {
+        return {
+          status: 200,
+          body: { items: [key({ id: "key_z", name: "Zeta", created_at: "2026-01-01T00:00:00Z" }), key({ id: "key_a", name: "Alpha", created_at: "2026-02-01T00:00:00Z" })] },
+        };
+      }
+      return { status: 200, body: {} };
+    });
+    renderKeys();
+    await screen.findByText("Zeta");
+    const rowNames = () => Array.from(document.querySelectorAll("tbody tr[aria-label]")).map((r) => r.getAttribute("aria-label"));
+    expect(rowNames()).toEqual(["Zeta", "Alpha"]);
+    fireEvent.click(within(screen.getByRole("region", { name: "API keys" })).getByRole("button", { name: "Name" }));
+    expect(rowNames()).toEqual(["Alpha", "Zeta"]);
+    expect(screen.getByRole("columnheader", { name: /Name/ }).getAttribute("aria-sort")).toBe("ascending");
+    fireEvent.click(within(screen.getByRole("region", { name: "API keys" })).getByRole("button", { name: "Created" }));
+    expect(rowNames()).toEqual(["Zeta", "Alpha"]);
+    expect(screen.getByRole("columnheader", { name: /Created/ }).getAttribute("aria-sort")).toBe("ascending");
+  });
 });
 
 // Making a key from an admin's session needs the admin's own password (decision 84). The prompt is the sign-in-as dialog,
