@@ -55,6 +55,7 @@ type searchParams struct {
 	q       string
 	in      string // "" (names) or search.InContent
 	kind    string
+	group   string // a file type group (decision 110), or ""
 	exts    []string
 	mFrom   int64
 	mTo     int64
@@ -123,7 +124,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.Search.Timeout.D())
 	defer cancel()
 
-	req := &search.Request{AccountID: p.AccountID, In: ps.in, Terms: terms, Kind: ps.kind, Exts: ps.exts,
+	req := &search.Request{AccountID: p.AccountID, In: ps.in, Terms: terms, Kind: ps.kind, Group: ps.group, Exts: ps.exts,
 		ModifiedFrom: ps.mFrom, ModifiedTo: ps.mTo, SizeMin: ps.sMin, SizeMax: ps.sMax,
 		LabelFilters: ps.labels, ScopeID: ps.scope, Limit: ps.limit}
 	var out listResponse[searchHit]
@@ -432,6 +433,28 @@ func parseSearchParams(v url.Values) (searchParams, error) {
 	default:
 		return ps, apierr.New(apierr.InvalidRequest, "kind must be file, dir or shortcut")
 	}
+	// type (decision 110) is a file group, or folder or shortcut, which is the kind of the same name. With kind it must agree.
+	if vals := v["type"]; len(vals) > 0 {
+		if len(vals) > 1 {
+			return ps, apierr.New(apierr.InvalidRequest, "type may be given once")
+		}
+		if vals[0] != "" {
+			f, err := store.ListTypeFilter(vals[0])
+			if err != nil {
+				return ps, apierr.New(apierr.InvalidRequest, "type is not a type")
+			}
+			switch {
+			case f.Kind != "" && ps.kind != "" && ps.kind != f.Kind:
+				return ps, apierr.New(apierr.InvalidRequest, "kind and type disagree")
+			case f.Kind != "":
+				ps.kind = f.Kind
+			case ps.kind != "" && ps.kind != store.KindFile:
+				return ps, apierr.New(apierr.InvalidRequest, "kind and type disagree")
+			default:
+				ps.group = f.Group
+			}
+		}
+	}
 	if raw := v.Get("ext"); raw != "" {
 		parts := strings.Split(raw, ",")
 		if len(parts) > searchMaxFilters {
@@ -451,6 +474,9 @@ func parseSearchParams(v url.Values) (searchParams, error) {
 	}
 	if ps.mTo, err = optionalMillis(v, "modified_before"); err != nil {
 		return ps, err
+	}
+	if ps.mFrom >= 0 && ps.mTo >= 0 && ps.mFrom >= ps.mTo {
+		return ps, apierr.New(apierr.InvalidRequest, "modified_after must be before modified_before")
 	}
 	if ps.sMin, err = optionalMillis(v, "size_min"); err != nil {
 		return ps, err
@@ -499,7 +525,7 @@ func optionalMillis(v url.Values, key string) (int64, error) {
 
 // hasFilter reports whether the request names any filter, so that it may run without a query.
 func (ps searchParams) hasFilter() bool {
-	return ps.kind != "" || len(ps.exts) > 0 || ps.mFrom >= 0 || ps.mTo >= 0 || ps.sMin >= 0 || ps.sMax >= 0 ||
+	return ps.kind != "" || ps.group != "" || len(ps.exts) > 0 || ps.mFrom >= 0 || ps.mTo >= 0 || ps.sMin >= 0 || ps.sMax >= 0 ||
 		len(ps.labels) > 0 || ps.scope != ""
 }
 
