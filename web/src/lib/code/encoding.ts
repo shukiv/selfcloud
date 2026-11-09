@@ -19,9 +19,10 @@ export function sniff(head: Uint8Array): Sniff {
   return b.includes(0) ? "binary" : "text";
 }
 
-// Decoded is the text the viewer shows. bom says the bytes start with a UTF-8 byte order mark, which stays in the text (the
-// editor writes it back). utf8 is false when the bytes are not valid UTF-8: each bad sequence is then shown as U+FFFD,
-// read-only, and nothing is written.
+// Decoded is the text the viewer shows. bom says the bytes start with a UTF-8 byte order mark: it is left out of the text
+// (CodeMirror would draw it as a placeholder on the first line) and kept as this flag, so the editor can write it back
+// (design-ce 4.8). utf8 is false when the bytes are not valid UTF-8: each bad sequence is then shown as U+FFFD, read-only,
+// with a notice, and nothing is written.
 export interface Decoded {
   text: string;
   bom: boolean;
@@ -33,10 +34,12 @@ export interface Decoded {
 export function decodeText(bytes: Uint8Array, cut: boolean): Decoded {
   const b = cut ? bytes.subarray(0, wholeEnd(bytes)) : bytes;
   const bom = b.length >= 3 && b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf;
+  // The decoders keep the mark (ignoreBOM), so it is taken off here, once, and only at the start.
+  const shown = (text: string) => (bom ? text.slice(1) : text);
   try {
-    return { text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(b), bom, utf8: true };
+    return { text: shown(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(b)), bom, utf8: true };
   } catch {
-    return { text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(b), bom, utf8: false };
+    return { text: shown(new TextDecoder("utf-8", { ignoreBOM: true }).decode(b)), bom, utf8: false };
   }
 }
 
