@@ -154,7 +154,7 @@ describe("the admins table marks the signed-in admin and has an empty state", ()
     renderAdmins();
     const add = await expectEmptyTable("Admins", {
       headers: ["Name", "Status", "Last sign-in"],
-      title: "No people yet.",
+      title: "No people yet",
       description: "An admin runs this installation and its tenants.",
       action: "New admin",
     });

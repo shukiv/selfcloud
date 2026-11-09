@@ -836,7 +836,7 @@ describe("Listing with columns: a preset list in the one table", () => {
         {...itemProps({
           items: [],
           sort: { key: "name", dir: "asc", onSort: vi.fn() },
-          empty: { title: "No tenants yet.", description: "A tenant is an organisation.", action: { label: "New tenant", onClick } },
+          empty: { title: "No tenants yet", description: "A tenant is an organisation.", action: { label: "New tenant", onClick } },
         })}
       />,
     );
@@ -847,7 +847,7 @@ describe("Listing with columns: a preset list in the one table", () => {
     const empty = within(body).getByRole("status");
     expect(empty.querySelector(".ant-empty.ant-empty-normal .ant-empty-image svg")).not.toBeNull();
     const title = empty.querySelector(".empty-title") as HTMLElement;
-    expect(title.textContent).toBe("No tenants yet.");
+    expect(title.textContent).toBe("No tenants yet");
     expect(title.style.fontWeight).toBe("600");
     expect((empty.querySelector(".empty-desc") as HTMLElement).textContent).toBe("A tenant is an organisation.");
     const button = within(empty).getByRole("button", { name: "New tenant" });
@@ -859,9 +859,9 @@ describe("Listing with columns: a preset list in the one table", () => {
 
   it("an empty list without a description or an action shows the title alone", () => {
     viewport(1200);
-    const { container } = render(<Listing {...itemProps({ items: [], empty: { title: "Nothing recorded yet." } })} />);
+    const { container } = render(<Listing {...itemProps({ items: [], empty: { title: "Nothing recorded yet" } })} />);
     const body = container.querySelector(".item-list tbody") as HTMLElement;
-    expect((body.querySelector(".empty-title") as HTMLElement).textContent).toBe("Nothing recorded yet.");
+    expect((body.querySelector(".empty-title") as HTMLElement).textContent).toBe("Nothing recorded yet");
     expect(body.querySelector(".empty-desc")).toBeNull();
     expect(within(body).queryByRole("button")).toBeNull();
   });

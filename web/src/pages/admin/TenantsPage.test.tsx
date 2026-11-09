@@ -118,7 +118,7 @@ describe("a failed read", () => {
     renderPage();
     const add = await expectEmptyTable("Tenants", {
       headers: ["Name", "Status", "Storage", "Users", "Created"],
-      title: "No tenants yet.",
+      title: "No tenants yet",
       description: "A tenant is an organisation with its own users and folders.",
       action: "New tenant",
     });
@@ -134,10 +134,11 @@ describe("a failed read", () => {
     fireEvent.click(screen.getByRole("button", { name: "Suspended" }));
     await waitFor(() => expect(calls.some((c) => path(c).searchParams.get("status") === "suspended")).toBe(true));
     expect(screen.getByRole("button", { name: "Suspended" }).getAttribute("aria-pressed")).toBe("true");
-    // Nothing matches the filter: the table says so, and offers no New tenant in its body.
+    // Nothing matches the filter: the table says so in a title with no full stop, its description says what to change (the
+    // admin catalogue part), and it offers no New tenant in its body.
     const body = (await screen.findByRole("region", { name: "Tenants" })).querySelector("tbody") as HTMLElement;
-    await waitFor(() => expect(body.querySelector(".empty-title")?.textContent).not.toBe("No tenants yet."));
-    expect(body.querySelector(".empty-desc")).toBeNull();
+    await waitFor(() => expect(body.querySelector(".empty-title")?.textContent).toBe("No tenant matches"));
+    await waitFor(() => expect(body.querySelector(".empty-desc")?.textContent).toBe("Change the search or the filter."));
     expect(within(body).queryByRole("button")).toBeNull();
   });
 });

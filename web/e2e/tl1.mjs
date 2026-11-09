@@ -203,7 +203,7 @@ async function emptyTableChecks(h, { page, base, adminKey }) {
       seen.headers.join(', ') === 'Name, Created, Last used, Expires, Status',
       `an empty keys table keeps its header row (${seen.headers.join(', ')})`,
     );
-    check(seen.title === 'No API keys yet.' && seen.action === 'New key', `its body has the Empty, with its title and New key (${seen.title}; ${seen.action})`);
+    check(seen.title === 'No API keys yet' && seen.action === 'New key', `its body has the Empty, with its title (no full stop, as the mockup's) and New key (${seen.title}; ${seen.action})`);
 
     // The empty block against the approved mockup's (Main.dc.html, the empty table; round 4, MED-1), in CSS pixels at 1280
     // wide, each within 1 pixel: the picture 64 by 41; 14 from the picture to the title, 6 from the title to the description and

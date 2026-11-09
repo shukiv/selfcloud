@@ -44,7 +44,7 @@ describe("the audit log", () => {
     stubFetch((c: Call) => (c.url.includes("/audit") ? fail(403, "forbidden") : { status: 200, body: { items: [] } }));
     renderPage();
     expect((await screen.findByRole("alert")).className).toContain("ant-alert-error");
-    expect(screen.queryByText("Nothing recorded yet.")).toBeNull();
+    expect(screen.queryByText("Nothing recorded yet")).toBeNull();
   });
 
   it("a failed read of the names says so, and the list still shows (guard: names failure is not silent)", async () => {

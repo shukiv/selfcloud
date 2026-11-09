@@ -69,7 +69,7 @@ describe("people of a tenant as a table", () => {
     renderUsers();
     await expectEmptyTable("People", {
       headers: ["Name", "Role", "Status", "Last sign-in"],
-      title: "No people yet.",
+      title: "No people yet",
       description: "The tenant's owner invites its people, or an app adds them through the API.",
     });
   });
@@ -89,7 +89,7 @@ describe("people of a tenant", () => {
     stubFetch(() => fail(500, "internal"));
     renderUsers();
     expect((await screen.findByRole("alert")).textContent).toContain("The server had a problem");
-    expect(screen.queryByText("No people yet.")).toBeNull();
+    expect(screen.queryByText("No people yet")).toBeNull();
   });
 
   // A new link to an admin's session needs the admin's own password (decision 84). The prompt opens on New link, and the

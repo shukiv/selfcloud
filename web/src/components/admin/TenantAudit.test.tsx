@@ -61,7 +61,7 @@ describe("tenant audit log", () => {
     stubFetch((c: Call) => (c.url.includes("/audit") ? fail(500, "internal") : { status: 200, body: { items: [] } }));
     renderAudit();
     expect((await screen.findByRole("alert")).textContent).toContain("The server had a problem");
-    expect(screen.queryByText("Nothing recorded yet.")).toBeNull();
+    expect(screen.queryByText("Nothing recorded yet")).toBeNull();
   });
 
   // The owner's rule of 2026-11-09 (decision 114): the empty table keeps its headers; the audit log has no create action.
@@ -70,7 +70,7 @@ describe("tenant audit log", () => {
     renderAudit();
     await expectEmptyTable("Audit log", {
       headers: ["Action", "When"],
-      title: "Nothing recorded yet.",
+      title: "Nothing recorded yet",
       description: "Sign-ins, changes to people and keys, and other actions show here.",
     });
   });
@@ -78,7 +78,7 @@ describe("tenant audit log", () => {
   it("the action filter is sent to the server", async () => {
     const { calls } = stubFetch((c: Call) => (c.url.includes("/audit") ? { status: 200, body: { items: [] } } : { status: 200, body: { items: [] } }));
     renderAudit();
-    await screen.findByText("Nothing recorded yet.");
+    await screen.findByText("Nothing recorded yet");
     const selector = document.getElementById("tenant-audit-action")!.closest(".ant-select")!.querySelector(".ant-select-selector") as HTMLElement;
     fireEvent.mouseDown(selector);
     const options = await screen.findAllByText("key.revoke", { selector: ".ant-select-item-option-content" });

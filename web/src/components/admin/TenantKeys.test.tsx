@@ -86,7 +86,7 @@ describe("an empty keys table", () => {
     renderKeys();
     const add = await expectEmptyTable("API keys", {
       headers: ["Name", "Created", "Last used", "Expires", "Status"],
-      title: "No API keys yet.",
+      title: "No API keys yet",
       description: "An API key lets an app manage this tenant through the API.",
       action: "New key",
     });
@@ -102,9 +102,9 @@ describe("a new key needs the admin's password", () => {
       return { status: 200, body: { items: [] } };
     });
     renderKeys();
-    await screen.findByText("No API keys yet.");
+    await screen.findByText("No API keys yet");
     // The empty list is antd's Empty, with the simple picture, in the table (decisions 111 and 114).
-    expect(document.querySelector("tbody .ant-empty.ant-empty-normal .empty-title")?.textContent).toBe("No API keys yet.");
+    expect(document.querySelector("tbody .ant-empty.ant-empty-normal .empty-title")?.textContent).toBe("No API keys yet");
     fillKeyAndCreate();
     expect(document.getElementById("new-key-admin")).toBeTruthy();
     expect(calls.some((c) => c.method === "POST")).toBe(false);
@@ -116,7 +116,7 @@ describe("a new key needs the admin's password", () => {
   it("a wrong password is refused in the prompt, and no key is shown", async () => {
     stubFetch((c: Call) => (c.method === "POST" ? fail(403, "forbidden") : { status: 200, body: { items: [] } }));
     renderKeys();
-    await screen.findByText("No API keys yet.");
+    await screen.findByText("No API keys yet");
     fillKeyAndCreate();
     confirmWith("not the admin password");
     expect(await screen.findByText("Your admin password is not correct.")).toBeTruthy();
@@ -138,7 +138,7 @@ describe("API keys of a tenant", () => {
     stubFetch(() => fail(500, "internal"));
     renderKeys();
     expect((await screen.findByRole("alert")).textContent).toContain("The server had a problem");
-    expect(screen.queryByText("No API keys yet.")).toBeNull();
+    expect(screen.queryByText("No API keys yet")).toBeNull();
   });
 
   it("a new key is shown once in its dialog, and never enters the query cache (guard: no setQueryData)", async () => {
@@ -165,7 +165,7 @@ describe("API keys of a tenant", () => {
       return { status: 200, body: { items: [] } };
     });
     renderKeys();
-    await screen.findByText("No API keys yet.");
+    await screen.findByText("No API keys yet");
     fireEvent.click(screen.getAllByRole("button", { name: "New key" })[0]);
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "CI" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
@@ -250,7 +250,7 @@ describe("API keys of a tenant", () => {
   it("a session change closes the new key form with what was typed (guard: the form closes on a session change)", async () => {
     stubFetch((c: Call) => (c.method === "GET" ? { status: 200, body: { items: [] } } : { status: 201, body: key() }));
     renderKeys();
-    await screen.findByText("No API keys yet.");
+    await screen.findByText("No API keys yet");
     fireEvent.click(screen.getAllByRole("button", { name: "New key" })[0]);
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "typed by Ada" } });
     act(() => session.set(signedAs("admin", "admin_2")));
@@ -264,7 +264,7 @@ describe("the new key dialog while a key is being created", () => {
   it("Cancel on the busy form closes it at once (guard: busy forms can be cancelled)", async () => {
     const { calls } = stubFetch((c: Call) => (c.method === "POST" ? new Promise<Answer>(() => undefined) : { status: 200, body: { items: [] } }));
     renderKeys();
-    await screen.findByText("No API keys yet.");
+    await screen.findByText("No API keys yet");
     fireEvent.click(screen.getAllByRole("button", { name: "New key" })[0]);
     fireEvent.change(document.getElementById("new-key-name") as HTMLInputElement, { target: { value: "Deploy" } });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
