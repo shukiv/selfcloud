@@ -4,8 +4,9 @@
 // and its icons are fetched and valid; the worker is registered and controls the page after a reload; no answer of the API,
 // the office endpoints, the share pages or the brand files is in any cache; sign-out leaves no app file; with the network
 // cut, a navigation shows the offline page; a new version waits and is offered; the install entries follow the browser's
-// offer, and the iPhone instructions appear on an iPhone's user agent. With SELFCLOUD_PWA1_SHOTS set to a folder, the run
-// also saves the pictures for the slice and the icons as PNG files.
+// offer, and the iPhone instructions appear on an iPhone's user agent; the app icons and the favicon are drawn from the
+// installation's icon file (decision 119). With SELFCLOUD_PWA1_SHOTS set to a folder, the run also saves the pictures for the
+// slice and the icons as PNG files.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { click, setLanguage, setPhone, shot, sleep } from './media.mjs';
@@ -137,6 +138,28 @@ export async function pwaChecks(h, { page, base, brand, dir, check, wsUrl }) {
   })`);
   check(head.manifest === '/manifest.webmanifest' && head.apple === '/brand/apple-touch-icon.png', 'the page links the manifest and the apple icon');
   check(head.themes.length === 2 && head.themes.some((m) => m.includes('light')) && head.themes.some((m) => m.includes('dark')), 'the page has a theme colour for light and for dark');
+
+  // The app icons and the favicon are the installation's own picture (decision 119): the e2e brand's icon file, a green edge with a
+  // red square in the middle (icon.mjs). Chromium draws each one on a canvas: the centre is red and a corner is green. The favicon
+  // is the check that its wrapper's data image renders under its own policy; a refusal shows here as a failed draw.
+  const drawn = (src, size) => `(async () => {
+    const img = new Image();
+    img.src = ${JSON.stringify(src)};
+    await new Promise((ok, no) => { img.onload = ok; img.onerror = () => no(new Error('not drawn')); });
+    const canvas = document.createElement('canvas');
+    canvas.width = ${size};
+    canvas.height = ${size};
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, ${size}, ${size});
+    const at = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3));
+    return { centre: at(${size / 2}, ${size / 2}), corner: at(1, 1) };
+  })()`;
+  const isRed = (c) => c[0] > 180 && c[1] < 80 && c[2] < 80;
+  const isGreen = (c) => c[1] > 120 && c[0] < 80 && c[2] < 80;
+  for (const [src, size] of [['/brand/icon-512.png', 512], ['/brand/icon-512-maskable.png', 512], ['/favicon.svg', 64]]) {
+    const got = await page.evaluate(drawn(src, size));
+    check(isRed(got.centre) && isGreen(got.corner), `${src} is drawn from the installation's icon file: red in the middle, green at the corner (${got.centre}, ${got.corner})`);
+  }
 
   // The worker registers after the page loads, and controls the page after a reload.
   await page.waitFor(`navigator.serviceWorker.getRegistration().then((r) => !!(r && r.active))`, 20000);

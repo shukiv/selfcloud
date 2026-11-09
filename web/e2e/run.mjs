@@ -35,6 +35,7 @@ import { q4Checks } from './q4.mjs';
 import { r7Checks } from './r7.mjs';
 import { r7bChecks } from './r7b.mjs';
 import { pwaChecks } from './pwa.mjs';
+import { brandIconPng } from './icon.mjs';
 import { pwa2Checks } from './pwa2.mjs';
 import { x3Checks } from './x3.mjs';
 import { x4Checks } from './x4.mjs';
@@ -649,6 +650,8 @@ async function main() {
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   const cfg = join(dir, 'selfcloud.yaml');
+  const iconFile = join(dir, 'icon.png');
+  await writeFile(iconFile, brandIconPng());
   const sink = await mailSink();
   // The document converter is a fake HTTPS server on this host (convertFake.mjs). The server trusts its certificate through
   // SSL_CERT_FILE, which is set for the server process only.
@@ -687,6 +690,8 @@ async function main() {
       '  brand:',
       `    name: "${BRAND.name}"`,
       `    accent: "${BRAND.accent}"`,
+      // The icon file (decision 119): the app icons and the favicon are drawn from it, and nothing else changes.
+      `    icon_file: "${iconFile}"`,
       '',
     ].join('\n'),
   );
