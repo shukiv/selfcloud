@@ -151,10 +151,21 @@ export class Page {
     this.listeners.set(method, (this.listeners.get(method) ?? []).filter((f) => f !== fn));
   }
 
-  send(method, params = {}) {
+  // send gives up after timeoutMs (0 waits for ever), so a call the browser never answers fails with its name instead of
+  // hanging the run (a run hung after pwa.mjs's Hebrew offer check until the gate's 45-minute limit, twice).
+  send(method, params = {}, timeoutMs = 180000) {
     const id = this.nextId++;
     this.ws.send(JSON.stringify({ id, method, params }));
-    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+    const answer = new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+    if (!timeoutMs) return answer;
+    let timer;
+    const limit = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`no answer in ${timeoutMs} ms to ${method}`));
+      }, timeoutMs);
+    });
+    return Promise.race([answer, limit]).finally(() => clearTimeout(timer));
   }
 
   // start takes the answers the run expects: each is { name, matches(entry) }. A failed request that
@@ -260,11 +271,13 @@ export class Page {
     await this.waitFor(`document.readyState === 'complete'`, 15000);
   }
 
-  async evaluate(expression) {
+  async evaluate(expression, timeoutMs = 180000) {
     const res = await this.send('Runtime.evaluate', {
       expression,
       returnByValue: true,
       awaitPromise: true,
+    }, timeoutMs).catch((err) => {
+      throw new Error(`${err.message}: ${expression.slice(0, 160)}`);
     });
     if (res.exceptionDetails) {
       throw new Error(`page script failed: ${res.exceptionDetails.exception?.description ?? res.exceptionDetails.text}`);
@@ -276,10 +289,11 @@ export class Page {
   async waitFor(expression, timeoutMs = 10000) {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const value = await this.evaluate(expression).catch(() => undefined);
+      // Each read is bounded by what is left of the wait, so a read the page never answers cannot outlast it.
+      const value = await this.evaluate(expression, Math.max(1000, deadline - Date.now() + 5000)).catch(() => undefined);
       if (value) return value;
       if (Date.now() > deadline) {
-        const at = await this.evaluate('location.pathname').catch(() => 'unknown');
+        const at = await this.evaluate('location.pathname', 5000).catch(() => 'unknown');
         throw new Error(`timed out waiting for: ${expression} (the page is at ${at})`);
       }
       await sleep(100);
