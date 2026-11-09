@@ -12,13 +12,15 @@ import { useLang, useT } from '../i18n';
 import { get, useStore } from '../store';
 import { session } from '../session';
 import { createDocument } from './api';
+import { createFromTemplate } from './templates';
 import { coarsePointer, safeFrom } from './editor';
 import { fileErrorText } from './fileErrors';
 import { finishHandoff, newKey, startHandoff, waitPath } from './newDocumentHandoff';
 import { refreshTree } from '../query';
 import { newPlace, placeForRoute } from './newPlace';
 
-export type DocumentKind = 'docx' | 'xlsx' | 'pptx';
+// DocumentKind is a blank file the New menu makes: an Office kind, a drawing (odg) or a text file (txt), which the server also makes (decision 105).
+export type DocumentKind = 'docx' | 'xlsx' | 'pptx' | 'odg' | 'txt';
 
 // openNewDocumentTab starts a new document: the key, the wait page (in a new tab from the click, or in this tab on a coarse
 // pointer), and the one server call. The call's result, or its error text, is handed to the wait page. When the browser
@@ -27,6 +29,8 @@ export function openNewDocumentTab(
   o: {
     parent: string;
     kind: DocumentKind;
+    // template, when given, makes the file from that template (nt2) instead of a blank one; kind is then not used for the call.
+    template?: string;
     from: string;
     coarse: boolean;
     goTo: (to: string) => void;
@@ -55,7 +59,8 @@ export function openNewDocumentTab(
     w.opener = null;
   }
   const tab = !o.coarse;
-  void createDocument(o.parent, o.kind).then(
+  const made = o.template !== undefined ? createFromTemplate(o.parent, o.template) : createDocument(o.parent, o.kind);
+  void made.then(
     (node) => {
       o.created?.();
       finishHandoff(k, { node: node.id, from: back, tab });

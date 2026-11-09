@@ -982,7 +982,8 @@ describe("the sidebar's document entries follow the place, the role and the impe
     await wideScreen(async () => {
       setUp("member", "editor", place({}));
       await openSidebarNew();
-      for (const name of DOCUMENTS) expect(screen.getByRole("menuitem", { name })).toBeTruthy();
+      // Each kind is a submenu now (nt2, decision 108): its title is the kind's name, and the blank entry sits under it.
+      for (const name of DOCUMENTS) expect(screen.getByText(name)).toBeTruthy();
     });
   });
 

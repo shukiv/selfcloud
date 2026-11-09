@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "../../lib/i18n";
 import { myFilesPlace, placeOfHere, type DocKind, type NewPlace } from "../../lib/files/newPlace";
@@ -8,15 +8,25 @@ import { PALETTE, SIDEBAR } from "../../theme/tokens";
 import { ThemeProvider, antdTokens } from "../../theme/theme";
 import { contrast } from "../../lib/brand";
 import SidebarNew from "./SidebarNew";
+import { MemoryRouter, useLocation } from "react-router-dom";
 
 const readOnly: NewPlace = { where: { folder: "fld_t", dirID: null, path: "/" }, canFolder: false, canUpload: false, canUploadFolder: false, readOnly: true, canEdit: false };
+
+// Probe shows the address the menu navigated to (the gallery's, from a template).
+function Probe() {
+  const loc = useLocation();
+  return <output data-testid="at">{loc.pathname + loc.search}</output>;
+}
 
 function renderNew(place: NewPlace | null, collapsed = false, coarse = false, documents: DocKind[] = [], failure: string | null = null) {
   const onPick = vi.fn();
   const onFolder = vi.fn();
   const onDocument = vi.fn();
   const utils = render(
-    <SidebarNew place={place} failure={failure} collapsed={collapsed} coarse={coarse} sidebar={SIDEBAR} onPick={onPick} onFolder={onFolder} documents={documents} onDocument={onDocument} />,
+    <MemoryRouter initialEntries={["/files"]}>
+      <Probe />
+      <SidebarNew place={place} failure={failure} collapsed={collapsed} coarse={coarse} sidebar={SIDEBAR} onPick={onPick} onFolder={onFolder} documents={documents} onDocument={onDocument} />
+    </MemoryRouter>,
   );
   return { ...utils, onPick, onFolder, onDocument };
 }
@@ -60,9 +70,10 @@ describe("the sidebar's New button", () => {
       rootReachable: true, reach: [], spaceNoDownload: false, path: "/", rootNodeID: "nod_root" } as unknown as Parameters<typeof placeOfHere>[0], true, true);
     const { onDocument } = renderNew(place, false, false, ["docx", "xlsx", "pptx"]);
     fireEvent.click(screen.getByRole("button", { name: "New" }));
-    expect(await screen.findByRole("menuitem", { name: "Document" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Spreadsheet" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Presentation" }));
+    expect(await screen.findByText("Document")).toBeTruthy();
+    expect(screen.getByText("Spreadsheet")).toBeTruthy();
+    fireEvent.mouseEnter(screen.getByText("Presentation"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Blank" }));
     expect(onDocument).toHaveBeenCalledWith("pptx");
   });
 
@@ -181,7 +192,9 @@ describe("the sidebar's New button", () => {
     try {
       render(
         <ThemeProvider>
-          <SidebarNew place={readOnly} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
+          <MemoryRouter>
+            <SidebarNew place={readOnly} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
+          </MemoryRouter>
         </ThemeProvider>,
       );
       fireEvent.click(screen.getByRole("button", { name: "New" }));
@@ -221,9 +234,11 @@ describe("Escape in the sidebar's New menu (decision 95, round 3 fix)", () => {
   function renderInParent(place: NewPlace) {
     const parentKey = vi.fn();
     const utils = render(
-      <div onKeyDown={parentKey}>
-        <SidebarNew place={place} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
-      </div>,
+      <MemoryRouter>
+        <div onKeyDown={parentKey}>
+          <SidebarNew place={place} collapsed={false} coarse={false} sidebar={SIDEBAR} onPick={vi.fn()} onFolder={vi.fn()} documents={[]} onDocument={vi.fn()} />
+        </div>
+      </MemoryRouter>,
     );
     return { ...utils, parentKey };
   }
@@ -252,3 +267,162 @@ describe("Escape in the sidebar's New menu (decision 95, round 3 fix)", () => {
     expect(parentKey.mock.calls[0][0].key).toBe("Escape");
   });
 });
+
+// The menu's groups, the submenus, the chord and the hints (design-nt2-phase1: the menu and shortcut rules, W1).
+describe("the New menu's submenus, template link, and chord", () => {
+  beforeEach(async () => {
+    await setLang("en");
+  });
+
+  const office = (p: NewPlace) => p;
+
+  // Blank under a kind runs the existing onDocument path with its kind (decision 102: the same call as today).
+  it("a kind's Blank calls onDocument with that kind", async () => {
+    const { onDocument } = renderNew(office(myFilesPlace("fld_mine")), false, false, ["docx", "xlsx", "pptx"]);
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.mouseEnter(await screen.findByText("Spreadsheet"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Blank" }));
+    expect(onDocument).toHaveBeenCalledWith("xlsx");
+  });
+
+  // From a template navigates to the gallery at the place's folder, with the kind (newURL). Nothing is created here.
+  it("a kind's From a template goes to the gallery address for the place and kind", async () => {
+    const { onDocument } = renderNew(myFilesPlace("fld_mine"), false, false, ["docx"]);
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.mouseEnter(await screen.findByText("Document"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "From a template" }));
+    expect(screen.getByTestId("at").textContent).toBe("/new/fld_mine?kind=document");
+    expect(onDocument).not.toHaveBeenCalled();
+  });
+
+  it("Drawing and Text file are direct items under More, and each calls onDocument with its kind", async () => {
+    const { onDocument } = renderNew(myFilesPlace("fld_mine"), false, false, ["docx"]);
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.mouseEnter(await screen.findByText("More"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Drawing" }));
+    expect(onDocument).toHaveBeenLastCalledWith("odg");
+    fireEvent.click(button());
+    fireEvent.mouseEnter(await screen.findByText("More"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Text file" }));
+    expect(onDocument).toHaveBeenLastCalledWith("txt");
+  });
+
+  // The shortcut hint shows at the row's end and the row says its keys to a screen reader.
+  it("each action row sets aria-keyshortcuts and shows its letter as the hint", async () => {
+    renderNew(myFilesPlace("fld_mine"), false, false, ["docx"]);
+    fireEvent.click(button());
+    const folder = await screen.findByRole("menuitem", { name: "New folder" });
+    expect(folder.getAttribute("aria-keyshortcuts")).toBe("Alt+C F");
+    expect(folder.querySelector(".menu-hint")?.getAttribute("data-hint")).toBe("Alt+C, F");
+    expect(screen.getByRole("menuitem", { name: "Upload files" }).getAttribute("aria-keyshortcuts")).toBe("Alt+C U");
+  });
+
+  // A viewer's place shows no hints (the menu's reason is the header, decision 95).
+  it("a viewer's place shows no shortcut hints", async () => {
+    renderNew(readOnly);
+    fireEvent.click(button());
+    const folder = await screen.findByRole("menuitem", { name: "New folder" });
+    expect(folder.getAttribute("aria-keyshortcuts")).toBeNull();
+    expect(folder.querySelector(".menu-hint")).toBeNull();
+  });
+
+  // Width and rows (design-nt2 section 3): min(400px, 100vw - 32px), at least 320 px; rows 40 px, 44 px on a finger.
+  it("the menu is min(400px, 100vw - 32px) wide, at least 320 px", async () => {
+    renderNew(myFilesPlace("fld_mine"));
+    fireEvent.click(button());
+    const list = await waitForMenu();
+    // jsdom writes calc(100vw - 32px) as "-32px + 100vw": the rule is the same.
+    expect(list.style.width.startsWith("min(400px")).toBe(true);
+    expect(list.style.width).toMatch(/100vw/);
+    expect(list.style.width).toMatch(/32px/);
+    expect(list.style.minWidth).toBe("320px");
+  });
+
+  it("rows are 40 px with a mouse and 44 px on a coarse pointer", async () => {
+    renderNew(myFilesPlace("fld_mine"));
+    fireEvent.click(button());
+    expect(((await screen.findByRole("menuitem", { name: "New folder" })) as HTMLElement).style.height).toBe("40px");
+    cleanup();
+    renderNew(myFilesPlace("fld_mine"), false, true);
+    fireEvent.click(button());
+    expect(((await screen.findByRole("menuitem", { name: "New folder" })) as HTMLElement).style.height).toBe("44px");
+  });
+
+  // The chord (Alt+C, then a letter), with the menu closed: it opens nothing and calls the action.
+  it("Alt+C then F runs New folder for the place with the menu closed, and opens nothing", () => {
+    const place = myFilesPlace("fld_mine");
+    const { onFolder } = renderNew(place);
+    fireEvent.keyDown(document.body, { key: "c", code: "KeyC", altKey: true });
+    fireEvent.keyDown(document.body, { key: "f", code: "KeyF" });
+    expect(onFolder).toHaveBeenCalledWith(place.where);
+    expect(document.querySelector("[role='menu']")).toBeNull();
+  });
+
+  // The layout types Hebrew: the key is not Latin, the code still says F.
+  it("Alt+C then F works on a Hebrew layout (key is not Latin, code is KeyF)", () => {
+    const { onFolder } = renderNew(myFilesPlace("fld_mine"));
+    fireEvent.keyDown(document.body, { key: "c", code: "KeyC", altKey: true });
+    fireEvent.keyDown(document.body, { key: "כ", code: "KeyF" });
+    expect(onFolder).toHaveBeenCalledTimes(1);
+  });
+
+  // Alt+C is consumed: the default is cancelled, so nothing is typed on macOS (Option+C is ç).
+  it("Alt+C calls preventDefault", () => {
+    renderNew(myFilesPlace("fld_mine"));
+    const notCancelled = fireEvent.keyDown(document.body, { key: "ç", code: "KeyC", altKey: true });
+    expect(notCancelled).toBe(false);
+  });
+
+  it("a stray key cancels the chord, so a later F does nothing", () => {
+    const { onFolder } = renderNew(myFilesPlace("fld_mine"));
+    fireEvent.keyDown(document.body, { key: "c", code: "KeyC", altKey: true });
+    fireEvent.keyDown(document.body, { key: "q", code: "KeyQ" });
+    fireEvent.keyDown(document.body, { key: "f", code: "KeyF" });
+    expect(onFolder).not.toHaveBeenCalled();
+  });
+
+  it("the chord is ignored in a text field", () => {
+    const { onFolder } = renderNew(myFilesPlace("fld_mine"));
+    const box = document.createElement("input");
+    box.type = "text";
+    document.body.appendChild(box);
+    box.focus();
+    fireEvent.keyDown(box, { key: "c", code: "KeyC", altKey: true });
+    fireEvent.keyDown(box, { key: "f", code: "KeyF" });
+    expect(onFolder).not.toHaveBeenCalled();
+    box.remove();
+  });
+
+  it("the chord is ignored while the New menu is open", async () => {
+    const { onFolder } = renderNew(myFilesPlace("fld_mine"));
+    fireEvent.click(button());
+    await screen.findByRole("menuitem", { name: "New folder" });
+    fireEvent.keyDown(document.body, { key: "c", code: "KeyC", altKey: true });
+    fireEvent.keyDown(document.body, { key: "f", code: "KeyF" });
+    expect(onFolder).not.toHaveBeenCalled();
+  });
+
+  it("the chord does nothing in a viewer's place", () => {
+    const { onFolder, onPick, onDocument } = renderNew(readOnly, false, false, ["docx"]);
+    fireEvent.keyDown(document.body, { key: "c", code: "KeyC", altKey: true });
+    fireEvent.keyDown(document.body, { key: "f", code: "KeyF" });
+    expect(onFolder).not.toHaveBeenCalled();
+    expect(onPick).not.toHaveBeenCalled();
+    expect(onDocument).not.toHaveBeenCalled();
+  });
+
+  it("the chord waits while the place is still read", () => {
+    const { onFolder } = renderNew(null);
+    fireEvent.keyDown(document.body, { key: "c", code: "KeyC", altKey: true });
+    fireEvent.keyDown(document.body, { key: "f", code: "KeyF" });
+    expect(onFolder).not.toHaveBeenCalled();
+  });
+});
+
+function button(): HTMLElement {
+  return screen.getByRole("button", { name: "New" });
+}
+
+async function waitForMenu(): Promise<HTMLElement> {
+  return (await screen.findByRole("menu")) as HTMLElement;
+}

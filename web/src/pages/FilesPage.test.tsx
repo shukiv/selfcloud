@@ -3116,7 +3116,8 @@ describe("decision 91: the document entries follow the place and the impersonati
     renderAt(FOLDER);
     await screen.findByRole("row", { name: "alpha.txt" });
     await openNew();
-    for (const name of DOCUMENTS) expect(screen.getByRole("menuitem", { name })).toBeTruthy();
+    // The three documents are submenus of the New menu (Document, Spreadsheet, Presentation), so their titles are the entries here.
+    for (const name of DOCUMENTS) expect(screen.getByText(name)).toBeTruthy();
   });
 
   it("hides the three documents while office editing is off, even in a folder the person edits", async () => {
@@ -3126,7 +3127,7 @@ describe("decision 91: the document entries follow the place and the impersonati
     await screen.findByRole("row", { name: "alpha.txt" });
     await openNew();
     expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeTruthy();
-    for (const name of DOCUMENTS) expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    for (const name of DOCUMENTS) expect(screen.queryByText(name)).toBeNull();
   });
 
   it("hides the three documents in a folder the person may add to but not edit, and keeps the other entries", async () => {
@@ -3135,7 +3136,7 @@ describe("decision 91: the document entries follow the place and the impersonati
     await screen.findByRole("row", { name: "alpha.txt" });
     await openNew();
     expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeTruthy();
-    for (const name of DOCUMENTS) expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    for (const name of DOCUMENTS) expect(screen.queryByText(name)).toBeNull();
   });
 
   it("hides the three documents when an installation admin is signed in as the person, and keeps the other entries", async () => {
@@ -3145,6 +3146,6 @@ describe("decision 91: the document entries follow the place and the impersonati
     await screen.findByRole("row", { name: "alpha.txt" });
     await openNew();
     expect(screen.getByRole("menuitem", { name: "Upload files" })).toBeTruthy();
-    for (const name of DOCUMENTS) expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    for (const name of DOCUMENTS) expect(screen.queryByText(name)).toBeNull();
   });
 });

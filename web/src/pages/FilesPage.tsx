@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { App, Alert, Button, ConfigProvider, Dropdown, Modal, Skeleton, theme as antdTheme } from "antd";
 import IconButton from "../components/IconButton";
 import SelectionBar from "../components/files/SelectionBar";
+import { useNewChord } from "../components/files/SidebarNew";
+import { menuIsDark, newMenuItems, newMenuTree, type NewMenuNode } from "../lib/files/newMenu";
+import { newURL } from "../lib/files/newRoute";
+import type { NewChordAction } from "../lib/files/newShortcut";
 import {
   ClipboardPaste,
   Copy,
@@ -16,8 +20,6 @@ import {
   FolderOpen,
   FolderInput,
   BookOpen,
-  FolderPlus,
-  FolderUp,
   History,
   ArrowUpDown,
   Info,
@@ -34,9 +36,6 @@ import {
   Star,
   Trash2,
   Upload,
-  FileSpreadsheet,
-  FileText,
-  Presentation,
 } from "lucide-react";
 import { useLang, useT, translatePlural } from "../lib/i18n";
 import { useStore, get } from "../lib/store";
@@ -147,6 +146,8 @@ const MENU_FIT = { adjustX: 1, adjustY: 1, shiftX: true, shiftY: true } as const
 const MENU_SCROLL = { maxBlockSize: "calc(100dvh - 16px)", overflowY: "auto" } as const;
 // antd offsets a menu 4 px from its anchor after it has been fitted to the window; 4 px of padding in the popup keeps the offset menu inside.
 const MENU_POPUP = { paddingBlock: 4 } as const;
+// NEW_MENU_STYLE is the New menu's width: 400 px at most, 320 px at least, and the screen less a 16 px gutter each side (design-nt2 section 3).
+const NEW_MENU_STYLE = { ...MENU_SCROLL, width: "min(400px, calc(100vw - 32px))", minWidth: 320, boxSizing: "border-box" } as const;
 // MAC_KEYS says whether the shortcuts a menu shows are the Mac's (the command sign) or the Windows and Linux ones (Ctrl).
 const MAC_KEYS = typeof navigator !== "undefined" && isMacPlatform(navigator);
 
@@ -307,6 +308,13 @@ export default function FilesPage() {
   // documents there, as the sidebar's New does (decision 91).
   const shownPlace = useStore(newPlace);
   const makeDocument = useNewDocument();
+  const navigate = useNavigate();
+  // The chord (Alt+C, then a letter) acts on this page's New while the toolbar holds it (not docked to the sidebar). newRun and newChordOn
+  // are set below, once the New actions are known: the hook must come before the early returns of this component.
+  const newRun = useRef<(action: NewChordAction) => void>(() => undefined);
+  const newChordOn = useRef<() => boolean>(() => false);
+  useNewChord(() => newChordOn.current(), (action) => newRun.current(action));
+  const newGround = String(antdTheme.useToken().token.colorBgElevated);
   const impersonating = !!useStore(session)?.impersonation;
   // viewable is a file the viewer opens: a previewable one, or an office document while its preview is offered.
   const viewable = (n: Node) => previewable(n) || (officeOn && kindOf(n) === "office");
@@ -1178,7 +1186,7 @@ export default function FilesPage() {
     const target = e.target;
     if (!(target instanceof HTMLElement) || target.closest('[role="toolbar"], nav, input, textarea, select, [contenteditable], .ant-modal, .ant-dropdown, .ant-drawer, [role="dialog"]')) return;
     // A place with nothing to offer keeps the browser's own menu: the menu is not opened, and nothing is prevented.
-    if (!spaceActs.some((a) => !a.hidden)) return;
+    if (!spaceActs.some((a) => !a.hidden) && newTree.length === 0) return;
     e.preventDefault();
     setMenu(menuAt(e.clientX, e.clientY, "space"));
   }
@@ -1856,25 +1864,59 @@ export default function FilesPage() {
   const panelKeys = roomy ? (coarse && !spacious ? ["share", "download", "move", "delete"] : ["share", "copyLink", "download", "move", "delete"]) : ["share", "download"];
   const panelIcons = panelKeys.map((k) => barActs.find((a) => a.key === k)).filter((a): a is BarAct => a !== undefined);
   const panelMore = barActs.filter((a) => !panelKeys.includes(a.key));
-  // newActs is the New menu: a folder, and the files or a folder uploaded. spaceActs is the menu of the empty space: the same,
-  // and a paste. Both follow the toolbar's rules.
-  // The three blank documents (decision 91): shown only while office editing is on and the folder takes new files.
+  // The New menu is the one list of newMenu.ts, the sidebar's too: its entries follow the page's rules (canMakeFolder, canUploadHere,
+  // canUploadFolder), and its blank kinds are the document kinds (decision 91). A blank file runs makeDocument (decision 102); a
+  // template goes to the gallery at this folder or directory (newURL). The menu's chord hints show only where the page takes files.
   const docKinds = canUploadHere ? documentKinds(placeForRoute(shownPlace, path), editorOn, impersonating) : [];
-  const docActs: BarAct[] = [
-    { key: "doc-docx", label: t("files.act.document"), icon: <FileText {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("docx"), fits: true, enabled: true, run: () => makeDocument("docx") },
-    { key: "doc-xlsx", label: t("files.act.spreadsheet"), icon: <FileSpreadsheet {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("xlsx"), fits: true, enabled: true, run: () => makeDocument("xlsx") },
-    { key: "doc-pptx", label: t("files.act.presentation"), icon: <Presentation {...ic} />, group: 1, section: "first", hidden: !docKinds.includes("pptx"), fits: true, enabled: true, run: () => makeDocument("pptx") },
-  ];
-  const newActs: BarAct[] = [
-    { key: "newFolder", label: t("files.act.newFolder"), icon: <FolderPlus {...ic} />, group: 1, section: "first", hidden: !canMakeFolder, fits: true, enabled: true, run: openNewFolder },
-    { key: "upload", label: t("files.act.upload"), icon: <Upload {...ic} />, group: 1, section: "first", hidden: !canUploadHere, fits: true, enabled: true, run: openFilePicker },
-    { key: "uploadFolder", label: t("files.act.uploadFolder"), icon: <FolderUp {...ic} />, group: 1, section: "first", hidden: !canUploadFolder, fits: true, enabled: true, run: () => folderInputRef.current?.click() },
-    ...docActs,
-  ];
+  const newTree = newMenuTree({
+    entries: [
+      { key: "newFolder", visible: canMakeFolder, enabled: canMakeFolder },
+      { key: "upload", visible: canUploadHere, enabled: canUploadHere },
+      { key: "uploadFolder", visible: canUploadFolder, enabled: canUploadFolder },
+    ],
+    blanks: docKinds,
+    hints: canUploadHere,
+  });
+  const newText = {
+    newFolder: t("files.act.newFolder"),
+    upload: t("files.act.upload"),
+    uploadFolder: t("files.act.uploadFolder"),
+    document: t("files.act.document"),
+    spreadsheet: t("files.act.spreadsheet"),
+    presentation: t("files.act.presentation"),
+    more: t("files.new.more"),
+    drawing: t("files.new.drawing"),
+    textFile: t("files.new.textFile"),
+    blank: t("files.new.blank"),
+    fromTemplate: t("files.new.fromTemplate"),
+    shortcut: t("files.new.shortcut"),
+  };
+  const runNewNode = (node: NewMenuNode) => {
+    menuChosen.current = true;
+    setMenu(null);
+    if (node.type === "action") {
+      if (node.key === "newFolder") openNewFolder();
+      if (node.key === "upload") openFilePicker();
+      if (node.key === "uploadFolder") folderInputRef.current?.click();
+    } else if (node.type === "blank") {
+      void makeDocument(node.kind);
+    } else if (node.type === "template" && here) {
+      navigate(newURL(here.folder, here.dir?.id ?? null, node.kind));
+    }
+  };
+  newRun.current = (action) => {
+    if (action === "newFolder" || action === "upload" || action === "uploadFolder") {
+      if (newTree.some((n) => n.type === "action" && n.key === action && n.enabled)) runNewNode({ type: "action", key: action, enabled: true });
+      return;
+    }
+    if (docKinds.includes(action)) runNewNode({ type: "blank", kind: action });
+  };
+  newChordOn.current = () => !docked && canUploadHere;
+  const newMenuOptions = { text: newText, dark: menuIsDark(newGround), coarse, onRun: runNewNode };
   const hasMedia = items.some(isPlayable);
+  // spaceActs is the empty space's flat actions: Play media and Paste. The New entries sit between them (spaceMenuItems).
   const spaceActs: BarAct[] = [
     { key: "playMedia", label: t("files.act.playMedia"), icon: <Play {...ic} />, group: 0, section: "first", hidden: !hasMedia, fits: true, enabled: true, run: () => playHere() },
-    ...newActs,
     { key: "paste", label: t("files.act.paste"), icon: <ClipboardPaste {...ic} />, group: 2, section: "first", hidden: !canUploadHere, fits: true, enabled: clip !== null, run: () => void pasteHere() },
   ];
   // menuItems turns actions into the items of a menu: a divider between the groups, the hidden and the non-fitting actions left
@@ -1898,6 +1940,11 @@ export default function FilesPage() {
       };
       return i > 0 && shown[i - 1].group !== a.group ? [{ type: "divider" as const, key: `${a.key}-divider` }, item] : [item];
     });
+  };
+  // spaceMenuItems is the empty space's menu: Play media, the New entries, and Paste, each section apart from the next by a divider.
+  const spaceMenuItems = () => {
+    const sections = [menuItems(spaceActs.filter((a) => a.key === "playMedia")), newMenuItems(newTree, newMenuOptions), menuItems(spaceActs.filter((a) => a.key === "paste"))].filter((sec) => sec.length > 0);
+    return sections.flatMap((sec, i) => (i === 0 ? sec : [{ type: "divider" as const, key: `space-section-${i}` }, ...sec]));
   };
   // actItem is one entry of a menu built from an action: its shortcut at the right, and the same call as the toolbar's.
   const actItem = (a: BarAct) => ({
@@ -2154,13 +2201,13 @@ export default function FilesPage() {
               <ConfigProvider theme={menuTheme}>
                 {/* Under 480 px New is the plus icon, with its name as label and tooltip; a wider row keeps the word (decision 68). */}
                 {spacious ? (
-                  <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(newActs), style: MENU_SCROLL }}>
+                  <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: newMenuItems(newTree, newMenuOptions), style: NEW_MENU_STYLE }}>
                     <Button icon={<Plus {...ic} />} aria-haspopup="menu" style={touchSize}>
                       {t("files.act.new")}
                     </Button>
                   </Dropdown>
                 ) : (
-                  <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: menuItems(newActs), style: MENU_SCROLL }}>
+                  <Dropdown trigger={["click"]} autoAdjustOverflow={MENU_FIT} overlayStyle={MENU_POPUP} menu={{ items: newMenuItems(newTree, newMenuOptions), style: NEW_MENU_STYLE }}>
                     <IconButton label={t("files.act.new")} icon={<Plus {...ic} />} aria-haspopup="menu" />
                   </Dropdown>
                 )}
@@ -2297,7 +2344,7 @@ export default function FilesPage() {
                 }}
                 menu={
                   menu.scope === "space"
-                    ? { items: menuItems(spaceActs), style: MENU_SCROLL }
+                    ? { items: spaceMenuItems(), style: NEW_MENU_STYLE }
                     : { items: groupedItems(barActs), style: MENU_SCROLL, triggerSubMenuAction: coarse ? "click" : "hover" }
                 }
               >

@@ -142,7 +142,7 @@ export function mkdirIn(folder: string, parent: string, name: string): Promise<N
 
 // createDocument makes a blank Office document of kind (docx, xlsx or pptx) in the folder's root or the directory nod, a
 // node ID (decision 91). The server names it, and answers the new node.
-export function createDocument(nod: string, kind: 'docx' | 'xlsx' | 'pptx'): Promise<Node> {
+export function createDocument(nod: string, kind: 'docx' | 'xlsx' | 'pptx' | 'odg' | 'txt'): Promise<Node> {
   return api<Node>('POST', `/api/v1/nodes/${nod}/documents`, { body: { type: kind } });
 }
 
