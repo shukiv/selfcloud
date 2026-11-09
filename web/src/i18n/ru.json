@@ -1569,5 +1569,6 @@
   "settings.templates.change": "Изменить",
   "settings.templates.clear": "Убрать",
   "settings.templates.pick": "Выберите папку шаблонов",
-  "settings.templates.save": "Сохранить"
+  "settings.templates.save": "Сохранить",
+  "settings.templates.noRoot": "Не удалось прочитать корневую папку пространства. Попробуйте ещё раз."
 }

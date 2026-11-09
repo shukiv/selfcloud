@@ -1569,5 +1569,6 @@
   "settings.templates.change": "تغيير",
   "settings.templates.clear": "إزالة",
   "settings.templates.pick": "اختر مجلد القوالب",
-  "settings.templates.save": "حفظ"
+  "settings.templates.save": "حفظ",
+  "settings.templates.noRoot": "تعذّرت قراءة المجلد الجذر لهذه المساحة. حاول مرة أخرى."
 }

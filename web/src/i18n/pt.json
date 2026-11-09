@@ -1569,5 +1569,6 @@
   "settings.templates.change": "Alterar",
   "settings.templates.clear": "Remover",
   "settings.templates.pick": "Escolha a pasta de modelos",
-  "settings.templates.save": "Salvar"
+  "settings.templates.save": "Salvar",
+  "settings.templates.noRoot": "Não foi possível ler a pasta raiz deste espaço. Tente novamente."
 }

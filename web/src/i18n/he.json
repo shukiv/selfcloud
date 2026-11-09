@@ -1569,5 +1569,6 @@
   "settings.templates.change": "שינוי",
   "settings.templates.clear": "הסר",
   "settings.templates.pick": "בחירת תיקיית התבניות",
-  "settings.templates.save": "שמירה"
+  "settings.templates.save": "שמירה",
+  "settings.templates.noRoot": "לא ניתן לקרוא את התיקייה הראשית של המרחב. נסו שוב."
 }

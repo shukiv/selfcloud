@@ -1569,5 +1569,6 @@
   "settings.templates.change": "Cambiar",
   "settings.templates.clear": "Quitar",
   "settings.templates.pick": "Elige la carpeta de plantillas",
-  "settings.templates.save": "Guardar"
+  "settings.templates.save": "Guardar",
+  "settings.templates.noRoot": "No se pudo leer la carpeta raíz del espacio. Inténtalo de nuevo."
 }

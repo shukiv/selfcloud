@@ -84,6 +84,8 @@ export interface FolderAccess {
   hidden?: boolean;
   access: 'read' | 'write';
   role: Role;
+  // The folder's root node (the folder list gives it; the templates setting saves it as the account's templates folder).
+  root_node_id?: string;
   // The team-space settings (false on a personal folder). Only a manager of the space sees them change.
   members_only: boolean;
   sharing_managers_only: boolean;

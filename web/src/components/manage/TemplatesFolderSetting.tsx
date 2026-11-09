@@ -40,6 +40,15 @@ export default function TemplatesFolderSetting({ account }: { account: string })
 
   if (!owner) return null;
 
+  // A space is picked at its root with dir null: the space's root node, from the folder list, is saved (nt2 review, MED-3).
+  // The list is read at the pick (the cache when it is fresh), so the pick does not depend on the picker's own load.
+  async function pickDestination(d: Destination) {
+    const folders = await qc.fetchQuery({ queryKey: ["templatesFolder", "spaces"], queryFn: () => myFolders() });
+    const nod = d.dir ?? folders.find((s) => s.id === d.folder)?.root_node_id ?? null;
+    if (nod !== null) await save(nod);
+    else setError(t("settings.templates.noRoot"));
+  }
+
   async function save(nod: string | null) {
     setBusy(true);
     setError(null);
@@ -76,9 +85,7 @@ export default function TemplatesFolderSetting({ account }: { account: string })
           spaces={spaces.data ?? []}
           heading={t("settings.templates.pick")}
           action={t("settings.templates.save")}
-          onPick={(d: Destination) => {
-            if (d.dir) void save(d.dir);
-          }}
+          onPick={(d: Destination) => void pickDestination(d)}
           onClose={() => setPicking(false)}
         />
       )}

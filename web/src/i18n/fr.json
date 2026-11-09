@@ -1569,5 +1569,6 @@
   "settings.templates.change": "Changer",
   "settings.templates.clear": "Retirer",
   "settings.templates.pick": "Choisir le dossier des modèles",
-  "settings.templates.save": "Enregistrer"
+  "settings.templates.save": "Enregistrer",
+  "settings.templates.noRoot": "Le dossier racine de cet espace est introuvable. Réessayez."
 }

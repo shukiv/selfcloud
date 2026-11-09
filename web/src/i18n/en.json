@@ -1569,5 +1569,6 @@
   "settings.templates.change": "Change",
   "settings.templates.clear": "Clear",
   "settings.templates.pick": "Choose the templates folder",
-  "settings.templates.save": "Save"
+  "settings.templates.save": "Save",
+  "settings.templates.noRoot": "The space's root folder could not be read. Try again."
 }
