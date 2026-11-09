@@ -36,8 +36,8 @@ async function setWidth(page, width) {
   await sleep(300);
 }
 
-export async function em1Checks(h, { page, base, accountKey, shotsDir = process.env.SELFCLOUD_E2E_SHOTS || null }) {
-  const { check, api, navigateTo, rowAppears, selectRow, clickButton, clickOn, rawPut } = h;
+export async function em1Checks(h, { page, base, accountKey, accountID, MEMBER, shotsDir = process.env.SELFCLOUD_E2E_SHOTS || null }) {
+  const { check, api, navigateTo, rowAppears, selectRow, clickButton, rawPut, signIn, signOut } = h;
   const suffix = Date.now().toString(36);
   const name = `em1-note-${suffix}.txt`;
   if (shotsDir) await mkdir(shotsDir, { recursive: true });
@@ -56,29 +56,23 @@ export async function em1Checks(h, { page, base, accountKey, shotsDir = process.
     found.push({ what: `${p.key} (${label})`, text: p.text, status: true, empty: await emptyOf(page), sideways: sidewaysToo ? await sideways(page) : null, wrapClass });
   };
 
-  // The earlier sections of a full run leave the member's Recent and trash with items. Recent is cleared and the trash emptied
-  // through their own buttons, each with its confirmation, so the pages read empty as a person sees them.
+  // The empty pages are read as a new member who has nothing: made and verified through the API here, and signed in on the page.
+  // The member the earlier sections use keeps whatever they left in Recent and the trash. An editor's own trashed item in a team
+  // space (sd1 leaves one) is one the editor may not purge, so Empty trash cannot clear it and the page never reads empty. So
+  // nothing is cleared here: the pages are read as this new member, and the signed-in member is put back at the end.
+  const fresh = { email: `em1-${suffix}@example.com`, name: `Em1 Nothing Yet ${suffix}`, password: MEMBER.password };
+  const created = await api(base, 'POST', `/api/v1/accounts/${accountID}/users`, accountKey, {
+    email: fresh.email,
+    display_name: fresh.name,
+    role: 'member',
+    verification: 'link',
+  });
+  await api(base, 'POST', '/api/v1/auth/verify', null, { token: created.verification.token, password: fresh.password });
   await setWidth(page, 1280);
-  const recentText = PAGES.find((p) => p.key === 'recent').text;
-  await navigateTo(page, '/recent');
-  await page.waitFor(`!!Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Clear all') || document.body.innerText.includes(${q(recentText)})`, 15000);
-  if (await page.evaluate(`!!Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Clear all')`)) {
-    await clickButton(page, 'Clear all');
-    await page.waitFor(`!!document.querySelector('.ant-modal .ant-modal-footer button:last-child')`, 10000);
-    await clickOn(page, '.ant-modal .ant-modal-footer button:last-child');
-  }
-  await page.waitFor(`document.body.innerText.includes(${q(recentText)})`, 15000);
-  // Empty trash shows only once the folder list says the member manages one, after the page has loaded, so the page's load
-  // state cannot decide whether to empty: wait for the button or the empty words, as Recent does above.
-  const trashText = PAGES.find((p) => p.key === 'trash').text;
+  await signOut(page);
+  await signIn(page, fresh);
   await navigateTo(page, '/trash');
-  await page.waitFor(`!!Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Empty trash' && !b.disabled) || document.body.innerText.includes(${q(trashText)})`, 15000);
-  if (await page.evaluate(`!!Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Empty trash')`)) {
-    await clickButton(page, 'Empty trash');
-    await page.waitFor(`!!document.querySelector('.ant-modal .ant-modal-footer button:last-child')`, 10000);
-    await clickOn(page, '.ant-modal .ant-modal-footer button:last-child');
-  }
-  await page.waitFor(`document.body.innerText.includes(${q(PAGES.find((p) => p.key === 'trash').text)})`, 30000);
+  await page.waitFor(`document.body.innerText.includes(${q(PAGES.find((p) => p.key === 'trash').text)})`, 15000);
 
   // Desktop: light, then dark. The theme is chosen at the desktop width.
   await setTheme(page, 'Light');
@@ -143,6 +137,9 @@ export async function em1Checks(h, { page, base, accountKey, shotsDir = process.
   await setWidth(page, 375);
   await shotBox('dark', 375, 'dark');
   await setWidth(page, 1280);
+  // The member the rest of the run signs in as is put back.
+  await signOut(page);
+  await signIn(page, MEMBER);
 
   for (const f of found) {
     if (f.border !== undefined && f.border !== null) check(f.border === 'dashed', `em1: ${f.what} has its dashed border (${f.border})`);

@@ -965,7 +965,7 @@ async function main() {
     // The page is signed in as the member here (the sections above sign the member in last).
     if (!only || onlySet.has('st')) await stChecks(h, { page, base, accountKey, accountID, memberID, MEMBER, dir });
     // Slice em1 (decision 111): the empty states are antd's Empty. The member's empty pages and one compact case.
-    if (!only || onlySet.has('em1')) await em1Checks(h, { page, base, accountKey, dir });
+    if (!only || onlySet.has('em1')) await em1Checks(h, { page, base, accountKey, accountID, MEMBER, dir });
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
