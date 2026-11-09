@@ -7,11 +7,15 @@
 // opens the find panel and Escape closes the panel, not the viewer; the theme switched while the viewer is open (System, with
 // the device's scheme changed) repaints it in place; the not-UTF-8 notice and its Download button; the truncated notice above
 // 1 MiB; at 375 px a long line scrolls in the code area, not the page;
-// in Hebrew the gutter stays on the left. No console error and no content-policy violation over the whole section. The seeded
-// files are removed after.
+// in Hebrew the gutter stays on the left; a Go file in Team B (read-only for the member) under the no-download rule shows the
+// restricted notice after one refused read. No console error and no content-policy violation over the whole section, but for
+// that one 403, which the run expects by name. The seeded files are removed after.
+import { readFileSync } from 'node:fs';
 import { closePreview, setLanguage, setTheme, sleep } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
+// The restricted notice, as the English catalogue words it.
+const RESTRICTED = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))['files.err.downloadRestricted'];
 const PREVIEW = '[data-testid="preview"]';
 const EDITOR = `${PREVIEW} .cm-editor`;
 
@@ -50,7 +54,7 @@ const groundOf = (page) =>
 const scheme = (page, value) =>
   page.send('Emulation.setEmulatedMedia', { media: '', features: value ? [{ name: 'prefers-color-scheme', value }] : [] });
 
-export async function ce1Checks(h, { page, base, accountKey, MEMBER }) {
+export async function ce1Checks(h, { page, base, accountKey, MEMBER, teamB }) {
   const { check, api, navigateTo } = h;
   const before = page.errors.length;
   const suffix = Date.now().toString(36);
@@ -61,7 +65,9 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER }) {
     wide: `ce1-wide-${suffix}.min.js`,
     latin: `ce1-latin-${suffix}.txt`,
   };
+  const locked = `ce1-locked-${suffix}.go`;
   let pf = null;
+  let lockedID = null;
   try {
     const me = await page.evaluate(`fetch('/api/v1/me', { credentials: 'same-origin' }).then((r) => r.json())`);
     check(me.user?.email === MEMBER.email && typeof me.personal_folder_id === 'string', `the code viewer's checks run as the member (${me.user?.email})`);
@@ -191,6 +197,30 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER }) {
     await closePreview(page);
     await setLanguage(page, 'English');
 
+    // ---- A viewer the no-download rule binds: Team B is read-only for the member, and its Go file, stored as octet-stream,
+    // may not be read even inline. The sniff's read is refused (403), and the viewer says so in place of the text.
+    await h.rawPut(base, `/api/v1/folders/${teamB}/files?path=${encodeURIComponent(`/${locked}`)}`, accountKey, GO, 'application/octet-stream');
+    const inB = await api(base, 'GET', `/api/v1/folders/${teamB}/children`, accountKey);
+    lockedID = inB.items.find((n) => n.name === locked)?.id ?? null;
+    await api(base, 'PATCH', `/api/v1/nodes/${lockedID}`, accountKey, { no_download: true });
+    const refusedBefore = page.expectedAnswers.get('restricted read')?.length ?? 0;
+    await navigateTo(page, `/files/${teamB}`);
+    const lockedRow = `[role="row"][aria-label=${q(locked)}], [role="option"][aria-label=${q(locked)}]`;
+    await page.waitFor(`!!document.querySelector(${q(lockedRow)})`, 15000);
+    await page.evaluate(`document.querySelector(${q(lockedRow)}).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })), true`);
+    await page.waitFor(`!!document.querySelector(${q(`${PREVIEW} .ant-alert`)})`, 15000);
+    await sleep(300);
+    const refused = {
+      alert: await page.evaluate(`document.querySelector(${q(`${PREVIEW} .ant-alert`)}).textContent`),
+      editor: await page.evaluate(`!!document.querySelector(${q(EDITOR)})`),
+      answers: (page.expectedAnswers.get('restricted read')?.length ?? 0) - refusedBefore,
+    };
+    check(
+      refused.alert === RESTRICTED && !refused.editor && refused.answers === 1,
+      `a restricted viewer's code file shows the restricted notice, not the text, after one refused read (${JSON.stringify(refused)})`,
+    );
+    await closePreview(page);
+
     // ---- The whole section: no console error, no content-policy violation.
     const errors = page.errors.slice(before);
     check(errors.length === 0, `the code viewer logs no console error and no content-policy violation (${errors.join(' | ') || 'none'})`);
@@ -205,5 +235,6 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER }) {
         if (Object.values(names).includes(n.name)) await api(base, 'DELETE', `/api/v1/nodes/${n.id}`, accountKey).catch(() => undefined);
       }
     }
+    if (lockedID) await api(base, 'DELETE', `/api/v1/nodes/${lockedID}`, accountKey).catch(() => undefined);
   }
 }

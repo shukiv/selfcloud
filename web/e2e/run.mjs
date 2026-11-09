@@ -159,6 +159,12 @@ const EXPECTED = [
     name: 'zip refused',
     matches: (e) => e.source === 'network' && /\/api\/v1\/zips\/[^/?]+$/.test(e.url ?? '') && /status of 403\b/.test(e.text ?? ''),
   },
+  // A text read the no-download rule refuses: the code viewer sniffs a file stored as octet-stream, the server answers 403, and
+  // the viewer says the file is restricted (ce1Checks, decision 115).
+  {
+    name: 'restricted read',
+    matches: (e) => e.source === 'network' && /\/api\/v1\/nodes\/[^/]+\/content\?disposition=inline$/.test(e.url ?? '') && /status of 403\b/.test(e.text ?? ''),
+  },
   // The member's upload over its limit is refused by the server.
   {
     name: 'over the limit',
@@ -982,7 +988,7 @@ async function main() {
     // Slice em1 (decision 111): the empty states are antd's Empty. The member's empty pages and one compact case.
     if (!only || onlySet.has('em1')) await em1Checks(h, { page, base, accountKey, accountID, MEMBER, dir });
     // The read-only code viewer (slice ce1, decision 115): the member's own files, in light, dark, Hebrew and at 375 px.
-    if (!only || onlySet.has('ce1')) await ce1Checks(h, { page, base, accountKey, MEMBER });
+    if (!only || onlySet.has('ce1')) await ce1Checks(h, { page, base, accountKey, MEMBER, teamB });
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
