@@ -62,7 +62,7 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER }) {
   let pf = null;
   try {
     const me = await page.evaluate(`fetch('/api/v1/me', { credentials: 'same-origin' }).then((r) => r.json())`);
-    check(me.email === MEMBER.email && typeof me.personal_folder_id === 'string', `the code viewer's checks run as the member (${me.email})`);
+    check(me.user?.email === MEMBER.email && typeof me.personal_folder_id === 'string', `the code viewer's checks run as the member (${me.user?.email})`);
     pf = me.personal_folder_id;
     const put = (name, body, type) => h.rawPut(base, `/api/v1/folders/${pf}/files?path=${encodeURIComponent(`/${name}`)}`, accountKey, body, type);
     await put(names.js, JS, 'application/javascript');
