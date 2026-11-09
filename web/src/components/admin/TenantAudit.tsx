@@ -11,7 +11,8 @@ import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { queryKey } from "../../lib/query";
 import { type AuditEntry, type Names } from "../../lib/audit/sentence";
 import AuditItem from "../manage/AuditItem";
-import { list, more, muted, sectionTitle, toolbar } from "./adminStyles";
+import { list, more, sectionTitle, toolbar } from "./adminStyles";
+import EmptyState from "../EmptyState";
 
 type Entry = AuditEntry & { id: string; time: string };
 
@@ -58,11 +59,7 @@ export default function TenantAudit({ account }: { account: string }) {
 
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 12 }} />}
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {q.isSuccess && entries.length === 0 && (
-        <p role="status" style={muted}>
-          {t("audit.empty")}
-        </p>
-      )}
+      {q.isSuccess && entries.length === 0 && <EmptyState role="status" size="compact" text={t("audit.empty")} />}
       {!firstFailed && entries.length > 0 && (
         <ul style={list} aria-label={t("tenant.audit.title")}>
           {entries.map((entry) => (

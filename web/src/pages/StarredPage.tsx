@@ -12,6 +12,7 @@ import { fileErrorText } from "../lib/files/fileErrors";
 import { formatDate } from "../lib/files/format";
 import { listStarred, unstarNode, type StarredItem } from "../lib/stars";
 import NodeRow from "../components/home/NodeRow";
+import EmptyState from "../components/EmptyState";
 
 // Starred: the items the caller starred, newest star first. Removing a star takes the item off this list only; the item
 // itself is not changed. A star on an item the caller can no longer reach is kept but not listed. A failed first load
@@ -98,11 +99,7 @@ export default function StarredPage() {
 
       {loading && items.length === 0 && error === null && <Skeleton active />}
 
-      {empty && (
-        <p role="status" className="empty" style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
-          {t("starred.empty")}
-        </p>
-      )}
+      {empty && <EmptyState role="status" className="empty" text={t("starred.empty")} />}
 
       {items.length > 0 && (
         <ul className="items" aria-label={t("nav.starred")} style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>

@@ -20,6 +20,7 @@ import { kindOf } from "../lib/files/kind";
 import type { Page, TrashItem } from "../lib/files/types";
 import Icon from "../components/files/Icon";
 import KindMarks from "../components/files/KindMarks";
+import EmptyState from "../components/EmptyState";
 
 // Trash lists items deleted but not yet gone for good. Restore brings one back; deleting for good cannot be
 // undone, so it asks first.
@@ -196,9 +197,7 @@ export default function TrashPage() {
       ) : trashQ.isError ? (
         <Alert type="error" showIcon role="alert" message={fileErrorText(trashQ.error, lang)} />
       ) : items.length === 0 ? (
-        <p role="status" style={{ padding: "32px 16px", textAlign: "center", border: `1px dashed ${token.colorBorder}`, borderRadius: token.borderRadiusLG }}>
-          {t("trash.empty.none")}
-        </p>
+        <EmptyState role="status" text={t("trash.empty.none")} />
       ) : (
         <ul aria-label={t("trash.title")} style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>
           {items.map((it) => (

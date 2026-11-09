@@ -20,6 +20,7 @@ import Confirm from "../../components/Confirm";
 import NameDialog from "../../components/manage/NameDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 import { LOCK } from "../../lib/manage/locks";
+import EmptyState from "../../components/EmptyState";
 
 // Groups: a group is a named set of people. A permission on a team space given to a group reaches each member at once,
 // and removing a member ends that access at once.
@@ -164,7 +165,7 @@ function GroupsView() {
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
       {loaded && groups.length === 0 && failure === null && (
-        <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("groups.empty")}</p>
+        <EmptyState role="status" text={t("groups.empty")} />
       )}
 
       {groups.length > 0 && (

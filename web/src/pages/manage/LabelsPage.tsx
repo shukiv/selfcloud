@@ -14,6 +14,7 @@ import { sessionChanged } from "../../lib/session";
 import Confirm from "../../components/Confirm";
 import LabelDialog from "../../components/labels/LabelDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOnce } from "../../components/manage/OwnerPage";
+import EmptyState from "../../components/EmptyState";
 
 // Labels: the owner defines the fields that describe items. Every reader of an item sees its values; editors set them.
 // A restricted field is seen and set only by the managers of an item. Deleting a field removes its values, so the
@@ -116,7 +117,7 @@ function LabelsView() {
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
       {loaded && fields.length === 0 && failure === null && (
-        <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("labels.empty")}</p>
+        <EmptyState role="status" text={t("labels.empty")} />
       )}
 
       {fields.length > 0 && (

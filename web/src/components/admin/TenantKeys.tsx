@@ -16,6 +16,7 @@ import NewKey from "./NewKey";
 import ShowOnce from "./ShowOnce";
 import { useOnSessionChange } from "./hooks";
 import { list, muted, row, rowMain, rowTitle, sectionTitle, toolbar } from "./adminStyles";
+import EmptyState from "../EmptyState";
 
 // TenantKeys: the API keys of a tenant. A new key is shown once, in a dialog that holds it only while open. The key is
 // never put in the query cache: the list reads name no secret, and the reply of create is kept only in this page's state.
@@ -104,11 +105,7 @@ export default function TenantKeys({ account }: { account: string }) {
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 12 }} />}
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {q.isSuccess && keys.length === 0 && (
-        <p role="status" style={muted}>
-          {t("keys.empty")}
-        </p>
-      )}
+      {q.isSuccess && keys.length === 0 && <EmptyState role="status" size="compact" text={t("keys.empty")} />}
       {!firstFailed && keys.length > 0 && (
         <ul style={list} aria-label={t("tenant.keys.title")}>
           {keys.map((k) => (

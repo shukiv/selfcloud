@@ -90,6 +90,8 @@ describe("Starred", () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderPage();
     expect(await screen.findByText(translate("en", "starred.empty"))).toBeTruthy();
+    // The empty state is antd's Empty, in the status region (decision 111).
+    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe(translate("en", "starred.empty"));
   });
 
   it("removing a star sends one request, takes the item off the list, and leaves the item itself", async () => {

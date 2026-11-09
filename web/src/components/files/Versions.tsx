@@ -12,6 +12,7 @@ import { startDownloadURL } from "../../lib/files/ops";
 import { can, downloadAllowed } from "../../lib/files/roles";
 import type { Node, Version } from "../../lib/files/types";
 import { useLang, useT } from "../../lib/i18n";
+import EmptyState from "../EmptyState";
 
 // Versions lists a file's earlier contents, newest first, and lets the person name, keep, restore and
 // delete them, as their role allows. Errors are shown by code through fileErrorText, never as server text.
@@ -126,7 +127,7 @@ export default function Versions({
       {loading ? (
         <p role="status">{t("app.loading")}</p>
       ) : items.length <= 1 ? (
-        <p>{t("files.versions.none")}</p>
+        <EmptyState size="compact" text={t("files.versions.none")} />
       ) : null}
       <List
         dataSource={items}

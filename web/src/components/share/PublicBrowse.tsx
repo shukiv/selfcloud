@@ -12,6 +12,7 @@ import { Pager } from "../../lib/files/pager";
 import type { Link } from "../files/MediaPlayer";
 import { PlayMark } from "../files/KindMarks";
 import HeadDownload from "../files/HeadDownload";
+import EmptyState from "../EmptyState";
 
 // The player and its playlist load when a video or audio file opens.
 const MediaPlaylist = lazy(() => import("../files/MediaPlaylist"));
@@ -264,7 +265,7 @@ export default function PublicBrowse({ token, root, onlost }: PublicBrowseProps)
 
           {current.kind === "dir" ? (
             children.length === 0 ? (
-              <p style={{ color: "var(--ant-color-text-secondary)" }}>{t("share.open.empty")}</p>
+              <EmptyState text={t("share.open.empty")} />
             ) : (
               <ul className="rows" style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>
                 {children.map((child) => (

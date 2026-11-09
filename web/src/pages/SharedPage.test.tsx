@@ -82,6 +82,10 @@ describe("shared with me", () => {
     stubFetch(() => ({ status: 200, body: { items: [], next_cursor: null } }));
     renderPage();
     expect(await screen.findByText("Nothing is shared with you yet. Ask an owner of your organisation to share a folder.")).toBeTruthy();
+    // The empty state is antd's Empty, in the status region (decision 111).
+    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe(
+      "Nothing is shared with you yet. Ask an owner of your organisation to share a folder.",
+    );
   });
 
   it("a signed-out page reads nothing (guard: enabled on the session)", async () => {

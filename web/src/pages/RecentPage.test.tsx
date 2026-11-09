@@ -85,6 +85,8 @@ describe("Recent", () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderPage();
     expect(await screen.findByText(translate("en", "recent.empty"))).toBeTruthy();
+    // The empty state is antd's Empty, in the status region (decision 111).
+    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe(translate("en", "recent.empty"));
     expect(screen.queryByRole("button", { name: CLEAR })).toBeNull();
   });
 

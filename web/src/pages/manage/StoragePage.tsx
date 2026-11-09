@@ -23,6 +23,7 @@ import { sessionChanged } from "../../lib/session";
 import UsageMeter from "../../components/UsageMeter";
 import LimitEditor from "../../components/storage/LimitEditor";
 import { OwnerOnly, useAccountID, useManageTitle, useOnce } from "../../components/manage/OwnerPage";
+import EmptyState from "../../components/EmptyState";
 
 // Manage > Storage: the account's meter, the default limit for each person, the people by use with their own limits, and
 // the team spaces with their largest files. An owner sees per-person totals but never a file name from a person's My
@@ -160,7 +161,7 @@ function StorageView() {
               {t("storage.people")}
             </h2>
             {people.length === 0 ? (
-              <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("storage.peopleEmpty")}</p>
+              <EmptyState role="status" size="compact" text={t("storage.peopleEmpty")} />
             ) : (
               <div style={{ overflowX: "auto" }}>
 <table className="storage-table" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }}>
@@ -216,7 +217,7 @@ function StorageView() {
               {t("storage.spaces")}
             </h2>
             {folders.length === 0 ? (
-              <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("storage.spacesEmpty")}</p>
+              <EmptyState role="status" size="compact" text={t("storage.spacesEmpty")} />
             ) : (
               <div style={{ overflowX: "auto" }}>
 <table className="storage-table" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }}>
@@ -260,7 +261,7 @@ function StorageView() {
           <Alert type="warning" showIcon role="alert" message={failureText(largest.error, lang)} style={{ marginBottom: 12 }} />
         )}
         {largest.data !== undefined && rows.length === 0 && !largest.isError && (
-          <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("storage.largestEmpty")}</p>
+          <EmptyState role="status" size="compact" text={t("storage.largestEmpty")} />
         )}
         {rows.length > 0 && (
           <div style={{ overflowX: "auto" }}>

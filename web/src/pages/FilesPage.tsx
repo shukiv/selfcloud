@@ -101,6 +101,7 @@ import FocusOnOpen from "../components/FocusOnOpen";
 import UndoToast from "../components/UndoToast";
 import NotFoundPage from "./NotFoundPage";
 import StorageNotice from "../components/storage/StorageNotice";
+import EmptyState from "../components/EmptyState";
 
 // The file browser: a folder or a directory, its items, and what the signed-in person may do with them.
 // The server checks every operation again; the buttons only show what the role allows.
@@ -2195,21 +2196,22 @@ export default function FilesPage() {
               canUploadHere ? (
                 // Decision 85: the box says how to add files, and its one button is the New menu's Upload files (openFilePicker).
                 // A drop on the box is a drop on the section, so it queues the files the same way (queueFiles).
-                <div
-                  data-testid="empty-folder"
-                  style={{ padding: "32px 16px", textAlign: "center", color: token.colorTextSecondary, border: `1px dashed ${token.colorBorder}`, borderRadius: token.borderRadiusLG, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}
+                // The empty state (decision 111): "This folder is empty." on its own line, the hint under it, and the Upload button.
+                <EmptyState
+                  testId="empty-folder"
+                  text={
+                    <>
+                      <h2 style={{ margin: 0, fontSize: "inherit", fontWeight: 600, color: token.colorText }}>{t("files.empty")}</h2>
+                      <p style={{ margin: 0 }}>{coarse ? t("files.emptyTouch") : t("files.emptyMouse")}</p>
+                    </>
+                  }
                 >
-                  <Upload size={32} aria-hidden="true" color={token.colorTextTertiary} />
-                  <h2 style={{ margin: 0, fontSize: token.fontSizeLG, fontWeight: 600, color: token.colorText }}>{t("files.empty")}</h2>
-                  <p style={{ margin: 0 }}>{coarse ? t("files.emptyTouch") : t("files.emptyMouse")}</p>
-                  <Button type="primary" icon={<Upload {...ic} />} onClick={openFilePicker} style={{ marginTop: 8, ...touchSize }}>
+                  <Button type="primary" icon={<Upload {...ic} />} onClick={openFilePicker} style={{ ...touchSize }}>
                     {t("files.act.upload")}
                   </Button>
-                </div>
+                </EmptyState>
               ) : (
-                <p role="status" style={{ padding: "32px 16px", textAlign: "center", color: token.colorTextSecondary, border: `1px dashed ${token.colorBorder}`, borderRadius: token.borderRadiusLG }}>
-                  {t("files.empty")}
-                </p>
+                <EmptyState role="status" text={t("files.empty")} />
               )
             ) : (
               <>

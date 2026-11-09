@@ -11,6 +11,7 @@ import TagCover from "./TagCover";
 import { MAX_QUEUE, type Entry, type Repeat as RepeatMode } from "../../lib/files/queue";
 import type { Node } from "../../lib/files/types";
 import { usePaletteOrLight } from "../../theme/theme";
+import EmptyState from "../EmptyState";
 
 // MediaQueue is the playlist panel: the files in play order, the one on screen marked, and the actions on the list.
 // A row is one line at every width: a grip to drag it, its name (cut with an ellipsis, the full name on hover), the mark
@@ -124,7 +125,7 @@ export default function MediaQueue(p: Props) {
       {p.capped && <Alert type="info" showIcon message={t("files.media.capped", { count: MAX_QUEUE })} style={{ marginBottom: 8 }} />}
 
       {total === 0 ? (
-        <p className="media-queue-empty">{t("files.media.queueEmpty")}</p>
+        <EmptyState size="compact" className="media-queue-empty" text={t("files.media.queueEmpty")} />
       ) : (
         <ol className="media-rows" ref={list}>
           {p.entries.map((entry, index) => {
@@ -232,7 +233,7 @@ export default function MediaQueue(p: Props) {
       {p.adding && (
         <div className="media-add" data-testid="media-add">
           {p.candidates.length === 0 ? (
-            <p>{t("files.media.addNone")}</p>
+            <EmptyState size="compact" text={t("files.media.addNone")} />
           ) : (
             <ul className="media-rows">
               {p.candidates.map((n) => (

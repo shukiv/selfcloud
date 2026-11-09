@@ -8,6 +8,7 @@ import { canComment } from "../../lib/comments/logic";
 import Composer from "./Composer";
 import CommentItem from "./CommentItem";
 import { faultMessage } from "./faults";
+import EmptyState from "../EmptyState";
 
 export type CommentsQuery = UseInfiniteQueryResult<InfiniteData<Page<Comment>>, Error>;
 
@@ -58,7 +59,7 @@ export default function CommentsPanel({
       )}
 
       {q.isSuccess && items.length === 0 && (
-        <p style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>{t("comments.empty")}</p>
+        <EmptyState size="compact" text={t("comments.empty")} />
       )}
 
       {items.length > 0 && (

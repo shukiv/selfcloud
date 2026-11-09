@@ -179,6 +179,12 @@ describe("TrashPage", () => {
     await waitFor(() => expect(api.purgeTrashed).toHaveBeenCalledWith("b"));
   });
 
+  it("an empty trash shows antd's Empty with its words, in the status region (decision 111)", async () => {
+    renderTrash([]);
+    await screen.findByText("The trash is empty.");
+    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe("The trash is empty.");
+  });
+
   it("empty trash loops emptyTrashStep while the server says more remain", async () => {
     api.emptyTrashStep
       .mockResolvedValueOnce({ purged: 1000, more: true })

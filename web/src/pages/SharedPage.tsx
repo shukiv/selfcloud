@@ -17,6 +17,7 @@ import { sharedWithMe } from "../lib/sharing/api";
 import type { Node, Page } from "../lib/files/types";
 import Icon from "../components/files/Icon";
 import KindMarks from "../components/files/KindMarks";
+import EmptyState from "../components/EmptyState";
 
 // Shared with me: the items other people shared with the caller, each at the role it has, in the order the server
 // gives them. An item opens in its folder, through its address (/n/{nod}), like any link a share mail carries.
@@ -65,7 +66,7 @@ export default function SharedPage() {
       {!hasData && q.isPending && signedIn && <Skeleton active />}
 
       {hasData && items.length === 0 && failure === null && (
-        <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("shared.empty")}</p>
+        <EmptyState role="status" text={t("shared.empty")} />
       )}
 
       {items.length > 0 && (

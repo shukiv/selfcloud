@@ -13,6 +13,7 @@ import { formatDate } from "../lib/files/format";
 import { activityKey, lastActivity, mergeRecent, type RecentItem } from "../lib/recent";
 import { clearRecent, listRecent, removeRecent } from "../lib/stars";
 import NodeRow from "../components/home/NodeRow";
+import EmptyState from "../components/EmptyState";
 
 // Recent: the items the caller opened or changed lately, most recent first. It is private to the caller and kept for 30
 // days, at most 500 items. Removing one takes it off this list only; clearing empties the whole list after the person
@@ -132,11 +133,7 @@ export default function RecentPage() {
 
       {loading && items.length === 0 && error === null && <Skeleton active />}
 
-      {empty && (
-        <p role="status" className="empty" style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
-          {t("recent.empty")}
-        </p>
-      )}
+      {empty && <EmptyState role="status" className="empty" text={t("recent.empty")} />}
 
       {items.length > 0 && (
         <ul className="items" aria-label={t("nav.recent")} style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>

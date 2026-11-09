@@ -10,6 +10,7 @@ import { activitySentence, formatWhen, nextPage } from "../../lib/comments/logic
 import { useCT } from "../../lib/comments/i18n";
 import { queryKey } from "../../lib/query";
 import { faultMessage } from "./faults";
+import EmptyState from "../EmptyState";
 
 // ActivityList is the history of one item, from the activity route (decision 50). The sentences are the audit ones of
 // the main catalogues, so a change reads the same here as on the audit page. A page can come back empty with a cursor;
@@ -55,7 +56,7 @@ export default function ActivityList({ nodeID }: { nodeID: string }) {
       )}
 
       {q.isSuccess && items.length === 0 && !q.hasNextPage && (
-        <p style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>{t("activity.empty")}</p>
+        <EmptyState size="compact" text={t("activity.empty")} />
       )}
 
       {items.length > 0 && (

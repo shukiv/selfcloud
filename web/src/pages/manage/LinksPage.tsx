@@ -34,6 +34,7 @@ import Confirm from "../../components/Confirm";
 import DeletePublicLinks from "../../components/share/DeletePublicLinks";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 import { LOCK } from "../../lib/manage/locks";
+import EmptyState from "../../components/EmptyState";
 
 // Links: every link of the account that anyone can open, and every drop link, with its place and its state. An owner
 // deletes one at a time, or all of them at once. Links that only people in the account can open are on the items they
@@ -169,7 +170,7 @@ function LinksView() {
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
       {loaded && rows.length === 0 && failure === null && (
-        <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("links.empty")}</p>
+        <EmptyState role="status" text={t("links.empty")} />
       )}
 
       {rows.length > 0 && (

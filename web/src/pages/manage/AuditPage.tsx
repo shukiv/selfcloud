@@ -11,6 +11,7 @@ import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { queryKey } from "../../lib/query";
 import AuditItem from "../../components/manage/AuditItem";
 import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage/OwnerPage";
+import EmptyState from "../../components/EmptyState";
 
 // The audit log: what changed in the account, newest first. The server hides an entry about a personal folder from
 // everyone but its user, and this page shows the list exactly as the server answers it.
@@ -71,7 +72,7 @@ function AuditView() {
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
       {loaded && entries.length === 0 && failure === null && (
-        <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("audit.empty")}</p>
+        <EmptyState role="status" text={t("audit.empty")} />
       )}
 
       {entries.length > 0 && (

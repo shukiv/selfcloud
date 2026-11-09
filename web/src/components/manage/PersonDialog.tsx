@@ -20,6 +20,7 @@ import { sessionChanged } from "../../lib/session";
 import AuditItem from "./AuditItem";
 import LimitEditor from "../storage/LimitEditor";
 import { useOnce } from "./OwnerPage";
+import EmptyState from "../EmptyState";
 
 // PersonDialog shows one person: the details, the team spaces and groups the person belongs to, what the person did,
 // and the person's own storage limit. Each is read through the API. A person's My files are never listed, since they
@@ -250,7 +251,7 @@ export default function PersonDialog({ account, person, names, onclose }: Person
                 {t("people.detail.activity")}
               </h3>
               {d.activity.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>{t("people.detail.noActivity")}</p>
+                <EmptyState size="compact" text={t("people.detail.noActivity")} />
               ) : (
                 <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
                   {d.activity.map((entry) => (

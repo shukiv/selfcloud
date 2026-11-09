@@ -27,6 +27,7 @@ import StatusTag from "../../components/admin/StatusTag";
 import UsageMeter from "../../components/UsageMeter";
 import { list, more, muted, pageTitle, row, rowMain, rowTitle, toolbar } from "../../components/admin/adminStyles";
 import { useGuard, useOnSessionChange } from "../../components/admin/hooks";
+import EmptyState from "../../components/EmptyState";
 
 // TenantsPage lists every tenant on this installation, for an installation admin only. The search text and the status
 // filter are in the address, so a search can be bookmarked. Names are searched on the server; the list is read a page
@@ -218,9 +219,7 @@ function TenantsView() {
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
       {q.isSuccess && accounts.length === 0 && (
-        <p role="status" style={muted}>
-          {emptyText}
-        </p>
+        <EmptyState role="status" text={emptyText} />
       )}
       {!firstFailed && accounts.length > 0 && (
         <ul style={list} aria-label={t("admin.tenants.title")}>

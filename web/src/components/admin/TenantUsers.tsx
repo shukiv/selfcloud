@@ -18,6 +18,7 @@ import ShowOnce from "./ShowOnce";
 import { useOnSessionChange } from "./hooks";
 import StatusTag from "./StatusTag";
 import { list, more, muted, row, rowMain, rowTitle } from "./adminStyles";
+import EmptyState from "../EmptyState";
 
 // The two dialogs load on first use: a first load of the tenant's people does not need them.
 const ResetPassword = lazy(() => import("./ResetPassword"));
@@ -105,11 +106,7 @@ export default function TenantUsers({ account }: { account: string }) {
       {notice !== null && <Alert type="success" showIcon role="status" message={notice} style={{ marginBlockEnd: 12 }} />}
 
       {!firstFailed && q.isPending && <p role="status">{t("app.loading")}</p>}
-      {q.isSuccess && people.length === 0 && (
-        <p role="status" style={muted}>
-          {t("tenant.users.empty")}
-        </p>
-      )}
+      {q.isSuccess && people.length === 0 && <EmptyState role="status" size="compact" text={t("tenant.users.empty")} />}
       {!firstFailed && people.length > 0 && (
         <ul style={list} aria-label={t("tenant.users.title")}>
           {people.map((p) => {

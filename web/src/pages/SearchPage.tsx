@@ -31,6 +31,7 @@ import { loadSearchText } from "../lib/search/text";
 import HitRow from "../components/search/HitRow";
 import SearchFilters from "../components/search/SearchFilters";
 import { useDraft } from "../components/search/useDraft";
+import EmptyState from "../components/EmptyState";
 
 // searchErrorText is the text of a failed search, by its code. The server's own text is never shown.
 export function searchErrorText(err: unknown, lang: Lang): string {
@@ -344,16 +345,8 @@ export default function SearchPage() {
               <p style={{ margin: "8px 0 0", fontSize: token.fontSizeSM, color: token.colorTextSecondary }}>{t("search.snippetNote")}</p>
             )}
 
-            {empty && (
-              <p role="status" style={{ margin: 0, color: token.colorTextSecondary }}>
-                {t("search.empty")}
-              </p>
-            )}
-            {pageEmpty && (
-              <p role="status" style={{ margin: 0, color: token.colorTextSecondary }}>
-                {t("search.pageEmpty")}
-              </p>
-            )}
+            {empty && <EmptyState role="status" text={t("search.empty")} />}
+            {pageEmpty && <EmptyState role="status" text={t("search.pageEmpty")} />}
 
             {cursor !== null && (
               <div style={{ marginBlockStart: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>

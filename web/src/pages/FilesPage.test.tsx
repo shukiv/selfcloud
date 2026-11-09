@@ -2991,6 +2991,10 @@ describe("an empty folder says how to add files (decision 85)", () => {
     expect(within(box).getByText(translate("en", "files.emptyMouse"))).toBeTruthy();
     expect(within(box).queryByText(translate("en", "files.emptyTouch"))).toBeNull();
     expect(within(box).getByRole("button", { name: "Upload files" })).toBeTruthy();
+    // antd's Empty description carries the heading's words, then the hint (decision 111).
+    expect(box.querySelector(".ant-empty .ant-empty-description")?.textContent).toBe(
+      translate("en", "files.empty") + translate("en", "files.emptyMouse"),
+    );
   });
 
   it("on a finger the instruction says to tap Upload, and the mouse instruction is not shown", async () => {

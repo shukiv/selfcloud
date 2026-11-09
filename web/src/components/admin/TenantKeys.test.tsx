@@ -49,6 +49,8 @@ describe("a new key needs the admin's password", () => {
     });
     renderKeys();
     await screen.findByText("No API keys yet.");
+    // The empty list is antd's Empty, compact, with its words (decision 111).
+    expect(document.querySelector(".ant-empty.ant-empty-normal .ant-empty-description")?.textContent).toBe("No API keys yet.");
     fillKeyAndCreate();
     expect(document.getElementById("new-key-admin")).toBeTruthy();
     expect(calls.some((c) => c.method === "POST")).toBe(false);

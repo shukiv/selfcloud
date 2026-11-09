@@ -48,6 +48,15 @@ beforeEach(() => session.set(signedAs()));
 afterEach(() => session.set(null));
 
 describe("the people list", () => {
+  it("an empty list shows antd's Empty with the words, in the status region (decision 111)", async () => {
+    stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    await screen.findByText("No people yet. Invite the first person to start.");
+    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe(
+      "No people yet. Invite the first person to start.",
+    );
+  });
+
   it("a failed first load shows the error, never the empty message (guard: error before the empty state)", async () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? fail(403, "forbidden") : { status: 200, body: { items: [] } }));
     renderPage();

@@ -19,6 +19,7 @@ import { useStore } from "../lib/store";
 import { queryKey } from "../lib/query";
 import { useCoarsePointer } from "../lib/pointer";
 import { RADIUS } from "../theme/tokens";
+import EmptyState from "../components/EmptyState";
 
 // NotificationsPage is the signed-in person's inbox, newest first, one page at a time, with the switch for email beside it.
 // Each line says who did what, on which file, in text. Opening a line marks it read and goes to the file with its comments
@@ -182,7 +183,7 @@ export default function NotificationsPage() {
       )}
 
       {!blocked && list.isSuccess && items.length === 0 && !list.hasNextPage && (
-        <p style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>{t("notifications.empty")}</p>
+        <EmptyState text={t("notifications.empty")} />
       )}
 
       {!blocked && items.length > 0 && (

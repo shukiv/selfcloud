@@ -17,6 +17,7 @@ import type { AccessRequest, Node, Role } from "../lib/files/types";
 import { approveAccessRequest, denyAccessRequest, listAccessRequests } from "../lib/sharing/api";
 import { grantableRoles, shareCap } from "../lib/sharing/roles";
 import { refreshPendingRequests } from "../lib/sharing/requestCount";
+import EmptyState from "../components/EmptyState";
 
 // Requests: the access requests the caller may decide, oldest first. Approving grants the role asked for, or a role
 // the caller chooses that is not above its own; denying closes the request. An item the caller cannot see is listed
@@ -121,7 +122,7 @@ export default function RequestsPage() {
       {!hasData && q.isPending && signedIn && <Skeleton active />}
 
       {hasData && rows.length === 0 && failure === null && (
-        <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("requests.empty")}</p>
+        <EmptyState role="status" text={t("requests.empty")} />
       )}
 
       {rows.length > 0 && (

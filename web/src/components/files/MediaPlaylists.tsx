@@ -8,6 +8,7 @@ import { useT } from "../../lib/i18n";
 import { kindOf } from "../../lib/files/kind";
 import { displayTitle, getTags, loadTags, seedTags, subscribeTags, tagsVersion } from "../../lib/files/tags";
 import type { Entry } from "../../lib/files/queue";
+import EmptyState from "../EmptyState";
 import {
   createPlaylist,
   deletePlaylist,
@@ -118,7 +119,7 @@ export default function MediaPlaylists({ queue, onOpen }: Props) {
         />
       )}
 
-      {lists !== null && lists.length === 0 && <p className="media-queue-empty">{t("files.playlists.none")}</p>}
+      {lists !== null && lists.length === 0 && <EmptyState size="compact" className="media-queue-empty" text={t("files.playlists.none")} />}
 
       {lists !== null && lists.length > 0 && (
         <ul className="media-rows" data-testid="playlist-list">
@@ -360,7 +361,7 @@ function PlaylistEditor(p: { pls: string; name: string; onChanged: () => void; o
         <Button size="small" className="pl-touch" aria-label={t("files.playlists.close")} icon={<X size={14} aria-hidden="true" />} onClick={p.onClose} />
       </div>
       {rows.length === 0 ? (
-        <p className="media-queue-empty">{t("files.playlists.empty")}</p>
+        <EmptyState size="compact" className="media-queue-empty" text={t("files.playlists.empty")} />
       ) : (
         <ol className="media-rows">
           {rows.map((r, i) => {

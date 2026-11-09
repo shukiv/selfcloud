@@ -7,6 +7,7 @@ import { useCT } from "../../lib/comments/i18n";
 import type { Page, Viewer } from "../../lib/comments/api";
 import { formatWhen, viewerName } from "../../lib/comments/logic";
 import { faultMessage } from "./faults";
+import EmptyState from "../EmptyState";
 
 export type ViewersQuery = UseInfiniteQueryResult<InfiniteData<Page<Viewer>>, Error>;
 
@@ -50,7 +51,7 @@ export default function ViewersList({ q }: { q: ViewersQuery }) {
       )}
 
       {q.isSuccess && items.length === 0 && (
-        <p style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>{t("viewers.empty")}</p>
+        <EmptyState size="compact" text={t("viewers.empty")} />
       )}
 
       {items.length > 0 && (

@@ -7,6 +7,7 @@ import { fileErrorText } from "../../lib/files/fileErrors";
 import { atLeast } from "../../lib/files/roles";
 import type { FolderAccess, Node, Role } from "../../lib/files/types";
 import { useLang, useT } from "../../lib/i18n";
+import EmptyState from "../EmptyState";
 
 // A destination: a folder, and a directory in it (null for the folder's root).
 export interface Destination {
@@ -132,7 +133,7 @@ export default function PickDestination({
     >
       {error && <Alert type="error" showIcon role="alert" message={error} style={{ marginBlockEnd: 12 }} />}
       {spaces.length === 0 ? (
-        <p>{t("files.pick.noSpaces")}</p>
+        <EmptyState size="compact" text={t("files.pick.noSpaces")} />
       ) : (
         <>
           <p>{selected === null ? t("files.pick.spaces") : t("files.pick.folders")}</p>
@@ -145,7 +146,7 @@ export default function PickDestination({
             blockNode
           />
           {selected !== null && !canPick && <p role="note">{t("files.pick.viewOnly")}</p>}
-          {isEmpty && <p>{t("files.pick.empty")}</p>}
+          {isEmpty && <EmptyState size="compact" text={t("files.pick.empty")} />}
           {hasMore && (
             <Button block disabled={busy} onClick={() => void loadChildren(selected as string, false)}>
               {t("files.loadMore")}

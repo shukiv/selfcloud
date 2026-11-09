@@ -30,6 +30,7 @@ import { canRequestFiles } from "../../lib/sharing/drop";
 import PeopleCombobox from "./PeopleCombobox";
 import GeneralAccess from "./GeneralAccess";
 import RequestFiles from "./RequestFiles";
+import EmptyState from "../EmptyState";
 
 // ShareDialog shows who has access to an item, and changes it as far as the caller may. The server checks every change;
 // the dialog only shows what the caller's role allows. A person below manager sees only its own rows (the server's
@@ -351,7 +352,7 @@ export default function ShareDialog({ node, space, onclose, onchanged }: ShareDi
           ) : permsQ.isError && perms.length === 0 ? (
             <Alert type="error" showIcon role="alert" message={shareErrorText(permsQ.error, lang, maxDays)} />
           ) : perms.length === 0 ? (
-            <p style={{ margin: 0, color: "var(--ant-color-text-secondary)" }}>{t("share.none")}</p>
+            <EmptyState size="compact" text={t("share.none")} />
           ) : (
             <ul style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>
               {perms.map((p) => {

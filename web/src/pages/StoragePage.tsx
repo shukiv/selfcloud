@@ -14,6 +14,7 @@ import { kindOfChip, type Breakdown, type ChipId } from "../lib/storage/breakdow
 import StorageMeter from "../components/storage/StorageMeter";
 import FreeUpSpace from "../components/storage/FreeUpSpace";
 import LargestFilesCard from "../components/storage/LargestFiles";
+import EmptyState from "../components/EmptyState";
 
 // A server that does not send the breakdown shows the figures with the files only.
 const NO_BREAKDOWN: Breakdown = { versions_bytes: 0, versions_files: 0, trash_bytes: 0, trash_files: 0 };
@@ -183,11 +184,7 @@ export default function StoragePage() {
         onRestore={(id) => void restore(id)}
       />
       {loading && files.length === 0 && error === null && <Skeleton active style={{ marginBlockStart: 12 }} />}
-      {empty && (
-        <p role="status" className="empty" style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
-          {t("storage.largestEmpty")}
-        </p>
-      )}
+      {empty && <EmptyState role="status" className="empty" size="compact" text={t("storage.largestEmpty")} />}
     </div>
   );
 }

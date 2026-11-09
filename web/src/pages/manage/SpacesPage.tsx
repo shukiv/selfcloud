@@ -21,6 +21,7 @@ import Confirm from "../../components/Confirm";
 import NameDialog from "../../components/manage/NameDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 import { LOCK } from "../../lib/manage/locks";
+import EmptyState from "../../components/EmptyState";
 
 // Spaces: the team spaces of the account. Sharing a space goes through the share dialog on its root, the same one the
 // file browser uses. Deleting a space removes it and everything in it for everyone.
@@ -162,7 +163,7 @@ function SpacesView() {
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
       {loaded && spaces.length === 0 && failure === null && (
-        <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("spaces.empty")}</p>
+        <EmptyState role="status" text={t("spaces.empty")} />
       )}
 
       {spaces.length > 0 && (

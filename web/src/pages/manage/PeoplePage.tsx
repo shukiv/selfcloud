@@ -18,6 +18,7 @@ import PersonDialog from "../../components/manage/PersonDialog";
 import RemoveDialog from "../../components/manage/RemoveDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 import { LOCK } from "../../lib/manage/locks";
+import EmptyState from "../../components/EmptyState";
 
 // People: the account's owners and members, invited by email. An owner changes a person's role or status and removes a
 // person here. The server answers every change; a refusal is shown by its code and reason.
@@ -138,7 +139,7 @@ function PeopleView() {
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
       {loaded && people.length === 0 && failure === null && (
-        <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("people.empty")}</p>
+        <EmptyState role="status" text={t("people.empty")} />
       )}
 
       {people.length > 0 && (

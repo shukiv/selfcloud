@@ -18,6 +18,7 @@ import PublicLinksSwitch from "../../components/share/PublicLinksSwitch";
 // The comments and who-viewed switches (decisions 39 and 51) are a chunk of their own, with the comments catalogue.
 const SharingSwitches = lazy(() => import("../../components/comments/SharingSwitches"));
 import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage/OwnerPage";
+import EmptyState from "../../components/EmptyState";
 
 // Overview: the account's usage and people, its recent activity, and the next steps while it is new. The names for the
 // activity are read apart from the figures, so a failed names read leaves the figures and falls back to NO_NAMES.
@@ -132,7 +133,7 @@ function OverviewView() {
               <a href="/manage/audit">{t("manage.overview.fullLog")}</a>
             </div>
             {data.activity.length === 0 ? (
-              <p role="status" style={{ color: "var(--ant-color-text-secondary)" }}>{t("manage.overview.noActivity")}</p>
+              <EmptyState role="status" size="compact" text={t("manage.overview.noActivity")} />
             ) : (
               <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
                 {data.activity.map((entry) => (
