@@ -28,9 +28,15 @@ async function pickBlank(page, kind) {
   // The keyboard opens it, as ArrowRight does in a menu (antd): the title is focused, then the key is sent to it.
   // The menu animates in: its first frame is not ready for the keyboard, so the key is sent after the animation ends.
   await page.waitFor(`!document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)[class*="ant-slide-up-appear"]')`, 5000);
-  await page.evaluate(`${title}.focus()`);
-  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
-  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+  // A first ArrowRight can land before the title takes it (probe, 2026-11-09: the submenu was not open 10 s later, and was open
+  // after the next key). So the key is sent again, up to three times, until the title reports it is expanded.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.evaluate(`${title}.focus()`);
+    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+    await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+    await new Promise((r) => setTimeout(r, 800));
+    if (await page.evaluate(`${title}.getAttribute('aria-expanded') === 'true'`)) break;
+  }
   await page.waitFor(`${OPEN_ITEMS}.some((x) => x.textContent.trim() === 'Blank')`, 10000);
   await pickMenuItem(page, 'Blank');
 }
