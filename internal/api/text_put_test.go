@@ -235,8 +235,8 @@ func TestPutRequestContentTypeTextIsChecked(t *testing.T) {
 }
 
 // TestPutBinaryContentTypeKeepsTheRule: a Content-Type that is binary does not switch the rule off for a text file. The
-// refused body changes nothing, and a valid body keeps the stored type: a checked file keeps its stored type unless the
-// request names a text type.
+// refused body changes nothing, and a valid body keeps the stored type: an exempt file stores only a binary type, so the
+// binary Content-Type is kept (decision 113, putRule).
 func TestPutBinaryContentTypeKeepsTheRule(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)

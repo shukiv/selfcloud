@@ -92,8 +92,8 @@ func binaryMedia(mt string) bool {
 // is text-named when its name is in the code list, or its stored type is text, or the request's Content-Type is text.
 // A file stored as binary is exempt (an MPEG-TS .ts file stored as video/mp2t, say), unless the request names a text
 // type: a binary file that a PUT makes text is checked. A binary request type never switches the rule off for a text
-// file, and a checked file keeps its stored type unless the request names a text type (the handler's rule). newType is
-// the type the request would store, and it is not consulted.
+// file. The check also counts the type the PUT would store (want, the Content-Type or the name's extension), so a file
+// that would become text is checked. The type a PUT stores is putRule's.
 func utf8Required(name, stored, header, want string) bool {
 	st, hd, wt := mediaType(stored), mediaType(header), mediaType(want)
 	named := codeNamed(name) || textMedia(st) || textMedia(hd) || textMedia(wt)
