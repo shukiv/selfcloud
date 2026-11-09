@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import "../../test/rangeRects";
-import { act, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/apiError";
 import type { PlaybackSeed } from "../../lib/files/playback";
@@ -157,6 +157,33 @@ describe("Preview", () => {
     expect(await screen.findByText("No preview for this file. Download it to open it.")).toBeTruthy();
     expect(document.querySelector(".cm-editor")).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a file that is not UTF-8 read-only, with a notice and a Download button (design-ce 2.3)", async () => {
+    // Latin-1 "café" and a line break.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a]), { status: 206 })));
+    render(<Preview items={[file("notes.txt", "text/plain", 5)]} index={0} onClose={() => {}} onIndex={() => {}} />);
+    expect(await codeShown()).toBe("caf�\n");
+    const notice = await screen.findByText("This file is not UTF-8 text. Characters that could not be read show as �.");
+    const alert = notice.closest(".ant-alert") as HTMLElement;
+    expect(alert).not.toBeNull();
+    fireEvent.click(within(alert).getByRole("button", { name: "Download" }));
+    await waitFor(() => expect(startDownload).toHaveBeenCalledWith("n-notes.txt"));
+  });
+
+  it("shows the notice without a button to a viewer who may not download", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a]), { status: 206 })));
+    const kept: Node = { ...file("notes.txt", "text/plain", 5), role: "viewer", no_download: true };
+    render(<Preview items={[kept]} index={0} onClose={() => {}} onIndex={() => {}} />);
+    const notice = await screen.findByText("This file is not UTF-8 text. Characters that could not be read show as �.");
+    expect(within(notice.closest(".ant-alert") as HTMLElement).queryByRole("button")).toBeNull();
+  });
+
+  it("shows no notice for UTF-8 text", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("café\n", { status: 206 })));
+    render(<Preview items={[file("notes.txt", "text/plain", 6)]} index={0} onClose={() => {}} onIndex={() => {}} />);
+    expect(await codeShown()).toBe("café\n");
+    expect(document.querySelector(".ant-alert")).toBeNull();
   });
 
   it("opens a file stored as octet-stream as plain text when the sniff finds text", async () => {

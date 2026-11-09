@@ -93,3 +93,24 @@ describe("readHead", () => {
     await expect(readCode(file("big.log", "text/plain", 5_000_000_000))).rejects.toBeInstanceOf(ApiError);
   });
 });
+
+describe("readCode", () => {
+  it("says a file is not UTF-8 when its bytes are not, and still gives its text with U+FFFD for each bad sequence", async () => {
+    // Latin-1 "café" and a line break.
+    vi.stubGlobal("fetch", answer(new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a]), 206));
+    const got = await readCode(file("notes.txt", "text/plain", 5));
+    expect(got).toMatchObject({ text: "caf�\n", utf8: false, viewer: { kind: "code", pack: "text" } });
+  });
+
+  it("says UTF-8 text is UTF-8", async () => {
+    vi.stubGlobal("fetch", answer(new TextEncoder().encode("café\n"), 206));
+    expect(await readCode(file("notes.txt", "text/plain", 6))).toMatchObject({ text: "café\n", utf8: true });
+  });
+
+  it("gives an empty file as empty UTF-8 text with no read", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await readCode(file("empty.txt", "text/plain", 0))).toMatchObject({ text: "", utf8: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

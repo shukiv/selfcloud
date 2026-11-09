@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Slice ce1 (decision 115): the read-only code viewer in the preview. It runs in the shared run (run.mjs), signed in as the
-// member, or alone with SELFCLOUD_E2E_ONLY=ce1. The member's My files gets four files: a JavaScript file, a Go file stored as
-// application/octet-stream (the name decides, after the sniff), a log over 1 MiB, and a file with a line of 3,000 characters.
-// Checked: colours (a token class, in its colour) and line numbers; the style sheets carry the nonce; Find opens the find panel
-// and Escape closes the panel, not the viewer; the theme switched while the viewer is open (System, with the device's scheme
-// changed) repaints it in place; the truncated notice above 1 MiB; at 375 px a long line scrolls in the code area, not the page;
+// member, or alone with SELFCLOUD_E2E_ONLY=ce1. The member's My files gets five files: a JavaScript file, a Go file stored as
+// application/octet-stream (the name decides, after the sniff), a log over 1 MiB, a file with a line of 3,000 characters, and
+// a Latin-1 text file. Checked: colours (a token class, in its colour) and line numbers; the style sheets carry the nonce; Find
+// opens the find panel and Escape closes the panel, not the viewer; the theme switched while the viewer is open (System, with
+// the device's scheme changed) repaints it in place; the not-UTF-8 notice and its Download button; the truncated notice above
+// 1 MiB; at 375 px a long line scrolls in the code area, not the page;
 // in Hebrew the gutter stays on the left. No console error and no content-policy violation over the whole section. The seeded
 // files are removed after.
 import { closePreview, setLanguage, setTheme, sleep } from './media.mjs';
@@ -58,6 +59,7 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER }) {
     go: `ce1-main-${suffix}.go`,
     big: `ce1-big-${suffix}.log`,
     wide: `ce1-wide-${suffix}.min.js`,
+    latin: `ce1-latin-${suffix}.txt`,
   };
   let pf = null;
   try {
@@ -70,6 +72,8 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER }) {
     // Over 1 MiB: 24,000 lines of 50 bytes.
     await put(names.big, Array.from({ length: 24000 }, (_, i) => `line ${String(i + 1).padStart(6, '0')} of the big log, padded to fifty.`.slice(0, 49) + '\n').join(''), 'text/plain');
     await put(names.wide, `const wide = "${'w'.repeat(3000)}";\n`, 'application/javascript');
+    // Latin-1 "café" and a line break: not UTF-8. An upload is not checked for text (decision 113).
+    await put(names.latin, new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a]), 'text/plain');
 
     await navigateTo(page, `/files/${pf}`);
 
@@ -125,6 +129,20 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER }) {
     await page.waitFor(`!!document.querySelector(${q(`${EDITOR} .tok-keyword`)})`, 15000);
     const goText = await page.evaluate(`document.querySelector(${q(`${EDITOR} .cm-line`)}).textContent`);
     check(goText === 'package main', `a .go file stored as octet-stream opens as Go code (${goText})`);
+    await closePreview(page);
+
+    // ---- A file that is not UTF-8 opens read-only, with a notice and a Download button (design-ce 2.3).
+    await openFile(page, names.latin);
+    await page.waitFor(`!!document.querySelector(${q(`${PREVIEW} .ant-alert`)})`, 10000);
+    const latin = await page.evaluate(`(() => {
+      const alert = document.querySelector(${q(`${PREVIEW} .ant-alert`)});
+      const line = document.querySelector(${q(`${EDITOR} .cm-line`)});
+      return { notice: alert.textContent, buttons: [...alert.querySelectorAll('button')].map((b) => b.textContent.trim()), line: line ? line.textContent : null };
+    })()`);
+    check(
+      latin.notice.includes('This file is not UTF-8 text.') && latin.buttons.includes('Download') && latin.line === 'caf�',
+      `a Latin-1 file opens read-only with the not-UTF-8 notice and a Download button (${JSON.stringify(latin)})`,
+    );
     await closePreview(page);
 
     // ---- Over 1 MiB: the first 1 MiB, and the notice.
