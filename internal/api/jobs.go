@@ -80,6 +80,13 @@ func queuedBy(job *store.Job, p *auth.Principal) bool {
 	return true
 }
 
+// jobReadable is the one rule for who may read a job row (design 2.10). A caller may read a job of an account it manages,
+// or the job its own credential queued. Every kind follows it today; a kind that needs a narrower rule adds its case here,
+// and no other route decides a job's readers.
+func jobReadable(job *store.Job, p *auth.Principal) bool {
+	return p.ManagesAccount(job.AccountID) || queuedBy(job, p)
+}
+
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) error {
 	job, err := s.store.Job(r.Context(), r.PathValue("job"))
 	if errors.Is(err, store.ErrNotFound) {
@@ -88,7 +95,7 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if p := principalOf(r); !p.ManagesAccount(job.AccountID) && !queuedBy(job, p) {
+	if !jobReadable(job, principalOf(r)) {
 		return notFound("job")
 	}
 	out := toJobJSON(job)
