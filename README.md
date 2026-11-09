@@ -126,7 +126,8 @@ request function of `web/src/lib` has an `fn` row and every `fn` row names one, 
 line with no repeated key and LF line ends, and that no file outside `web/src/lib` makes a request or builds an
 `/api/v1` path, except as an `href` or `src` address. A new route or request function adds its row in the same commit.
 The web rule reads the syntax tree and the names in it: a request made under another name, or through a dynamic
-property, is not seen. A URL that `web/src/lib` builds for a link or an image (an `href` or a `src`, such as a content
+property, is not seen. An object member that only names a request function by identifier (`export default { go: g }`,
+`{ go: g }`, an alias) is not seen either: it is a reference, not a call, and no code in `web/src/lib` has one today. A URL that `web/src/lib` builds for a link or an image (an `href` or a `src`, such as a content
 or thumbnail address) is not counted: the code makes no request for it, and the browser makes the request when the
 link is followed or the element loads.
 
