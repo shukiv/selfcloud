@@ -274,12 +274,7 @@ func resetWithLink(ctx context.Context, st *store.Store, cfg *config.Config, u *
 	)
 	if linkFile != "" {
 		var err error
-		f, err = os.OpenFile(linkFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if errors.Is(err, os.ErrExist) {
-			fmt.Fprintf(stderr, "selfcloud admin %s: %s exists; refusing to overwrite it\n", name, linkFile)
-			return 1
-		}
-		if err != nil {
+		if f, err = openLinkFile(linkFile); err != nil {
 			fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
 			return 1
 		}
@@ -410,5 +405,129 @@ func resetWithTemporary(ctx context.Context, st *store.Store, u *store.User, ena
 		fmt.Fprintf(stdout, "password=%s\n", pw)
 		fmt.Fprintln(stderr, "The temporary password is shown only once: give it to the user now.")
 	}
+	return 0
+}
+
+// openLinkFile creates a new file for a link, with mode 0600. It refuses a file that is already there, so an earlier
+// link is never overwritten.
+func openLinkFile(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return nil, fmt.Errorf("%s exists; refusing to overwrite it", path)
+	}
+	return f, err
+}
+
+// checkVerifyState refuses a user that a verify link may not be issued for: only a pending user is verified. An active
+// user is already verified, and a disabled one is enabled by admin enable, not verified.
+func checkVerifyState(u *store.User) error {
+	switch u.Status {
+	case store.UserActive:
+		return fmt.Errorf("%s is already verified", u.ID)
+	case store.UserDisabled:
+		return fmt.Errorf("%s is disabled; use `selfcloud admin enable`", u.ID)
+	}
+	return nil
+}
+
+// adminVerify issues a fresh verification link for a pending user, as create-admin does, and voids the earlier one. It
+// covers an admin whose create-admin link was lost. The link is printed, or written to -link-file.
+func adminVerify(args []string, stdout, stderr io.Writer) int {
+	var user, ttlText, linkFile *string
+	cfg, _, code := loadConfig("admin verify", args, stderr, 0, func(fs *flag.FlagSet) {
+		user = fs.String("user", "", "the user's ID, or an email that exactly one user has (required)")
+		ttlText = fs.String("ttl", "", "how long the link works, from 5m to 168h (default users.verification_ttl)")
+		linkFile = fs.String("link-file", "", "write the link to this new file (mode 0600) instead of stdout")
+	})
+	if cfg == nil {
+		return code
+	}
+	const name = "verify"
+	usage := func(msg string) int {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %s\n", name, msg)
+		return 2
+	}
+	if *user == "" || !validUserRef(*user) {
+		return usage("-user must be a user ID or an email address")
+	}
+	ttl, err := parseRecoveryTTL(*ttlText, 0)
+	if err != nil {
+		return usage(err.Error())
+	}
+	ctx := context.Background()
+	st, c := adminStoreFor(cfg, stderr, name)
+	if st == nil {
+		return c
+	}
+	defer st.Close()
+	userID, code := resolveUserRef(ctx, st, *user, stderr, name)
+	if code != 0 {
+		return code
+	}
+	u, err := loadUser(ctx, st, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		fmt.Fprintf(stderr, "selfcloud admin %s: no user %s\n", name, userID)
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+		return 1
+	}
+	if err := checkVerifyState(u); err != nil {
+		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+		return 1
+	}
+	defTTL, tmpl := recovery.DefaultLifetime(cfg.Users, store.PurposeVerify)
+	if ttl == 0 {
+		ttl = defTTL
+	}
+
+	var f *os.File
+	if *linkFile != "" {
+		if f, err = openLinkFile(*linkFile); err != nil {
+			fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+			return 1
+		}
+	}
+	var tok *recovery.Token
+	err = st.Write(ctx, func(tx *store.Tx) error {
+		cur, err := tx.UserByID(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if err := checkVerifyState(cur); err != nil {
+			return err
+		}
+		tok, err = recovery.Issue(ctx, tx, cur, store.PurposeVerify, ttl, tmpl, cfg.PublicURL, store.Now())
+		if err != nil {
+			return err
+		}
+		if f != nil {
+			if _, err := f.WriteString(tok.Link + "\n"); err != nil {
+				return err
+			}
+		}
+		return tx.InsertAudit(ctx, recoveryAudit(cur.AccountID, "user.verification_issued", cur.ID,
+			map[string]any{"purpose": store.PurposeVerify, "ttl": int64(ttl / time.Second)}))
+	})
+	if f != nil {
+		if cerr := f.Close(); err == nil && cerr != nil {
+			err = cerr
+		}
+	}
+	if err != nil {
+		if *linkFile != "" {
+			_ = os.Remove(*linkFile) // created above by this run, so nothing else is removed
+		}
+		fmt.Fprintf(stderr, "selfcloud admin %s: %v\n", name, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "user_id=%s\n", u.ID)
+	if *linkFile != "" {
+		fmt.Fprintf(stdout, "link_file=%s\n", *linkFile)
+	} else {
+		fmt.Fprintf(stdout, "link=%s\n", tok.Link)
+	}
+	fmt.Fprintf(stdout, "expires=%s\n", tok.Expires.UTC().Format(time.RFC3339))
 	return 0
 }

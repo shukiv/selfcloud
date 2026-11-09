@@ -45,6 +45,9 @@ Commands:
                                  ends the user's sessions and makes the user change it at the next use
                                  (-yes is needed when stdin is not a terminal). -enable enables a disabled
                                  user. -password-stdin reads the operator's own password from one line.
+  verify -user ID|EMAIL [-ttl DURATION] [-link-file FILE]
+                                 issue a fresh verification link for a pending user, voiding the earlier
+                                 one; an active user is refused
   recount-usage [-account ID]    recompute usage and reserved bytes from the files and uploads
                                  (all accounts unless -account is given), and print the change
   search-rebuild                 empty the search index, including the text of files, and queue every folder
@@ -96,6 +99,8 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return adminNewSigningKey(args, stdout, stderr)
 	case "reset-password":
 		return adminResetPassword(args, stdout, stderr)
+	case "verify":
+		return adminVerify(args, stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, adminUsage)
 		return 0
