@@ -654,7 +654,8 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
       from({ MessageId: "Action_Save_Resp", Values: { success: true, fileName: "letter (2).docx" } });
       await flush();
       expect(window.location.pathname).toBe("/edit/nod_a1");
-      expect(screen.queryByText("The copy was saved, but it is not shown here. Open its folder to find it.")).toBeNull();
+      // The request was sent, so the timeout leaves the copy note (round 4): the copy may exist, and the page has not seen it.
+      expect(screen.getByText("The copy was saved, but it is not shown here. Open its folder to find it.")).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
@@ -875,7 +876,7 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/edit/nod_c2"));
   });
 
-  it("round 3: five titles while one check is in flight start one read and one listing", async () => {
+  it("round 3: five titles while one check is in flight start one read at a time, and one re-check", async () => {
     nodesMock.children = [];
     await openEditor();
     await confirmSaveAs("letter (2)");
@@ -893,7 +894,8 @@ describe("the editor page follows renames, copies and sessions (ef1)", () => {
       held.forEach((h) => h.ok());
     });
     await flush();
-    expect(nodesMock.listed).toHaveLength(1);
+    // The check in flight, then one re-check for the latest title: a title titled after a check started is checked again.
+    expect(nodesMock.listed).toHaveLength(2);
   });
 
   // Round 4 (decision 107): the newest title is always checked; a timed-out request leaves the copy note and no renewals;

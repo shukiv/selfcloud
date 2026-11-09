@@ -76,6 +76,9 @@ interface SaveAsPending {
   answered: boolean;
   dead: boolean;
   timer: ReturnType<typeof setTimeout> | null;
+  // titleBusy says a title check of this window is in flight; titleQueued is the latest title that came meanwhile.
+  titleBusy: boolean;
+  titleQueued: string | null;
 }
 
 // Notice is a note the bar shows about the session or a copy (ef1). Its words are the catalogue key after files.editor.
@@ -146,9 +149,6 @@ export default function OfficeEditPage() {
   // copyLostRef is true once a Save As's copy could not be bound (copyNotShown): the editor may then show the copy, so the page
   // mints no token for the original (renew). It is cleared when the page opens a file, or binds a copy.
   const copyLostRef = useRef(false);
-  // titleRef runs one title check at a time: a title that comes while one is in flight waits, and the latest waiting name runs
-  // once after it, if it differs from the name in flight.
-  const titleRef = useRef<{ busy: boolean; queued: string | null }>({ busy: false, queued: null });
 
   // finishSaveAs ends a window of a Save As: the copy is bound, not found, superseded, or timed out. A window ends once, and only
   // the window that is still the pending one clears the busy flag, so an old window never touches a newer one.
@@ -269,20 +269,20 @@ export default function OfficeEditPage() {
     announceNodeChanged(hit.id, hit.folder_id, hit.parent_id);
   };
 
-  // bindTitle runs bindCopy for a title. One check is in flight at a time: a title that comes meanwhile waits, and the latest
-  // waiting name runs once after it, only if it differs from the name in flight (decision 107).
+  // bindTitle runs bindCopy for a title of a window. One check of a window is in flight at a time, and the state is the window's
+  // own, so a title of another window never waits for, or is dropped by, this one. A title that came while a check was in
+  // flight is checked once more after it, whatever its name: it was titled after that check started (decision 107).
   const bindTitle = (win: SaveAsPending, name: string) => {
-    const r = titleRef.current;
-    if (r.busy) {
-      r.queued = name;
+    if (win.titleBusy) {
+      win.titleQueued = name;
       return;
     }
-    r.busy = true;
+    win.titleBusy = true;
     void bindCopy(win, name, false).finally(() => {
-      r.busy = false;
-      const next = r.queued;
-      r.queued = null;
-      if (next !== null && next !== name && saveAsRef.current === win && !win.answered) bindTitle(win, next);
+      win.titleBusy = false;
+      const next = win.titleQueued;
+      win.titleQueued = null;
+      if (next !== null && !win.dead && !win.answered) bindTitle(win, next);
     });
   };
 
@@ -304,10 +304,8 @@ export default function OfficeEditPage() {
   // whose browser session has changed mints nothing: the session-ended note says so.
   const renew = async () => {
     if (renewingRef.current) return;
-    if (copyLostRef.current) {
-      setNotice("tokenRefreshFailed");
-      return;
-    }
+    // The copy note stays while renewals are refused: the editor may show the copy, so no token goes to the original.
+    if (copyLostRef.current) return;
     if (watchRef.current?.() ?? false) {
       setNotice("sessionEnded");
       return;
@@ -438,9 +436,23 @@ export default function OfficeEditPage() {
     // The window opens with the request and ends at the answer, or after SAVE_AS_WINDOW_MS. Before the request goes to the
     // editor, the folder's files are read in full: the copy must be one that was not there (copyCandidates). A folder that
     // cannot be read in full is no basis, so the Save As is not asked and the page says so.
-    const win: SaveAsPending = { filename, at: 0, before: new Set(), answered: false, dead: false, timer: null };
+    const win: SaveAsPending = {
+      filename,
+      at: 0,
+      before: new Set(),
+      answered: false,
+      dead: false,
+      timer: null,
+      titleBusy: false,
+      titleQueued: null,
+    };
     saveAsRef.current = win;
-    win.timer = setTimeout(() => finishSaveAs(win), SAVE_AS_WINDOW_MS);
+    // The window's timer ends it. Once the request has gone to the editor, a timeout may leave a copy the page never heard of, so
+    // the copy is lost (copyLost): the page then mints no token for the original. A window that never sent its request is only ended.
+    win.timer = setTimeout(() => {
+      if (win.at !== 0) copyLost(win);
+      else finishSaveAs(win);
+    }, SAVE_AS_WINDOW_MS);
     setCopyBusy(true);
     setSaveAs(null);
     void (async () => {
