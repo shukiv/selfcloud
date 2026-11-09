@@ -3,6 +3,7 @@
 // A minimal Chrome DevTools Protocol client for the smoke test. It uses Node's WebSocket and no
 // npm packages, so the test adds no dependency (Playwright is Apache-2.0, outside the licence rule).
 import { spawn } from 'node:child_process';
+import { closeSync, openSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 
@@ -26,6 +27,8 @@ export function freePort() {
 // primaryHoverType=1 and primaryPointerType=2, which gives hover: none and pointer: coarse.
 export async function launchBrowser(binary, profileDir, { mouse = false, finger = false, hybrid = false, ignoreCertificateErrors = false } = {}) {
   const port = await freePort();
+  // The browser's stderr goes to <profile>.stderr.log (kept when SELFCLOUD_E2E_KEEP=1, as the run's folder is).
+  const stderrLog = openSync(`${profileDir}.stderr.log`, 'a');
   const proc = spawn(
     binary,
     [
@@ -46,10 +49,16 @@ export async function launchBrowser(binary, profileDir, { mouse = false, finger 
       '--disable-extensions',
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${profileDir}`,
+      // The browser's own log and crash dumps are kept beside its profile (the run's folder), so a renderer that dies can be
+      // explained: its stderr names a CHECK failure, an out-of-memory kill, or a GPU or shared-memory fault.
+      '--enable-logging=stderr',
+      '--v=0',
+      `--crash-dumps-dir=${profileDir}.crashes`,
       'about:blank',
     ],
-    { stdio: 'ignore' },
+    { stdio: ['ignore', stderrLog, stderrLog] },
   );
+  closeSync(stderrLog);
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; ; i++) {
     try {
