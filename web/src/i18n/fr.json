@@ -1539,6 +1539,8 @@
   "files.editor.sessionEnded": "La session a changé : cet éditeur ne peut plus enregistrer. Reconnectez-vous et rouvrez le fichier.",
   "files.editor.tokenRefreshFailed": "L'éditeur n'a pas pu renouveler sa session : les dernières modifications risquent de ne pas être enregistrées. Rouvrez le fichier.",
   "files.editor.copyNotShown": "La copie a été enregistrée, mais elle n'est pas affichée ici. Ouvrez son dossier pour la trouver.",
+  "files.editor.copyNotStarted": "La copie n'a pas été lancée, car ce dossier n'a pas pu être lu. Réessayez.",
+  "files.editor.saveAsBusy": "Une copie est déjà en cours. Attendez qu'elle se termine.",
   "files.editing.mark": "En cours de modification",
   "files.details.editing": "En cours de modification",
   "files.details.editingUnnamed": "Un éditeur",

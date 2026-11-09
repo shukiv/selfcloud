@@ -1539,6 +1539,8 @@
   "files.editor.sessionEnded": "A sessão mudou, por isso este editor já não consegue guardar. Volte a iniciar sessão e reabra o ficheiro.",
   "files.editor.tokenRefreshFailed": "O editor não conseguiu renovar a sessão, por isso as últimas alterações podem não ser guardadas. Reabra o ficheiro.",
   "files.editor.copyNotShown": "A cópia foi guardada, mas não aparece aqui. Abra a sua pasta para a encontrar.",
+  "files.editor.copyNotStarted": "A cópia não foi iniciada, porque não foi possível ler esta pasta. Tente novamente.",
+  "files.editor.saveAsBusy": "Já está a ser criada uma cópia. Aguarde que termine.",
   "files.editing.mark": "Em edição",
   "files.details.editing": "Em edição",
   "files.details.editingUnnamed": "Um editor",

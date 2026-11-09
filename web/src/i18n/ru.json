@@ -1539,6 +1539,8 @@
   "files.editor.sessionEnded": "Вход изменился. Войдите снова.",
   "files.editor.tokenRefreshFailed": "Сеанс не продлён. Откройте файл.",
   "files.editor.copyNotShown": "Копия сохранена. Откройте папку.",
+  "files.editor.copyNotStarted": "Копия не начата: папку не прочитать. Повторите.",
+  "files.editor.saveAsBusy": "Копия уже делается. Дождитесь.",
   "files.editing.mark": "Редактируется",
   "files.details.editing": "Редактируется",
   "files.details.editingUnnamed": "Редактор",

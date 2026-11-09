@@ -1539,6 +1539,8 @@
   "files.editor.sessionEnded": "The sign-in changed, so this editor can no longer save. Sign in again and reopen the file.",
   "files.editor.tokenRefreshFailed": "The editor could not renew its session, so the latest changes may not be saved. Reopen the file.",
   "files.editor.copyNotShown": "The copy was saved, but it is not shown here. Open its folder to find it.",
+  "files.editor.copyNotStarted": "The copy was not started, because this folder could not be read. Try again.",
+  "files.editor.saveAsBusy": "A copy is already being made. Wait for it to finish.",
   "files.editing.mark": "Being edited",
   "files.details.editing": "Being edited",
   "files.details.editingUnnamed": "An editor",

@@ -1539,6 +1539,8 @@
   "files.editor.sessionEnded": "تغيّر تسجيل الدخول، لذلك لم يعد هذا المحرر قادرًا على الحفظ. سجّل الدخول مرة أخرى وأعد فتح الملف.",
   "files.editor.tokenRefreshFailed": "تعذّر على المحرر تجديد الجلسة، لذلك قد لا تُحفظ آخر التغييرات. أعد فتح الملف.",
   "files.editor.copyNotShown": "حُفظت النسخة، لكنها لا تظهر هنا. افتح مجلدها للعثور عليها.",
+  "files.editor.copyNotStarted": "لم تبدأ النسخة، لأنه تعذّرت قراءة هذا المجلد. حاول مرة أخرى.",
+  "files.editor.saveAsBusy": "نسخة قيد الإنشاء بالفعل. انتظر حتى تنتهي.",
   "files.editing.mark": "قيد التحرير",
   "files.details.editing": "قيد التحرير",
   "files.details.editingUnnamed": "محرر",
