@@ -37,6 +37,14 @@ Commands:
                                  create an account and an account key; print both
   create-admin -email EMAIL [-name NAME]
                                  create a pending admin user; print its set-password link and token
+  reset-password -user ID|EMAIL [-method link|temporary] [-enable] [-ttl DURATION]
+                 [-link-file FILE | -password-stdin] [-yes]
+                                 reset a password from the data folder, with no mail and no server. The
+                                 default is a one-time link (5m to 168h, default users.reset_ttl). The
+                                 temporary method sets a generated 24-character password, printed once,
+                                 ends the user's sessions and makes the user change it at the next use
+                                 (-yes is needed when stdin is not a terminal). -enable enables a disabled
+                                 user. -password-stdin reads the operator's own password from one line.
   recount-usage [-account ID]    recompute usage and reserved bytes from the files and uploads
                                  (all accounts unless -account is given), and print the change
   search-rebuild                 empty the search index, including the text of files, and queue every folder
@@ -86,6 +94,8 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return adminRewrapSecrets(args, stdout, stderr)
 	case "new-signing-key":
 		return adminNewSigningKey(args, stdout, stderr)
+	case "reset-password":
+		return adminResetPassword(args, stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, adminUsage)
 		return 0

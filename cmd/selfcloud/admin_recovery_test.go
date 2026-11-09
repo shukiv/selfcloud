@@ -207,7 +207,7 @@ func TestResetLinkRedeemsThroughTheRoute(t *testing.T) {
 	acc := f.seedAccount("Acme")
 	admin := f.seedUser("", "root@example.com", store.RoleAdmin, store.UserActive, "old passphrase one")
 	member := f.seedUser(acc.ID, "ann@example.com", store.RoleMember, store.UserActive, "old passphrase two")
-	ts, c := f.serve()
+	ts, _ := f.serve()
 
 	for _, tc := range []struct {
 		name string
@@ -218,6 +218,9 @@ func TestResetLinkRedeemsThroughTheRoute(t *testing.T) {
 		{"account user by ID", member, member.ID},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// A client of its own: a session of the other subtest would make the reset ask to switch users (409).
+			jar, _ := cookiejar.New(nil)
+			c := &http.Client{Jar: jar}
 			code, out, errOut := runCmd(t, "admin", "reset-password", "-user", tc.ref)
 			if code != 0 {
 				t.Fatalf("reset-password = %d %q %q", code, out, errOut)
@@ -458,7 +461,7 @@ func TestLinkFileIsNewOwnerOnlyAndNeverOverwritten(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("the existing file was changed")
 	}
-	if got := redeemReset(t, ts, c, tokenOf(t, string(after)), "a new passphrase"); got != 200 {
+	if got := redeemReset(t, ts, c, tokenOf(t, strings.TrimSpace(string(after))), "a new passphrase"); got != 200 {
 		t.Errorf("the link in the file = %d, want 200 (the refused run must not void it)", got)
 	}
 }
