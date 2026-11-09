@@ -1,0 +1,394 @@
+kind	key	command	slice	reason
+cmd	create-account	create-account	pre-cli1	local only (design 4.6)
+cmd	create-admin	create-admin	pre-cli1	local only (design 4.6)
+cmd	create-key	create-key	pre-cli1	local only (design 4.6)
+cmd	disable	disable	cli1	local only (design 4.6)
+cmd	enable	enable	cli1	local only (design 4.6)
+cmd	end-sessions	end-sessions	cli1	local only (design 4.6)
+cmd	generate-key	generate-key	pre-cli1	local only (design 4.6)
+cmd	list-keys	list-keys	pre-cli1	local only (design 4.6)
+cmd	new-signing-key	new-signing-key	pre-cli1	local only (design 4.6)
+cmd	recount-usage	recount-usage	pre-cli1	local only (design 4.6)
+cmd	reset-password	reset-password	cli1	local only (design 4.6)
+cmd	revoke-key	revoke-key	pre-cli1	local only (design 4.6)
+cmd	rewrap-secrets	rewrap-secrets	pre-cli1	local only (design 4.6)
+cmd	search-rebuild	search-rebuild	pre-cli1	local only (design 4.6)
+cmd	users	users	cli1	local only (design 4.6)
+cmd	verify	verify	cli1	local only (design 4.6)
+fn	lib/api.ts:api	-	-	the request helper every call goes through; each caller has its own row
+fn	lib/auth.ts:changePassword	-	-	browser session only
+fn	lib/auth.ts:confirmDevice	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+fn	lib/auth.ts:confirmEmailChange	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+fn	lib/auth.ts:forgotPassword	-	-	email reset from the sign-in page, rate limited per address and IP; the CLI resets by user reset-password or admin reset-password
+fn	lib/auth.ts:loadInfo	-	cli3	planned, cli3
+fn	lib/auth.ts:loadMe	-	-	browser session only; whoami reads GET /folders
+fn	lib/auth.ts:resetPassword	-	-	email reset from the sign-in page, rate limited per address and IP; the CLI resets by user reset-password or admin reset-password
+fn	lib/auth.ts:setLocale	-	-	browser session only; profile edits stay in the web interface
+fn	lib/auth.ts:signIn	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+fn	lib/auth.ts:signInWithLink	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+fn	lib/auth.ts:signOut	-	-	browser sign-in flow; the CLI's `logout` deletes its own device token (cli4)
+fn	lib/auth.ts:verifyAccount	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+fn	lib/comments/api.ts:createComment	-	cli11	planned, cli11
+fn	lib/comments/api.ts:deleteComment	-	cli11	planned, cli11
+fn	lib/comments/api.ts:editComment	-	cli11	planned, cli11
+fn	lib/comments/api.ts:listActivity	-	cli11	planned, cli11
+fn	lib/comments/api.ts:listComments	-	cli11	planned, cli11
+fn	lib/comments/api.ts:listPeople	-	cli11	planned, cli11
+fn	lib/comments/api.ts:listReplies	-	cli11	planned, cli11
+fn	lib/comments/api.ts:listViewers	-	-	live presence of other viewers: a browser feature
+fn	lib/comments/api.ts:resolveComment	-	cli11	planned, cli11
+fn	lib/files/api.ts:childrenPage	-	cli5	planned, cli5
+fn	lib/files/api.ts:commitUpload	-	cli6	planned, cli6
+fn	lib/files/api.ts:copyNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:createDocument	-	cli11	planned, cli11
+fn	lib/files/api.ts:createShortcut	-	cli5	planned, cli5
+fn	lib/files/api.ts:createZipJob	-	cli12	planned, cli12
+fn	lib/files/api.ts:deleteNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:deleteVersion	-	cli11	planned, cli11
+fn	lib/files/api.ts:emptyTrashStep	-	cli5	planned, cli5
+fn	lib/files/api.ts:getJob	-	cli10	planned, cli10
+fn	lib/files/api.ts:getMe	-	-	browser session only; whoami reads GET /folders
+fn	lib/files/api.ts:getResume	-	-	media playback position: a player feature
+fn	lib/files/api.ts:listSubtitles	-	-	playback subtitles: a player feature
+fn	lib/files/api.ts:listTrash	-	cli5	planned, cli5
+fn	lib/files/api.ts:listVersions	-	cli11	planned, cli11
+fn	lib/files/api.ts:mkdir	-	cli5	planned, cli5
+fn	lib/files/api.ts:mkdirIn	-	cli5	planned, cli5
+fn	lib/files/api.ts:moveNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:myFolders	-	cli8	planned, cli8
+fn	lib/files/api.ts:purgeTrashed	-	cli5	planned, cli5
+fn	lib/files/api.ts:putResume	-	-	media playback position: a player feature
+fn	lib/files/api.ts:renameNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:restoreNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:restoreVersion	-	cli11	planned, cli11
+fn	lib/files/api.ts:serverLimits	-	cli3	planned, cli3
+fn	lib/files/api.ts:signedLink	-	cli7	planned, cli7
+fn	lib/files/api.ts:statNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:updateAppearance	-	cli5	planned, cli5
+fn	lib/files/api.ts:updateVersion	-	cli11	planned, cli11
+fn	lib/files/convert.ts:watchPreview	-	-	HTTP HEAD, rendered preview for the browser viewer
+fn	lib/files/convertLive.ts:liveExportDeps	-	cli11	planned, cli11
+fn	lib/files/convertLive.ts:livePreviewDeps	-	-	the fetch the browser preview uses; its request is GET /api/v1/nodes/{nod}/preview, browser only
+fn	lib/files/ops.ts:startDownloadURL	-	cli6	planned, cli6
+fn	lib/files/playlists.ts:createPlaylist	-	cli12	planned, cli12
+fn	lib/files/playlists.ts:deletePlaylist	-	cli12	planned, cli12
+fn	lib/files/playlists.ts:getPlaylist	-	cli12	planned, cli12
+fn	lib/files/playlists.ts:listPlaylists	-	cli12	planned, cli12
+fn	lib/files/playlists.ts:removeEntry	-	cli12	planned, cli12
+fn	lib/files/playlists.ts:renamePlaylist	-	cli12	planned, cli12
+fn	lib/files/playlists.ts:reorderEntries	-	cli12	planned, cli12
+fn	lib/files/playlists.ts:replaceEntries	-	cli12	planned, cli12
+fn	lib/files/tags.ts:getMediaTags	-	cli11	planned, cli11
+fn	lib/files/tags.ts:getNodeTags	-	cli11	planned, cli11
+fn	lib/files/thumbnail.ts:liveDeps	-	cli11	planned, cli11
+fn	lib/files/thumbnail.ts:watchThumbnail	-	cli11	planned, cli11
+fn	lib/files/tus.ts:createUpload	-	cli6	planned, cli6
+fn	lib/files/tus.ts:deleteUpload	-	cli6	planned, cli6
+fn	lib/files/tus.ts:headOffset	-	cli6	planned, cli6
+fn	lib/files/zips.ts:zipStatus	-	cli12	planned, cli12
+fn	lib/impersonation.ts:adoptSession	-	-	browser session only; whoami reads GET /folders
+fn	lib/impersonation.ts:endImpersonation	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+fn	lib/labels/api.ts:clearNodeLabel	-	cli11	planned, cli11
+fn	lib/labels/api.ts:createLabelField	-	cli9	planned, cli9
+fn	lib/labels/api.ts:deleteLabelField	-	cli9	planned, cli9
+fn	lib/labels/api.ts:listLabelFields	-	cli11	planned, cli11
+fn	lib/labels/api.ts:listNodeLabels	-	cli11	planned, cli11
+fn	lib/labels/api.ts:setNodeLabel	-	cli11	planned, cli11
+fn	lib/labels/api.ts:updateLabelField	-	cli9	planned, cli9
+fn	lib/manage/api.ts:addGroupMember	-	cli8	planned, cli8
+fn	lib/manage/api.ts:auditLog	-	cli9	planned, cli9
+fn	lib/manage/api.ts:createAccount	-	cli9	planned, cli9
+fn	lib/manage/api.ts:createAdmin	-	cli9	planned, cli9
+fn	lib/manage/api.ts:createGroup	-	cli8	planned, cli8
+fn	lib/manage/api.ts:createKey	-	cli9	planned, cli9
+fn	lib/manage/api.ts:createPerson	-	cli9	planned, cli9
+fn	lib/manage/api.ts:createSpace	-	cli8	planned, cli8
+fn	lib/manage/api.ts:deleteAccount	-	cli9	planned, cli9
+fn	lib/manage/api.ts:deleteAdmin	-	cli9	planned, cli9
+fn	lib/manage/api.ts:deleteAllPublicLinks	-	cli7	planned, cli7
+fn	lib/manage/api.ts:deleteGroup	-	cli8	planned, cli8
+fn	lib/manage/api.ts:deleteSpace	-	cli8	planned, cli8
+fn	lib/manage/api.ts:getAccount	-	cli9	planned, cli9
+fn	lib/manage/api.ts:getInfo	-	cli3	planned, cli3
+fn	lib/manage/api.ts:getJob	-	cli10	planned, cli10
+fn	lib/manage/api.ts:getPerson	-	cli9	planned, cli9
+fn	lib/manage/api.ts:getSpace	-	cli8	planned, cli8
+fn	lib/manage/api.ts:listAccountLinks	-	cli7	planned, cli7
+fn	lib/manage/api.ts:listAccounts	-	cli9	planned, cli9
+fn	lib/manage/api.ts:listAdmins	-	cli9	planned, cli9
+fn	lib/manage/api.ts:listGroupMembers	-	cli8	planned, cli8
+fn	lib/manage/api.ts:listGroups	-	cli8	planned, cli8
+fn	lib/manage/api.ts:listKeys	-	cli9	planned, cli9
+fn	lib/manage/api.ts:listPeople	-	cli9	planned, cli9
+fn	lib/manage/api.ts:listSpaces	-	cli8	planned, cli8
+fn	lib/manage/api.ts:removeGroupMember	-	cli8	planned, cli8
+fn	lib/manage/api.ts:removePerson	-	cli9	planned, cli9
+fn	lib/manage/api.ts:renameGroup	-	cli8	planned, cli8
+fn	lib/manage/api.ts:renameSpace	-	cli8	planned, cli8
+fn	lib/manage/api.ts:resendVerification	-	cli9	planned, cli9
+fn	lib/manage/api.ts:resetUserPassword	-	cli9	planned, cli9
+fn	lib/manage/api.ts:revokeKey	-	cli9	planned, cli9
+fn	lib/manage/api.ts:sendPasswordReset	-	cli9	planned, cli9
+fn	lib/manage/api.ts:setUserPassword	-	-	typed password from an installation admin session (decision 41); local: admin reset-password --method temporary
+fn	lib/manage/api.ts:signInAsUser	-	-	sign in as a user: browser session only (decision 41)
+fn	lib/manage/api.ts:updateAccount	-	cli9	planned, cli9
+fn	lib/manage/api.ts:updatePerson	-	cli9	planned, cli9
+fn	lib/manage/api.ts:usage	-	cli9	planned, cli9
+fn	lib/notifications/api.ts:getEmailSwitch	-	cli11	planned, cli11
+fn	lib/notifications/api.ts:listNotices	-	cli11	planned, cli11
+fn	lib/notifications/api.ts:markRead	-	cli11	planned, cli11
+fn	lib/notifications/api.ts:setEmailSwitch	-	cli11	planned, cli11
+fn	lib/notifications/api.ts:unreadCount	-	cli11	planned, cli11
+fn	lib/search/api.ts:searchNodes	-	cli11	planned, cli11
+fn	lib/sharing/api.ts:approveAccessRequest	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:createAccessRequest	-	-	a viewer asks for access in the browser
+fn	lib/sharing/api.ts:createDropLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:createShareLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:deleteShareLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:denyAccessRequest	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:getSharingPolicy	-	cli9	planned, cli9
+fn	lib/sharing/api.ts:listAccessRequests	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:listPermissions	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:listShareLinks	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:openShareLink	-	cli6	planned, cli6
+fn	lib/sharing/api.ts:removePermission	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:renewShareLink	-	-	visitor credential refresh, used inside get <share-url>
+fn	lib/sharing/api.ts:resetShareLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:searchDirectory	-	cli11	planned, cli11
+fn	lib/sharing/api.ts:setHidden	-	cli8	planned, cli8
+fn	lib/sharing/api.ts:setPermission	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:setSharingPolicy	-	cli9	planned, cli9
+fn	lib/sharing/api.ts:setSharingSwitches	-	cli9	planned, cli9
+fn	lib/sharing/api.ts:sharedWithMe	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:transferOwnership	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:updateDropLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:updateNodeFlags	-	cli5	planned, cli5
+fn	lib/sharing/api.ts:updateShareLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:updateSpaceSettings	-	cli8	planned, cli8
+fn	lib/sharing/api.ts:visitorChildren	-	cli5	planned, cli5
+fn	lib/sharing/api.ts:visitorInfo	-	-	visitor credential read, used inside get <share-url>
+fn	lib/sharing/api.ts:visitorLink	-	cli7	planned, cli7
+fn	lib/sharing/api.ts:visitorNode	-	cli5	planned, cli5
+fn	lib/stars.ts:clearRecent	-	cli11	planned, cli11
+fn	lib/stars.ts:listRecent	-	cli11	planned, cli11
+fn	lib/stars.ts:listSharedRecent	-	cli7	planned, cli7
+fn	lib/stars.ts:listStarred	-	cli11	planned, cli11
+fn	lib/stars.ts:removeRecent	-	cli11	planned, cli11
+fn	lib/stars.ts:starNode	-	cli11	planned, cli11
+fn	lib/stars.ts:unstarNode	-	cli11	planned, cli11
+fn	lib/storage/api.ts:accountLargest	-	cli9	planned, cli9
+fn	lib/storage/api.ts:accountStorage	-	cli9	planned, cli9
+fn	lib/storage/api.ts:myLargest	-	-	browser session only; the account form is storage largest --account
+fn	lib/storage/api.ts:refreshMyBreakdown	-	-	browser session only; whoami reads GET /folders
+fn	lib/storage/api.ts:refreshMyStorage	-	-	browser session only; whoami reads GET /folders
+fn	lib/storage/api.ts:setPersonLimit	-	cli9	planned, cli9
+fn	lib/storage/api.ts:setPolicyDefault	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}/folders/{fld}	-	cli8	planned, cli8
+route	DELETE /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	-	cli7	planned, cli7
+route	DELETE /api/v1/accounts/{acc}/groups/{grp}	-	cli8	planned, cli8
+route	DELETE /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	-	cli8	planned, cli8
+route	DELETE /api/v1/accounts/{acc}/keys/{key}	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
+route	DELETE /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
+route	DELETE /api/v1/admins/{usr}	-	cli9	planned, cli9
+route	DELETE /api/v1/comments/{cmt}	-	cli11	planned, cli11
+route	DELETE /api/v1/folders/{fld}/hidden	-	cli8	planned, cli8
+route	DELETE /api/v1/nodes/{nod}	-	cli5	planned, cli5
+route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
+route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	-	cli7	planned, cli7
+route	DELETE /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
+route	DELETE /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
+route	DELETE /api/v1/playlists/{pls}	-	cli12	planned, cli12
+route	DELETE /api/v1/playlists/{pls}/entries/{ple}	-	cli12	planned, cli12
+route	DELETE /api/v1/recent	-	cli11	planned, cli11
+route	DELETE /api/v1/recent/{nod}	-	cli11	planned, cli11
+route	DELETE /api/v1/share-links/{shl}	-	cli7	planned, cli7
+route	DELETE /api/v1/trash/{nod}	-	cli5	planned, cli5
+route	DELETE /api/v1/uploads/{upl}	-	cli6	planned, cli6
+route	DELETE /api/v1/zips/{zip}	-	cli12	planned, cli12
+route	GET /api/v1/access-requests	-	cli7	planned, cli7
+route	GET /api/v1/accounts	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/audit	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/folders	-	cli8	planned, cli8
+route	GET /api/v1/accounts/{acc}/folders/{fld}	-	cli8	planned, cli8
+route	GET /api/v1/accounts/{acc}/folders/{fld}/grants	-	cli7	planned, cli7
+route	GET /api/v1/accounts/{acc}/groups	-	cli8	planned, cli8
+route	GET /api/v1/accounts/{acc}/groups/{grp}	-	cli8	planned, cli8
+route	GET /api/v1/accounts/{acc}/groups/{grp}/members	-	cli8	planned, cli8
+route	GET /api/v1/accounts/{acc}/keys	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/share-links	-	cli7	planned, cli7
+route	GET /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/storage	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/storage/largest	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
+route	GET /api/v1/accounts/{acc}/usage	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/users	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
+route	GET /api/v1/accounts/{acc}/users/{usr}/grants	-	cli8	planned, cli8
+route	GET /api/v1/accounts/{acc}/webhooks	-	cli10	planned, cli10
+route	GET /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
+route	GET /api/v1/accounts/{acc}/webhooks/{hook}/deliveries	-	cli10	planned, cli10
+route	GET /api/v1/admins	-	cli9	planned, cli9
+route	GET /api/v1/directory	-	cli11	planned, cli11
+route	GET /api/v1/folders	-	cli8	planned, cli8
+route	GET /api/v1/folders/{fld}/children	-	cli5	planned, cli5
+route	GET /api/v1/imports/sources	-	cli10	planned, cli10
+route	GET /api/v1/imports/{imp}	-	cli10	planned, cli10
+route	GET /api/v1/imports/{imp}/items	-	cli10	planned, cli10
+route	GET /api/v1/info	-	cli3	planned, cli3
+route	GET /api/v1/jobs/{job}	-	cli10	planned, cli10
+route	GET /api/v1/label-fields	-	cli11	planned, cli11
+route	GET /api/v1/links/{token}	-	-	an anonymous visitor opens a link in the browser; get <share-url> covers the CLI case
+route	GET /api/v1/me	-	-	browser session only; whoami reads GET /folders
+route	GET /api/v1/me/storage/largest	-	-	browser session only; the account form is storage largest --account
+route	GET /api/v1/media/tags	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}	-	cli5	planned, cli5
+route	GET /api/v1/nodes/{nod}/access-requests	-	cli7	planned, cli7
+route	GET /api/v1/nodes/{nod}/activity	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/children	-	cli5	planned, cli5
+route	GET /api/v1/nodes/{nod}/comments	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/content	-	cli6	planned, cli6
+route	GET /api/v1/nodes/{nod}/exports/{drv}	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/labels	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/people	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/permissions	-	cli7	planned, cli7
+route	GET /api/v1/nodes/{nod}/preview	-	-	rendered preview for the browser viewer
+route	GET /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature
+route	GET /api/v1/nodes/{nod}/share-links	-	cli7	planned, cli7
+route	GET /api/v1/nodes/{nod}/subtitles	-	-	playback subtitles: a player feature
+route	GET /api/v1/nodes/{nod}/tags	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/thumbnail	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/versions	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/versions/{ver}/content	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/viewers	-	-	live presence of other viewers: a browser feature
+route	GET /api/v1/notifications	-	cli11	planned, cli11
+route	GET /api/v1/notifications/settings	-	cli11	planned, cli11
+route	GET /api/v1/notifications/unread	-	cli11	planned, cli11
+route	GET /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
+route	GET /api/v1/openapi.yaml	-	cli3	planned, cli3
+route	GET /api/v1/playlists	-	cli12	planned, cli12
+route	GET /api/v1/playlists/{pls}	-	cli12	planned, cli12
+route	GET /api/v1/recent	-	cli11	planned, cli11
+route	GET /api/v1/search	-	cli11	planned, cli11
+route	GET /api/v1/share/info	-	-	visitor credential read, used inside get <share-url>
+route	GET /api/v1/shared	-	cli7	planned, cli7
+route	GET /api/v1/starred	-	cli11	planned, cli11
+route	GET /api/v1/templates	-	cli11	planned, cli11
+route	GET /api/v1/trash	-	cli5	planned, cli5
+route	GET /api/v1/zips/{zip}	-	cli12	planned, cli12
+route	GET /brand/logo	-	-	static image for the web interface
+route	GET /healthz	-	-	platform health probe, not a user action
+route	GET /metrics	-	-	Prometheus scrape target, not a user action
+route	GET /readyz	-	-	platform readiness probe, not a user action
+route	GET /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
+route	GET /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
+route	HEAD /api/v1/links/{token}	-	-	HTTP HEAD of a link
+route	HEAD /api/v1/nodes/{nod}/content	-	-	HTTP HEAD, used inside get
+route	HEAD /api/v1/nodes/{nod}/preview	-	-	HTTP HEAD, rendered preview for the browser viewer
+route	HEAD /api/v1/nodes/{nod}/tags	-	-	HTTP HEAD
+route	HEAD /api/v1/nodes/{nod}/thumbnail	-	-	HTTP HEAD, used inside thumb
+route	HEAD /api/v1/nodes/{nod}/versions/{ver}/content	-	-	HTTP HEAD, used inside version get
+route	HEAD /api/v1/uploads/{upl}	-	cli6	planned, cli6
+route	OPTIONS /api/v1/uploads	-	-	CORS preflight, meaningless outside a browser
+route	PATCH /api/v1/accounts/{acc}	-	cli9	planned, cli9
+route	PATCH /api/v1/accounts/{acc}/folders/{fld}	-	cli8	planned, cli8
+route	PATCH /api/v1/accounts/{acc}/groups/{grp}	-	cli8	planned, cli8
+route	PATCH /api/v1/accounts/{acc}/label-fields/{lbf}	-	cli9	planned, cli9
+route	PATCH /api/v1/accounts/{acc}/sharing-policy	-	cli9	planned, cli9
+route	PATCH /api/v1/accounts/{acc}/storage-policy	-	cli9	planned, cli9
+route	PATCH /api/v1/accounts/{acc}/users/{usr}	-	cli9	planned, cli9
+route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
+route	PATCH /api/v1/comments/{cmt}	-	cli11	planned, cli11
+route	PATCH /api/v1/folders/{fld}/settings	-	cli8	planned, cli8
+route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web interface
+route	PATCH /api/v1/nodes/{nod}	-	cli5	planned, cli5
+route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
+route	PATCH /api/v1/notifications/settings	-	cli11	planned, cli11
+route	PATCH /api/v1/playlists/{pls}	-	cli12	planned, cli12
+route	PATCH /api/v1/share-links/{shl}	-	cli7	planned, cli7
+route	PATCH /api/v1/uploads/{upl}	-	cli6	planned, cli6
+route	POST /api/v1/access-requests/{arq}/approve	-	cli7	planned, cli7
+route	POST /api/v1/access-requests/{arq}/deny	-	cli7	planned, cli7
+route	POST /api/v1/accounts	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/folders	-	cli8	planned, cli8
+route	POST /api/v1/accounts/{acc}/groups	-	cli8	planned, cli8
+route	POST /api/v1/accounts/{acc}/keys	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/label-fields	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/share-links/delete-public	-	cli7	planned, cli7
+route	POST /api/v1/accounts/{acc}/tokens	-	cli4	planned, cli4
+route	POST /api/v1/accounts/{acc}/tokens/revoke	-	cli4	planned, cli4
+route	POST /api/v1/accounts/{acc}/users	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/users/{usr}/password	-	-	typed password from an installation admin session (decision 41); local: admin reset-password --method temporary
+route	POST /api/v1/accounts/{acc}/users/{usr}/password-reset	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in	-	-	sign in as a user: browser session only (decision 41)
+route	POST /api/v1/accounts/{acc}/users/{usr}/sign-in-links	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/users/{usr}/tokens/revoke	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/users/{usr}/verification	-	cli9	planned, cli9
+route	POST /api/v1/accounts/{acc}/webhooks	-	cli10	planned, cli10
+route	POST /api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry	-	cli10	planned, cli10
+route	POST /api/v1/accounts/{acc}/webhooks/{hook}/secret	-	cli10	planned, cli10
+route	POST /api/v1/accounts/{acc}/webhooks/{hook}/test	-	cli10	planned, cli10
+route	POST /api/v1/admins	-	cli9	planned, cli9
+route	POST /api/v1/auth/device-confirm	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+route	POST /api/v1/auth/email-change/confirm	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+route	POST /api/v1/auth/impersonation/end	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+route	POST /api/v1/auth/login	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+route	POST /api/v1/auth/logout	-	-	browser sign-in flow; the CLI's `logout` deletes its own device token (cli4)
+route	POST /api/v1/auth/password/forgot	-	-	email reset from the sign-in page, rate limited per address and IP; the CLI resets by user reset-password or admin reset-password
+route	POST /api/v1/auth/password/reset	-	-	email reset from the sign-in page, rate limited per address and IP; the CLI resets by user reset-password or admin reset-password
+route	POST /api/v1/auth/sign-in-link	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+route	POST /api/v1/auth/verify	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+route	POST /api/v1/comments/{cmt}/resolve	-	cli11	planned, cli11
+route	POST /api/v1/folders/{fld}/directories	-	cli5	planned, cli5
+route	POST /api/v1/folders/{fld}/files	-	cli5	planned, cli5
+route	POST /api/v1/imports	-	cli10	planned, cli10
+route	POST /api/v1/imports/{imp}/cancel	-	cli10	planned, cli10
+route	POST /api/v1/imports/{imp}/pause	-	cli10	planned, cli10
+route	POST /api/v1/imports/{imp}/resume	-	cli10	planned, cli10
+route	POST /api/v1/me/password	-	-	browser session only
+route	POST /api/v1/nodes/{nod}/access-requests	-	-	a viewer asks for access in the browser
+route	POST /api/v1/nodes/{nod}/comments	-	cli11	planned, cli11
+route	POST /api/v1/nodes/{nod}/copy	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/documents	-	cli11	planned, cli11
+route	POST /api/v1/nodes/{nod}/exports	-	cli11	planned, cli11
+route	POST /api/v1/nodes/{nod}/links	-	cli7	planned, cli7
+route	POST /api/v1/nodes/{nod}/move	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/office	-	-	opens the Collabora editor in a browser tab
+route	POST /api/v1/nodes/{nod}/restore	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/share-links	-	cli7	planned, cli7
+route	POST /api/v1/nodes/{nod}/shortcuts	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/transfer-ownership	-	cli7	planned, cli7
+route	POST /api/v1/nodes/{nod}/unlock	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/versions/{ver}/restore	-	cli11	planned, cli11
+route	POST /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
+route	POST /api/v1/notifications/{ntf}/read	-	cli11	planned, cli11
+route	POST /api/v1/playlists	-	cli12	planned, cli12
+route	POST /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12
+route	POST /api/v1/share-links/{shl}/reset	-	cli7	planned, cli7
+route	POST /api/v1/share/open	-	cli6	planned, cli6
+route	POST /api/v1/share/renew	-	-	visitor credential refresh, used inside get <share-url>
+route	POST /api/v1/trash/empty	-	cli5	planned, cli5
+route	POST /api/v1/uploads	-	cli6	planned, cli6
+route	POST /api/v1/uploads/{upl}/commit	-	cli6	planned, cli6
+route	POST /api/v1/zips	-	cli12	planned, cli12
+route	POST /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
+route	POST /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
+route	PUT /api/v1/accounts/{acc}/folders/{fld}/grants/{usr}	-	cli7	planned, cli7
+route	PUT /api/v1/accounts/{acc}/groups/{grp}/members/{usr}	-	cli8	planned, cli8
+route	PUT /api/v1/accounts/{acc}/imports/archive	-	cli10	planned, cli10
+route	PUT /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
+route	PUT /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
+route	PUT /api/v1/folders/{fld}/hidden	-	cli8	planned, cli8
+route	PUT /api/v1/nodes/{nod}/content	-	cli6	planned, cli6
+route	PUT /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
+route	PUT /api/v1/nodes/{nod}/permissions/{subject}	-	cli7	planned, cli7
+route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature
+route	PUT /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
+route	PUT /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12
+route	PUT /api/v1/playlists/{pls}/order	-	cli12	planned, cli12

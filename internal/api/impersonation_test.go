@@ -477,7 +477,7 @@ func TestImpersonationRefusalsAreChecked(t *testing.T) {
 
 func TestEveryRouteIsClassified(t *testing.T) {
 	t.Parallel()
-	s := newAuthServer(t, &mail.Recorder{})
+	s := newAuthServer(t, &mail.Recorder{}, parityConfig)
 	var mustChange []string
 	for _, rt := range s.routes() {
 		if rt.imp == impUnclassified {
@@ -495,6 +495,8 @@ func TestEveryRouteIsClassified(t *testing.T) {
 	if strings.Join(mustChange, ",") != strings.Join(want, ",") {
 		t.Errorf("must-change routes = %v, want %v", mustChange, want)
 	}
+	// Each mounted route has a row in docs/cli-parity.tsv, and each route row names a mounted route (design 5.2).
+	checkParityRoutes(t, s, readParity(t))
 }
 
 func TestImpersonatedViewsCountNowhere(t *testing.T) {
