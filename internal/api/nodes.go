@@ -1252,6 +1252,15 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 	if n.ETag != ifMatch {
 		return apierr.New(apierr.PreconditionFailed, "the file changed since it was read; read it again")
 	}
+	// A live lock answers before the body is read, as it does for any replacement (the in-transaction check in
+	// replaceContent is kept for a lock taken in the meantime), so a bad body on a locked file gets the lock's 409.
+	live, err := liveLockOf(r.Context(), s.store, n.AccountID, n.ID)
+	if err != nil {
+		return err
+	}
+	if live != nil {
+		return &store.LockedError{Current: live.LockID, Reason: "the file is open in an office editor"}
+	}
 	mt := mimeOf(r.Header.Get("Content-Type"), n.Name)
 	// A text file takes only UTF-8 text with no NUL byte (decision 113). The rule is here and not in replaceContent,
 	// which WOPI PutFile also calls, so an office save is unchanged.
