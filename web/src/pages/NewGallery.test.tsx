@@ -146,6 +146,14 @@ describe("NewGallery: the sections", () => {
     expect(sections()).not.toContain("mine");
   });
 
+  // The design: Blank does not need the template list, so a failed list still leaves Blank (with the error and a retry).
+  it("a failed template list still shows Blank, with the error", async () => {
+    m.listAllTemplates.mockRejectedValue(new Error("list failed"));
+    renderAt(`/new/${FLD}?kind=document`);
+    await waitFor(() => expect(sections()).toEqual(["blank"]));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
   it("an empty listing still shows Blank", async () => {
     m.listAllTemplates.mockResolvedValue([]);
     renderAt(`/new/${FLD}?kind=document`);
