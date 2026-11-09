@@ -7,6 +7,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { emptyStateProblems } from './emptyStateGuard.mjs';
 
 const root = fileURLToPath(new URL('../src/', import.meta.url));
 
@@ -153,29 +154,10 @@ for (const path of (await files(join(root, 'components'))).filter((p) => /\.tsx?
 // through EmptyState, so a bare paragraph or box with the words fails the check, and so does a file that draws one without
 // importing EmptyState. The empty folder's heading and hint are the description of its EmptyState, so FilesPage may draw them
 // in its own lines and nowhere else. Outcome messages (preview, playlist stops, the share status) are not in this list.
-const EMPTY_KEYS = [
-  'starred.empty', 'recent.empty', 'shared.empty', 'trash.empty.none', 'files.empty', 'files.emptyMouse', 'files.emptyTouch',
-  'requests.empty', 'people.empty', 'groups.empty', 'spaces.empty', 'audit.empty', 'links.empty', 'labels.empty',
-  'tenants.empty', 'tenants.noMatch', 'search.empty', 'search.pageEmpty', 'notifications.empty', 'share.open.empty',
-  'storage.largestEmpty', 'storage.peopleEmpty', 'storage.spacesEmpty', 'manage.overview.noActivity', 'tenant.users.empty',
-  'keys.empty', 'files.media.queueEmpty', 'files.media.addNone', 'files.playlists.none', 'files.playlists.empty',
-  'files.pick.empty', 'files.pick.noSpaces', 'files.versions.none', 'comments.empty', 'activity.empty', 'viewers.empty',
-  'people.detail.noActivity', 'people.detail.noSpaces', 'people.detail.noGroups', 'groups.noMembers', 'share.none',
-];
-const EMPTY_DESCRIPTION_KEYS = new Map([['pages/FilesPage.tsx', ['files.empty', 'files.emptyMouse', 'files.emptyTouch']]]);
+// The empty-state guard (decision 111) is in emptyStateGuard.mjs, with its fixtures in emptyStateGuard.test.mjs.
 for (const path of (await files(root)).filter((p) => /\.tsx$/.test(p) && !/\.test\.tsx$/.test(p))) {
   const file = relative(root, path);
-  const text = await readFile(path, 'utf8');
-  const lines = text.split('\n');
-  const importsEmptyState = /import\s+EmptyState\s+from\s+/.test(text);
-  const described = EMPTY_DESCRIPTION_KEYS.get(file) ?? [];
-  lines.forEach((line, i) => {
-    const key = EMPTY_KEYS.find((k) => line.includes(`t("${k}")`) || line.includes(`t('${k}')`));
-    if (key === undefined || described.includes(key)) return;
-    const bare = /<(p|div|span)\b/.test(line) || (i > 0 && /<(p|div|span)\b[^>]*>\s*$/.test(lines[i - 1]));
-    if (bare) problems.push(`${file}:${i + 1}: the empty state ${key} is drawn as a bare paragraph or box; use EmptyState (decision 111)`);
-    else if (!importsEmptyState) problems.push(`${file}:${i + 1}: the empty state ${key} is drawn outside EmptyState (decision 111)`);
-  });
+  problems.push(...emptyStateProblems(file, await readFile(path, 'utf8')));
 }
 
 if (problems.length > 0) {
