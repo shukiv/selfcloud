@@ -16,6 +16,7 @@ export const EMPTY_KEYS = [
   'keys.empty', 'files.media.queueEmpty', 'files.media.addNone', 'files.playlists.none', 'files.playlists.empty',
   'files.pick.empty', 'files.pick.noSpaces', 'files.versions.none', 'comments.empty', 'activity.empty', 'viewers.empty',
   'people.detail.noActivity', 'people.detail.noSpaces', 'people.detail.noGroups', 'groups.noMembers', 'share.none',
+  'tenant.reset.none',
 ];
 
 const isKeyLiteral = (node) => (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && EMPTY_KEYS.includes(node.text);

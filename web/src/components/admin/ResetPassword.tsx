@@ -11,6 +11,7 @@ import { personLabel } from "../../lib/manage/people";
 import type { Person } from "../../lib/manage/types";
 import { sessionChanged } from "../../lib/session";
 import { checkNewPassword } from "../../pages/passwordRules";
+import EmptyState from "../EmptyState";
 import Field from "../Field";
 import NewPasswordFields from "../NewPasswordFields";
 import PasswordField from "../PasswordField";
@@ -117,7 +118,7 @@ export default function ResetPassword({
   return (
     <Modal open title={t("tenant.reset.title", { name })} onCancel={onClose} maskClosable={false} footer={null} destroyOnClose>
       {offered.length === 0 ? (
-        <Alert type="info" showIcon message={t("tenant.reset.none")} />
+        <EmptyState size="compact" text={t("tenant.reset.none")} />
       ) : (
         <form onSubmit={submit} noValidate style={{ display: "grid", gap: 16 }}>
           <fieldset style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
