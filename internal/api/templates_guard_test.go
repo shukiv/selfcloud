@@ -67,7 +67,8 @@ func TestTemplatesListingHasNoCursorAfterTheLastFile(t *testing.T) {
 	}
 	setTemplatesFolder(t, fx, dir.ID)
 	page := listTemplates(t, fx, "kind=document&limit=2")
-	if len(page.Items) != 5 || page.NextCursor != "" {
-		t.Errorf("page = %d items, next %q; want 3 built-in and 2 account files, and no cursor", len(page.Items), page.NextCursor)
+	// Deliberate change (nt2): five built-in documents now, so seven items with the two account files.
+	if len(page.Items) != 7 || page.NextCursor != "" {
+		t.Errorf("page = %d items, next %q; want 5 built-in and 2 account files, and no cursor", len(page.Items), page.NextCursor)
 	}
 }

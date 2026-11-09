@@ -1409,6 +1409,7 @@ Users                                      session
 
 Office editing
   POST /nodes/{nod}/office                 editor URL and WOPI token for the client to open
+  GET  /templates/{id}/thumbnail           a built-in template's PNG picture (nt2, decision 105): office editing on; a share-link visitor is refused
   /wopi/files/{nod}...                     WOPI host (section 10)
 ```
 

@@ -17,6 +17,7 @@ type listedTemplate struct {
 	Kind         string `json:"kind"`
 	Source       string `json:"source"`
 	NodeID       string `json:"node_id"`
+	Category     string `json:"category"`
 	HasThumbnail *bool  `json:"has_thumbnail"`
 }
 
@@ -123,17 +124,28 @@ func TestListTemplatesAnswersTheBuiltIns(t *testing.T) {
 	got := listTemplates(t, fx, "kind=document")
 	var names []string
 	for _, it := range got.Items {
-		if it.Source != "builtin" || it.Kind != "document" || it.NodeID != "" || it.HasThumbnail != nil {
-			t.Errorf("item %+v is not a built-in document template without a node", it)
+		// Every built-in has a picture and a category (nt2); it has no node.
+		if it.Source != "builtin" || it.Kind != "document" || it.NodeID != "" || it.HasThumbnail == nil || !*it.HasThumbnail || it.Category == "" {
+			t.Errorf("item %+v is not a built-in document template with a node-less id, a category and a picture", it)
 		}
 		names = append(names, it.ID+" "+it.Name)
 	}
-	want := "builtin:letter Letter.docx,builtin:resume Resume.docx,builtin:meeting-notes Meeting notes.docx"
+	// Deliberate change (nt2): the two shipped letters follow our three documents.
+	want := "builtin:letter Letter.docx,builtin:resume Resume.docx,builtin:meeting-notes Meeting notes.docx," +
+		"builtin:lo-letter-serif Modern business letter serif.docx,builtin:lo-letter-sans-serif Modern business letter sans-serif.docx"
 	if strings.Join(names, ",") != want {
 		t.Errorf("document templates = %s, want %s", strings.Join(names, ","), want)
 	}
-	if slides := listTemplates(t, fx, "kind=presentation"); len(slides.Items) != 1 || slides.Items[0].Name != "Slide deck.pptx" {
-		t.Errorf("presentation templates = %+v", slides.Items)
+	cats := map[string]string{}
+	for _, it := range got.Items {
+		cats[it.ID] = it.Category
+	}
+	if cats["builtin:letter"] != "letters" || cats["builtin:resume"] != "resumes" || cats["builtin:lo-letter-serif"] != "letters" {
+		t.Errorf("document categories = %v", cats)
+	}
+	slides := listTemplates(t, fx, "kind=presentation")
+	if len(slides.Items) != 17 || slides.Items[0].Name != "Slide deck.pptx" || slides.Items[1].Category != "designs" {
+		t.Errorf("presentation templates: %d items, first %+v", len(slides.Items), slides.Items[0])
 	}
 	wantStatus(t, call(t, fx.s, "GET", "/api/v1/templates?kind=document&limit=0", fx.key, nil), 400)
 	wantStatus(t, call(t, fx.s, "GET", "/api/v1/templates?kind=document&limit=101", fx.key, nil), 400)
@@ -159,10 +171,11 @@ func TestListTemplatesShowsTheAccountFolderFiles(t *testing.T) {
 	_ = nodeOf(t, newDocumentCall(t, fx.s, fx.key, dir.ID, map[string]any{"type": "odg"}))
 	setTemplatesFolder(t, fx, dir.ID)
 	docs := listTemplates(t, fx, "kind=document")
-	if len(docs.Items) != 5 {
-		t.Fatalf("document templates = %d items, want 3 built-in and 2 account files", len(docs.Items))
+	// Deliberate change (nt2): five built-in documents now, so seven items with the two account files.
+	if len(docs.Items) != 7 {
+		t.Fatalf("document templates = %d items, want 5 built-in and 2 account files", len(docs.Items))
 	}
-	for _, it := range docs.Items[3:] {
+	for _, it := range docs.Items[5:] {
 		if it.Source != "account" || it.HasThumbnail == nil || *it.HasThumbnail {
 			t.Errorf("account item %+v: want source account and has_thumbnail false", it)
 		}
@@ -189,8 +202,9 @@ func TestListTemplatesPagesTheAccountFiles(t *testing.T) {
 	}
 	setTemplatesFolder(t, fx, dir.ID)
 	first := listTemplates(t, fx, "kind=document&limit=2")
-	if len(first.Items) != 5 || first.NextCursor == "" {
-		t.Fatalf("first page = %d items, next %q; want 3 built-in and 2 account, with a cursor", len(first.Items), first.NextCursor)
+	// Deliberate change (nt2): five built-in documents now, so seven items on the first page with the two account files.
+	if len(first.Items) != 7 || first.NextCursor == "" {
+		t.Fatalf("first page = %d items, next %q; want 5 built-in and 2 account, with a cursor", len(first.Items), first.NextCursor)
 	}
 	second := listTemplates(t, fx, "kind=document&limit=2&after="+first.NextCursor)
 	if len(second.Items) != 1 || second.Items[0].Source != "account" || second.NextCursor != "" {

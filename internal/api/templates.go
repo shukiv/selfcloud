@@ -58,6 +58,7 @@ type templateItem struct {
 	Kind         string `json:"kind"`
 	Source       string `json:"source"`
 	NodeID       string `json:"node_id,omitempty"`
+	Category     string `json:"category,omitempty"`
 	HasThumbnail *bool  `json:"has_thumbnail,omitempty"`
 }
 
@@ -196,7 +197,10 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) err
 	out := []templateItem{}
 	if after == "" {
 		for _, t := range templates.ByKind(kind) {
-			out = append(out, templateItem{ID: t.ID, Name: t.Name(lang) + "." + t.Ext, Kind: kind, Source: "builtin"})
+			// Every built-in has a picture (nt2).
+			yes := true
+			out = append(out, templateItem{ID: t.ID, Name: t.Name(lang) + "." + t.Ext, Kind: kind, Source: "builtin",
+				Category: t.Category, HasThumbnail: &yes})
 		}
 	}
 	folder, err := s.templatesFolder(ctx, p, acc)
@@ -294,4 +298,21 @@ func (s *Server) templateUsable(ctx context.Context, p *auth.Principal, c *store
 		return false, err
 	}
 	return !restricted, nil
+}
+
+// handleGetTemplateThumbnail answers a built-in template's picture (nt2): a PNG, cached privately for an hour. It is behind
+// the listing's gate: office editing must be on, else not found. The route has no link flag, so a share-link visitor is refused
+// before this runs (link_route). An account's template, an unknown ID and an empty one have no picture: not found.
+func (s *Server) handleGetTemplateThumbnail(w http.ResponseWriter, r *http.Request) error {
+	if s.office == nil {
+		return notFound("templates")
+	}
+	png, ok := templates.Thumbnail(r.PathValue("id"))
+	if !ok {
+		return notFound("template")
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	_, _ = w.Write(png)
+	return nil
 }

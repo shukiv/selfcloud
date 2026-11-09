@@ -31,11 +31,12 @@ var Langs = []string{"en", "es", "fr", "pt", "ru", "ar", "he"}
 
 // Template is one built-in starting file.
 type Template struct {
-	ID    string // builtin:<name>, the value a create request names
-	Kind  string // Document, Spreadsheet or Presentation
-	Ext   string // docx, xlsx or pptx
-	names map[string]string
-	build func() ([]byte, error)
+	ID       string // builtin:<name>, the value a create request names
+	Kind     string // Document, Spreadsheet or Presentation
+	Ext      string // docx, xlsx or pptx
+	Category string // the gallery section: letters, resumes, reports, workbooks, presentations or designs
+	names    map[string]string
+	build    func() ([]byte, error)
 }
 
 // Name is the template's display name in lang, with the English name for a language that has none.
@@ -51,32 +52,79 @@ func (t Template) Build() ([]byte, error) {
 	return t.build()
 }
 
-// builtins is the set, in the order the listing shows it.
-var builtins = []Template{
-	{ID: "builtin:letter", Kind: Document, Ext: "docx", build: docxFile(letterLines), names: map[string]string{
+// ourBuiltins are the six templates written for Selfcloud.
+var ourBuiltins = []Template{
+	{ID: "builtin:letter", Kind: Document, Ext: "docx", Category: "letters", build: docxFile(letterLines), names: map[string]string{
 		"en": "Letter", "es": "Carta", "fr": "Lettre", "pt": "Carta", "ru": "Письмо",
 		"ar": "خطاب", "he": "מכתב", // ar and he: machine drafts
 	}},
-	{ID: "builtin:resume", Kind: Document, Ext: "docx", build: docxFile(resumeLines), names: map[string]string{
+	{ID: "builtin:resume", Kind: Document, Ext: "docx", Category: "resumes", build: docxFile(resumeLines), names: map[string]string{
 		"en": "Resume", "es": "Currículum", "fr": "CV", "pt": "Currículo", "ru": "Резюме",
 		"ar": "سيرة ذاتية", "he": "קורות חיים", // ar and he: machine drafts
 	}},
-	{ID: "builtin:meeting-notes", Kind: Document, Ext: "docx", build: docxFile(meetingLines), names: map[string]string{
+	{ID: "builtin:meeting-notes", Kind: Document, Ext: "docx", Category: "reports", build: docxFile(meetingLines), names: map[string]string{
 		"en": "Meeting notes", "es": "Notas de reunión", "fr": "Notes de réunion", "pt": "Notas de reunião",
 		"ru": "Заметки о встрече", "ar": "ملاحظات الاجتماع", "he": "סיכום פגישה", // ar and he: machine drafts
 	}},
-	{ID: "builtin:budget", Kind: Spreadsheet, Ext: "xlsx", build: xlsxFile(budgetWidths, budgetRows), names: map[string]string{
+	{ID: "builtin:budget", Kind: Spreadsheet, Ext: "xlsx", Category: "workbooks", build: xlsxFile(budgetWidths, budgetRows), names: map[string]string{
 		"en": "Budget", "es": "Presupuesto", "fr": "Budget", "pt": "Orçamento", "ru": "Бюджет",
 		"ar": "ميزانية", "he": "תקציב", // ar and he: machine drafts
 	}},
-	{ID: "builtin:invoice", Kind: Spreadsheet, Ext: "xlsx", build: xlsxFile(invoiceWidths, invoiceRows), names: map[string]string{
+	{ID: "builtin:invoice", Kind: Spreadsheet, Ext: "xlsx", Category: "workbooks", build: xlsxFile(invoiceWidths, invoiceRows), names: map[string]string{
 		"en": "Invoice", "es": "Factura", "fr": "Facture", "pt": "Fatura", "ru": "Счёт",
 		"ar": "فاتورة", "he": "חשבונית", // ar and he: machine drafts
 	}},
-	{ID: "builtin:slide-deck", Kind: Presentation, Ext: "pptx", build: deckFile(deckSlides), names: map[string]string{
+	{ID: "builtin:slide-deck", Kind: Presentation, Ext: "pptx", Category: "presentations", build: deckFile(deckSlides), names: map[string]string{
 		"en": "Slide deck", "es": "Presentación", "fr": "Diaporama", "pt": "Apresentação", "ru": "Презентация",
 		"ar": "عرض شرائح", "he": "מצגת", // ar and he: machine drafts
 	}},
+}
+
+// builtins is the set, in the order the listing shows it: our six, then the shipped LibreOffice templates (nt2).
+var builtins = append(append([]Template(nil), ourBuiltins...), shippedBuiltins...)
+
+// shippedBuiltins are the LibreOffice templates embedded in files/ (CREDITS.md). Their names are their English titles in every
+// language, as the English name is the fallback.
+var shippedBuiltins = []Template{
+	shipped("lo-letter-serif", Document, "docx", "letters", "Modern business letter serif"),
+	shipped("lo-letter-sans-serif", Document, "docx", "letters", "Modern business letter sans-serif"),
+	shipped("lo-beehive", Presentation, "pptx", "designs", "Beehive"),
+	shipped("lo-blue-curve", Presentation, "pptx", "designs", "Blue Curve"),
+	shipped("lo-dna", Presentation, "pptx", "designs", "DNA"),
+	shipped("lo-focus", Presentation, "pptx", "designs", "Focus"),
+	shipped("lo-forestbird", Presentation, "pptx", "designs", "Forestbird"),
+	shipped("lo-inspiration", Presentation, "pptx", "designs", "Inspiration"),
+	shipped("lo-lights", Presentation, "pptx", "designs", "Lights"),
+	shipped("lo-metropolis", Presentation, "pptx", "designs", "Metropolis"),
+	shipped("lo-midnightblue", Presentation, "pptx", "designs", "Midnightblue"),
+	shipped("lo-nature-illustration", Presentation, "pptx", "designs", "Nature Illustration"),
+	shipped("lo-pencil", Presentation, "pptx", "designs", "Pencil"),
+	shipped("lo-piano", Presentation, "pptx", "designs", "Piano"),
+	shipped("lo-portfolio", Presentation, "pptx", "designs", "Portfolio"),
+	shipped("lo-progress", Presentation, "pptx", "designs", "Progress"),
+	shipped("lo-sunset", Presentation, "pptx", "designs", "Sunset"),
+	shipped("lo-vivid", Presentation, "pptx", "designs", "Vivid"),
+}
+
+// shipped is one of the LibreOffice templates embedded in files/: its bytes as they are, with the English title as its name.
+func shipped(name, kind, ext, category, title string) Template {
+	return Template{ID: "builtin:" + name, Kind: kind, Ext: ext, Category: category,
+		names: map[string]string{"en": title},
+		build: func() ([]byte, error) { return shippedFiles.ReadFile("files/" + name + "." + ext) },
+	}
+}
+
+// Thumbnail returns the picture of a built-in template, a PNG, and whether the template has one. An account's template and an
+// unknown ID have none.
+func Thumbnail(id string) ([]byte, bool) {
+	if _, ok := Get(id); !ok {
+		return nil, false
+	}
+	data, err := thumbFiles.ReadFile("thumbs/" + strings.TrimPrefix(id, "builtin:") + ".png")
+	if err != nil {
+		return nil, false
+	}
+	return data, true
 }
 
 // All returns the built-in set, in its order.

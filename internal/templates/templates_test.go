@@ -58,6 +58,25 @@ func TestBuiltInSetIsFixed(t *testing.T) {
 		{"builtin:budget", Spreadsheet, "xlsx"},
 		{"builtin:invoice", Spreadsheet, "xlsx"},
 		{"builtin:slide-deck", Presentation, "pptx"},
+		// The shipped LibreOffice set (decision 105, nt2): two documents, then sixteen presentations.
+		{"builtin:lo-letter-serif", Document, "docx"},
+		{"builtin:lo-letter-sans-serif", Document, "docx"},
+		{"builtin:lo-beehive", Presentation, "pptx"},
+		{"builtin:lo-blue-curve", Presentation, "pptx"},
+		{"builtin:lo-dna", Presentation, "pptx"},
+		{"builtin:lo-focus", Presentation, "pptx"},
+		{"builtin:lo-forestbird", Presentation, "pptx"},
+		{"builtin:lo-inspiration", Presentation, "pptx"},
+		{"builtin:lo-lights", Presentation, "pptx"},
+		{"builtin:lo-metropolis", Presentation, "pptx"},
+		{"builtin:lo-midnightblue", Presentation, "pptx"},
+		{"builtin:lo-nature-illustration", Presentation, "pptx"},
+		{"builtin:lo-pencil", Presentation, "pptx"},
+		{"builtin:lo-piano", Presentation, "pptx"},
+		{"builtin:lo-portfolio", Presentation, "pptx"},
+		{"builtin:lo-progress", Presentation, "pptx"},
+		{"builtin:lo-sunset", Presentation, "pptx"},
+		{"builtin:lo-vivid", Presentation, "pptx"},
 	}
 	all := All()
 	if len(all) != len(want) {
@@ -96,6 +115,10 @@ func TestEveryBuiltInBuildsAValidPackage(t *testing.T) {
 			t.Errorf("%s: no main part %s", tpl.ID, m)
 		}
 		for name, data := range files {
+			// A shipped presentation carries pictures (its backgrounds): only the XML parts are checked here.
+			if !strings.HasSuffix(name, ".xml") && !strings.HasSuffix(name, ".rels") {
+				continue
+			}
 			if err := wellFormed(data); err != nil {
 				t.Errorf("%s: part %s is not well-formed: %v", tpl.ID, name, err)
 			}
@@ -205,11 +228,15 @@ func TestByKindListsTheBuiltInsOfThatKind(t *testing.T) {
 		}
 		return out
 	}
-	if got := strings.Join(ids(ByKind(Document)), ","); got != "builtin:letter,builtin:resume,builtin:meeting-notes" {
+	// Deliberate change (nt2): the two shipped letters come after our three documents.
+	if got := strings.Join(ids(ByKind(Document)), ","); got != "builtin:letter,builtin:resume,builtin:meeting-notes,builtin:lo-letter-serif,builtin:lo-letter-sans-serif" {
 		t.Errorf("document templates = %s", got)
 	}
 	if got := strings.Join(ids(ByKind(Spreadsheet)), ","); got != "builtin:budget,builtin:invoice" {
 		t.Errorf("spreadsheet templates = %s", got)
+	}
+	if n := len(ByKind(Presentation)); n != 17 {
+		t.Errorf("presentation templates = %d, want 17 (our slide deck and sixteen shipped)", n)
 	}
 	if got := ByKind("drawing"); len(got) != 0 {
 		t.Errorf("drawing templates = %v, want none", ids(got))

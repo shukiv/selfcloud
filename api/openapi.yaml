@@ -3382,6 +3382,31 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /api/v1/templates/{id}/thumbnail:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: "The template's ID, `builtin:<name>`. The web encodes it."
+        schema: { type: string }
+    get:
+      tags: [Office]
+      operationId: getTemplateThumbnail
+      summary: A built-in template's picture
+      description: |
+        The picture of a built-in template (decision 105): a PNG, about 300 px wide, cached privately for an hour
+        (`Cache-Control: private, max-age=3600`). An account's template, an unknown ID and office editing being off are
+        `not_found`. A share-link visitor is refused (`link_route`).
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The picture.
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/templates:
     parameters:
       - $ref: "#/components/parameters/acc"
@@ -6110,7 +6135,8 @@ components:
         kind: { type: string, enum: [document, spreadsheet, presentation] }
         source: { type: string, enum: [builtin, account] }
         node_id: { type: string, description: "Account files only." }
-        has_thumbnail: { type: boolean, description: "Account files only." }
+        category: { type: string, enum: [letters, resumes, reports, workbooks, presentations, designs], description: "Built-ins only (nt2): the gallery section." }
+        has_thumbnail: { type: boolean, description: "Every built-in has a picture (GET /api/v1/templates/{id}/thumbnail); account files have none yet." }
     TemplatesFolder:
       type: object
       description: "The account's templates folder (decision 105): its directory's node ID, or null for none."
