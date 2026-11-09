@@ -3,7 +3,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "../../lib/files/types";
-import Listing, { type Click, type ListingProps, type RowAct } from "./Listing";
+import Listing, { ItemList, type Click, type ItemListProps, type ListingProps, type RowAct } from "./Listing";
 
 function node(id: string, name: string, over: Partial<Node> = {}): Node {
   return {
@@ -651,5 +651,112 @@ describe("checkboxes on demand (decision 70)", () => {
     withPointer(true);
     const { container } = render(<Listing {...props()} />);
     expect(container.querySelector(".ant-table-selection-column")).not.toBeNull();
+  });
+});
+
+// The generic table (ItemList) is the one list of the admin pages and the other preset lists (tl1). It shares the look and
+// the phone rules of My files, and none of its behaviour. Its tests set the viewport themselves: the default mock is narrow.
+type Row = { id: string; name: string; email: string; status: string; when: string };
+const people: Row[] = [
+  { id: "r1", name: "Acme Studio", email: "acme@example.com", status: "Active", when: "Mar 3, 2026" },
+  { id: "r2", name: "Beta Clinic", email: "beta@example.com", status: "Suspended", when: "Jun 18, 2026" },
+];
+const viewport = (px: number) =>
+  vi.stubGlobal("matchMedia", (query: string) => {
+    const m = /min-width: (\d+)px/.exec(query);
+    return { matches: m ? px >= Number(m[1]) : false, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false };
+  });
+const itemProps = (over: Partial<ItemListProps<Row>> = {}): ItemListProps<Row> => ({
+  items: people,
+  label: "Tenants",
+  rowLabel: (r) => r.name,
+  moreLabel: (r) => `More for ${r.name}`,
+  columns: [
+    { key: "name", title: "Name", render: (r) => <span>{r.name}</span>, sortKey: "name" },
+    { key: "email", title: "Email", render: (r) => r.email, secondary: true },
+    { key: "status", title: "Status", render: (r) => r.status },
+    { key: "when", title: "Created", render: (r) => r.when, secondary: true, ariaSort: "descending" },
+  ],
+  empty: <p>Nothing here</p>,
+  ...over,
+});
+
+describe("ItemList: one table for the admin and preset lists", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("renders a region with the rows, the headers and no files-list class", () => {
+    viewport(1200);
+    const { container } = render(<ItemList {...itemProps()} />);
+    const region = screen.getByRole("region", { name: "Tenants" });
+    expect(region.classList.contains("item-list")).toBe(true);
+    expect(region.classList.contains("files-list")).toBe(false);
+    expect(container.querySelectorAll("tbody tr[aria-label]").length).toBe(2);
+    expect(screen.getByRole("columnheader", { name: "Status" })).toBeTruthy();
+  });
+
+  it("shows a secondary column as its own column on a desktop, and as the name's second line on a phone", () => {
+    viewport(1200);
+    const { unmount } = render(<ItemList {...itemProps()} />);
+    expect(screen.getByRole("columnheader", { name: "Email" })).toBeTruthy();
+    unmount();
+    viewport(375);
+    render(<ItemList {...itemProps()} />);
+    expect(screen.queryByRole("columnheader", { name: "Email" })).toBeNull();
+    const line = document.querySelector(".item-second");
+    expect(line?.textContent).toContain("acme@example.com");
+    expect(line?.textContent).toContain("Mar 3, 2026");
+  });
+
+  it("a sortable header is a button that reports its key, and carries aria-sort on its th", () => {
+    viewport(1200);
+    const onSort = vi.fn();
+    render(<ItemList {...itemProps({ sort: { key: "name", dir: "asc", onSort } })} />);
+    const head = screen.getByRole("columnheader", { name: /Name/ });
+    expect(head.getAttribute("aria-sort")).toBe("ascending");
+    fireEvent.click(within(head).getByRole("button", { name: "Name" }));
+    expect(onSort).toHaveBeenCalledWith("name");
+  });
+
+  it("a time column with no sort has aria-sort descending and no button", () => {
+    viewport(1200);
+    render(<ItemList {...itemProps({ sort: { key: "name", dir: "asc", onSort: vi.fn() } })} />);
+    const when = screen.getByRole("columnheader", { name: "Created" });
+    expect(when.getAttribute("aria-sort")).toBe("descending");
+    expect(within(when).queryByRole("button")).toBeNull();
+  });
+
+  it("shows up to three inline icons on a desktop and sends the rest to the more menu", () => {
+    viewport(1200);
+    const acts = () => [
+      { key: "a", label: "Act A", icon: <span>a</span>, run: vi.fn() },
+      { key: "b", label: "Act B", icon: <span>b</span>, run: vi.fn() },
+      { key: "c", label: "Act C", icon: <span>c</span>, run: vi.fn() },
+      { key: "d", label: "Act D", icon: <span>d</span>, run: vi.fn() },
+    ];
+    render(<ItemList {...itemProps({ actions: () => acts().map((a) => ({ ...a, enabled: true })), menu: () => [{ key: "x", label: "Suspend", onSelect: vi.fn() }] })} />);
+    expect(screen.getAllByRole("button", { name: /^Act [ABC]$/ })).toHaveLength(6);
+    expect(screen.queryByRole("button", { name: /Act D/ })).toBeNull();
+  });
+
+  it("on a phone shows the more menu alone, and its entries run", () => {
+    viewport(375);
+    const onSelect = vi.fn();
+    render(<ItemList {...itemProps({ actions: () => [{ key: "a", label: "Act A", icon: <span>a</span>, enabled: true, run: vi.fn() }], menu: () => [{ key: "x", label: "Suspend", onSelect }] })} />);
+    expect(screen.queryByRole("button", { name: /Act A/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More for Acme Studio" }));
+    fireEvent.click(screen.getByText("Suspend"));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("an empty list shows the empty node the page passed, in the body", () => {
+    viewport(1200);
+    render(<ItemList {...itemProps({ items: [], empty: <div role="status">Nothing here</div> })} />);
+    expect(screen.getByRole("status").textContent).toContain("Nothing here");
+  });
+
+  it("each row carries its label as aria-label", () => {
+    viewport(1200);
+    const { container } = render(<ItemList {...itemProps()} />);
+    expect(container.querySelector('tr[aria-label="Acme Studio"]')).not.toBeNull();
   });
 });
