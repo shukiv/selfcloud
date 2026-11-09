@@ -54,7 +54,8 @@ const groundOf = (page) =>
 const scheme = (page, value) =>
   page.send('Emulation.setEmulatedMedia', { media: '', features: value ? [{ name: 'prefers-color-scheme', value }] : [] });
 
-export async function ce1Checks(h, { page, base, accountKey, MEMBER, teamB }) {
+// lockedIDs is run.mjs's set of the nodes this section locks: its "restricted read" entry expects an inline 403 only for those.
+export async function ce1Checks(h, { page, base, accountKey, MEMBER, teamB, locked: lockedIDs = new Set() }) {
   const { check, api, navigateTo } = h;
   const before = page.errors.length;
   const suffix = Date.now().toString(36);
@@ -203,6 +204,8 @@ export async function ce1Checks(h, { page, base, accountKey, MEMBER, teamB }) {
     const inB = await api(base, 'GET', `/api/v1/folders/${teamB}/children`, accountKey);
     lockedID = inB.items.find((n) => n.name === locked)?.id ?? null;
     await api(base, 'PATCH', `/api/v1/nodes/${lockedID}`, accountKey, { no_download: true });
+    // Named before the read, so its 403 is the one expected.
+    lockedIDs.add(lockedID);
     const refusedBefore = page.expectedAnswers.get('restricted read')?.length ?? 0;
     await navigateTo(page, `/files/${teamB}`);
     const lockedRow = `[role="row"][aria-label=${q(locked)}], [role="option"][aria-label=${q(locked)}]`;
