@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { session, type Session } from "../../lib/session";
-import { fail, stubFetch, type Call } from "../../test/fetchStub";
+import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import TenantUsers from "./TenantUsers";
 import { LINK, person, signedAs } from "../../test/adminFixtures";
 
@@ -112,6 +112,30 @@ describe("people of a tenant", () => {
     await screen.findByDisplayValue(LINK);
     act(() => session.set(signedAs("admin", "admin_2")));
     await waitFor(() => expect(screen.queryByDisplayValue(LINK)).toBeNull());
+  });
+
+  // Review M1: a row with a request on its way keeps its icons where they are, disabled. A disabled icon keeps its place and
+  // its focus (IconButton's contract); an icon taken out of the row would move the others and drop the focus.
+  it("keeps a busy row's actions in place, disabled, and the pressed one keeps the focus", async () => {
+    let release: (a: Answer) => void = () => {};
+    stubFetch((c: Call) => {
+      if (c.url.includes("/verification")) return new Promise<Answer>((r) => (release = r));
+      return { status: 200, body: { items: [pendingOwner] } };
+    });
+    renderUsers();
+    await screen.findByText("Owen");
+    const resend = screen.getByRole("button", { name: /Resend invitation/ }) as HTMLButtonElement;
+    const newLink = screen.getByRole("button", { name: /New link/ }) as HTMLButtonElement;
+    resend.focus();
+    fireEvent.click(resend);
+    await waitFor(() => expect(resend.disabled).toBe(true));
+    expect(resend.isConnected).toBe(true);
+    expect(newLink.isConnected).toBe(true);
+    expect(newLink.disabled).toBe(true);
+    expect(document.activeElement).toBe(resend);
+    await act(async () => release({ status: 200, body: { ...pendingOwner, verification: { method: "email", sent: true } } }));
+    await waitFor(() => expect(resend.disabled).toBe(false));
+    expect(resend.isConnected).toBe(true);
   });
 
   it("a refused resend shows the code's text and sends nothing more (guard: failureText)", async () => {
