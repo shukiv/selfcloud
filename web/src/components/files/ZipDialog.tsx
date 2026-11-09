@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Alert, Button, Modal, Space, Spin, theme as antdTheme } from "antd";
-import { downloadZip, type ZipPhase } from "../../lib/files/zips";
+import { downloadAgain, type ZipPhase } from "../../lib/files/zips";
 import { translatePlural, useLang, useT } from "../../lib/i18n";
 
 // ZipDialog shows a zip being made, the items it left out, and a refusal in words. The page starts the zip and owns its
@@ -16,6 +16,7 @@ export default function ZipDialog({ phase, onClose }: { phase: ZipPhase; onClose
   const lang = useLang();
   const { token } = antdTheme.useToken();
   const [live, setLive] = useState(false);
+  const [againText, setAgainText] = useState<string | null>(null);
   useEffect(() => setLive(true), []);
   return (
     <Modal
@@ -26,7 +27,9 @@ export default function ZipDialog({ phase, onClose }: { phase: ZipPhase; onClose
       destroyOnHidden
       footer={
         <Space>
-          {phase.kind === "ready" && <Button onClick={() => downloadZip(phase.zip)}>{t("files.zip.again")}</Button>}
+          {phase.kind === "ready" && (
+            <Button onClick={() => downloadAgain(phase.zip, lang).then(setAgainText)}>{t("files.zip.again")}</Button>
+          )}
           <Button type="primary" onClick={onClose}>
             {t("common.close")}
           </Button>
@@ -56,6 +59,7 @@ export default function ZipDialog({ phase, onClose }: { phase: ZipPhase; onClose
         )}
       </div>
       {phase.kind === "failed" && <Alert type="error" showIcon role="alert" message={phase.text} />}
+      {againText !== null && <Alert type="error" showIcon role="alert" message={againText} />}
       {phase.kind === "slow" && <Alert type="warning" showIcon role="alert" message={t("files.zip.slow")} />}
     </Modal>
   );

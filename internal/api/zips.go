@@ -262,8 +262,10 @@ func (s *Server) zipOwner(r *http.Request) (*store.Zip, *auth.Principal, error) 
 }
 
 // handleGetZip sends a finished zip to its maker. Access is checked on every call, including a Range resume: each root
-// must still be readable by the caller and not trashed. The no-download rule is not checked again, as decision 35 says
-// a zip stays until its expiry once it is made. A zip that is not ready yet answers 202.
+// must still be readable by the caller and not trashed, and the no-download rule is checked too, with the copy rule the
+// create route uses (decision 117, which supersedes decision 35 on this point). So a zip the caller could not make now is
+// not sent. This runs before the preconditions and Range handling, so a 304 or a 206 cannot leak the zip. A zip that is
+// not ready yet answers 202.
 func (s *Server) handleGetZip(w http.ResponseWriter, r *http.Request) error {
 	z, p, err := s.zipOwner(r)
 	if err != nil {
@@ -284,9 +286,16 @@ func (s *Server) handleGetZip(w http.ResponseWriter, r *http.Request) error {
 	}
 	var name string
 	for i, root := range z.Roots {
-		n, _, err := nodeAccessWith(r.Context(), s.store, p, root)
+		n, role, err := nodeAccessWith(r.Context(), s.store, p, root)
 		if err != nil {
 			return err
+		}
+		restricted, err := s.copyRestricted(r.Context(), s.store, n, role)
+		if err != nil {
+			return err
+		}
+		if restricted {
+			return errDownloadRestricted()
 		}
 		if i == 0 && len(z.Roots) == 1 {
 			name = n.Name + ".zip"

@@ -41,7 +41,7 @@ func TestZipGetRefusesAfterDemotion(t *testing.T) {
 }
 
 // TestZipGetRefusesCoveredFileInUncoveredFolder: the folder is not covered, but a file under it is, so a viewer's
-// copy of the folder is refused (decision D7: the subtree counts).
+// copy of the folder is refused: the subtree counts, as it does for a create.
 func TestZipGetRefusesCoveredFileInUncoveredFolder(t *testing.T) {
 	fx := zipFixture(t)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/nodes/"+fx.deep.ID, fx.key, map[string]any{"no_download": true}), 200)

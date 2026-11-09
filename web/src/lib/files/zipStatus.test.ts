@@ -62,6 +62,11 @@ describe("zipStatus", () => {
     vi.stubGlobal("fetch", headFetch(500));
     await expect(zipStatus("zip_1")).rejects.toMatchObject({ status: 500, code: "internal" });
   });
+
+  it("refuses a zip the caller may no longer fetch as download_restricted", async () => {
+    vi.stubGlobal("fetch", headFetch(403));
+    await expect(zipStatus("zip_1")).rejects.toMatchObject({ status: 403, code: "download_restricted" });
+  });
 });
 
 describe("the selection limit", () => {

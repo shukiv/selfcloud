@@ -46,6 +46,7 @@ import { d3Checks } from './d3.mjs';
 import { l1Checks } from './l1.mjs';
 import { ic2Checks } from './ic2.mjs';
 import { sbChecks } from './sb.mjs';
+import { zr1eChecks } from './zr1e.mjs';
 import { fu7Checks } from './fu7.mjs';
 import { l4Checks } from './l4.mjs';
 import { l6Checks } from './l6.mjs';
@@ -836,7 +837,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb, pwa or sec2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, sb, zr1e, pwa or sec2 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -859,6 +860,8 @@ async function main() {
     if (!only || onlySet.has('d1')) await d1Checks(h, { page, base, accountKey, teamA });
     // Slice sb: the sidebar's tree rows have the menu row's metrics (decision 81). It runs on the shared page, after d1.
     if (!only || onlySet.has('sb')) await sbChecks(h, { page, base, accountKey, teamA, accountID, memberID });
+    // Slice zr1: a demoted maker's zip link shows the no-download refusal (decision 117). It runs on the shared page.
+    if (!only || onlySet.has('zr1e')) await zr1eChecks(h, { page, base, accountKey, accountID, memberID, dir });
     if (!only || onlySet.has('fu7')) await fu7Checks(h, { page, base, accountKey, teamA, accountID, memberID });
     if (!only || onlySet.has('d2')) await d2Checks(h, { page, base, accountKey, teamA, teamB, dir, accountID, memberID });
     if (!only || onlySet.has('i1')) await i1Checks(h, { page, base, accountKey, teamA, dir });

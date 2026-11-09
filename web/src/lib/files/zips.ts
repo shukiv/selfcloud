@@ -61,6 +61,8 @@ export interface ZipStatus {
 export async function zipStatus(zip: string): Promise<ZipStatus> {
   const res = await fetch(zipPath(zip), { method: 'HEAD', credentials: 'same-origin', cache: 'no-store' });
   if (res.status === 202) return { ready: false, skipped: 0 };
+  // The zip routes answer 403 only for the no-download rule (a demoted maker), and a HEAD has no body to name it.
+  if (res.status === 403) throw new ApiError(403, 'download_restricted', {}, 0);
   if (res.status !== 200) throw new ApiError(res.status, res.status === 404 ? 'not_found' : 'internal', {}, 0);
   return { ready: true, skipped: parseSkipped(res.headers.get('X-Selfcloud-Skipped')) };
 }
@@ -92,6 +94,19 @@ export function downloadZip(zip: string): void {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+// downloadAgain starts the download of a zip the caller made earlier, after a HEAD that checks it may still be fetched.
+// A browser link cannot show a refusal, so the check comes first. It resolves to the text of a refusal, or null when the
+// download has started.
+export function downloadAgain(zip: string, lang: Lang, d: Pick<ZipDeps, 'status' | 'download'> = liveZipDeps): Promise<string | null> {
+  return d.status(zip).then(
+    () => {
+      d.download(zip);
+      return null;
+    },
+    (err: unknown) => zipErrorText(err, lang),
+  );
 }
 
 // ZipDeps are the parts a test replaces. The live ones are the routes above.

@@ -5,7 +5,7 @@ import { ApiError } from '../api';
 import { loadLang, translate } from '../i18n';
 import { MAX_POLLS, poll } from '../jobs/backoff';
 import type { Job } from './types';
-import { makeZip, zipErrorText, zipFailureText, type ZipDeps, type ZipStatus } from './zips';
+import { downloadAgain, makeZip, zipErrorText, zipFailureText, type ZipDeps, type ZipStatus } from './zips';
 
 // Every text the zip path can show, in English, and each one's key, so a refusal is checked by the words it shows.
 const KEYS = {
@@ -162,6 +162,27 @@ describe('makeZip', () => {
     await vi.advanceTimersByTimeAsync(60 * 60_000);
     expect(d.job).toHaveBeenCalledTimes(MAX_POLLS);
     expect(onGiveUp).toHaveBeenCalledTimes(1);
+    expect(d.download).not.toHaveBeenCalled();
+  });
+});
+
+describe('downloadAgain', () => {
+  beforeAll(async () => {
+    await loadLang('en');
+  });
+
+  it('starts the download when the zip may still be fetched', async () => {
+    const d = { status: vi.fn(async () => ({ ready: true, skipped: 0 })), download: vi.fn() };
+    await expect(downloadAgain('zip_1', 'en', d)).resolves.toBeNull();
+    expect(d.download).toHaveBeenCalledWith('zip_1');
+  });
+
+  it('shows the direct download refusal, and starts no download, when the zip is refused', async () => {
+    const d = {
+      status: vi.fn(async () => Promise.reject(new ApiError(403, 'download_restricted', {}, 0))),
+      download: vi.fn(),
+    };
+    await expect(downloadAgain('zip_1', 'en', d)).resolves.toBe(text(KEYS.restricted));
     expect(d.download).not.toHaveBeenCalled();
   });
 });
