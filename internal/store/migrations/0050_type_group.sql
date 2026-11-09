@@ -3,7 +3,6 @@
 -- groupOf written in SQL, in the same order: a folder or shortcut has no group; a known extension decides; otherwise the
 -- media type (parameters dropped, trimmed, lower case) decides, first by an exact member, then by the video and audio
 -- prefixes. A test compares this result with groupOf on a fixture of names and types that disagree.
--- The five list and trash indexes are added by a later step of this slice (see the decision entry); they are not here.
 ALTER TABLE nodes ADD COLUMN type_group TEXT NOT NULL DEFAULT '';
 
 UPDATE nodes SET type_group = CASE
@@ -50,3 +49,11 @@ UPDATE nodes SET type_group = CASE
         IN ('application/zip', 'application/x-zip-compressed', 'application/x-tar', 'application/gzip',
             'application/x-7z-compressed', 'application/x-rar-compressed') THEN 'archive'
     ELSE '' END;
+
+-- The list and trash indexes (design ff1 section 2 and Appendix B). Built after the backfill, so the build reads the
+-- finished column. Their build times on the measuring machine are in the decision entry.
+CREATE INDEX nodes_list_name_group ON nodes (parent_id, kind, type_group, name COLLATE selfcloud_name, id) WHERE trashed_at IS NULL;
+CREATE INDEX nodes_list_modified_group ON nodes (parent_id, kind, type_group, modified_at, id) WHERE trashed_at IS NULL;
+CREATE INDEX nodes_list_size_group ON nodes (parent_id, kind, type_group, size, id) WHERE trashed_at IS NULL;
+CREATE INDEX nodes_size_group ON nodes (folder_id, type_group, size DESC, id DESC) WHERE kind = 'file';
+CREATE INDEX nodes_trash_group ON nodes (account_id, type_group, trashed_at, id) WHERE trashed_at IS NOT NULL;
