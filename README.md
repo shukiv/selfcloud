@@ -263,6 +263,8 @@ A conversion is refused when Collabora cannot save the document as the format as
 document, for example). A stopped Collabora is an outage: SelfCloud answers `unavailable` with `Retry-After` and tries
 again. Collabora converts unknown content as text rather than refusing it, so a corrupt file yields a PDF of its bytes.
 
+**Templates.** The New menu makes blank Word, Excel and PowerPoint files (and the OpenDocument kinds), and From a template makes a file from a built-in starter or from the account's templates folder (decision 108). Some built-in templates come from LibreOffice: 16 presentations under Creative Commons CC0, and two letters under MPL-2.0 (converted to .docx). Each file's source path, licence and origin are listed in [CREDITS.md](CREDITS.md). The MPL-2.0 text is in `internal/templates/licenses/MPL-2.0.txt`.
+
 ## Off by default
 
 - **Links that anyone can open, and drop folders.** An account turns them on with its own public-link setting; it starts off.
