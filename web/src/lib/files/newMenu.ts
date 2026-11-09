@@ -183,6 +183,7 @@ export function newMenuItems(tree: NewMenuNode[], o: NewMenuOptions): NonNullabl
           key,
           label,
           icon: createElement(icon, { ...ICON, ...(color ? { color } : {}) }),
+          style: rowStyle,
           children: newMenuItems(node.children, o),
         };
       }
