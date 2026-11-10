@@ -185,6 +185,35 @@ func TestImportEntryLargerThanTheDiskPauses(t *testing.T) {
 	}
 }
 
+// TestImportEntryCheckSeesReservationMadeAfterIt: the disk check of an entry is made in the write that reserves it, so an
+// upload that takes the disk after the entry arrives is counted. The competing upload is made at the entry's fault point,
+// which runs outside every write, so the reservation is not blocked by it. Before the fix the entry was checked first
+// and reserved later, and it was admitted beside the upload (decision 120, M2).
+func TestImportEntryCheckSeesReservationMadeAfterIt(t *testing.T) {
+	fx := newImportFixture(t)
+	minFree := uint64(fx.s.cfg.Storage.MinFree)
+	fx.s.freeBytes = func(string) (uint64, error) { return minFree + 16<<10, nil }
+	fx.s.cfg.Upload.MaxDiskSharePercent = 100
+	imp := fx.startOK(t, fx.archive(t, "big.zip", zipArchive(t, [][2]string{{"big.txt", strings.Repeat("0", 10240)}})), "")
+	taken := false
+	fx.s.importFault = func(stage string) error {
+		if stage == "entry" && !taken {
+			taken = true
+			rec := createUpload(t, fx.s, fx.key, 10<<10, md("folder", fx.folder, "name", "competing.bin"))
+			if rec.Code != http.StatusCreated {
+				t.Errorf("competing upload status %d, want 201", rec.Code)
+			}
+		}
+		return nil
+	}
+	_ = fx.runJob(t)
+	fx.s.importFault = nil
+	got := fx.get(t, imp.ID)
+	if got.State != store.ImportPaused || got.PauseReason != string(apierr.StorageFull) || got.Files != 0 {
+		t.Fatalf("entry admitted beside the competing upload: %+v, want paused with storage_full and no file", got)
+	}
+}
+
 // A publish that writes one audit row per file floods the webhooks; the folder is reported once, as a copy reports a
 // large tree (F4).
 func TestImportPublishDoesNotFloodWebhooks(t *testing.T) {
