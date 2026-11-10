@@ -106,7 +106,7 @@ func writeNew(dir, name string, data []byte, overwrite bool) error {
 	}
 	defer root.Close()
 	if !overwrite {
-		err := createNew(root, name, data)
+		err := createNew(root, name, data, newFileMode)
 		if errors.Is(err, fs.ErrExist) {
 			return exitcode.Usagef("%s already exists; pass --overwrite to replace it", name)
 		}
@@ -119,12 +119,17 @@ func writeNew(dir, name string, data []byte, overwrite bool) error {
 	case err != nil && !errors.Is(err, fs.ErrNotExist):
 		return err
 	}
+	// A replaced file keeps the mode it had; a new file is newFileMode.
+	perm := os.FileMode(newFileMode)
+	if err == nil {
+		perm = fi.Mode().Perm()
+	}
 	suffix, err := randomSuffix()
 	if err != nil {
 		return err
 	}
 	tmp := ".api-spec-" + suffix + ".tmp"
-	if err := createNew(root, tmp, data); err != nil {
+	if err := createNew(root, tmp, data, perm); err != nil {
 		return err
 	}
 	if err := root.Rename(tmp, name); err != nil {
@@ -133,6 +138,9 @@ func writeNew(dir, name string, data []byte, overwrite bool) error {
 	}
 	return nil
 }
+
+// newFileMode is the mode of a file api spec creates. The design names none; this is what it has always been.
+const newFileMode = 0o644
 
 // writeFault is a test seam: a non-nil error from it stands for a write that failed part-way.
 var writeFault = func() error { return nil }
@@ -148,12 +156,16 @@ func randomSuffix() (string, error) {
 
 // createNew writes data to a new file name under root. The file is created with O_EXCL, so an existing name, a symbolic
 // link included, is never written through. A failed write removes the new file.
-func createNew(root *os.Root, name string, data []byte) error {
-	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+func createNew(root *os.Root, name string, data []byte, perm os.FileMode) error {
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		return err
 	}
 	_, werr := f.Write(data)
+	if werr == nil {
+		// Set after the create, so the umask does not change the mode.
+		werr = f.Chmod(perm)
+	}
 	if werr == nil {
 		werr = writeFault()
 	}
