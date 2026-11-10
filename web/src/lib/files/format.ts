@@ -5,6 +5,19 @@ import { directionOf, isolate, matchLang } from '../i18n';
 // Sizes and dates, in the language of the interface. Sizes use decimal units, the way Intl names them.
 const UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
 
+// Every row of a listing formats its date and its size, and building an Intl object costs far more than using one (perf-1
+// section 6). The objects are kept by language and by every option that changes the output, so a change of language asks for
+// a different object at once. The keys are few: the interface's languages, the units and two digit counts.
+const formatters = new Map<string, Intl.DateTimeFormat | Intl.NumberFormat>();
+function cached<T extends Intl.DateTimeFormat | Intl.NumberFormat>(key: string, make: () => T): T {
+  let f = formatters.get(key) as T | undefined;
+  if (f === undefined) {
+    f = make();
+    formatters.set(key, f);
+  }
+  return f;
+}
+
 // formatBytes returns a size such as "1.5 MB" for lang, with the unit named in that language.
 export function formatBytes(bytes: number, lang: string): string {
   let v = Math.max(0, Number.isFinite(bytes) ? bytes : 0);
@@ -14,13 +27,16 @@ export function formatBytes(bytes: number, lang: string): string {
     i++;
   }
   const digits = i === 0 ? 0 : v < 10 ? 1 : 0;
-  const nf = new Intl.NumberFormat(lang, {
-    style: 'unit',
-    unit: UNITS[i],
-    // Bytes are written in full ("9 bytes"); the larger units keep their short form ("2 kB").
-    unitDisplay: i === 0 ? 'long' : 'short',
-    maximumFractionDigits: digits,
-  });
+  // Bytes are written in full ("9 bytes"); the larger units keep their short form ("2 kB").
+  const display = i === 0 ? 'long' : 'short';
+  const nf = cached(`bytes|${lang}|${i}|${display}|${digits}`, () =>
+    new Intl.NumberFormat(lang, {
+      style: 'unit',
+      unit: UNITS[i],
+      unitDisplay: display,
+      maximumFractionDigits: digits,
+    }),
+  );
   // In a right-to-left language the size keeps its own order, digits then unit, inside the sentence (decision 67).
   const l = matchLang(lang);
   if (l === null || directionOf(l) !== 'rtl') return nf.format(v);
@@ -41,7 +57,7 @@ export function formatBytes(bytes: number, lang: string): string {
 
 // formatNumber formats a count or a byte total with the locale's digits.
 export function formatNumber(n: number, lang: string): string {
-  return new Intl.NumberFormat(lang).format(n);
+  return cached(`number|${lang}`, () => new Intl.NumberFormat(lang)).format(n);
 }
 
 // formatDate formats an RFC 3339 time for lang. A time that does not parse is shown as an empty string.
@@ -49,7 +65,7 @@ export function formatDate(iso: string | null | undefined, lang: string): string
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
+  return cached(`date|${lang}`, () => new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeStyle: 'short' })).format(d);
 }
 
 // daysUntil is the whole days from now until iso, rounded up, never below 0.

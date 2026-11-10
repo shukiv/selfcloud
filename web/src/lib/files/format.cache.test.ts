@@ -52,6 +52,13 @@ describe('a change of language changes the output at once', () => {
     expect(formatBytes(3_100_000, 'es')).toBe(es);
   });
 
+  // One unit, two digit counts: 3.1 MB keeps a decimal and 12 MB does not, so the cache must keep them apart.
+  it('keeps the digits of one unit apart', () => {
+    expect(formatBytes(3_140_000, 'en')).toBe('3.1 MB');
+    expect(formatBytes(12_340_000, 'en')).toBe('12 MB');
+    expect(formatBytes(3_140_000, 'en')).toBe('3.1 MB');
+  });
+
   it('formats a count in the language asked for, after another language was used', () => {
     expect(formatNumber(1234567, 'en')).toBe('1,234,567');
     expect(formatNumber(1234567, 'de')).toBe(new Intl.NumberFormat('de').format(1234567));
