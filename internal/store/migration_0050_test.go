@@ -76,6 +76,11 @@ func TestMigration0050BackfillsEveryRowLikeGroupOf(t *testing.T) {
 		{"file", "untitled", "application/x-unknown"},
 		{"dir", "docs.pdf", "application/pdf"},
 		{"shortcut", "link.pdf", ""},
+		// Unicode case and whitespace (review L1 of ff1a). SQLite's lower() and trim() fold ASCII and trim spaces only, so
+		// the Kelvin sign (U+212A) in an extension is not "k" and is in no group, and a tab before a media type is not
+		// trimmed. groupOf must answer the same as the backfill.
+		{"file", "clip.mKv", ""},
+		{"file", "untitled", "\timage/png"},
 	}
 	for i, f := range fixture {
 		exec(`INSERT INTO nodes (id, account_id, folder_id, parent_id, name, name_key, kind, size, mime_type, created_at, modified_at)
