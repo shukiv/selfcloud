@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect } from "vitest";
 
 // expectEmptyTable checks an empty preset list (the owner's rule of 2026-11-09, decision 114). The table and its header row
@@ -12,9 +12,13 @@ export async function expectEmptyTable(
   want: { headers: string[]; title: string; description: string; action?: string },
 ): Promise<HTMLElement | null> {
   const r = await screen.findByRole("region", { name: region });
+  // Listing draws the phone layout until antd's breakpoint is known, so the desktop headers come a render later: wait.
+  await waitFor(() => {
+    const t = r.querySelector("table") as HTMLElement;
+    expect(t).not.toBeNull();
+    expect(within(t).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(want.headers);
+  });
   const table = r.querySelector("table") as HTMLElement;
-  expect(table).not.toBeNull();
-  expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(want.headers);
   const body = table.querySelector("tbody") as HTMLElement;
   await within(body).findByText(want.description);
   expect(body.querySelector(".ant-empty.ant-empty-normal .ant-empty-image")).not.toBeNull();
