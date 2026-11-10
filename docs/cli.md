@@ -217,7 +217,8 @@ route answers this until the password is changed, and the change itself ends the
 the device refuses it, and says so with this reason (decision 125): the office editor, Save As included; creating or
 changing a link, a share link or a share credential (`POST /nodes/{nod}/links`, `POST /nodes/{nod}/share-links`,
 `PATCH` and `POST .../reset` of a share link, `POST /share/renew`); a sign-in link; a password reset or a verification
-mail; a webhook, its change and its secret. Use the browser for these.
+mail; a webhook, its change and its secret; starting an import (`POST /api/v1/imports`) or resuming one
+(`POST /api/v1/imports/{imp}/resume`). Use the browser for these. Pausing or cancelling an import stays open to a device.
 
 **403 `forbidden` with a message and no reason.** A route that refuses any token acting for a user. The message names
 the route's rule, such as "a delegated token cannot list access requests", "a delegated token cannot change permissions"
