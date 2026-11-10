@@ -258,6 +258,20 @@ func TestTrashRmNameNotInTheTrashDeletesNothing(t *testing.T) {
 	}
 }
 
+// TestTrashRmNameOnALaterPage: the node may sit on a later page of the trash listing, and its name is still read.
+func TestTrashRmNameOnALaterPage(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("GET", "/api/v1/trash", page("c1", trashedNode(testOther, "first.txt")), page("", trashedNode(testNode, "later.txt")))
+	f.on("DELETE", "/api/v1/trash/"+testNode, done(http.StatusNoContent))
+	typeAtTerminal("later.txt\n")
+	wantCode(t, f.run(TrashRm, testNode), 0)
+	calls := f.requests()
+	if len(calls) != 3 || calls[0] != "GET /api/v1/trash" || calls[1] != "GET /api/v1/trash?cursor=c1" {
+		t.Fatalf("calls %v: want the listing read on both pages, then the purge", calls)
+	}
+}
+
 func TestShortcutAddMakesAShortcutInADirectory(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)

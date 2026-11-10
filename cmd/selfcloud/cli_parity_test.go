@@ -10,6 +10,16 @@ import (
 	"testing"
 )
 
+// callsRoute reports whether the remote command named name calls route.
+func callsRoute(name, route string) bool {
+	for _, c := range remoteCommands {
+		if c.name == name {
+			return slices.Contains(c.routes(), route)
+		}
+	}
+	return false
+}
+
 // parityTableRoot returns the nearest directory above this package that holds go.mod.
 func parityTableRoot(t *testing.T) string {
 	t.Helper()
@@ -104,6 +114,8 @@ func TestCLIParityCommands(t *testing.T) {
 				t.Errorf("remote command %q declares the read %s, which has no route row in docs/cli-parity.tsv", c.name, read)
 			case owner == c.name:
 				t.Errorf("remote command %q declares the read %s, which is its own route; a read must belong to another command", c.name, read)
+			case !callsRoute(owner, read):
+				t.Errorf("remote command %q declares the read %s, but its row names %q, which does not call that route", c.name, read, owner)
 			}
 			if slices.Contains(c.routes(), read) {
 				t.Errorf("remote command %q declares the read %s, which is already one of its routes", c.name, read)
