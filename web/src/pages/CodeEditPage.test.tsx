@@ -221,4 +221,35 @@ describe("the editor page", () => {
     await waitFor(() => expect(document.querySelector(".cm-search")).toBeNull());
     expect(goMock).not.toHaveBeenCalled();
   });
+
+  it("keeps the code area left to right in a right-to-left page, with the gutter before the text", async () => {
+    server();
+    document.documentElement.dir = "rtl";
+    try {
+      render();
+      await waitFor(() => expect(content().textContent).toContain("{}"));
+      const host = document.querySelector<HTMLElement>('[data-testid="code-editor"]')!;
+      expect(host.getAttribute("dir")).toBe("ltr");
+      const order = [...document.querySelector(".cm-scroller")!.children].map((c) => c.className);
+      expect(order.findIndex((c) => c.includes("cm-gutters"))).toBeLessThan(order.findIndex((c) => c.includes("cm-content")));
+    } finally {
+      document.documentElement.dir = "ltr";
+    }
+  });
+
+  it("writes the editor's style sheets with the page's nonce, the CSP's", async () => {
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    const sheets = [...document.querySelectorAll("style")].filter((s) => (s.textContent ?? "").includes(".cm-scroller"));
+    expect(sheets.length).toBeGreaterThan(0);
+    for (const s of sheets) expect(s.getAttribute("nonce")).toBe("nonce-for-tests");
+  });
+
+  it("takes the focus into the code area when the page opens", async () => {
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    expect(document.activeElement && content().contains(document.activeElement)).toBe(true);
+  });
 });
