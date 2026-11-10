@@ -56,6 +56,9 @@ func ownListCaller(p *auth.Principal) error {
 type starredItem struct {
 	nodeJSON
 	StarredAt time.Time `json:"starred_at"`
+	// Place is the name of the item's parent, when the caller reaches the parent; "" (omitted) at the top of a folder or
+	// when the parent is out of reach (placeNames).
+	Place string `json:"place,omitempty"`
 }
 
 // withStarred sets the starred flag of each node JSON in items from one query: the caller's own stars among them.
@@ -204,6 +207,13 @@ func (s *Server) handleListStarred(w http.ResponseWriter, r *http.Request) error
 	ptrs := make([]*nodeJSON, len(out.Items))
 	for i := range out.Items {
 		ptrs[i] = &out.Items[i].nodeJSON
+	}
+	places, err := s.placesOfItems(ctx, p, ptrs)
+	if err != nil {
+		return err
+	}
+	for i := range out.Items {
+		out.Items[i].Place = places[i]
 	}
 	if err := s.withTargets(ctx, p, ptrs...); err != nil {
 		return err

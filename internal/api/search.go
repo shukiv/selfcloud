@@ -42,6 +42,8 @@ var (
 type searchHit struct {
 	nodeJSON
 	Snippet *snippetJSON `json:"snippet,omitempty"`
+	// Place is the name of the hit's parent, when the caller reaches the parent (placeNames).
+	Place string `json:"place,omitempty"`
 }
 
 // snippetJSON is a content match's text (search form, plain text, never markup) and its [start, end) byte ranges.
@@ -143,7 +145,22 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		out, err = s.searchIn(ctx, q, p, req, ps, start)
-		return err
+		if err != nil {
+			return err
+		}
+		// The places are read in the same snapshot as the hits, so a parent moved between the two reads cannot show.
+		ptrs := make([]*nodeJSON, len(out.Items))
+		for i := range out.Items {
+			ptrs[i] = &out.Items[i].nodeJSON
+		}
+		places, err := placesIn(ctx, q, p, ptrs)
+		if err != nil {
+			return err
+		}
+		for i := range out.Items {
+			out.Items[i].Place = places[i]
+		}
+		return nil
 	})
 	if errors.Is(err, context.DeadlineExceeded) {
 		return apierr.New(apierr.Unavailable, "the search took too long; try a narrower query")

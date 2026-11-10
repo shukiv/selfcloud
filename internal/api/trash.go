@@ -38,6 +38,9 @@ type trashItemJSON struct {
 	TrashedBy        string    `json:"trashed_by"`
 	OriginalParentID string    `json:"original_parent_id"`
 	PurgeAt          time.Time `json:"purge_at"`
+	// Place is the name of the original parent, when the caller reaches it: "" when the parent is in the trash, is out of
+	// reach, or is the folder's root (placeNames).
+	Place string `json:"place,omitempty"`
 }
 
 // trashedBy reports whether the caller is the one that trashed the node. A token acting for a user counts
@@ -165,6 +168,13 @@ scan:
 	ptrs := make([]*nodeJSON, len(out))
 	for i := range out {
 		ptrs[i] = &out[i].nodeJSON
+	}
+	places, err := s.placesOfItems(ctx, p, ptrs)
+	if err != nil {
+		return err
+	}
+	for i := range out {
+		out[i].Place = places[i]
 	}
 	if err := s.withTargets(ctx, p, ptrs...); err != nil {
 		return err

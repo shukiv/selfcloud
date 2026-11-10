@@ -478,6 +478,13 @@ func (s *Server) handleSharedWithMe(w http.ResponseWriter, r *http.Request) erro
 	for i := range items {
 		ptrs[i] = &items[i].nodeJSON
 	}
+	places, err := s.placesOfItems(ctx, p, ptrs)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		items[i].Place = places[i]
+	}
 	if err := s.withTargets(ctx, p, ptrs...); err != nil {
 		return err
 	}
@@ -492,4 +499,6 @@ func (s *Server) handleSharedWithMe(w http.ResponseWriter, r *http.Request) erro
 type sharedItem struct {
 	nodeJSON
 	SharedAt *time.Time `json:"shared_at,omitempty"`
+	// Place is the name of the item's parent, when the caller reaches the parent (placeNames).
+	Place string `json:"place,omitempty"`
 }

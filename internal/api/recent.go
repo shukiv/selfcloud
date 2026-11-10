@@ -16,6 +16,8 @@ type recentItem struct {
 	ViewedAt *time.Time `json:"viewed_at"`
 	EditedAt *time.Time `json:"edited_at"`
 	LastAt   time.Time  `json:"last_at"`
+	// Place is the name of the item's parent, when the caller reaches the parent (placeNames).
+	Place string `json:"place,omitempty"`
 }
 
 // handleListRecent lists the caller's recent items, the latest first. As for stars, an item the caller no longer
@@ -63,6 +65,13 @@ func (s *Server) handleListRecent(w http.ResponseWriter, r *http.Request) error 
 	kept := make([]*nodeJSON, len(items))
 	for i := range items {
 		kept[i] = &items[i].nodeJSON
+	}
+	places, err := s.placesOfItems(ctx, p, kept)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		items[i].Place = places[i]
 	}
 	if err := s.withTargets(r.Context(), p, kept...); err != nil {
 		return err
