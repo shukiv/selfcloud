@@ -950,3 +950,21 @@ describe("Listing with columns: a preset list in the one table", () => {
     expect(container.querySelector('tr[aria-label="Acme Studio"]')).not.toBeNull();
   });
 });
+
+// design-tl 2.2 and decision 114: a preset action can be the open one of its list (Groups' Members for the open group). Its icon
+// button says so with aria-pressed; an action that is not pressed has no aria-pressed at all.
+describe("a preset action's pressed state", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("an action with pressed is aria-pressed on its icon button, and one without has no aria-pressed", () => {
+    viewport(1200);
+    const actions = () => [
+      { key: "m", label: "Members: Ops", icon: <span>m</span>, run: vi.fn(), pressed: true },
+      { key: "r", label: "Rename: Ops", icon: <span>r</span>, run: vi.fn() },
+    ];
+    render(<Listing {...itemProps({ actions })} />);
+    const row = itemRow("Acme Studio");
+    expect(within(row).getByRole("button", { name: "Members: Ops" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(row).getByRole("button", { name: "Rename: Ops" }).hasAttribute("aria-pressed")).toBe(false);
+  });
+});

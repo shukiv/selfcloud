@@ -212,4 +212,19 @@ describe("the open group after a rename", () => {
     const region = await screen.findByRole("region", { name: "Members" });
     expect(await within(region).findByRole("button", { name: /^Remove: / })).toBeTruthy();
   });
+
+  // design-tl 2.2 and decision 114: the open group's Members icon is pressed, so a screen reader says which group's members show.
+  it("the open group's Members icon is aria-pressed=true, and the other groups' is aria-pressed=false", async () => {
+    const OTHER = { ...GROUP, id: "grp_2", name: "Sales" };
+    stubFetch((c) => {
+      if (c.url.includes("/groups/grp_1/members")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/groups")) return { status: 200, body: { items: [GROUP, OTHER] } };
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Members: Finance" }));
+    await screen.findByRole("region", { name: "Members" });
+    expect(screen.getByRole("button", { name: "Members: Finance" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Members: Sales" }).getAttribute("aria-pressed")).toBe("false");
+  });
 });
