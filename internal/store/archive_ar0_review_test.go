@@ -131,10 +131,24 @@ func TestArchiveSumsUseIndexes(t *testing.T) {
 		}
 		rows.Close()
 		t.Logf("EXPLAIN QUERY PLAN for %s: %v", index, plan)
-		if !strings.Contains(strings.Join(plan, "; "), index) {
+		if !usesIndex(plan, index) {
 			t.Errorf("plan %v does not use %s", plan, index)
 		}
 	}
+}
+
+// usesIndex reports whether a plan step names index exactly: the word after INDEX is the index name, so a
+// longer name that starts with it (bundle_jobs_unwritten_x) does not count.
+func usesIndex(plan []string, index string) bool {
+	for _, detail := range plan {
+		fields := strings.Fields(detail)
+		for i := 0; i+1 < len(fields); i++ {
+			if fields[i] == "INDEX" && fields[i+1] == index {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // TestArchiveNameLimitIsBytes: a bundle's name is at most 255 bytes, not 255 characters. 128
