@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
+import { desktopViewport } from "../../test/viewport";
 import LinksPage from "./LinksPage";
 
 function signedAs(): Session {
@@ -53,8 +54,16 @@ function renderPage() {
   return qc;
 }
 
-beforeEach(() => session.set(signedAs()));
-afterEach(() => session.set(null));
+// The row icons are drawn on a desktop window; a phone keeps the ⋮ menu alone (decision 122).
+let restoreView: () => void = () => undefined;
+beforeEach(() => {
+  restoreView = desktopViewport();
+  session.set(signedAs());
+});
+afterEach(() => {
+  restoreView();
+  session.set(null);
+});
 
 const isLinkDelete = (c: Call) => c.method === "DELETE" && c.url === "/api/v1/share-links/shl_1";
 
@@ -95,7 +104,8 @@ describe("links", () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderPage();
     const region = await screen.findByRole("region", { name: "Links" });
-    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status", "Actions"]);
+    // An empty list has no row icons, so no Actions column (it comes with the first row's icons).
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status"]);
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No links to show");
   });
 

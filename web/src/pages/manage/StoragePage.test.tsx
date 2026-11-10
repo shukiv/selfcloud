@@ -66,7 +66,8 @@ describe("manage storage", () => {
     });
     renderPage();
     const people = await screen.findByRole("region", { name: "People, by use" });
-    expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Used", "Limit", "Actions"]);
+    // An empty list has no row icons, so no Actions column: it comes with the first row's Change icon.
+    expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Used", "Limit"]);
     expect(people.querySelector("tbody .empty-title")?.textContent).toBe("No people yet");
     const spaces = screen.getByRole("region", { name: "Team spaces" });
     expect(within(spaces).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Team space", "Size", "Files"]);

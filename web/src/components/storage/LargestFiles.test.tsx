@@ -82,7 +82,8 @@ describe("the largest files are one table (decision 122)", () => {
   it("an empty card keeps its headers, and its title is in the table body", () => {
     renderCard({ files: [] });
     const region = screen.getByRole("region", { name: "Largest files" });
-    expect(within(region).getAllByRole("columnheader").length).toBe(5);
+    // No row, so no row icons and no Actions column: the four column headers stay.
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Size", "Old versions", "Modified"]);
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
   });
 

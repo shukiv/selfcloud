@@ -8,6 +8,7 @@ import { session, type Session } from "../lib/session";
 import { myBreakdown, myStorage } from "../lib/storage/api";
 import { setLang, translate } from "../lib/i18n";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
+import { desktopViewport } from "../test/viewport";
 import StoragePage from "./StoragePage";
 
 function signedAs(id: string, role: "owner" | "member" | "admin" = "member"): Session {
@@ -218,13 +219,17 @@ describe("Storage", () => {
 // Review fixes (decision 79): the row actions, their effect on the server and on the list, the focus after one, the stale
 // answer of a chip, and the size bar of each row.
 describe("Storage row actions and the review fixes (decision 79)", () => {
+  let restoreView: () => void = () => undefined;
   beforeEach(async () => {
     // The language test above leaves Hebrew on; these tests name the English labels.
     await setLang("en");
+    // The row icons are drawn on a desktop window; a phone keeps the ⋮ menu alone (decision 122).
+    restoreView = desktopViewport();
     session.set(signedAs("olivia"));
   });
 
   afterEach(() => {
+    restoreView();
     session.set(null);
     myStorage.set(null);
     myBreakdown.set(null);

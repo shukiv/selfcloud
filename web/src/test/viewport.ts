@@ -19,3 +19,22 @@ export function setViewport(width: number): () => void {
 // DESKTOP is a window of 1200 pixels, PHONE one of 375 (design-tl section 4).
 export const DESKTOP = 1200;
 export const PHONE = 375;
+
+// desktopViewport makes every min-width query match, as a desktop window does: a list then draws its row icons inline, where a
+// phone (below md, 768 px) keeps only the ⋮ menu (decision 122). It returns the function that restores the setup's stub.
+export function desktopViewport(): () => void {
+  const before = window.matchMedia;
+  window.matchMedia = ((query: string) => ({
+    matches: /min-width: \d+px/.test(query),
+    media: query,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+  return () => {
+    window.matchMedia = before;
+  };
+}
