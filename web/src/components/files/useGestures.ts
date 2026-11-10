@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { bandSelection, boxBetween, edgeScroll, movedFar, treeNode, type Box, type Decision, type Dest, type Why } from "../../lib/files/drag";
+import { bandSelection, boxBetween, edgeScroll, movedFar, rowBoxes, treeNode, type Box, type Decision, type Dest, type Why } from "../../lib/files/drag";
 import type { Node } from "../../lib/files/types";
 
 // The pointer gestures of the file browser, with a mouse (a finger scrolls and a pen has no touch-action to keep the browser from panning, so both use Move to and the menu): a press on an item that moves becomes a drag (move, or copy
@@ -27,6 +27,8 @@ export interface GestureCtl {
   drop: (decision: Extract<Decision, { ok: true }>, dest: Dest) => void;
   refuse: (why: Why) => void;
   selectedIDs: () => string[];
+  // rowIDs is every loaded row's ID in the list's order. A windowed list draws only some rows, so a band places the others from it.
+  rowIDs?: () => string[];
   setBand: (ids: string[]) => void;
   clear: () => void;
 }
@@ -173,10 +175,25 @@ export function useGestures(rootRef: RefObject<HTMLElement | null>, listRef: Ref
         // scrolled out of the window on the way are still between the two.
         const py = Math.min(Math.max(last.y, vis.top), vis.bottom) - rr.top;
         const box = boxBetween(press.ax, press.ay, last.x - rr.left, py);
-        const items = Array.from(listRef.current?.querySelectorAll<HTMLElement>("[data-id]") ?? []).map((el) => {
-          const r = el.getBoundingClientRect();
-          return { id: el.dataset.id ?? "", box: { x0: r.left - rr.left, y0: r.top - rr.top, x1: r.right - rr.left, y1: r.bottom - rr.top } as Box };
-        });
+        const drawn = Array.from(listRef.current?.querySelectorAll<HTMLElement>("[data-id]") ?? []);
+        const rowIDs = c.rowIDs?.() ?? [];
+        // A windowed list draws only the rows near the screen (decision 134). Its rows are one height and in order, so the rows that
+        // are not drawn take their boxes from the first drawn row and their index; the band then covers them as it covers drawn rows.
+        const first = listRef.current?.querySelector<HTMLElement>("tbody tr[data-id]") ?? null;
+        const placed =
+          first && rowIDs.length > drawn.length && rowIDs.includes(first.dataset.id ?? "")
+            ? (() => {
+                const fr = first.getBoundingClientRect();
+                const index = rowIDs.indexOf(first.dataset.id ?? "");
+                return rowBoxes(rowIDs, { index, top: fr.top - rr.top }, fr.height, fr.left - rr.left, fr.right - rr.left);
+              })()
+            : null;
+        const items: Array<{ id: string; box: Box }> =
+          placed ??
+          drawn.map((el) => {
+            const r = el.getBoundingClientRect();
+            return { id: el.dataset.id ?? "", box: { x0: r.left - rr.left, y0: r.top - rr.top, x1: r.right - rr.left, y1: r.bottom - rr.top } as Box };
+          });
         const ids = bandSelection(items, box, press.base, last.ctrl);
         const k = ids.join(",");
         if (k !== bandKey) {
