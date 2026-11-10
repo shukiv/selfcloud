@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
@@ -203,6 +204,53 @@ func TestIndentedPassesTheDocumentThrough(t *testing.T) {
 	}
 	if err := Indented(&b, []byte("<html>")); err == nil {
 		t.Error("a non-JSON answer was indented")
+	}
+}
+
+// TestInvalidUTF8NeverReachesTheTerminal: a lone byte 0x9b (a CSI on 8-bit terminals) or any broken sequence is not text.
+// Indented must write U+FFFD for it, and JSON must not write it either.
+func TestInvalidUTF8NeverReachesTheTerminal(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{"{\"a\":\"x\x9by\"}", "{\"a\":\"\xff\"}", "{\"a\":\"\xe2\x80\"}"} {
+		var b bytes.Buffer
+		if err := Indented(&b, []byte(raw)); err != nil {
+			t.Fatalf("Indented(%q): %v", raw, err)
+		}
+		if !utf8.Valid(b.Bytes()) || bytes.IndexByte(b.Bytes(), 0x9b) >= 0 {
+			t.Errorf("Indented(%q) wrote bytes that are not valid UTF-8: % x", raw, b.Bytes())
+		}
+		var back map[string]string
+		if err := json.Unmarshal(b.Bytes(), &back); err != nil {
+			t.Errorf("Indented(%q): the output is not JSON: %v", raw, err)
+		}
+	}
+	var b bytes.Buffer
+	if err := JSON(&b, map[string]string{"a": "x\x9by\xff"}); err != nil {
+		t.Fatal(err)
+	}
+	if !utf8.Valid(b.Bytes()) || bytes.IndexByte(b.Bytes(), 0x9b) >= 0 {
+		t.Errorf("JSON wrote bytes that are not valid UTF-8: % x", b.Bytes())
+	}
+}
+
+// TestAstralFormatRunesRoundTrip: a rune above U+FFFF is escaped as a surrogate pair, so the value decodes to the same
+// rune. The tag characters (U+E0001, U+E0020 to U+E007F) and the musical format controls (U+1D173 to U+1D17A) are format
+// characters, so they are escaped.
+func TestAstralFormatRunesRoundTrip(t *testing.T) {
+	t.Parallel()
+	for _, r := range []rune{0xE0001, 0xE0020, 0xE007F, 0x1D173, 0x1D17A} {
+		raw := `{"a":"x` + string(r) + `y"}`
+		var b bytes.Buffer
+		if err := Indented(&b, []byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+		if strings.ContainsRune(b.String(), r) {
+			t.Errorf("U+%X was written raw: %q", r, b.String())
+		}
+		var back map[string]string
+		if err := json.Unmarshal(b.Bytes(), &back); err != nil || back["a"] != "x"+string(r)+"y" {
+			t.Errorf("U+%X: decoded %q, %v; want the same rune back", r, back["a"], err)
+		}
 	}
 }
 
