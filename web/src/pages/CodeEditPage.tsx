@@ -141,6 +141,8 @@ export default function CodeEditPage() {
     // The new file starts with no save in flight and no ETag, saved text or type of the last file (LOW-2).
     saving.current = false;
     saved.current = "";
+    // A new file is guarded again: a leave chosen for the last one does not carry over (MED-3).
+    leaving.current = false;
     lostSave.current = false;
     file.current = { etag: "", mime: "application/octet-stream" };
     setPage({ s: "opening" });
@@ -387,11 +389,17 @@ export default function CodeEditPage() {
 
   // The unsaved guard (4.6): a link, Back or Close that would leave the page with unsaved text asks first. A move to the same address
   // is not a leave.
+  // leaving is set once the person has chosen to leave, so the page's own way out (a tab close, then back) is not asked again (MED-3).
+  const leaving = useRef(false);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
+      !leaving.current &&
+      dirty &&
+      (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
   );
   const blocked = blocker.state === "blocked" ? blocker : null;
+  // askClose is the guard for a Close that would end a script's tab with unsaved text (MED-3): the same modal as a link.
+  const [askClose, setAskClose] = useState(false);
 
   // A reload or a close of the tab with unsaved text asks first, through the browser's own prompt (4.6).
   useEffect(() => {
@@ -408,15 +416,49 @@ export default function CodeEditPage() {
   const back = () => go(from ?? folderHref);
   // close ends the tab when a script opened it (tab=1). The browser refuses a close it did not allow, and then the page is still
   // here after a moment, so it goes back instead; a page opened directly goes back at once.
+  const leaveTab = () => {
+    window.close();
+    window.setTimeout(() => {
+      if (!window.closed) back();
+    }, 150);
+  };
   const close = () => {
     if (!tab) {
       back();
       return;
     }
-    window.close();
-    window.setTimeout(() => {
-      if (!window.closed) back();
-    }, 150);
+    if (dirty) {
+      setAskClose(true);
+      return;
+    }
+    leaveTab();
+  };
+  // The guard's three answers, for a blocked link and for a Close that asked (MED-3). Leave sets leaving first, so the close and the
+  // back that follows it are not asked again.
+  const stayHere = () => {
+    if (blocked !== null) blocked.reset();
+    setAskClose(false);
+  };
+  const leaveNow = () => {
+    if (blocked !== null) {
+      blocked.proceed();
+      return;
+    }
+    leaving.current = true;
+    setAskClose(false);
+    leaveTab();
+  };
+  const saveAndLeaveNow = () => {
+    const gate = blocked;
+    void save().then((ok) => {
+      if (!ok) {
+        gate?.reset();
+        setAskClose(false);
+        return;
+      }
+      if (gate !== null) gate.proceed();
+      else leaveNow();
+    });
   };
 
   if (!valid) return null;
@@ -573,22 +615,16 @@ export default function CodeEditPage() {
         {conflict?.noName && <Alert type="error" showIcon role="alert" message={ct.noFreeName} />}
       </Modal>
       <Modal
-        open={blocked !== null}
+        open={blocked !== null || askClose}
         title={ct.leaveTitle}
-        onCancel={() => blocked?.reset()}
+        onCancel={stayHere}
         maskClosable={false}
         destroyOnHidden
         footer={
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
-            <Button onClick={() => blocked?.reset()}>{ct.stay}</Button>
-            <Button onClick={() => blocked?.proceed()}>{ct.leave}</Button>
-            <Button
-              type="primary"
-              onClick={() => {
-                const gate = blocked;
-                void save().then((ok) => (ok ? gate?.proceed() : gate?.reset()));
-              }}
-            >
+            <Button onClick={stayHere}>{ct.stay}</Button>
+            <Button onClick={leaveNow}>{ct.leave}</Button>
+            <Button type="primary" onClick={saveAndLeaveNow}>
               {ct.saveAndLeave}
             </Button>
           </div>
