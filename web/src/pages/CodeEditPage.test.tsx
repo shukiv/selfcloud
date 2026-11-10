@@ -3,7 +3,7 @@
 import "../test/rangeRects";
 import { act, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
-import { MemoryRouter, Route, Routes, useNavigate, type NavigateFunction } from "react-router-dom";
+import { createMemoryRouter, RouterProvider, useNavigate, type NavigateFunction } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const goMock = vi.hoisted(() => vi.fn());
@@ -20,6 +20,8 @@ document.head.appendChild(meta);
 
 const NOD = "nod_a1";
 const NOD_B = "nod_b2";
+const NOD_DIR = "nod_dir";
+const FLD = "fld_b";
 const ETAG = '"0123abcd"';
 const ETAG_B = '"bbbb"';
 const MiB = 1024 * 1024;
@@ -32,7 +34,12 @@ interface Options {
   body?: Uint8Array;
   size?: number;
   mime?: string;
+  name?: string;
   noDownload?: boolean;
+  // nested puts the file in a folder under the root, so a copy's path carries that folder's name (design 4.4).
+  nested?: boolean;
+  // taken lists full paths a copy finds taken, before the copies the test makes (for example "/a (2).json").
+  taken?: string[];
   // put answers a save of the first file, instead of the server's own rule (the If-Match check runs first).
   put?: (init: RequestInit) => Response | Promise<Response>;
 }
@@ -40,6 +47,8 @@ interface Options {
 interface Stored {
   id: string;
   name: string;
+  kind?: "file" | "dir";
+  parent?: string | null;
   etag: string;
   body: Uint8Array;
   mime: string;
@@ -55,10 +64,14 @@ function server(o: Options = {}) {
   const calls: Array<{ method: string; url: string; init: RequestInit }> = [];
   const answers: number[] = [];
   let seq = 0;
+  // The folder's root is nod_root (no parent); the file sits in it, or, when nested, in a folder named docs under it.
   const files: Record<string, Stored> = {
+    nod_root: { id: "nod_root", name: "", kind: "dir", parent: null, etag: '"root"', body: new Uint8Array(0), mime: "", role: "editor", noDownload: false },
+    [NOD_DIR]: { id: NOD_DIR, name: "docs", kind: "dir", parent: "nod_root", etag: '"dir"', body: new Uint8Array(0), mime: "", role: "editor", noDownload: false },
     [NOD]: {
       id: NOD,
-      name: "a.json",
+      name: o.name ?? "a.json",
+      parent: o.nested ? NOD_DIR : "nod_root",
       etag: ETAG,
       body: o.body ?? new TextEncoder().encode("{}"),
       mime: o.mime ?? "application/json",
@@ -77,12 +90,14 @@ function server(o: Options = {}) {
       noDownload: false,
     },
   };
+  // The full paths taken in the folder: the file the test opens, and any the test names.
+  const takenPaths = new Set<string>([o.nested ? "/docs/a.json" : "/a.json", ...(o.taken ?? [])]);
   const nodeJSON = (f: Stored) => ({
     id: f.id,
     folder_id: "fld_b",
-    parent_id: null,
+    parent_id: f.parent ?? null,
     name: f.name,
-    kind: "file",
+    kind: f.kind ?? "file",
     size: f.size ?? f.body.length,
     mime_type: f.mime,
     etag: f.etag,
@@ -95,9 +110,33 @@ function server(o: Options = {}) {
   const f = vi.fn(async (url: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     calls.push({ method, url, init });
+    // A copy (design 4.4): POST /api/v1/folders/{fld}/files?path=..., refused with 412 when If-None-Match is * and the name is taken.
+    const post = /^\/api\/v1\/folders\/([^/?]+)\/files\?path=(.*)$/.exec(url);
+    if (method === "POST" && post !== null) {
+      const path = new URL(url, "http://localhost").searchParams.get("path") ?? "";
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      if (headers["If-None-Match"] === "*" && takenPaths.has(path)) {
+        return Response.json({ error: { code: "precondition_failed", details: {} } }, { status: 412 });
+      }
+      const id = `nod_copy${++seq}`;
+      takenPaths.add(path);
+      files[id] = {
+        id,
+        name: path.slice(path.lastIndexOf("/") + 1),
+        parent: "nod_root",
+        etag: `"copy-${seq}"`,
+        body: init.body as Uint8Array,
+        mime: headers["Content-Type"] ?? "application/octet-stream",
+        role: "editor",
+        noDownload: false,
+      };
+      return Response.json(nodeJSON(files[id]!), { status: 201 });
+    }
     const m = /^\/api\/v1\/nodes\/([^/?]+)(\/content)?(\?.*)?$/.exec(url);
     const file = m ? files[m[1]!] : undefined;
     if (m === null || file === undefined) return new Response(null, { status: 404 });
+    // HEAD of the content gives the current ETag and records no view (design 4.4).
+    if (method === "HEAD" && m[2] !== undefined) return new Response(null, { status: 200, headers: { ETag: file.etag } });
     if (method === "GET" && m[2] === undefined) return Response.json(nodeJSON(file));
     if (method === "GET") {
       return new Response(file.body as unknown as BodyInit, { status: 200, headers: { ETag: file.etag } });
@@ -122,7 +161,19 @@ function server(o: Options = {}) {
     return new Response(null, { status: 404 });
   });
   vi.stubGlobal("fetch", f);
-  return { calls, answers, puts: () => calls.filter((c) => c.method === "PUT") };
+  // touch is another client's change to the open file: a new ETag and new bytes, so the page's next save is refused.
+  const touch = (body: string) => {
+    files[NOD]!.etag = `"touched-${++seq}"`;
+    files[NOD]!.body = new TextEncoder().encode(body);
+  };
+  return {
+    calls,
+    answers,
+    files,
+    touch,
+    puts: () => calls.filter((c) => c.method === "PUT"),
+    copies: () => calls.filter((c) => c.method === "POST"),
+  };
 }
 
 // held makes a save that waits until the test lets it answer: the answer is a save of the file, with the ETag it was given.
@@ -143,15 +194,25 @@ function Grab() {
   return null;
 }
 
+// The page runs under a data router, as the app does: the unsaved guard is a router blocker (useBlocker), which needs one.
+let router: ReturnType<typeof createMemoryRouter> | null = null;
 function render(path = `/edit/${NOD}?mode=edit`) {
-  return rtlRender(
-    <MemoryRouter initialEntries={[path]}>
-      <Grab />
-      <Routes>
-        <Route path="/edit/:nod" element={<CodeEditPage />} />
-      </Routes>
-    </MemoryRouter>,
+  router = createMemoryRouter(
+    [
+      { path: "/edit/:nod", element: <><Grab /><CodeEditPage /></> },
+      { path: "/files/:fld", element: <p>files</p> },
+    ],
+    { initialEntries: [path] },
   );
+  return rtlRender(<RouterProvider router={router} />);
+}
+
+// goTo moves the test's router to an address, as a link does, and waits for the navigation inside act. A navigation left pending
+// by one test stops the next test's first render, so every navigation of a test goes through here.
+async function goTo(path: string) {
+  await act(async () => {
+    await router!.navigate(path);
+  });
 }
 
 const content = () => document.querySelector<HTMLElement>(".cm-content")!;
@@ -168,6 +229,8 @@ const pause = () => new Promise((r) => setTimeout(r, 20));
 
 beforeEach(() => {
   goMock.mockClear();
+  // go moves the router, so Close and Back are subject to the same unsaved guard as a link (design 4.6).
+  goMock.mockImplementation((url: string) => navigateTo?.(url));
   navigateTo = null;
   // A signed-in browser session: the reads and the save are made under it.
   session.set({ user: { id: "usr_1", role: "user" }, csrf: "csrf_test" } as never);
@@ -176,6 +239,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   session.set(null);
+  // Each test's data router is stopped, so no navigation of one test reaches the next.
+  router?.dispose();
+  router = null;
 });
 
 describe("the editor page", () => {
@@ -271,8 +337,7 @@ describe("the editor page", () => {
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
     type(0, "x");
-    act(() => navigateTo!(`/edit/${NOD}?mode=edit`));
-    await pause();
+    await goTo(`/edit/${NOD}?mode=edit`);
     expect(content().textContent).toContain("x{}");
     expect(s.calls.filter((c) => c.method === "GET" && c.url.includes("/content"))).toHaveLength(1);
   });
@@ -333,27 +398,6 @@ describe("the editor page", () => {
     expect(s.puts()).toHaveLength(0);
   });
 
-  it("shows a conflict with a reload choice, and keeps the draft until the person chooses to reload", async () => {
-    const s = server({ put: () => Response.json({ error: { code: "precondition_failed", details: {} } }, { status: 412 }) });
-    render();
-    await waitFor(() => expect(content().textContent).toContain("{}"));
-    type(0, "x");
-    ctrlS();
-    const alert = await screen.findByRole("alert");
-    expect(within(alert).getByText("This file changed since you opened it. Reload it to see the saved version.")).toBeTruthy();
-    expect(content().textContent).toContain("x{}");
-    fireEvent.click(within(alert).getByRole("button", { name: "Reload" }));
-    // Reloading throws the draft away, so it asks first: the confirmation's own Reload button does it.
-    const pop = await waitFor(() => {
-      const el = document.querySelector<HTMLElement>(".ant-popover:not(.ant-popover-hidden)");
-      expect(el).not.toBeNull();
-      return el!;
-    });
-    fireEvent.click(within(pop).getByRole("button", { name: "Reload" }));
-    await waitFor(() => expect(content().textContent).toBe("{}"));
-    expect(s.puts()).toHaveLength(1);
-  });
-
   it("the Save button stays enabled while a save is in flight, and keeps the focus after the save", async () => {
     const hold = held();
     server({ put: hold.put });
@@ -378,7 +422,7 @@ describe("the editor page", () => {
     type(0, "x");
     ctrlS();
     await waitFor(() => expect(s.puts()).toHaveLength(1));
-    act(() => navigateTo!(`/edit/${NOD_B}?mode=edit`));
+    await goTo(`/edit/${NOD_B}?mode=edit`);
     await waitFor(() => expect(document.querySelector('.cm-content[aria-label="b.json"]')).not.toBeNull());
     await act(async () => hold.release());
     await pause();
@@ -513,5 +557,250 @@ describe("the editor page", () => {
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
     expect(document.activeElement && content().contains(document.activeElement)).toBe(true);
+  });
+});
+
+// The dialog's footer words and the guard's, as the English catalogue has them (lib/code/text.ts, decision 130).
+const RELOAD = "Reload theirs";
+const COPY = "Keep as a copy";
+const OVERWRITE = "Overwrite theirs with mine (theirs stays in history)";
+const KEEP = "Keep my draft (saving will ask again)";
+const MIXED = "This file mixes line break styles. Saving writes the first style on every line.";
+
+// openConflict opens the file, types a draft, and saves it after another client changed the file: the save is refused with 412,
+// and the conflict dialog opens (design 4.4).
+async function openConflict(s: ReturnType<typeof server>) {
+  render();
+  await waitFor(() => expect(content().textContent).toContain("{}"));
+  s.touch("changed by someone else\n");
+  type(0, "x");
+  ctrlS();
+  return screen.findByRole("dialog");
+}
+
+// postPaths is the path each copy was sent to, decoded.
+const postPaths = (s: ReturnType<typeof server>) => s.copies().map((c) => new URL(c.url, "http://localhost").searchParams.get("path"));
+
+describe("the editor's conflict dialog, copies, guards and lint (decision 130)", () => {
+  it("a save the server refuses with 412 opens the dialog with its four choices, and reads the file's ETag by HEAD", async () => {
+    const s = server();
+    const d = await openConflict(s);
+    for (const name of [RELOAD, COPY, OVERWRITE, KEEP]) expect(within(d).getByRole("button", { name })).toBeTruthy();
+    expect(content().textContent).toContain("x{}");
+    expect(s.calls.some((c) => c.method === "HEAD" && c.url === `/api/v1/nodes/${NOD}/content`)).toBe(true);
+    // The check records no view: the only GET of the content is the one that opened the page.
+    expect(s.calls.filter((c) => c.method === "GET" && c.url.includes("/content"))).toHaveLength(1);
+  });
+
+  it("Keep my draft closes the dialog with no request, and the next save is refused and asks again", async () => {
+    const s = server();
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: KEEP }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(content().textContent).toContain("x{}");
+    expect(s.puts()).toHaveLength(1);
+    ctrlS();
+    await screen.findByRole("dialog");
+    expect(s.puts()).toHaveLength(2);
+  });
+
+  it("Reload theirs asks first, then shows the saved version", async () => {
+    const s = server();
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: RELOAD }));
+    const pop = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".ant-popover:not(.ant-popover-hidden)");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    fireEvent.click(within(pop).getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(content().textContent).toContain("changed by someone else"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("Keep as a copy saves the draft under the next free name beside the file, and leaves the original as it was", async () => {
+    const s = server();
+    const d = await openConflict(s);
+    const original = new Uint8Array(s.files[NOD]!.body);
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    expect(await screen.findByText("Saved as a (2).json")).toBeTruthy();
+    expect(postPaths(s)).toEqual(["/a (2).json"]);
+    const sent = s.copies()[0]!;
+    expect(sent.init.headers).toMatchObject({ "If-None-Match": "*", "Content-Type": "application/json" });
+    expect(new TextDecoder().decode(sent.init.body as Uint8Array)).toBe("x{}");
+    expect([...s.files[NOD]!.body]).toEqual([...original]);
+  });
+
+  it("Keep as a copy skips a name that is taken and takes the next one", async () => {
+    const s = server({ taken: ["/a (2).json", "/a (3).json"] });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    expect(await screen.findByText("Saved as a (4).json")).toBeTruthy();
+    expect(postPaths(s)).toEqual(["/a (2).json", "/a (3).json", "/a (4).json"]);
+  });
+
+  it("Keep as a copy tries twenty names at most, then says it could not find a free name", async () => {
+    const taken = Array.from({ length: 30 }, (_, i) => `/a (${i + 2}).json`);
+    const s = server({ taken });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    expect(await within(await screen.findByRole("dialog")).findByText("Could not find a free name.")).toBeTruthy();
+    expect(postPaths(s)).toHaveLength(20);
+  });
+
+  it("a copy of a file in a folder goes into that folder, its path read from the parent chain", async () => {
+    const s = server({ nested: true });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    expect(await screen.findByText("Saved as a (2).json")).toBeTruthy();
+    expect(postPaths(s)).toEqual(["/docs/a (2).json"]);
+  });
+
+  it("Overwrite saves the draft over the changed file with the ETag the check read", async () => {
+    const s = server();
+    const d = await openConflict(s);
+    const touched = s.files[NOD]!.etag;
+    fireEvent.click(within(d).getByRole("button", { name: OVERWRITE }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(await screen.findByText("Saved")).toBeTruthy();
+    const last = s.puts()[1]!;
+    expect(last.init.headers).toMatchObject({ "If-Match": touched });
+    expect(new TextDecoder().decode(s.files[NOD]!.body)).toBe("x{}");
+  });
+
+  it("Overwrite that meets another change opens the dialog again, with a fresh check", async () => {
+    let refused = 0;
+    const s = server({
+      put: () => {
+        // The first matched save is refused: another client changed the file again after the check.
+        if (refused++ === 0) return Response.json({ error: { code: "precondition_failed", details: {} } }, { status: 412 });
+        return Response.json({ id: NOD, etag: '"after"', mime_type: "application/json" });
+      },
+    });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: OVERWRITE }));
+    await waitFor(() => expect(s.calls.filter((c) => c.method === "HEAD")).toHaveLength(2));
+    const again = await screen.findByRole("dialog");
+    fireEvent.click(within(again).getByRole("button", { name: OVERWRITE }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(s.puts()).toHaveLength(3);
+  });
+
+  it("leaving with unsaved text asks first, and Stay keeps the page and the text", async () => {
+    const s = server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    await goTo(`/files/${FLD}`);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Stay" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
+    expect(content().textContent).toContain("x{}");
+    expect(s.puts()).toHaveLength(0);
+  });
+
+  it("Leave goes on to the other address without saving", async () => {
+    const s = server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    await goTo(`/files/${FLD}`);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Leave" }));
+    await waitFor(() => expect(router!.state.location.pathname).toBe(`/files/${FLD}`));
+    expect(s.puts()).toHaveLength(0);
+  });
+
+  it("Save and leave saves the draft first, then goes on", async () => {
+    const s = server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    await goTo(`/files/${FLD}`);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Save and leave" }));
+    await waitFor(() => expect(router!.state.location.pathname).toBe(`/files/${FLD}`));
+    expect(s.puts()).toHaveLength(1);
+    expect(new TextDecoder().decode(s.puts()[0]!.init.body as Uint8Array)).toBe("x{}");
+  });
+
+  it("Save and leave that does not save stays on the page, and the conflict dialog shows", async () => {
+    const s = server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    s.touch("changed by someone else\n");
+    await goTo(`/files/${FLD}`);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Save and leave" }));
+    expect(within(await screen.findByRole("dialog")).getByRole("button", { name: RELOAD })).toBeTruthy();
+    expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
+  });
+
+  it("Close with unsaved text asks first, as a link does", async () => {
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(within(await screen.findByRole("dialog")).getByRole("button", { name: "Stay" })).toBeTruthy();
+    expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
+  });
+
+  it("a navigation to the same address does not ask", async () => {
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    act(() => navigateTo!(`/edit/${NOD}?mode=edit`));
+    await pause();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("beforeunload is cancelled while the text is unsaved, and not once it is saved", async () => {
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    const clean = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(clean);
+    expect(clean.defaultPrevented).toBe(false);
+    type(0, "x");
+    await screen.findByText("Unsaved changes");
+    const dirty = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(dirty);
+    expect(dirty.defaultPrevented).toBe(true);
+    ctrlS();
+    await screen.findByText("Saved");
+    const after = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(false);
+  });
+
+  it("a file with mixed line breaks shows a notice, and a save writes its first style on every line", async () => {
+    const s = server({ body: new TextEncoder().encode("a\r\nb\nc\r\n") });
+    render();
+    expect(await screen.findByText(MIXED)).toBeTruthy();
+    await waitFor(() => expect(content().textContent).toContain("a"));
+    type(0, "x");
+    ctrlS();
+    await waitFor(() => expect(s.puts()).toHaveLength(1));
+    expect(new TextDecoder().decode(s.puts()[0]!.init.body as Uint8Array)).toBe("xa\r\nb\r\nc\r\n");
+  });
+
+  it("a JSON file shows its syntax problems as markers and a count, and still saves", async () => {
+    const s = server({ body: new TextEncoder().encode('{\n  "a": 1,\n}\n') });
+    render();
+    await waitFor(() => expect(document.querySelector(".cm-lint-marker")).not.toBeNull());
+    expect(screen.getByTestId("lint-count").textContent).toMatch(/^\d+ problems?$/);
+    type(0, "x");
+    ctrlS();
+    await waitFor(() => expect(s.puts()).toHaveLength(1));
+  });
+
+  it("a .jsonc file is not linted: no marker and no count", async () => {
+    server({ name: "a.jsonc", body: new TextEncoder().encode('{ // comment\n  "a": 1\n}\n') });
+    render();
+    await waitFor(() => expect(content().textContent).toContain('"a"'));
+    // The lint package loads only for a JSON file; a short wait gives a late load its chance to draw a marker.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(document.querySelector(".cm-lint-marker")).toBeNull();
+    expect(screen.queryByTestId("lint-count")).toBeNull();
   });
 });
