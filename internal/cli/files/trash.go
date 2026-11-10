@@ -222,6 +222,12 @@ func TrashEmpty(args []string, stdout, stderr io.Writer) int {
 			return fail(stderr, g, errors.New("the server did not purge anything but said more remain; the trash is not empty"))
 		}
 	}
+	if g.JSON {
+		if err := output.JSON(stdout, map[string]int{"purged": purged}); err != nil {
+			return fail(stderr, g, err)
+		}
+		return exitcode.OK
+	}
 	if err := output.KeyValues(stdout, []output.KV{{Key: "purged", Value: strconv.Itoa(purged)}}); err != nil {
 		return fail(stderr, g, err)
 	}
