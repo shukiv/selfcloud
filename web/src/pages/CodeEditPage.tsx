@@ -31,12 +31,12 @@ import { startDownload } from "../lib/files/ops";
 import { can, downloadAllowed } from "../lib/files/roles";
 import type { Node } from "../lib/files/types";
 import { useLang, useT } from "../lib/i18n";
-import { go } from "../lib/router";
+import { go, signInURL } from "../lib/router";
 import { useStore } from "../lib/store";
 import { useModeOrLight } from "../theme/theme";
 
 // The failure the page shows when the file cannot be opened, chosen by the status and never by the server's text.
-type OpenFailure = "notFound" | "forbidden" | "failed";
+type OpenFailure = "notFound" | "forbidden" | "signedOut" | "failed";
 
 // SaveState is the bar's save state. null is nothing to say yet.
 type SaveState = "saved" | "unsaved" | "saving" | "failed" | null;
@@ -88,6 +88,8 @@ function failureOf(err: unknown): OpenFailure {
   if (!(err instanceof ApiError)) return "failed";
   if (err.status === 404) return "notFound";
   if (err.status === 403) return "forbidden";
+  // A sign-in that has ended (401) is not a failure to retry: the page offers to sign in again (MED-4).
+  if (err.status === 401) return "signedOut";
   return "failed";
 }
 
@@ -382,7 +384,7 @@ export default function CodeEditPage() {
       setNotice(d.utf8 ? null : "notUtf8");
     } catch (err) {
       const why = failureOf(err);
-      setNotice(why === "forbidden" ? "forbidden" : why === "notFound" ? "gone" : "failed");
+      setNotice(why === "forbidden" ? "forbidden" : why === "notFound" ? "gone" : why === "signedOut" ? "signedOut" : "failed");
       if (why === "forbidden" || why === "notFound") setClosed(true);
     }
   };
@@ -568,7 +570,21 @@ export default function CodeEditPage() {
       )}
       {page.s === "failed" && (
         <div style={{ padding: 16 }}>
-          <Alert type="error" showIcon role="alert" message={t(`files.editor.${page.why === "failed" ? "failed" : page.why}`)} />
+          {page.why === "signedOut" ? (
+            <Alert
+              type="error"
+              showIcon
+              role="alert"
+              message={ct.signedOut}
+              action={
+                <Button size="small" onClick={() => go(signInURL())}>
+                  {ct.signIn}
+                </Button>
+              }
+            />
+          ) : (
+            <Alert type="error" showIcon role="alert" message={t(`files.editor.${page.why === "failed" ? "failed" : page.why}`)} />
+          )}
         </div>
       )}
       {page.s === "ready" && (
@@ -658,6 +674,14 @@ export default function CodeEditPage() {
         return c.tooLarge;
       case "failed":
         return c.failed;
+      case "signedOut":
+        return c.signedOut;
+      case "storageFull":
+        return c.storageFull;
+      case "badName":
+        return c.badName;
+      case "folderGone":
+        return c.folderGone;
     }
   }
 
@@ -668,6 +692,15 @@ export default function CodeEditPage() {
       return (
         <Button size="small" onClick={() => void saveRef.current()}>
           {ct.retry}
+        </Button>
+      );
+    }
+    // The sign-in ended: a retry would fail the same way, so the choice is to sign in again (MED-4). The draft is kept, and the
+    // unsaved guard asks before the sign-in page is opened.
+    if (n === "signedOut") {
+      return (
+        <Button size="small" onClick={() => go(signInURL())}>
+          {ct.signIn}
         </Button>
       );
     }

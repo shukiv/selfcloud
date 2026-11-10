@@ -14,7 +14,20 @@ import { EDIT_LIMIT } from "./edit";
 // SaveFailure is why a save did not happen: a stale ETag (conflict), a live office lock (locked), a role that changed
 // (forbidden), a file that was deleted (gone), a draft that is not UTF-8 text (notText), a draft over the limit (tooLarge), and
 // anything else, including no answer at all (failed).
-export type SaveFailure = "conflict" | "locked" | "forbidden" | "gone" | "notText" | "tooLarge" | "failed";
+// signedOut is a sign-in that has ended (401): the draft stays and the page offers to sign in again (MED-4). storageFull is a store
+// with no room left (507, LOW-3). badName and folderGone are a copy's own refusals (400 and 404, LOW-2); see keepCopy.
+export type SaveFailure =
+  | "conflict"
+  | "locked"
+  | "forbidden"
+  | "gone"
+  | "notText"
+  | "tooLarge"
+  | "signedOut"
+  | "storageFull"
+  | "badName"
+  | "folderGone"
+  | "failed";
 
 export type SaveResult = { ok: true; node: Node } | { ok: false; why: SaveFailure };
 
@@ -28,6 +41,8 @@ const FAILURE_BY_STATUS: Readonly<Record<number, SaveFailure>> = {
   409: "locked",
   412: "conflict",
   413: "tooLarge",
+  401: "signedOut",
+  507: "storageFull",
 };
 
 // failureOfStatus names a refused answer's failure (design 4.3): the table above, and "failed" for any other status.

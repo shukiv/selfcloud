@@ -62,6 +62,12 @@ export interface CodeText {
   mixedBreaks: string;
   // A conflict after a save that got no answer: the draft may already be on the server (decision 124, LOW-4).
   maybeSaved: string;
+  // The review round 1 notices (decision 130): a sign-in that ended, its Sign in choice, a copy's name or folder refused, a full store.
+  signedOut: string;
+  signIn: string;
+  badName: string;
+  folderGone: string;
+  storageFull: string;
 }
 
 export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
@@ -112,6 +118,11 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemMany: "{n} problems",
     mixedBreaks: "This file mixes line break styles. Saving writes the first style on every line.",
     maybeSaved: "The last save may have reached the server before the connection failed.",
+    signedOut: "Your sign-in has ended. The text stays here. Sign in again to save it.",
+    signIn: "Sign in",
+    badName: "This name is too long or not allowed in this folder. Rename the copy and try again.",
+    folderGone: "The folder for this copy is gone. The text stays here so you can copy it.",
+    storageFull: "The storage is full. The text stays here, so free some space and try again.",
   },
   es: {
     find: "Buscar",
@@ -160,6 +171,11 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemMany: "{n} problemas",
     mixedBreaks: "Este archivo mezcla estilos de salto de línea. Al guardar se usa el primero en cada línea.",
     maybeSaved: "Es posible que el último guardado haya llegado al servidor antes de que fallara la conexión.",
+    signedOut: "Su sesión ha terminado. El texto se queda aquí. Inicie sesión de nuevo para guardarlo.",
+    signIn: "Iniciar sesión",
+    badName: "Este nombre es demasiado largo o no está permitido en esta carpeta. Cambie el nombre de la copia e inténtelo de nuevo.",
+    folderGone: "La carpeta de esta copia ya no existe. El texto se queda aquí para que pueda copiarlo.",
+    storageFull: "El almacenamiento está lleno. El texto se queda aquí; libere espacio e inténtelo de nuevo.",
   },
   fr: {
     find: "Rechercher",
@@ -208,6 +224,11 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemMany: "{n} problèmes",
     mixedBreaks: "Ce fichier mélange des styles de fin de ligne. L’enregistrement utilise le premier style sur chaque ligne.",
     maybeSaved: "Le dernier enregistrement a pu atteindre le serveur avant la perte de la connexion.",
+    signedOut: "Votre connexion a pris fin. Le texte reste ici. Reconnectez-vous pour l’enregistrer.",
+    signIn: "Se connecter",
+    badName: "Ce nom est trop long ou non autorisé dans ce dossier. Renommez la copie et réessayez.",
+    folderGone: "Le dossier de cette copie n’existe plus. Le texte reste ici pour que vous puissiez le copier.",
+    storageFull: "Le stockage est plein. Le texte reste ici ; libérez de la place et réessayez.",
   },
   pt: {
     find: "Localizar",
@@ -256,6 +277,11 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemMany: "{n} problemas",
     mixedBreaks: "Este ficheiro mistura estilos de quebra de linha. Ao guardar, usa-se o primeiro em cada linha.",
     maybeSaved: "O último guardar pode ter chegado ao servidor antes de a ligação falhar.",
+    signedOut: "A sua sessão terminou. O texto fica aqui. Inicie sessão novamente para o guardar.",
+    signIn: "Iniciar sessão",
+    badName: "Este nome é demasiado longo ou não é permitido nesta pasta. Mude o nome da cópia e tente de novo.",
+    folderGone: "A pasta desta cópia já não existe. O texto fica aqui para o poder copiar.",
+    storageFull: "O armazenamento está cheio. O texto fica aqui; liberte espaço e tente de novo.",
   },
   ru: {
     find: "Найти",
@@ -304,6 +330,11 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemMany: "Проблем: {n}",
     mixedBreaks: "В этом файле смешаны стили переноса строк. При сохранении на каждой строке используется первый стиль.",
     maybeSaved: "Последнее сохранение могло дойти до сервера до того, как пропало соединение.",
+    signedOut: "Сеанс входа завершён. Текст остаётся здесь. Войдите снова, чтобы сохранить его.",
+    signIn: "Войти",
+    badName: "Это имя слишком длинное или не разрешено в этой папке. Переименуйте копию и попробуйте ещё раз.",
+    folderGone: "Папка для этой копии больше не существует. Текст остаётся здесь, чтобы вы могли его скопировать.",
+    storageFull: "Хранилище заполнено. Текст остаётся здесь; освободите место и попробуйте ещё раз.",
   },
   ar: {
     find: "بحث",
@@ -352,6 +383,11 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemMany: "{n} مشكلات",
     mixedBreaks: "يخلط هذا الملف بين أنماط فواصل الأسطر. يستخدم الحفظ النمط الأول في كل سطر.",
     maybeSaved: "ربما وصل آخر حفظ إلى الخادم قبل انقطاع الاتصال.",
+    signedOut: "انتهت جلسة تسجيل الدخول. يبقى النص هنا. سجّل الدخول مرة أخرى لحفظه.",
+    signIn: "تسجيل الدخول",
+    badName: "هذا الاسم طويل جدًا أو غير مسموح به في هذا المجلد. غيّر اسم النسخة وحاول مرة أخرى.",
+    folderGone: "مجلد هذه النسخة لم يعد موجودًا. يبقى النص هنا لتتمكن من نسخه.",
+    storageFull: "مساحة التخزين ممتلئة. يبقى النص هنا؛ أفرِغ بعض المساحة وحاول مرة أخرى.",
   },
   he: {
     find: "חיפוש",
@@ -400,6 +436,11 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemMany: "{n} בעיות",
     mixedBreaks: "הקובץ הזה מערבב סגנונות של שבירת שורה. בשמירה נעשה שימוש בסגנון הראשון בכל שורה.",
     maybeSaved: "ייתכן שהשמירה האחרונה הגיעה לשרת לפני שהחיבור נכשל.",
+    signedOut: "פג תוקף ההתחברות. הטקסט נשאר כאן. התחבר שוב כדי לשמור אותו.",
+    signIn: "התחברות",
+    badName: "השם הזה ארוך מדי או אינו מותר בתיקייה הזו. שנה את שם העותק ונסה שוב.",
+    folderGone: "התיקייה של העותק הזה כבר אינה קיימת. הטקסט נשאר כאן כדי שתוכל להעתיק אותו.",
+    storageFull: "האחסון מלא. הטקסט נשאר כאן; פנה מקום ונסה שוב.",
   },
 };
 

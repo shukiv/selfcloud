@@ -60,6 +60,14 @@ async function dirsOf(parentId: string | null): Promise<string[]> {
 
 export type CopyResult = { ok: true; node: Node } | { ok: false; why: SaveFailure | "noName" };
 
+// copyFailureOfStatus names a refused copy (LOW-2): a name the server will not take (400) and a folder that is gone (404) have words
+// of their own; every other refusal is the save's table (failureOfStatus).
+function copyFailureOfStatus(status: number): SaveFailure {
+  if (status === 400) return "badName";
+  if (status === 404) return "folderGone";
+  return failureOfStatus(status);
+}
+
 // keepCopy saves bytes as a new file in the folder of file, under the first free copy name. Each try is a POST with If-None-Match: *,
 // so a taken name answers 412 and the next name is tried. Any other answer stops the loop and is returned. The bounded loop gives up
 // after COPY_TRIES names with "noName". The original file is not touched.
@@ -69,7 +77,7 @@ export async function keepCopy(file: Node, mime: string, bytes: Uint8Array): Pro
   try {
     dirs = await dirsOf(file.parent_id);
   } catch (err) {
-    return { ok: false, why: err instanceof ApiError ? failureOfStatus(err.status) : "failed" };
+    return { ok: false, why: err instanceof ApiError ? copyFailureOfStatus(err.status) : "failed" };
   }
   const csrf = currentCsrf();
   for (let n = 2; n < 2 + COPY_TRIES; n++) {
@@ -98,7 +106,7 @@ export async function keepCopy(file: Node, mime: string, bytes: Uint8Array): Pro
     }
     if (res.status !== 201) {
       await res.body?.cancel().catch(() => undefined);
-      return { ok: false, why: failureOfStatus(res.status) };
+      return { ok: false, why: copyFailureOfStatus(res.status) };
     }
     let node: unknown;
     try {
