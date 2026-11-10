@@ -180,6 +180,30 @@ export async function pwaChecks(h, { page, base, brand, dir, check, wsUrl }) {
   await sleep(500);
   const cached = (await page.evaluate(CACHE_URLS)).map((u) => new URL(u).pathname);
   check(cached.some((p) => p.startsWith('/assets/')), `the app's own hashed files are cached (${cached.filter((p) => p.startsWith('/assets/')).length})`);
+  // The app's files come encoded from the server (decision 131). With the worker bypassed and the cache ignored, a reload gets
+  // its JavaScript as brotli or gzip, and the page still opens. Files under 1 KB are sent as they are, so only the rest count.
+  const encodings = [];
+  const onResponse = (p) => {
+    const url = new URL(p.response.url);
+    if (!url.pathname.startsWith('/assets/') || !url.pathname.endsWith('.js')) return;
+    const header = Object.entries(p.response.headers).find(([k]) => k.toLowerCase() === 'content-encoding');
+    encodings.push(header ? header[1].toLowerCase() : 'identity');
+  };
+  page.on('Network.responseReceived', onResponse);
+  await page.send('Network.setBypassServiceWorker', { bypass: true });
+  try {
+    await page.send('Page.reload', { ignoreCache: true });
+    await page.waitFor(`document.readyState === 'complete' && !!document.querySelector('[data-testid=account-menu]')`, 30000);
+    await sleep(500);
+  } finally {
+    await page.send('Network.setBypassServiceWorker', { bypass: false });
+    page.off('Network.responseReceived', onResponse);
+  }
+  const encoded = encodings.filter((e) => e !== 'identity');
+  check(
+    encoded.includes('br') && encoded.length >= 10,
+    `the app's JavaScript arrives encoded from the server (${encoded.length} of ${encodings.length} files, ${[...new Set(encoded)].join(', ') || 'none'})`,
+  );
   const forbidden = kept.filter((p) => p.startsWith('/api/') || p.startsWith('/wopi/') || p === '/s' || p.startsWith('/s/') || p.startsWith('/brand/'));
   check(forbidden.length === 0, `no API answer, office endpoint, share page or brand file is cached (${forbidden.join(' ') || 'none'})`);
   check(urls.every((u) => !new URL(u).search), 'no cached answer carries a query string (no signed link)');
