@@ -227,7 +227,7 @@ Content search keeps the words of each file in the database. Deleting the text o
 | `office.lock_minutes` | `30` | How long an editor's lock lasts without a refresh, at most 30 (the WOPI limit). A crashed editor frees its file after this. |
 | `office.token_minutes` | `600` | How long an editor's access token lives, at most a day. It never outlives the token that opened the editor. |
 | `office.max_file_bytes` | `50MiB` | The largest office file that may be opened in the editor, and the largest one a save may write. |
-| `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished uploads may hold. Set `100` for a single tenant. |
+| `upload.max_disk_share_percent` | `50` | Most of the usable disk space one account's unfinished writes may hold: its uploads, and its stored zips, bundles and imports as well. Set `100` for a single tenant. |
 | `tokens.max_ttl` | `1h` | Longest lifetime of a delegated token. A longer `ttl` is refused. |
 | `admin.tenant_access` | `false` | **Off by default.** When on, an installation admin may get into a tenant user's account three ways: a one-time reset link, a password the admin types (the user must change it at the next sign-in), and sign-in as the user for one hour. Turning it on means the people who run this installation can read and act as any user of any tenant. Each of these is recorded in the tenant's audit log under the admin's name. Off, the admin cannot use these three ways. Off does not stop an admin reaching a tenant's files, since an admin can create an account key, and that is audited too. The email reset stays available either way. |
 | `sharing.max_expiry` | `8760h` | Longest a permission may run from the moment it is set (its `expires_at`). `0` means no cap. |

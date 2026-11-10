@@ -5392,9 +5392,27 @@ Bundle, measured on the first-load files of each build (gzip level 9, bytes, the
     - **`apierr.EncryptedArchive`** (`encrypted_archive`, 415) is the code for an encrypted archive. No route answers it yet; the OpenAPI error list has it so the spec test keeps step.
     - **Config.** `bundle.max_disk` (default 30 GiB) and `bundle.max_disk_per_account` (default 10 GiB) are placeholders, validated at load: the budget is positive, and the share is positive and at most the budget. They are separate from `zip.max_disk`, since bundles do not expire. The bundle's entry and byte caps are the import's (`imports.archive.*`), so no other key is added.
 
-    **Release note (for API clients).** After this change an upload can be refused while a stored zip reserves the disk. The refusal is `507 storage_full` with `details.scope` `server` and `details.reason` `disk`, as the disk rule has always given, now with `reason` added. A stored zip whose start the disk cannot hold ends `failed` with `error_code` `storage_full` and `error_reason` `disk`, and a zip that would take the disk is refused before it writes. An import's reservations count the same way. Nothing else in a response changes.
+    **Release note (for API clients).** Three answers change, and each is listed here, since no other answer changes in this slice.
+    1. An upload can be refused while a stored zip, a bundle or an import holds disk. The refusal is `507 storage_full` with `details.scope` `server` and `details.reason` `disk`. The reason is new in the body; the code and the status are as before.
+    2. An upload's share of the disk, `details.scope` `account`, now counts the account's stored zips, bundles and imports as well as its uploads. So an upload can be refused with scope `account` while a zip of the same account reserves disk.
+    3. A stored zip whose start the disk cannot hold ends `failed` with `error_code` `storage_full` and `error_reason` `disk`, and reserves nothing before it writes. A zip that a restart resumes is no longer refused by its own earlier reservation, and a piece whose bytes are still arriving is counted (see below).
+    An import whose next entry the disk cannot hold pauses with `storage_full`, as before; the check is now in the entry's reservation write.
 
     `jobReadable` keeps today's rule: a caller who manages the job's account, or the credential that queued it. Import jobs keep their current readers in this slice. A later slice changes them for account owners, and that change is a behaviour change to be stated when it lands.
+
+    **Round 2 review points, and what they changed.**
+    - *A restarted zip.* A zip that stopped after its snapshot keeps its reservation. Its restarted run releases that reservation inside its start write, which rolls back if the write is refused, so the zip is not refused by its own earlier claim.
+    - *An import's entry.* The disk check for an entry is in the write that reserves it, before the reservation, so the check and the reservation see the same totals. The import's own old reservation is persisted as released first. This replaces the separate check that ran before the reservation's write; the single writer (one write connection, `BEGIN IMMEDIATE`) is what makes the in-write check exact. A sequential test pins it (`TestImportEntryLargerThanTheDiskPauses` fails if the in-write check is removed). A concurrent test is not possible without a hook in the writer, so none is written.
+    - *Pieces in flight.* A one-request upload piece holds its bytes in memory until they land. A zip start reads those bytes under the flight lock, which it takes before its write and never inside it, and counts them with its reservation. The flight release runs only at the end of its handler, never inside a store write, so the lock order cannot deadlock.
+    - *The ended bundles and the paused import.* A cancelled or failed bundle holds nothing, and a paused import holds its current entry until it ends. Both are pinned by tests.
+    - *The fsck.* The check's blob names, references and unrecorded scan read `source_blob_id` as well as `archive_blob_id`, and a test pins each.
+    - *The schema.* A bundle's name and key are limited to 255 bytes, and a bundle's folder is a foreign key with cascade. A node source names its node and an upload names none. Partial indexes cover the unfinished rows of `bundle_jobs` and `import_jobs`. The plans, as the test logs them: `SCAN bundle_jobs USING INDEX bundle_jobs_unwritten` and `SCAN import_jobs USING INDEX import_jobs_unfinished`. The scans read the index, which holds only unfinished rows, so the cost follows the number of unfinished writers, not the size of the table.
+    - *The partial name.* `CreateNamed` refuses the `tmp-` prefix that the stale sweep removes.
+
+    **Follow-ups, recorded and not done in ar0.**
+    - *ar2 must sweep named partials (L2).* `bnd-<id>.part` is not swept by `RemoveStaleUploads`. The bundle job removes its partial at job end, at restart, and in a sweep, or a crash leaves it behind.
+    - *ar4 clears the source pin when the import ends (L3).* A finished import's row is kept until retention, so a drive file's blob is pinned that long. ar4 should clear `source_blob_id` when the import ends, if the file must be releasable sooner.
+    - *The bundle's owner check against a deleted user (ar2).* `user_id` has no foreign key, as the users table is not referenced by the bundle tables yet; ar2 decides how a deleted maker's bundle is read.
 
     **Not in this slice.** No route, no OpenAPI route section, and no CLI row. `encrypted_archive` has no route yet. The bundle snapshot and state machine are ar2; the walker move is ar1; the extract is ar4.
 
