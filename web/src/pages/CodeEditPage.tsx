@@ -343,7 +343,8 @@ export default function CodeEditPage() {
       setConflict({ ...c, noName: true });
       return;
     }
-    if (got.why === "failed") lostSave.current = true;
+    // Only a copy that was sent can have reached the server, so only it is a lost reply (LOW-B).
+    if (got.why === "failed" && got.sent) lostSave.current = true;
     setConflict(null);
     setSaveState("failed");
     setNotice(got.why);

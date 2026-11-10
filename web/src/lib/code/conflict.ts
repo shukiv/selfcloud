@@ -58,7 +58,8 @@ async function dirsOf(parentId: string | null): Promise<string[]> {
   return names;
 }
 
-export type CopyResult = { ok: true; node: Node } | { ok: false; why: SaveFailure | "noName" };
+// A failed copy says whether a request was sent: only a sent copy can have reached the server, so only it can be a lost reply (LOW-B).
+export type CopyResult = { ok: true; node: Node } | { ok: false; why: SaveFailure | "noName"; sent: boolean };
 
 // copyFailureOfStatus names a refused copy (LOW-2): a name the server will not take (400) and a folder that is gone (404) have words
 // of their own; every other refusal is the save's table (failureOfStatus).
@@ -72,12 +73,12 @@ function copyFailureOfStatus(status: number): SaveFailure {
 // so a taken name answers 412 and the next name is tried. Any other answer stops the loop and is returned. The bounded loop gives up
 // after COPY_TRIES names with "noName". The original file is not touched.
 export async function keepCopy(file: Node, mime: string, bytes: Uint8Array): Promise<CopyResult> {
-  if (!file.folder_id) return { ok: false, why: "failed" };
+  if (!file.folder_id) return { ok: false, why: "failed", sent: false };
   let dirs: string[];
   try {
     dirs = await dirsOf(file.parent_id);
   } catch (err) {
-    return { ok: false, why: err instanceof ApiError ? copyFailureOfStatus(err.status) : "failed" };
+    return { ok: false, why: err instanceof ApiError ? copyFailureOfStatus(err.status) : "failed", sent: false };
   }
   const csrf = currentCsrf();
   for (let n = 2; n < 2 + COPY_TRIES; n++) {
@@ -98,7 +99,7 @@ export async function keepCopy(file: Node, mime: string, bytes: Uint8Array): Pro
         cache: "no-store",
       });
     } catch {
-      return { ok: false, why: "failed" };
+      return { ok: false, why: "failed", sent: true };
     }
     if (res.status === 412) {
       await res.body?.cancel().catch(() => undefined);
@@ -106,18 +107,18 @@ export async function keepCopy(file: Node, mime: string, bytes: Uint8Array): Pro
     }
     if (res.status !== 201) {
       await res.body?.cancel().catch(() => undefined);
-      return { ok: false, why: copyFailureOfStatus(res.status) };
+      return { ok: false, why: copyFailureOfStatus(res.status), sent: true };
     }
     let node: unknown;
     try {
       node = await res.json();
     } catch {
-      return { ok: false, why: "failed" };
+      return { ok: false, why: "failed", sent: true };
     }
     if (typeof node !== "object" || node === null || typeof (node as { id?: unknown }).id !== "string") {
-      return { ok: false, why: "failed" };
+      return { ok: false, why: "failed", sent: true };
     }
     return { ok: true, node: node as Node };
   }
-  return { ok: false, why: "noName" };
+  return { ok: false, why: "noName", sent: true };
 }

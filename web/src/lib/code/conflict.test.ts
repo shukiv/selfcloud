@@ -72,13 +72,13 @@ describe("keepCopy", () => {
 
   it("stops at twenty tries and reports that no name is free", async () => {
     const f = fake(() => taken());
-    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "noName" });
+    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "noName", sent: true });
     expect(f.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(20);
   });
 
   it("stops at any other answer and reports it as a failure", async () => {
     const f = fake(() => new Response(null, { status: 403 }));
-    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "forbidden" });
+    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "forbidden", sent: true });
     expect(f.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(1);
   });
 
@@ -117,8 +117,8 @@ describe("keepCopy", () => {
 
   it("names a copy the server refuses as a bad name, and one whose folder is gone, with their own reasons (LOW-2)", async () => {
     fake(() => Response.json({ error: { code: "invalid_path", details: {} } }, { status: 400 }));
-    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "badName" });
+    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "badName", sent: true });
     fake(() => Response.json({ error: { code: "not_found", details: {} } }, { status: 404 }));
-    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "folderGone" });
+    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "folderGone", sent: true });
   });
 });
