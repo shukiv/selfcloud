@@ -159,6 +159,7 @@ const TL2_LISTS = [
   ['people', '/manage/people'],
   ['groups', '/manage/groups'],
   ['spaces', '/manage/spaces'],
+  ['labels', '/manage/labels'],
 ];
 async function tl2Shots(page, h) {
   const snap = async (name) => {
