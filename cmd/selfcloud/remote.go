@@ -72,51 +72,51 @@ var remoteCommands = []remoteCommand{
 	{name: "profile rm", help: `  profile rm NAME                remove a profile's local key (the server's key is not revoked)
 `, run: profilecmd.Remove},
 	{name: "ls", route: "GET /api/v1/folders/{fld}/children", more: []string{"GET /api/v1/nodes/{nod}/children"},
-		notProbed: filesProbeNote, help: `  ls [--folder FOLDER] [--all] [PATH | NODE]
+		help: `  ls [--folder FOLDER] [--all] [PATH | NODE]
                                  the children of a path in a folder (--folder names it), or of a directory node
 `, run: files.Ls},
-	{name: "stat", route: "GET /api/v1/nodes/{nod}", notProbed: filesProbeNote,
+	{name: "stat", route: "GET /api/v1/nodes/{nod}",
 		help: `  stat NODE [--json]             one node: its id, folder, parent, name, kind, size and modified time
 `, run: files.Stat},
-	{name: "mkdir", route: "POST /api/v1/folders/{fld}/directories", notProbed: filesProbeNote,
+	{name: "mkdir", route: "POST /api/v1/folders/{fld}/directories",
 		help: `  mkdir --folder FOLDER [--parents] PATH
                                  make a directory at a path in a folder (--parents makes the missing ones too)
 `, run: files.Mkdir},
-	{name: "touch", route: "POST /api/v1/folders/{fld}/files", notProbed: filesProbeNote,
+	{name: "touch", route: "POST /api/v1/folders/{fld}/files",
 		help: `  touch --folder FOLDER [--parents] PATH
                                  make a new, empty file at a path; a name in use is a conflict
 `, run: files.Touch},
 	{name: "mv", route: "POST /api/v1/nodes/{nod}/move", more: []string{"PATCH /api/v1/nodes/{nod}"},
-		notProbed: filesProbeNote, help: `  mv NODE DEST [--folder FOLDER] [--name NAME] [--replace [--yes]]
+		help: `  mv NODE DEST [--folder FOLDER] [--name NAME] [--replace [--yes]]
   mv NODE --name NAME
                                  move a node into a directory (DEST is a node id, or a path in --folder), or rename it
 `, run: files.Mv},
-	{name: "cp", route: "POST /api/v1/nodes/{nod}/copy", notProbed: filesProbeNote,
+	{name: "cp", route: "POST /api/v1/nodes/{nod}/copy",
 		help: `  cp NODE DEST [--folder FOLDER] [--name NAME] [--replace [--yes]]
                                  copy a node into a directory, as mv does for the destination
 `, run: files.Cp},
-	{name: "rm", route: "DELETE /api/v1/nodes/{nod}", reads: []string{"GET /api/v1/nodes/{nod}"}, notProbed: filesProbeNote,
+	{name: "rm", route: "DELETE /api/v1/nodes/{nod}", reads: []string{"GET /api/v1/nodes/{nod}"},
 		help: `  rm NODE... [--yes]             move one or more nodes to the Trash (asks first)
 `, run: files.Rm},
-	{name: "trash ls", route: "GET /api/v1/trash", notProbed: filesProbeNote,
+	{name: "trash ls", route: "GET /api/v1/trash",
 		help: `  trash ls [--folder FOLDER] [--all]
                                  the trashed nodes, of every folder or of one
 `, run: files.TrashLs},
-	{name: "trash restore", route: "POST /api/v1/nodes/{nod}/restore", notProbed: filesProbeNote,
+	{name: "trash restore", route: "POST /api/v1/nodes/{nod}/restore",
 		help: `  trash restore NODE...          put one or more trashed nodes back where they were
 `, run: files.TrashRestore},
-	{name: "trash empty", route: "POST /api/v1/trash/empty", notProbed: filesProbeNote,
+	{name: "trash empty", route: "POST /api/v1/trash/empty",
 		help: `  trash empty [--folder FOLDER] [--yes]
                                  purge the trash for good, of every folder or of one (asks first)
 `, run: files.TrashEmpty},
-	{name: "trash rm", route: "DELETE /api/v1/trash/{nod}", reads: []string{"GET /api/v1/trash"}, notProbed: filesProbeNote,
+	{name: "trash rm", route: "DELETE /api/v1/trash/{nod}", reads: []string{"GET /api/v1/trash"},
 		help: `  trash rm NODE... [--yes]       purge one or more trashed nodes for good (asks first)
 `, run: files.TrashRm},
-	{name: "shortcut add", route: "POST /api/v1/nodes/{nod}/shortcuts", notProbed: filesProbeNote,
+	{name: "shortcut add", route: "POST /api/v1/nodes/{nod}/shortcuts",
 		help: `  shortcut add DIR TARGET [--name NAME]
                                  a shortcut to TARGET, in the directory DIR (both node ids)
 `, run: files.ShortcutAdd},
-	{name: "unlock", route: "POST /api/v1/nodes/{nod}/unlock", notProbed: filesProbeNote,
+	{name: "unlock", route: "POST /api/v1/nodes/{nod}/unlock",
 		help: `  unlock NODE                    break the editing lock on a file
 `, run: files.Unlock},
 }
