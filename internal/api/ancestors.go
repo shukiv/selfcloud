@@ -28,11 +28,11 @@ type reachedNode struct {
 // reachableAncestors walks up parent_id from n, nearest first, and returns each ancestor the caller reaches. Each step
 // is nodeAccessWith, the same access GET /nodes/{nod} makes, so a share link, a grant, a token's scope and the trash
 // all apply. The walk stops at the first node the caller cannot reach (not_found): nothing above it is read or returned.
-// Any other error is the answer.
-func (s *Server) reachableAncestors(ctx context.Context, p *auth.Principal, n *store.Node) ([]reachedNode, error) {
+// Any other error is the answer, and no partial chain comes with it. rd is the store, or a stand-in in a test.
+func (s *Server) reachableAncestors(ctx context.Context, rd accessReader, p *auth.Principal, n *store.Node) ([]reachedNode, error) {
 	var chain []reachedNode
 	for id := n.ParentID; id != "" && len(chain) < maxAncestors; {
-		a, role, err := nodeAccessWith(ctx, s.store, p, id)
+		a, role, err := nodeAccessWith(ctx, rd, p, id)
 		if err != nil {
 			if apierr.From(err).Code == apierr.NotFound {
 				break
@@ -55,7 +55,7 @@ func (s *Server) handleListAncestors(w http.ResponseWriter, r *http.Request) err
 	}
 	ctx := r.Context()
 	p := principalOf(r)
-	chain, err := s.reachableAncestors(ctx, p, n)
+	chain, err := s.reachableAncestors(ctx, s.store, p, n)
 	if err != nil {
 		return err
 	}
