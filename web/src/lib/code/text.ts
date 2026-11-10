@@ -67,6 +67,11 @@ export interface CodeText {
   signIn: string;
   // The line under the signed-out notice: what a sign-in does to unsaved text (HIGH-1).
   signedOutCopy: string;
+  // The unsaved text kept across a sign-in for the same person (decision 133): the line under the signed-out notice when the text is
+  // kept, the notice when the text comes back after a sign-in, and its Discard choice.
+  signedOutKept: string;
+  restored: string;
+  discard: string;
   badName: string;
   folderGone: string;
   storageFull: string;
@@ -125,6 +130,9 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     signedOut: "Your sign-in has ended. The text stays here. Sign in again to save it.",
     signIn: "Sign in",
     signedOutCopy: "Unsaved changes are not kept across sign-in. Copy the text first, then sign in.",
+    signedOutKept: "Unsaved changes are kept in this tab. They come back when the same person signs in and opens this file.",
+    restored: "Unsaved changes from before the sign-in are back.",
+    discard: "Discard",
     badName: "This name is too long or not allowed in this folder. Rename the copy and try again.",
     folderGone: "The folder for this copy is gone. The text stays here so you can copy it.",
     storageFull: "The storage is full. The text stays here, so free some space and try again.",
@@ -180,6 +188,9 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     signedOut: "Su sesión ha terminado. El texto se queda aquí. Inicie sesión de nuevo para guardarlo.",
     signIn: "Iniciar sesión",
     signedOutCopy: "Los cambios sin guardar no se conservan al iniciar sesión. Copie el texto antes y luego inicie sesión.",
+    signedOutKept: "Los cambios sin guardar se conservan en esta pestaña. Vuelven cuando la misma persona inicie sesión y abra este archivo.",
+    restored: "Los cambios sin guardar de antes del inicio de sesión han vuelto.",
+    discard: "Descartar",
     badName: "Este nombre es demasiado largo o no está permitido en esta carpeta. Cambie el nombre de la copia e inténtelo de nuevo.",
     folderGone: "La carpeta de esta copia ya no existe. El texto se queda aquí para que pueda copiarlo.",
     storageFull: "El almacenamiento está lleno. El texto se queda aquí; libere espacio e inténtelo de nuevo.",
@@ -235,6 +246,9 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     signedOut: "Votre connexion a pris fin. Le texte reste ici. Reconnectez-vous pour l’enregistrer.",
     signIn: "Se connecter",
     signedOutCopy: "Les modifications non enregistrées ne sont pas conservées à la connexion. Copiez d’abord le texte, puis connectez-vous.",
+    signedOutKept: "Les modifications non enregistrées sont conservées dans cet onglet. Elles reviennent lorsque la même personne se connecte et ouvre ce fichier.",
+    restored: "Les modifications non enregistrées d’avant la connexion sont revenues.",
+    discard: "Abandonner",
     badName: "Ce nom est trop long ou non autorisé dans ce dossier. Renommez la copie et réessayez.",
     folderGone: "Le dossier de cette copie n’existe plus. Le texte reste ici pour que vous puissiez le copier.",
     storageFull: "Le stockage est plein. Le texte reste ici ; libérez de la place et réessayez.",
@@ -290,6 +304,9 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     signedOut: "A sua sessão terminou. O texto fica aqui. Inicie sessão novamente para o guardar.",
     signIn: "Iniciar sessão",
     signedOutCopy: "As alterações não guardadas não são mantidas ao iniciar sessão. Copie primeiro o texto e depois inicie sessão.",
+    signedOutKept: "As alterações não guardadas ficam neste separador. Voltam quando a mesma pessoa iniciar sessão e abrir este ficheiro.",
+    restored: "As alterações não guardadas de antes do início de sessão voltaram.",
+    discard: "Descartar",
     badName: "Este nome é demasiado longo ou não é permitido nesta pasta. Mude o nome da cópia e tente de novo.",
     folderGone: "A pasta desta cópia já não existe. O texto fica aqui para o poder copiar.",
     storageFull: "O armazenamento está cheio. O texto fica aqui; liberte espaço e tente de novo.",
@@ -345,6 +362,9 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     signedOut: "Сеанс входа завершён. Текст остаётся здесь. Войдите снова, чтобы сохранить его.",
     signIn: "Войти",
     signedOutCopy: "Несохранённые изменения не сохраняются при входе. Сначала скопируйте текст, затем войдите.",
+    signedOutKept: "Несохранённые изменения остаются в этой вкладке. Они вернутся, когда тот же человек войдёт и откроет этот файл.",
+    restored: "Несохранённые изменения, сделанные до входа, восстановлены.",
+    discard: "Отменить изменения",
     badName: "Это имя слишком длинное или не разрешено в этой папке. Переименуйте копию и попробуйте ещё раз.",
     folderGone: "Папка для этой копии больше не существует. Текст остаётся здесь, чтобы вы могли его скопировать.",
     storageFull: "Хранилище заполнено. Текст остаётся здесь; освободите место и попробуйте ещё раз.",
@@ -400,6 +420,9 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     signedOut: "انتهت جلسة تسجيل الدخول. يبقى النص هنا. سجّل الدخول مرة أخرى لحفظه.",
     signIn: "تسجيل الدخول",
     signedOutCopy: "التغييرات غير المحفوظة لا تُحفظ عند تسجيل الدخول. انسخ النص أولًا ثم سجّل الدخول.",
+    signedOutKept: "التغييرات غير المحفوظة محفوظة في هذا التبويب. ستعود عندما يسجّل الشخص نفسه الدخول ويفتح هذا الملف.",
+    restored: "عادت التغييرات غير المحفوظة من قبل تسجيل الدخول.",
+    discard: "تجاهل التغييرات",
     badName: "هذا الاسم طويل جدًا أو غير مسموح به في هذا المجلد. غيّر اسم النسخة وحاول مرة أخرى.",
     folderGone: "مجلد هذه النسخة لم يعد موجودًا. يبقى النص هنا لتتمكن من نسخه.",
     storageFull: "مساحة التخزين ممتلئة. يبقى النص هنا؛ أفرِغ بعض المساحة وحاول مرة أخرى.",
@@ -455,6 +478,9 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     signedOut: "פג תוקף ההתחברות. הטקסט נשאר כאן. התחבר שוב כדי לשמור אותו.",
     signIn: "התחברות",
     signedOutCopy: "שינויים שלא נשמרו לא נשמרים בהתחברות. העתק קודם את הטקסט ואז התחבר.",
+    signedOutKept: "השינויים שלא נשמרו נשמרים בכרטיסייה זו. הם יחזרו כשאותו אדם ייכנס וייפתח את הקובץ.",
+    restored: "השינויים שלא נשמרו מלפני הכניסה חזרו.",
+    discard: "ביטול השינויים",
     badName: "השם הזה ארוך מדי או אינו מותר בתיקייה הזו. שנה את שם העותק ונסה שוב.",
     folderGone: "התיקייה של העותק הזה כבר אינה קיימת. הטקסט נשאר כאן כדי שתוכל להעתיק אותו.",
     storageFull: "האחסון מלא. הטקסט נשאר כאן; פנה מקום ונסה שוב.",

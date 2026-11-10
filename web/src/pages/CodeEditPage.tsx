@@ -21,6 +21,7 @@ import { brand } from "../lib/brand";
 import { decodeText, sniffWhole } from "../lib/code/encoding";
 import { encodeDraft, EDIT_LIMIT, lineBreakOf, mixedBreaks, normalizeText } from "../lib/code/edit";
 import { headEtag, keepCopy } from "../lib/code/conflict";
+import { dropUnsaved, keepUnsaved, readUnsaved } from "../lib/code/unsaved";
 import { extensionOf, packOf, type Pack } from "../lib/code/names";
 import { codeText } from "../lib/code/text";
 import { readWhole, saveText, type SaveFailure } from "../lib/code/save";
@@ -32,8 +33,8 @@ import { can, downloadAllowed } from "../lib/files/roles";
 import type { Node } from "../lib/files/types";
 import { useLang, useT } from "../lib/i18n";
 import { go, signInURL } from "../lib/router";
-import { clearSession } from "../lib/session";
-import { useStore } from "../lib/store";
+import { clearSession, session, signingOut, type Session } from "../lib/session";
+import { get, useStore } from "../lib/store";
 import { useModeOrLight } from "../theme/theme";
 
 // The failure the page shows when the file cannot be opened, chosen by the status and never by the server's text.
@@ -43,8 +44,9 @@ type OpenFailure = "notFound" | "forbidden" | "signedOut" | "failed";
 type SaveState = "saved" | "unsaved" | "saving" | "failed" | null;
 
 // Notice is a note in the page's notice area: a save that did not happen (its SaveFailure), a file that is not UTF-8, one too
-// large to edit, or one that is not text at all (binary: a NUL byte anywhere in the file, MED-2).
-type Notice = SaveFailure | "notUtf8" | "tooLargeToEdit" | "binary" | null;
+// large to edit, or one that is not text at all (binary: a NUL byte anywhere in the file, MED-2). signedOutKept is a sign-in that
+// ended while this tab kept the unsaved text (decision 133); restored is the kept text coming back after a sign-in.
+type Notice = SaveFailure | "notUtf8" | "tooLargeToEdit" | "binary" | "signedOutKept" | "restored" | null;
 
 // Ready is an open file: its text as the editor starts with it, and what the save needs to write it back (the BOM and the line
 // break the file had). initial changes with each reload, and key remounts the editor with it. mixed says the file uses more than
@@ -97,6 +99,11 @@ function failureOf(err: unknown): OpenFailure {
 // NOD is the node in the address, as the API gives it.
 const NOD = /^nod_[A-Za-z0-9_-]+$/;
 
+// fitsDraft says a text is kept across a sign-in only up to the editor's own gate, 2 MiB after encoding (design 4.2, decision 133).
+function fitsDraft(text: string, bom: boolean, sep: string): boolean {
+  return encodeDraft(text, bom, sep).length <= EDIT_LIMIT;
+}
+
 export default function CodeEditPage() {
   const { t } = useT();
   const lang = useLang();
@@ -133,6 +140,10 @@ export default function CodeEditPage() {
   const keyRef = useRef(0);
   // The latest page and save, read by the editor's keys, which are bound once for the editor's text.
   const readyRef = useRef<Ready | null>(null);
+  // openUser is the person the open file was opened by: text kept for the file is theirs, whoever signs in later (decision 133).
+  const openUser = useRef<string | null>(null);
+  // keptText is the text this tab kept when a sign-in ended, so the page's Sign in does not ask again for the same text.
+  const keptText = useRef<string | null>(null);
 
   // The page opens the file each time the address changes: a read with no Range, so the whole file, and its ETag kept.
   useEffect(() => {
@@ -141,6 +152,8 @@ export default function CodeEditPage() {
     openGen.current++;
     readyRef.current = null;
     handle.current = null;
+    openUser.current = get(session)?.user.id ?? null;
+    keptText.current = null;
     // The new file starts with no save in flight and no ETag, saved text or type of the last file (LOW-2).
     saving.current = false;
     saved.current = "";
@@ -173,18 +186,24 @@ export default function CodeEditPage() {
           return;
         }
         const d = decodeText(got.bytes, false);
-        file.current = { etag: got.etag, mime: n.mime_type ?? "application/octet-stream" };
-        const initial = normalizeText(d.text);
-        saved.current = initial;
+        const serverText = normalizeText(d.text);
         const canEdit = mode === "edit" && can.edit(n.role);
+        // A file opened to edit comes back with the text this tab kept for this person (decision 133). It is unsaved text: the server's
+        // text is the saved text, and the draft's ETag is the one a save is checked against, so a change since then meets the conflict dialog.
+        const back = canEdit && d.utf8 && openUser.current !== null ? readUnsaved(openUser.current, nod) : null;
+        const kept = back !== null && fitsDraft(back.text, back.bom, back.sep) ? back : null;
+        file.current = { etag: kept ? kept.etag : got.etag, mime: n.mime_type ?? "application/octet-stream" };
+        saved.current = serverText;
+        const initial = kept ? kept.text : serverText;
+        if (kept) keptText.current = kept.text;
         const ready: Ready = {
           name: n.name,
           folder: n.folder_id,
           canEdit,
           utf8: d.utf8,
-          bom: d.bom,
+          bom: kept ? kept.bom : d.bom,
           mixed: mixedBreaks(d.text),
-          sep: lineBreakOf(d.text),
+          sep: kept ? kept.sep : lineBreakOf(d.text),
           initial,
           pack: packOf(n.name) ?? "text",
           lint: packOf(n.name) === "json" && extensionOf(n.name) === "json",
@@ -197,8 +216,17 @@ export default function CodeEditPage() {
         setWrap(ready.wrap);
         setPage({ s: "ready", ready });
         if (!d.utf8) setNotice("notUtf8");
+        else if (kept) {
+          setNotice("restored");
+          setSaveState("unsaved");
+        }
       } catch (err) {
-        if (!cancelled) setPage({ s: "failed", why: failureOf(err) });
+        if (!cancelled) {
+          const why = failureOf(err);
+          // A file that now answers not found, or forbidden, drops the text kept for it (decision 133). Opening to read does not.
+          if (mode === "edit" && openUser.current !== null && (why === "notFound" || why === "forbidden")) dropUnsaved(openUser.current, nod);
+          setPage({ s: "failed", why });
+        }
       }
     })();
     return () => {
@@ -223,9 +251,35 @@ export default function CodeEditPage() {
   const applySaved = (node: Node, text: string) => {
     file.current = { etag: node.etag ?? "", mime: node.mime_type ?? file.current.mime };
     saved.current = text;
+    // A save that took the text clears the text kept for the file (decision 133).
+    drop();
     const now = handle.current?.text();
     setSaveState(now === text ? "saved" : "unsaved");
   };
+
+  // drop clears the text kept for the open file, when a save took it, a discard was chosen, or the file is gone or forbidden.
+  const drop = () => {
+    if (openUser.current !== null) dropUnsaved(openUser.current, nod);
+    keptText.current = null;
+  };
+
+  // keep writes the text into this tab's store for the person who opened the file, with the ETag a save of it is checked against
+  // (decision 133). It says whether the store kept it: a text over the editor's gate, or one the store refuses, is not kept.
+  const keep = (text: string): boolean => {
+    const r = readyRef.current;
+    const u = openUser.current;
+    if (r === null || u === null || !r.utf8 || !fitsDraft(text, r.bom, r.sep)) {
+      keptText.current = null;
+      return false;
+    }
+    const ok = keepUnsaved(u, nod, { text, etag: file.current.etag, bom: r.bom, sep: r.sep });
+    keptText.current = ok ? text : null;
+    return ok;
+  };
+
+  // signedOutNotice is the notice for a sign-in that ended while the text was unsaved: kept, when this tab kept the text, and the
+  // copy-first words otherwise (design 4.3, decision 133).
+  const signedOutNotice = (text: string): "signedOutKept" | "signedOut" => (keep(text) ? "signedOutKept" : "signedOut");
 
   // openConflict opens the dialog for a save refused with 412 (4.4): the check reads the file's current ETag with HEAD, and the
   // dialog's Overwrite saves over it. A check that fails shows its notice instead of the dialog.
@@ -234,9 +288,12 @@ export default function CodeEditPage() {
     const h = await headEtag(nod);
     if (gen !== openGen.current) return;
     if (!h.ok) {
-      setNotice(h.why);
+      setNotice(h.why === "signedOut" ? signedOutNotice(text) : h.why);
       setSaveState("failed");
-      if (h.why === "forbidden" || h.why === "gone") setClosed(true);
+      if (h.why === "forbidden" || h.why === "gone") {
+        drop();
+        setClosed(true);
+      }
       return;
     }
     setConflict({ text, bytes, etag: h.etag, noName: false, maybe: lostSave.current });
@@ -271,8 +328,11 @@ export default function CodeEditPage() {
     }
     if (got.why === "failed") lostSave.current = true;
     setSaveState("failed");
-    setNotice(got.why);
-    if (got.why === "forbidden" || got.why === "gone") setClosed(true);
+    setNotice(got.why === "signedOut" ? signedOutNotice(text) : got.why);
+    if (got.why === "forbidden" || got.why === "gone") {
+      drop();
+      setClosed(true);
+    }
     return false;
   };
   // The editor's Ctrl or Cmd+S runs the latest save.
@@ -319,8 +379,11 @@ export default function CodeEditPage() {
     // A save that got no answer may still have reached the server, so the next conflict says so (MED-2).
     if (got.why === "failed") lostSave.current = true;
     setSaveState("failed");
-    setNotice(got.why);
-    if (got.why === "forbidden" || got.why === "gone") setClosed(true);
+    setNotice(got.why === "signedOut" ? signedOutNotice(c.text) : got.why);
+    if (got.why === "forbidden" || got.why === "gone") {
+      drop();
+      setClosed(true);
+    }
   };
 
   // keepAsCopy saves the draft as a new file beside the original (the dialog's second choice). The original is not changed, and the
@@ -334,6 +397,8 @@ export default function CodeEditPage() {
     if (gen !== openGen.current) return;
     if (got.ok) {
       lostSave.current = false;
+      // The copy took the text, so the text kept for the file is cleared (decision 133).
+      drop();
       setConflict(null);
       setSaveState("unsaved");
       setCopied({ id: got.node.id, name: got.node.name });
@@ -347,8 +412,11 @@ export default function CodeEditPage() {
     if (got.why === "failed" && got.sent) lostSave.current = true;
     setConflict(null);
     setSaveState("failed");
-    setNotice(got.why);
-    if (got.why === "forbidden" || got.why === "gone") setClosed(true);
+    setNotice(got.why === "signedOut" ? signedOutNotice(c.text) : got.why);
+    if (got.why === "forbidden" || got.why === "gone") {
+      drop();
+      setClosed(true);
+    }
   };
 
   // keepDraft closes the dialog and keeps the draft on the page: the next save is checked again (the dialog's fourth choice).
@@ -368,6 +436,8 @@ export default function CodeEditPage() {
       const got = await readWhole(nod);
       if (gen !== openGen.current) return;
       const d = decodeText(got.bytes, false);
+      // The saved version replaces the draft, so the text kept for the file goes too: Reload and Discard are that choice (decision 133).
+      drop();
       file.current = { ...file.current, etag: got.etag };
       const initial = normalizeText(d.text);
       saved.current = initial;
@@ -391,7 +461,10 @@ export default function CodeEditPage() {
       if (gen !== openGen.current) return;
       const why = failureOf(err);
       setNotice(why === "forbidden" ? "forbidden" : why === "notFound" ? "gone" : why === "signedOut" ? "signedOut" : "failed");
-      if (why === "forbidden" || why === "notFound") setClosed(true);
+      if (why === "forbidden" || why === "notFound") {
+        drop();
+        setClosed(true);
+      }
     }
   };
 
@@ -453,10 +526,41 @@ export default function CodeEditPage() {
     clearSession();
     go(signInURL(), { replace: true });
   };
-  // askSignInFirst is the page's Sign in choice: with unsaved text the guard asks first; without it the sign-in goes at once.
+  // askSignInFirst is the page's Sign in choice: with unsaved text the guard asks first; without it the sign-in goes at once. Text this
+  // tab kept for the sign-in (the same text) goes with it, so there is nothing to ask (decision 133).
   const askSignInFirst = () => {
-    if (dirty) setAskSignIn(true);
+    const cur = handle.current?.text();
+    const keptNow = cur !== undefined && cur === keptText.current;
+    if (dirty && !keptNow) setAskSignIn(true);
     else signInNow();
+  };
+
+  // sessionEnded runs when the session ends from the person who has this file open, other than by a sign-out (decision 133). The
+  // unsaved text is kept first. When it is kept, the guard does not hold the app's redirect to the sign-in page, as nothing is lost;
+  // when it is not, the guard asks as before.
+  const sessionEnded = () => {
+    const cur = handle.current?.text();
+    if (readyRef.current === null || closed || cur === undefined || cur === saved.current) return;
+    if (keep(cur)) leaving.current = true;
+  };
+  const sessionEndedRef = useRef(sessionEnded);
+  sessionEndedRef.current = sessionEnded;
+
+  // The page watches the session. A watcher is told the current session at once, and then each change, so only a change from this
+  // person to none is an end. A sign-out's own clear is not one: the sign-out clears the kept text itself (auth.ts).
+  useEffect(() => {
+    let was: Session | null = get(session);
+    return session.subscribe((now) => {
+      const before = was;
+      was = now;
+      if (before !== null && now === null && before.user.id === openUser.current && !signingOut()) sessionEndedRef.current();
+    });
+  }, []);
+
+  // discardOnLeave: a Leave with the person still signed in discards the text kept for the file (decision 133, rule 5). After the
+  // session has ended, the guard is the app's own redirect, not the person's choice, so nothing is discarded then.
+  const discardOnLeave = () => {
+    if (openUser.current !== null && get(session)?.user.id === openUser.current) drop();
   };
   const stayHere = () => {
     if (blocked !== null) blocked.reset();
@@ -465,6 +569,7 @@ export default function CodeEditPage() {
   };
   const leaveNow = () => {
     if (blocked !== null) {
+      discardOnLeave();
       blocked.proceed();
       return;
     }
@@ -472,6 +577,7 @@ export default function CodeEditPage() {
       signInNow();
       return;
     }
+    discardOnLeave();
     leaving.current = true;
     setAskClose(false);
     leaveTab();
@@ -571,11 +677,11 @@ export default function CodeEditPage() {
       {notice !== null && (
         <div style={{ padding: "8px 12px" }}>
           <Alert
-            type={notice === "notUtf8" ? "warning" : "error"}
+            type={notice === "notUtf8" ? "warning" : notice === "restored" ? "info" : "error"}
             showIcon
-            role={notice === "notUtf8" ? "status" : "alert"}
+            role={notice === "notUtf8" || notice === "restored" ? "status" : "alert"}
             message={noticeText(notice, ct)}
-            description={notice === "signedOut" ? ct.signedOutCopy : undefined}
+            description={notice === "signedOut" ? ct.signedOutCopy : notice === "signedOutKept" ? ct.signedOutKept : undefined}
             action={noticeAction(notice)}
           />
         </div>
@@ -713,7 +819,10 @@ export default function CodeEditPage() {
       case "failed":
         return c.failed;
       case "signedOut":
+      case "signedOutKept":
         return c.signedOut;
+      case "restored":
+        return c.restored;
       case "storageFull":
         return c.storageFull;
       case "badName":
@@ -735,10 +844,18 @@ export default function CodeEditPage() {
     }
     // The sign-in ended: a retry would fail the same way, so the choice is to sign in again (MED-4). The draft is kept, and the
     // unsaved guard asks before the sign-in page is opened (HIGH-1).
-    if (n === "signedOut") {
+    if (n === "signedOut" || n === "signedOutKept") {
       return (
         <Button size="small" onClick={askSignInFirst}>
           {ct.signIn}
+        </Button>
+      );
+    }
+    // The kept text comes back as the file's unsaved text. Discard is the saved version, as Reload is (decision 133).
+    if (n === "restored") {
+      return (
+        <Button size="small" onClick={() => void reload()}>
+          {ct.discard}
         </Button>
       );
     }
