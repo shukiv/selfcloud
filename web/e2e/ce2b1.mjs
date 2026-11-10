@@ -200,8 +200,8 @@ export async function ce2b1Checks(h, { page, base, accountKey, teamB, stale: sta
     await page.evaluate(`[...document.querySelectorAll('.ant-popover:not(.ant-popover-hidden) button')].find((b) => b.textContent.trim() === 'Reload').click(), true`);
     await page.waitFor(`(() => { const c = document.querySelector(${q(`${EDITOR} .cm-content`)}); return !!c && c.textContent.includes('changed by someone else'); })()`, 15000);
     await page.waitFor(`!document.querySelector('.ant-modal')`, 10000);
-    const reloaded = (await editorText(page)) ?? '';
-    check(reloaded.includes('changed by someone else'), `Reload theirs shows the saved text, and the dialog goes (${JSON.stringify(reloaded)})`);
+    const theirs = (await editorText(page)) ?? '';
+    check(theirs.includes('changed by someone else'), `Reload theirs shows the saved text, and the dialog goes (${JSON.stringify(theirs)})`);
 
     // ---- A viewer's address shows "View only" and no Save.
     await navigateTo(page, `/edit/${viewerID}?mode=edit`);
