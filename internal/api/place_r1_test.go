@@ -77,3 +77,52 @@ func TestPlaceNamesSendsOnlyRealParentIDs(t *testing.T) {
 		t.Errorf("the name of parent b is %q, want %q", got[fx.b.ID], "b")
 	}
 }
+
+// TestPlacesIsAFixedNumberOfQueries: a page of items costs the same queries however long it is, and a user's page at
+// most three: the user row, the reach of the parents, and their names. Items alternate between a child of b (named) and
+// a child of a (out of reach), so both answers are checked at each length.
+func TestPlacesIsAFixedNumberOfQueries(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
+	p := userOf(fx.acc.ID, fx.ann.ID)
+
+	queriesFor := func(n int) int {
+		items := make([]*nodeJSON, n)
+		for i := range items {
+			parent := fx.b.ID
+			if i%2 == 1 {
+				parent = fx.a.ID
+			}
+			items[i] = &nodeJSON{ParentID: &parent}
+		}
+		var cq *countingQuerier
+		var places []string
+		err := fx.s.store.Read(context.Background(), func(q store.Querier) error {
+			cq = &countingQuerier{q: q}
+			var err error
+			places, err = placesIn(context.Background(), cq, p, items)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, place := range places {
+			want := "b"
+			if i%2 == 1 {
+				want = ""
+			}
+			if place != want {
+				t.Errorf("%d items: place of item %d = %q, want %q", n, i, place, want)
+			}
+		}
+		return len(cq.queries)
+	}
+	one, many := queriesFor(1), queriesFor(20)
+	if one != many {
+		t.Errorf("a page of 1 item ran %d queries, a page of 20 ran %d: the count must not grow with the page", one, many)
+	}
+	if many > 3 {
+		t.Errorf("a page ran %d queries, want at most 3", many)
+	}
+}
