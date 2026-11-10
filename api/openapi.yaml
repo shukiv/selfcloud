@@ -4590,6 +4590,7 @@ paths:
         Without `order`, the nodes come in node ID order. With `order=recent`, the newest share
         first. Each item carries `shared_at` in either order: the later of the permission's creation and the
         caller's visit to an organisation link on the node. Each item carries `place` when the caller reaches its parent.
+        Each item carries `created_by_name` and `owner_name` under the same rule as a listing (see Node).
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - $ref: "#/components/parameters/limit"
@@ -6880,7 +6881,8 @@ components:
       description: |
         A node shared with the caller. `shared_at` is set in every order, and it is the time `order=recent` sorts by: the
         later of (a) the newest creation time of the caller's live permissions on the node, direct or through a group the
-        caller is in, and (b) the caller's visit to an organisation link on the node, when it has one.
+        caller is in, and (b) the caller's visit to an organisation link on the node, when it has one. The names of the
+        creator and the owner follow the rule of a listing.
       allOf:
         - $ref: "#/components/schemas/Node"
         - type: object

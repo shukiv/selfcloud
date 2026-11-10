@@ -473,6 +473,9 @@ func (s *Server) handleSharedWithMe(w http.ResponseWriter, r *http.Request) erro
 	for i := range items {
 		ptrs[i] = &items[i].nodeJSON
 	}
+	if err := s.addPeopleNames(ctx, p, p.AccountID, ptrs...); err != nil {
+		return err
+	}
 	places, err := s.placesOfItems(ctx, p, ptrs)
 	if err != nil {
 		return err

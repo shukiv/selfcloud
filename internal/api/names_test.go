@@ -85,6 +85,26 @@ func TestDetailsNamesGoOnlyToTheAccountsOwnPeople(t *testing.T) {
 	nameOf(t, gone, "owner_name", "")
 }
 
+// TestSharedWithMeNamesTheOwner: the Shared list shows who shared an item by display name, the same as a listing does.
+// Bob holds no permission on the folder root, so the file is listed for him only through its own share, and ann, the
+// owner, is named to him.
+func TestSharedWithMeNamesTheOwner(t *testing.T) {
+	t.Parallel()
+	fx := newAnyoneFixture(t)
+	const annName = "Ann Example"
+	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.ann.ID, fx.key,
+		map[string]any{"display_name": annName}), 200)
+	root := fx.rootOf(t, fx.fld.ID)
+	fx.setPerm(t, root, fx.ann.ID, "contributor")
+	file := nodeOf(t, rawSession(t, fx.s, fx.annSess, "POST", "/api/v1/folders/"+fx.fld.ID+"/files?path=/shared-by-ann.txt",
+		"hi", nil))
+	fx.setPerm(t, file.ID, fx.bob.ID, "viewer")
+
+	listed := childOf(t, callSession(t, fx.s, fx.bobSess, "GET", "/api/v1/shared", nil), file.ID)
+	nameOf(t, listed, "created_by_name", annName)
+	nameOf(t, listed, "owner_name", annName)
+}
+
 // nodeReply is a node reply as a generic map, after a 200.
 func nodeReply(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
