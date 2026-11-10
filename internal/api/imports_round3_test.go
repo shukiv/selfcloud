@@ -265,6 +265,39 @@ func TestImportResumeReleasesItsStaleReservation(t *testing.T) {
 	}
 }
 
+// TestImportPanicReleasesTheFlightLock: a panic inside an import's reservation does not leave the flight lock held, so
+// the next one-request write is served. The fault point at before-reserve panics. Without a deferred release the lock
+// stays held and the write waits forever; the timeout turns that into a failure.
+func TestImportPanicReleasesTheFlightLock(t *testing.T) {
+	fx := newImportFixture(t)
+	minFree := uint64(fx.s.cfg.Storage.MinFree)
+	fx.s.freeBytes = func(string) (uint64, error) { return minFree + 1<<20, nil }
+	fx.startOK(t, fx.archive(t, "a.zip", zipArchive(t, [][2]string{{"a.txt", "x"}})), "")
+	panicked := false
+	fx.s.importFault = func(stage string) error {
+		if stage == "before-reserve" && !panicked {
+			panicked = true
+			panic("the fault point panics")
+		}
+		return nil
+	}
+	_ = fx.runJob(t)
+	fx.s.importFault = nil
+	if !panicked {
+		t.Fatal("the fault point was not reached")
+	}
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- rawCall(t, fx.s, "POST", "/api/v1/folders/"+fx.folder+"/files?"+q("/after.txt"), fx.key, "after", nil)
+	}()
+	select {
+	case rec := <-done:
+		wantStatus(t, rec, http.StatusCreated)
+	case <-time.After(10 * time.Second):
+		t.Fatal("a one-request write hangs after a panic in the reservation: the flight lock is still held")
+	}
+}
+
 // A publish that writes one audit row per file floods the webhooks; the folder is reported once, as a copy reports a
 // large tree (F4).
 func TestImportPublishDoesNotFloodWebhooks(t *testing.T) {
