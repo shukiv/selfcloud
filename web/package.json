@@ -10,9 +10,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "check": "tsc --noEmit -p tsconfig.json && node scripts/check-source.mjs && node --test scripts/emptyStateGuard.test.mjs && node scripts/check-licences.mjs && node scripts/check-keys.mjs && vitest run",
+    "check": "tsc --noEmit -p tsconfig.json && node scripts/check-source.mjs && node --test scripts/emptyStateGuard.test.mjs scripts/check-dist.test.mjs scripts/precompress.test.mjs && node scripts/check-licences.mjs && node scripts/check-keys.mjs && vitest run",
     "test": "vitest run",
-    "postbuild": "node scripts/check-dist.mjs && node scripts/write-dist-gitignore.mjs"
+    "postbuild": "node scripts/check-dist.mjs && node scripts/precompress.mjs && node scripts/write-dist-gitignore.mjs"
   },
   "dependencies": {
     "@ant-design/colors": "7.2.1",

@@ -80,6 +80,9 @@ const jsText = new Map();
 for (const path of await files(dist)) {
   const ext = extname(path);
   const name = relative(dist, path);
+  // The precompressed variants (precompress.mjs, decision 131) are the same files in the encoding the server sends. They are
+  // not checked again, and they are not counted in any budget: the budgets are the sizes of the files as they are.
+  if (ext === '.gz' || ext === '.br') continue;
   if (ext === '.html') {
     const html = await readFile(path, 'utf8');
     if (inlineScript.test(html)) problems.push(`${name}: inline <script>`);
