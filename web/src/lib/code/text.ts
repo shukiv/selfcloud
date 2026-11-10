@@ -60,6 +60,8 @@ export interface CodeText {
   problemOne: string;
   problemMany: string;
   mixedBreaks: string;
+  // A conflict after a save that got no answer: the draft may already be on the server (decision 124, LOW-4).
+  maybeSaved: string;
 }
 
 export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
@@ -109,6 +111,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemOne: "1 problem",
     problemMany: "{n} problems",
     mixedBreaks: "This file mixes line break styles. Saving writes the first style on every line.",
+    maybeSaved: "The last save may have reached the server before the connection failed.",
   },
   es: {
     find: "Buscar",
@@ -156,6 +159,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemOne: "1 problema",
     problemMany: "{n} problemas",
     mixedBreaks: "Este archivo mezcla estilos de salto de línea. Al guardar se usa el primero en cada línea.",
+    maybeSaved: "Es posible que el último guardado haya llegado al servidor antes de que fallara la conexión.",
   },
   fr: {
     find: "Rechercher",
@@ -203,6 +207,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemOne: "1 problème",
     problemMany: "{n} problèmes",
     mixedBreaks: "Ce fichier mélange des styles de fin de ligne. L’enregistrement utilise le premier style sur chaque ligne.",
+    maybeSaved: "Le dernier enregistrement a pu atteindre le serveur avant la perte de la connexion.",
   },
   pt: {
     find: "Localizar",
@@ -250,6 +255,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemOne: "1 problema",
     problemMany: "{n} problemas",
     mixedBreaks: "Este ficheiro mistura estilos de quebra de linha. Ao guardar, usa-se o primeiro em cada linha.",
+    maybeSaved: "O último guardar pode ter chegado ao servidor antes de a ligação falhar.",
   },
   ru: {
     find: "Найти",
@@ -297,6 +303,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemOne: "1 проблема",
     problemMany: "Проблем: {n}",
     mixedBreaks: "В этом файле смешаны стили переноса строк. При сохранении на каждой строке используется первый стиль.",
+    maybeSaved: "Последнее сохранение могло дойти до сервера до того, как пропало соединение.",
   },
   ar: {
     find: "بحث",
@@ -344,6 +351,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemOne: "مشكلة واحدة",
     problemMany: "{n} مشكلات",
     mixedBreaks: "يخلط هذا الملف بين أنماط فواصل الأسطر. يستخدم الحفظ النمط الأول في كل سطر.",
+    maybeSaved: "ربما وصل آخر حفظ إلى الخادم قبل انقطاع الاتصال.",
   },
   he: {
     find: "חיפוש",
@@ -391,6 +399,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     problemOne: "בעיה אחת",
     problemMany: "{n} בעיות",
     mixedBreaks: "הקובץ הזה מערבב סגנונות של שבירת שורה. בשמירה נעשה שימוש בסגנון הראשון בכל שורה.",
+    maybeSaved: "ייתכן שהשמירה האחרונה הגיעה לשרת לפני שהחיבור נכשל.",
   },
 };
 

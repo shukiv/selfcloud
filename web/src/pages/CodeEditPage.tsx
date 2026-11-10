@@ -72,6 +72,8 @@ interface Conflict {
   bytes: Uint8Array;
   etag: string;
   noName: boolean;
+  // maybe says a save before this one got no answer: the server may have stored the draft already (decision 124, LOW-4).
+  maybe: boolean;
 }
 
 type Page =
@@ -122,6 +124,9 @@ export default function CodeEditPage() {
   // openGen counts the opens. A save answers for the open it was sent in: an answer for a file the page has since left is not
   // shown, and does not touch the new file's state (LOW-2).
   const openGen = useRef(0);
+  // lostSave is set when a save got no answer, and cleared by a save that is answered: a later conflict then says the draft may already
+  // be on the server (decision 124, LOW-4).
+  const lostSave = useRef(false);
   const keyRef = useRef(0);
   // The latest page and save, read by the editor's keys, which are bound once for the editor's text.
   const readyRef = useRef<Ready | null>(null);
@@ -136,6 +141,7 @@ export default function CodeEditPage() {
     // The new file starts with no save in flight and no ETag, saved text or type of the last file (LOW-2).
     saving.current = false;
     saved.current = "";
+    lostSave.current = false;
     file.current = { etag: "", mime: "application/octet-stream" };
     setPage({ s: "opening" });
     setSaveState(null);
@@ -228,7 +234,7 @@ export default function CodeEditPage() {
       if (h.why === "forbidden" || h.why === "gone") setClosed(true);
       return;
     }
-    setConflict({ text, bytes, etag: h.etag, noName: false });
+    setConflict({ text, bytes, etag: h.etag, noName: false, maybe: lostSave.current });
   };
 
   // save writes the draft with If-Match and the stored type. It sends nothing when the text is the saved text, or while a save is
@@ -250,6 +256,7 @@ export default function CodeEditPage() {
     if (gen !== openGen.current) return false;
     saving.current = false;
     if (got.ok) {
+      lostSave.current = false;
       applySaved(got.node, text);
       return true;
     }
@@ -257,6 +264,7 @@ export default function CodeEditPage() {
       await openConflict(text, bytes, gen);
       return false;
     }
+    if (got.why === "failed") lostSave.current = true;
     setSaveState("failed");
     setNotice(got.why);
     if (got.why === "forbidden" || got.why === "gone") setClosed(true);
@@ -540,6 +548,7 @@ export default function CodeEditPage() {
         }
       >
         <p>{ct.conflict}</p>
+        {conflict?.maybe && <Alert type="warning" showIcon role="status" message={ct.maybeSaved} />}
         {conflict?.noName && <Alert type="error" showIcon role="alert" message={ct.noFreeName} />}
       </Modal>
       <Modal

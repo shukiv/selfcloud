@@ -570,6 +570,7 @@ const COPY = "Keep as a copy";
 const OVERWRITE = "Overwrite theirs with mine (theirs stays in history)";
 const KEEP = "Keep my draft (saving will ask again)";
 const MIXED = "This file mixes line break styles. Saving writes the first style on every line.";
+const MAYBE = "The last save may have reached the server before the connection failed.";
 
 // openConflict opens the file, types a draft, and saves it after another client changed the file: the save is refused with 412,
 // and the conflict dialog opens (design 4.4).
@@ -601,6 +602,26 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(s.calls.some((c) => c.method === "HEAD" && c.url === `/api/v1/nodes/${NOD}/content`)).toBe(true);
     // The check records no view: the only GET of the content is the one that opened the page.
     expect(s.calls.filter((c) => c.method === "GET" && c.url.includes("/content"))).toHaveLength(1);
+  });
+
+  it("after a save whose answer was lost, a conflict says the draft may already be on the server (decision 124, LOW-4)", async () => {
+    // The first save's request fails with no answer; the server may still have stored the draft. The next save is refused with 412.
+    let attempt = 0;
+    const s = server({
+      put: () => {
+        if (attempt++ === 0) throw new TypeError("connection lost");
+        return Response.json({ error: { code: "precondition_failed", details: {} } }, { status: 412 });
+      },
+    });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    await screen.findByText("Save failed. The text stays here, so try again.");
+    ctrlS();
+    const d = await screen.findByRole("dialog");
+    expect(within(d).getByText(MAYBE)).toBeTruthy();
+    expect(s.puts()).toHaveLength(2);
   });
 
   it("Keep my draft closes the dialog with no request, and the next save is refused and asks again", async () => {
