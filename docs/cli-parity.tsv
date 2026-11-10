@@ -38,11 +38,11 @@ fn	lib/cli.ts:cliApprove	-	cli4	the approval page /cli-approve, with a signed-in
 fn	lib/cli.ts:cliDevices	-	cli4	the Signed-in devices page (/devices)
 fn	lib/cli.ts:cliLookup	-	cli4	the approval page /cli-approve, with a signed-in session and CSRF token
 fn	lib/cli.ts:cliRevokeDevice	-	cli4	the Signed-in devices page's revoke icon (/devices)
+fn	lib/code/conflict.ts:headEtag	-	ce3c	the browser editor's conflict check (design-ce 4.4): a HEAD of the content, which records no view and gives the current ETag; the CLI's `edit` (planned, ce3c) checks the same way
+fn	lib/code/conflict.ts:keepCopy	-	ce3c	the browser editor's keep as a copy (design-ce 4.4): a POST with If-None-Match * to the first free copy name, bounded to 20 tries; the CLI's `edit` (planned, ce3c) may offer the same
 fn	lib/code/read.ts:readHead	-	-	the browser viewer's range read of a file's first bytes: the code viewer's sniff and its text
 fn	lib/code/save.ts:readWhole	-	ce3c	the browser editor's read of a whole text file, with its ETag kept for the save; the CLI's `edit` (planned, design-ce 8.2) reads the same way
 fn	lib/code/save.ts:saveText	-	ce3c	the browser editor's save: a PUT with If-Match and the stored type unchanged; the CLI's `put --if-match` and `edit` (planned, ce3c) save the same way
-fn	lib/code/conflict.ts:headEtag	-	ce3c	the browser editor's conflict check (design-ce 4.4): a HEAD of the content, which records no view and gives the current ETag; the CLI's `edit` (planned, ce3c) checks the same way
-fn	lib/code/conflict.ts:keepCopy	-	ce3c	the browser editor's keep as a copy (design-ce 4.4): a POST with If-None-Match * to the first free copy name, bounded to 20 tries; the CLI's `edit` (planned, ce3c) may offer the same
 fn	lib/comments/api.ts:createComment	-	cli11	planned, cli11
 fn	lib/comments/api.ts:deleteComment	-	cli11	planned, cli11
 fn	lib/comments/api.ts:editComment	-	cli11	planned, cli11
