@@ -97,7 +97,7 @@ export interface ListingProps {
   containerRef?: Ref<HTMLDivElement>;
 }
 
-// ListColumn is one column of a preset list (design-tl 2.1). The first column is the name cell: the row's icon, then what
+// ListColumn is one column of a preset list (the design, not in this repository, section 2.1). The first column is the name cell: the row's icon, then what
 // the column renders. A secondary column is a column on a desktop; below md (768 px) its value is the name cell's second
 // line, after the ones before it.
 export interface ListColumn<T> {
@@ -124,7 +124,7 @@ export interface ListAction {
   disabled?: boolean;
   danger?: boolean;
   // pressed is the state of a toggle-like action, such as a group's Members while that group is open: the inline icon says it
-  // as aria-pressed (true or false). Left out, the icon has no pressed state. A menu entry has none (design-tl 7).
+  // as aria-pressed (true or false). Left out, the icon has no pressed state. A menu entry has none (the design, not in this repository, section 7).
   pressed?: boolean;
   // href makes the action a real link (round 2 of tl3): inline it is an anchor the browser follows, so a middle click opens a
   // new tab and Copy link works; in the ⋮ menu it is the menu's link, and a plain click runs run.
@@ -184,7 +184,7 @@ export interface ItemListingProps<T extends { id: string }> {
   // onOpen opens a row: Enter on the row, or a plain click on it. On a list with a selection, Ctrl, Cmd and Shift clicks and the
   // checkboxes select instead (tl4).
   onOpen?: (row: T) => void;
-  // empty is what the table's body shows when there are no rows, under the header row, which stays (design-tl 2.5).
+  // empty is what the table's body shows when there are no rows, under the header row, which stays (the design, not in this repository, section 2.5).
   empty: ListEmpty;
   // stickyTop is where the column header pins; the default is under the shell's header, as a preset list has no toolbar row.
   stickyTop?: number;
@@ -229,7 +229,7 @@ function RowActs({ id, show, children }: { id: string; show: boolean; children: 
   return hovered || show ? <>{children()}</> : null;
 }
 
-// Listing is the one list of the web interface (design-tl, decision 114). Without columns it is the files preset, My files:
+// Listing is the one list of the web interface (the design, not in this repository; decision 114). Without columns it is the files preset, My files:
 // a folder's items, a table in list view and tiles in grid view, whose keyboard handling belongs to the page; it reports
 // clicks, keys and focus, and marks what is selected. With columns it is a preset list: the page's columns, rows, actions
 // and menu, with the shared selection and keys. Both are drawn in the same frame: the region and its band variables, antd's
@@ -246,7 +246,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const stickyTop = p.stickyTop ?? (isItems(p) ? HEADER_H : DEFAULT_STICKY_TOP);
   // A row or tile that the keyboard scrolls to keeps clear of the sticky header, the toolbar and, in the list, the column header.
   const scrollMarginTop = stickyTop + (isItems(p) || p.view === "list" ? THEAD_H : 0) + 4;
-  // A preset list's selection and keys (design-tl 2.4). My files keeps its own in FilesPage, and these are not used for it.
+  // A preset list's selection and keys (the design, not in this repository, section 2.4). My files keeps its own in FilesPage, and these are not used for it.
   const rows = p.items as { id: string }[];
   const ids = useMemo(() => rows.map((r) => r.id), [rows]);
   const sel = useListSelection(ids);
@@ -390,7 +390,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
 
   const renderItems = (q: ItemListingProps<T>) => {
     const [nameCol, ...others] = q.columns;
-    // Below md the secondary columns are the name's second line; a phone or a finger has the ⋮ menu alone (design-tl 4).
+    // Below md the secondary columns are the name's second line; a phone or a finger has the ⋮ menu alone (the design, not in this repository, section 4).
     const seconds = narrow ? others.filter((c) => c.secondary) : [];
     const shown = narrow ? others.filter((c) => !c.secondary) : others;
     const menuOnly = narrow || coarse;
