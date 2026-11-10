@@ -7,7 +7,7 @@ import { createMemoryRouter, RouterProvider, useNavigate, type NavigateFunction 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const goMock = vi.hoisted(() => vi.fn());
-vi.mock("../lib/router", () => ({ go: goMock }));
+vi.mock("../lib/router", () => ({ go: goMock, signInURL: () => "/login" }));
 
 import CodeEditPage from "./CodeEditPage";
 import { session } from "../lib/session";
@@ -42,6 +42,12 @@ interface Options {
   taken?: string[];
   // put answers a save of the first file, instead of the server's own rule (the If-Match check runs first).
   put?: (init: RequestInit) => Response | Promise<Response>;
+  // post answers a copy (a POST to a folder's files) when it returns a response; undefined leaves the copy to the server.
+  post?: (init: RequestInit) => Response | Promise<Response> | undefined;
+  // read answers the content GET of the first file with this status and the error envelope (a refused open).
+  read?: number;
+  // hold makes the content GET of the first file wait for the gate while on, so a test finishes an answer after the page moved.
+  hold?: { on: boolean; gate: Promise<void> };
 }
 
 interface Stored {
@@ -113,6 +119,10 @@ function server(o: Options = {}) {
     // A copy (design 4.4): POST /api/v1/folders/{fld}/files?path=..., refused with 412 when If-None-Match is * and the name is taken.
     const post = /^\/api\/v1\/folders\/([^/?]+)\/files\?path=(.*)$/.exec(url);
     if (method === "POST" && post !== null) {
+      if (o.post) {
+        const answer = await o.post(init);
+        if (answer !== undefined) return answer;
+      }
       const path = new URL(url, "http://localhost").searchParams.get("path") ?? "";
       const headers = (init.headers ?? {}) as Record<string, string>;
       if (headers["If-None-Match"] === "*" && takenPaths.has(path)) {
@@ -139,6 +149,10 @@ function server(o: Options = {}) {
     if (method === "HEAD" && m[2] !== undefined) return new Response(null, { status: 200, headers: { ETag: file.etag } });
     if (method === "GET" && m[2] === undefined) return Response.json(nodeJSON(file));
     if (method === "GET") {
+      if (file.id === NOD && o.hold?.on) await o.hold.gate;
+      if (file.id === NOD && o.read !== undefined) {
+        return Response.json({ error: { code: "unauthenticated", details: {} } }, { status: o.read });
+      }
       return new Response(file.body as unknown as BodyInit, { status: 200, headers: { ETag: file.etag } });
     }
     if (method === "PUT" && m[2] !== undefined) {
@@ -571,6 +585,13 @@ const OVERWRITE = "Overwrite theirs with mine (theirs stays in history)";
 const KEEP = "Keep my draft (saving will ask again)";
 const MIXED = "This file mixes line break styles. Saving writes the first style on every line.";
 const MAYBE = "The last save may have reached the server before the connection failed.";
+const FAILED = "Save failed. The text stays here, so try again.";
+const MESSAGE = "This file changed since you opened it. Reload it to see the saved version.";
+// The new notices of the review round 1 fixes (decision 130): the sign-in that ended, a copy refused by name or folder, a full store.
+const SIGNED_OUT = "Your sign-in has ended. The text stays here. Sign in again to save it.";
+const BAD_NAME = "This name is too long or not allowed in this folder. Rename the copy and try again.";
+const FOLDER_GONE = "The folder for this copy is gone. The text stays here so you can copy it.";
+const STORAGE_FULL = "The storage is full. The text stays here, so free some space and try again.";
 
 // openConflict opens the file, types a draft, and saves it after another client changed the file: the save is refused with 412,
 // and the conflict dialog opens (design 4.4).
@@ -582,6 +603,11 @@ async function openConflict(s: ReturnType<typeof server>) {
   ctrlS();
   return screen.findByRole("dialog");
 }
+
+// modalWith is the open modal whose text has this words, or null. A closing modal (its leave motion) is not open.
+const modalWith = (text: string) =>
+  [...document.querySelectorAll<HTMLElement>(".ant-modal")].find((m) => (m.textContent ?? "").includes(text) && !m.className.includes("ant-zoom-leave")) ?? null;
+const dialogHas = (text: string) => modalWith(text) !== null;
 
 // dialogOpen says a modal is open. jsdom never ends an antd motion, so a dialog that is closing keeps its leave classes: it is
 // closed, though it stays in the page.
@@ -842,6 +868,211 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     expect(content().classList.contains("cm-lineWrapping")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Wrap lines" }));
     await waitFor(() => expect(content().classList.contains("cm-lineWrapping")).toBe(true));
+  });
+
+  // ---- The review round 1 fixes (decision 130, the lead's findings). Each test is red before its fix.
+
+  it("a double click on Keep as a copy sends one copy, not two (MED-1)", async () => {
+    const s = server();
+    const d = await openConflict(s);
+    const copy = within(d).getByRole("button", { name: COPY });
+    fireEvent.click(copy);
+    fireEvent.click(copy);
+    expect(await screen.findByText("Saved as a (2).json")).toBeTruthy();
+    await pause();
+    expect(postPaths(s)).toEqual(["/a (2).json"]);
+  });
+
+  it("a double click on Overwrite saves once (MED-1)", async () => {
+    const s = server();
+    const d = await openConflict(s);
+    const over = within(d).getByRole("button", { name: OVERWRITE });
+    fireEvent.click(over);
+    fireEvent.click(over);
+    await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
+    await pause();
+    // One save from Ctrl+S, which met the change, and one overwrite.
+    expect(s.puts()).toHaveLength(2);
+  });
+
+  it("an overwrite that gets no answer marks the next conflict as possibly saved (MED-2)", async () => {
+    // The overwrite's save gets no answer; the next save is refused with 412, so its dialog must say the draft may be saved.
+    let attempt = 0;
+    const s = server({
+      put: () => {
+        if (attempt++ === 0) throw new TypeError("connection lost");
+        return Response.json({ error: { code: "precondition_failed", details: {} } }, { status: 412 });
+      },
+    });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: OVERWRITE }));
+    expect(await screen.findByText(FAILED)).toBeTruthy();
+    await pause();
+    ctrlS();
+    await waitFor(() => expect(dialogHas(MAYBE)).toBe(true));
+  });
+
+  it("a copy that gets no answer marks the next conflict as possibly saved (MED-2)", async () => {
+    const s = server({
+      post: () => {
+        throw new TypeError("connection lost");
+      },
+    });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    expect(await screen.findByText(FAILED)).toBeTruthy();
+    ctrlS();
+    await waitFor(() => expect(dialogHas(MAYBE)).toBe(true));
+  });
+
+  it("an overwrite that is answered clears the possibly-saved mark (MED-2)", async () => {
+    let calls = 0;
+    const s = server({
+      put: () => {
+        calls++;
+        if (calls === 1) throw new TypeError("connection lost");
+        if (calls === 2) return Response.json({ error: { code: "precondition_failed", details: {} } }, { status: 412 });
+        return Response.json({ id: NOD, etag: '"after"', mime_type: "application/json" });
+      },
+    });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: OVERWRITE }));
+    expect(await screen.findByText(FAILED)).toBeTruthy();
+    ctrlS();
+    await waitFor(() => expect(dialogHas(MAYBE)).toBe(true));
+    fireEvent.click(within(modalWith(MAYBE)!).getByRole("button", { name: OVERWRITE }));
+    await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
+    s.touch("changed again\n");
+    ctrlS();
+    await waitFor(() => expect(dialogOpen()).toBe(true));
+    await waitFor(() => expect(dialogHas(MESSAGE)).toBe(true));
+    expect(dialogHas(MAYBE)).toBe(false);
+  });
+
+  it("a copy that is answered clears the possibly-saved mark (MED-2)", async () => {
+    let calls = 0;
+    const s = server({
+      post: () => {
+        if (calls++ === 0) throw new TypeError("connection lost");
+        return undefined;
+      },
+    });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    expect(await screen.findByText(FAILED)).toBeTruthy();
+    ctrlS();
+    await waitFor(() => expect(dialogHas(MAYBE)).toBe(true));
+    fireEvent.click(within(modalWith(MAYBE)!).getByRole("button", { name: COPY }));
+    expect(await screen.findByText("Saved as a (2).json")).toBeTruthy();
+    s.touch("changed again\n");
+    ctrlS();
+    await waitFor(() => expect(dialogOpen()).toBe(true));
+    await waitFor(() => expect(dialogHas(MESSAGE)).toBe(true));
+    expect(dialogHas(MAYBE)).toBe(false);
+  });
+
+  it("Close on a tab a script opened asks before it closes, when text is unsaved (MED-3)", async () => {
+    const closeSpy = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    try {
+      server();
+      render(`/edit/${NOD}?mode=edit&tab=1`);
+      await waitFor(() => expect(content().textContent).toContain("{}"));
+      type(0, "x");
+      await screen.findByText("Unsaved changes");
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+      expect(closeSpy).not.toHaveBeenCalled();
+      fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Leave" }));
+      await waitFor(() => expect(closeSpy).toHaveBeenCalled());
+    } finally {
+      closeSpy.mockRestore();
+    }
+  });
+
+  it("a save the server answers 401 keeps the draft, names the ended sign-in, and Sign in asks before it leaves (MED-4)", async () => {
+    server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText(SIGNED_OUT)).toBeTruthy();
+    expect(content().textContent).toContain("x{}");
+    fireEvent.click(within(alert).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
+  });
+
+  it("a file whose read is refused because the sign-in has ended says so, with Sign in (MED-4)", async () => {
+    server({ read: 401 });
+    render();
+    expect(await screen.findByText(SIGNED_OUT)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
+  });
+
+  it("a copy the server refuses as a bad name says so, with its own words (LOW-2)", async () => {
+    const s = server({ post: () => Response.json({ error: { code: "invalid_path", details: {} } }, { status: 400 }) });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    expect(await screen.findByText(BAD_NAME)).toBeTruthy();
+    expect(screen.queryByText(FAILED)).toBeNull();
+  });
+
+  it("a copy whose folder is gone says so, with its own words (LOW-2)", async () => {
+    const s = server({ post: () => Response.json({ error: { code: "not_found", details: {} } }, { status: 404 }) });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    expect(await screen.findByText(FOLDER_GONE)).toBeTruthy();
+  });
+
+  it("a save the server answers 507 says the storage is full, and offers no retry (LOW-3)", async () => {
+    server({ put: () => Response.json({ error: { code: "quota_exceeded", details: {} } }, { status: 507 }) });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText(STORAGE_FULL)).toBeTruthy();
+    expect(within(alert).queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("the app mark leaves through the router, so the unsaved guard asks first (LOW-4)", async () => {
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    await screen.findByText("Unsaved changes");
+    fireEvent.click(document.querySelector<HTMLAnchorElement>(`[data-testid="code-editor-page"] a[href="/files/${FLD}"]`)!);
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
+  });
+
+  it("a reload that finishes after the page moved to another file does not put the old file on the page (LOW-5)", async () => {
+    let release: () => void = () => undefined;
+    const hold = { on: false, gate: new Promise<void>((r) => (release = r)) };
+    const s = server({ hold });
+    // b.json has its own text, so the page shows which file it holds.
+    s.files[NOD_B]!.body = new TextEncoder().encode("bee");
+    const d = await openConflict(s);
+    hold.on = true;
+    fireEvent.click(within(d).getByRole("button", { name: RELOAD }));
+    const pop = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".ant-popover:not(.ant-popover-hidden)");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    fireEvent.click(within(pop).getByRole("button", { name: "Reload" }));
+    // The reload waits for the server. The person leaves for another file, and chooses Leave in the guard.
+    await goTo(`/edit/${NOD_B}?mode=edit`);
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Leave" }));
+    await waitFor(() => expect(content().textContent).toContain("bee"));
+    // The old file's reload finishes now: it must not put a.json's text on b.json's page.
+    release();
+    await pause();
+    await pause();
+    expect(content().textContent).toContain("bee");
+    expect(content().textContent).not.toContain("{}");
   });
 
   it("a .jsonc file is not linted: no marker and no count", async () => {

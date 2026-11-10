@@ -81,4 +81,31 @@ describe("keepCopy", () => {
     expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "forbidden" });
     expect(f.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(1);
   });
+
+  it("names a copy in a folder two levels down, outermost folder first (LOW-1)", async () => {
+    const nodes: Record<string, unknown> = {
+      nod_dir: { id: "nod_dir", folder_id: "fld_b", parent_id: "nod_root", name: "docs", kind: "dir", etag: '"d"' },
+      nod_sub: { id: "nod_sub", folder_id: "fld_b", parent_id: "nod_dir", name: "inner", kind: "dir", etag: '"s"' },
+    };
+    const f = vi.fn(async (url: string, init: RequestInit = {}) => {
+      if ((init.method ?? "GET") === "GET") {
+        const id = new URL(url, "http://localhost").pathname.split("/").pop() ?? "";
+        return Response.json(nodes[id] ?? ROOT);
+      }
+      return created("a (2).json");
+    });
+    vi.stubGlobal("fetch", f);
+    const deep = { ...file, parent_id: "nod_sub" } as unknown as Node;
+    const got = await keepCopy(deep, "application/json", new TextEncoder().encode("x{}"));
+    expect(got.ok).toBe(true);
+    const post = f.mock.calls.find((c) => c[1]?.method === "POST");
+    expect(new URL(post![0] as string, "http://localhost").searchParams.get("path")).toBe("/docs/inner/a (2).json");
+  });
+
+  it("names a copy the server refuses as a bad name, and one whose folder is gone, with their own reasons (LOW-2)", async () => {
+    fake(() => Response.json({ error: { code: "invalid_path", details: {} } }, { status: 400 }));
+    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "badName" });
+    fake(() => Response.json({ error: { code: "not_found", details: {} } }, { status: 404 }));
+    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "folderGone" });
+  });
 });
