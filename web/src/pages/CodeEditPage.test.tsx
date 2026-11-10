@@ -875,9 +875,10 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
   it("a double click on Keep as a copy sends one copy, not two (MED-1)", async () => {
     const s = server();
     const d = await openConflict(s);
+    // Two native clicks in one task: React has not yet rendered the busy state between them, so only the ref guard stops the second.
     const copy = within(d).getByRole("button", { name: COPY });
-    fireEvent.click(copy);
-    fireEvent.click(copy);
+    copy.click();
+    copy.click();
     expect(await screen.findByText("Saved as a (2).json")).toBeTruthy();
     await pause();
     expect(postPaths(s)).toEqual(["/a (2).json"]);
@@ -887,8 +888,8 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     const s = server();
     const d = await openConflict(s);
     const over = within(d).getByRole("button", { name: OVERWRITE });
-    fireEvent.click(over);
-    fireEvent.click(over);
+    over.click();
+    over.click();
     await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
     await pause();
     // One save from Ctrl+S, which met the change, and one overwrite.
