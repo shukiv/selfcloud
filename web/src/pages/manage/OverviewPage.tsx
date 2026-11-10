@@ -10,23 +10,22 @@ import { collectAll } from "../../lib/manage/paging";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { failureText } from "../../lib/manage/failure";
 import { queryKey } from "../../lib/query";
-import type { AuditEntry } from "../../lib/audit/sentence";
 import type { Usage } from "../../lib/manage/types";
 import UsageMeter from "../../components/UsageMeter";
-import AuditItem from "../../components/manage/AuditItem";
+import { auditColumns, auditSaid, type AuditRow } from "../../components/manage/auditColumns";
+import Listing from "../../components/files/Listing";
 import PublicLinksSwitch from "../../components/share/PublicLinksSwitch";
 import TemplatesFolderSetting from "../../components/manage/TemplatesFolderSetting";
 // The comments and who-viewed switches (decisions 39 and 51) are a chunk of their own, with the comments catalogue.
 const SharingSwitches = lazy(() => import("../../components/comments/SharingSwitches"));
 import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage/OwnerPage";
-import EmptyState from "../../components/EmptyState";
 
 // Overview: the account's usage and people, its recent activity, and the next steps while it is new. The names for the
 // activity are read apart from the figures, so a failed names read leaves the figures and falls back to NO_NAMES.
 interface Overview {
   usage: Usage;
   spaceCount: number;
-  activity: Array<AuditEntry & { id: string; time: string }>;
+  activity: AuditRow[];
 }
 
 async function readOverview(account: string): Promise<Overview> {
@@ -57,6 +56,7 @@ function OverviewView() {
     refetchOnMount: "always",
   });
   const lookup = names.data?.names ?? NO_NAMES;
+  const said = (e: AuditRow) => auditSaid(e, lookup, lang);
   const data = q.data;
   const people = data ? data.usage.users_active + data.usage.users_pending : 0;
   const fresh = data !== undefined && people <= 1 && data.spaceCount === 0;
@@ -128,22 +128,21 @@ function OverviewView() {
             </section>
           )}
 
-          <section aria-labelledby="activity-title" style={{ marginBlockStart: 24 }}>
+          {/* The table is the region: it carries the section's name, so the section is not a second region (decision 122). */}
+          <section style={{ marginBlockStart: 24 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
               <h2 id="activity-title" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
                 {t("manage.overview.activity")}
               </h2>
               <a href="/manage/audit">{t("manage.overview.fullLog")}</a>
             </div>
-            {data.activity.length === 0 ? (
-              <EmptyState role="status" size="compact" text={t("manage.overview.noActivity")} />
-            ) : (
-              <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                {data.activity.map((entry) => (
-                  <AuditItem key={entry.id} entry={entry} names={lookup} />
-                ))}
-              </ul>
-            )}
+            <Listing
+              label={t("manage.overview.activity")}
+              items={data.activity}
+              rowLabel={said}
+              columns={auditColumns(t, lang, said)}
+              empty={{ title: t("manage.overview.noActivity") }}
+            />
           </section>
         </>
       )}

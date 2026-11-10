@@ -9,9 +9,9 @@ import { AUDIT_ACTIONS } from "../../lib/manage/actions";
 import { failureText } from "../../lib/manage/failure";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { queryKey } from "../../lib/query";
-import AuditItem from "../../components/manage/AuditItem";
+import { auditColumns, auditSaid, type AuditRow } from "../../components/manage/auditColumns";
+import Listing from "../../components/files/Listing";
 import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage/OwnerPage";
-import EmptyState from "../../components/EmptyState";
 
 // The audit log: what changed in the account, newest first. The server hides an entry about a personal folder from
 // everyone but its user, and this page shows the list exactly as the server answers it.
@@ -40,9 +40,10 @@ function AuditView() {
   const lookup = names.data?.names ?? NO_NAMES;
   const namesPartial = names.isError || (names.data !== undefined && !names.data.complete);
 
-  const entries = q.data?.pages.flatMap((p) => p.items) ?? [];
+  const entries: AuditRow[] = q.data?.pages.flatMap((p) => p.items) ?? [];
   const failure = q.isError ? failureText(q.error, lang) : null;
   const loaded = q.data !== undefined;
+  const said = (e: AuditRow) => auditSaid(e, lookup, lang);
 
   return (
     <div>
@@ -71,16 +72,16 @@ function AuditView() {
 
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
-      {loaded && entries.length === 0 && failure === null && (
-        <EmptyState role="status" text={t("audit.empty")} />
-      )}
-
-      {entries.length > 0 && (
-        <ul aria-label={t("manage.audit.title")} style={{ margin: 0, padding: 0, listStyle: "none" }}>
-          {entries.map((entry) => (
-            <AuditItem key={entry.id} entry={entry} names={lookup} />
-          ))}
-        </ul>
+      {/* Newest first: the When column says so with aria-sort and no button (decision 122). The table keeps its headers when empty. */}
+      {loaded && (
+        <Listing
+          label={t("manage.audit.title")}
+          items={entries}
+          rowLabel={said}
+          columns={auditColumns(t, lang, said)}
+          // The audit log has no create action.
+          empty={{ title: t("audit.empty") }}
+        />
       )}
 
       {q.hasNextPage && (
