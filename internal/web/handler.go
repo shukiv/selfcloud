@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -235,6 +236,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	fallback := false
 	data, err := fs.ReadFile(h.files, name)
+	if err == nil && isVariantName(name) {
+		// A precompressed variant is served only as the encoding of its file (decision 131): asked for by name, it is missing.
+		err = fs.ErrNotExist
+	}
 	missingAsset := err != nil && strings.HasPrefix(name, "assets/")
 	if hidden(r.URL.Path) || !fs.ValidPath(name) || err != nil {
 		name, fallback = "index.html", true
@@ -269,6 +274,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hd.Set("Cache-Control", "public, max-age=31536000, immutable")
 	default:
 		hd.Set("Cache-Control", "no-cache")
+	}
+	if !fallback && err == nil && strings.HasPrefix(name, "assets/") {
+		// An asset with precompressed variants (decision 131) is answered in the encoding the client takes, brotli first.
+		// Vary says so on every answer of such a file, encoded or not. A request with a Range gets the file as it is.
+		if br, gz := h.variants(name); br || gz {
+			hd.Add("Vary", "Accept-Encoding")
+			if r.Header.Get("Range") == "" {
+				accept := strings.Join(r.Header.Values("Accept-Encoding"), ",")
+				if enc := pickEncoding(accept, br, gz); enc != "" {
+					if variant, verr := fs.ReadFile(h.files, name+variantSuffix[enc]); verr == nil {
+						data = variant
+						hd.Set("Content-Encoding", enc)
+						// ServeContent sets no length for an encoded answer, so the length of the bytes sent goes here.
+						hd.Set("Content-Length", strconv.Itoa(len(data)))
+					}
+				}
+			}
+		}
 	}
 	if name == "index.html" && h.index != nil && err == nil {
 		// The page is built per response: a fresh nonce, drawn from the system's random source.
