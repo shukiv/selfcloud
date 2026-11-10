@@ -198,7 +198,8 @@ func TestSignInLinkSingleUse(t *testing.T) {
 func TestSignInLinkRefusesUnknownMalformedAndExpired(t *testing.T) {
 	t.Parallel()
 	s := newAuthServer(t, &mail.Recorder{}, func(c *config.Config) {
-		c.Users.SignInLinkTTL = config.Duration(50 * time.Millisecond)
+		// Long enough that the link is still live when the helper checks it, even under the race detector's load.
+		c.Users.SignInLinkTTL = config.Duration(2 * time.Second)
 	})
 	admin := adminKey(t, s)
 	acc, key := newAccount(t, s, admin, "Acme")
@@ -208,7 +209,7 @@ func TestSignInLinkRefusesUnknownMalformedAndExpired(t *testing.T) {
 	wantError(t, redeem(t, s, freshToken()), 400, apierr.InvalidRequest)
 
 	_, tok := signInLinkOf(t, s, key, acc.ID, usr, nil)
-	time.Sleep(120 * time.Millisecond)
+	time.Sleep(2100 * time.Millisecond)
 	wantError(t, redeem(t, s, tok), 400, apierr.InvalidRequest)
 }
 

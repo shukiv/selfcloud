@@ -203,7 +203,8 @@ func TestPermissionExpiresAtIsCheckedAgainstTheCap(t *testing.T) {
 func TestExpiredPermissionGrantsNothing(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
-	expires := time.Now().Add(time.Second)
+	// Three seconds, so the grant is still live at the first stat even under the race detector's load.
+	expires := time.Now().Add(3 * time.Second)
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+fx.a.ID+"/permissions/"+fx.bob.ID, fx.key,
 		map[string]any{"role": "viewer", "notify": false, "expires_at": expires}), 200)
 	wantStatus(t, fx.stat(t, fx.bobSess, fx.deep.ID), 200)
