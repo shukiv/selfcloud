@@ -25,8 +25,12 @@ type remoteCommand struct {
 	// credential that the test cannot make (a person's approval in the browser, for a device token). Its own package records
 	// its calls instead.
 	notProbed string
-	help      string
-	run       func(args []string, stdout, stderr io.Writer) int
+	// reads lists the routes a command calls for a check of its own, which another command owns (design-cli 3.7: rm
+	// reads a node's name before it asks). docs/cli-parity.tsv has a row for each, naming that other command, and the
+	// probe checks that a command's calls stay within its routes and these reads.
+	reads []string
+	help  string
+	run   func(args []string, stdout, stderr io.Writer) int
 }
 
 // routes returns every route the command calls, route first.
@@ -91,7 +95,7 @@ var remoteCommands = []remoteCommand{
 		help: `  cp NODE DEST [--folder FOLDER] [--name NAME] [--replace [--yes]]
                                  copy a node into a directory, as mv does for the destination
 `, run: files.Cp},
-	{name: "rm", route: "DELETE /api/v1/nodes/{nod}", notProbed: filesProbeNote,
+	{name: "rm", route: "DELETE /api/v1/nodes/{nod}", reads: []string{"GET /api/v1/nodes/{nod}"}, notProbed: filesProbeNote,
 		help: `  rm NODE... [--yes]             move one or more nodes to the Trash (asks first)
 `, run: files.Rm},
 	{name: "trash ls", route: "GET /api/v1/trash", notProbed: filesProbeNote,
@@ -105,7 +109,7 @@ var remoteCommands = []remoteCommand{
 		help: `  trash empty [--folder FOLDER] [--yes]
                                  purge the trash for good, of every folder or of one (asks first)
 `, run: files.TrashEmpty},
-	{name: "trash rm", route: "DELETE /api/v1/trash/{nod}", notProbed: filesProbeNote,
+	{name: "trash rm", route: "DELETE /api/v1/trash/{nod}", reads: []string{"GET /api/v1/trash"}, notProbed: filesProbeNote,
 		help: `  trash rm NODE... [--yes]       purge one or more trashed nodes for good (asks first)
 `, run: files.TrashRm},
 	{name: "shortcut add", route: "POST /api/v1/nodes/{nod}/shortcuts", notProbed: filesProbeNote,

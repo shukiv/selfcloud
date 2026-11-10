@@ -29,12 +29,72 @@ func Rm(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, g, err)
 	}
-	if err := confirm(yes, phraseFor(ids), "move the node or nodes to the Trash", stderr); err != nil {
+	c, err := connect(g, stderr)
+	if err != nil {
 		return fail(stderr, g, err)
 	}
-	return runCommand(g, stdout, stderr, ids, func(id string) request {
+	// One target is confirmed by its name, read first (design 3.7); several by yes.
+	phrase := func() (string, error) {
+		if len(ids) != 1 {
+			return phraseFor(ids), nil
+		}
+		return nodeName(c, ids[0])
+	}
+	if err := confirmWith(yes, phrase, "move the node or nodes to the Trash", stderr); err != nil {
+		return fail(stderr, g, err)
+	}
+	return report(stdout, stderr, g.JSON, runEach(c, ids, func(id string) request {
 		return request{method: "DELETE", path: nodeRoute(id, "")}
-	})
+	}))
+}
+
+// nodeName reads a node's name: the phrase a person types back before a removal.
+func nodeName(c *conn.Conn, nodeID string) (string, error) {
+	resp, err := send(c, request{method: "GET", path: nodeRoute(nodeID, "")})
+	if err != nil {
+		return "", err
+	}
+	v, err := decodeNode(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return v.Name, nil
+}
+
+// trashedName reads a trashed node's name from the trash listing, the one place a trashed node can be read. A node that
+// the listing does not hold is not found, and nothing is purged.
+func trashedName(c *conn.Conn, nodeID string) (string, error) {
+	cursor := ""
+	for {
+		q := url.Values{}
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		resp, err := send(c, request{method: "GET", path: "/api/v1/trash", query: q})
+		if err != nil {
+			return "", err
+		}
+		var page struct {
+			Items      []json.RawMessage `json:"items"`
+			NextCursor string            `json:"next_cursor"`
+		}
+		if err := json.Unmarshal(resp.Body, &page); err != nil {
+			return "", errors.New("the server's answer is not a list")
+		}
+		for _, raw := range page.Items {
+			v, err := decodeNode(raw)
+			if err != nil {
+				return "", err
+			}
+			if v.ID == nodeID {
+				return v.Name, nil
+			}
+		}
+		if page.NextCursor == "" || page.NextCursor == cursor {
+			return "", exitcode.NotFoundf("the node is not in the Trash")
+		}
+		cursor = page.NextCursor
+	}
 }
 
 // TrashLs is `selfcloud trash ls`: the trashed nodes, of every folder or of the one given.
@@ -183,12 +243,23 @@ func TrashRm(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, g, err)
 	}
-	if err := confirm(yes, phraseFor(ids), "purge the node or nodes for good; they cannot be restored", stderr); err != nil {
+	c, err := connect(g, stderr)
+	if err != nil {
 		return fail(stderr, g, err)
 	}
-	return runCommand(g, stdout, stderr, ids, func(id string) request {
+	// One target is confirmed by its name, read from the trash listing first (design 3.7); several by yes.
+	phrase := func() (string, error) {
+		if len(ids) != 1 {
+			return phraseFor(ids), nil
+		}
+		return trashedName(c, ids[0])
+	}
+	if err := confirmWith(yes, phrase, "purge the node or nodes for good; they cannot be restored", stderr); err != nil {
+		return fail(stderr, g, err)
+	}
+	return report(stdout, stderr, g.JSON, runEach(c, ids, func(id string) request {
 		return request{method: "DELETE", path: trashRoute(id)}
-	})
+	}))
 }
 
 // nodeIDs checks that every argument is a node id. It is one check for all of them, before anything is sent.

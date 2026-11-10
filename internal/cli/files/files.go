@@ -324,12 +324,27 @@ func phraseFor(targets []string) string {
 // confirm asks before a destructive change. With yes it asks nothing. Otherwise standard input must be a terminal, where
 // the person types phrase and presses Enter; without a terminal the command refuses (exit 2), so nothing is sent.
 func confirm(yes bool, phrase, what string, stderr io.Writer) error {
+	return confirmWith(yes, func() (string, error) { return phrase, nil }, what, stderr)
+}
+
+// confirmWith is confirm for a phrase that may need a read, such as a node's name. The read happens only at a terminal,
+// after the question is known to be needed; an error from it stops the command before anything is sent.
+func confirmWith(yes bool, phrase func() (string, error), what string, stderr io.Writer) error {
 	if yes {
 		return nil
 	}
 	if !isTerminal(stdin) {
 		return exitcode.Usagef("%s; give --yes to confirm when standard input is not a terminal", what)
 	}
+	p, err := phrase()
+	if err != nil {
+		return err
+	}
+	return askPhrase(p, what, stderr)
+}
+
+// askPhrase shows the question and reads the answer, which must be phrase exactly.
+func askPhrase(phrase, what string, stderr io.Writer) error {
 	fmt.Fprintf(stderr, "%s. Type %s and press Enter to go on: ", what, phrase)
 	line, err := bufio.NewReader(stdin).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
