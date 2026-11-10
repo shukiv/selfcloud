@@ -7,7 +7,7 @@
 // and offline.html, the worker, the manifest and the icons are answered as they are. A variant is written only when it is
 // smaller than its file. Vite empties dist/ before each build, so a variant from an earlier build cannot be left behind.
 import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { join, extname } from 'node:path';
+import { join, extname, relative } from 'node:path';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
@@ -35,6 +35,15 @@ try {
   list = await files(assets);
 } catch {
   console.error(`${assets} is missing: the build has no assets to compress`);
+  process.exit(1);
+}
+
+// A source named .gz or .br would be indistinguishable from a variant, so it stops the build before anything is written. Vite
+// empties dist/ before each build, so a file with either name there is a source, not a variant of this run.
+const clashes = list.filter((path) => /\.(gz|br)$/.test(path));
+if (clashes.length > 0) {
+  const names = clashes.map((path) => relative(dist, path)).join(', ');
+  console.error(`${names}: a file under assets/ is named .gz or .br; those names are the build's own variants, so rename the source`);
   process.exit(1);
 }
 
