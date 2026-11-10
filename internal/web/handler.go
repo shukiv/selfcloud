@@ -57,7 +57,7 @@ type Options struct {
 	// and manifest (decision 65).
 	BrandName   string
 	BrandAccent string
-	// BrandArtwork says the installation shows the SelfCloud artwork: the default name with no logo file (decision 109).
+	// BrandArtwork says the installation shows the SelfCloud artwork: it has no logo file, whatever its name (decision 126).
 	BrandArtwork bool
 	// IconFile is ui.brand.icon_file, read at start, or nil. LogoFile is ui.brand.logo_file, or nil. The icons and the
 	// favicon are drawn from them (decision 119); the server reads them with LoadIconFile and LoadLogo.

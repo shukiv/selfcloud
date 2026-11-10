@@ -795,12 +795,12 @@ async function main() {
     await signIn(page, OWNER);
     const who = await accountName(page);
     check(who.includes(OWNER.name), `the shell shows the signed-in name (${who.trim()})`);
-    // The configured name is in the browser tab. With no logo, the sidebar's top shows the name as text (decision 109); the top bar
-    // draws no brand name (decision 69).
+    // The configured name is in the browser tab. With no logo file, the sidebar's top shows the SelfCloud wordmark, labelled with
+    // the configured name, and not the name as text (decision 126); the top bar draws no brand name (decision 69).
     const tabTitle = await page.evaluate(`document.title`);
     check(tabTitle.includes(BRAND.name), 'the browser tab carries the configured brand name');
-    const siderNames = await page.evaluate(`document.querySelector('.shell-sider')?.textContent ?? ''`);
-    check(siderNames.includes(BRAND.name), 'the sidebar\'s top shows the configured name (decision 109)');
+    const siderBrand = await page.evaluate(`(() => { const img = document.querySelector('[data-testid="sidebar-brand"] img'); return { src: img?.getAttribute('src') ?? '', alt: img?.getAttribute('alt') ?? '', text: document.querySelector('[data-testid="sidebar-brand"]')?.textContent ?? '' }; })()`);
+    check(siderBrand.src === '/brand/wordmark.svg' && siderBrand.alt === BRAND.name && siderBrand.text === '', `the sidebar's top shows the wordmark labelled with the configured name (decision 126; ${JSON.stringify(siderBrand)})`);
     const barNames = await page.evaluate(`document.querySelector('header')?.textContent ?? ''`);
     check(!barNames.includes(BRAND.name), 'the top bar draws no brand name');
     const sider = await page.evaluate(`getComputedStyle(document.querySelector('.ant-layout-sider')).backgroundColor`);

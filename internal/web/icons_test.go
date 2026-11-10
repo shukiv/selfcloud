@@ -88,8 +88,8 @@ func logoPNG(t *testing.T) []byte {
 func pngFile(data []byte) *Logo { return &Logo{data: data, contentType: "image/png"} }
 func svgFile(s string) *Logo    { return &Logo{data: []byte(s), contentType: "image/svg+xml"} }
 
-// brandHandler builds the handler for a name and the two files. The artwork flag is set as the server sets it: the default
-// name with no logo file.
+// brandHandler builds the handler for a name and the two files. The artwork flag is set as the server sets it: no logo file,
+// whatever the name (decision 126).
 func brandHandler(t *testing.T, name string, icon, logo *Logo) *Handler {
 	t.Helper()
 	files := testFiles()
@@ -97,7 +97,7 @@ func brandHandler(t *testing.T, name string, icon, logo *Logo) *Handler {
 	return newTestHandler(t, files, Options{
 		BrandName:    name,
 		BrandAccent:  testAccent,
-		BrandArtwork: name == "SelfCloud" && logo == nil,
+		BrandArtwork: logo == nil,
 		IconFile:     icon,
 		LogoFile:     logo,
 	})

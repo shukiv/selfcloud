@@ -231,7 +231,7 @@ func brandSVGs(b brandInfo, favicon brandSVG) map[string]brandSVG {
 		faviconPath: favicon,
 		markPath:    {body: brandFile("selfcloud-mark.svg"), policy: svgPolicy},
 	}
-	// The wordmark is the SelfCloud artwork's; a custom name shows its name as text, so it has none (decision 109).
+	// The wordmark is the SelfCloud artwork's; an installation with its own logo shows that instead, so it has none (decision 126).
 	if b.artwork {
 		out[wordmarkPath] = brandSVG{body: brandFile("selfcloud-logo-transparent.svg"), policy: svgPolicy}
 	}

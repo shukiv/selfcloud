@@ -5,8 +5,8 @@ import { useStore } from "../lib/store";
 import { brand, brandLoaded, contrast, safeLogo } from "../lib/brand";
 
 // The brand at the top of the sidebar (decision 109). Its block has the same edge as New's top (10 px, or 6 px on a finger), then
-// the picture, then the same edge again, so New sits one edge under it. Expanded, it is the SelfCloud wordmark, the installation's
-// logo, or its name as text. Folded to the rail, it is the SelfCloud mark for every name (decision 119), or the logo small.
+// the picture, then the same edge again, so New sits one edge under it. Expanded, it is the SelfCloud wordmark (every installation
+// with no logo file, decision 126), the installation's logo, or, only from a server that sends neither, its name as text. Folded to the rail, it is the SelfCloud mark for every name (decision 119), or the logo small.
 // The name of a custom installation is not drawn in the rail: it has no picture to fold to, so the mark stands in for it. Nothing
 // is drawn until the brand is loaded, and the picture's space is kept so nothing moves.
 export default function SidebarBrand({ collapsed, coarse, text, background }: { collapsed: boolean; coarse: boolean; text: string; background: string }) {

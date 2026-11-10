@@ -101,7 +101,8 @@ type infoBrand struct {
 	Name    string  `json:"name"`
 	Accent  string  `json:"accent"`
 	LogoURL *string `json:"logo_url"`
-	// Artwork is true when the installation shows the SelfCloud artwork (decision 109): its logo is then the artwork at logo_url.
+	// Artwork is true when the installation shows the SelfCloud artwork, which is whenever it has no logo file (decisions 109 and
+	// 126).
 	Artwork bool         `json:"artwork"`
 	Palette *infoPalette `json:"palette,omitempty"`
 	Sidebar *infoSidebar `json:"sidebar,omitempty"`
@@ -230,7 +231,7 @@ func (s *Server) handleLogo(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	if s.cfg.UI.Brand.Artwork() {
-		// The default brand's logo is the SelfCloud artwork (decision 109).
+		// With no logo file, the logo is the SelfCloud artwork, whatever the name (decisions 109 and 126).
 		web.ArtworkLogo().ServeHTTP(w, r)
 		return nil
 	}

@@ -160,7 +160,8 @@ func TestIndexCarriesTheInstallationsName(t *testing.T) {
 }
 
 // TestBrandSVGsAreServed: the mark is the mark for the default brand and for a custom name. The wordmark is served
-// only for the default brand, since a custom name shows its name as text. All of them need the web interface, like the icons.
+// only when the artwork shows (no logo file, decision 126); an installation with its own logo has none. All of them need the
+// web interface, like the icons.
 func TestBrandSVGsAreServed(t *testing.T) {
 	art := artworkHandler(t, "#053D8E")
 	for _, p := range []string{wordmarkPath, markPath} {

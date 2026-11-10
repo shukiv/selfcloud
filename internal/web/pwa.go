@@ -69,7 +69,7 @@ type icon struct {
 }
 
 // brandInfo is the installation's name and accent, for the manifest and the icons. artwork says the installation shows the
-// SelfCloud artwork, which is the wordmark in the sidebar (decision 109); the icons do not depend on it.
+// SelfCloud artwork, which is the wordmark in the sidebar (decisions 109 and 126); the icons do not depend on it.
 type brandInfo struct {
 	name    string
 	accent  color.RGBA
