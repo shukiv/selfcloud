@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { session, type Session } from '../session';
 import { ancestorsOrNull, childrenPage } from './api';
 import { locate } from './location';
-import type { FolderAccess, Node } from './types';
+import type { FolderAccess } from './types';
 
 // The network is a stand-in for the base API function. It answers the reads a folder open makes, and it counts every
 // request, in the order they start. A response waits for the gate, so a test can see what is in flight before any answer.
