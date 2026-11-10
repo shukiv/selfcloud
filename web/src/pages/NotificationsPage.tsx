@@ -107,10 +107,6 @@ export default function NotificationsPage() {
         <button
           type="button"
           onClick={() => open(n)}
-          onKeyDown={(e) => {
-            // The row's Enter opens the notice; the button's own Enter is the same click, so the row does not open it again.
-            if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-          }}
           style={{
             display: "block",
             maxWidth: "100%",
