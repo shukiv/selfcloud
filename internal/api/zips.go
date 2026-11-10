@@ -489,6 +489,11 @@ func (s *Server) startZip(ctx context.Context, z *store.Zip, p *auth.Principal) 
 	}
 	s.atWrite()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
+		// A restarted run counts its own earlier reservation nowhere (decision 120): it is released first, inside this
+		// write, and the write rolls back if it is refused.
+		if err := tx.ClearZipReservation(ctx, z.ID); err != nil {
+			return err
+		}
 		ready, reserved, err := tx.ZipDiskUse(ctx)
 		if err != nil {
 			return err
