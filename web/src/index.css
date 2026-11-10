@@ -74,19 +74,6 @@ body {
   overflow-x: auto;
 }
 
-/* The native tables (the storage pages). A header cell and a data cell share one padding, so each header sits over its
-   column and two numeric columns keep a gap between them. */
-.storage-table th,
-.storage-table td {
-  padding-block: 8px;
-  padding-inline: 12px;
-  vertical-align: top;
-}
-
-.storage-table th {
-  font-weight: 600;
-}
-
 /* A legend sits flush with the labels of its fields, not inset by the browser's default padding. */
 legend {
   padding-inline: 0;
@@ -428,16 +415,6 @@ a {
   border-radius: 20px;
   background: var(--ant-color-fill-tertiary);
   color: var(--ant-color-primary);
-}
-
-.storage-wide {
-  display: table-cell;
-}
-
-@media (max-width: 719px) {
-  .storage-wide {
-    display: none;
-  }
 }
 
 /* Visually hidden text that screen readers still announce. */

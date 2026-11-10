@@ -14,7 +14,6 @@ import { kindOfChip, type Breakdown, type ChipId } from "../lib/storage/breakdow
 import StorageMeter from "../components/storage/StorageMeter";
 import FreeUpSpace from "../components/storage/FreeUpSpace";
 import LargestFilesCard from "../components/storage/LargestFiles";
-import EmptyState from "../components/EmptyState";
 
 // A server that does not send the breakdown shows the figures with the files only.
 const NO_BREAKDOWN: Breakdown = { versions_bytes: 0, versions_files: 0, trash_bytes: 0, trash_files: 0 };
@@ -79,8 +78,10 @@ export default function StoragePage() {
       document.getElementById("largest-title")?.focus();
       return;
     }
-    const row = Math.min(index, files.length - 1);
-    document.querySelector<HTMLElement>(`tr[data-row-index="${row}"] [data-first-action]`)?.focus();
+    // The row's first icon is its Download (decision 122: the rows are the one table, each carrying its file's ID).
+    const id = files[Math.min(index, files.length - 1)].id;
+    const tr = [...document.querySelectorAll<HTMLElement>("tbody tr[data-id]")].find((r) => r.dataset.id === id);
+    tr?.querySelector<HTMLElement>(".row-acts button, .row-acts a")?.focus();
   }, [files, loading]);
 
   // reloadAll reads the figures and the first page again, after a file moved to or out of the trash.
@@ -155,7 +156,8 @@ export default function StoragePage() {
 
   if (admin) return null;
 
-  const empty = !loading && files.length === 0 && error === null;
+  // The table is drawn once the list has been read (or has rows to keep): before the first answer, the page shows its skeleton.
+  const loaded = files.length > 0 || (!loading && error === null);
   const figures = my;
   const parts = breakdown ?? NO_BREAKDOWN;
 
@@ -175,6 +177,7 @@ export default function StoragePage() {
 
       <LargestFilesCard
         files={files}
+        loaded={loaded}
         chip={chip}
         onChip={pickChip}
         hasMore={cursor !== null}
@@ -184,7 +187,6 @@ export default function StoragePage() {
         onRestore={(id) => void restore(id)}
       />
       {loading && files.length === 0 && error === null && <Skeleton active style={{ marginBlockStart: 12 }} />}
-      {empty && <EmptyState role="status" className="empty" size="compact" text={t("storage.largestEmpty")} />}
     </div>
   );
 }
