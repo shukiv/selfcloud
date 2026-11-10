@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Trash2 } from "lucide-react";
-import IconButton from "../../components/IconButton";
+import Listing from "../../components/files/Listing";
 
 import { useState } from "react";
 import { App, Alert, Button, Select } from "antd";
@@ -34,7 +34,6 @@ import Confirm from "../../components/Confirm";
 import DeletePublicLinks from "../../components/share/DeletePublicLinks";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 import { LOCK } from "../../lib/manage/locks";
-import EmptyState from "../../components/EmptyState";
 
 // Links: every link of the account that anyone can open, and every drop link, with its place and its state. An owner
 // deletes one at a time, or all of them at once. Links that only people in the account can open are on the items they
@@ -169,58 +168,77 @@ function LinksView() {
 
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
-      {loaded && rows.length === 0 && failure === null && (
-        <EmptyState role="status" text={t("links.empty")} />
-      )}
-
-      {rows.length > 0 && (
-        <ul aria-label={t("links.title")} style={{ margin: 0, padding: 0, listStyle: "none" }}>
-          {rows.map((l) => (
-            <li
-              key={l.id}
-              className="link-row"
-              style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "space-between", alignItems: "start", padding: "12px 0", borderBlockEnd: "1px solid var(--ant-color-split)" }}
-            >
-              <div style={{ minInlineSize: 0 }}>
-                <p style={{ margin: 0, overflowWrap: "anywhere" }}>
-                  <bdi className="item-name" style={{ fontWeight: 600 }}>{text(itemLabel(l, false))}</bdi>
-                  {pathLabel(l) !== "" && (
-                    <span style={{ marginInlineStart: 8, fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{pathLabel(l)}</span>
-                  )}
-                </p>
-                <p style={{ margin: 0, fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
-                  <span>{text(folderLabel(l, viewer))}</span>
-                  <span aria-hidden="true"> · </span>
-                  <span>{text(audienceLabel(l))}</span>
-                  <span aria-hidden="true"> · </span>
-                  <span>{text(kindLabel(l))}</span>
-                  {l.role && (
-                    <>
-                      <span aria-hidden="true"> · </span>
-                      <span>{t(`role.${l.role}`)}</span>
-                    </>
-                  )}
-                </p>
-                <p style={{ margin: 0, fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
-                  <span>{text(creatorLabel(l))}</span>
-                  <span aria-hidden="true"> · </span>
+      {/* The links are the one table (decision 122). The name cell holds the item, its path and its folder; Kind holds the kind and
+          the role; Created the date and who made the link; Status the end date and the states. Delete is the row's icon. */}
+      {loaded && (
+        <Listing
+          label={t("links.title")}
+          items={rows}
+          rowLabel={(l) => text(itemLabel(l, false))}
+          columns={[
+            {
+              key: "name",
+              title: t("files.col.name"),
+              render: (l) => (
+                <span style={{ display: "block", minWidth: 0 }}>
+                  <span style={{ display: "block", overflowWrap: "anywhere" }}>
+                    <bdi className="item-name" style={{ fontWeight: 600 }}>{text(itemLabel(l, false))}</bdi>
+                    {pathLabel(l) !== "" && (
+                      <span style={{ marginInlineStart: 8, fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{pathLabel(l)}</span>
+                    )}
+                  </span>
+                  <span style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{text(folderLabel(l, viewer))}</span>
+                </span>
+              ),
+            },
+            { key: "audience", title: t("links.filter.audience"), render: (l) => text(audienceLabel(l)) },
+            {
+              key: "kind",
+              title: t("links.filter.kind"),
+              render: (l) => (
+                <span style={{ display: "block" }}>
+                  <span style={{ display: "block" }}>{text(kindLabel(l))}</span>
+                  {l.role && <span style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{t(`role.${l.role}`)}</span>}
+                </span>
+              ),
+            },
+            {
+              key: "created",
+              title: t("keys.created"),
+              render: (l) => (
+                <span style={{ display: "block" }}>
                   <time dateTime={l.created_at}>{formatDate(l.created_at, lang)}</time>
-                  <span aria-hidden="true"> · </span>
-                  <span>{l.expires_at ? t("links.ends", { date: formatDate(l.expires_at, lang) }) : t("links.noEnd")}</span>
+                  <span style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{text(creatorLabel(l))}</span>
+                </span>
+              ),
+            },
+            {
+              key: "status",
+              title: t("people.detail.status"),
+              render: (l) => (
+                <span style={{ display: "block" }}>
+                  <span style={{ display: "block" }}>{l.expires_at ? t("links.ends", { date: formatDate(l.expires_at, lang) }) : t("links.noEnd")}</span>
                   {statusKeys(l).map((s, i) => (
-                    <span key={i}>
-                      <span aria-hidden="true"> · </span>
-                      <span>{text(s)}</span>
-                    </span>
+                    <span key={i} style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{text(s)}</span>
                   ))}
-                </p>
-              </div>
-              <div style={{ flex: "none" }}>
-                <IconButton label={`${t("links.delete.action")}: ${text(itemLabel(l, false))}`} tip={t("links.delete.action")} danger onClick={() => { setDeleteError(null); setDeleting(l); }} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
-              </div>
-            </li>
-          ))}
-        </ul>
+                </span>
+              ),
+            },
+          ]}
+          actions={(l) => [
+            {
+              key: "delete",
+              label: `${t("links.delete.action")}: ${text(itemLabel(l, false))}`,
+              icon: <Trash2 size={18} aria-hidden="true" focusable="false" />,
+              danger: true,
+              run: () => {
+                setDeleteError(null);
+                setDeleting(l);
+              },
+            },
+          ]}
+          empty={{ title: t("links.empty") }}
+        />
       )}
 
       {q.hasNextPage && (

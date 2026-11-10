@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Pencil } from "lucide-react";
-import IconButton from "../../components/IconButton";
-
 import { useState } from "react";
 import { Alert, Button, Modal, Tag } from "antd";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,7 +21,7 @@ import { sessionChanged } from "../../lib/session";
 import UsageMeter from "../../components/UsageMeter";
 import LimitEditor from "../../components/storage/LimitEditor";
 import { OwnerOnly, useAccountID, useManageTitle, useOnce } from "../../components/manage/OwnerPage";
-import EmptyState from "../../components/EmptyState";
+import Listing from "../../components/files/Listing";
 
 // Manage > Storage: the account's meter, the default limit for each person, the people by use with their own limits, and
 // the team spaces with their largest files. An owner sees per-person totals but never a file name from a person's My
@@ -38,6 +36,8 @@ function StorageView() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingDefault, setEditingDefault] = useState(false);
   const [editingPerson, setEditingPerson] = useState<StoragePerson | null>(null);
+  // The team spaces sort by name, A to Z first; the header's click reverses it (decision 122).
+  const [spaceDir, setSpaceDir] = useState<"asc" | "desc">("asc");
   const once = useOnce();
 
   const q = useInfiniteQuery({
@@ -62,6 +62,8 @@ function StorageView() {
   const folders = (first?.folders ?? []).filter((f) => f.kind === "team");
   const rows: SpaceFile[] = largest.data?.pages.flatMap((p) => p.items) ?? [];
   const held = first ? heldBytes(first.account) : 0;
+  const sign = spaceDir === "asc" ? 1 : -1;
+  const spaces = [...folders].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", lang) * sign);
 
   const refresh = () => qc.invalidateQueries({ queryKey: queryKey("manage", account, "storage") });
 
@@ -156,53 +158,58 @@ function StorageView() {
             </div>
           </section>
 
-          <section id="people-storage" aria-labelledby="people-storage-title" style={block}>
+          {/* The three storage tables are the one table (decision 122). Each section's name is its table's, so the section is not a
+              second region with the same name. */}
+          <section id="people-storage" style={block}>
             <h2 id="people-storage-title" style={sectionTitle}>
               {t("storage.people")}
             </h2>
-            {people.length === 0 ? (
-              <EmptyState role="status" size="compact" text={t("storage.peopleEmpty")} />
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-<table className="storage-table" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }}>
-                <thead>
-                  <tr>
-                    <th scope="col" style={{ textAlign: "start" }}>{t("storage.person")}</th>
-                    <th scope="col" style={{ textAlign: "end" }}>{t("storage.used")}</th>
-                    <th scope="col" style={{ textAlign: "start" }}>{t("storage.limit")}</th>
-                    <th scope="col"><span className="sr-only">{t("storage.actions")}</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {people.map((p) => (
-                    <tr key={p.id}>
-                      <th scope="row" style={{ textAlign: "start", fontWeight: 500, verticalAlign: "top" }}>
-                        <bdi>{personLabel(p)}</bdi>
-                        {p.email && p.email !== personLabel(p) && (
-                          <>
-                            <br />
-                            <span style={{ color: "var(--ant-color-text-secondary)" }}>
-                              <bdi>{p.email}</bdi>
-                            </span>
-                          </>
-                        )}
-                      </th>
-                      <td style={{ textAlign: "end", whiteSpace: "nowrap" }}>{formatBytes(heldBytes(p), lang)}</td>
-                      <td>
-                        {limitText(p)}
-                        {p.quota_bytes === null && (
-                          <span style={{ color: "var(--ant-color-text-secondary)" }}> · {t("storage.followsDefault")}</span>
-                        )}
-                      </td>
-                      <td style={{ textAlign: "end" }}>
-                        <IconButton label={`${t("storage.change")}: ${personLabel(p)}`} tip={t("storage.change")} onClick={() => setEditingPerson(p)} icon={<Pencil size={18} aria-hidden="true" focusable="false" />} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-</div>
-            )}
+            <Listing
+              label={t("storage.people")}
+              items={people}
+              rowLabel={(p) => personLabel(p)}
+              columns={[
+                {
+                  key: "person",
+                  title: t("storage.person"),
+                  render: (p) => (
+                    <span style={{ display: "block" }}>
+                      <bdi>{personLabel(p)}</bdi>
+                      {p.email && p.email !== personLabel(p) && (
+                        <span style={{ display: "block", color: "var(--ant-color-text-secondary)" }}>
+                          <bdi>{p.email}</bdi>
+                        </span>
+                      )}
+                    </span>
+                  ),
+                },
+                {
+                  key: "used",
+                  title: t("storage.used"),
+                  align: "end",
+                  render: (p) => <span style={{ whiteSpace: "nowrap" }}>{formatBytes(heldBytes(p), lang)}</span>,
+                },
+                {
+                  key: "limit",
+                  title: t("storage.limit"),
+                  render: (p) => (
+                    <span>
+                      {limitText(p)}
+                      {p.quota_bytes === null && <span style={{ color: "var(--ant-color-text-secondary)" }}> · {t("storage.followsDefault")}</span>}
+                    </span>
+                  ),
+                },
+              ]}
+              actions={(p) => [
+                {
+                  key: "edit",
+                  label: `${t("storage.change")}: ${personLabel(p)}`,
+                  icon: <Pencil size={18} aria-hidden="true" focusable="false" />,
+                  run: () => setEditingPerson(p),
+                },
+              ]}
+              empty={{ title: t("storage.peopleEmpty") }}
+            />
             {q.hasNextPage && (
               <div style={{ display: "flex", justifyContent: "center", marginBlockStart: 12 }}>
                 <Button disabled={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>
@@ -212,45 +219,38 @@ function StorageView() {
             )}
           </section>
 
-          <section id="spaces-storage" aria-labelledby="spaces-storage-title" style={block}>
+          <section id="spaces-storage" style={block}>
             <h2 id="spaces-storage-title" style={sectionTitle}>
               {t("storage.spaces")}
             </h2>
-            {folders.length === 0 ? (
-              <EmptyState role="status" size="compact" text={t("storage.spacesEmpty")} />
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-<table className="storage-table" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }}>
-                <thead>
-                  <tr>
-                    <th scope="col" style={{ textAlign: "start" }}>{t("storage.space")}</th>
-                    <th scope="col" style={{ textAlign: "end" }}>{t("storage.size")}</th>
-                    <th scope="col" style={{ textAlign: "end" }}>{t("storage.files")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {folders.map((f) => (
-                    <tr key={f.id}>
-                      <th scope="row" style={{ textAlign: "start", fontWeight: 500 }}>
-                        <bdi>{f.name ?? ""}</bdi>
-                      </th>
-                      <td style={{ textAlign: "end", whiteSpace: "nowrap" }}>
-                        {formatBytes(f.used_bytes + f.reserved_bytes, lang)}
-                      </td>
-                      <td style={{ textAlign: "end", whiteSpace: "nowrap" }}>
-                        {tp("storage.fileCount", f.used_files)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-</div>
-            )}
+            <Listing
+              label={t("storage.spaces")}
+              items={spaces}
+              rowLabel={(f) => f.name ?? ""}
+              columns={[
+                { key: "space", title: t("storage.space"), sortKey: "name", render: (f) => <bdi>{f.name ?? ""}</bdi> },
+                {
+                  key: "size",
+                  title: t("storage.size"),
+                  align: "end",
+                  render: (f) => <span style={{ whiteSpace: "nowrap" }}>{formatBytes(f.used_bytes + f.reserved_bytes, lang)}</span>,
+                },
+                {
+                  key: "files",
+                  title: t("storage.files"),
+                  align: "end",
+                  render: (f) => <span style={{ whiteSpace: "nowrap" }}>{tp("storage.fileCount", f.used_files)}</span>,
+                },
+              ]}
+              // The team spaces are the whole list (the first page of the account's read), so the sort is on the client.
+              sort={{ key: "name", dir: spaceDir, onSort: () => setSpaceDir((d) => (d === "asc" ? "desc" : "asc")) }}
+              empty={{ title: t("storage.spacesEmpty") }}
+            />
           </section>
         </>
       )}
 
-      <section id="largest-spaces" aria-labelledby="largest-spaces-title" style={block}>
+      <section id="largest-spaces" style={block}>
         <h2 id="largest-spaces-title" style={sectionTitle}>
           {t("storage.spaceLargest")}
         </h2>
@@ -260,43 +260,37 @@ function StorageView() {
         {largest.isError && rows.length > 0 && (
           <Alert type="warning" showIcon role="alert" message={failureText(largest.error, lang)} style={{ marginBottom: 12 }} />
         )}
-        {largest.data !== undefined && rows.length === 0 && !largest.isError && (
-          <EmptyState role="status" size="compact" text={t("storage.largestEmpty")} />
-        )}
-        {rows.length > 0 && (
-          <div style={{ overflowX: "auto" }}>
-<table className="storage-table" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }}>
-            <thead>
-              <tr>
-                <th scope="col" style={{ textAlign: "start" }}>{t("storage.name")}</th>
-                <th scope="col" style={{ textAlign: "start" }}>{t("storage.space")}</th>
-                <th scope="col" style={{ textAlign: "end" }}>{t("storage.size")}</th>
-                <th scope="col" style={{ textAlign: "start" }}>{t("storage.modified")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((f) => (
-                <tr key={f.id}>
-                  <th scope="row" style={{ textAlign: "start", fontWeight: 500 }}>
+        {largest.data !== undefined && (
+          <Listing
+            label={t("storage.spaceLargest")}
+            items={rows}
+            rowLabel={(f) => f.name}
+            columns={[
+              {
+                key: "name",
+                title: t("storage.name"),
+                render: (f) => (
+                  <span>
                     <bdi>{f.name}</bdi>
                     {f.in_trash && (
                       <span style={{ marginInlineStart: 8 }}>
                         <Tag color="warning">{t("storage.inTrash")}</Tag>
                       </span>
                     )}
-                  </th>
-                  <td>
-                    <bdi>{f.folder_name}</bdi>
-                  </td>
-                  <td style={{ textAlign: "end", whiteSpace: "nowrap" }}>{formatBytes(f.size, lang)}</td>
-                  <td>
-                    <time dateTime={f.modified_at}>{formatDate(f.modified_at, lang)}</time>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-</div>
+                  </span>
+                ),
+              },
+              { key: "space", title: t("storage.space"), render: (f) => <bdi>{f.folder_name}</bdi> },
+              {
+                key: "size",
+                title: t("storage.size"),
+                align: "end",
+                render: (f) => <span style={{ whiteSpace: "nowrap" }}>{formatBytes(f.size, lang)}</span>,
+              },
+              { key: "modified", title: t("storage.modified"), render: (f) => <time dateTime={f.modified_at}>{formatDate(f.modified_at, lang)}</time> },
+            ]}
+            empty={{ title: t("storage.largestEmpty") }}
+          />
         )}
         {largest.hasNextPage && (
           <div style={{ display: "flex", justifyContent: "center", marginBlockStart: 12 }}>
