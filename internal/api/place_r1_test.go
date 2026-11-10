@@ -127,6 +127,53 @@ func TestPlacesIsAFixedNumberOfQueries(t *testing.T) {
 	}
 }
 
+// TestPlaceFollowsATokenNodeOnSharedAndTrash: a token confined to node b (acting as ann) names only what is inside b. On
+// the shared list, b's parent a is outside, so b's place is "", and deep's parent b is inside, so deep's place is "b".
+// On the trash, ann's trashed deep names b; ann's trashed b names nothing, its parent a being outside.
+func TestPlaceFollowsATokenNodeOnSharedAndTrash(t *testing.T) {
+	t.Parallel()
+
+	t.Run("shared", func(t *testing.T) {
+		t.Parallel()
+		fx := newSharingFixture(t)
+		// ann reaches a too, so a token that stopped at b is the only thing that keeps a's name out of b's place.
+		fx.setPerm(t, fx.a.ID, fx.ann.ID, "viewer")
+		fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
+		fx.setPerm(t, fx.deep.ID, fx.ann.ID, "viewer")
+		tok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"folders": []string{fx.fld.ID},
+			"node": fx.b.ID, "user": fx.ann.ID})
+
+		got := placesOf(t, call(t, fx.s, "GET", "/api/v1/shared", tok, nil))
+		wantPlaces(t, got, map[string]string{"b": "", "file.txt": "b"})
+	})
+
+	t.Run("trash, a file below the node", func(t *testing.T) {
+		t.Parallel()
+		fx := newSharingFixture(t)
+		fx.setPerm(t, fx.b.ID, fx.ann.ID, "editor")
+		fx.setPerm(t, fx.deep.ID, fx.ann.ID, "editor")
+		wantStatus(t, callSession(t, fx.s, fx.annSess, "DELETE", "/api/v1/nodes/"+fx.deep.ID, nil), 204)
+		tok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"folders": []string{fx.fld.ID},
+			"node": fx.b.ID, "user": fx.ann.ID})
+
+		got := placesOf(t, call(t, fx.s, "GET", "/api/v1/trash", tok, nil))
+		wantPlaces(t, got, map[string]string{"file.txt": "b"})
+	})
+
+	t.Run("trash, the node itself", func(t *testing.T) {
+		t.Parallel()
+		fx := newSharingFixture(t)
+		fx.setPerm(t, fx.a.ID, fx.ann.ID, "editor")
+		fx.setPerm(t, fx.b.ID, fx.ann.ID, "editor")
+		tok := mintFor(t, fx.s, fx.key, fx.acc.ID, map[string]any{"folders": []string{fx.fld.ID},
+			"node": fx.b.ID, "user": fx.ann.ID})
+		wantStatus(t, callSession(t, fx.s, fx.annSess, "DELETE", "/api/v1/nodes/"+fx.b.ID, nil), 204)
+
+		got := placesOf(t, call(t, fx.s, "GET", "/api/v1/trash", tok, nil))
+		wantPlaces(t, got, map[string]string{"b": ""})
+	})
+}
+
 // TestPlaceFollowsAnOrganisationLinkBothWays: a visit to an organisation link reaches the node and what is below it, and
 // nothing above it. ann opens a link on deep: deep is hers, and its parent b is not, so deep's place is "". ann opens a
 // link on b with a grant on deep: deep's parent b is reached through the link, so deep's place is "b", and b's parent a
