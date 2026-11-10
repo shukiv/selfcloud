@@ -26,7 +26,7 @@ const q = (v) => JSON.stringify(v);
 
 // emptyOf reads the first antd Empty in the scope: its words, and whether it sits in a role=status region.
 const emptyOf = (page, scope = 'main') =>
-  page.evaluate(`(() => { const root = document.querySelector(${q(scope)}) ?? document; const e = root.querySelector('.ant-empty'); if (!e) return null; return { text: e.querySelector('.ant-empty-description')?.textContent.trim() ?? null, status: !!e.closest('[role="status"]') }; })()`);
+  page.evaluate(`(() => { const root = document.querySelector(${q(scope)}) ?? document; const e = root.querySelector('.ant-empty'); if (!e) return null; return { text: e.querySelector('.ant-empty-description')?.textContent.trim() ?? null, status: !!e.closest('[role="status"]'), desc: e.querySelector('.empty-desc')?.textContent.trim() ?? null }; })()`);
 
 // sideways reads whether the page is wider than its window, which is a sideways scroll on a phone.
 const sideways = (page) => page.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth`);
@@ -150,8 +150,9 @@ export async function em1Checks(h, { page, base, accountKey, accountID, MEMBER, 
   for (const f of found) {
     if (!f.empty) check(false, `em1: ${f.what} shows antd's Empty (none on the page: ${JSON.stringify(f.empty ?? null)})`);
     if (f.name) check(f.empty.text.startsWith('This folder is empty.'), `em1: ${f.what} shows the heading and the hint in antd's Empty (${f.empty.text})`);
-    // The drive lists' empty body is the short title, then the description (tl4 r1), so the description ends the text.
-    else check(f.empty.text.endsWith(f.text), `em1: ${f.what} shows antd's Empty with its words (${f.empty.text})`);
+    // A drive list's empty body holds a short title and then the description (tl4 r1). The words the page gives are the
+    // description, read exactly; a page with no description (Trash) has its title as its words, read exactly too.
+    else check((f.empty.desc ?? f.empty.text) === f.text, `em1: ${f.what} shows antd's Empty with its words (${f.empty.desc ?? f.empty.text})`);
     if (f.status !== null) check(f.empty.status === true, `em1: ${f.what} keeps its status region`);
     if (f.sideways !== null) check(f.sideways === false, `em1: ${f.what} does not scroll sideways`);
     if (f.rtl !== undefined) check(f.rtl === 'rtl', `em1: ${f.what} is right to left (${f.rtl})`);
