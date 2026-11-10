@@ -574,8 +574,9 @@ func wrongCode() error {
 	return apierr.New(apierr.InvalidRequest, "that code is not right").With("reason", "wrong_code")
 }
 
-// handleCLIRevoke ends the device token that calls it. Only a device token may, and sign-out may call it even when the
-// user's password must change.
+// handleCLIRevoke ends the device token that calls it. Only a device token may. The route does not admit a user whose
+// password must change: that refusal (password_change_required) comes first, and the password change itself ends the
+// device, so logout waits for the change (decision 125).
 func (s *Server) handleCLIRevoke(w http.ResponseWriter, r *http.Request) error {
 	p := principalOf(r)
 	if p == nil || p.Token == nil || p.Token.Audience != auth.CLIAudience || p.Token.Device == "" {

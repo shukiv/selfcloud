@@ -1592,7 +1592,7 @@
   "cliApprove.ip": "Address",
   "cliApprove.agent": "Program",
   "cliApprove.started": "Started",
-  "cliApprove.scope": "It gets your access, as you, until you sign it out in Signed-in devices.",
+  "cliApprove.scope": "It gets full access as you, until you sign it out in Signed-in devices or its time runs out.",
   "cliApprove.approve": "Approve sign-in",
   "cliApprove.notMe": "Not me",
   "cliApprove.done": "Approved. You can go back to the terminal.",
