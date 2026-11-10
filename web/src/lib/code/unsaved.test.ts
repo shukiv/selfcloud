@@ -16,8 +16,13 @@ import {
 const NOD = "nod_a1";
 const OTHER_NOD = "nod_b2";
 const rec = { text: "x{}", etag: '"e1"', bom: false, sep: "\n" as const };
-// pause lets a channel message be delivered between two channel objects of this process.
-const pause = () => new Promise((r) => setTimeout(r, 50));
+// until polls a condition until it holds: a channel message reaches this tab's handler in a later turn, so a message is waited for by its
+// effect, never by a fixed pause (a late message would land in the next test).
+async function until(cond: () => boolean): Promise<void> {
+  for (let i = 0; i < 400 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
+}
+// keeps says whether this tab keeps text now, probed with a person no test uses.
+const keeps = () => keepUnsaved("probe", OTHER_NOD, rec);
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -37,8 +42,7 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
       keepUnsaved("usr_1", NOD, rec);
       keepUnsaved("usr_2", OTHER_NOD, rec);
       other.postMessage({ type: "signed-out" });
-      await pause();
-      expect(readUnsaved("usr_1", NOD)).toBeNull();
+      await until(() => readUnsaved("usr_1", NOD) === null);
       expect(readUnsaved("usr_2", OTHER_NOD)).toBeNull();
     } finally {
       stop();
@@ -51,7 +55,7 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
     const other = new BroadcastChannel(SIGNOUT_CHANNEL);
     try {
       other.postMessage({ type: "signed-out" });
-      await pause();
+      await until(() => !keeps());
       expect(keepUnsaved("usr_1", NOD, rec)).toBe(false);
       expect(readUnsaved("usr_1", NOD)).toBeNull();
       noteSignedIn();
@@ -69,7 +73,7 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
     try {
       keepUnsaved("usr_1", NOD, rec);
       announceSignOut();
-      await pause();
+      await until(() => heard.length > 0);
       expect(heard).toHaveLength(1);
       expect(JSON.stringify(heard)).not.toContain("x{}");
     } finally {
@@ -82,10 +86,10 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
     const other = new BroadcastChannel(SIGNOUT_CHANNEL);
     try {
       other.postMessage({ type: "signed-out" });
-      await pause();
+      await until(() => !keeps());
       expect(keepUnsaved("usr_1", NOD, rec)).toBe(false);
       other.postMessage({ type: "signed-in" });
-      await pause();
+      await until(keeps);
       expect(keepUnsaved("usr_1", NOD, rec)).toBe(true);
     } finally {
       stop();
@@ -100,7 +104,7 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
     try {
       keepUnsaved("usr_1", NOD, rec);
       noteSignedIn();
-      await pause();
+      await until(() => heard.length > 0);
       expect(heard).toEqual([{ type: "signed-in" }]);
     } finally {
       listener.close();

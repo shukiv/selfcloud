@@ -247,6 +247,9 @@ function ctrlS() {
   return fireEvent.keyDown(content(), { key: "s", code: "KeyS", ctrlKey: true });
 }
 const pause = () => new Promise((r) => setTimeout(r, 20));
+// keepsHere says whether this tab keeps text now. It probes with a person no other test uses, so a channel message is waited for by
+// its effect (waitFor), not by a fixed pause: a message can reach this tab late.
+const keepsHere = () => keepUnsaved("probe", NOD_B, { text: "probe", etag: ETAG_B, bom: false, sep: "\n" });
 
 beforeEach(() => {
   // The text kept across a sign-in lives in this tab's sessionStorage, so one test's kept text must not reach the next.
@@ -1537,7 +1540,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
       render();
       await waitFor(() => expect(content().textContent).toContain("{}"));
       other.postMessage({ type: "signed-out" });
-      await pause();
+      await waitFor(() => expect(keepsHere()).toBe(false));
       setSignedIn({ user: { id: "usr_1", role: "user" }, csrf_token: "csrf_again" } as never);
       type(0, "x");
       act(() => clearSession());
@@ -1649,6 +1652,8 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
       fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Leave" }));
       await waitFor(() => expect(closeSpy).toHaveBeenCalled());
       expect(keptFor()).toEqual([]);
+      // The page's fallback back runs 150 ms after the close: it is waited for here, so it cannot navigate the next test's router.
+      await new Promise((r) => setTimeout(r, 250));
     } finally {
       closeSpy.mockRestore();
     }
@@ -1669,9 +1674,9 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
       await waitFor(() => expect(content().textContent).toContain("{}"));
       type(0, "x");
       other.postMessage({ type: "signed-out" });
-      await pause();
+      await waitFor(() => expect(keepsHere()).toBe(false));
       other.postMessage({ type: "signed-in" });
-      await pause();
+      await waitFor(() => expect(keepsHere()).toBe(true));
       act(() => clearSession());
       await waitFor(() => expect(keptFor()).toHaveLength(1));
       expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}");
@@ -1705,7 +1710,7 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
       await waitFor(() => expect(content().textContent).toContain("{}"));
       type(0, "x");
       other.postMessage({ type: "signed-out" });
-      await pause();
+      await waitFor(() => expect(keepsHere()).toBe(false));
       setMe({ user: { id: "usr_1", role: "user" }, account: null, csrf_token: "csrf_again" } as never);
       act(() => clearSession());
       await waitFor(() => expect(keptFor()).toHaveLength(1));
