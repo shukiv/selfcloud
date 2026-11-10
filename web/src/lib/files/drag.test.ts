@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { bandSelection, boxBetween, dropDecision, dropTrash, edgeScroll, movedFar, touches, treeNode, type Dest } from "./drag";
+import { bandSelection, boxBetween, dropDecision, dropTrash, edgeScroll, movedFar, rowBoxes, touches, treeNode, type Dest } from "./drag";
 import type { Node } from "./types";
 
 function node(id: string, extra: Partial<Node> = {}): Node {
@@ -151,5 +151,32 @@ describe("the pointer's movement", () => {
     expect(Math.abs(edgeScroll(101, 100, 800))).toBeGreaterThan(Math.abs(edgeScroll(140, 100, 800)));
     expect(edgeScroll(0, 100, 800)).toBe(-24);
     expect(edgeScroll(900, 100, 800)).toBe(24);
+  });
+});
+
+// A rubber band over a windowed list (decision 134): rows that are not drawn have no element to measure, so their boxes are
+// placed from their index and the row height, from the one row that is drawn. A band covers them as it covers drawn rows.
+describe("rowBoxes: the band's boxes for rows that are not drawn (decision 134)", () => {
+  const ids = Array.from({ length: 300 }, (_, i) => `n${i}`);
+
+  it("places every row from the drawn row's top and its index", () => {
+    const boxes = rowBoxes(ids, { index: 100, top: 50 }, 40, 0, 500);
+    expect(boxes).toHaveLength(300);
+    expect(boxes[100]).toEqual({ id: "n100", box: { x0: 0, y0: 50, x1: 500, y1: 90 } });
+    expect(boxes[0].box).toEqual({ x0: 0, y0: 50 - 100 * 40, x1: 500, y1: 50 - 100 * 40 + 40 });
+    expect(boxes[299].box.y0).toBe(50 + 199 * 40);
+  });
+
+  it("a band dragged over rows that are not drawn selects them, in list order", () => {
+    const boxes = rowBoxes(ids, { index: 100, top: 50 }, 40, 0, 500);
+    const top20 = boxes[20].box.y0;
+    const band = { x0: 10, y0: top20 + 5, x1: 20, y1: top20 + 3 * 40 - 5 };
+    expect(bandSelection(boxes, band, [], false)).toEqual(["n20", "n21", "n22"]);
+  });
+
+  it("a band that does not reach a row that is not drawn leaves it out", () => {
+    const boxes = rowBoxes(ids, { index: 100, top: 50 }, 40, 0, 500);
+    const band = { x0: 10, y0: 50 + 40 * 5, x1: 20, y1: 50 + 40 * 6 - 1 };
+    expect(bandSelection(boxes, band, [], false)).toEqual(["n105"]);
   });
 });
