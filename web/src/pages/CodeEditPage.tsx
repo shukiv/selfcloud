@@ -99,7 +99,7 @@ function failureOf(err: unknown): OpenFailure {
 // NOD is the node in the address, as the API gives it.
 const NOD = /^nod_[A-Za-z0-9_-]+$/;
 
-// fitsDraft says a text is kept across a sign-in only up to the editor's own gate, 2 MiB after encoding (design 4.2, decision 133).
+// fitsDraft says a text is kept across a sign-in only up to the editor's own gate, 2 MiB after encoding (design-ce 4.2, not in this repository; decision 133).
 function fitsDraft(text: string, bom: boolean, sep: string): boolean {
   return encodeDraft(text, bom, sep).length <= EDIT_LIMIT;
 }
@@ -281,7 +281,7 @@ export default function CodeEditPage() {
   };
 
   // signedOutNotice is the notice for a sign-in that ended while the text was unsaved: kept, when this tab kept the text, and the
-  // copy-first words otherwise (design 4.3, decision 133). It keeps the editor's text as it is now, not the text a save sent: the
+  // copy-first words otherwise (design-ce 4.3, not in this repository; decision 133). It keeps the editor's text as it is now, not the text a save sent: the
   // person may have typed while the save ran, and that text is the one on the page (MED-2). The text it was sent with is only the
   // fallback for a page with no editor.
   const signedOutNotice = (sent: string): "signedOutKept" | "signedOut" => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor's unsaved text, kept across a sign-in for the same person (design-ce 4.3 and 4.6, decision 133). The text is kept in
+// The code editor's unsaved text, kept across a sign-in for the same person (design-ce 4.3 and 4.6, not in this repository; decision 133). The text is kept in
 // this browser tab only (sessionStorage), one entry per person and file, so it comes back when that person signs in again and opens
 // the file. Nothing here reads the session: the page passes the person's id, and the session's own changes call the purges.
 // Every storage call is in try/catch: a store that throws or is full means the text is not kept, and nothing else changes.
