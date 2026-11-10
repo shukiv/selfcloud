@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useSyncExternalStore } from 'react';
+import { useRef, useSyncExternalStore } from 'react';
 
 // A small store with the same surface the modules were written against: writable, derived, get, and
 // a hook that re-renders a component when the value changes. The subscribe contract is the one
@@ -105,4 +105,19 @@ export function useStore<T>(store: Readable<T>): T {
     () => get(store),
     () => get(store),
   );
+}
+
+// useStoreSelect returns select(value) for the store's value, and re-renders the component only when that result changes by
+// equal. A component that needs one part of a store is not drawn again for the rest of it, nor for a write that leaves its part
+// as it was. The result is kept between reads, so the same one is returned while it is equal.
+export function useStoreSelect<T, S>(store: Readable<T>, select: (value: T) => S, equal: (a: S, b: S) => boolean = Object.is): S {
+  const selectRef = useRef(select);
+  selectRef.current = select;
+  const kept = useRef<{ value: S } | null>(null);
+  const read = (): S => {
+    const next = selectRef.current(get(store));
+    if (kept.current === null || !equal(kept.current.value, next)) kept.current = { value: next };
+    return kept.current.value;
+  };
+  return useSyncExternalStore((onChange) => store.subscribe(() => onChange()), read, read);
 }

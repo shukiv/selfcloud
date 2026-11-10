@@ -38,7 +38,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useLang, useT, translatePlural } from "../lib/i18n";
-import { derived, useStore, get } from "../lib/store";
+import { derived, useStore, useStoreSelect, get } from "../lib/store";
 import { brand } from "../lib/brand";
 import { ApiError } from "../lib/apiError";
 import { go } from "../lib/router";
@@ -145,6 +145,11 @@ const NO_SEL: SelState = { ...EMPTY, anchorID: null, focusID: null };
 // whole list, and a page that read the list would be drawn again for each event (perf-1 3.3). The number changes only when an
 // upload finishes, so the page renders for that and for nothing else.
 const doneUploads = derived(uploads, (list) => list.filter((u) => u.status === "done").length);
+
+// sameKinds says two lists of document kinds hold the same kinds in the same order.
+function sameKinds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((k, i) => k === b[i]);
+}
 
 // A menu that is taller than the room above and below the pointer shifts along the window as well as flipping (antd shifts only
 // the placements top, bottom, left and right, and the menus here use bottomLeft), and when it is taller than the window it scrolls
@@ -311,9 +316,6 @@ export default function FilesPage() {
   const officeOn = useStore(officeConvert);
   // editorOn is true while the server offers the office editor (decision 72): the menu then offers Open in editor or Open in viewer.
   const editorOn = useStore(officeEdit);
-  // The place the New actions act on, as the sidebar's New reads it (decision 66). The toolbar's New and the drawer's make blank
-  // documents there, as the sidebar's New does (decision 91).
-  const shownPlace = useStore(newPlace);
   const makeDocument = useNewDocument();
   const navigate = useNavigate();
   // The chord (Alt+C, then a letter) acts on this page's New while the toolbar holds it (not docked to the sidebar). newRun and newChordOn
@@ -323,6 +325,10 @@ export default function FilesPage() {
   useNewChord(() => newChordOn.current(), (action) => newRun.current(action));
   const newGround = String(antdTheme.useToken().token.colorBgElevated);
   const impersonating = !!useStore(session)?.impersonation;
+  // The toolbar's New and the drawer's make blank documents in the place the New actions act on, as the sidebar's New does (decision
+  // 66, decision 91). Only the document kinds that place takes are read from newPlace: the page writes its own place each time its
+  // folder is read, and a page that subscribed to the whole place was drawn again for each of those writes (perf-1 3.2).
+  const placeKinds = useStoreSelect(newPlace, (p) => documentKinds(placeForRoute(p, path), editorOn, impersonating), sameKinds);
   // viewable is a file the viewer opens: a previewable one, one the code viewer's sniff may find to be text (decision 115), or an
   // office document while its preview is offered.
   const viewable = (n: Node) => opensInViewer(n) || (officeOn && kindOf(n) === "office");
@@ -1889,7 +1895,7 @@ export default function FilesPage() {
   // The New menu is the one list of newMenu.ts, the sidebar's too: its entries follow the page's rules (canMakeFolder, canUploadHere,
   // canUploadFolder), and its blank kinds are the document kinds (decision 91). A blank file runs makeDocument (decision 102); a
   // template goes to the gallery at this folder or directory (newURL). The menu's chord hints show only where the page takes files.
-  const docKinds = canUploadHere ? documentKinds(placeForRoute(shownPlace, path), editorOn, impersonating) : [];
+  const docKinds = canUploadHere ? placeKinds : [];
   const newTree = newMenuTree({
     entries: [
       { key: "newFolder", visible: canMakeFolder, enabled: canMakeFolder },
