@@ -64,18 +64,30 @@ export async function et1Checks(h, { page, base, accountKey }) {
   const name = `et1-noetag-${suffix}.html`;
   const enc = encodeURIComponent;
   const stripped = [];
+  // seen lists every content answer the interception handled, with or without an ETag header to strip.
+  const seen = [];
   let pf = null;
   let fileID = null;
-  // onPaused answers a paused content answer with its headers, minus the ETag. Every paused request is answered, so none hangs.
-  const onPaused = (p) => {
+  // onPaused answers a paused content answer with its own body and its headers minus the ETag, as a proxy that drops the header would.
+  // A paused answer that is only continued (Fetch.continueResponse) hangs the body read in this harness, so it is fulfilled instead.
+  // Every paused request is answered, so none hangs.
+  const onPaused = async (p) => {
     if (p.responseStatusCode === undefined) {
-      page.send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => undefined);
+      await page.send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => undefined);
       return;
     }
     const headers = p.responseHeaders ?? [];
+    const answer = { status: p.responseStatusCode, method: p.request?.method ?? '' };
+    seen.push(answer);
+    if (hasETag(headers)) stripped.push(answer);
     const kept = headers.filter((x) => x.name.toLowerCase() !== 'etag');
-    if (hasETag(headers)) stripped.push({ status: p.responseStatusCode, method: p.request?.method ?? '' });
-    page.send('Fetch.continueResponse', { requestId: p.requestId, responseHeaders: kept }).catch(() => undefined);
+    try {
+      const got = await page.send('Fetch.getResponseBody', { requestId: p.requestId });
+      const body64 = got.base64Encoded ? got.body : Buffer.from(got.body, 'utf8').toString('base64');
+      await page.send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: p.responseStatusCode, responseHeaders: kept, body: body64 });
+    } catch {
+      await page.send('Fetch.continueResponse', { requestId: p.requestId, responseHeaders: kept }).catch(() => undefined);
+    }
   };
   try {
     const me = await page.evaluate(`fetch('/api/v1/me', { credentials: 'same-origin' }).then((r) => r.json())`);
@@ -106,7 +118,7 @@ export async function et1Checks(h, { page, base, accountKey }) {
     await page.waitFor(`document.querySelector(${q(BAR_STATE)})?.textContent.trim() === 'Saved'`, 15000);
     const saved = (await contentBytes(base, fileID, accountKey)).toString('utf8');
     check(saved === `Z${body}`, `a save of a file whose content answers have no ETag is kept (${JSON.stringify(saved)})`);
-    check(stripped.some((s) => s.method === 'PUT' && s.status === 200), 'the save\'s answer had its ETag stripped too');
+    check(seen.some((s) => s.method === 'PUT' && s.status === 200), 'the save\'s answer went through the same interception');
     check((await barState(page)) === 'Saved', 'the save state reads Saved');
 
     await leaveEditor(page, `/files/${pf}`);
