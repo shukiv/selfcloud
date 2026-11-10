@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
@@ -44,18 +45,35 @@ func unsafeRune(r rune) bool {
 // escapeUnsafe rewrites each unsafe rune in a JSON document as its \uXXXX escape. Inside a JSON string the escape decodes
 // to the same rune, so the values do not change; a terminal shows the escape, not the rune. Only runes from U+007F up are
 // rewritten: the ASCII controls are JSON's own whitespace outside a string, and inside one the encoder already escapes them.
+//
+// A byte that is not part of valid UTF-8 is not text: json.Indent passes it through, and an 8-bit terminal can read a lone
+// 0x9b as a CSI. It is written as U+FFFD. A rune above U+FFFF is written as its UTF-16 surrogate pair, two escapes, because
+// a four-digit escape cannot hold it.
 func escapeUnsafe(data []byte) []byte {
 	var out bytes.Buffer
 	for len(data) > 0 {
 		r, n := utf8.DecodeRune(data)
-		if r >= 0x7f && unsafeRune(r) {
-			fmt.Fprintf(&out, `\u%04x`, r)
-		} else {
+		switch {
+		case r == utf8.RuneError && n == 1:
+			out.WriteString("�")
+		case r >= 0x7f && unsafeRune(r):
+			writeEscape(&out, r)
+		default:
 			out.Write(data[:n])
 		}
 		data = data[n:]
 	}
 	return out.Bytes()
+}
+
+// writeEscape writes r as \uXXXX, or as a surrogate pair of two such escapes above U+FFFF.
+func writeEscape(out *bytes.Buffer, r rune) {
+	if r <= 0xffff {
+		fmt.Fprintf(out, `\u%04x`, r)
+		return
+	}
+	hi, lo := utf16.EncodeRune(r)
+	fmt.Fprintf(out, `\u%04x\u%04x`, hi, lo)
 }
 
 // Table writes a tab-aligned table with a header row. Each row has as many cells as there are headers.
