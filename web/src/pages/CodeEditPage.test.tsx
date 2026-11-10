@@ -1000,6 +1000,9 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
       expect(closeSpy).not.toHaveBeenCalled();
       fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Leave" }));
       await waitFor(() => expect(closeSpy).toHaveBeenCalled());
+      // The page's fallback back, after the refused close, is not asked again: the person chose to leave.
+      await new Promise((r) => setTimeout(r, 250));
+      expect(dialogHas("Leave this file?")).toBe(false);
     } finally {
       closeSpy.mockRestore();
     }
