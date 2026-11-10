@@ -1342,6 +1342,12 @@ tr[data-drop-state="refused"] > td {
   visibility: hidden;
 }
 
+/* A list row's marks (the link, the kind, the star) are a group after its name (decision 168). A row with none takes no room, so
+   its name is not followed by a gap. */
+.files-list .row-marks:empty {
+  display: none;
+}
+
 .files-list tr[aria-selected="true"] .row-acts,
 .files-list tr:focus-within .row-acts {
   visibility: visible;

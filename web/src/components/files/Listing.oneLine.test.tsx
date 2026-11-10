@@ -114,7 +114,8 @@ describe("a list row's name is one line (decision 168)", () => {
     const name = nameOf(container, "long");
     const marks = row.querySelector<HTMLElement>(".row-marks");
     expect(marks).not.toBeNull();
-    expect(marks!.style.flex).toBe("none");
+    // flex: none, as jsdom writes it back (0 0 auto): the group keeps its own width.
+    expect(["none", "0 0 auto"]).toContain(marks!.style.flex);
     expect(marks!.style.whiteSpace).toBe("nowrap");
     // The name comes first, then the marks, in the same cell.
     expect(name.compareDocumentPosition(marks!) & globalThis.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

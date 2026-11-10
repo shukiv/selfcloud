@@ -517,10 +517,21 @@ const FileNameCell = memo(function FileNameCell({ n, selected, coarse, renaming,
           </span>
         </span>
       )}
-      {renaming ? <FileRename value={renameValue} error={renameError} H={H} /> : <bdi style={{ overflowWrap: "anywhere", minWidth: 0 }}>{n.name}</bdi>}
-      <LinkBadge node={n} />
-      <KindMarks node={n} />
-      <StarMark node={n} />
+      {renaming ? (
+        <FileRename value={renameValue} error={renameError} H={H} />
+      ) : (
+        // The name is one line (decision 168): a long one is cut with an ellipsis, and its full text is the title. It starts at
+        // no width and takes the room the icons and the marks leave, so the marks after it keep their line.
+        <span className="row-name" title={n.name} style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <bdi>{n.name}</bdi>
+        </span>
+      )}
+      {/* The marks: a link, a kind, a star. They do not wrap, and an empty group takes no room (index.css, .row-marks:empty). */}
+      <span className="row-marks" style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: "none", whiteSpace: "nowrap" }}>
+        <LinkBadge node={n} />
+        <KindMarks node={n} />
+        <StarMark node={n} />
+      </span>
       <RenameError error={renaming ? renameError : null} />
     </span>
   );
