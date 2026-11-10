@@ -87,6 +87,8 @@ describe("the audit log is one table (decision 122)", () => {
     expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]);
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("Nothing recorded yet");
     expect(region.querySelector("tbody .ant-empty")).not.toBeNull();
+    // Round 2 (M3): the audit log's description is the admin catalogue's admin.empty.audit, as the tenant's log has it.
+    await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("Sign-ins, changes to people and keys, and other actions show here."));
   });
 });
 

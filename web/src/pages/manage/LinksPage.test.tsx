@@ -124,6 +124,8 @@ describe("links", () => {
     // An empty list has no row icons, so no Actions column (it comes with the first row's icons).
     expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status"]);
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No links to show");
+    // Round 2 (M3): the empty table says what will show here, in the admin catalogue (loaded on demand).
+    await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("Links that anyone can open, and drop links, show here."));
   });
 
   it("a failed read of the count shows an error, not a zero (guard: no silent zero for the delete-all count)", async () => {

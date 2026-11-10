@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LargestFilesCard from "./LargestFiles";
 import type { LargestFile } from "../../lib/storage/api";
@@ -102,12 +102,14 @@ describe("the largest files are one table (decision 122)", () => {
     }
   });
 
-  it("an empty card keeps its headers, and its title is in the table body", () => {
+  it("an empty card keeps its headers, and its title is in the table body", async () => {
     renderCard({ files: [] });
     const region = screen.getByRole("region", { name: "Largest files" });
     // No row, so no row icons and no Actions column: the four column headers stay.
     expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Size", "Old versions", "Modified"]);
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
+    // Round 2 (M3): the empty table says what will show here (the admin catalogue, loaded on demand).
+    await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("The biggest files in the drive show here, with their size."));
   });
 
   it("before the first load answers, no empty message shows", () => {

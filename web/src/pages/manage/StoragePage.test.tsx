@@ -78,12 +78,16 @@ describe("manage storage", () => {
     // An empty list has no row icons, so no Actions column: it comes with the first row's Change icon.
     expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Used", "Limit"]);
     expect(people.querySelector("tbody .empty-title")?.textContent).toBe("No people yet");
+    // Round 2 (M3): each empty table says what will show there (the admin catalogue, loaded on demand).
+    await waitFor(() => expect(people.querySelector("tbody .empty-desc")?.textContent).toBe("People show here once an owner adds them and attaches a folder."));
     const spaces = screen.getByRole("region", { name: "Team spaces" });
     expect(within(spaces).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Team space", "Size", "Files"]);
     expect(spaces.querySelector("tbody .empty-title")?.textContent).toBe("No team spaces yet");
+    await waitFor(() => expect(spaces.querySelector("tbody .empty-desc")?.textContent).toBe("Team spaces show here once someone creates one."));
     const largest = screen.getByRole("region", { name: "Largest files in team spaces" });
     expect(within(largest).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Team space", "Size", "Modified"]);
     expect(largest.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
+    await waitFor(() => expect(largest.querySelector("tbody .empty-desc")?.textContent).toBe("The biggest files in the drive show here, with their size."));
   });
 
   // Round 2 (H1, design section 4): at 375 px each storage table shows its name column, and the other columns join its second line.
