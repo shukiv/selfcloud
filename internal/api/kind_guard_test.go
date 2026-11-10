@@ -131,7 +131,12 @@ var reviewedNodeKindSites = map[string]int{
 	// Search (decision 40). search.go: the scope check refuses a scope that is not a directory with invalid_request; the
 	// reach check of the scope ran first, so this is a refusal of a bad argument, not an access decision. search_index.go:
 	// the extension of a file's search row is read from a file's name only. Neither decides access.
-	"internal/api/search.go":         2,
+	// Slice ff1 part 1 (decision 110). search.go, the type filter: a file group given with a kind other than file
+	// (?kind=dir or shortcut) is refused with invalid_request. The comparison reads the request's kind, not a node's.
+	// The rows are decided by the SQL: a file group adds "n.kind = 'file'" (search/search.go), so a file matches it, and a
+	// folder or a shortcut never does; type=folder and type=shortcut set the kind to dir or shortcut instead. Access is
+	// unchanged.
+	"internal/api/search.go":         3,
 	"internal/store/search_index.go": 1,
 	// Slice q3 (decision 46). search.go: a content search (in=content) given a kind other than file is refused with
 	// invalid_request, before any candidate is read. An input refusal that grants nothing, so it fails closed.
