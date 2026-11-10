@@ -213,6 +213,20 @@ func TestTrashEmptyLoopsUntilNoMore(t *testing.T) {
 	}
 }
 
+// TestTrashEmptyJSONIsOneDocument: --json prints one JSON document with the total, not the key=value line.
+func TestTrashEmptyJSONIsOneDocument(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("POST", "/api/v1/trash/empty",
+		reply{status: http.StatusOK, body: `{"purged":2,"more":true}`},
+		reply{status: http.StatusOK, body: `{"purged":1,"more":false}`})
+	res := f.run(TrashEmpty, "--yes", "--json")
+	wantCode(t, res, 0)
+	if !strings.Contains(res.stdout, `"purged": 3`) || strings.Contains(res.stdout, "purged=") {
+		t.Fatalf("--json stdout %q: want one JSON document with purged 3", res.stdout)
+	}
+}
+
 func TestTrashEmptyNeedsTheConfirmation(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
