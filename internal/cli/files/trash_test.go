@@ -39,18 +39,41 @@ func TestRmWithoutYesAndNotATerminalRefuses(t *testing.T) {
 }
 
 // TestRmAtATerminalTypesTheID: a terminal asks for the node's ID typed back, since a name would cost a read first.
-func TestRmAtATerminalTypesTheID(t *testing.T) {
+func TestRmAtATerminalTypesTheName(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
+	f.on("GET", nodePath(testNode, ""), ok(node(testNode, "report.pdf", "file")))
 	f.on("DELETE", nodePath(testNode, ""), done(http.StatusNoContent))
 	typeAtTerminal("\n")
 	wantCode(t, f.run(Rm, testNode), 2)
-	typeAtTerminal(testOther + "\n")
+	typeAtTerminal(testNode + "\n") // the id is not the name
 	wantCode(t, f.run(Rm, testNode), 2)
-	f.wantNoCalls()
-	typeAtTerminal(testNode + "\n")
+	typeAtTerminal("report.pdf\n")
 	wantCode(t, f.run(Rm, testNode), 0)
-	f.wantCalls("DELETE " + nodePath(testNode, ""))
+	calls := f.requests()
+	if len(calls) < 2 || calls[len(calls)-1] != "DELETE "+nodePath(testNode, "") {
+		t.Fatalf("calls %v: the last one must be the delete", calls)
+	}
+	for _, c := range calls[:len(calls)-1] {
+		if strings.HasPrefix(c, "DELETE") {
+			t.Fatalf("calls %v: a refused answer deleted something", calls)
+		}
+	}
+}
+
+// TestRmNameReadFailureDeletesNothing: at a terminal the name is read before the question; if the node is not there, the
+// command stops with its own code and sends no delete.
+func TestRmNameReadFailureDeletesNothing(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("DELETE", nodePath(testNode, ""), done(http.StatusNoContent))
+	typeAtTerminal("report.pdf\n")
+	wantCode(t, f.run(Rm, testNode), 4)
+	for _, c := range f.requests() {
+		if strings.HasPrefix(c, "DELETE") {
+			t.Fatalf("calls %v: the node was not found, so nothing may be deleted", f.requests())
+		}
+	}
 }
 
 func TestRmSeveralTargetsReportsEachAndExits7WhenSomeFail(t *testing.T) {
@@ -202,16 +225,37 @@ func TestTrashEmptyNeedsTheConfirmation(t *testing.T) {
 	f.wantCalls("POST /api/v1/trash/empty?" + url.Values{"folder": {testFolder}}.Encode())
 }
 
-func TestTrashRmPurgesOneNode(t *testing.T) {
+func TestTrashRmPurgesOneNodeAfterItsName(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
+	f.on("GET", "/api/v1/trash", page("", trashedNode(testNode, "old.txt")))
 	f.on("DELETE", "/api/v1/trash/"+testNode, done(http.StatusNoContent))
-	wantCode(t, f.run(TrashRm, testNode), 2)
+	wantCode(t, f.run(TrashRm, testNode), 2) // not a terminal
 	f.wantNoCalls()
-	typeAtTerminal(testNode + "\n")
-	res := f.run(TrashRm, testNode)
-	wantCode(t, res, 0)
-	f.wantCalls("DELETE /api/v1/trash/" + testNode)
+	typeAtTerminal(testNode + "\n") // the id is not the name
+	wantCode(t, f.run(TrashRm, testNode), 2)
+	typeAtTerminal("old.txt\n")
+	wantCode(t, f.run(TrashRm, testNode), 0)
+	calls := f.requests()
+	if calls[len(calls)-1] != "DELETE /api/v1/trash/"+testNode {
+		t.Fatalf("calls %v: the last one must be the purge", calls)
+	}
+}
+
+// TestTrashRmNameNotInTheTrashDeletesNothing: the name comes from the trash listing; a node that is not in it stops the
+// command with exit 4 and no purge.
+func TestTrashRmNameNotInTheTrashDeletesNothing(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("GET", "/api/v1/trash", page(""))
+	f.on("DELETE", "/api/v1/trash/"+testNode, done(http.StatusNoContent))
+	typeAtTerminal("old.txt\n")
+	wantCode(t, f.run(TrashRm, testNode), 4)
+	for _, c := range f.requests() {
+		if strings.HasPrefix(c, "DELETE") {
+			t.Fatalf("calls %v: nothing may be purged", f.requests())
+		}
+	}
 }
 
 func TestShortcutAddMakesAShortcutInADirectory(t *testing.T) {
