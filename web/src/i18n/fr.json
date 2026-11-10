@@ -1612,5 +1612,6 @@
   "devices.revokeTitle": "Déconnecter {name} ?",
   "devices.revokeBody": "Son terminal cesse de fonctionner immédiatement et doit se reconnecter.",
   "devices.revokeOk": "Déconnecter",
-  "devices.revoked": "L'appareil est déconnecté."
+  "devices.revoked": "L'appareil est déconnecté.",
+  "devices.address": "Adresse"
 }

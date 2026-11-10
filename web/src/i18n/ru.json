@@ -1612,5 +1612,6 @@
   "devices.revokeTitle": "Выйти с устройства {name}?",
   "devices.revokeBody": "Терминал сразу перестанет работать.",
   "devices.revokeOk": "Выйти",
-  "devices.revoked": "С устройства выполнен выход."
+  "devices.revoked": "С устройства выполнен выход.",
+  "devices.address": "Адрес"
 }

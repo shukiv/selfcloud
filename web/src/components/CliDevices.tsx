@@ -68,6 +68,12 @@ export default function CliDevices() {
         columns={[
           { title: t("devices.name"), dataIndex: "client_name", key: "name" },
           {
+            title: t("devices.address"),
+            dataIndex: "client_ip",
+            key: "address",
+            render: (v: string) => <Typography.Text type="secondary">{v}</Typography.Text>,
+          },
+          {
             title: t("devices.signedIn"),
             dataIndex: "created_at",
             key: "signedIn",

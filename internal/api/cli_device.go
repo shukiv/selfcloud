@@ -376,7 +376,8 @@ func (s *Server) handleCLIPoll(w http.ResponseWriter, r *http.Request) error {
 			return tx.DeleteCLIRequest(ctx, row.ID)
 		}
 		dev := &store.CLIDevice{ID: id.New("dev"), AccountID: row.AccountID, UserID: row.UserID,
-			ClientName: row.ClientName, CreatedAt: now, ExpiresAt: now.Add(s.cfg.CLI.DeviceTokenTTL.D())}
+			ClientName: row.ClientName, ClientIP: row.ClientIP, UserAgent: row.UserAgent,
+			CreatedAt: now, ExpiresAt: now.Add(s.cfg.CLI.DeviceTokenTTL.D())}
 		if err := tx.InsertCLIDevice(ctx, dev); err != nil {
 			return err
 		}
@@ -603,6 +604,8 @@ func (s *Server) handleCLIRevoke(w http.ResponseWriter, r *http.Request) error {
 type cliDeviceJSON struct {
 	ID         string    `json:"id"`
 	ClientName string    `json:"client_name"`
+	ClientIP   string    `json:"client_ip"`
+	UserAgent  string    `json:"user_agent"`
 	CreatedAt  time.Time `json:"created_at"`
 	ExpiresAt  time.Time `json:"expires_at"`
 }
@@ -618,7 +621,8 @@ func (s *Server) handleCLIDevices(w http.ResponseWriter, r *http.Request) error 
 		Devices []cliDeviceJSON `json:"devices"`
 	}{Devices: []cliDeviceJSON{}}
 	for _, d := range devices {
-		out.Devices = append(out.Devices, cliDeviceJSON{ID: d.ID, ClientName: d.ClientName, CreatedAt: d.CreatedAt, ExpiresAt: d.ExpiresAt})
+		out.Devices = append(out.Devices, cliDeviceJSON{ID: d.ID, ClientName: d.ClientName, ClientIP: d.ClientIP,
+			UserAgent: d.UserAgent, CreatedAt: d.CreatedAt, ExpiresAt: d.ExpiresAt})
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil

@@ -35,9 +35,13 @@ type CLIDevice struct {
 	AccountID  string
 	UserID     string
 	ClientName string
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
-	RevokedAt  *time.Time
+	// ClientIP and UserAgent are the terminal's start address and agent, as the approval page showed them. The address of
+	// the person who approved is not kept. There is no last-used time: a write on every call costs too much (decision 125).
+	ClientIP  string
+	UserAgent string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	RevokedAt *time.Time
 }
 
 // InsertCLIRequest adds r. A selector or device code hash that is already held is ErrConflict, so the caller can draw
@@ -113,9 +117,9 @@ func (tx *Tx) DeleteCLIRequest(ctx context.Context, id string) error {
 
 // InsertCLIDevice adds d.
 func (tx *Tx) InsertCLIDevice(ctx context.Context, d *CLIDevice) error {
-	_, err := tx.q.ExecContext(ctx, `INSERT INTO cli_devices (id, account_id, user_id, client_name, created_at, expires_at, revoked_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.AccountID, d.UserID, d.ClientName, millis(d.CreatedAt), millis(d.ExpiresAt), nullMillis(d.RevokedAt))
+	_, err := tx.q.ExecContext(ctx, `INSERT INTO cli_devices (id, account_id, user_id, client_name, client_ip, user_agent, created_at, expires_at, revoked_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.AccountID, d.UserID, d.ClientName, d.ClientIP, d.UserAgent, millis(d.CreatedAt), millis(d.ExpiresAt), nullMillis(d.RevokedAt))
 	return err
 }
 
@@ -130,7 +134,7 @@ func (tx *Tx) RevokeCLIDevice(ctx context.Context, accountID, userID, id string,
 // CLIDevicesOf lists the devices of a user that still work at now: not revoked, not expired, and issued after the
 // account's and the user's cut-offs. It is the list Manage shows. The check mirrors the API's callerLive.
 func (s *Store) CLIDevicesOf(ctx context.Context, accountID, userID string, now time.Time) ([]*CLIDevice, error) {
-	rows, err := s.r.QueryContext(ctx, `SELECT d.id, d.account_id, d.user_id, d.client_name, d.created_at, d.expires_at
+	rows, err := s.r.QueryContext(ctx, `SELECT d.id, d.account_id, d.user_id, d.client_name, d.client_ip, d.user_agent, d.created_at, d.expires_at
 		FROM cli_devices d
 		JOIN accounts a ON a.id = d.account_id
 		JOIN users u ON u.id = d.user_id AND u.account_id = d.account_id
@@ -145,7 +149,7 @@ func (s *Store) CLIDevicesOf(ctx context.Context, accountID, userID string, now 
 	for rows.Next() {
 		var d CLIDevice
 		var created, expires int64
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.UserID, &d.ClientName, &created, &expires); err != nil {
+		if err := rows.Scan(&d.ID, &d.AccountID, &d.UserID, &d.ClientName, &d.ClientIP, &d.UserAgent, &created, &expires); err != nil {
 			return nil, err
 		}
 		d.CreatedAt = fromMillis(created)

@@ -1612,5 +1612,6 @@
   "devices.revokeTitle": "לנתק את {name}?",
   "devices.revokeBody": "הטרמינל שלו יפסיק לעבוד מיד ויצטרך להתחבר מחדש.",
   "devices.revokeOk": "ניתוק",
-  "devices.revoked": "המכשיר נותק."
+  "devices.revoked": "המכשיר נותק.",
+  "devices.address": "כתובת"
 }

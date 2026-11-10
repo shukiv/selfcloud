@@ -1612,5 +1612,6 @@
   "devices.revokeTitle": "تسجيل الخروج من {name}؟",
   "devices.revokeBody": "تتوقف طرفيته عن العمل فوراً ويجب أن يسجّل الدخول من جديد.",
   "devices.revokeOk": "تسجيل الخروج",
-  "devices.revoked": "تم تسجيل الخروج من الجهاز."
+  "devices.revoked": "تم تسجيل الخروج من الجهاز.",
+  "devices.address": "العنوان"
 }

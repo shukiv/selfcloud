@@ -1612,5 +1612,6 @@
   "devices.revokeTitle": "Terminar a sessão de {name}?",
   "devices.revokeBody": "O terminal deixa de funcionar de imediato e tem de iniciar sessão de novo.",
   "devices.revokeOk": "Terminar sessão",
-  "devices.revoked": "O dispositivo terminou a sessão."
+  "devices.revoked": "O dispositivo terminou a sessão.",
+  "devices.address": "Endereço"
 }

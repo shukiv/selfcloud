@@ -18,6 +18,9 @@ export interface CliRequest {
 export interface CliDevice {
   id: string;
   client_name: string;
+  // The address and agent the terminal started from, as the approval page showed them.
+  client_ip: string;
+  user_agent: string;
   created_at: string;
   expires_at: string;
 }

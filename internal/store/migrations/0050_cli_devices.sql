@@ -8,6 +8,8 @@ CREATE TABLE cli_devices (
     account_id  TEXT    NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
     user_id     TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     client_name TEXT    NOT NULL,
+    client_ip   TEXT    NOT NULL DEFAULT '',
+    user_agent  TEXT    NOT NULL DEFAULT '',
     created_at  INTEGER NOT NULL,
     expires_at  INTEGER NOT NULL,
     revoked_at  INTEGER

@@ -1612,5 +1612,6 @@
   "devices.revokeTitle": "Sign out {name}?",
   "devices.revokeBody": "Its terminal stops working at once and must sign in again.",
   "devices.revokeOk": "Sign out",
-  "devices.revoked": "The device is signed out."
+  "devices.revoked": "The device is signed out.",
+  "devices.address": "Address"
 }
