@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor's conflict answers (design-ce 4.4, decision 130). The check reads the file's current ETag with HEAD, which
-// records no view. Keep as a copy saves the draft as a new file beside the original: the folder path comes from parent_id up to
-// the root, and the first free name is "name (n).ext" for n from 2, at most COPY_TRIES names. The original is never changed.
+// The code editor's conflict answers (design-ce 4.4, decision 130; the version source is decision 135). The check reads the file's
+// current etag from its node's stat, which records no view, and never from a response header. Keep as a copy saves the draft as a
+// new file beside the original: the folder path comes from parent_id up to the root, and the first free name is "name (n).ext" for
+// n from 2, at most COPY_TRIES names. The original is never changed.
 import { ApiError } from "../apiError";
 import { statNode } from "../files/api";
 import type { Node } from "../files/types";
@@ -15,22 +16,18 @@ export const COPY_TRIES = 20;
 // MAX_DEPTH bounds the walk up a folder chain, so a damaged chain cannot loop.
 const MAX_DEPTH = 256;
 
-export type HeadResult = { ok: true; etag: string } | { ok: false; why: SaveFailure };
+export type EtagResult = { ok: true; etag: string } | { ok: false; why: SaveFailure };
 
-// headEtag reads a file's current ETag with HEAD. A HEAD records no view, so the check is not one (design 4.4).
-export async function headEtag(nod: string): Promise<HeadResult> {
-  let res: Response;
+// currentEtag reads a file's current etag from its node's stat (GET /api/v1/nodes/{nod}), which records no view (design 4.4).
+// A refusal of the stat is the save's table of failures (failureOfStatus), and a stat with no quoted etag is failed.
+export async function currentEtag(nod: string): Promise<EtagResult> {
+  let n: Node;
   try {
-    res = await fetch(`/api/v1/nodes/${encodeURIComponent(nod)}/content`, {
-      method: "HEAD",
-      credentials: "same-origin",
-      cache: "no-store",
-    });
-  } catch {
-    return { ok: false, why: "failed" };
+    n = await statNode(nod);
+  } catch (err) {
+    return { ok: false, why: err instanceof ApiError ? failureOfStatus(err.status) : "failed" };
   }
-  if (res.status !== 200) return { ok: false, why: failureOfStatus(res.status) };
-  const etag = res.headers.get("ETag") ?? "";
+  const etag = n.etag ?? "";
   if (etag.length < 2 || !etag.startsWith('"') || !etag.endsWith('"')) return { ok: false, why: "failed" };
   return { ok: true, etag };
 }

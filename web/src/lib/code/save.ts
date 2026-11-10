@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor's reads and writes of a file's bytes (design-ce 4.1 to 4.3). The open is a GET of the whole file, which
-// keeps its ETag; the save is a PUT with If-Match set to that ETag and the stored type sent unchanged. Neither goes through
+// The code editor's reads and writes of a file's bytes (design-ce 4.1 to 4.3). The version of a file is the etag in its node's
+// JSON answer (decision 135), never a response header. The open is a GET of the whole file with If-Match set to that etag; the
+// save is a PUT with If-Match set to the etag of the last answer and the stored type sent unchanged. Neither goes through
 // api(), which parses JSON and does not give the response's headers, and a save's body is bytes, not JSON.
 //
 // The answers are mapped by status to a short name the page shows with its own words. The server's text is never shown.
@@ -82,22 +83,23 @@ async function readCapped(body: ReadableStream<Uint8Array>, limit: number): Prom
   return out;
 }
 
-// readWhole reads a file to the editor: the whole file, with no Range, and the ETag it was read with. A GET of the content
-// counts as a view, as every read of a file does. A refusal is thrown with its status, and so is an answer with no ETag, which
-// a save could not be checked against (500).
-export async function readWhole(id: string): Promise<{ bytes: Uint8Array; etag: string }> {
-  const res = await fetch(contentPath(id, "inline"), { credentials: "same-origin", cache: "no-store" });
+// readWhole reads a file to the editor: the whole file, with no Range, and If-Match set to etag, the version the node's answer
+// gave (decision 135). The server answers with the bytes only when the file still has that version, and with 412 when it has
+// changed; the caller then reads the node again. The answer's ETag header is never read: a proxy in front may drop or weaken it.
+// A GET of the content counts as a view, as every read of a file does. A refusal is thrown with its status. An etag that is not a
+// quoted tag is refused before anything is sent (500), as saveText does.
+export async function readWhole(id: string, etag: string): Promise<Uint8Array> {
+  if (!quoted(etag)) throw new ApiError(500, "internal", {}, 0);
+  const res = await fetch(contentPath(id, "inline"), {
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { "If-Match": etag },
+  });
   if (res.status !== 200) {
     await res.body?.cancel().catch(() => undefined);
     throw new ApiError(res.status, "internal", {}, 0);
   }
-  const etag = res.headers.get("ETag") ?? "";
-  if (!quoted(etag)) {
-    await res.body?.cancel().catch(() => undefined);
-    throw new ApiError(500, "internal", {}, 0);
-  }
-  const bytes = res.body === null ? new Uint8Array(0) : await readCapped(res.body, EDIT_LIMIT);
-  return { bytes, etag };
+  return res.body === null ? new Uint8Array(0) : readCapped(res.body, EDIT_LIMIT);
 }
 
 // saveText writes a draft's bytes over the file read with etag. The size is checked before anything is sent: a draft over the

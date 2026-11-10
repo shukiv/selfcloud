@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The code editor, full page, in its own tab (design-ce 3.2, 3.4, 4.2 to 4.6, decisions 124 and 130). The address is /edit/<node>, the
-// one the office editor uses; App sends a code file here and an office file to OfficeEditPage. The page reads the file (a GET
-// of the whole content, which keeps its ETag), shows it in CodeMirror, and saves on an explicit save only: a button, or Ctrl or
-// Cmd+S. A save is a PUT with If-Match set to the ETag read, and the stored type sent unchanged. A viewer, or an editor who
+// one the office editor uses; App sends a code file here and an office file to OfficeEditPage. The page reads the file's node (its
+// etag is the file's version, decision 135), then the whole content with If-Match set to that etag, shows it in CodeMirror, and
+// saves on an explicit save only: a button, or Ctrl or Cmd+S. A save is a PUT with If-Match set to the etag of the last answer, and
+// the stored type sent unchanged. No response header is read for a version. A viewer, or an editor who
 // opened it by its address with no right to save, reads the text with "View only" and no Save.
 //
 // The page is drawn outside the app shell, with a slim bar: the app's mark (to the folder), the file's name, the save state,
@@ -20,7 +21,7 @@ import { ApiError } from "../lib/apiError";
 import { brand } from "../lib/brand";
 import { decodeText, sniffWhole } from "../lib/code/encoding";
 import { encodeDraft, EDIT_LIMIT, lineBreakOf, mixedBreaks, normalizeText } from "../lib/code/edit";
-import { headEtag, keepCopy } from "../lib/code/conflict";
+import { currentEtag, keepCopy } from "../lib/code/conflict";
 import { dropUnsaved, keepUnsaved, readUnsaved } from "../lib/code/kept";
 import { extensionOf, packOf, type Pack } from "../lib/code/names";
 import { codeText } from "../lib/code/text";
@@ -96,6 +97,21 @@ function failureOf(err: unknown): OpenFailure {
   return "failed";
 }
 
+// readVersion reads a file's bytes as the version its node gave (decision 135): If-Match is the node's etag, so the bytes are that
+// version. A 412 means the file changed after the node was read: the node is read again, and the bytes once more. A second 412 is
+// thrown, and the caller shows its failure. The node is returned with the bytes, so the page uses the version it read.
+async function readVersion(nod: string, first: Node): Promise<{ node: Node; bytes: Uint8Array }> {
+  let node = first;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return { node, bytes: await readWhole(nod, node.etag ?? "") };
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 412 || attempt >= 2) throw err;
+      node = await statNode(nod);
+    }
+  }
+}
+
 // NOD is the node in the address, as the API gives it.
 const NOD = /^nod_[A-Za-z0-9_-]+$/;
 
@@ -143,7 +159,7 @@ export default function CodeEditPage() {
   // openUser is the person the open file was opened by: text kept for the file is theirs, whoever signs in later (decision 133).
   const openUser = useRef<string | null>(null);
 
-  // The page opens the file each time the address changes: a read with no Range, so the whole file, and its ETag kept.
+  // The page opens the file each time the address changes: its node, then a read with no Range, so the whole file, with If-Match set to the node's etag.
   useEffect(() => {
     if (!valid) return;
     let cancelled = false;
@@ -167,15 +183,17 @@ export default function CodeEditPage() {
     setProblems(0);
     void (async () => {
       try {
-        const n = await statNode(nod);
+        const first = await statNode(nod);
         if (cancelled) return;
-        if (n.size > EDIT_LIMIT) {
-          setPage({ s: "tooLarge", name: n.name, node: n });
+        if (first.size > EDIT_LIMIT) {
+          setPage({ s: "tooLarge", name: first.name, node: first });
           setNotice("tooLargeToEdit");
           return;
         }
-        const got = await readWhole(nod);
+        // The read is of the version the node gave; a 412 reads the node again (readVersion), and the page uses that node.
+        const got = await readVersion(nod, first);
         if (cancelled) return;
+        const n = got.node;
         // The editor has the whole file, so the sniff reads all of it: a NUL byte anywhere means it is not text (MED-2).
         if (sniffWhole(got.bytes) === "binary") {
           setPage({ s: "binary", name: n.name, node: n });
@@ -189,7 +207,7 @@ export default function CodeEditPage() {
         // text is the saved text, and the draft's ETag is the one a save is checked against, so a change since then meets the conflict dialog.
         const back = canEdit && d.utf8 && openUser.current !== null ? readUnsaved(openUser.current, nod) : null;
         const kept = back !== null && fitsDraft(back.text, back.bom, back.sep) ? back : null;
-        file.current = { etag: kept ? kept.etag : got.etag, mime: n.mime_type ?? "application/octet-stream" };
+        file.current = { etag: kept ? kept.etag : (n.etag ?? ""), mime: n.mime_type ?? "application/octet-stream" };
         saved.current = serverText;
         const initial = kept ? kept.text : serverText;
         const ready: Ready = {
@@ -286,11 +304,11 @@ export default function CodeEditPage() {
     return keep(cur) ? "signedOutKept" : "signedOut";
   };
 
-  // openConflict opens the dialog for a save refused with 412 (4.4): the check reads the file's current ETag with HEAD, and the
-  // dialog's Overwrite saves over it. A check that fails shows its notice instead of the dialog.
+  // openConflict opens the dialog for a save refused with 412 (4.4): the check reads the file's current etag from its node's stat
+  // (decision 135), and the dialog's Overwrite saves over it. A check that fails shows its notice instead of the dialog.
   const openConflict = async (text: string, bytes: Uint8Array, gen: number) => {
     setSaveState("unsaved");
-    const h = await headEtag(nod);
+    const h = await currentEtag(nod);
     if (gen !== openGen.current) return;
     if (!h.ok) {
       setNotice(h.why === "signedOut" ? signedOutNotice(text) : h.why);
@@ -438,12 +456,12 @@ export default function CodeEditPage() {
     const gen = openGen.current;
     setConflict(null);
     try {
-      const got = await readWhole(nod);
+      const got = await readVersion(nod, await statNode(nod));
       if (gen !== openGen.current) return;
       const d = decodeText(got.bytes, false);
       // The saved version replaces the draft, so the text kept for the file goes too: Reload and Discard are that choice (decision 133).
       drop();
-      file.current = { ...file.current, etag: got.etag };
+      file.current = { ...file.current, etag: got.node.etag ?? "" };
       const initial = normalizeText(d.text);
       saved.current = initial;
       const next: Ready = {
