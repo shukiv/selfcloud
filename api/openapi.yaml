@@ -6843,8 +6843,9 @@ components:
 
     SharedItem:
       description: |
-        A node shared with the caller. `shared_at` is set in every order: the later of the permission's creation and the
-        caller's visit to an organisation link on the node (the time `order=recent` sorts by).
+        A node shared with the caller. `shared_at` is set in every order, and it is the time `order=recent` sorts by: the
+        later of (a) the newest creation time of the caller's live permissions on the node, direct or through a group the
+        caller is in, and (b) the caller's visit to an organisation link on the node, when it has one.
       allOf:
         - $ref: "#/components/schemas/Node"
         - type: object
@@ -6857,9 +6858,9 @@ components:
       type: string
       description: |
         The display name of the item's parent, given only when the caller reaches that parent. The field is left out
-        (no value) when the item is at the top of a folder (its parent is the folder's root), when the parent is out of
-        the caller's reach (for example a folder above a grant, or outside a token's scope), and when the parent is in
-        the trash. It is a name only, never an ID.
+        (no value) when the item is at the top of a folder (its parent is the folder's root: a client shows the folder's
+        own name there, from `/folders`), when the parent is out of the caller's reach (for example a folder above a
+        grant, or outside a token's scope), and when the parent is in the trash. It is a name only, never an ID.
 
     SharedList:
       type: object
