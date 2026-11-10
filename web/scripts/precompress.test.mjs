@@ -108,6 +108,12 @@ test('files outside assets/ are never touched: the page, the offline page, the w
   );
 });
 
+test('a variant is never a source: a compressible .gz with no file beside it gets no variant of its own', () => {
+  const dir = fixture({ 'assets/legacy.js.gz': text(4096) });
+  assert.equal(run(dir).status, 0);
+  assert.deepEqual(list(dir), ['assets/legacy.js.gz'], 'a variant of a variant was written');
+});
+
 test('the original file is not changed, and a second run adds nothing', () => {
   const original = text(4096);
   const dir = fixture({ 'assets/app.js': original });
