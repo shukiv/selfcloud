@@ -224,3 +224,45 @@ func TestSpecFailureWritesNoFile(t *testing.T) {
 		t.Errorf("stderr = %q", errOut.String())
 	}
 }
+
+// TestOverwriteKeepsTheModeOfTheFile: a replaced file keeps the mode it had. A new file is 0644, which the design does
+// not name; the mode is set after the write, so the umask does not change it.
+func TestOverwriteKeepsTheModeOfTheFile(t *testing.T) {
+	isolate(t)
+	srv := specServer(t)
+	path := filepath.Join(t.TempDir(), "openapi.yaml")
+	if err := os.WriteFile(path, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"--url", srv.URL, "--out", path, "--overwrite"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, stderr %q", code, errOut.String())
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("the overwritten file's mode is %o, want 600 (the mode it had)", fi.Mode().Perm())
+	}
+}
+
+func TestNewFileIsMode0644(t *testing.T) {
+	isolate(t)
+	srv := specServer(t)
+	path := filepath.Join(t.TempDir(), "openapi.yaml")
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"--url", srv.URL, "--out", path}, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, stderr %q", code, errOut.String())
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o644 {
+		t.Errorf("a new file's mode is %o, want 644", fi.Mode().Perm())
+	}
+}
