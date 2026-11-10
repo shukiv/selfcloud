@@ -5400,7 +5400,7 @@ Bundle, measured on the first-load files of each build (gzip level 9, bytes, the
 
     `jobReadable` keeps today's rule: a caller who manages the job's account, or the credential that queued it. Import jobs keep their current readers in this slice. A later slice changes them for account owners, and that change is a behaviour change to be stated when it lands.
 
-    **Round 2 review points, and what they changed.**
+    **Round 2 points, and what they changed.**
     - *A restarted zip.* A zip that stopped after its snapshot keeps its reservation. Its restarted run releases that reservation inside its start write, which rolls back if the write is refused, so the zip is not refused by its own earlier claim.
     - *An import's entry.* The disk check for an entry is in the write that reserves it, before the reservation, so the check and the reservation see the same totals. The import's own old reservation is persisted as released first. This replaces the separate check that ran before the reservation's write; the single writer (one write connection, `BEGIN IMMEDIATE`) is what makes the in-write check exact. A sequential test pins it (`TestImportEntryLargerThanTheDiskPauses` fails if the in-write check is removed). A concurrent test is not possible without a hook in the writer, so none is written.
     - *Pieces in flight.* A one-request upload piece holds its bytes in memory until they land. A zip start reads those bytes under the flight lock, which it takes before its write and never inside it, and counts them with its reservation. The flight release runs only at the end of its handler, never inside a store write, so the lock order cannot deadlock.
