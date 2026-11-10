@@ -643,8 +643,10 @@ func (s *Server) checkDiskNow(ctx context.Context, accountID string, size int64)
 }
 
 // checkDiskTx is checkDiskNow inside a write: the unwritten bytes are read through tx, so the check and the reservation
-// it allows see the same totals (decision 120). size is the full reservation the write is about to take.
-func (s *Server) checkDiskTx(ctx context.Context, tx *store.Tx, accountID string, size int64) error {
+// it allows see the same totals (decision 120). size is the full reservation the write is about to take. inFlight is the
+// bytes of one-request pieces still arriving, which hold the disk in memory, not in the database (review M3); a caller
+// that passes it holds the flight lock across the write.
+func (s *Server) checkDiskTx(ctx context.Context, tx *store.Tx, accountID string, size, inFlight int64) error {
 	usable, ok, err := s.diskUsable()
 	if err != nil || !ok {
 		return err
@@ -653,7 +655,7 @@ func (s *Server) checkDiskTx(ctx context.Context, tx *store.Tx, accountID string
 	if err != nil {
 		return err
 	}
-	return s.checkDisk(usable, mine, total+size, false)
+	return s.checkDisk(usable, mine, total+size+inFlight, false)
 }
 
 // reserveTx reserves an upload's declared length, inside tx, the transaction that inserted it: the

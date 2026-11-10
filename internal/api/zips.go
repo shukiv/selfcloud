@@ -488,6 +488,9 @@ func (s *Server) startZip(ctx context.Context, z *store.Zip, p *auth.Principal) 
 		}
 	}
 	s.atWrite()
+	// The pieces still arriving hold the disk in memory (review M3). Their lock is taken before the write, never inside it,
+	// so the bytes read here are the ones the pieces hold while the zip reserves.
+	s.oneFlight.mu.Lock()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {
 		// A restarted run counts its own earlier reservation nowhere (decision 120): it is released first, inside this
 		// write, and the write rolls back if it is refused.
@@ -510,11 +513,12 @@ func (s *Server) startZip(ctx context.Context, z *store.Zip, p *auth.Principal) 
 		}
 		// The disk must hold what every unfinished writer still needs and this zip's full reservation (decision 120).
 		// It is checked before the reservation is written, so a refused zip reserves nothing.
-		if err := s.checkDiskTx(ctx, tx, z.AccountID, total); err != nil {
+		if err := s.checkDiskTx(ctx, tx, z.AccountID, total, s.oneFlight.total); err != nil {
 			return err
 		}
 		return tx.SetZipSnapshot(ctx, z.ID, total, len(plan), skipped, now)
 	})
+	s.oneFlight.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
