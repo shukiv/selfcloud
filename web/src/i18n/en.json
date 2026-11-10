@@ -1613,5 +1613,7 @@
   "devices.revokeBody": "Its terminal stops working at once and must sign in again.",
   "devices.revokeOk": "Sign out",
   "devices.revoked": "The device is signed out.",
-  "devices.address": "Address"
+  "devices.address": "Address",
+  "cliApprove.named": "The name was chosen by the terminal. It is not checked.",
+  "cliApprove.warning": "Approve only a code you started yourself, in your own terminal. Never type a code someone else gave you."
 }

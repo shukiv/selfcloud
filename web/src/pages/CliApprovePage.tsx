@@ -105,6 +105,8 @@ export default function CliApprovePage() {
             <dt>{t("cliApprove.started")}</dt>
             <dd style={{ margin: "0 0 8px" }}>{new Date(request.created_at).toLocaleString()}</dd>
           </dl>
+          <p role="note" style={{ color: "var(--ant-color-text-secondary)", margin: "0 0 8px" }}>{t("cliApprove.named")}</p>
+          <p role="note" style={{ fontWeight: 600, margin: "0 0 12px" }}>{t("cliApprove.warning")}</p>
           <p>{t("cliApprove.scope")}</p>
           <Alert message={error} />
           <Button type="primary" block loading={busy} disabled={busy} onClick={() => void approve()}>

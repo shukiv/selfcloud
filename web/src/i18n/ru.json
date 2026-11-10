@@ -1613,5 +1613,7 @@
   "devices.revokeBody": "Терминал сразу перестанет работать.",
   "devices.revokeOk": "Выйти",
   "devices.revoked": "С устройства выполнен выход.",
-  "devices.address": "Адрес"
+  "devices.address": "Адрес",
+  "cliApprove.named": "Имя выбрал терминал, оно не проверено.",
+  "cliApprove.warning": "Подтверждайте только код, который вы запустили сами. Никогда не вводите чужой код."
 }

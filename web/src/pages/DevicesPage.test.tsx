@@ -49,7 +49,7 @@ describe("signed-in devices", () => {
     expect(within(row as HTMLElement).getAllByText(/2026/).length).toBe(2);
   });
 
-  it("shows the terminal's address in its own column, as the approval page showed it", async () => {
+  it("shows the terminal's address in the row, as the approval page showed it", async () => {
     stubFetch((c: Call) => {
       if (c.url === "/api/v1/auth/cli/devices") {
         return { status: 200, body: { devices: [{ ...device("dev_1", "laptop"), client_ip: "198.51.100.23", user_agent: "selfcloud/1" }] } };
@@ -59,7 +59,6 @@ describe("signed-in devices", () => {
     renderPage();
     const row = (await screen.findByText("laptop")).closest("tr") as HTMLElement;
     expect(within(row).getByText("198.51.100.23")).toBeTruthy();
-    expect(screen.getByRole("columnheader", { name: "Address" })).toBeTruthy();
   });
 
   // The list is the unified preset list (Listing, decision 114): a region named for the page, drawn with the list's class.
@@ -93,7 +92,9 @@ describe("signed-in devices", () => {
     });
     renderPage();
     await screen.findByText("laptop");
-    fireEvent.click(screen.getByRole("button", { name: "Sign out this device: laptop" }));
+    // The row's icon sits in its ⋮ menu where there is no mouse: the menu entry is the same action.
+    fireEvent.click(screen.getByRole("button", { name: "More actions for laptop" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Sign out this device: laptop" }));
     // Nothing is sent until the person confirms.
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));

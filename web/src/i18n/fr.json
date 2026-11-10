@@ -1613,5 +1613,7 @@
   "devices.revokeBody": "Son terminal cesse de fonctionner immédiatement et doit se reconnecter.",
   "devices.revokeOk": "Déconnecter",
   "devices.revoked": "L'appareil est déconnecté.",
-  "devices.address": "Adresse"
+  "devices.address": "Adresse",
+  "cliApprove.named": "Le nom a été choisi par le terminal. Il n'est pas vérifié.",
+  "cliApprove.warning": "N'approuvez qu'un code que vous avez lancé vous-même, dans votre propre terminal. Ne saisissez jamais un code donné par quelqu'un d'autre."
 }

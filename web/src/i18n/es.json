@@ -1613,5 +1613,7 @@
   "devices.revokeBody": "Su terminal deja de funcionar de inmediato y debe iniciar sesión de nuevo.",
   "devices.revokeOk": "Cerrar sesión",
   "devices.revoked": "El dispositivo ha cerrado sesión.",
-  "devices.address": "Dirección"
+  "devices.address": "Dirección",
+  "cliApprove.named": "El nombre lo eligió la terminal. No se comprueba.",
+  "cliApprove.warning": "Aprueba solo un código que hayas iniciado tú, en tu propia terminal. No escribas nunca un código que te haya dado otra persona."
 }

@@ -1613,5 +1613,7 @@
   "devices.revokeBody": "הטרמינל שלו יפסיק לעבוד מיד ויצטרך להתחבר מחדש.",
   "devices.revokeOk": "ניתוק",
   "devices.revoked": "המכשיר נותק.",
-  "devices.address": "כתובת"
+  "devices.address": "כתובת",
+  "cliApprove.named": "השם נבחר על ידי הטרמינל. הוא לא נבדק.",
+  "cliApprove.warning": "אשרו רק קוד שהתחלתם בעצמכם, בטרמינל שלכם. לעולם אל תקלידו קוד שמישהו אחר נתן לכם."
 }
