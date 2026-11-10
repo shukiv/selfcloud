@@ -591,6 +591,13 @@ func (s *Server) writeChildren(w http.ResponseWriter, r *http.Request, dir *stor
 	if err != nil {
 		return err
 	}
+	// A link visitor sees no shortcut in a listing. A filter for shortcuts therefore answers an empty page with no cursor,
+	// before any SQL runs: a cursor after a page the visitor cannot see in full would show that hidden rows exist (review
+	// M5 of ff1a, decision 110).
+	if p.Kind == auth.KindShareLink && filter.Kind == store.KindShortcut {
+		writeJSON(w, http.StatusOK, listResponse[nodeJSON]{Items: []nodeJSON{}})
+		return nil
+	}
 	// A filter forces the sorted walk (decision 110): with no sort it is name ascending, so the cursor always has a place.
 	sorted = sorted || filter.Active()
 	var kids []*store.Node
