@@ -80,7 +80,7 @@ function AuditView() {
           label={t("manage.audit.title")}
           items={entries}
           rowLabel={said}
-          columns={auditColumns(t, lang, said)}
+          columns={auditColumns(t, lang, said, { whenSecondary: true })}
           // The audit log has no create action.
           empty={{ title: t("audit.empty"), description: adminText ? t("admin.empty.audit") : undefined }}
         />

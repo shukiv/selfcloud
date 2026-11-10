@@ -142,7 +142,7 @@ function OverviewView() {
               label={t("manage.overview.activity")}
               items={data.activity}
               rowLabel={said}
-              columns={auditColumns(t, lang, said)}
+              columns={auditColumns(t, lang, said, { whenSecondary: true })}
               empty={{ title: t("manage.overview.noActivity"), description: adminText ? t("manage.empty.activity") : undefined }}
             />
           </section>

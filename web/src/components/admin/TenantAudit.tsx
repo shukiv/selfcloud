@@ -3,15 +3,15 @@
 import { Alert, Button, Select } from "antd";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { translate, useLang, useT } from "../../lib/i18n";
-import { formatDate } from "../../lib/files/format";
+import { useLang, useT } from "../../lib/i18n";
 import { auditLog } from "../../lib/manage/api";
 import { AUDIT_ACTIONS } from "../../lib/manage/actions";
 import { failureText } from "../../lib/manage/failure";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { queryKey } from "../../lib/query";
-import { renderSentence, sentence, type AuditEntry, type Names } from "../../lib/audit/sentence";
+import { type AuditEntry, type Names } from "../../lib/audit/sentence";
 import Listing from "../files/Listing";
+import { auditColumns, auditSaid } from "../manage/auditColumns";
 import { more, sectionTitle, toolbar } from "./adminStyles";
 import { useAdminText } from "../../lib/manage/adminText";
 
@@ -41,7 +41,7 @@ export default function TenantAudit({ account }: { account: string }) {
   const entries: Entry[] = q.data?.pages.flatMap((p) => p.items) ?? [];
   const firstFailed = q.isError && q.data === undefined;
   // An entry's sentence, as text: the Event cell shows it, and a screen reader hears the row by it (review L4).
-  const said = (e: Entry) => renderSentence(sentence(e, names), (key, params) => translate(lang, key, params));
+  const said = (e: Entry) => auditSaid(e, names, lang);
 
   return (
     <div>
@@ -70,29 +70,7 @@ export default function TenantAudit({ account }: { account: string }) {
           label={t("tenant.audit.title")}
           items={entries}
           rowLabel={said}
-          columns={[
-            {
-              key: "event",
-              title: t("audit.filter"),
-              render: (e) => (
-                <span style={{ display: "block", minWidth: 0 }}>
-                  <span style={{ display: "block", overflowWrap: "anywhere" }}>{said(e)}</span>
-                  <span style={{ display: "block", fontFamily: "monospace", fontSize: 12, color: "var(--ant-color-text-secondary)" }}>{e.action}</span>
-                </span>
-              ),
-            },
-            {
-              key: "when",
-              title: t("audit.col.when"),
-              ariaSort: "descending",
-              width: 180,
-              render: (e) => (
-                <time dateTime={e.time} style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
-                  {formatDate(e.time, lang)}
-                </time>
-              ),
-            },
-          ]}
+          columns={auditColumns(t, lang, said, { whenSecondary: false })}
           // The audit log has no create action.
           empty={{ title: t("audit.empty"), description: adminText ? t("admin.empty.audit") : undefined }}
         />

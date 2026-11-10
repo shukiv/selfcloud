@@ -13,10 +13,16 @@ export function auditSaid(e: AuditRow, names: Names, lang: Lang): string {
   return renderSentence(sentence(e, names), (key, params) => translate(lang, key, params));
 }
 
-// auditColumns are the two columns of the audit log, the same on the owner's pages and the tenant's (decision 122): the sentence,
-// with its action code under it, and When, newest first. When carries aria-sort descending and no button, as the order it
-// arrives in has no control.
-export function auditColumns(t: (key: string) => string, lang: Lang, said: (e: AuditRow) => string): ListColumn<AuditRow>[] {
+// auditColumns are the two columns of the audit log, shared by the owner's pages and the tenant's admin page (decision 122):
+// the sentence, with its action code under it, and When, newest first. When carries aria-sort descending and no button, as
+// the order it arrives in has no control. whenSecondary says whether When joins the sentence's cell on a phone (the owner's
+// phone rule, design section 4); the admin page keeps When as a column of its own there, as it always did.
+export function auditColumns(
+  t: (key: string) => string,
+  lang: Lang,
+  said: (e: AuditRow) => string,
+  opts: { whenSecondary: boolean },
+): ListColumn<AuditRow>[] {
   return [
     {
       key: "event",
@@ -32,7 +38,7 @@ export function auditColumns(t: (key: string) => string, lang: Lang, said: (e: A
       key: "when",
       title: t("audit.col.when"),
       ariaSort: "descending",
-      secondary: true,
+      secondary: opts.whenSecondary,
       width: 180,
       render: (e) => (
         <time dateTime={e.time} style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
