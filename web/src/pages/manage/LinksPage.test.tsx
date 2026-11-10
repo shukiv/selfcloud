@@ -150,7 +150,8 @@ describe("links", () => {
     stubFetch((c: Call) => (c.url.includes("/share-links") || c.url.includes("/links") ? { status: 200, body: { items: [LINK] } } : { status: 200, body: { items: [] } }));
     renderPage();
     const region = await screen.findByRole("region", { name: "Links" });
-    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status", "Actions"]);
+    // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited (MED-1).
+    await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status", "Actions"]));
     const row = region.querySelector('tbody tr[data-id="shl_1"]') as HTMLElement;
     expect(row.getAttribute("aria-label")).toBe("report.pdf");
     expect(row.querySelector(".item-name")?.textContent).toBe("report.pdf");
@@ -178,7 +179,7 @@ describe("links", () => {
     renderPage();
     const region = await screen.findByRole("region", { name: "Links" });
     // An empty list has no row icons, so no Actions column (it comes with the first row's icons).
-    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status"]);
+    await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status"]));
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No links to show");
     // Round 2 (M3): the empty table says what will show here, in the admin catalogue (loaded on demand).
     await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("Drop links and links that anyone can open show here."));

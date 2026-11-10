@@ -123,7 +123,8 @@ describe("the owner overview", () => {
     });
     renderPage();
     const region = await screen.findByRole("region", { name: "Recent activity" });
-    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]);
+    // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited (MED-1).
+    await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]));
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("Nothing has happened yet");
     // Round 2 (M3): the overview's empty activity says what will show here (the admin catalogue, loaded on demand).
     await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("The latest actions on this account show here."));

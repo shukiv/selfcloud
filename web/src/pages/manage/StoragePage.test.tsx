@@ -76,16 +76,17 @@ describe("manage storage", () => {
     renderPage();
     const people = await screen.findByRole("region", { name: "People, by use" });
     // An empty list has no row icons, so no Actions column: it comes with the first row's Change icon.
-    expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Used", "Limit"]);
+    // The data arrives after the first render, which is the phone layout until antd knows the breakpoint: the headers are awaited (MED-1).
+    await waitFor(() => expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Used", "Limit"]));
     expect(people.querySelector("tbody .empty-title")?.textContent).toBe("No people yet");
     // Round 2 (M3): each empty table says what will show there (the admin catalogue, loaded on demand).
     await waitFor(() => expect(people.querySelector("tbody .empty-desc")?.textContent).toBe("People show here once an owner adds them and attaches a folder."));
     const spaces = screen.getByRole("region", { name: "Team spaces" });
-    expect(within(spaces).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Team space", "Size", "Files"]);
+    await waitFor(() => expect(within(spaces).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Team space", "Size", "Files"]));
     expect(spaces.querySelector("tbody .empty-title")?.textContent).toBe("No team spaces yet");
     await waitFor(() => expect(spaces.querySelector("tbody .empty-desc")?.textContent).toBe("Team spaces show here once someone creates one."));
     const largest = screen.getByRole("region", { name: "Largest files in team spaces" });
-    expect(within(largest).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Team space", "Size", "Modified"]);
+    await waitFor(() => expect(within(largest).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Team space", "Size", "Modified"]));
     expect(largest.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
     await waitFor(() => expect(largest.querySelector("tbody .empty-desc")?.textContent).toBe("The largest files in this account show here, with their sizes."));
   });

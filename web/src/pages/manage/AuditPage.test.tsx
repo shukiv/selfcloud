@@ -55,10 +55,14 @@ describe("the audit log is one table (decision 122)", () => {
     stubFetch((c: Call) => (c.url.includes("/audit") ? { status: 200, body: { items: [ENTRY] } } : { status: 200, body: { items: [] } }));
     renderPage();
     const region = await screen.findByRole("region", { name: "Audit log" });
-    const when = region.querySelector('th[aria-sort="descending"]') as HTMLElement;
-    expect(when).not.toBeNull();
+    // The first render is the phone layout (antd's breakpoint is not known yet), so the desktop headers are awaited (MED-1).
+    const when = (await waitFor(() => {
+      const th = region.querySelector('th[aria-sort="descending"]');
+      if (th === null) throw new Error("the When header is not drawn yet");
+      return th as HTMLElement;
+    })) as HTMLElement;
     expect(when.querySelector("button")).toBeNull();
-    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]);
+    await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]));
     const row = region.querySelector("tbody tr[data-id]") as HTMLElement;
     expect(row.getAttribute("aria-label")).not.toBe("folder.create");
     expect(row.getAttribute("aria-label")?.length ?? 0).toBeGreaterThan(5);
@@ -84,7 +88,7 @@ describe("the audit log is one table (decision 122)", () => {
     stubFetch(() => ({ status: 200, body: { items: [] } }));
     renderPage();
     const region = await screen.findByRole("region", { name: "Audit log" });
-    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]);
+    await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]));
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("Nothing recorded yet");
     expect(region.querySelector("tbody .ant-empty")).not.toBeNull();
     // Round 2 (M3): the audit log's description is the admin catalogue's admin.empty.audit, as the tenant's log has it.
