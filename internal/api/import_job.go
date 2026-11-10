@@ -663,6 +663,9 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 // file the import already brought in. A file that does not fit the quota is refused as a pause.
 func (s *Server) importReserve(ctx context.Context, impID string, p *auth.Principal, e imports.Entry, src string) (bool, error) {
 	var skip bool
+	// The flight lock is taken before the write and released after it, as a zip start takes it, so the piece bytes in
+	// flight are read under the lock and the lock is never taken inside a write.
+	s.oneFlight.mu.Lock()
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
 		im, err := tx.Import(ctx, impID)
 		if err != nil {
@@ -701,7 +704,7 @@ func (s *Server) importReserve(ctx context.Context, impID string, p *auth.Princi
 		}
 		// The disk must hold this entry as well as what every unfinished writer holds (decision 120). It is checked
 		// before the reservation is written, in the same write, so a refused entry reserves nothing.
-		if err := s.checkDiskTx(ctx, tx, im.AccountID, e.Size, 0); err != nil {
+		if err := s.checkDiskTx(ctx, tx, im.AccountID, e.Size, s.oneFlight.total); err != nil {
 			return err
 		}
 		if err := s.applyUsage(ctx, tx, p, im.AccountID, store.FolderChange{FolderID: im.StagingFolderID,
@@ -711,6 +714,7 @@ func (s *Server) importReserve(ctx context.Context, impID string, p *auth.Princi
 		im.ReservedBytes = e.Size
 		return tx.SaveImport(ctx, im, store.Now())
 	})
+	s.oneFlight.mu.Unlock()
 	if err == nil {
 		return skip, nil
 	}
