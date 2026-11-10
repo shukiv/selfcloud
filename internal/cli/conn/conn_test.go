@@ -374,3 +374,40 @@ func TestSecretNameWithoutPrefixGivenAsProfileFlagIsNotPrinted(t *testing.T) {
 		t.Errorf("--profile with a pasted secret: err %v, stderr %q; the secret must not be printed", err, errOut.String())
 	}
 }
+
+// TestStaleNameIsNoted: a stale name that is ignored gets one stderr note, and the note names no credential, even when
+// the name is key-shaped and the key is in the token file.
+func TestStaleNameIsNoted(t *testing.T) {
+	isolate(t)
+	t.Setenv("SELFCLOUD_PROFILE", "sc_acct_STALEKEY0123456789abcdefghijk")
+	g := goodGlobal()
+	g.URL = "https://flags.example"
+	g.TokenFile = tokenFile(t, accountKey)
+	var errOut bytes.Buffer
+	if _, err := Connect(g, &errOut, true); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(errOut.String(), "note"); n != 1 {
+		t.Errorf("stderr = %q, want one note for the stale SELFCLOUD_PROFILE", errOut.String())
+	}
+	if s := errOut.String(); strings.Contains(s, "STALEKEY") || strings.Contains(s, accountKey) {
+		t.Errorf("the note names a credential: %q", s)
+	}
+}
+
+// TestStaleCurrentPointerIsNoted: the same for a current pointer that names no profile.
+func TestStaleCurrentPointerIsNoted(t *testing.T) {
+	dir := isolate(t)
+	if err := profile.Open(dir).Save(profile.File{Version: 1, Current: "gone", Profiles: map[string]profile.Profile{}}); err != nil {
+		t.Fatal(err)
+	}
+	g := goodGlobal()
+	g.URL = "https://flags.example"
+	var errOut bytes.Buffer
+	if _, err := Connect(g, &errOut, false); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(errOut.String(), "note"); n != 1 {
+		t.Errorf("stderr = %q, want one note for the stale current pointer", errOut.String())
+	}
+}
