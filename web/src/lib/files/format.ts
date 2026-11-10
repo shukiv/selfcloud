@@ -6,9 +6,22 @@ import { directionOf, isolate, matchLang } from '../i18n';
 const UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
 
 // Every row of a listing formats its date and its size, and building an Intl object costs far more than using one (perf-1
-// section 6). The objects are kept by language and by every option that changes the output, so a change of language asks for
-// a different object at once. The keys are few: the interface's languages, the units and two digit counts.
+// section 6). The objects are kept by language and by every option that changes the output (for dates, the time zone too), so a
+// change of language or zone asks for a different object at once. The keys are few: the interface's languages, the units and two digit counts.
 const formatters = new Map<string, Intl.DateTimeFormat | Intl.NumberFormat>();
+// zoneNow is the browser's time zone. Reading it builds a formatter, which costs about what a cached one saves, so it is read at
+// most once a second: a date shown after the zone changed is in the new zone within that second (LOW-2).
+let zoneName = '';
+let zoneReadAt: number | null = null;
+function zoneNow(): string {
+  const t = Date.now();
+  if (zoneReadAt === null || Math.abs(t - zoneReadAt) >= 1000) {
+    zoneName = new Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+    zoneReadAt = t;
+  }
+  return zoneName;
+}
+
 function cached<T extends Intl.DateTimeFormat | Intl.NumberFormat>(key: string, make: () => T): T {
   let f = formatters.get(key) as T | undefined;
   if (f === undefined) {
@@ -65,7 +78,7 @@ export function formatDate(iso: string | null | undefined, lang: string): string
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return cached(`date|${lang}`, () => new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeStyle: 'short' })).format(d);
+  return cached(`date|${lang}|${zoneNow()}`, () => new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeStyle: 'short' })).format(d);
 }
 
 // daysUntil is the whole days from now until iso, rounded up, never below 0.
