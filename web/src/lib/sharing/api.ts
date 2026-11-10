@@ -34,9 +34,13 @@ export function searchDirectory(
   return api<{ items: DirectoryEntry[]; more?: boolean }>('GET', `/api/v1/directory?${params.toString()}`);
 }
 
-export function sharedWithMe(cursor?: string): Promise<Page<Node>> {
+// SharedNode is an item shared with the caller: shared_at is the later of the share and the caller's last visit to it (tl4a,
+// decision 136), sent in every order of the list.
+export type SharedNode = Node & { shared_at?: string };
+
+export function sharedWithMe(cursor?: string): Promise<Page<SharedNode>> {
   const c = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
-  return api<Page<Node>>('GET', `/api/v1/shared?limit=50${c}`);
+  return api<Page<SharedNode>>('GET', `/api/v1/shared?limit=50${c}`);
 }
 
 // createAccessRequest asks for a role on a node. The server answers 202 with no body whether or not the

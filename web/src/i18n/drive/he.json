@@ -1,0 +1,15 @@
+{
+  "drive.col.location": "מיקום",
+  "drive.col.originalLocation": "מיקום מקורי",
+  "drive.col.starredOn": "סומן בתאריך",
+  "drive.col.opened": "נפתח",
+  "drive.col.sharedBy": "שותף על ידי",
+  "drive.col.sharedOn": "שותף בתאריך",
+  "drive.col.deletedOn": "נמחק בתאריך",
+  "drive.empty.recent": "אין פריטים אחרונים",
+  "drive.empty.search": "אין תוצאות",
+  "drive.empty.searchPage": "אין תוצאות בעמוד הזה",
+  "drive.empty.shared": "עדיין לא שותף דבר",
+  "drive.empty.starred": "עדיין לא סומן דבר",
+  "drive.empty.trash": "סל המחזור ריק"
+}

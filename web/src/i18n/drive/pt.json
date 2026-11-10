@@ -1,0 +1,15 @@
+{
+  "drive.col.location": "Localização",
+  "drive.col.originalLocation": "Localização original",
+  "drive.col.starredOn": "Favoritado em",
+  "drive.col.opened": "Aberto",
+  "drive.col.sharedBy": "Compartilhado por",
+  "drive.col.sharedOn": "Compartilhado em",
+  "drive.col.deletedOn": "Excluído em",
+  "drive.empty.recent": "Nenhum item recente",
+  "drive.empty.search": "Nenhum resultado",
+  "drive.empty.searchPage": "Nenhum resultado nesta página",
+  "drive.empty.shared": "Nada compartilhado ainda",
+  "drive.empty.starred": "Nada favoritado ainda",
+  "drive.empty.trash": "A lixeira está vazia"
+}

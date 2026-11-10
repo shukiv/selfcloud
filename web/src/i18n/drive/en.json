@@ -1,0 +1,15 @@
+{
+  "drive.col.location": "Location",
+  "drive.col.originalLocation": "Original location",
+  "drive.col.starredOn": "Starred on",
+  "drive.col.opened": "Opened",
+  "drive.col.sharedBy": "Shared by",
+  "drive.col.sharedOn": "Shared on",
+  "drive.col.deletedOn": "Deleted on",
+  "drive.empty.recent": "Recent is empty",
+  "drive.empty.search": "No results",
+  "drive.empty.searchPage": "No results on this page",
+  "drive.empty.shared": "Nothing shared yet",
+  "drive.empty.starred": "Nothing starred yet",
+  "drive.empty.trash": "The trash is empty"
+}

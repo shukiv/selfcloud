@@ -1,0 +1,15 @@
+{
+  "drive.col.location": "Emplacement",
+  "drive.col.originalLocation": "Emplacement d'origine",
+  "drive.col.starredOn": "Suivi le",
+  "drive.col.opened": "Ouvert",
+  "drive.col.sharedBy": "Partagé par",
+  "drive.col.sharedOn": "Partagé le",
+  "drive.col.deletedOn": "Supprimé le",
+  "drive.empty.recent": "Aucun élément récent",
+  "drive.empty.search": "Aucun résultat",
+  "drive.empty.searchPage": "Aucun résultat sur cette page",
+  "drive.empty.shared": "Rien de partagé pour l'instant",
+  "drive.empty.starred": "Rien de suivi pour l'instant",
+  "drive.empty.trash": "La corbeille est vide"
+}

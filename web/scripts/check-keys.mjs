@@ -17,6 +17,7 @@ const en = {
   ...JSON.parse(await readFile(join(src, 'i18n', 'share', 'en.json'), 'utf8')),
   ...JSON.parse(await readFile(join(src, 'i18n', 'admin', 'en.json'), 'utf8')),
   ...JSON.parse(await readFile(join(src, 'i18n', 'cli', 'en.json'), 'utf8')),
+  ...JSON.parse(await readFile(join(src, 'i18n', 'drive', 'en.json'), 'utf8')),
 };
 
 async function files(dir) {

@@ -1,0 +1,15 @@
+{
+  "drive.col.location": "الموقع",
+  "drive.col.originalLocation": "الموقع الأصلي",
+  "drive.col.starredOn": "مميَّز في",
+  "drive.col.opened": "مفتوح",
+  "drive.col.sharedBy": "شاركه",
+  "drive.col.sharedOn": "تمت مشاركته في",
+  "drive.col.deletedOn": "حُذف في",
+  "drive.empty.recent": "لا عناصر حديثة",
+  "drive.empty.search": "لا توجد نتائج",
+  "drive.empty.searchPage": "لا توجد نتائج في هذه الصفحة",
+  "drive.empty.shared": "لم يُشارَك شيء بعد",
+  "drive.empty.starred": "لا شيء مميَّز بعد",
+  "drive.empty.trash": "سلة المهملات فارغة"
+}

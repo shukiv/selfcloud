@@ -1,0 +1,15 @@
+{
+  "drive.col.location": "Ubicación",
+  "drive.col.originalLocation": "Ubicación original",
+  "drive.col.starredOn": "Destacado el",
+  "drive.col.opened": "Abierto",
+  "drive.col.sharedBy": "Compartido por",
+  "drive.col.sharedOn": "Compartido el",
+  "drive.col.deletedOn": "Eliminado el",
+  "drive.empty.recent": "Nada reciente",
+  "drive.empty.search": "Sin resultados",
+  "drive.empty.searchPage": "Sin resultados en esta página",
+  "drive.empty.shared": "Nada compartido todavía",
+  "drive.empty.starred": "Nada destacado todavía",
+  "drive.empty.trash": "La papelera está vacía"
+}

@@ -26,6 +26,9 @@ export interface Node {
   created_at: string;
   modified_at: string;
   role?: Role;
+  // place is the name of the item's parent, when the caller reaches the parent. Left out for an item at the top of its space,
+  // for one whose parent the caller cannot see, and for one in the trash (decision 136). Only the drive lists send it.
+  place?: string;
   no_download: boolean;
   editors_can_share: boolean;
   created_by?: string;

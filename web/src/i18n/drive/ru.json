@@ -1,0 +1,15 @@
+{
+  "drive.col.location": "Расположение",
+  "drive.col.originalLocation": "Исходное расположение",
+  "drive.col.starredOn": "Отмечено звездой",
+  "drive.col.opened": "Открыто",
+  "drive.col.sharedBy": "Кто поделился",
+  "drive.col.sharedOn": "Общий доступ с",
+  "drive.col.deletedOn": "Удалено",
+  "drive.empty.recent": "Недавних нет",
+  "drive.empty.search": "Ничего не найдено",
+  "drive.empty.searchPage": "На этой странице ничего не найдено",
+  "drive.empty.shared": "Пока ничем не поделились",
+  "drive.empty.starred": "Пока ничего не отмечено",
+  "drive.empty.trash": "Корзина пуста"
+}
