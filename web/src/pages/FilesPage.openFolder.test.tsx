@@ -117,9 +117,9 @@ describe("a folder open reads what it needs once (perf-1 3.2)", () => {
   });
 
   it("starts the directory's listing before its stat has answered", async () => {
-    let release: (() => void) | null = null;
+    const gate: { open?: () => void } = {};
     const held = new Promise<void>((r) => {
-      release = r;
+      gate.open = r;
     });
     const real = vi.mocked(globalThis.fetch);
     real.mockImplementation(async (input: RequestInfo | URL) => {
@@ -132,6 +132,6 @@ describe("a folder open reads what it needs once (perf-1 3.2)", () => {
     // The stat of the directory is held. The listing of the directory needs only its id, which the address gives.
     await waitFor(() => expect(requestsTo(`/api/v1/nodes/nod_dirdirdi/children`)).toBeGreaterThan(0));
     expect(requestsTo(`/api/v1/nodes/nod_dirdirdi`)).toBe(1);
-    release?.();
+    gate.open?.();
   });
 });
