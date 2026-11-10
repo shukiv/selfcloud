@@ -561,7 +561,12 @@ export default function CodeEditPage() {
   // when it is not, the guard asks as before.
   const sessionEnded = () => {
     const cur = handle.current?.text();
-    if (readyRef.current === null || closed || cur === undefined || cur === saved.current) return;
+    if (readyRef.current === null || closed || cur === undefined) return;
+    // A text back at the saved text has nothing unsaved to keep, so the draft kept before for the file goes too (LOW-7).
+    if (cur === saved.current) {
+      drop();
+      return;
+    }
     if (keep(cur)) leaving.current = true;
   };
   const sessionEndedRef = useRef(sessionEnded);

@@ -1555,6 +1555,8 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     act(() => clearSession());
     await waitFor(() => expect(keptFor()).toHaveLength(1));
     first.unmount();
+    // The person signs in again, and opens the file: the kept text comes back.
+    session.set({ user: { id: "usr_1", role: "user" }, csrf: "csrf_again" } as never);
     render();
     await waitFor(() => expect(content().textContent).toContain("x{}"));
     // The person reverts to the saved text, then the session ends again.
