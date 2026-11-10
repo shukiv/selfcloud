@@ -153,6 +153,11 @@ decision 100 of `docs/design.md`. Files in quarantine are outside the server's d
 operator empties the folder. On a network file system, run the check where the clocks agree with the file server, since
 a clock difference larger than `--min-age` can make a fresh blob look old (decision 100).
 
+## Remote client
+
+`selfcloud info`, `selfcloud api spec` and `selfcloud profile add|use|ls|rm` call a server's API. Profiles keep a
+server's address and key in a private file. See [docs/cli.md](docs/cli.md).
+
 ## Configuration
 
 Defaults, then an optional YAML file (`-config FILE` or `$SELFCLOUD_CONFIG`), then environment
