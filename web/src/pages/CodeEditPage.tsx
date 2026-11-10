@@ -27,7 +27,7 @@ import { wraps } from "../lib/code/lines";
 import { statNode } from "../lib/files/api";
 import { readEditorPath } from "../lib/files/editor";
 import { startDownload } from "../lib/files/ops";
-import { can } from "../lib/files/roles";
+import { can, downloadAllowed } from "../lib/files/roles";
 import type { Node } from "../lib/files/types";
 import { useLang, useT } from "../lib/i18n";
 import { go } from "../lib/router";
@@ -243,7 +243,8 @@ export default function CodeEditPage() {
               ? t("files.editor.saveFailed")
               : null;
   const name = page.s === "ready" ? page.ready.name : page.s === "tooLarge" ? page.name : "";
-  const canDownload = (page.s === "ready" && !page.ready.node.no_download) || (page.s === "tooLarge" && !page.node.no_download);
+  // The download rule is the preview's (lib/files/roles.ts): a no-download file may still be downloaded by a contributor and above.
+  const canDownload = (page.s === "ready" && downloadAllowed(page.ready.node)) || (page.s === "tooLarge" && downloadAllowed(page.node));
   const nodeId = page.s === "ready" ? page.ready.node.id : page.s === "tooLarge" ? page.node.id : "";
 
   return (
