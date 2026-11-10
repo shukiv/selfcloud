@@ -631,11 +631,11 @@ func (s *Server) routes() []route {
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/quota-warning", handle: s.handleDeleteQuotaWarning, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/jobs/{job}", handle: s.handleGetJob, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/imports/sources", handle: s.handleImportSources, auth: true, imp: impAllow},
-		{method: http.MethodPost, path: "/api/v1/imports", handle: s.handleCreateImport, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/imports", handle: s.handleCreateImport, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodGet, path: "/api/v1/imports/{imp}", handle: s.handleGetImport, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/imports/{imp}/items", handle: s.handleImportItems, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/imports/{imp}/pause", handle: s.handlePauseImport, auth: true, imp: impRefuse},
-		{method: http.MethodPost, path: "/api/v1/imports/{imp}/resume", handle: s.handleResumeImport, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/imports/{imp}/resume", handle: s.handleResumeImport, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodPost, path: "/api/v1/imports/{imp}/cancel", handle: s.handleCancelImport, auth: true, imp: impRefuse},
 		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/imports/archive", handle: s.handleSetArchiveSwitch, auth: true, imp: impRefuse},
 
