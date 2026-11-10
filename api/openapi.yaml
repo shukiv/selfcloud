@@ -4553,8 +4553,8 @@ paths:
         whose team space's root the caller already reaches. The caller reaches nothing above a
         shared node. A user only: an account key has no shares.
         Without `order`, the nodes come in node ID order. With `order=recent`, the newest share
-        first, and each item carries `shared_at`: the later of the permission's creation and the
-        caller's visit to an organisation link on the node.
+        first. Each item carries `shared_at` in either order: the later of the permission's creation and the
+        caller's visit to an organisation link on the node. Each item carries `place` when the caller reaches its parent.
       security: [{ bearer: [] }, { session: [] }]
       parameters:
         - $ref: "#/components/parameters/limit"
@@ -6809,6 +6809,7 @@ components:
           required: [starred_at]
           properties:
             starred_at: { type: string, format: date-time }
+            place: { $ref: "#/components/schemas/Place" }
 
     StarredList:
       type: object
@@ -6829,6 +6830,7 @@ components:
             viewed_at: { type: [string, "null"], format: date-time }
             edited_at: { type: [string, "null"], format: date-time }
             last_at: { type: string, format: date-time, description: The later of the view and the edit. }
+            place: { $ref: "#/components/schemas/Place" }
 
     RecentList:
       type: object
@@ -6840,12 +6842,24 @@ components:
         next_cursor: { type: string }
 
     SharedItem:
-      description: A node shared with the caller. `shared_at` is set with `order=recent`.
+      description: |
+        A node shared with the caller. `shared_at` is set in every order: the later of the permission's creation and the
+        caller's visit to an organisation link on the node (the time `order=recent` sorts by).
       allOf:
         - $ref: "#/components/schemas/Node"
         - type: object
+          required: [shared_at]
           properties:
             shared_at: { type: string, format: date-time }
+            place: { $ref: "#/components/schemas/Place" }
+
+    Place:
+      type: string
+      description: |
+        The display name of the item's parent, given only when the caller reaches that parent. The field is left out
+        (no value) when the item is at the top of a folder (its parent is the folder's root), when the parent is out of
+        the caller's reach (for example a folder above a grant, or outside a token's scope), and when the parent is in
+        the trash. It is a name only, never an ID.
 
     SharedList:
       type: object
@@ -6882,6 +6896,7 @@ components:
               - type: object
                 properties:
                   snippet: { $ref: "#/components/schemas/SearchSnippet" }
+                  place: { $ref: "#/components/schemas/Place" }
         next_cursor: { type: string }
     NodeList:
       type: object
@@ -6919,6 +6934,7 @@ components:
             trashed_by: { type: string, description: "The ID of the user, or of the key, that trashed it." }
             original_parent_id: { type: string, description: "The directory the item was in. It may itself be in the trash." }
             purge_at: { type: string, format: date-time, description: "When the retention sweep purges it: `trashed_at` plus `trash.retention`." }
+            place: { $ref: "#/components/schemas/Place" }
 
     TrashList:
       type: object
