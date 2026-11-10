@@ -303,6 +303,7 @@ export default function CodeEditPage() {
     saving.current = false;
     setConflict(null);
     if (got.ok) {
+      lostSave.current = false;
       applySaved(got.node, c.text);
       return;
     }
@@ -310,6 +311,8 @@ export default function CodeEditPage() {
       await openConflict(c.text, c.bytes, gen);
       return;
     }
+    // A save that got no answer may still have reached the server, so the next conflict says so (MED-2).
+    if (got.why === "failed") lostSave.current = true;
     setSaveState("failed");
     setNotice(got.why);
     if (got.why === "forbidden" || got.why === "gone") setClosed(true);
@@ -325,6 +328,7 @@ export default function CodeEditPage() {
     const got = await keepCopy(r.node, file.current.mime, c.bytes);
     if (gen !== openGen.current) return;
     if (got.ok) {
+      lostSave.current = false;
       setConflict(null);
       setSaveState("unsaved");
       setCopied({ id: got.node.id, name: got.node.name });
@@ -334,6 +338,7 @@ export default function CodeEditPage() {
       setConflict({ ...c, noName: true });
       return;
     }
+    if (got.why === "failed") lostSave.current = true;
     setConflict(null);
     setSaveState("failed");
     setNotice(got.why);
