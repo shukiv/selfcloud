@@ -38,3 +38,23 @@ export function desktopViewport(): () => void {
     window.matchMedia = before;
   };
 }
+
+// phoneViewport makes no min-width query match: a phone below md (768 px), where a list shows its name column, its secondary
+// columns on the name's second line, and the ⋮ menu alone (design section 4). It returns the function that restores the
+// window the test had before it, so a test can call it inside itself: `const undo = phoneViewport(); try { ... } finally { undo(); }`.
+export function phoneViewport(): () => void {
+  const before = window.matchMedia;
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+  return () => {
+    window.matchMedia = before;
+  };
+}

@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
+import { phoneViewport } from "../../test/viewport";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import OverviewPage from "./OverviewPage";
 
@@ -17,7 +18,10 @@ function signedAs(): Session {
   } as unknown as Session;
 }
 
-const USAGE = { quota_bytes: null, used_bytes: 0, reserved_bytes: 0, available_bytes: null, files: 0, folders: 0, users_active: 1, users_pending: 0 };
+// One activity row, for the table's rows (round 2, M8).
+const ACTIVITY = { id: "aud_1", action: "folder.create", actor: { kind: "user", id: "usr_owen" }, target: "fld_1", details: {}, time: "2026-10-01T00:00:00Z" };
+
+const USAGE ={ quota_bytes: null, used_bytes: 0, reserved_bytes: 0, available_bytes: null, files: 0, folders: 0, users_active: 1, users_pending: 0 };
 
 function renderPage() {
   render(
@@ -46,6 +50,26 @@ describe("the owner overview", () => {
   });
 
   // Decision 122 (tl3): the recent activity is the audit table, with its headers kept when nothing has happened.
+  // Round 2 (H1, design section 4): at 375 px only the Action column shows; When joins its name cell.
+  it("at 375 px the activity shows only the Action column, and the When joins its name cell", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("/usage")) return { status: 200, body: USAGE };
+      if (c.url.includes("/folders")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/audit")) return { status: 200, body: { items: [ACTIVITY] } };
+      if (c.url.includes("/users")) return { status: 200, body: { items: [] } };
+      return fail(404, "not_found");
+    });
+    const undo = phoneViewport();
+    try {
+      renderPage();
+      const region = await screen.findByRole("region", { name: "Recent activity" });
+      expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action"]);
+      expect((region.querySelector("tbody tr[data-id] td") as HTMLElement).querySelector("time")).not.toBeNull();
+    } finally {
+      undo();
+    }
+  });
+
   it("the recent activity is a table whose empty body keeps the headers (decision 122)", async () => {
     stubFetch((c: Call) => {
       if (c.url.includes("/usage")) return { status: 200, body: USAGE };

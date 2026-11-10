@@ -7,6 +7,7 @@ import { createQueryClient } from "../../lib/query";
 import { limitBytes } from "../../lib/quota";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch } from "../../test/fetchStub";
+import { phoneViewport } from "../../test/viewport";
 import StoragePage from "./StoragePage";
 
 function signedAs(): Session {
@@ -75,6 +76,34 @@ describe("manage storage", () => {
     const largest = screen.getByRole("region", { name: "Largest files in team spaces" });
     expect(within(largest).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Team space", "Size", "Modified"]);
     expect(largest.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
+  });
+
+  // Round 2 (H1, design section 4): at 375 px each storage table shows its name column, and the other columns join its second line.
+  it("at 375 px each storage table shows its name column, and the other columns join it", async () => {
+    stubFetch((c) => {
+      if (c.url.includes("/storage/largest")) {
+        return {
+          status: 200,
+          body: { items: [{ id: "nod_1", name: "Big.bin", size: 5, versions_bytes: 0, in_trash: false, modified_at: "2026-10-01T00:00:00Z", folder_id: "fld_1", folder_name: "Plans" }] },
+        };
+      }
+      if (c.url.includes("/storage")) return { status: 200, body: ACCOUNT_STORAGE };
+      return fail(404, "not_found");
+    });
+    const undo = phoneViewport();
+    try {
+      renderPage();
+      const people = await screen.findByRole("region", { name: "People, by use" });
+      expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Actions"]);
+      expect(people.querySelector("tbody tr td")?.textContent).toContain("Follows the default");
+      const spaces = screen.getByRole("region", { name: "Team spaces" });
+      expect(within(spaces).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Team space"]);
+      const largest = await screen.findByRole("region", { name: "Largest files in team spaces" });
+      expect(within(largest).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name"]);
+      expect(largest.querySelector("tbody tr td")?.textContent).toContain("Plans");
+    } finally {
+      undo();
+    }
   });
 
   it("the team spaces sort by name, ascending first, and the header's click reverses it with aria-sort", async () => {

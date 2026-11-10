@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
-import { desktopViewport } from "../../test/viewport";
+import { desktopViewport, phoneViewport } from "../../test/viewport";
 import LinksPage from "./LinksPage";
 
 function signedAs(): Session {
@@ -98,6 +98,23 @@ describe("links", () => {
     const row = region.querySelector('tbody tr[data-id="shl_1"]') as HTMLElement;
     expect(row.getAttribute("aria-label")).toBe("report.pdf");
     expect(row.querySelector(".item-name")?.textContent).toBe("report.pdf");
+  });
+
+  // Round 2 (H1, design section 4): at 375 px only the name column and the ⋮ menu show; the audience, kind, created and status
+  // join the name cell's second line.
+  it("at 375 px only the name and the ⋮ column show, and the other columns join the name cell (design section 4)", async () => {
+    stubFetch((c: Call) => (c.url.includes("/share-links") || c.url.includes("/links") ? { status: 200, body: { items: [LINK] } } : { status: 200, body: { items: [] } }));
+    const undo = phoneViewport();
+    try {
+      renderPage();
+      const region = await screen.findByRole("region", { name: "Links" });
+      expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Actions"]);
+      const name = region.querySelector('tbody tr[data-id="shl_1"] td') as HTMLElement;
+      expect(name.textContent).toContain("Anyone with the link");
+      expect(name.textContent).toContain("Access link");
+    } finally {
+      undo();
+    }
   });
 
   it("an empty list keeps its header row, and its title is in the table body (decision 122)", async () => {

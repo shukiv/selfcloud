@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
+import { phoneViewport } from "../../test/viewport";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import AuditPage from "./AuditPage";
@@ -53,6 +54,22 @@ describe("the audit log is one table (decision 122)", () => {
     const row = region.querySelector("tbody tr[data-id]") as HTMLElement;
     expect(row.getAttribute("aria-label")).not.toBe("folder.create");
     expect(row.getAttribute("aria-label")?.length ?? 0).toBeGreaterThan(5);
+  });
+
+  // Round 2 (H1, design section 4): at 375 px only the sentence column shows; When joins its second line.
+  it("at 375 px the log shows only the Action column, and the When joins its name cell", async () => {
+    stubFetch((c: Call) => (c.url.includes("/audit") ? { status: 200, body: { items: [ENTRY] } } : { status: 200, body: { items: [] } }));
+    const undo = phoneViewport();
+    try {
+      renderPage();
+      const region = await screen.findByRole("region", { name: "Audit log" });
+      expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action"]);
+      const cell = region.querySelector("tbody tr[data-id] td") as HTMLElement;
+      expect(cell.textContent).toContain("folder.create");
+      expect(cell.querySelector("time")).not.toBeNull();
+    } finally {
+      undo();
+    }
   });
 
   it("an empty log keeps its header row, and its title is in the table body", async () => {
