@@ -1,17 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  announceSignOut,
-  dropUnsaved,
-  keepUnsaved,
-  noteSignedIn,
-  purgeAllUnsaved,
-  purgeOtherUnsaved,
-  readUnsaved,
-  SIGNOUT_CHANNEL,
-  watchSignOuts,
-} from "./unsaved";
+import { dropUnsaved, keepUnsaved, readUnsaved } from "./kept";
+import { announceSignOut, noteSignedIn, purgeAllUnsaved, purgeOtherUnsaved, SIGNOUT_CHANNEL, watchSignOuts } from "./unsaved";
 
 const NOD = "nod_a1";
 const OTHER_NOD = "nod_b2";
@@ -123,9 +114,10 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
     try {
       vi.resetModules();
       const m = await import("./unsaved");
+      const k = await import("./kept");
       expect(() => m.announceSignOut()).not.toThrow();
       const stop = m.watchSignOuts();
-      expect(m.keepUnsaved("usr_1", NOD, rec)).toBe(true);
+      expect(k.keepUnsaved("usr_1", NOD, rec)).toBe(true);
       expect(() => stop()).not.toThrow();
     } finally {
       vi.unstubAllGlobals();

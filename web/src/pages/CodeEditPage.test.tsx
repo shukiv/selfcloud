@@ -13,7 +13,8 @@ vi.mock("../lib/router", () => ({ go: goMock, signInURL: () => "/login" }));
 
 import CodeEditPage from "./CodeEditPage";
 import { signOut } from "../lib/auth";
-import { keepUnsaved, noteSignedIn, readUnsaved, SIGNOUT_CHANNEL } from "../lib/code/unsaved";
+import { keepUnsaved, readUnsaved } from "../lib/code/kept";
+import { noteSignedIn, SIGNOUT_CHANNEL } from "../lib/code/unsaved";
 import { clearSession, session, setMe, setSignedIn } from "../lib/session";
 import { get, useStore } from "../lib/store";
 

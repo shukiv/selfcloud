@@ -1,73 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor's unsaved text, kept across a sign-in for the same person (design-ce 4.3 and 4.6, not in this repository; decision 133). The text is kept in
-// this browser tab only (sessionStorage), one entry per person and file, so it comes back when that person signs in again and opens
-// the file. Nothing here reads the session: the page passes the person's id, and the session's own changes call the purges.
-// Every storage call is in try/catch: a store that throws or is full means the text is not kept, and nothing else changes.
-// The module imports nothing, so the entry chunk that signs people in and out does not grow with the editor.
+// The code editor's unsaved text, kept across a sign-in for the same person (design-ce 4.3 and 4.6, not in this repository; decision 133).
+// This module is the part the sign-in and sign-out paths need, and it is in the first load: the purges at every sign-in and sign-out,
+// and the sign-out channel. The text itself is kept and read in kept.ts, which only the editor loads (review round 2, N4). Nothing here
+// reads the session: the session's own changes call the purges and the channel. The module imports nothing, so the entry chunk that
+// signs people in and out does not grow with the editor.
 
-const PREFIX = "selfcloud.code-unsaved:";
-
-// Kept is one kept text: the editor's text (line breaks as LF, which is how the editor holds it), the ETag the edit was based on (the
-// If-Match of a save of this text), the file's byte order mark and line break (lib/code/edit.ts), its encoding (UTF-8 only, as the
-// editor reads it), and the time it was kept.
-export interface Kept {
-  text: string;
-  etag: string;
-  bom: boolean;
-  sep: "\n" | "\r\n" | "\r";
-  enc: "utf-8";
-  at: number;
-}
-
-// keyOf is the entry of one person's file. The person's id is encoded and ends at a colon, so one id never reads another's entry.
-const keyOf = (user: string, node: string) => `${PREFIX}${encodeURIComponent(user)}:${node}`;
-
-// keepUnsaved stores a text for a person's file. It says whether the store took it: false is "not kept" (the store refused, or is full).
-export function keepUnsaved(user: string, node: string, text: Omit<Kept, "enc" | "at">): boolean {
-  // A tab that heard another tab's explicit sign-out keeps nothing until the next sign-in (see endedElsewhere).
-  if (endedElsewhere) return false;
-  try {
-    const rec: Kept = { text: text.text, etag: text.etag, bom: text.bom, sep: text.sep, enc: "utf-8", at: Date.now() };
-    window.sessionStorage.setItem(keyOf(user, node), JSON.stringify(rec));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// readUnsaved gives the text kept for a person's file, or null when there is none, or the entry is not one this module wrote.
-export function readUnsaved(user: string, node: string): Kept | null {
-  try {
-    const raw = window.sessionStorage.getItem(keyOf(user, node));
-    if (raw === null) return null;
-    const v = JSON.parse(raw) as Partial<Kept> | null;
-    if (
-      typeof v !== "object" ||
-      v === null ||
-      typeof v.text !== "string" ||
-      typeof v.etag !== "string" ||
-      typeof v.bom !== "boolean" ||
-      (v.sep !== "\n" && v.sep !== "\r\n" && v.sep !== "\r") ||
-      v.enc !== "utf-8" ||
-      typeof v.at !== "number"
-    ) {
-      return null;
-    }
-    return v as Kept;
-  } catch {
-    return null;
-  }
-}
-
-// dropUnsaved removes the text kept for a person's file: a save that took it, a discard, a file that is gone or forbidden.
-export function dropUnsaved(user: string, node: string): void {
-  try {
-    window.sessionStorage.removeItem(keyOf(user, node));
-  } catch {
-    // A store that refuses a removal keeps its entry; the entry is still the person's own, and the next purge removes it.
-  }
-}
+// PREFIX is the key prefix of every kept entry in the tab's sessionStorage (kept.ts writes them; the purges here find them).
+export const PREFIX = "selfcloud.code-unsaved:";
 
 // keysWhere lists this module's keys in the tab whose person matches drop.
 function keysWhere(drop: (user: string) => boolean): string[] {
@@ -92,7 +32,7 @@ export function purgeOtherUnsaved(user: string): void {
     try {
       window.sessionStorage.removeItem(k);
     } catch {
-      // See dropUnsaved.
+      // A store that refuses a removal keeps its entry; the next purge removes it.
     }
   }
 }
@@ -103,14 +43,14 @@ export function purgeAllUnsaved(): void {
     try {
       window.sessionStorage.removeItem(k);
     } catch {
-      // See dropUnsaved.
+      // See purgeOtherUnsaved.
     }
   }
 }
 
 // The sign-out channel (decision 133, rule 5): an explicit sign-out tells the other tabs of this browser, so that each drops the text
-// it kept. The message carries no text, only the fact. A browser without channels has no other tab to tell, and keeps today's
-// behaviour: each tab's own text is kept as before.
+// it kept. A sign-in tells them too, so that a tab which kept nothing after another tab's sign-out keeps text again (review round 2,
+// N1). Both messages carry no text. A browser without channels has no other tab to tell, and keeps today's behaviour.
 export const SIGNOUT_CHANNEL = "selfcloud-code-unsaved";
 const SIGNED_OUT = "signed-out";
 const SIGNED_IN = "signed-in";
@@ -119,8 +59,8 @@ const SIGNED_IN = "signed-in";
 // nothing until a sign-in happens in this browser: this tab's own, or another tab's sign-in message (noteSignedIn).
 let endedElsewhere = false;
 
-// channel is this tab's one channel, made on first use. Its own messages are not delivered to it, so a sign-out in this tab does not
-// set the flag here.
+// channel is this tab's one channel, made on first use. Its own messages are not delivered to it, so a sign-out or sign-in in this tab
+// does not set or clear the flag here.
 let channel: BroadcastChannel | null = null;
 
 function openChannel(): BroadcastChannel | null {
@@ -134,6 +74,11 @@ function openChannel(): BroadcastChannel | null {
   return channel;
 }
 
+// signedOutElsewhere says this tab heard another tab's explicit sign-out and has not seen a sign-in since. kept.ts keeps nothing then.
+export function signedOutElsewhere(): boolean {
+  return endedElsewhere;
+}
+
 // announceSignOut tells the other tabs that the person signed out on purpose. The sign-out calls it after this tab's own purge.
 export function announceSignOut(): void {
   try {
@@ -143,8 +88,9 @@ export function announceSignOut(): void {
   }
 }
 
-// watchSignOuts makes this tab hear the other tabs' explicit sign-outs: it drops every text it kept and keeps nothing until the next
-// sign-in. It returns the function that stops the watch. session.ts starts it when the app loads, so every tab has it.
+// watchSignOuts makes this tab hear the other tabs' explicit sign-outs and sign-ins: a sign-out drops every text it kept and keeps
+// nothing until a sign-in; a sign-in ends that window. It returns the function that stops the watch, which closes the channel.
+// session.ts starts the watch when the app loads, so every tab has it.
 export function watchSignOuts(): () => void {
   const ch = openChannel();
   if (ch === null) return () => undefined;

@@ -21,7 +21,7 @@ import { brand } from "../lib/brand";
 import { decodeText, sniffWhole } from "../lib/code/encoding";
 import { encodeDraft, EDIT_LIMIT, lineBreakOf, mixedBreaks, normalizeText } from "../lib/code/edit";
 import { headEtag, keepCopy } from "../lib/code/conflict";
-import { dropUnsaved, keepUnsaved, readUnsaved } from "../lib/code/unsaved";
+import { dropUnsaved, keepUnsaved, readUnsaved } from "../lib/code/kept";
 import { extensionOf, packOf, type Pack } from "../lib/code/names";
 import { codeText } from "../lib/code/text";
 import { readWhole, saveText, type SaveFailure } from "../lib/code/save";
