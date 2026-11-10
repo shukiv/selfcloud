@@ -65,9 +65,9 @@ const countText = (page) => page.evaluate(`document.querySelector('[data-testid=
 const waitCount = (page, want) =>
   page.waitFor(`(document.querySelector('[data-testid="notifications-count"]')?.textContent ?? '0') === ${q(String(want))}`, 15000);
 
-// noticeButtons are the lines of the notifications page, as their text.
+// noticeTexts are the rows of the notifications table, as their text: the sentence, the status (Unread or Read) and the time (tl5).
 const noticeTexts = (page) =>
-  page.evaluate(`[...document.querySelectorAll('[data-testid="notice"] button')].map((b) => b.textContent)`);
+  page.evaluate(`[...document.querySelectorAll('tr[data-testid="notice"]')].map((r) => r.textContent)`);
 
 // ownerMentions signs in as the owner, names the member in a new comment on the file, and signs the member back in.
 async function ownerMentions(h, page, folderURL, fileName, MEMBER, OWNER, text) {
