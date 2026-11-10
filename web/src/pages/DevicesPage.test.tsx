@@ -2,7 +2,8 @@
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { loadCliText } from "../lib/cli/cliText";
 import { createQueryClient } from "../lib/query";
 import { session, type Session } from "../lib/session";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
@@ -34,6 +35,9 @@ function renderPage() {
   );
 }
 
+// The page's words are their own catalogue, which the page loads itself. These tests read them at once, so they preload it;
+// the lazy path is tested in DevicesPage.lazy.test.tsx.
+beforeAll(() => loadCliText("en"));
 beforeEach(() => session.set(signedAs("olivia")));
 afterEach(() => session.set(null));
 

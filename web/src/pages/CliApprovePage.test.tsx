@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { loadCliText } from "../lib/cli/cliText";
 import { session, type Session } from "../lib/session";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
 import CliApprovePage from "./CliApprovePage";
@@ -30,6 +31,9 @@ const request = {
   expires_at: "2026-11-10T08:10:00Z",
 };
 
+// The page's words are their own catalogue, which the page loads itself. These tests read them at once, so they preload it;
+// the lazy path is tested in CliApprovePage.lazy.test.tsx.
+beforeAll(() => loadCliText("en"));
 beforeEach(() => session.set(signedAs("olivia")));
 afterEach(() => {
   session.set(null);

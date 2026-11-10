@@ -6,9 +6,14 @@
 // and nothing more, no text is empty, each placeholder is the one the English text uses, and the main catalogues no longer carry
 // the moved keys. The account menu's entry (user.devices) is not a moved key and stays in the main catalogues.
 //
-// The cli files are read when a test runs, not imported, so a missing file fails one test with its name, not the whole file.
-
 import { describe, expect, it } from "vitest";
+import cliEn from "../../i18n/cli/en.json";
+import cliAr from "../../i18n/cli/ar.json";
+import cliEs from "../../i18n/cli/es.json";
+import cliFr from "../../i18n/cli/fr.json";
+import cliHe from "../../i18n/cli/he.json";
+import cliPt from "../../i18n/cli/pt.json";
+import cliRu from "../../i18n/cli/ru.json";
 import mainEn from "../../i18n/en.json";
 import mainAr from "../../i18n/ar.json";
 import mainEs from "../../i18n/es.json";
@@ -20,10 +25,9 @@ import mainRu from "../../i18n/ru.json";
 const LANGS = ["en", "ar", "es", "fr", "he", "pt", "ru"] as const;
 const MAIN: Record<string, Record<string, string>> = { en: mainEn, ar: mainAr, es: mainEs, fr: mainFr, he: mainHe, pt: mainPt, ru: mainRu };
 
-// cliCatalogues returns the cli files that exist, by language. A missing language is a failing test, not a failing file.
-const cliModules = import.meta.glob<{ default: Record<string, string> }>("../../i18n/cli/*.json", { eager: true });
-const cliCatalogues = (): Record<string, Record<string, string>> =>
-  Object.fromEntries(Object.entries(cliModules).map(([path, mod]) => [path.replace(/^.*\/([a-z]+)\.json$/, "$1"), mod.default]));
+const CLI: Record<string, Record<string, string>> = { en: cliEn, ar: cliAr, es: cliEs, fr: cliFr, he: cliHe, pt: cliPt, ru: cliRu };
+const cliCatalogues = (): Record<string, Record<string, string>> => CLI;
+
 
 const isMoved = (key: string) => key.startsWith("cliApprove.") || key.startsWith("devices.");
 

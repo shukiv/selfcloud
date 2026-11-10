@@ -33,7 +33,11 @@ describe("empty table titles", () => {
   });
 
   it.each(LANGS)("end with no full stop in %s", (lang) => {
-    const catalogue = JSON.parse(readFileSync(join(src, "i18n", `${lang}.json`), "utf8")) as Record<string, string>;
+    // The command-line strings (devices.empty) are a catalogue of their own (lib/cli/cliText.ts), read with the main one.
+    const catalogue = {
+      ...(JSON.parse(readFileSync(join(src, "i18n", `${lang}.json`), "utf8")) as Record<string, string>),
+      ...(JSON.parse(readFileSync(join(src, "i18n", "cli", `${lang}.json`), "utf8")) as Record<string, string>),
+    };
     const stopped = [...keys.keys()].filter((k) => {
       const v = catalogue[k];
       expect(v, `${k} in ${lang}`).toBeTypeOf("string");

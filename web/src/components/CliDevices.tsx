@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { LogOut } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Spin } from "antd";
 import Alert from "./Alert";
 import Confirm from "./Confirm";
 import Listing, { type ListColumn } from "./files/Listing";
 import { cliDevices, cliRevokeDevice, type CliDevice } from "../lib/cli";
+import { useCliText } from "../lib/cli/cliText";
 import { errorMessage, type Message } from "../lib/errors";
 import { useLang, useT } from "../lib/i18n";
 import { formatDate } from "../lib/files/format";
@@ -20,6 +22,7 @@ import { useStore } from "../lib/store";
 // ends the device. A device is added from the terminal, so the empty state offers no action. The server returns only the
 // person's own devices.
 export default function CliDevices() {
+  const cliReady = useCliText();
   const { t } = useT();
   const lang = useLang();
   const qc = useQueryClient();
@@ -61,6 +64,15 @@ export default function CliDevices() {
     { key: "signedIn", title: t("devices.signedIn"), render: (d) => formatDate(d.created_at, lang) },
     { key: "expires", title: t("devices.expires"), render: (d) => formatDate(d.expires_at, lang) },
   ];
+
+  // Its words are in their own catalogue, which loads with the page: until it is there, a spinner stands in for the list.
+  if (!cliReady) {
+    return (
+      <div style={{ textAlign: "center", padding: 24 }}>
+        <Spin />
+      </div>
+    );
+  }
 
   return (
     <div>

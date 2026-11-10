@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useState, type FormEvent } from "react";
-import { Button, Input, Typography } from "antd";
+import { Button, Input, Spin, Typography } from "antd";
 import { cliApprove, cliLookup, type CliRequest } from "../lib/cli";
+import { useCliText } from "../lib/cli/cliText";
 import { ApiError } from "../lib/api";
 import { errorMessage, type Message } from "../lib/errors";
 import { useT } from "../lib/i18n";
@@ -14,6 +15,7 @@ import Alert from "../components/Alert";
 // from, and when it started, and approves or leaves it. Nothing is approved on a wrong code, and a must-change user is
 // told to change the password first.
 export default function CliApprovePage() {
+  const cliReady = useCliText();
   const { t } = useT();
   const [code, setCode] = useState("");
   const [request, setRequest] = useState<CliRequest | null>(null);
@@ -66,6 +68,17 @@ export default function CliApprovePage() {
     setRequest(null);
     setCode("");
     setError(null);
+  }
+
+  // The page's words are in their own catalogue, which loads with the page: until it is there, a spinner stands in for them.
+  if (!cliReady) {
+    return (
+      <AuthLayout>
+        <div style={{ textAlign: "center", padding: 24 }}>
+          <Spin />
+        </div>
+      </AuthLayout>
+    );
   }
 
   return (
