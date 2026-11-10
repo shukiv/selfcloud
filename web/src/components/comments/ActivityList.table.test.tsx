@@ -53,7 +53,8 @@ describe("the activity is one table in its panel (tl5, decision 138)", () => {
     expect(when.getAttribute("aria-sort")).toBe("descending");
     const row = await screen.findByTestId("activity-entry");
     expect(row.getAttribute("role")).toBe("row");
-    expect(row.querySelector(".row-second")?.textContent).toContain("Ann commented on an item.");
+    // The name is set between bidi isolation marks, which the comments tests strip the same way.
+    expect((row.querySelector(".row-second")?.textContent ?? "").replace(/[⁦-⁩]/g, "")).toContain("Ann commented on an item.");
     expect(within(region).queryByRole("columnheader", { name: "Event" })).toBeNull();
   });
 

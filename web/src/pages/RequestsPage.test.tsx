@@ -7,6 +7,7 @@ import { createQueryClient } from "../lib/query";
 import { session, type Session } from "../lib/session";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
 import { pendingRequests } from "../lib/sharing/requestCount";
+import { desktopViewport } from "../test/viewport";
 import { get } from "../lib/store";
 import RequestsPage from "./RequestsPage";
 
@@ -57,11 +58,15 @@ function renderPage() {
   );
 }
 
+// The row icons (Approve, Deny) are drawn inline on a desktop; a phone has them in the ⋮ menu (tl5, decision 138).
+let undoView: () => void = () => undefined;
 beforeEach(() => {
+  undoView = desktopViewport();
   session.set(signedAs("olivia"));
 });
 
 afterEach(() => {
+  undoView();
   session.set(null);
   pendingRequests.set(null);
 });

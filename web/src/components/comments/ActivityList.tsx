@@ -9,12 +9,15 @@ import { listActivity, type ActivityEntry, type Page } from "../../lib/comments/
 import { activitySentence, formatWhen, nextPage } from "../../lib/comments/logic";
 import { useCT } from "../../lib/comments/i18n";
 import { queryKey } from "../../lib/query";
+import { useLoadMoreSentinel } from "../../lib/files/loadMoreSentinel";
+import Listing, { type ListColumn } from "../files/Listing";
 import { faultMessage } from "./faults";
-import EmptyState from "../EmptyState";
 
-// ActivityList is the history of one item, from the activity route (decision 50). The sentences are the audit ones of
-// the main catalogues, so a change reads the same here as on the audit page. A page can come back empty with a cursor;
-// followEmpty reads on through such pages, so the list never shows "nothing" while more is there.
+// ActivityList is the history of one item, from the activity route (decision 50), on one table (tl5, decision 138). The sentences
+// are the audit ones of the main catalogues, so a change reads the same here as on the audit page. The panel is narrow, so the
+// phone layout is always used: the event is the line under the time. A page can come back empty with a cursor; followEmpty reads
+// on through such pages, so the list never shows "nothing" while more is there. The entries are of this item, so a row opens
+// nothing.
 export default function ActivityList({ nodeID }: { nodeID: string }) {
   const { t } = useCT();
   const lang = useLang();
@@ -28,6 +31,26 @@ export default function ActivityList({ nodeID }: { nodeID: string }) {
   const items = (q.data?.pages ?? []).flatMap((p) => p.items);
   const youWord = t("comments.mine");
   const formerWord = t("comments.former");
+  const sentinel = useLoadMoreSentinel(q.hasNextPage && !q.isFetchNextPageError, q.isFetchingNextPage, () => void q.fetchNextPage());
+
+  const columns: ListColumn<ActivityEntry>[] = [
+    {
+      key: "when",
+      title: t("activity.colWhen"),
+      ariaSort: "descending",
+      render: (e) => (
+        <time dateTime={e.time} style={{ fontSize: 12, color: "var(--ant-color-text-secondary)" }}>
+          {formatWhen(e.time, lang)}
+        </time>
+      ),
+    },
+    {
+      key: "event",
+      title: t("activity.colEvent"),
+      secondary: true,
+      render: (e) => renderSentence(activitySentence(e, youWord, formerWord).sentence, (key, params) => translate(lang, key, params)),
+    },
+  ];
 
   return (
     <div style={{ display: "grid", gap: 4 }}>
@@ -55,25 +78,20 @@ export default function ActivityList({ nodeID }: { nodeID: string }) {
         <Alert type="warning" showIcon role="alert" message={t("comments.refreshFailed")} style={{ marginBlockEnd: 8 }} />
       )}
 
-      {q.isSuccess && items.length === 0 && !q.hasNextPage && (
-        <EmptyState size="compact" text={t("activity.empty")} />
+      {(items.length > 0 || (q.isSuccess && !q.hasNextPage)) && (
+        <Listing<ActivityEntry>
+          label={t("activity.tab")}
+          items={items}
+          rowLabel={(e) => formatWhen(e.time, lang)}
+          rowTestID={() => "activity-entry"}
+          columns={columns}
+          phone
+          stickyTop={0}
+          empty={{ title: t("activity.emptyTitle"), description: t("activity.empty") }}
+        />
       )}
 
-      {items.length > 0 && (
-        <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }} aria-label={t("activity.tab")}>
-          {items.map((e) => {
-            const text = activitySentence(e, youWord, formerWord);
-            return (
-              <li key={e.id} data-testid="activity-entry" style={{ display: "grid", gap: 2 }}>
-                <time dateTime={e.time} style={{ fontSize: 12, color: "var(--ant-color-text-secondary)" }}>
-                  {formatWhen(e.time, lang)}
-                </time>
-                <span>{renderSentence(text.sentence, (key, params) => translate(lang, key, params))}</span>
-              </li>
-            );
-          })}
-        </ol>
-      )}
+      {q.hasNextPage && <div ref={sentinel} aria-hidden="true" />}
 
       {q.hasNextPage && (
         <div>

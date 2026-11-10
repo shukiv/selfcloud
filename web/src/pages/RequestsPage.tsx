@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useState } from "react";
-import { Alert, Select, Skeleton, Space } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Select, Skeleton } from "antd";
 import { Check, X } from "lucide-react";
-import IconButton from "../components/IconButton";
+import Listing, { type ListAction, type ListColumn } from "../components/files/Listing";
+import DriveTextFailure from "../components/drive/DriveTextFailure";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../lib/i18n";
+import { useRequestsText } from "../lib/requests/text";
 import { useStore } from "../lib/store";
 import { brand } from "../lib/brand";
 import { ApiError } from "../lib/apiError";
@@ -17,15 +19,19 @@ import type { AccessRequest, Node, Role } from "../lib/files/types";
 import { approveAccessRequest, denyAccessRequest, listAccessRequests } from "../lib/sharing/api";
 import { grantableRoles, shareCap } from "../lib/sharing/roles";
 import { refreshPendingRequests } from "../lib/sharing/requestCount";
-import EmptyState from "../components/EmptyState";
+import { rank } from "../lib/files/roles";
 
-// Requests: the access requests the caller may decide, oldest first. Approving grants the role asked for, or a role
-// the caller chooses that is not above its own; denying closes the request. An item the caller cannot see is listed
-// without its name. A person with no name in the answer is shown as "A person", never by an ID.
+// Requests: the access requests the caller may decide, oldest first, on one table (tl5, decision 138). Approving grants the role
+// asked for, or a role the caller chooses that is not above its own; denying closes the request. An item the caller cannot see is
+// listed without its name. A person with no name in the answer is shown as "A person", never by an ID. Who and Asks sort on this
+// page, since the whole list is loaded; a press on a header sorts it, and a second press turns it over.
 interface Row {
+  id: string;
   req: AccessRequest;
   node: Node | null;
 }
+
+type SortKey = "who" | "asks";
 
 // capFor says the highest role the caller may grant on the item, from its role there. No item, no grant.
 function capFor(node: Node | null): Role[] {
@@ -36,7 +42,7 @@ function capFor(node: Node | null): Role[] {
 // readRows reads the requests the caller may decide, each with its item when the caller can see it.
 async function readRows(): Promise<Row[]> {
   const { items } = await listAccessRequests();
-  return Promise.all(items.map(async (req) => ({ req, node: await statOrNull(req.node_id) })));
+  return Promise.all(items.map(async (req) => ({ id: req.id, req, node: await statOrNull(req.node_id) })));
 }
 
 export default function RequestsPage() {
@@ -56,8 +62,30 @@ export default function RequestsPage() {
     enabled: signedIn,
     refetchOnMount: "always",
   });
-  const rows = q.data ?? [];
   const hasData = q.data !== undefined;
+  const rt = useRequestsText();
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const who = (req: AccessRequest): string => req.user_name || t("share.subject.person");
+  const rows = useMemo(() => {
+    const base = q.data ?? [];
+    if (sortKey === null) return base;
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: Row, b: Row) =>
+      sortKey === "asks" ? rank(a.req.role) - rank(b.req.role) : who(a.req).localeCompare(who(b.req), lang);
+    return [...base].sort((a, b) => dir * cmp(a, b));
+    // who reads the translator, which is in the page's language; the rows are sorted again when the language changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q.data, sortKey, sortDir, lang, t]);
+
+  // pressSort sorts by a header's column, and turns the sort over when the same header is pressed again.
+  const pressSort = (key: SortKey) => {
+    if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
 
   useEffect(() => {
     document.title = `${t("requests.title")} · ${brandName}`;
@@ -76,8 +104,6 @@ export default function RequestsPage() {
     }
     return fileErrorText(err, lang);
   };
-
-  const who = (req: AccessRequest): string => req.user_name || t("share.subject.person");
 
   // decide sends one decision, then refreshes the list and the count, unless the session has ended meanwhile.
   const decide = useMutation({
@@ -109,6 +135,61 @@ export default function RequestsPage() {
 
   const failure = q.isError ? fileErrorText(q.error, lang) : null;
 
+  // The columns: the name cell is Who; Item and Message are a second line on a phone; Grant is the role's Select (its own
+  // control, which stays on a phone); Approve and Deny are the row's icons, and the ⋮ menu on a phone.
+  const columns: ListColumn<Row>[] = [
+    {
+      key: "who",
+      title: t("requests.colWho"),
+      sortKey: "who",
+      render: (row) => <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}><bdi>{who(row.req)}</bdi></span>,
+    },
+    {
+      key: "item",
+      title: t("requests.colItem"),
+      secondary: true,
+      render: (row) =>
+        row.node ? (
+          <a href={`/n/${row.node.id}`}>
+            <bdi>{row.node.name}</bdi>
+          </a>
+        ) : (
+          <span style={{ color: "var(--ant-color-text-secondary)" }}>{t("requests.hiddenItem")}</span>
+        ),
+    },
+    {
+      key: "asks",
+      title: t("requests.colAsks"),
+      sortKey: "asks",
+      render: (row) => <span style={{ color: "var(--ant-color-text-secondary)" }}>{t("requests.asks", { role: t(`role.${row.req.role}`) })}</span>,
+    },
+    {
+      key: "message",
+      title: t("requests.colMessage"),
+      secondary: true,
+      render: (row) => (row.req.message ? <bdi style={{ overflowWrap: "anywhere" }}>{row.req.message}</bdi> : null),
+    },
+    {
+      key: "grant",
+      title: t("requests.colGrant"),
+      width: 170,
+      render: (row) => {
+        const roles = capFor(row.node);
+        if (roles.length === 0) return null;
+        return (
+          <Select
+            id={`grant-${row.req.id}`}
+            aria-label={t("requests.grant")}
+            value={grants[row.req.id] ?? row.req.role}
+            onChange={(r: Role) => setGrants((g) => ({ ...g, [row.req.id]: r }))}
+            options={roles.map((r) => ({ value: r, label: t(`role.${r}`) }))}
+            style={{ width: "100%", minWidth: 120 }}
+          />
+        );
+      },
+    },
+  ];
+
   return (
     <div>
       <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 16px" }}>{t("requests.title")}</h1>
@@ -121,66 +202,41 @@ export default function RequestsPage() {
 
       {!hasData && q.isPending && signedIn && <Skeleton active />}
 
-      {hasData && rows.length === 0 && failure === null && (
-        <EmptyState role="status" text={t("requests.empty")} />
-      )}
-
-      {rows.length > 0 && (
-        <ul className="requests" aria-label={t("requests.title")} style={{ display: "grid", gap: 12, margin: 0, padding: 0, listStyle: "none" }}>
-          {rows.map((row) => {
-            const roles = capFor(row.node);
-            const grant = grants[row.req.id] ?? row.req.role;
-            const name = who(row.req);
-            return (
-              <li
-                key={row.req.id}
-                className="request"
-                aria-label={name}
-                style={{ display: "grid", gap: 8, padding: 16, border: "1px solid var(--ant-color-border)", borderRadius: 4 }}
-              >
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "8px 12px" }}>
-                  <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
-                    <bdi>{name}</bdi>
-                  </span>
-                  <span style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
-                    {t("requests.asks", { role: t(`role.${row.req.role}`) })}
-                  </span>
-                </div>
-                <p style={{ margin: 0, overflowWrap: "anywhere" }}>
-                  {row.node ? (
-                    <a href={`/n/${row.node.id}`}>
-                      <bdi>{row.node.name}</bdi>
-                    </a>
-                  ) : (
-                    <span style={{ color: "var(--ant-color-text-secondary)" }}>{t("requests.hiddenItem")}</span>
-                  )}
-                </p>
-                {row.req.message && (
-                  <blockquote style={{ margin: 0, padding: 0, color: "var(--ant-color-text-secondary)" }}>
-                    <bdi>{row.req.message}</bdi>
-                  </blockquote>
-                )}
-                <Space wrap align="center">
-                  {roles.length > 0 && (
-                    <>
-                      <label htmlFor={`grant-${row.req.id}`}>{t("requests.grant")}</label>
-                      <Select
-                        id={`grant-${row.req.id}`}
-                        aria-label={t("requests.grant")}
-                        value={grant}
-                        onChange={(r: Role) => setGrants((g) => ({ ...g, [row.req.id]: r }))}
-                        options={roles.map((r) => ({ value: r, label: t(`role.${r}`) }))}
-                        style={{ minWidth: 160 }}
-                      />
-                    </>
-                  )}
-                  <IconButton label={`${t("requests.approve")}: ${name}`} tip={t("requests.approve")} disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: true })} icon={<Check size={18} aria-hidden="true" focusable="false" />} />
-                  <IconButton label={`${t("requests.deny")}: ${name}`} tip={t("requests.deny")} disabled={decide.isPending} onClick={() => decide.mutate({ row, approve: false })} icon={<X size={18} aria-hidden="true" focusable="false" />} />
-                </Space>
-              </li>
-            );
-          })}
-        </ul>
+      {rt.failed ? (
+        <DriveTextFailure retry={rt.retry} />
+      ) : !rt.ready ? null : (
+        hasData && (
+          <div className="requests">
+            <Listing<Row>
+              label={t("requests.title")}
+              items={rows}
+              rowLabel={(row) => who(row.req)}
+              rowClassName={() => "request"}
+              sort={{ key: sortKey ?? "", dir: sortDir, onSort: (k) => pressSort(k as SortKey) }}
+              columns={columns}
+              actions={(row): ListAction[] => {
+                const name = who(row.req);
+                return [
+                  {
+                    key: "approve",
+                    label: `${t("requests.approve")}: ${name}`,
+                    icon: <Check size={18} aria-hidden="true" focusable="false" />,
+                    disabled: decide.isPending,
+                    run: () => decide.mutate({ row, approve: true }),
+                  },
+                  {
+                    key: "deny",
+                    label: `${t("requests.deny")}: ${name}`,
+                    icon: <X size={18} aria-hidden="true" focusable="false" />,
+                    disabled: decide.isPending,
+                    run: () => decide.mutate({ row, approve: false }),
+                  },
+                ];
+              }}
+              empty={{ title: t("requests.emptyTitle"), description: t("requests.empty") }}
+            />
+          </div>
+        )
       )}
     </div>
   );
