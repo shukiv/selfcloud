@@ -54,6 +54,13 @@ interface Options {
   read?: number;
   // hold makes the content GET of the first file wait for the gate while on, so a test finishes an answer after the page moved.
   hold?: { on: boolean; gate: Promise<void> };
+  // noETag and weakETag change the content answer's ETag header (decision 135: a proxy dropped it, or made it weak). The page's
+  // version does not come from that header, so the editor opens and saves the same way.
+  noETag?: boolean;
+  weakETag?: boolean;
+  // racingReads makes the first N content GETs that carry an If-Match find the file changed (another client's change between
+  // the stat and the read), so the server refuses them with 412, as it does for a stale If-Match.
+  racingReads?: number;
 }
 
 interface Stored {
@@ -76,6 +83,7 @@ function server(o: Options = {}) {
   const calls: Array<{ method: string; url: string; init: RequestInit }> = [];
   const answers: number[] = [];
   let seq = 0;
+  let racing = o.racingReads ?? 0;
   // The folder's root is nod_root (no parent); the file sits in it, or, when nested, in a folder named docs under it.
   const files: Record<string, Stored> = {
     nod_root: { id: "nod_root", name: "", kind: "dir", parent: null, etag: '"root"', body: new Uint8Array(0), mime: "", role: "editor", noDownload: false },
@@ -151,15 +159,26 @@ function server(o: Options = {}) {
     const m = /^\/api\/v1\/nodes\/([^/?]+)(\/content)?(\?.*)?$/.exec(url);
     const file = m ? files[m[1]!] : undefined;
     if (m === null || file === undefined) return new Response(null, { status: 404 });
-    // HEAD of the content gives the current ETag and records no view (design 4.4).
-    if (method === "HEAD" && m[2] !== undefined) return new Response(null, { status: 200, headers: { ETag: file.etag } });
     if (method === "GET" && m[2] === undefined) return Response.json(nodeJSON(file));
     if (method === "GET") {
       if (file.id === NOD && o.hold?.on) await o.hold.gate;
       if (file.id === NOD && o.read !== undefined) {
         return Response.json({ error: { code: "unauthenticated", details: {} } }, { status: o.read });
       }
-      return new Response(file.body as unknown as BodyInit, { status: 200, headers: { ETag: file.etag } });
+      // A read with If-Match is refused unless the file still has that version, as the server does (download.go's preconditions).
+      // racingReads changes the file first, so the read finds it changed.
+      const ifMatch = (init.headers as Record<string, string> | undefined)?.["If-Match"];
+      if (ifMatch !== undefined && file.id === NOD && racing > 0) {
+        racing--;
+        file.etag = `"raced-${++seq}"`;
+        file.body = new TextEncoder().encode("raced\n");
+      }
+      if (ifMatch !== undefined && ifMatch !== file.etag) {
+        return Response.json({ error: { code: "precondition_failed", details: {} } }, { status: 412 });
+      }
+      const headers: Record<string, string> = {};
+      if (!o.noETag) headers.ETag = o.weakETag ? `W/${file.etag}` : file.etag;
+      return new Response(file.body as unknown as BodyInit, { status: 200, headers });
     }
     if (method === "PUT" && m[2] !== undefined) {
       const headers = (init.headers ?? {}) as Record<string, string>;
@@ -280,7 +299,8 @@ describe("the editor page", () => {
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
     const get = s.calls.find((c) => c.method === "GET" && c.url.includes("/content"));
-    expect(get?.init.headers).toBeUndefined();
+    expect(get?.init.headers).toEqual({ "If-Match": ETAG });
+    expect(get?.url).not.toContain("Range");
     expect(document.activeElement && content().contains(document.activeElement)).toBe(true);
   });
 
@@ -665,6 +685,105 @@ function refuseStorage() {
 }
 afterEach(() => vi.restoreAllMocks());
 
+// statCount counts the reads of a node's stat (not its content): the open reads one, and each conflict check reads one more.
+function statCount(s: ReturnType<typeof server>) {
+  return s.calls.filter((c) => c.method === "GET" && /^\/api\/v1\/nodes\/[^/?]+$/.test(c.url)).length;
+}
+
+describe("the version comes from the node's answer, not from a header (decision 135)", () => {
+  it("opens a file whose content answer has no ETag header, and saves it with the etag the stat gave", async () => {
+    const s = server({ noETag: true });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    await waitFor(() => expect(s.puts()).toHaveLength(1));
+    expect(s.puts()[0]!.init.headers).toMatchObject({ "If-Match": ETAG });
+    await waitFor(() => expect(s.answers).toEqual([200]));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("opens a file whose content answer has a weak ETag the same way, and saves with the stat's strong etag", async () => {
+    const s = server({ weakETag: true });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    await waitFor(() => expect(s.puts()).toHaveLength(1));
+    expect(s.puts()[0]!.init.headers).toMatchObject({ "If-Match": ETAG });
+    await waitFor(() => expect(s.answers).toEqual([200]));
+  });
+
+  it("reads the content with If-Match set to the etag of the stat, and no other header", async () => {
+    const s = server({ noETag: true });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    const reads = s.calls.filter((c) => c.method === "GET" && c.url.includes("/content"));
+    expect(reads).toHaveLength(1);
+    expect(reads[0]!.init.headers).toEqual({ "If-Match": ETAG });
+    expect(statCount(s)).toBe(1);
+  });
+
+  it("a read refused with 412 (the file changed after the stat) stats the file again and reads once more, then opens it", async () => {
+    const s = server({ racingReads: 1 });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("raced"));
+    const reads = s.calls.filter((c) => c.method === "GET" && c.url.includes("/content"));
+    expect(reads).toHaveLength(2);
+    expect(reads[0]!.init.headers).toEqual({ "If-Match": ETAG });
+    expect(statCount(s)).toBe(2);
+    const raced = s.files[NOD]!.etag;
+    expect(reads[1]!.init.headers).toEqual({ "If-Match": raced });
+    // The save that follows names the version the second read gave.
+    type(0, "x");
+    ctrlS();
+    await waitFor(() => expect(s.puts()).toHaveLength(1));
+    expect(s.puts()[0]!.init.headers).toMatchObject({ "If-Match": raced });
+    await waitFor(() => expect(s.answers).toEqual([200]));
+  });
+
+  it("a read refused with 412 twice shows the page's failure after two reads and two stats, and opens no editor", async () => {
+    const s = server({ racingReads: 2 });
+    render();
+    expect(await screen.findByText("The editor could not be opened. Try again.")).toBeTruthy();
+    expect(s.calls.filter((c) => c.method === "GET" && c.url.includes("/content"))).toHaveLength(2);
+    expect(statCount(s)).toBe(2);
+    expect(document.querySelector(".cm-content")).toBeNull();
+    expect(s.puts()).toHaveLength(0);
+  });
+
+  it("the conflict check reads the stat's etag, not a HEAD, and the dialog's Overwrite saves with it", async () => {
+    const s = server({ noETag: true });
+    const d = await openConflict(s);
+    expect(s.calls.some((c) => c.method === "HEAD")).toBe(false);
+    expect(statCount(s)).toBe(2);
+    const touched = s.files[NOD]!.etag;
+    fireEvent.click(within(d).getByRole("button", { name: OVERWRITE }));
+    await waitFor(() => expect(dialogOpen()).toBe(false));
+    expect(s.puts()[1]!.init.headers).toMatchObject({ "If-Match": touched });
+  });
+
+  it("a save's answer whose ETag header differs from its body's etag: the next save sends the body's etag", async () => {
+    const s = server({
+      put: () =>
+        new Response(JSON.stringify({ id: NOD, etag: '"body-etag"', mime_type: "application/json" }), {
+          status: 200,
+          headers: { ETag: '"header-etag"' },
+        }),
+    });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    await waitFor(() => expect(s.puts()).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
+    type(0, "y");
+    ctrlS();
+    await waitFor(() => expect(s.puts()).toHaveLength(2));
+    expect(s.puts()[1]!.init.headers).toMatchObject({ "If-Match": '"body-etag"' });
+  });
+});
+
 describe("the sign-in from the page (review re-check 1, HIGH-1)", () => {
   it("Sign in with unsaved text asks first; after Leave the sign-in page shows and the session has ended", async () => {
     refuseStorage();
@@ -712,12 +831,14 @@ describe("the sign-in from the page (review re-check 1, HIGH-1)", () => {
 });
 
 describe("the editor's conflict dialog, copies, guards and lint (decision 130)", () => {
-  it("a save the server refuses with 412 opens the dialog with its four choices, and reads the file's ETag by HEAD", async () => {
+  it("a save the server refuses with 412 opens the dialog with its four choices, and reads the file's ETag from its stat", async () => {
     const s = server();
     const d = await openConflict(s);
     for (const name of [RELOAD, COPY, OVERWRITE, KEEP]) expect(within(d).getByRole("button", { name })).toBeTruthy();
     expect(content().textContent).toContain("x{}");
-    expect(s.calls.some((c) => c.method === "HEAD" && c.url === `/api/v1/nodes/${NOD}/content`)).toBe(true);
+    // The check is the node's stat (decision 135): one more stat after the open's, and no HEAD of anything.
+    expect(statCount(s)).toBe(2);
+    expect(s.calls.some((c) => c.method === "HEAD")).toBe(false);
     // The check records no view: the only GET of the content is the one that opened the page.
     expect(s.calls.filter((c) => c.method === "GET" && c.url.includes("/content"))).toHaveLength(1);
   });
@@ -829,7 +950,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     });
     const d = await openConflict(s);
     fireEvent.click(within(d).getByRole("button", { name: OVERWRITE }));
-    await waitFor(() => expect(s.calls.filter((c) => c.method === "HEAD")).toHaveLength(2));
+    await waitFor(() => expect(statCount(s)).toBe(3));
     const again = await screen.findByRole("dialog");
     fireEvent.click(within(again).getByRole("button", { name: OVERWRITE }));
     await waitFor(() => expect(dialogOpen()).toBe(false));

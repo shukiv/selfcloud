@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "../session";
 import type { Node } from "../files/types";
-import { copyName, headEtag, keepCopy } from "./conflict";
+import { copyName, currentEtag, keepCopy } from "./conflict";
 
 // ROOT is the folder's root node: a directory with no parent. A file in the root names it as its parent_id.
 const ROOT = { id: "nod_root", folder_id: "fld_b", parent_id: null, name: "", kind: "dir", etag: '"root"' };
@@ -45,17 +45,32 @@ describe("copyName", () => {
   });
 });
 
-describe("headEtag", () => {
-  it("reads the current ETag with HEAD, and makes no GET", async () => {
-    const f = fake(() => new Response(null, { status: 200, headers: { ETag: '"e1"' } }));
-    expect(await headEtag("nod_a1")).toEqual({ ok: true, etag: '"e1"' });
+describe("currentEtag (decision 135)", () => {
+  // The check reads the node's stat, whose JSON etag is the version: no HEAD, and no header of the answer is read.
+  const statOf = (etag: string | undefined) => ({ ...file, etag }) as unknown as Node;
+
+  it("reads the current ETag from the node's stat, and sends no HEAD and no content request", async () => {
+    const f = vi.fn(async () => Response.json(statOf('"e1"')));
+    vi.stubGlobal("fetch", f);
+    expect(await currentEtag("nod_a1")).toEqual({ ok: true, etag: '"e1"' });
     expect(f).toHaveBeenCalledTimes(1);
-    expect(f.mock.calls[0]![1]).toMatchObject({ method: "HEAD" });
+    expect(f.mock.calls[0]![0]).toBe("/api/v1/nodes/nod_a1");
+    expect(f.mock.calls.some((c) => c[1]?.method === "HEAD")).toBe(false);
   });
 
-  it("maps a refusal to the failure it means", async () => {
-    fake(() => new Response(null, { status: 403 }));
-    expect(await headEtag("nod_a1")).toEqual({ ok: false, why: "forbidden" });
+  it("takes the etag from the answer's body, not from a header of the answer", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(statOf('"body"')), { status: 200, headers: { ETag: '"header"' } })));
+    expect(await currentEtag("nod_a1")).toEqual({ ok: true, etag: '"body"' });
+  });
+
+  it("fails a stat that carries no etag", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(statOf(undefined))));
+    expect(await currentEtag("nod_a1")).toEqual({ ok: false, why: "failed" });
+  });
+
+  it("maps a refusal of the stat to the failure it means", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 403 })));
+    expect(await currentEtag("nod_a1")).toEqual({ ok: false, why: "forbidden" });
   });
 });
 

@@ -91,17 +91,38 @@ describe("saveText", () => {
   });
 });
 
-describe("readWhole", () => {
-  it("reads the whole file with no Range header and keeps its ETag", async () => {
-    const f = vi.fn(async () => new Response("hello", { status: 200, headers: { ETag: OLD_ETAG } }));
+describe("readWhole (decision 135)", () => {
+  // The version is the node answer's etag, which the caller passes in; the content answer's ETag header is never read.
+  it("reads the whole file with no Range header, and If-Match set to the etag it is given", async () => {
+    const f = vi.fn(async () => new Response("hello", { status: 200 }));
     vi.stubGlobal("fetch", f);
-    const got = await readWhole(NODE_ID);
-    expect(got.etag).toBe(OLD_ETAG);
-    expect(new TextDecoder().decode(got.bytes)).toBe("hello");
+    const got = await readWhole(NODE_ID, OLD_ETAG);
+    expect(new TextDecoder().decode(got)).toBe("hello");
+    expect(f).toHaveBeenCalledTimes(1);
     const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`/api/v1/nodes/${NODE_ID}/content?disposition=inline`);
     expect(init.method ?? "GET").toBe("GET");
+    expect(init.headers as Record<string, string>).toMatchObject({ "If-Match": OLD_ETAG });
     expect((init.headers as Record<string, string> | undefined)?.Range).toBeUndefined();
+  });
+
+  it("opens an answer with no ETag header, since the version is not read from it", async () => {
+    const { calls } = stubFetch(() => ({ status: 200 }));
+    expect(new TextDecoder().decode(await readWhole(NODE_ID, OLD_ETAG))).toBe("");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("opens an answer whose ETag header is weak, and one that differs from the etag given", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("weak", { status: 200, headers: { ETag: `W/${OLD_ETAG}` } })));
+    expect(new TextDecoder().decode(await readWhole(NODE_ID, OLD_ETAG))).toBe("weak");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("other", { status: 200, headers: { ETag: '"other"' } })));
+    expect(new TextDecoder().decode(await readWhole(NODE_ID, OLD_ETAG))).toBe("other");
+  });
+
+  it("refuses an etag that is not a quoted tag before sending, as saveText does", async () => {
+    const { calls } = stubFetch(() => ({ status: 200 }));
+    await expect(readWhole(NODE_ID, "bare")).rejects.toMatchObject({ status: 500 });
+    expect(calls).toHaveLength(0);
   });
 
   it("refuses a file over 2 MiB, and stops reading it at the limit", async () => {
@@ -112,19 +133,19 @@ describe("readWhole", () => {
         c.enqueue(new Uint8Array(64 * 1024));
       },
     });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(stream, { status: 200, headers: { ETag: OLD_ETAG } })));
-    await expect(readWhole(NODE_ID)).rejects.toMatchObject({ status: 413 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(stream, { status: 200 })));
+    await expect(readWhole(NODE_ID, OLD_ETAG)).rejects.toMatchObject({ status: 413 });
     expect(pulled).toBeLessThan(64);
   });
 
   it("gives the status of a refusal, so the page shows its own message", async () => {
     stubFetch(() => fail(403, "download_restricted"));
-    await expect(readWhole(NODE_ID)).rejects.toMatchObject({ status: 403 });
+    await expect(readWhole(NODE_ID, OLD_ETAG)).rejects.toMatchObject({ status: 403 });
   });
 
-  it("refuses an answer with no ETag: a save could not be checked against it", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("x", { status: 200 })));
-    await expect(readWhole(NODE_ID)).rejects.toMatchObject({ status: 500 });
+  it("gives a 412 as a 412: the file changed since its node was read, and the page reads it again", async () => {
+    stubFetch(() => fail(412, "precondition_failed"));
+    await expect(readWhole(NODE_ID, OLD_ETAG)).rejects.toMatchObject({ status: 412 });
   });
 });
 
