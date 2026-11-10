@@ -661,10 +661,11 @@ func (s *Server) importReserve(ctx context.Context, impID string, p *auth.Princi
 	// The flight lock is taken before the write and released after it, as a zip start takes it, so the piece bytes in
 	// flight are read under the lock and the lock is never taken inside a write.
 	s.oneFlight.mu.Lock()
+	// The deferred release also runs when the reservation panics, so a panic does not leave the lock held.
+	defer s.oneFlight.mu.Unlock()
 	// before-reserve is a fault point inside the lock and before the write. A test makes a competing reservation here,
 	// so the check inside the write is the one that must see it.
 	if err := s.importFaultAt("before-reserve"); err != nil {
-		s.oneFlight.mu.Unlock()
 		return false, err
 	}
 	err := s.store.Write(ctx, func(tx *store.Tx) error {
@@ -715,7 +716,6 @@ func (s *Server) importReserve(ctx context.Context, impID string, p *auth.Princi
 		im.ReservedBytes = e.Size
 		return tx.SaveImport(ctx, im, store.Now())
 	})
-	s.oneFlight.mu.Unlock()
 	if err == nil {
 		return skip, nil
 	}

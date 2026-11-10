@@ -472,26 +472,14 @@ func (s *Server) zipGuard(ctx context.Context, z *store.Zip, p *auth.Principal) 
 
 // startZip reads the snapshot, checks the disk budget, and opens the partial file. Nothing is written before the
 // snapshot is complete and within its limits.
-func (s *Server) startZip(ctx context.Context, z *store.Zip, p *auth.Principal) (*zipWork, error) {
-	plan, skipped, total, err := s.planZip(ctx, z, p)
-	if err != nil {
-		return nil, err
-	}
-	now := store.Now()
-	fits := func(ready, reserved int64) bool { return ready+reserved+total <= int64(s.cfg.Zip.MaxDisk) }
-	if ready, reserved, err := s.store.ZipDiskUse(ctx); err != nil {
-		return nil, err
-	} else if !fits(ready, reserved) {
-		// Expired zips go first. Only the sweep's own pass removes them, so the same rule runs here.
-		if _, err := s.zipFiles.Sweep(ctx, now, 1000); err != nil {
-			s.log.Error("zip sweep before a zip", "error", err)
-		}
-	}
-	s.atWrite()
-	// The pieces still arriving hold the disk in memory. Their lock is taken before the write, never inside it,
-	// so the bytes read here are the ones the pieces hold while the zip reserves.
+// startZipWrite makes the zip's start write. The pieces still arriving hold the disk in memory. Their lock is taken
+// before the write, never inside it, so the bytes read here are the ones the pieces hold while the zip reserves. The
+// lock is released by a deferred call, so a panic in the write does not leave it held.
+func (s *Server) startZipWrite(ctx context.Context, z *store.Zip, total int64, entries, skipped int, now time.Time) error {
 	s.oneFlight.mu.Lock()
-	err = s.store.Write(ctx, func(tx *store.Tx) error {
+	defer s.oneFlight.mu.Unlock()
+	fits := func(ready, reserved int64) bool { return ready+reserved+total <= int64(s.cfg.Zip.MaxDisk) }
+	return s.store.Write(ctx, func(tx *store.Tx) error {
 		// A restarted run counts its own earlier reservation nowhere (decision 120): it is released first, inside this
 		// write, and the write rolls back if it is refused.
 		if err := tx.ClearZipReservation(ctx, z.ID); err != nil {
@@ -516,9 +504,29 @@ func (s *Server) startZip(ctx context.Context, z *store.Zip, p *auth.Principal) 
 		if err := s.checkDiskTx(ctx, tx, z.AccountID, total, s.oneFlight.total); err != nil {
 			return err
 		}
-		return tx.SetZipSnapshot(ctx, z.ID, total, len(plan), skipped, now)
+		return tx.SetZipSnapshot(ctx, z.ID, total, entries, skipped, now)
 	})
-	s.oneFlight.mu.Unlock()
+}
+
+func (s *Server) startZip(ctx context.Context, z *store.Zip, p *auth.Principal) (*zipWork, error) {
+	plan, skipped, total, err := s.planZip(ctx, z, p)
+	if err != nil {
+		return nil, err
+	}
+	now := store.Now()
+	fits := func(ready, reserved int64) bool { return ready+reserved+total <= int64(s.cfg.Zip.MaxDisk) }
+	if ready, reserved, err := s.store.ZipDiskUse(ctx); err != nil {
+		return nil, err
+	} else if !fits(ready, reserved) {
+		// Expired zips go first. Only the sweep's own pass removes them, so the same rule runs here.
+		if _, err := s.zipFiles.Sweep(ctx, now, 1000); err != nil {
+			s.log.Error("zip sweep before a zip", "error", err)
+		}
+	}
+	s.atWrite()
+	// The pieces still arriving hold the disk in memory. Their lock is taken before the write, never inside it,
+	// so the bytes read here are the ones the pieces hold while the zip reserves.
+	err = s.startZipWrite(ctx, z, total, len(plan), skipped, now)
 	if err != nil {
 		return nil, err
 	}
