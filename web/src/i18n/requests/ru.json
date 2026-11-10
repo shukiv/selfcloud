@@ -1,0 +1,8 @@
+{
+  "requests.colWho": "Кто",
+  "requests.colItem": "Объект",
+  "requests.colAsks": "Запрос",
+  "requests.colMessage": "Сообщение",
+  "requests.colGrant": "Выдать",
+  "requests.emptyTitle": "Нечего решать"
+}

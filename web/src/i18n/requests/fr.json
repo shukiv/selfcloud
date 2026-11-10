@@ -1,0 +1,8 @@
+{
+  "requests.colWho": "Qui",
+  "requests.colItem": "Élément",
+  "requests.colAsks": "Demande",
+  "requests.colMessage": "Message",
+  "requests.colGrant": "Accorder",
+  "requests.emptyTitle": "Rien à décider"
+}

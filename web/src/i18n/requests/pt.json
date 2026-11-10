@@ -1,0 +1,8 @@
+{
+  "requests.colWho": "Quem",
+  "requests.colItem": "Item",
+  "requests.colAsks": "Pede",
+  "requests.colMessage": "Mensagem",
+  "requests.colGrant": "Conceder",
+  "requests.emptyTitle": "Nada a decidir"
+}

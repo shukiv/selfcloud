@@ -1,5 +1,9 @@
 {
   "notifications.bell": "Уведомления",
+  "notifications.colStatus": "Статус",
+  "notifications.colMessage": "Сообщение",
+  "notifications.colWhen": "Когда",
+  "notifications.emptyTitle": "Пока пусто",
   "notifications.title": "Уведомления",
   "notifications.unreadCount": "Непрочитанных: {n}",
   "notifications.noneUnread": "Нет непрочитанных уведомлений",

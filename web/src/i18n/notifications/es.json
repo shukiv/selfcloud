@@ -1,5 +1,9 @@
 {
   "notifications.bell": "Notificaciones",
+  "notifications.colStatus": "Estado",
+  "notifications.colMessage": "Mensaje",
+  "notifications.colWhen": "Cuándo",
+  "notifications.emptyTitle": "Nada por ahora",
   "notifications.title": "Notificaciones",
   "notifications.unreadCount": "{n} sin leer",
   "notifications.noneUnread": "No hay notificaciones sin leer",

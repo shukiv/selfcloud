@@ -1,5 +1,9 @@
 {
   "notifications.bell": "الإشعارات",
+  "notifications.colStatus": "الحالة",
+  "notifications.colMessage": "الرسالة",
+  "notifications.colWhen": "متى",
+  "notifications.emptyTitle": "لا شيء هنا بعد",
   "notifications.title": "الإشعارات",
   "notifications.unreadCount": "{n} غير مقروءة",
   "notifications.noneUnread": "لا توجد إشعارات غير مقروءة",

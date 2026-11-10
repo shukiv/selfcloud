@@ -1,5 +1,9 @@
 {
   "notifications.bell": "התראות",
+  "notifications.colStatus": "סטטוס",
+  "notifications.colMessage": "הודעה",
+  "notifications.colWhen": "מתי",
+  "notifications.emptyTitle": "אין כאן כלום עדיין",
   "notifications.title": "התראות",
   "notifications.unreadCount": "{n} שלא נקראו",
   "notifications.noneUnread": "אין התראות שלא נקראו",

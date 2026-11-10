@@ -1,0 +1,8 @@
+{
+  "requests.colWho": "Who",
+  "requests.colItem": "Item",
+  "requests.colAsks": "Asks",
+  "requests.colMessage": "Message",
+  "requests.colGrant": "Grant",
+  "requests.emptyTitle": "Nothing to decide"
+}
