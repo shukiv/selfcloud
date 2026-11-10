@@ -30,6 +30,11 @@ const FAILURE_BY_STATUS: Readonly<Record<number, SaveFailure>> = {
   413: "tooLarge",
 };
 
+// failureOfStatus names a refused answer's failure (design 4.3): the table above, and "failed" for any other status.
+export function failureOfStatus(status: number): SaveFailure {
+  return FAILURE_BY_STATUS[status] ?? "failed";
+}
+
 // quoted says a value is a strong ETag as the server writes it: a quoted string. The server refuses any other If-Match, so the
 // page does not send one.
 function quoted(etag: string): boolean {

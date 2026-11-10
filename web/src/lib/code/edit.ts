@@ -54,6 +54,13 @@ export function lineBreakOf(text: string): "\r\n" | "\n" | "\r" {
   return text[i + 1] === "\n" ? "\r\n" : "\r";
 }
 
+// mixedBreaks says a file uses more than one style of line break (design 4.8). A save writes the first style on every line, so
+// the file's other breaks change, and the page says so.
+export function mixedBreaks(text: string): boolean {
+  const styles = [/\r\n/.test(text), /(^|[^\r])\n/.test(text), /\r(?!\n)/.test(text)];
+  return styles.filter(Boolean).length > 1;
+}
+
 // normalizeText is the text as the editor holds it: every line break is LF, which is how CodeMirror keeps a document.
 export function normalizeText(text: string): string {
   return text.replace(/\r\n?/g, "\n");
