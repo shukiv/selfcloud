@@ -108,18 +108,25 @@ func renameHint(verb string) string {
 	return ""
 }
 
-// destination is the body that names a directory: its node id, or a path with the folder it is in. A path is checked
-// with the API's name rules; a folder goes only with a path.
+// destination is the body that names a directory: its node id, or a path, each with the folder it is in when --folder
+// gives one. The API takes a node id only with the folder that holds the node (resolveDestination), so the folder is
+// sent with it; without --folder the source's folder is used, as the API does. A path is checked with the API's name
+// rules.
 func destination(dest, folder string) (map[string]any, error) {
 	if !strings.HasPrefix(dest, "/") {
-		if folder != "" {
-			return nil, exitcode.Usagef("--folder goes with a path destination; a node id names its own folder")
-		}
 		parentID, err := nodeArg(dest)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"parent": parentID}, nil
+		body := map[string]any{"parent": parentID}
+		if folder != "" {
+			fid, err := folderArg(folder)
+			if err != nil {
+				return nil, err
+			}
+			body["folder"] = fid
+		}
+		return body, nil
 	}
 	p, err := remotePath(dest)
 	if err != nil {
