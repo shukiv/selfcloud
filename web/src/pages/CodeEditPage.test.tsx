@@ -264,6 +264,19 @@ describe("the editor page", () => {
     expect(s.puts()).toHaveLength(0);
   });
 
+  // A navigation to the same address (a refetch, a re-render of the route, a link to the page it is on) must not open the
+  // file again: that would read the server's text over the person's typed text. The page's open effect is keyed by the address.
+  it("a navigation to the same address keeps the typed text and does not read the file again", async () => {
+    const s = server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    act(() => navigateTo!(`/edit/${NOD}?mode=edit`));
+    await pause();
+    expect(content().textContent).toContain("x{}");
+    expect(s.calls.filter((c) => c.method === "GET" && c.url.includes("/content"))).toHaveLength(1);
+  });
+
   it("a second Ctrl+S while the first save is in flight sends no second PUT", async () => {
     const hold = held();
     const s = server({ put: hold.put });
