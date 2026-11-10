@@ -40,7 +40,7 @@ export default function DriveName({ node, children }: { node: Node; children?: R
           <a
             href={to}
             onClick={(e) => officeLinkClick(e, node, editorOn, get(routerLocation).path + get(routerLocation).search, go)}
-            style={{ fontWeight: 600, color: token.colorPrimary }}
+            style={{ fontWeight: 600, color: token.colorLink }}
           >
             {name}
           </a>
