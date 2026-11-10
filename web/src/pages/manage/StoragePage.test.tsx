@@ -87,7 +87,7 @@ describe("manage storage", () => {
     const largest = screen.getByRole("region", { name: "Largest files in team spaces" });
     expect(within(largest).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Team space", "Size", "Modified"]);
     expect(largest.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
-    await waitFor(() => expect(largest.querySelector("tbody .empty-desc")?.textContent).toBe("The biggest files in the drive show here, with their size."));
+    await waitFor(() => expect(largest.querySelector("tbody .empty-desc")?.textContent).toBe("The largest files in this account show here, with their sizes."));
   });
 
   // Round 2 (H1, design section 4): at 375 px each storage table shows its name column, and the other columns join its second line.

@@ -109,7 +109,7 @@ describe("the largest files are one table (decision 122)", () => {
     expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Size", "Old versions", "Modified"]);
     expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
     // Round 2 (M3): the empty table says what will show here (the admin catalogue, loaded on demand).
-    await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("The biggest files in the drive show here, with their size."));
+    await waitFor(() => expect(region.querySelector("tbody .empty-desc")?.textContent).toBe("The largest files in this account show here, with their sizes."));
   });
 
   it("before the first load answers, no empty message shows", () => {
