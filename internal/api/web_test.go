@@ -167,6 +167,13 @@ func TestInfoBrand(t *testing.T) {
 		}
 	}
 
+	// A name of its own and no logo file: the artwork, with the installation's name (decision 126).
+	s = newTestServer(t, func(c *config.Config) { c.UI.Brand.Name = "Acme Drive" })
+	body = serveRaw(t, s, http.MethodGet, "/api/v1/info").Body.String()
+	if !strings.Contains(body, `"brand":{"name":"Acme Drive","accent":"#053D8E","logo_url":null,"artwork":true}`) {
+		t.Errorf("info = %s", body)
+	}
+
 	logo := filepath.Join(t.TempDir(), "mark.png")
 	if err := os.WriteFile(logo, append([]byte("\x89PNG\r\n\x1a\n"), 0, 0, 0, 0), 0o600); err != nil {
 		t.Fatal(err)
@@ -207,11 +214,16 @@ func TestLogoRoute(t *testing.T) {
 	}
 }
 
-// TestLogoRouteWithoutLogo: no logo file and a name of the installation's own, so the route is the JSON 404.
-func TestLogoRouteWithoutLogo(t *testing.T) {
+// TestLogoRouteCustomNameShowsArtwork: an installation with a name of its own and no logo file shows the SelfCloud artwork too
+// (decision 126), so the logo route answers the artwork, not the JSON 404.
+func TestLogoRouteCustomNameShowsArtwork(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, func(c *config.Config) { c.UI.Brand.Name = "Acme Drive" })
-	wantError(t, serveRaw(t, s, http.MethodGet, "/brand/logo"), http.StatusNotFound, "not_found")
+	rec := serveRaw(t, s, http.MethodGet, "/brand/logo")
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/svg+xml" ||
+		!strings.Contains(rec.Body.String(), `aria-label="SelfCloud"`) {
+		t.Errorf("%d %v", rec.Code, rec.Header())
+	}
 }
 
 // TestLogoRouteArtwork: the default brand (name SelfCloud, no logo file) has the SelfCloud artwork at the logo route, with the
@@ -228,7 +240,8 @@ func TestLogoRouteArtwork(t *testing.T) {
 	}
 }
 
-// TestConfigArtwork: the artwork shows only for the default name with no logo file (decision 109, Q4).
+// TestConfigArtwork: the artwork shows whenever the installation has no logo file, whatever its name (decision 126, which
+// changes decision 109's Q4).
 func TestConfigArtwork(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -237,7 +250,8 @@ func TestConfigArtwork(t *testing.T) {
 	}{
 		{"SelfCloud", "", true},
 		{"SelfCloud", "/x/logo.png", false},
-		{"Acme Drive", "", false},
+		{"Acme Drive", "", true},
+		{"Acme Drive", "/x/logo.png", false},
 	} {
 		if got := (config.BrandConfig{Name: tc.name, LogoFile: tc.logo}).Artwork(); got != tc.want {
 			t.Errorf("name %q logo %q: Artwork() = %v, want %v", tc.name, tc.logo, got, tc.want)
