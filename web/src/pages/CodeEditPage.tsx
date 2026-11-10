@@ -274,6 +274,22 @@ export default function CodeEditPage() {
   const saveRef = useRef(save);
   saveRef.current = save;
 
+  // answerOnce runs one of the dialog's two saves (overwrite, keep as a copy). A second click while one is in flight sends nothing, and
+  // the buttons show as busy until it is answered (MED-1).
+  const answering = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const answerOnce = async (run: () => Promise<void>) => {
+    if (answering.current) return;
+    answering.current = true;
+    setBusy(true);
+    try {
+      await run();
+    } finally {
+      answering.current = false;
+      setBusy(false);
+    }
+  };
+
   // overwrite saves the draft over the changed file, with the ETag the check read (the dialog's third choice). A second change after the
   // check opens the dialog again, with a fresh check.
   const overwrite = async () => {
@@ -535,10 +551,10 @@ export default function CodeEditPage() {
             <Popconfirm title={ct.reloadConfirm} okText={ct.reload} cancelText={t("common.cancel")} onConfirm={() => void reload()}>
               <Button icon={<RotateCcw size={16} aria-hidden="true" focusable="false" />}>{ct.reloadTheirs}</Button>
             </Popconfirm>
-            <Button icon={<Copy size={16} aria-hidden="true" focusable="false" />} onClick={() => void keepAsCopy()}>
+            <Button icon={<Copy size={16} aria-hidden="true" focusable="false" />} loading={busy} disabled={busy} onClick={() => void answerOnce(keepAsCopy)}>
               {ct.keepCopy}
             </Button>
-            <Button type="primary" icon={<Save size={16} aria-hidden="true" focusable="false" />} onClick={() => void overwrite()}>
+            <Button type="primary" icon={<Save size={16} aria-hidden="true" focusable="false" />} loading={busy} disabled={busy} onClick={() => void answerOnce(overwrite)}>
               {ct.overwrite}
             </Button>
             <Button icon={<Pencil size={16} aria-hidden="true" focusable="false" />} onClick={keepDraft}>
