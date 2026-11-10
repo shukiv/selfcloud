@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -76,7 +76,27 @@ describe("links", () => {
     stubFetch((c) => (c.url.includes("/share-links") ? fail(403, "forbidden") : { status: 200, body: { anyone_links: 0, public_links: true } }));
     renderPage();
     expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.queryByText("No links to show.")).toBeNull();
+    expect(screen.queryByText("No links to show")).toBeNull();
+  });
+
+  // Decision 122 (tl3): the links are the one table. Its headers are the existing words, its rows are named by the item, and
+  // an empty list keeps its header row with the title in the body.
+  it("is one table whose headers keep the words and whose empty body keeps the headers (decision 122)", async () => {
+    stubFetch((c: Call) => (c.url.includes("/share-links") || c.url.includes("/links") ? { status: 200, body: { items: [LINK] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Links" });
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status", "Actions"]);
+    const row = region.querySelector('tbody tr[data-id="shl_1"]') as HTMLElement;
+    expect(row.getAttribute("aria-label")).toBe("report.pdf");
+    expect(row.querySelector(".item-name")?.textContent).toBe("report.pdf");
+  });
+
+  it("an empty list keeps its header row, and its title is in the table body (decision 122)", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Links" });
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Who can open", "Kind", "Created", "Status", "Actions"]);
+    expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No links to show");
   });
 
   it("a failed read of the count shows an error, not a zero (guard: no silent zero for the delete-all count)", async () => {

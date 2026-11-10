@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
@@ -38,6 +38,32 @@ function renderPage() {
 
 beforeEach(() => session.set(signedAs()));
 afterEach(() => session.set(null));
+
+// Decision 122 (tl3): the audit log is the one table. Its When header is descending with no button, its rows are named by
+// their sentence, and an empty log keeps its header row with the title in the body.
+describe("the audit log is one table (decision 122)", () => {
+  it("is a region whose When header says descending with no button, and whose rows are named by their sentence", async () => {
+    stubFetch((c: Call) => (c.url.includes("/audit") ? { status: 200, body: { items: [ENTRY] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Audit log" });
+    const when = region.querySelector('th[aria-sort="descending"]') as HTMLElement;
+    expect(when).not.toBeNull();
+    expect(when.querySelector("button")).toBeNull();
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]);
+    const row = region.querySelector("tbody tr[data-id]") as HTMLElement;
+    expect(row.getAttribute("aria-label")).not.toBe("folder.create");
+    expect(row.getAttribute("aria-label")?.length ?? 0).toBeGreaterThan(5);
+  });
+
+  it("an empty log keeps its header row, and its title is in the table body", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Audit log" });
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]);
+    expect(region.querySelector("tbody .empty-title")?.textContent).toBe("Nothing recorded yet");
+    expect(region.querySelector("tbody .ant-empty")).not.toBeNull();
+  });
+});
 
 describe("the audit log", () => {
   it("a failed first load shows the error, never the empty message (guard: error before the empty state)", async () => {

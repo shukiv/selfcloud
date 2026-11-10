@@ -52,9 +52,56 @@ describe("manage storage", () => {
     renderPage();
     const alerts = await screen.findAllByRole("alert");
     expect(alerts.every((a) => a.className.includes("ant-alert-error"))).toBe(true);
-    expect(screen.queryByText("No people yet.")).toBeNull();
-    expect(screen.queryByText("No team spaces yet.")).toBeNull();
-    expect(screen.queryByText("No team spaces yet.")).toBeNull();
+    expect(screen.queryByText("No people yet")).toBeNull();
+    expect(screen.queryByText("No team spaces yet")).toBeNull();
+  });
+
+  // Decision 122 (tl3): the three storage tables are the one table. Each keeps its headers, its empty body holds the title, the
+  // team spaces sort by name on the client (the list is whole) with aria-sort, and the people keep their order by use.
+  it("each storage table is a region with its headers, and an empty table keeps them", async () => {
+    stubFetch((c) => {
+      if (c.url.includes("/storage/largest")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/storage")) return { status: 200, body: { ...ACCOUNT_STORAGE, folders: [], users: [] } };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const people = await screen.findByRole("region", { name: "People, by use" });
+    expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Used", "Limit", "Actions"]);
+    expect(people.querySelector("tbody .empty-title")?.textContent).toBe("No people yet");
+    const spaces = screen.getByRole("region", { name: "Team spaces" });
+    expect(within(spaces).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Team space", "Size", "Files"]);
+    expect(spaces.querySelector("tbody .empty-title")?.textContent).toBe("No team spaces yet");
+    const largest = screen.getByRole("region", { name: "Largest files in team spaces" });
+    expect(within(largest).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Team space", "Size", "Modified"]);
+    expect(largest.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
+  });
+
+  it("the team spaces sort by name, ascending first, and the header's click reverses it with aria-sort", async () => {
+    stubFetch((c) => {
+      if (c.url.includes("/storage/largest")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/storage")) {
+        return {
+          status: 200,
+          body: {
+            ...ACCOUNT_STORAGE,
+            folders: [
+              { id: "fld_z", name: "Zeta", kind: "team", used_bytes: 1, used_files: 1, reserved_bytes: 0 },
+              { id: "fld_a", name: "Alpha", kind: "team", used_bytes: 1, used_files: 1, reserved_bytes: 0 },
+            ],
+          },
+        };
+      }
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const spaces = await screen.findByRole("region", { name: "Team spaces" });
+    const names = () => [...spaces.querySelectorAll("tbody tr[data-id]")].map((r) => r.getAttribute("aria-label"));
+    expect(names()).toEqual(["Alpha", "Zeta"]);
+    const head = [...spaces.querySelectorAll("thead th")].find((th) => th.textContent?.startsWith("Team space")) as HTMLElement;
+    expect(head.getAttribute("aria-sort")).toBe("ascending");
+    fireEvent.click(head.querySelector("button") as HTMLElement);
+    await waitFor(() => expect(names()).toEqual(["Zeta", "Alpha"]));
+    expect(head.getAttribute("aria-sort")).toBe("descending");
   });
 
   it("people are listed by use, and a failed read of the largest files keeps the rest (guard: each section has its own error)", async () => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LargestFilesCard from "./LargestFiles";
 import type { LargestFile } from "../../lib/storage/api";
@@ -13,10 +13,11 @@ const files: LargestFile[] = [
   { id: "nod_pdf1", name: "scan.pdf", size: 20, versions_bytes: 0, in_trash: false, modified_at: "2026-10-01T00:00:00Z", mime_type: "application/pdf" },
 ];
 
-function renderCard() {
+function renderCard(over: { files?: LargestFile[]; loaded?: boolean } = {}) {
   return render(
     <LargestFilesCard
-      files={files}
+      files={over.files ?? files}
+      loaded={over.loaded ?? true}
       chip={"all" as never}
       onChip={() => undefined}
       hasMore={false}
@@ -48,6 +49,49 @@ function pointer(coarse: boolean) {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
 }
+
+// Decision 122 (tl3): the largest files are one table. On a desktop it has five headers (Old versions and Modified among them);
+// its empty body keeps the headers and says No files yet, and the first load shows no empty message at all.
+describe("the largest files are one table (decision 122)", () => {
+  beforeEach(() => {
+    officeEdit.set(false);
+    window.matchMedia = ((query: string) => ({
+      matches: /min-width: (\d+)px/.exec(query) !== null,
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  });
+
+  afterEach(() => {
+    officeEdit.set(false);
+  });
+
+  it("a desktop table keeps its five headers and names each row by its file", () => {
+    const { container } = renderCard();
+    const region = screen.getByRole("region", { name: "Largest files" });
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Size", "Old versions", "Modified", "Actions"]);
+    expect(region.querySelector('tbody tr[data-id="nod_pdf1"]')?.getAttribute("aria-label")).toBe("scan.pdf");
+    expect(container.querySelectorAll("tbody td .item-name").length).toBe(2);
+  });
+
+  it("an empty card keeps its headers, and its title is in the table body", () => {
+    renderCard({ files: [] });
+    const region = screen.getByRole("region", { name: "Largest files" });
+    expect(within(region).getAllByRole("columnheader").length).toBe(5);
+    expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No files yet");
+  });
+
+  it("before the first load answers, no empty message shows", () => {
+    renderCard({ files: [], loaded: false });
+    expect(screen.queryByText("No files yet")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Largest files" })).toBeNull();
+  });
+});
 
 describe("the Largest files links (decision 102, round 2 R6, and the rules of the editor's open)", () => {
   beforeEach(() => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
@@ -42,7 +42,22 @@ describe("the owner overview", () => {
     renderPage();
     expect(await screen.findByText("Next steps")).toBeTruthy();
     expect(screen.getByText("Invite your first person")).toBeTruthy();
-    expect(screen.getByText("Nothing has happened yet.")).toBeTruthy();
+    expect(screen.getByText("Nothing has happened yet")).toBeTruthy();
+  });
+
+  // Decision 122 (tl3): the recent activity is the audit table, with its headers kept when nothing has happened.
+  it("the recent activity is a table whose empty body keeps the headers (decision 122)", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("/usage")) return { status: 200, body: USAGE };
+      if (c.url.includes("/folders")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/audit")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/users")) return { status: 200, body: { items: [] } };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Recent activity" });
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]);
+    expect(region.querySelector("tbody .empty-title")?.textContent).toBe("Nothing has happened yet");
   });
 
   it("a failed first load shows the error and no figures (guard: error before the figures)", async () => {

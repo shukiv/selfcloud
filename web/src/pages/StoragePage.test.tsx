@@ -245,7 +245,8 @@ describe("Storage row actions and the review fixes (decision 79)", () => {
     });
     renderPage();
     await screen.findByRole("link", { name: "One.bin" });
-    expect(screen.getByRole("link", { name: "Download: One.bin" })).toBeTruthy();
+    // Decision 122 (tl3): the row's icons are the one table's IconButtons, so Download is a button with a tooltip.
+    expect(screen.getByRole("button", { name: "Download: One.bin" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Move to trash: One.bin" }));
     await waitFor(() => expect(screen.queryByRole("link", { name: "One.bin" })).toBeNull());
     const del = calls.findIndex((c) => c.method === "DELETE");
@@ -292,7 +293,7 @@ describe("Storage row actions and the review fixes (decision 79)", () => {
     renderPage();
     await screen.findByRole("link", { name: "One.bin" });
     fireEvent.click(screen.getByRole("button", { name: "Move to trash: One.bin" }));
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: "Download: Two.bin" })));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Download: Two.bin" })));
   });
 
   it("when the last row goes, the focus goes to the heading of the list", async () => {
@@ -313,16 +314,16 @@ describe("Storage row actions and the review fixes (decision 79)", () => {
   });
 
   // The table's paddings are logical, so a right-to-left page keeps the name's inset on its start side.
-  it("the name cell's padding is logical (inline start and end), not left and right", async () => {
+  // Decision 122 (tl3): the rows are the one table's rows, each named by its file, with the name in the first cell.
+  it("each largest file is a table row named by the file, and its name is the first cell's link", async () => {
     stubFetch((c: Call) => {
       if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
       if (c.url.startsWith(LARGEST)) return { status: 200, body: { items: [largest("nod_1", "One.bin")] } };
       return fail(404, "x");
     });
     renderPage();
-    const name = (await screen.findByRole("rowheader", { name: /One\.bin/ })) as HTMLElement;
-    expect(name.style.paddingInlineStart).toBe("20px");
-    expect(name.style.paddingInlineEnd).toBe("8px");
+    const row = (await screen.findByRole("row", { name: "One.bin" })) as HTMLElement;
+    expect(row.querySelector("td a")?.textContent).toContain("One.bin");
   });
 
   it("each row shows a size bar against the largest row, hidden from assistive technology", async () => {
