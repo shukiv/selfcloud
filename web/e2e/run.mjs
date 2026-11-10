@@ -68,6 +68,7 @@ import { ce3Checks } from './ce3.mjs';
 import { et1Checks } from './et1.mjs';
 import { tl1Checks } from './tl1.mjs';
 import { tl3Checks } from './tl3.mjs';
+import { tl5Checks } from './tl5.mjs';
 import { menuHeaderText, pickMenuEntry } from './menu.mjs';
 import { saveFailure } from './diag.mjs';
 import { cli4Checks } from './cli4.mjs';
@@ -1144,6 +1145,12 @@ async function main() {
       await signIn(page, OWNER);
       await tl3Checks(h, { page, shots: process.env.SELFCLOUD_E2E_SHOTS || null });
     }
+    // Slice tl5 (decision 138): the requests and the notifications are tables, checked as the owner (SELFCLOUD_E2E_ONLY=tl5).
+    if (only && onlySet.has('tl5')) {
+      await signOut(page);
+      await signIn(page, OWNER);
+      await tl5Checks(h, { page });
+    }
     if (only) {
       console.log(`only ${only}: passed`);
       passed = true;
@@ -1161,6 +1168,7 @@ async function main() {
     await p3.p3OwnerChecks(page, h, { teamA, projectsID: p3ids.projectsID });
     await p4.p4OwnerChecks(page, h, { api, base, accountKey, teamA, reportID: p4ids.reportID });
     await tl3Checks(h, { page, shots: process.env.SELFCLOUD_E2E_SHOTS || null });
+    await tl5Checks(h, { page });
     await signOut(page);
     await signIn(page, ADMIN);
     await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
