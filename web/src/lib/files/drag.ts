@@ -106,6 +106,16 @@ export function bandSelection(items: Array<{ id: string; box: Box }>, band: Box,
   return items.filter((i) => keep.has(i.id)).map((i) => i.id);
 }
 
+// rowBoxes places every listed row in the band's coordinates, for a windowed list (decision 134). The page measures one drawn row
+// (its index and its top) and every row is one row height below or above it, so a row that is not drawn has the box it would
+// have. The boxes are in list order and span x0 to x1.
+export function rowBoxes(ids: string[], anchor: { index: number; top: number }, rowH: number, x0: number, x1: number): Array<{ id: string; box: Box }> {
+  return ids.map((id, i) => {
+    const y0 = anchor.top + (i - anchor.index) * rowH;
+    return { id, box: { x0, y0, x1, y1: y0 + rowH } };
+  });
+}
+
 // THRESHOLD is how far the pointer moves before a press becomes a drag or a band; a click that wobbles stays a click.
 export const THRESHOLD = 5;
 
