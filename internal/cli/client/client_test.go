@@ -548,3 +548,27 @@ func TestLoopbackIsOnlyTheLoopback(t *testing.T) {
 		}
 	}
 }
+
+// TestAPIErrorCarriesTheReason: an API refusal's details.reason is kept, so a command can tell a refusal that names no
+// reason from one that does (password_change_required, device_token).
+func TestAPIErrorCarriesTheReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"error":{"code":"forbidden","message":"change the password first",`+
+			`"details":{"reason":"password_change_required"}}}`)
+	}))
+	defer srv.Close()
+	c, err := New(Options{BaseURL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Do(context.Background(), Request{Method: "GET", Path: "/api/v1/x"})
+	var ae *APIError
+	if !errors.As(err, &ae) {
+		t.Fatalf("err %v is not an APIError", err)
+	}
+	if ae.Reason != "password_change_required" {
+		t.Fatalf("Reason = %q, want password_change_required", ae.Reason)
+	}
+}

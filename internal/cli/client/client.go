@@ -104,6 +104,7 @@ type APIError struct {
 	Code       string
 	Message    string
 	RetryAfter time.Duration // the server's Retry-After, when it gave one
+	Reason     string        // details.reason, such as device_token; "" when the refusal gives none
 }
 
 func (e *APIError) Error() string {
@@ -352,11 +353,15 @@ func decodeAPIError(resp *Response) *APIError {
 		Error struct {
 			Code    string `json:"code"`
 			Message string `json:"message"`
+			Details struct {
+				Reason string `json:"reason"`
+			} `json:"details"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(resp.Body, &env) == nil {
 		e.Code = env.Error.Code
 		e.Message = env.Error.Message
+		e.Reason = env.Error.Details.Reason
 	}
 	switch {
 	case e.Message != "":
