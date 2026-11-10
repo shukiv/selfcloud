@@ -6,6 +6,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -157,6 +158,8 @@ export interface ListEmpty {
   title: string;
   description?: string;
   action?: { label: string; onClick: () => void };
+  // className is the empty state's class, for the page's own hooks (an e2e check reads it).
+  className?: string;
 }
 
 // ItemListingProps are the props of a preset list: the admin, Manage and drive lists other than My files. Its columns,
@@ -172,11 +175,14 @@ export interface ItemListingProps<T extends { id: string }> {
   icon?: (row: T) => ReactNode;
   actions?: (row: T) => ListAction[];
   menu?: (row: T) => ListMenuEntry[];
+  // rowClassName gives a row its class, for the page's own hooks and styles.
+  rowClassName?: (row: T) => string;
   // selectable gives the list a selection: checkboxes, the selection keys, and a selection bar with the bulk icons.
   selectable?: boolean;
   bulk?: (ids: string[]) => SelectionAction[];
   sort?: ListSort;
-  // onOpen opens a row: Enter on the row, or a click on it (a double click on a list with a selection).
+  // onOpen opens a row: Enter on the row, or a plain click on it. On a list with a selection, Ctrl, Cmd and Shift clicks and the
+  // checkboxes select instead (tl4, design-tl 2.2).
   onOpen?: (row: T) => void;
   // empty is what the table's body shows when there are no rows, under the header row, which stays (design-tl 2.5).
   empty: ListEmpty;
@@ -244,6 +250,8 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const rows = p.items as { id: string }[];
   const ids = useMemo(() => rows.map((r) => r.id), [rows]);
   const sel = useListSelection(ids);
+  // rowMenu is the row whose ⋮ menu a right click or a finger's long press opened, and the pointer's place (tl4).
+  const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const itemRef = useRef<HTMLDivElement>(null);
   const focusRow = useCallback((id: string) => {
     const tr = [...(itemRef.current?.querySelectorAll<HTMLElement>("tbody tr[data-id]") ?? [])].find((r) => r.dataset.id === id);
@@ -513,9 +521,16 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
     const isControl = (e: ReactMouseEvent<HTMLElement>) =>
       !e.currentTarget.contains(e.target as globalThis.Node) ||
       !!(e.target as HTMLElement).closest("a, button, input, label, .row-check, .ant-table-selection-column");
+    // A row's ⋮ menu holds the row's actions and the page's menu entries, all of them: a right click and a finger's long press open
+    // it at the pointer (the same menu as the ⋮ button's, tl4).
+    const entriesOf = (r: T): ListMenuEntry[] => [
+      ...(q.actions?.(r) ?? []).map((a) => ({ key: `act-${a.key}`, label: a.label, icon: a.icon, danger: a.danger, disabled: a.disabled, href: a.href, onSelect: a.run })),
+      ...(q.menu?.(r) ?? []),
+    ];
     const rowProps = (r: T) => ({
       role: "row",
       "aria-label": q.rowLabel(r),
+      className: q.rowClassName?.(r),
       ...(selectable ? { "aria-selected": picked.has(r.id) } : {}),
       tabIndex: sel.focusID === r.id ? 0 : -1,
       "data-id": r.id,
@@ -523,14 +538,48 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       onKeyDown: onItemKey,
       onClick: (e: ReactMouseEvent<HTMLElement>) => {
         if (isControl(e)) return;
-        if (selectable) sel.pick(r.id, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey });
-        else q.onOpen?.(r);
+        // The tap that ends a long press is part of the press: it opens and selects nothing.
+        if (pressed.current) {
+          pressed.current = false;
+          return;
+        }
+        if (selectable && (e.ctrlKey || e.metaKey || e.shiftKey)) sel.pick(r.id, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey });
+        else if (q.onOpen) q.onOpen(r);
+        else if (selectable) sel.pick(r.id);
       },
-      onDoubleClick: (e: ReactMouseEvent<HTMLElement>) => {
-        if (selectable && !isControl(e)) q.onOpen?.(r);
+      onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
+        endPress();
+        pressed.current = false;
+        if (e.pointerType !== "touch" || entriesOf(r).length === 0) return;
+        const { clientX: x, clientY: y } = e;
+        press.current = {
+          x,
+          y,
+          timer: setTimeout(() => {
+            press.current = null;
+            pressed.current = true;
+            liftPending.current = true;
+            setRowMenu({ id: r.id, x, y });
+          }, LONG_PRESS_MS),
+        };
+      },
+      onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
+        const cur = press.current;
+        if (cur && Math.hypot(e.clientX - cur.x, e.clientY - cur.y) > PRESS_SLOP_PX) endPress();
+      },
+      onPointerUp: endPress,
+      onPointerCancel: endPress,
+      onContextMenu: (e: ReactMouseEvent<HTMLElement>) => {
+        if (entriesOf(r).length === 0) return;
+        e.preventDefault();
+        endPress();
+        setRowMenu({ id: r.id, x: e.clientX, y: e.clientY });
       },
       style: selectable ? { userSelect: "none" as const, scrollMarginTop } : { scrollMarginTop },
     });
+    // The menu the right click or long press opened: it is drawn at the pointer, by an empty anchor there.
+    const menuRow = rowMenu ? q.items.find((r) => r.id === rowMenu.id) : undefined;
+    const menuList = menuRow ? entriesOf(menuRow) : [];
 
     return (
       <div role="region" aria-label={q.label} ref={itemRef} className="item-list" data-has-selection={anyPicked ? "true" : "false"} style={bandVars}>
@@ -554,7 +603,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           dataSource={q.items}
           locale={{
             emptyText: (
-              <EmptyState role="status" size="table" text={q.empty.title} description={q.empty.description}>
+              <EmptyState role="status" size="table" className={q.empty.className} text={q.empty.title} description={q.empty.description}>
                 {q.empty.action && (
                   // The mockup's action: 36 high, padded 16 at each side with no border (antd's is 15 inside a 1-pixel border).
                   <Button
@@ -589,6 +638,17 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
           }
           onRow={(r) => rowProps(r) as Record<string, unknown>}
         />
+        <Dropdown
+          open={menuList.length > 0}
+          onOpenChange={(open) => {
+            if (!open) setRowMenu(null);
+          }}
+          trigger={[]}
+          menu={{ items: menuList.map(menuItem), onClick: () => setRowMenu(null) }}
+        >
+          {/* The anchor sits at the pointer, which is a place in the window (clientX from the left), so its inset is physical. */}
+          <span aria-hidden="true" style={{ position: "fixed", inset: `${rowMenu?.y ?? 0}px auto auto ${rowMenu?.x ?? 0}px`, width: 0, height: 0 }} />
+        </Dropdown>
       </div>
     );
   };
