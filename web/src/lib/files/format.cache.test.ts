@@ -10,7 +10,7 @@ describe('the formatters reuse their Intl objects', () => {
     vi.restoreAllMocks();
   });
 
-  it('builds at most one DateTimeFormat for fifty dates in one language', () => {
+  it('builds no DateTimeFormat for fifty dates in one language once that language is in use', () => {
     formatDate('2026-10-01T10:00:00Z', 'en');
     const spy = vi.spyOn(Intl, 'DateTimeFormat');
     for (let i = 0; i < 50; i++) formatDate(`2026-10-0${(i % 9) + 1}T10:00:00Z`, 'en');
