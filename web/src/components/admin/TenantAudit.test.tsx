@@ -31,12 +31,16 @@ describe("tenant audit table", () => {
     );
     renderAudit();
     const region = await screen.findByRole("region", { name: "Audit log" });
-    const when = region.querySelector('th[aria-sort="descending"]') as HTMLElement;
-    expect(when).not.toBeNull();
+    // The first render is the phone layout until antd knows the breakpoint, and the data arrives later: the When header is awaited (MED-1).
+    const when = (await waitFor(() => {
+      const th = region.querySelector('th[aria-sort="descending"]');
+      if (th === null) throw new Error("the When header is not drawn yet");
+      return th as HTMLElement;
+    })) as HTMLElement;
     expect(when.querySelector("button")).toBeNull();
     expect(region.querySelector("tbody")?.textContent).toContain("key.revoke");
     // The event column is named as the filter above it names what it filters: Action.
-    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]);
+    await waitFor(() => expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Action", "When"]));
   });
 
   // Review L4: a screen reader hears a row as its sentence, not as the action's code.
