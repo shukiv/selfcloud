@@ -126,7 +126,8 @@ export async function ce2b1Checks(h, { page, base, accountKey, teamB, stale: sta
     check(opened === '{\n  "a": 1\n}\n', `the editor page shows the file's text (${JSON.stringify(opened)})`);
     await typeText(page, 'X');
     await page.waitFor(`document.querySelector(${q(`${EDITOR_PAGE} header [role="status"]`)})?.textContent.trim() === 'Unsaved changes'`, 10000);
-    check(true, 'a change shows "Unsaved changes" before any save');
+    const unsaved = await page.evaluate(`document.querySelector(${q(`${EDITOR_PAGE} header [role="status"]`)})?.textContent.trim()`);
+    check(unsaved === 'Unsaved changes', `a change shows "Unsaved changes" before any save (${JSON.stringify(unsaved)})`);
     await ctrlS(page);
     await page.waitFor(`document.querySelector(${q(`${EDITOR_PAGE} header [role="status"]`)})?.textContent.trim() === 'Saved'`, 15000);
     const stored = (await contentBytes(base, jsonID, accountKey)).toString('utf8');
@@ -136,6 +137,14 @@ export async function ce2b1Checks(h, { page, base, accountKey, teamB, stale: sta
     await editorShows(page, names.json);
     const reloaded = await editorText(page);
     check(reloaded === 'X{\n  "a": 1\n}\n', `a reload of the editor shows the saved change (${JSON.stringify(reloaded)})`);
+
+    // ---- The Save button stays enabled during a save and keeps the focus after it (LOW-1).
+    await typeText(page, 'Z');
+    await page.waitFor(`document.querySelector(${q(`${EDITOR_PAGE} header [role="status"]`)})?.textContent.trim() === 'Unsaved changes'`, 10000);
+    const saveFocus = await page.evaluate(`(() => { const b = document.querySelector(${q(`${EDITOR_PAGE} header button[aria-label="Save"]`)}); if (!b) return null; b.focus(); b.click(); return { disabledAtClick: b.disabled, focusedAfter: document.activeElement === b }; })()`);
+    await page.waitFor(`document.querySelector(${q(`${EDITOR_PAGE} header [role="status"]`)})?.textContent.trim() === 'Saved'`, 15000);
+    const focusAfter = await page.evaluate(`(() => { const b = document.querySelector(${q(`${EDITOR_PAGE} header button[aria-label="Save"]`)}); return b ? { disabled: b.disabled, focused: document.activeElement === b } : null; })()`);
+    check(saveFocus !== null && !saveFocus.disabledAtClick && focusAfter !== null && !focusAfter.disabled && focusAfter.focused, `Save stays enabled during a save and keeps the focus after it (${JSON.stringify({ saveFocus, focusAfter })})`);
 
     // ---- A byte order mark and CRLF line breaks come back as they were.
     await openEditor(h, page, pf, crlfID, names.crlf);
