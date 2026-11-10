@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -367,6 +368,99 @@ func TestWhoamiJSON(t *testing.T) {
 		t.Errorf("document = %+v", doc)
 	}
 	noToken(t, &out, &errOut)
+}
+
+// login sends no credential at all. An environment token and a stored key are both present here, and neither reaches the
+// server: the sign-in is not made with a key, and the new address is not given the old key (decision 125, review fix).
+func TestLoginSendsNoCredential(t *testing.T) {
+	dir := isolate(t)
+	const key = "sc_acct_key_value_0123456789abcdefghijklmnopqrstuvwxyz"
+	t.Setenv("SELFCLOUD_TOKEN", key)
+	saveProfile(t, dir, "old", profile.KindAccount, key, "https://old.example")
+	sc := &script{polls: []string{""}}
+	srv := newFake(t, sc)
+	var out, errOut bytes.Buffer
+	if code := Login([]string{"--url", srv.URL, "--profile", "work"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	for _, line := range sc.seen {
+		if !strings.HasSuffix(line, "bearer=") {
+			t.Errorf("a sign-in request carried a credential: %q", line)
+		}
+	}
+	if len(sc.seen) != 2 {
+		t.Errorf("requests = %v, want the start and one poll", sc.seen)
+	}
+	if !strings.Contains(errOut.String(), "SELFCLOUD_TOKEN is set; login ignores it") {
+		t.Errorf("the environment token is not reported: %q", errOut.String())
+	}
+	noToken(t, &out, &errOut)
+	if strings.Contains(errOut.String()+out.String(), key) {
+		t.Error("the environment key appears in an output")
+	}
+}
+
+// login does not read a credential from a file either: it signs a new device in, so there is no key to read.
+func TestLoginRefusesTokenFile(t *testing.T) {
+	isolate(t)
+	file := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(file, []byte("sc_acct_key_value_0123456789abcdefghijklmnopqrstuvwxyz\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sc := &script{polls: []string{""}}
+	srv := newFake(t, sc)
+	var out, errOut bytes.Buffer
+	if code := Login([]string{"--url", srv.URL, "--token-file", file}, &out, &errOut); code != 2 {
+		t.Fatalf("exit %d, want 2", code)
+	}
+	if len(sc.seen) != 0 {
+		t.Errorf("requests were made with a token file given: %v", sc.seen)
+	}
+}
+
+// logout and whoami send the profile's token to the profile's own address only. An address given on the command line
+// that is not the profile's is refused before any request.
+func TestProfileCommandsNeverSendToAnotherAddress(t *testing.T) {
+	dir := isolate(t)
+	sc := &script{revoke: http.StatusNoContent, folders: 1}
+	srv := newFake(t, sc)
+	saveProfile(t, dir, "work", profile.KindDevice, testToken, srv.URL)
+	for name, run := range map[string]func([]string, *bytes.Buffer, *bytes.Buffer) int{
+		"logout": func(a []string, o, e *bytes.Buffer) int { return Logout(a, o, e) },
+		"whoami": func(a []string, o, e *bytes.Buffer) int { return Whoami(a, o, e) },
+	} {
+		var out, errOut bytes.Buffer
+		if code := run([]string{"--profile", "work", "--url", "http://127.0.0.1:1"}, &out, &errOut); code != 2 {
+			t.Errorf("%s: exit %d, want 2", name, code)
+		}
+		noToken(t, &out, &errOut)
+	}
+	if len(sc.seen) != 0 {
+		t.Errorf("a request was made to the profile's address with the other address given: %v", sc.seen)
+	}
+	if _, ok := loadProfiles(t, dir).Profiles["work"]; !ok {
+		t.Error("the profile was removed by a refused command")
+	}
+}
+
+// logout revokes the profile's own device token, not the one in the environment, and only at the profile's address.
+func TestLogoutUsesTheProfilesOwnToken(t *testing.T) {
+	dir := isolate(t)
+	const envToken = "scd_ENVIRONMENT_0123456789abcdefghijklmnopqrstuvwxyz"
+	t.Setenv("SELFCLOUD_TOKEN", envToken)
+	sc := &script{revoke: http.StatusNoContent}
+	srv := newFake(t, sc)
+	saveProfile(t, dir, "work", profile.KindDevice, testToken, srv.URL)
+	var out, errOut bytes.Buffer
+	if code := Logout([]string{"--profile", "work"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	if len(sc.seen) != 1 || sc.seen[0] != "POST /api/v1/auth/cli/revoke bearer="+testToken {
+		t.Errorf("requests = %v, want one revoke with the profile's token", sc.seen)
+	}
+	if strings.Contains(strings.Join(sc.seen, "\n"), "ENVIRONMENT") {
+		t.Error("the environment's token was sent")
+	}
 }
 
 // The failing paths, run with the token known, name no token: an expired sign-in, an unreachable server, and a whoami the

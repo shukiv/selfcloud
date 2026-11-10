@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"runtime"
 	"time"
 
@@ -101,7 +102,7 @@ func Login(args []string, stdout, stderr io.Writer) int {
 	}
 	// The name is where the token is saved; the connection itself names no profile and sends no credential.
 	g.Profile = ""
-	c, err := conn.Connect(g, stderr, false)
+	c, err := anonymousConn(g, stderr)
 	if err != nil {
 		return output.Fail(stderr, g.JSON, err)
 	}
@@ -216,7 +217,7 @@ func Logout(args []string, stdout, stderr io.Writer) int {
 	if len(pos) != 0 {
 		return output.Fail(stderr, g.JSON, exitcode.Usagef("logout takes no arguments"))
 	}
-	c, err := conn.Connect(g, stderr, true)
+	c, err := profileConn(g)
 	if err != nil {
 		return output.Fail(stderr, g.JSON, err)
 	}
@@ -296,7 +297,7 @@ func Whoami(args []string, stdout, stderr io.Writer) int {
 	if len(pos) != 0 {
 		return output.Fail(stderr, g.JSON, exitcode.Usagef("whoami takes no arguments"))
 	}
-	c, err := conn.Connect(g, stderr, true)
+	c, err := profileConn(g)
 	if err != nil {
 		return output.Fail(stderr, g.JSON, err)
 	}
@@ -327,6 +328,67 @@ func Whoami(args []string, stdout, stderr io.Writer) int {
 		return output.Fail(stderr, g.JSON, err)
 	}
 	return exitcode.OK
+}
+
+// anonymousConn is the connection a sign-in uses. It takes the address from the flags and sends no credential at all:
+// neither SELFCLOUD_TOKEN nor a profile's key reaches the server, since a sign-in makes a new device rather than using a key
+// (decision 125). A token file is refused, for the same reason.
+func anonymousConn(g conn.Global, stderr io.Writer) (*conn.Conn, error) {
+	if g.TokenFile != "" {
+		return nil, exitcode.Usagef("login does not read a credential; remove --token-file")
+	}
+	if os.Getenv("SELFCLOUD_TOKEN") != "" {
+		fmt.Fprintln(stderr, "selfcloud: SELFCLOUD_TOKEN is set; login ignores it")
+	}
+	u, err := client.ParseBaseURL(g.URL, g.InsecureHTTP)
+	if err != nil {
+		return nil, exitcode.Usagef("%s", err)
+	}
+	cl, err := client.New(client.Options{BaseURL: u.String(), CAFile: g.CAFile, InsecureSkipVerify: g.InsecureSkipVerify,
+		InsecureHTTP: g.InsecureHTTP, ConnectTimeout: g.ConnectTimeout, HeaderTimeout: g.HeaderTimeout, Timeout: g.Timeout})
+	if err != nil {
+		return nil, err
+	}
+	return &conn.Conn{Client: cl, URL: u.String()}, nil
+}
+
+// profileConn is the connection of a command that works on a profile (logout, whoami). It uses the profile's own address and
+// its own token, and no other: the environment's token and address are not read, and a --url that is not the profile's
+// is refused before any request (decision 125).
+func profileConn(g conn.Global) (*conn.Conn, error) {
+	if g.TokenFile != "" {
+		return nil, exitcode.Usagef("this command uses the profile's own token; remove --token-file")
+	}
+	store, err := openStore()
+	if err != nil {
+		return nil, err
+	}
+	f, err := store.Load()
+	if err != nil {
+		return nil, err
+	}
+	name := g.Profile
+	if name == "" {
+		name = f.Current
+	}
+	p, ok := f.Profiles[name]
+	if name == "" || !ok {
+		return nil, exitcode.NotFoundf("no profile to use; give --profile NAME, or sign in with login first")
+	}
+	if g.URL != "" {
+		want, err1 := client.ParseBaseURL(p.URL, true)
+		got, err2 := client.ParseBaseURL(g.URL, g.InsecureHTTP)
+		if err1 != nil || err2 != nil || want.String() != got.String() {
+			return nil, exitcode.Usagef("--url names another address than profile %s; run without --url", profile.Shown(name))
+		}
+	}
+	cl, err := client.New(client.Options{BaseURL: p.URL, Credential: p.Token, CAFile: p.CAFile,
+		InsecureSkipVerify: g.InsecureSkipVerify, InsecureHTTP: g.InsecureHTTP, ConnectTimeout: g.ConnectTimeout,
+		HeaderTimeout: g.HeaderTimeout, Timeout: g.Timeout})
+	if err != nil {
+		return nil, err
+	}
+	return &conn.Conn{Client: cl, URL: p.URL, Profile: name, Kind: p.Kind}, nil
 }
 
 // openStore opens the profiles file in its directory.
