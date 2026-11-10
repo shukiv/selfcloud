@@ -360,3 +360,17 @@ func isUsage(err error) bool {
 	code, _, _ := exitcode.Of(err)
 	return err != nil && code == exitcode.Usage
 }
+
+// TestSecretNameWithoutPrefixGivenAsProfileFlagIsNotPrinted: the same for --profile, which names a profile to Connect.
+func TestSecretNameWithoutPrefixGivenAsProfileFlagIsNotPrinted(t *testing.T) {
+	isolate(t)
+	secret := "Hunter2 pass!word #2026 with spaces & symbols, 40+c"
+	g := goodGlobal()
+	g.URL = "https://flags.example"
+	g.Profile = secret
+	var errOut bytes.Buffer
+	_, err := Connect(g, &errOut, false)
+	if err == nil || strings.Contains(err.Error(), secret) || strings.Contains(errOut.String(), secret) {
+		t.Errorf("--profile with a pasted secret: err %v, stderr %q; the secret must not be printed", err, errOut.String())
+	}
+}

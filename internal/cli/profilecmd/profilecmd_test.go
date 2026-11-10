@@ -353,3 +353,19 @@ func TestInsecureHTTPHelpSaysNotSaved(t *testing.T) {
 		t.Errorf("the --insecure-http help does not say the flag is not saved:\n%s", help)
 	}
 }
+
+// TestSecretNameWithoutPrefixIsNotPrinted: a pasted password with no key prefix, given where a profile name goes, is not
+// printed by use, rm or add. Only the name rule in profile.Shown keeps it out; the prefix rule does not apply to it.
+func TestSecretNameWithoutPrefixIsNotPrinted(t *testing.T) {
+	isolate(t)
+	pipe(t, accountKey)
+	add(t, "home", "--url", "https://selfcloud.example")
+	secret := "Hunter2 pass!word #2026 with spaces & symbols, 40+c"
+	var out, errOut bytes.Buffer
+	Use([]string{secret}, &out, &errOut)
+	Remove([]string{secret}, &out, &errOut)
+	Add([]string{secret, "--url", "https://selfcloud.example"}, &out, &errOut)
+	if strings.Contains(out.String(), secret) || strings.Contains(errOut.String(), secret) {
+		t.Errorf("the pasted secret was printed: stdout %q, stderr %q", out.String(), errOut.String())
+	}
+}
