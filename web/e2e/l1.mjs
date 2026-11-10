@@ -298,8 +298,9 @@ export async function l1Checks(h, { page, base, accountKey, teamA, dir }) {
       throw new Error(`${err.message.slice(0, 60)}; ${seen}`);
     });
     const top = await page.evaluate(LABELS);
-    // Share stays at the top level; its Share… entry is hidden for an editor who may not share (decision 70).
-    const want = ['Preview', 'Download', 'Rename', 'Share', 'Organize', 'Information', 'Move to trash'];
+    // Share stays at the top level; its Share… entry is hidden for an editor who may not share (decision 70). The file is a
+    // .txt the person may edit, so Open in editor follows Preview (decision 124).
+    const want = ['Preview', 'Open in editor', 'Download', 'Rename', 'Share', 'Organize', 'Information', 'Move to trash'];
     check(JSON.stringify(top) === JSON.stringify(want), `the menu's top level reads ${want.join(' / ')} (${top.join(' / ')})`);
     const dividers = await page.evaluate(`document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) .ant-dropdown-menu-item-divider').length`);
     check(dividers >= 4, `the groups are divided (${dividers} dividers)`);
