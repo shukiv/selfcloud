@@ -107,6 +107,7 @@ func TestRemoteCommandsCallTheirRoute(t *testing.T) {
 		if c.route == "" || c.notProbed != "" {
 			continue
 		}
+		p.answer = ""
 		var args []string
 		if fixture, ok := fileProbes[c.name]; ok {
 			args = fixture(p)
@@ -120,7 +121,9 @@ func TestRemoteCommandsCallTheirRoute(t *testing.T) {
 		var out, errOut bytes.Buffer
 		full := append(append([]string{}, strings.Fields(c.name)...), args...)
 		full = append(full, "--url", p.recURL)
+		restore := typeAt(p.answer)
 		code, matched := remote(full, &out, &errOut)
+		restore()
 		if !matched || code != 0 {
 			t.Errorf("%s: exit %d, matched %v, stderr %q", c.name, code, matched, errOut.String())
 			continue

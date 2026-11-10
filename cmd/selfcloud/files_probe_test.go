@@ -5,12 +5,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/id"
 	"github.com/shukiv/selfcloud/internal/store"
 )
@@ -25,6 +27,17 @@ type fileProbe struct {
 	st     *store.Store
 	folder string
 	acc    string
+	// answer is what a person at a terminal types at the confirmation of the command under test, if it asks.
+	answer string
+}
+
+// typeAt makes the confirmation read answer, as a person at a terminal types it. It returns the function that puts the
+// input back.
+func typeAt(answer string) func() {
+	oldIn, oldTTY := files.Stdin, files.IsTerminal
+	files.Stdin = strings.NewReader(answer)
+	files.IsTerminal = func(io.Reader) bool { return true }
+	return func() { files.Stdin, files.IsTerminal = oldIn, oldTTY }
 }
 
 // newFileProbe makes an account with `admin create-account` in a private data directory, makes a team folder in its
@@ -137,14 +150,20 @@ var fileProbes = map[string]func(p *fileProbe) []string{
 	"cp": func(p *fileProbe) []string {
 		return []string{p.touch("/cp-src.txt"), p.mkdir("/cp-dest")}
 	},
-	"rm":       func(p *fileProbe) []string { return []string{p.touch("/rm.txt"), "--yes"} },
+	// rm and trash rm ask for the name of the one node, as a person at a terminal types it, so the probe makes the
+	// name reads it declares (reads in remote.go).
+	"rm": func(p *fileProbe) []string {
+		p.answer = "rm.txt\n"
+		return []string{p.touch("/rm.txt")}
+	},
 	"trash ls": func(p *fileProbe) []string { return []string{"--folder", p.folder} },
 	"trash restore": func(p *fileProbe) []string {
 		return []string{p.trashed("/restore.txt")}
 	},
 	"trash empty": func(p *fileProbe) []string { return []string{"--folder", p.folder, "--yes"} },
 	"trash rm": func(p *fileProbe) []string {
-		return []string{p.trashed("/trash-rm.txt"), "--yes"}
+		p.answer = "trash-rm.txt\n"
+		return []string{p.trashed("/trash-rm.txt")}
 	},
 	"shortcut add": func(p *fileProbe) []string {
 		return []string{p.mkdir("/sc-dir"), p.touch("/sc-target.txt")}
