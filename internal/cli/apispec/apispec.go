@@ -7,6 +7,8 @@ package apispec
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"io"
@@ -93,39 +95,75 @@ func isYAML(contentType string) bool {
 // writeNew writes data to name inside dir, through an os.Root, so no path can leave dir. Without overwrite the file is
 // created with O_EXCL, which also refuses an existing symbolic link. With overwrite, a symbolic link or any other
 // non-regular file at the name is refused first.
+//
+// With overwrite, the document is written to a new temporary name in the same root and renamed over the target, so a
+// write that fails part-way leaves the original whole. The target is not truncated, and it is not removed before the
+// new bytes are complete.
 func writeNew(dir, name string, data []byte, overwrite bool) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
-	if overwrite {
-		fi, err := root.Lstat(name)
-		switch {
-		case err == nil && !fi.Mode().IsRegular():
-			return exitcode.Usagef("%s is not a regular file, so it is not replaced", name)
-		case err == nil:
-			flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-		case !errors.Is(err, fs.ErrNotExist):
-			return err
-		}
-	}
-	f, err := root.OpenFile(name, flags, 0o644)
-	if err != nil {
+	if !overwrite {
+		err := createNew(root, name, data)
 		if errors.Is(err, fs.ErrExist) {
 			return exitcode.Usagef("%s already exists; pass --overwrite to replace it", name)
 		}
 		return err
 	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = root.Remove(name)
+	fi, err := root.Lstat(name)
+	switch {
+	case err == nil && !fi.Mode().IsRegular():
+		return exitcode.Usagef("%s is not a regular file, so it is not replaced", name)
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
 		return err
 	}
-	if err := f.Close(); err != nil {
-		_ = root.Remove(name)
+	suffix, err := randomSuffix()
+	if err != nil {
 		return err
+	}
+	tmp := ".api-spec-" + suffix + ".tmp"
+	if err := createNew(root, tmp, data); err != nil {
+		return err
+	}
+	if err := root.Rename(tmp, name); err != nil {
+		_ = root.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// writeFault is a test seam: a non-nil error from it stands for a write that failed part-way.
+var writeFault = func() error { return nil }
+
+// randomSuffix returns a random name part for a temporary file.
+func randomSuffix() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// createNew writes data to a new file name under root. The file is created with O_EXCL, so an existing name, a symbolic
+// link included, is never written through. A failed write removes the new file.
+func createNew(root *os.Root, name string, data []byte) error {
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(data)
+	if werr == nil {
+		werr = writeFault()
+	}
+	cerr := f.Close()
+	if werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		_ = root.Remove(name)
+		return werr
 	}
 	return nil
 }
