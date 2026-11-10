@@ -107,8 +107,8 @@ command fails at once, and the error says how long the server asked to wait. Oth
 - **`--json`.** One JSON document, with the API's own field names. `profile ls --json` is a list of
   `{"name","url","kind","current"}`; it never has a key in it.
 - **Text from the server** is shown with control and format characters (including bidi overrides) replaced by spaces, so a
-  message cannot make a terminal act or misreport. In `--json` those characters are written as `\uXXXX` escapes, which
-  decode to the same text.
+  message cannot make a terminal act or misreport. In `--json` those characters are written as `\uXXXX` escapes (a rune above
+  U+FFFF as a surrogate pair), which decode to the same text; a byte that is not valid UTF-8 is written as U+FFFD.
 - **Errors** go to standard error. Without `--json`, one line: `selfcloud: <code>: <message>`. With `--json`, the API's
   envelope: `{"error":{"code":"…","message":"…"}}`.
 
