@@ -5,7 +5,6 @@
 package info
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -66,13 +65,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return output.Fail(stderr, g.JSON, err)
 	}
 	if g.JSON {
-		var buf bytes.Buffer
-		if err := json.Indent(&buf, resp.Body, "", "  "); err != nil {
+		if err := output.Indented(stdout, resp.Body); err != nil {
 			return output.Fail(stderr, g.JSON, errors.New("the server's answer is not JSON"))
-		}
-		buf.WriteByte('\n')
-		if _, err := stdout.Write(buf.Bytes()); err != nil {
-			return output.Fail(stderr, g.JSON, err)
 		}
 		return exitcode.OK
 	}
