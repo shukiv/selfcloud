@@ -189,17 +189,19 @@ export async function ce2b1Checks(h, { page, base, accountKey, teamB, stale: sta
     await putIfMatch(base, jsonID, accountKey, current, 'changed by someone else\n', 'application/json');
     await typeText(page, 'Z');
     await ctrlS(page);
-    await page.waitFor(`!!document.querySelector(${q(`${EDITOR_PAGE} .ant-alert`)})`, 15000);
-    const alert = await page.evaluate(`(() => { const a = document.querySelector(${q(`${EDITOR_PAGE} .ant-alert`)}); return { text: a.textContent, role: a.getAttribute('role') }; })()`);
-    check(alert.text.includes(CONFLICT), `a save against a changed file shows the conflict (${alert.text})`);
+    // The conflict is a dialog (decision 130): its title and message, and the draft kept on the page under it.
+    await page.waitFor(`!!document.querySelector('.ant-modal')`, 15000);
+    const dialog = (await page.evaluate(`document.querySelector('.ant-modal')?.textContent ?? ''`)) ?? '';
+    check(dialog.includes('This file changed') && dialog.includes(CONFLICT), `a save against a changed file opens the conflict dialog (${dialog})`);
     check((await editorText(page)).startsWith('Z'), 'the conflict keeps the draft on the page');
     check((page.expectedAnswers.get('stale save')?.length ?? 0) === 1, 'the server refused the stale save once, and the browser logged it');
-    await page.evaluate(`[...document.querySelectorAll(${q(`${EDITOR_PAGE} .ant-alert button`)})].find((b) => b.textContent.trim() === 'Reload').click(), true`);
+    await page.evaluate(`[...document.querySelectorAll('.ant-modal-footer button')].find((b) => b.textContent.trim() === 'Reload theirs').click(), true`);
     await page.waitFor(`!!document.querySelector('.ant-popover:not(.ant-popover-hidden)')`, 10000);
     await page.evaluate(`[...document.querySelectorAll('.ant-popover:not(.ant-popover-hidden) button')].find((b) => b.textContent.trim() === 'Reload').click(), true`);
     await page.waitFor(`(() => { const c = document.querySelector(${q(`${EDITOR} .cm-content`)}); return !!c && c.textContent.includes('changed by someone else'); })()`, 15000);
-    const afterReload = await page.evaluate(`!document.querySelector(${q(`${EDITOR_PAGE} .ant-alert`)})`);
-    check(afterReload, 'Reload shows the saved text, and the conflict notice goes');
+    await page.waitFor(`!document.querySelector('.ant-modal')`, 10000);
+    const reloaded = (await editorText(page)) ?? '';
+    check(reloaded.includes('changed by someone else'), `Reload theirs shows the saved text, and the dialog goes (${JSON.stringify(reloaded)})`);
 
     // ---- A viewer's address shows "View only" and no Save.
     await navigateTo(page, `/edit/${viewerID}?mode=edit`);

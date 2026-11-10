@@ -63,6 +63,7 @@ import { stChecks } from './st.mjs';
 import { em1Checks } from './em1.mjs';
 import { ce1Checks } from './ce1.mjs';
 import { ce2b1Checks } from './ce2b1.mjs';
+import { ce2b2Checks } from './ce2b2.mjs';
 import { tl1Checks } from './tl1.mjs';
 import { tl3Checks } from './tl3.mjs';
 import { menuHeaderText, pickMenuEntry } from './menu.mjs';
@@ -96,6 +97,10 @@ const ce1Locked = new Set();
 // The node IDs the ce2b-1 section saves against a file changed on the server. The server answers 412 to that save on purpose; the
 // section fills the set before the save, so a 412 counts as expected only for a node the section made stale.
 const ce2b1Stale = new Set();
+// The node IDs the ce2b-2 section saves against a file changed on the server (decision 130), and the encoded copy paths whose
+// copy the section makes with a name already taken: the server answers 412 to those on purpose.
+const ce2b2Stale = new Set();
+const ce2b2Taken = new Set();
 
 // The answers the run causes on purpose: the start-up probe of an anonymous visitor, and a sign-in link
 // used a second time. The browser logs each as a failed request; the run counts them instead.
@@ -182,8 +187,18 @@ const EXPECTED = [
     name: 'stale save',
     matches: (e) => {
       const m = /\/api\/v1\/nodes\/([^/]+)\/content$/.exec(e.url ?? '');
-      return e.source === 'network' && m !== null && ce2b1Stale.has(m[1]) && /status of 412\b/.test(e.text ?? '');
+      return e.source === 'network' && m !== null && (ce2b1Stale.has(m[1]) || ce2b2Stale.has(m[1])) && /status of 412\b/.test(e.text ?? '');
     },
+  },
+  // A copy that meets a taken name is refused with 412 once, and the next name is tried (ce2b2Checks, decision 130). Only a path the
+  // section made taken counts.
+  {
+    name: 'copy name taken',
+    matches: (e) =>
+      e.source === 'network' &&
+      /\/api\/v1\/folders\/[^/]+\/files\?path=/.test(e.url ?? '') &&
+      /status of 412\b/.test(e.text ?? '') &&
+      [...ce2b2Taken].some((p) => (e.url ?? '').includes(p)),
   },
   // The member's upload over its limit is refused by the server.
   {
@@ -1018,6 +1033,7 @@ async function main() {
     if (!only || onlySet.has('ce1')) await ce1Checks(h, { page, base, accountKey, MEMBER, teamB, locked: ce1Locked });
     // The code editor and its save (slice ce2b-1, decision 124): the pencil, the editor page, Ctrl+S, the conflict and Hebrew.
     if (!only || onlySet.has('ce2b-1')) await ce2b1Checks(h, { page, base, accountKey, teamB, stale: ce2b1Stale });
+    if (!only || onlySet.has('ce2b-2')) await ce2b2Checks(h, { page, base, accountKey, stale: ce2b2Stale, taken: ce2b2Taken });
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
