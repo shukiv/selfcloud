@@ -359,9 +359,12 @@ export default function CodeEditPage() {
   const reload = async () => {
     const r = readyRef.current;
     if (r === null) return;
+    // An answer for a file the page has since left is not shown, as save's is (LOW-5).
+    const gen = openGen.current;
     setConflict(null);
     try {
       const got = await readWhole(nod);
+      if (gen !== openGen.current) return;
       const d = decodeText(got.bytes, false);
       file.current = { ...file.current, etag: got.etag };
       const initial = normalizeText(d.text);
@@ -383,6 +386,7 @@ export default function CodeEditPage() {
       setCopied(null);
       setNotice(d.utf8 ? null : "notUtf8");
     } catch (err) {
+      if (gen !== openGen.current) return;
       const why = failureOf(err);
       setNotice(why === "forbidden" ? "forbidden" : why === "notFound" ? "gone" : why === "signedOut" ? "signedOut" : "failed");
       if (why === "forbidden" || why === "notFound") setClosed(true);
@@ -493,8 +497,13 @@ export default function CodeEditPage() {
       style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", flexDirection: "column", background: "var(--ant-color-bg-container, #fff)" }}
     >
       <header style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 48, padding: "0 12px", borderBottom: "1px solid rgba(0,0,0,0.12)" }}>
+        {/* The router leaves the page, so the unsaved guard asks first, as it does for a link in the page (LOW-4). */}
         <a
           href={folderHref}
+          onClick={(e) => {
+            e.preventDefault();
+            go(folderHref);
+          }}
           aria-label={t("files.editor.toFolder")}
           title={t("files.editor.toFolder")}
           style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", color: "inherit", textDecoration: "none", fontWeight: 700 }}
