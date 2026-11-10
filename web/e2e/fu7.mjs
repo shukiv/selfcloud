@@ -428,10 +428,11 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
           await page.evaluate(`${SCOPE}?.querySelector('[role="tree"] > [role="treeitem"] > .tree-row button')?.click(), true`);
         }
         await page.waitFor(`${SCOPE}?.querySelector('[role="tree"] > [role="treeitem"]')?.getAttribute('aria-expanded') === 'true'`, 10000).catch(() => undefined);
+        // While a read is in flight the group's last row is the busy loading row (aria-busy), not the hint: skip it.
         await page.waitFor(
           label.mode === 'error'
             ? `!!${SCOPE}?.querySelector('[data-tree-group="root"] > li[role="none"] > div:not([class*="ant-skeleton"])')`
-            : `!!${SCOPE}?.querySelector('[data-tree-group="root"] > li[role="none"]:last-child')`,
+            : `!!${SCOPE}?.querySelector('[data-tree-group="root"] > li[role="none"]:last-child:not([aria-busy="true"])')`,
           20000,
         ).catch(async (err) => {
           const state = await page.evaluate(`(() => { const g = ${SCOPE}?.querySelector('[data-tree-group="root"]'); return { group: !!g, html: (g?.outerHTML ?? ${SCOPE}?.querySelector('[data-testid="folder-tree"]')?.outerHTML ?? 'no tree').slice(0, 700), path: location.pathname }; })()`);
@@ -442,7 +443,7 @@ async function fu7Body(h, { page, base, accountKey, teamA, accountID, memberID }
         await sleep(300);
         const elExpr = label.mode === 'error'
           ? `(${SCOPE}?.querySelector('[data-tree-group="root"]')?.querySelector(':scope > li[role="none"] > div:not([class*="ant-skeleton"])'))`
-          : `(${SCOPE}?.querySelector('[data-tree-group="root"]')?.querySelector(':scope > li[role="none"]:last-child'))`;
+          : `(${SCOPE}?.querySelector('[data-tree-group="root"]')?.querySelector(':scope > li[role="none"]:last-child:not([aria-busy="true"])'))`;
         const at = await onTop(page, elExpr);
         check(at !== null && at.hit, `${label.name}: the text is on top at its centre (elementFromPoint: ${JSON.stringify(at)})`);
         const paint = await paintedInk(page, elExpr);
