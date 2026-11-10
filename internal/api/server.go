@@ -233,7 +233,8 @@ type route struct {
 	// user with password_change_required.
 	mustChange bool
 	// noDevice refuses a terminal's device token (decision 125): the route mints or changes a credential that would
-	// outlive the device, such as a link, an editor's token or a sign-in link. Such a route answers forbidden with
+	// outlive the device, such as a link, an editor's token or a sign-in link, or it starts or resumes an import job,
+	// which runs under the stored actor and never re-checks the token. Such a route answers forbidden with
 	// details.reason device_token, before its handler runs.
 	noDevice bool
 }
@@ -636,7 +637,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/imports/{imp}/items", handle: s.handleImportItems, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/imports/{imp}/pause", handle: s.handlePauseImport, auth: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/imports/{imp}/resume", handle: s.handleResumeImport, auth: true, imp: impRefuse, noDevice: true},
-		{method: http.MethodPost, path: "/api/v1/imports/{imp}/cancel", handle: s.handleCancelImport, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/imports/{imp}/cancel", handle: s.handleCancelImport, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodPut, path: "/api/v1/accounts/{acc}/imports/archive", handle: s.handleSetArchiveSwitch, auth: true, imp: impRefuse},
 
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/folders", handle: s.handleCreateFolder, auth: true, imp: impRefuse},
