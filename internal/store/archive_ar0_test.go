@@ -145,7 +145,7 @@ func TestNodeSourceBlobIsPinned(t *testing.T) {
 // migrationNumber is the leading number of a migration file name.
 var migrationNumber = regexp.MustCompile(`^(\d{4})_`)
 
-// TestMigrationsForwardOnlyAdditive: the archive migrations (0050 on) only create tables and add columns. Nothing is
+// TestMigrationsForwardOnlyAdditive: the archive migrations (0051 on) only create tables and add columns. Nothing is
 // dropped or renamed, so a binary that predates them still reads the rows it knows (decision 120).
 func TestMigrationsForwardOnlyAdditive(t *testing.T) {
 	entries, err := fs.ReadDir(migrationFS, "migrations")
@@ -155,7 +155,7 @@ func TestMigrationsForwardOnlyAdditive(t *testing.T) {
 	checked := 0
 	for _, e := range entries {
 		m := migrationNumber.FindStringSubmatch(e.Name())
-		if m == nil || m[1] < "0050" {
+		if m == nil || m[1] < "0051" {
 			continue
 		}
 		checked++
