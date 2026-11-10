@@ -347,6 +347,21 @@ func TestUnlockRefusesADeviceWithTheBrowserHint(t *testing.T) {
 	}
 }
 
+// TestUnlockDeviceRefusedWithAReasonKeepsTheAnswer: a refusal that names its reason is the API's own answer, so the
+// browser hint, which is for the reason-less lock refusal only, is not added.
+func TestUnlockDeviceRefusedWithAReasonKeepsTheAnswer(t *testing.T) {
+	isolate(t, testDeviceTok)
+	f := newFake(t)
+	f.on("POST", nodePath(testNode, "/unlock"), reply{status: http.StatusForbidden,
+		body: `{"error":{"code":"forbidden","message":"change your password first",` +
+			`"details":{"reason":"password_change_required"}}}`})
+	res := f.run(Unlock, testNode)
+	wantCode(t, res, 3)
+	if strings.Contains(res.stderr, "browser") || !strings.Contains(res.stderr, "change your password first") {
+		t.Fatalf("stderr %q: want the API's own message and no browser hint", res.stderr)
+	}
+}
+
 func TestUnlockAccountKeyGetsNoHint(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
