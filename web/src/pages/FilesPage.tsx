@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { App, Alert, Button, ConfigProvider, Dropdown, Modal, Skeleton, theme as antdTheme } from "antd";
 import IconButton from "../components/IconButton";
 import SelectionBar from "../components/files/SelectionBar";
@@ -224,24 +224,56 @@ interface RenameState {
   error: string | null;
 }
 
+// childrenKey is the query key of a folder's listing. The page reads the listing under it, and loadPlace reads the first page under
+// the same key, so the page finds the rows already there.
+function childrenKey(folder: string | null, dir: string | null, sort: { key: SortKey; dir: SortDir }): unknown[] {
+  return queryKey("children", folder, dir, sort.key, sort.dir);
+}
+
+// readFirstPage reads the first page of a listing into the query client. The page's listing reads the same key, so one read serves
+// both (perf-1 3.2). It reads again on every call: a visit reads the listing again (fu8, decision 94).
+function readFirstPage(qc: QueryClient, folder: string, dir: string | null, sort: { key: SortKey; dir: SortDir }): Promise<InfiniteData<Page<Node>>> {
+  return qc.fetchInfiniteQuery({
+    queryKey: childrenKey(folder, dir, sort),
+    // The read ends when the query is abandoned, as the page's own read does (fu8, decision 94).
+    queryFn: ({ pageParam, signal }: { pageParam: string | undefined; signal: AbortSignal }) => childrenPage(folder, dir, pageParam, sort, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: Page<Node>) => last.next_cursor,
+    staleTime: 0,
+  });
+}
+
+// readMe reads the signed-in person's /me once for the query client, under the key the Trash page also uses, for five minutes:
+// the personal folder does not change in a session (perf-1 3.2: /me was read four times for one page).
+function readMe(qc: QueryClient): Promise<{ personal_folder_id: string | null }> {
+  return qc.fetchQuery({ queryKey: queryKey("me"), queryFn: () => getMe(), staleTime: 5 * 60_000 });
+}
+
 // loadPlace reads where the browser is. A missing folder or directory, and an address that is not a folder
 // address, are missing; the caller's own folder is read for /files.
-async function loadPlace(route: FilesRoute): Promise<PlaceState> {
+async function loadPlace(route: FilesRoute, qc: QueryClient, sort: { key: SortKey; dir: SortDir }): Promise<PlaceState> {
   if (!route || route.kind === "node") return { kind: "missing" };
   if (route.kind === "my") {
-    const me = await getMe();
+    const me = await readMe(qc);
     if (!me.personal_folder_id) return { kind: "missing" };
     return { kind: "redirect", to: filesURL(me.personal_folder_id, null) };
   }
-  const personalID = (await getMe().catch(() => null))?.personal_folder_id ?? null;
+  // The person's own folder, the folder's first listing and the folder list need none of each other, so they are read at once.
+  // The listing is the page's own read (childrenKey), so the page does not read it again (perf-1 3.2).
+  const me = readMe(qc).catch(() => null);
+  const dirID = route.kind === "dir" ? route.dir : null;
+  const first = readFirstPage(qc, route.folder, dirID, sort);
+  // A failure of the listing is the page's to show; here it is only kept from being an unhandled rejection.
+  first.catch(() => undefined);
   let list = get(folders).length > 0 ? get(folders) : await loadFolders().catch(() => []);
   // A hidden space is not in the visible list, but it is still reached, so its name is read here.
   if (!list.some((f) => f.id === route.folder)) {
     list = [...list, ...(await loadHiddenFolders().catch(() => []))];
   }
-  const dirID = route.kind === "dir" ? route.dir : null;
+  const personalID = (await me)?.personal_folder_id ?? null;
   try {
-    const where = await locate(route.folder, dirID, list);
+    // A folder's root is reached when its listing is read: the listing answers not_found to a caller who cannot reach it.
+    const where = await (dirID === null ? locate(route.folder, null, list, first) : locate(route.folder, dirID, list));
     if (!where) return { kind: "missing" };
     return { kind: "ready", here: where, personalID };
   } catch (err) {
@@ -430,7 +462,7 @@ export default function FilesPage() {
     // decision 94): a folder renamed by someone else shows its new name.
     refetchOnMount: "always",
     staleTime: 0,
-    queryFn: () => loadPlace(route),
+    queryFn: () => loadPlace(route, qc, prefs.sort),
     enabled: signedIn && route !== null && route.kind !== "node",
     // While the next place is looked up, the page keeps the place it showed: its listing stays on screen, busy and inert, and
     // the loading notice does not replace it (decision 77, item fu3b). The first place of the page has none, and shows the notice.
@@ -465,11 +497,15 @@ export default function FilesPage() {
 
   const childrenQ = useInfiniteQuery({
     // The sort is part of the key, so a sort change reads the directory again from its first page.
-    queryKey: queryKey("children", folderID, dirID, prefs.sort.key, prefs.sort.dir),
-    refetchOnMount: "always",
-    // A folder's listing is read again each time the page shows it, even inside the 30 seconds in which a read is fresh
-    // (fu8, decision 94): the page keeps the rows it had while the read is on its way.
-    staleTime: 0,
+    queryKey: childrenKey(folderID, dirID, prefs.sort),
+    // The place's read (placeQ, read on each visit) reads the first page under this key before the page shows it, so the page does
+    // not read it again on mount (perf-1 3.2). A folder's listing is still read again on each visit, through that place read.
+    refetchOnMount: false,
+    // A folder's listing is read again each time the page shows it (through the place read above, on each visit), so the rows
+    // are read again even inside the 30 seconds in which a read is fresh (fu8, decision 94). The page enables this query only after
+    // that read, so a read made just before is still fresh: TanStack would otherwise read the listing a second time when the query
+    // is enabled. The page keeps the rows it had while the read is on its way.
+    staleTime: 5_000,
     // The read is cancelled when the page leaves the folder before it arrives (fu8, decision 94).
     queryFn: ({ pageParam, signal }: { pageParam: string | undefined; signal: AbortSignal }) =>
       childrenPage(folderID as string, dirID, pageParam, prefs.sort, signal),
@@ -656,7 +692,7 @@ export default function FilesPage() {
   // for them. A layout effect runs before the browser paints the new address, so no paint shows the untrimmed revisit.
   useLayoutEffect(() => {
     if (folderID === null) return;
-    const key = queryKey("children", folderID, dirID, prefs.sort.key, prefs.sort.dir);
+    const key = childrenKey(folderID, dirID, prefs.sort);
     const had = qc.getQueryData<InfiniteData<Page<Node>>>(key);
     if (had && had.pages.length > 1) {
       qc.setQueryData<InfiniteData<Page<Node>>>(key, { pages: had.pages.slice(0, 1), pageParams: had.pageParams.slice(0, 1) });

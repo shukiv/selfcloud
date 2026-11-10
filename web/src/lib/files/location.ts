@@ -34,18 +34,20 @@ export function joinPath(base: string | null, name: string): string | null {
 }
 
 // locate reads where the browser is. It answers null when the folder or the directory is not reachable by
-// the caller, so the page shows the not-found view. Other errors are thrown.
+// the caller, so the page shows the not-found view. Other errors are thrown. listing, when the caller already reads the
+// folder's root (the files page does), is that read: it answers for the root, so the root is not read a second time (perf-1 3.2).
 export async function locate(
   folder: string,
   dirID: string | null,
   folders: FolderAccess[],
+  listing?: Promise<unknown>,
 ): Promise<Here | null> {
   const listed = folders.find((f) => f.id === folder);
   const folderName = listed?.name ?? null;
   if (!dirID) {
     try {
       // The folder's listing answers not_found when the caller cannot reach its root.
-      await childrenPage(folder, null);
+      await (listing ?? childrenPage(folder, null));
     } catch (err) {
       if (err instanceof ApiError && err.code === 'not_found') return null;
       throw err;
