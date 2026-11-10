@@ -56,4 +56,6 @@ CREATE INDEX nodes_list_name_group ON nodes (parent_id, kind, type_group, name C
 CREATE INDEX nodes_list_modified_group ON nodes (parent_id, kind, type_group, modified_at, id) WHERE trashed_at IS NULL;
 CREATE INDEX nodes_list_size_group ON nodes (parent_id, kind, type_group, size, id) WHERE trashed_at IS NULL;
 CREATE INDEX nodes_size_group ON nodes (folder_id, type_group, size DESC, id DESC) WHERE kind = 'file';
+-- The account-wide Largest page (Manage > Largest, with no folder): its filter has no folder to narrow by (review M1).
+CREATE INDEX nodes_size_account_group ON nodes (account_id, type_group, size DESC, id DESC) WHERE kind = 'file';
 CREATE INDEX nodes_trash_group ON nodes (account_id, type_group, trashed_at, id) WHERE trashed_at IS NOT NULL;

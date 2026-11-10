@@ -276,6 +276,16 @@ func largestPageSQL(accountID, folderID, kind, fileKind string, f ListFilter, af
 		args = append(args, after.Size, after.ID)
 	}
 	args = append(args, limit)
+	// With a group, the index that matches the scope is named. Without a hint the planner chose between the folder and the
+	// account index by their equality columns, and picked the account one for a folder page (review M1 of ff1a). The index
+	// names are fixed here, never taken from a request.
+	hint := ""
+	if f.Group != "" {
+		hint = " INDEXED BY nodes_size_account_group"
+		if folderID != "" {
+			hint = " INDEXED BY nodes_size_group"
+		}
+	}
 	query := `WITH RECURSIVE trashed(nid) AS (
 			SELECT id FROM nodes WHERE account_id = ? AND trashed_at IS NOT NULL
 			UNION ALL
@@ -283,7 +293,7 @@ func largestPageSQL(accountID, folderID, kind, fileKind string, f ListFilter, af
 		), page AS (
 			SELECT n.id, n.folder_id, n.parent_id, n.name, n.size, n.modified_at, n.mime_type,
 				n.id IN (SELECT nid FROM trashed) AS trashed
-			FROM nodes n JOIN folders f ON f.id = n.folder_id AND f.staged = 0
+			FROM nodes n` + hint + ` JOIN folders f ON f.id = n.folder_id AND f.staged = 0
 			WHERE n.account_id = ? AND n.kind = 'file'` + cond + `
 			ORDER BY n.size DESC, n.id DESC LIMIT ?
 		)
