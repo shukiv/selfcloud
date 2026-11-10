@@ -246,7 +246,7 @@ export default function SearchPage() {
   const empty = !loading && failure === null && problem === null && asked && items.length === 0 && cursor === null;
   const pageEmpty = !loading && failure === null && problem === null && asked && items.length === 0 && cursor !== null;
   const hasSnippet = items.some((h) => h.snippet !== undefined);
-  const sentinel = useLoadMoreSentinel(cursor !== null, loading, loadMore);
+  const sentinel = useLoadMoreSentinel(cursor !== null, loading, failedMore, loadMore);
 
   const setInText = (inText: boolean) => write((s) => ({ ...s, inText, kind: inText ? "" : s.kind }));
 

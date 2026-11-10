@@ -43,7 +43,7 @@ export default function SharedPage() {
 
   const items = useMemo<SharedNode[]>(() => (q.data?.pages ?? []).flatMap((p) => p.items), [q.data]);
   const hasMore = q.hasNextPage === true;
-  const sentinel = useLoadMoreSentinel(hasMore, q.isFetchingNextPage, () => void q.fetchNextPage());
+  const sentinel = useLoadMoreSentinel(hasMore, q.isFetchingNextPage, q.isFetchNextPageError, () => void q.fetchNextPage());
   const hasData = q.data !== undefined;
 
   useEffect(() => {

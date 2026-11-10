@@ -45,6 +45,8 @@ export default function RecentPage() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // moreFailed: the last next page failed, so the sentinel waits for Load more (tl4 r2, N1).
+  const [moreFailed, setMoreFailed] = useState(false);
   const [busy, setBusy] = useState<string[]>([]);
   const inFlight = useRef(new Set<string>());
   const [askClear, setAskClear] = useState(false);
@@ -62,7 +64,10 @@ export default function RecentPage() {
         setItems((prev) => (reset ? page.items : mergeRecent(prev, page.items)));
         setCursor(page.next_cursor ?? null);
         setError(null);
+        setMoreFailed(false);
       } catch (err) {
+        // A failed next page is not asked for again by the sentinel; Load more tries again (tl4 r2, N1).
+        if (!reset) setMoreFailed(true);
         if (!changed() && !signingOut()) setError(fileErrorText(err, langRef.current));
       } finally {
         setLoading(false);
@@ -130,7 +135,7 @@ export default function RecentPage() {
     setClearError(null);
   };
 
-  const sentinel = useLoadMoreSentinel(cursor !== null, loading, () => void load(false, cursor));
+  const sentinel = useLoadMoreSentinel(cursor !== null, loading, moreFailed, () => void load(false, cursor));
   const columns: ListColumn<RecentItem>[] = [
     { key: "name", title: t("files.col.name"), render: (n) => <DriveName node={n} /> },
     { key: "where", title: t("drive.col.location"), secondary: true, render: (n) => locationOf(n, spaces, t("nav.files")) },

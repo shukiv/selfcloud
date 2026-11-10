@@ -137,7 +137,7 @@ export default function TrashPage() {
 
   const anyManager = items.some(canPurge);
   const loading = trashQ.isPending;
-  const sentinel = useLoadMoreSentinel(trashQ.hasNextPage, trashQ.isFetchingNextPage, () => void trashQ.fetchNextPage());
+  const sentinel = useLoadMoreSentinel(trashQ.hasNextPage, trashQ.isFetchingNextPage, trashQ.isFetchNextPageError, () => void trashQ.fetchNextPage());
 
   function days(it: TrashItem): string {
     return translatePlural(lang, "trash.purge", daysUntil(it.purge_at));
