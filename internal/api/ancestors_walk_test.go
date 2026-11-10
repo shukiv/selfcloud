@@ -28,6 +28,42 @@ func (f *flakyReader) Node(ctx context.Context, accountID, id string) (*store.No
 	return f.accessReader.Node(ctx, accountID, id)
 }
 
+// trashedReader is the store with one node in the trash, as the access rules see it: a trashed node is not reached,
+// and neither is anything below it. Reach is not downward-closed in general, so the walk must stop at the trashed node
+// and not read on above it, even where a node above is reached.
+type trashedReader struct {
+	accessReader
+	trashed string
+}
+
+func (f *trashedReader) TrashState(ctx context.Context, accountID, id string) (bool, bool, error) {
+	if id == f.trashed {
+		return true, false, nil
+	}
+	return f.accessReader.TrashState(ctx, accountID, id)
+}
+
+// TestAncestorsStopAtAnUnreachableMiddleEvenWhenTheTopIsReached: the middle parent is trashed, so the caller does not
+// reach it; the top (the directory above it) and the folder root are reached. The answer is empty: the walk stops at
+// the middle and returns nothing above it.
+func TestAncestorsStopAtAnUnreachableMiddleEvenWhenTheTopIsReached(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	ctx := context.Background()
+	n, err := fx.s.store.Node(ctx, fx.acc.ID, fx.deep.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rd := &trashedReader{accessReader: fx.s.store, trashed: fx.b.ID}
+	chain, err := fx.s.reachableAncestors(ctx, rd, accountKeyOf(fx.acc.ID), n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chain) != 0 {
+		t.Errorf("the walk returned %d ancestors above an unreachable middle; want none", len(chain))
+	}
+}
+
 // accountKeyOf is the account key's principal: it reaches every node of the account, so only the walk decides the chain.
 func accountKeyOf(accID string) *auth.Principal {
 	return &auth.Principal{Kind: auth.KindAccountKey, AccountID: accID}
