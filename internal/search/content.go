@@ -56,9 +56,12 @@ func (r *Request) contentSQL(after Pos, limit int) (string, []any, error) {
 	}
 	var args []any
 	var b strings.Builder
+	// CROSS JOIN keeps the order of the joins: the full-text table is the outer loop, its text rows come next and then their
+	// nodes. An ordinary JOIN let the planner put nodes outside the match once the partial index on nodes existed (review
+	// M1 of ff1a, bisected to that index): the pages then followed the nodes' order, and repeated or skipped hits.
 	b.WriteString(`SELECT st.id, n.rowid, n.id FROM search_text_fts
-		JOIN search_texts st ON st.id = search_text_fts.rowid
-		JOIN nodes n ON n.blob_id = st.blob_id AND n.account_id = st.account_id AND n.kind = 'file'
+		CROSS JOIN search_texts st ON st.id = search_text_fts.rowid
+		CROSS JOIN nodes n INDEXED BY nodes_blob ON n.blob_id = st.blob_id AND n.account_id = st.account_id AND n.kind = 'file'
 		JOIN folders f ON f.id = n.folder_id`)
 	if len(r.Exts) > 0 {
 		b.WriteString(" JOIN search_names sn ON sn.node_id = n.id")
