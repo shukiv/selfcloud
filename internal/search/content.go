@@ -56,9 +56,11 @@ func (r *Request) contentSQL(after Pos, limit int) (string, []any, error) {
 	}
 	var args []any
 	var b strings.Builder
-	// CROSS JOIN keeps the order of the joins: the full-text table is the outer loop, its text rows come next and then their
-	// nodes. An ordinary JOIN let the planner put nodes outside the match once the partial index on nodes existed (review
-	// M1 of ff1a, bisected to that index): the pages then followed the nodes' order, and repeated or skipped hits.
+	// The order rests on INDEXED BY nodes_blob, the part the tests prove: the full-text table is the outer loop, its text rows
+	// come next, then their nodes through the blob index. Once the partial index on nodes existed (review M1 of ff1a,
+	// bisected to 8b247ba), the planner put nodes outside the match, the pages followed the nodes' order, and hits repeated
+	// or were skipped. The CROSS JOIN keywords are not proven to matter: an ordinary-JOIN mutant with the INDEXED BY passes
+	// the paging and plan tests (one run on fa53d965: all three tests pass).
 	b.WriteString(`SELECT st.id, n.rowid, n.id FROM search_text_fts
 		CROSS JOIN search_texts st ON st.id = search_text_fts.rowid
 		CROSS JOIN nodes n INDEXED BY nodes_blob ON n.blob_id = st.blob_id AND n.account_id = st.account_id AND n.kind = 'file'
