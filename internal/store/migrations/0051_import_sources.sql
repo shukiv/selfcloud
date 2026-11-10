@@ -8,5 +8,13 @@
 -- Additive only: the columns are added with defaults, so the rows that exist read as uploads.
 
 ALTER TABLE import_jobs ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'upload' CHECK (source_kind IN ('upload', 'node'));
-ALTER TABLE import_jobs ADD COLUMN source_node_id TEXT NOT NULL DEFAULT '' CHECK (length(source_node_id) <= 64);
-ALTER TABLE import_jobs ADD COLUMN source_blob_id TEXT NOT NULL DEFAULT '' CHECK (length(source_blob_id) <= 64);
+-- A node source names its node, and an upload source names none.
+ALTER TABLE import_jobs ADD COLUMN source_node_id TEXT NOT NULL DEFAULT ''
+    CHECK (length(source_node_id) <= 64 AND ((source_kind = 'node') = (source_node_id <> '')));
+-- Only a node source holds a drive file's blob.
+ALTER TABLE import_jobs ADD COLUMN source_blob_id TEXT NOT NULL DEFAULT ''
+    CHECK (length(source_blob_id) <= 64 AND (source_blob_id = '' OR source_kind = 'node'));
+
+-- The disk rule sums what the unfinished imports hold, on every upload check. Only unfinished rows are indexed.
+CREATE INDEX import_jobs_unfinished ON import_jobs (account_id, reserved_bytes)
+    WHERE state IN ('queued', 'running', 'paused');

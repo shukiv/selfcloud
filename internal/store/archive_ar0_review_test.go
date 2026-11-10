@@ -145,8 +145,9 @@ func TestArchiveNameLimitIsBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	long := strings.Repeat("é", 128) // 256 bytes
+	// Only the name is long: name_key is short, so the refusal below is the name's own rule.
 	_, err := s.w.ExecContext(ctx, `INSERT INTO bundle_jobs (id, job_id, account_id, user_id, folder_id, name, name_key, state, created_at, updated_at)
-		VALUES ('bnd_n', 'job_n', 'acc_a', 'usr_a', 'fld_a', ?, ?, 'pending', 0, 0)`, long, long)
+		VALUES ('bnd_n', 'job_n', 'acc_a', 'usr_a', 'fld_a', ?, 'n.zip', 'pending', 0, 0)`, long)
 	if err == nil {
 		t.Error("a 256-byte bundle name was accepted")
 	}

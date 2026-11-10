@@ -15,10 +15,10 @@ CREATE TABLE bundle_jobs (
     job_id         TEXT    NOT NULL UNIQUE REFERENCES jobs (id) ON DELETE CASCADE,
     account_id     TEXT    NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
     user_id        TEXT    NOT NULL CHECK (length(user_id) BETWEEN 1 AND 64), -- the maker; the only one who reads it
-    folder_id      TEXT    NOT NULL CHECK (length(folder_id) BETWEEN 1 AND 64), -- the folder the zip is saved in
+    folder_id      TEXT    NOT NULL REFERENCES folders (id) ON DELETE CASCADE, -- the folder the zip is saved in
     parent_id      TEXT    NOT NULL DEFAULT '', -- the target directory; '' is the folder's root
-    name           TEXT    NOT NULL CHECK (length(name) BETWEEN 1 AND 255),
-    name_key       TEXT    NOT NULL CHECK (length(name_key) BETWEEN 1 AND 255),
+    name           TEXT    NOT NULL CHECK (length(CAST(name AS BLOB)) BETWEEN 1 AND 255), -- bytes, as design 2.1 says
+    name_key       TEXT    NOT NULL CHECK (length(CAST(name_key AS BLOB)) BETWEEN 1 AND 255),
     state          TEXT    NOT NULL CHECK (state IN ('pending', 'cancelling', 'ready', 'cancelled', 'failed')),
     phase          TEXT    NOT NULL DEFAULT 'snapshot' CHECK (phase IN ('snapshot', 'write')),
     snapshot_count INTEGER NOT NULL DEFAULT 0 CHECK (snapshot_count >= 0),
@@ -41,6 +41,11 @@ CREATE TABLE bundle_jobs (
 ) STRICT;
 
 CREATE INDEX bundle_jobs_account_state ON bundle_jobs (account_id, state);
+
+-- The disk rule sums what the unfinished bundles hold, on every upload check. Only unfinished rows are indexed, so the
+-- index stays small while finished bundles (which have no expiry) grow.
+CREATE INDEX bundle_jobs_unwritten ON bundle_jobs (account_id, reserved_bytes, written_bytes)
+    WHERE state IN ('pending', 'cancelling');
 
 -- bundle_roots holds the items the caller asked for, in order. node_id is not a foreign key: a trashed or purged root
 -- is found by the job, which fails it with a reason.
