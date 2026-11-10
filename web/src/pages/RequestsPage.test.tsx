@@ -84,7 +84,8 @@ describe("access requests icon buttons name the person who asks", () => {
     });
     renderPage();
     await screen.findByText("Ann Lee");
-    expect(screen.getByRole("button", { name: "Approve: Ann Lee" })).toBeTruthy();
+    // The breakpoint is known after the first draw, and the icons come with it: wait for them rather than read them at once.
+    expect(await screen.findByRole("button", { name: "Approve: Ann Lee" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Deny: Ann Lee" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Approve: Ben Ko" })).toBeTruthy();
   });
