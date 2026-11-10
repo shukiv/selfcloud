@@ -240,17 +240,24 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
 
     // ---- The five drive lists (tl4 r1): at 375 px each has no sideways scroll, in English and light and in Hebrew (RTL) and dark,
     // and no uncaught exception shows on any of them in either set.
-    await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+    // The language and the theme are set at desktop width (the phone layout keeps the theme control in a menu), then the viewport
+    // is 375 px for the lists themselves.
+    await page.send('Emulation.clearDeviceMetricsOverride', {});
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     const lists = ['/starred', '/recent', '/shared', '/trash', '/search?q=budget'];
     const sets = [
       { lang: 'English', theme: 'Light', dir: 'ltr' },
       { lang: 'עברית', theme: 'Dark', dir: 'rtl' },
     ];
     for (const set of sets) {
+      await page.send('Page.navigate', { url: base + '/starred' });
+      await page.waitFor(`location.pathname === '/starred'`, 15000);
+      // The theme's menu is found by its English label, so the theme is set while the page is in English.
+      await setTheme(page, set.theme);
       await setLanguage(page, set.lang);
       await page.waitFor(`document.documentElement.dir === ${q(set.dir)}`, 10000);
-      await setTheme(page, set.theme);
       await sleep(300);
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
       for (const path of lists) {
         const before = page.errors.length;
         await page.send('Page.navigate', { url: base + path });

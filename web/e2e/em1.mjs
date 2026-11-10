@@ -14,7 +14,8 @@ const PAGES = [
   // wrapClass: the class the old element had, which owner.mjs waits for on Recent (`.empty`), kept on EmptyState's wrapper.
   { key: 'starred', path: '/starred', text: 'Nothing is starred yet. Star a file or folder to find it here.', wrapClass: 'empty' },
   { key: 'recent', path: '/recent', text: 'Nothing here yet. Files you open or change appear here.', wrapClass: 'empty' },
-  { key: 'trash', path: '/trash', text: 'The trash is empty.' },
+  // The Trash title has no full stop: the drive lists' titles are short (tl4 r1), and the words are the same.
+  { key: 'trash', path: '/trash', text: 'The trash is empty' },
 ];
 const VERSIONS_TEXT = 'There are no earlier versions.';
 // The Hebrew words come from the catalogue itself: the text before the first placeholder of the Starred page's words.
