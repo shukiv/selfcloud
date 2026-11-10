@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useRef, useSyncExternalStore } from 'react';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
 
 // A small store with the same surface the modules were written against: writable, derived, get, and
 // a hook that re-renders a component when the value changes. The subscribe contract is the one
@@ -119,5 +119,7 @@ export function useStoreSelect<T, S>(store: Readable<T>, select: (value: T) => S
     if (kept.current === null || !equal(kept.current.value, next)) kept.current = { value: next };
     return kept.current.value;
   };
-  return useSyncExternalStore((onChange) => store.subscribe(() => onChange()), read, read);
+  // The subscription is kept for the store, so React does not subscribe again on every render.
+  const subscribe = useCallback((onChange: () => void) => store.subscribe(() => onChange()), [store]);
+  return useSyncExternalStore(subscribe, read, read);
 }
