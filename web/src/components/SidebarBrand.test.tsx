@@ -51,6 +51,17 @@ describe("SidebarBrand (decision 109)", () => {
     expect(container.querySelector('[role="img"]')?.getAttribute("style")).toContain("/brand/mark.svg");
   });
 
+  // Decision 126: a server with no logo file sends the artwork whatever the name, so a custom name gets the wordmark, labelled
+  // with that name, and no text.
+  it("shows the wordmark for a custom name with the artwork, labelled with the name", () => {
+    brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
+    const { container } = renderBrand(false);
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe("/brand/wordmark.svg");
+    expect(img?.getAttribute("alt")).toBe("Acme Drive");
+    expect(container.textContent).toBe("");
+  });
+
   it("shows a custom logo in the same place, and small in the rail", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: "/brand/logo", artwork: false });
     expect(renderBrand(false).container.querySelector("img")?.getAttribute("src")).toBe("/brand/logo");

@@ -253,7 +253,9 @@ func TestWordmarkFollowsTheLogoFile(t *testing.T) {
 	if err := os.WriteFile(logo, append([]byte("\x89PNG\r\n\x1a\n"), 0, 0, 0, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s = newTestServer(t, func(c *config.Config) { c.UI.Brand = config.BrandConfig{Name: "Acme Drive", Accent: "#0F766E", LogoFile: logo} })
+	s = newTestServer(t, func(c *config.Config) {
+		c.UI.Brand = config.BrandConfig{Name: "Acme Drive", Accent: "#0F766E", LogoFile: logo}
+	})
 	wantError(t, serveRaw(t, s, http.MethodGet, "/brand/wordmark.svg"), http.StatusNotFound, "not_found")
 }
 

@@ -42,6 +42,16 @@ describe("AuthLayout brand (decision 109)", () => {
     expect(container.querySelector(".auth-brand-name")).toBeNull();
   });
 
+  // Decision 126: a custom name with no logo file gets the artwork too, with no name beside it.
+  it("shows the artwork for a custom name with the artwork, and no name beside it", () => {
+    brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: null, artwork: true });
+    const { container } = renderAuth();
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe("/brand/logo");
+    expect(img?.getAttribute("alt")).toBe("Acme Drive");
+    expect(container.querySelector(".auth-brand-name")).toBeNull();
+  });
+
   it("shows a custom name as text and no picture", () => {
     brand.set({ name: "Acme Drive", accent: DEFAULT_ACCENT, logo_url: null, artwork: false });
     const { container } = renderAuth();
