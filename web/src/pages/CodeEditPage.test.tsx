@@ -940,7 +940,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await waitFor(() => expect(content().classList.contains("cm-lineWrapping")).toBe(true));
   });
 
-  // ---- The review round 1 fixes (decision 130, the lead's findings). Each test is red before its fix.
+  // ---- The review round 1 fixes (decision 130, the review's findings). Each test is red before its fix.
 
   it("a double click on Keep as a copy sends one copy, not two (MED-1)", async () => {
     const s = server();
