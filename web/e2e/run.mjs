@@ -64,6 +64,7 @@ import { em1Checks } from './em1.mjs';
 import { ce1Checks } from './ce1.mjs';
 import { ce2b1Checks } from './ce2b1.mjs';
 import { ce2b2Checks } from './ce2b2.mjs';
+import { ce3Checks } from './ce3.mjs';
 import { tl1Checks } from './tl1.mjs';
 import { tl3Checks } from './tl3.mjs';
 import { menuHeaderText, pickMenuEntry } from './menu.mjs';
@@ -101,6 +102,8 @@ const ce2b1Stale = new Set();
 // copy the section makes with a name already taken: the server answers 412 to those on purpose.
 const ce2b2Stale = new Set();
 const ce2b2Taken = new Set();
+// ce3Ended collects the files whose save is answered 401 on purpose: the section ends the session on the server (ce3Checks, decision 133).
+const ce3Ended = new Set();
 
 // The answers the run causes on purpose: the start-up probe of an anonymous visitor, and a sign-in link
 // used a second time. The browser logs each as a failed request; the run counts them instead.
@@ -188,6 +191,15 @@ const EXPECTED = [
     matches: (e) => {
       const m = /\/api\/v1\/nodes\/([^/]+)\/content$/.exec(e.url ?? '');
       return e.source === 'network' && m !== null && (ce2b1Stale.has(m[1]) || ce2b2Stale.has(m[1])) && /status of 412\b/.test(e.text ?? '');
+    },
+  },
+  // The editor's save after the session ended on the server is answered 401 once (ce3Checks, decision 133). Only a file the section
+  // ended the session for counts.
+  {
+    name: 'ended sign-in',
+    matches: (e) => {
+      const m = /\/api\/v1\/nodes\/([^/]+)\/content$/.exec(e.url ?? '');
+      return e.source === 'network' && m !== null && ce3Ended.has(m[1]) && /status of 401\b/.test(e.text ?? '');
     },
   },
   // A copy that meets a taken name is refused with 412 once, and the next name is tried (ce2b2Checks, decision 130). Only a path the
@@ -1034,6 +1046,7 @@ async function main() {
     // The code editor and its save (slice ce2b-1, decision 124): the pencil, the editor page, Ctrl+S, the conflict and Hebrew.
     if (!only || onlySet.has('ce2b-1')) await ce2b1Checks(h, { page, base, accountKey, teamB, stale: ce2b1Stale });
     if (!only || onlySet.has('ce2b-2')) await ce2b2Checks(h, { page, base, accountKey, stale: ce2b2Stale, taken: ce2b2Taken });
+    if (!only || onlySet.has('ce3')) await ce3Checks(h, { page, base, accountKey, ended: ce3Ended });
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
