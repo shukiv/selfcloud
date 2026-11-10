@@ -207,6 +207,9 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
     case 'account.deleted':
     case 'tokens.revoke':
     case 'token.mint':
+    case 'cli.approve':
+    case 'cli.device_revoke':
+    case 'cli.sign_in':
       return { key: `audit.${entry.action}`, params: { actor } };
     case 'access.approve':
       return { key: 'audit.access.approve', params: { actor, person: personOf(names, detail(d, 'user')) } };

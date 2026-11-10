@@ -67,6 +67,11 @@ var webhookAuditNoEvent = map[string]string{
 	"user.device_confirmed":        "sign-in activity is not on the event list (sec2, decision 86)",
 	"user.login_confirm_requested": "sign-in activity is not on the event list (sec2, decision 86, round 3)",
 
+	// A terminal's device sign-in (cli4, decision 125) is sign-in activity too.
+	"cli.approve":       "sign-in activity is not on the event list (cli4, decision 125)",
+	"cli.sign_in":       "sign-in activity is not on the event list (cli4, decision 125)",
+	"cli.device_revoke": "sign-in activity is not on the event list (cli4, decision 125)",
+
 	"user.password_reset":     "password changes are not on the event list",
 	"user.password_set":       "password changes are not on the event list",
 	"admin.password_refused":  "a refused attempt changes nothing: no event (decision 41)",
