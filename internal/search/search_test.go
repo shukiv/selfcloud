@@ -205,6 +205,16 @@ func TestFingerprintBindsTheRequest(t *testing.T) {
 	if a.Fingerprint() != c.Fingerprint() {
 		t.Fatal("the typed label tests change the fingerprint")
 	}
+	// The type group (decision 110): a cursor of one group does not continue another, and an unset group keeps the
+	// fingerprint of a request without a type.
+	pdf, image := base(), base()
+	pdf.Group, image.Group = "pdf", "image"
+	if base().Fingerprint() == pdf.Fingerprint() {
+		t.Fatal("a type group keeps the fingerprint of the request without one")
+	}
+	if pdf.Fingerprint() == image.Fingerprint() {
+		t.Fatal("two type groups share a fingerprint, so a cursor of one continues the other")
+	}
 }
 
 // TestCandidateSQLBindsEveryValue: the query text holds no request value; every value is an argument.
