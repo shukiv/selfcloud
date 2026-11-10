@@ -54,6 +54,21 @@ describe("the approval page", () => {
     expect(window.location.href).toBe(before);
   });
 
+  // The name is the terminal's own choice, and the page says so; it warns against a code someone else gave the person
+  // (device-code phishing, decision 125).
+  it("says the terminal named the sign-in, and warns against a code someone else gave", async () => {
+    stubFetch((c: Call) => {
+      if (c.url === "/api/v1/auth/cli/lookup") return { status: 200, body: request };
+      return fail(404, "not_found");
+    });
+    render(page());
+    fireEvent.change(screen.getByLabelText("Code from the terminal"), { target: { value: "BCDFGHJK" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText("selfcloud CLI on laptop");
+    expect(screen.getByText("The name was chosen by the terminal. It is not checked.")).toBeTruthy();
+    expect(screen.getByText(/Approve only a code you started yourself/)).toBeTruthy();
+  });
+
   it("approves the shown sign-in with the same code, then says it is done", async () => {
     const { calls } = stubFetch((c: Call) => {
       if (c.url === "/api/v1/auth/cli/lookup") return { status: 200, body: request };

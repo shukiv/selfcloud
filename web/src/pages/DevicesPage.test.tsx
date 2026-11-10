@@ -62,6 +62,18 @@ describe("signed-in devices", () => {
     expect(screen.getByRole("columnheader", { name: "Address" })).toBeTruthy();
   });
 
+  // The list is the unified preset list (Listing, decision 114): a region named for the page, drawn with the list's class.
+  it("is the unified list preset: a region named for the page, with the address as a secondary column", async () => {
+    stubFetch((c: Call) => {
+      if (c.url === "/api/v1/auth/cli/devices") return { status: 200, body: { devices: [device("dev_1", "laptop")] } };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    await screen.findByText("laptop");
+    const region = screen.getByRole("region", { name: "Signed-in devices" });
+    expect(region.classList.contains("item-list")).toBe(true);
+  });
+
   it("with no device, says so as the title, and offers no add action", async () => {
     stubFetch((c: Call) => {
       if (c.url === "/api/v1/auth/cli/devices") return { status: 200, body: { devices: [] } };
