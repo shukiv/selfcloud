@@ -8,7 +8,7 @@ import { session, type Session } from "../lib/session";
 import { myBreakdown, myStorage } from "../lib/storage/api";
 import { setLang, translate } from "../lib/i18n";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
-import { desktopViewport } from "../test/viewport";
+import { desktopViewport, phoneViewport } from "../test/viewport";
 import StoragePage from "./StoragePage";
 
 function signedAs(id: string, role: "owner" | "member" | "admin" = "member"): Session {
@@ -250,8 +250,8 @@ describe("Storage row actions and the review fixes (decision 79)", () => {
     });
     renderPage();
     await screen.findByRole("link", { name: "One.bin" });
-    // Decision 122 (tl3): the row's icons are the one table's IconButtons, so Download is a button with a tooltip.
-    expect(screen.getByRole("button", { name: "Download: One.bin" })).toBeTruthy();
+    // Download is a link to the file's address (round 2, M2), with its tooltip.
+    expect(screen.getByRole("link", { name: "Download: One.bin" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Move to trash: One.bin" }));
     await waitFor(() => expect(screen.queryByRole("link", { name: "One.bin" })).toBeNull());
     const del = calls.findIndex((c) => c.method === "DELETE");
@@ -298,7 +298,33 @@ describe("Storage row actions and the review fixes (decision 79)", () => {
     renderPage();
     await screen.findByRole("link", { name: "One.bin" });
     fireEvent.click(screen.getByRole("button", { name: "Move to trash: One.bin" }));
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Download: Two.bin" })));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: "Download: Two.bin" })));
+  });
+
+  // Round 2 (M1): on a phone a row's icons are in its ⋮ menu, so the focus after Move to trash goes to the next row's ⋮ button.
+  it("on a phone, after Move to trash the focus goes to the next row's ⋮ button", async () => {
+    let trashed = false;
+    stubFetch((c: Call) => {
+      if (c.url === ME) return { status: 200, body: { user: {}, storage: STORAGE } };
+      if (c.method === "DELETE") {
+        trashed = true;
+        return { status: 204 };
+      }
+      if (c.url.startsWith(LARGEST)) {
+        return { status: 200, body: { items: trashed ? [largest("nod_2", "Two.bin", 100)] : [largest("nod_1", "One.bin"), largest("nod_2", "Two.bin", 100)] } };
+      }
+      return fail(404, "x");
+    });
+    const undo = phoneViewport();
+    try {
+      renderPage();
+      const first = await screen.findByRole("row", { name: "One.bin" });
+      fireEvent.click(first.querySelector('button[aria-haspopup="menu"]') as HTMLElement);
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Move to trash: One.bin" }));
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("row", { name: "Two.bin" }).querySelector('button[aria-haspopup="menu"]')));
+    } finally {
+      undo();
+    }
   });
 
   it("when the last row goes, the focus goes to the heading of the list", async () => {
