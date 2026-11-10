@@ -200,14 +200,38 @@ the server cannot be reached, the profile and its token are kept, and `logout` c
 `selfcloud whoami --profile name` reads `GET /api/v1/folders` with the profile's own token, sent only to the profile's
 own address. It prints the profile name, the address, the kind and the number of top-level folders the person can see.
 
-A device token meets these 403 answers besides the ones every credential meets (401 `unauthenticated` when the token has
-been ended or has expired, which the CLI reports as an authentication failure):
+### What a device token is refused
 
-- `forbidden` with `details.reason` `password_change_required`: the person must change the password first. Every route
-  is refused this way until the password is changed, and the change itself ends the device.
-- `account_suspended`, `user_disabled` and `user_not_verified`: the account or the person can no longer sign in, and the
-  device is ended by the same cut-off.
-- `forbidden` on `POST /api/v1/auth/cli/revoke` for any credential that is not a device token.
+A device token acts as the person who approved it, as a token minted by an account key for a user does, and the refusals
+below apply to it. Only the signed-in person's browser session is not refused these.
+
+**401 `unauthenticated`** (the token is not valid). The device was signed out or ran out of time, or its account is
+suspended, or its person is disabled or not verified, or a password change or a cut-off ended its sign-in. The CLI
+reports this as an authentication failure. A device on a suspended or disabled account gets this 401; it does not get
+403.
+
+**403 `forbidden` with `details.reason` `password_change_required`.** The person must change the password first. Every
+route answers this until the password is changed, and the change itself ends the device.
+
+**403 `forbidden` with `details.reason` `device_token`.** A route that would mint or change a credential which outlives
+the device refuses it, and says so with this reason (decision 125): the office editor, Save As included; creating or
+changing a link, a share link or a share credential (`POST /nodes/{nod}/links`, `POST /nodes/{nod}/share-links`,
+`PATCH` and `POST .../reset` of a share link, `POST /share/renew`); a sign-in link; a password reset or a verification
+mail; a webhook, its change and its secret. Use the browser for these.
+
+**403 `forbidden` with a message and no reason.** A route that refuses any token acting for a user. The message names
+the route's rule, such as "a delegated token cannot list access requests", "a delegated token cannot change permissions"
+or "a delegated token has no part in a playlist". The routes are: access requests (list and decide); comments and
+activity of people; the directory search; email change (an account key or an installation admin only); folder settings;
+hidden folders (listing them, hiding a folder, showing it); lock break; media resume; notifications; ownership transfer;
+permissions (read and change); playlists; share links (manage); stars and recent items (a read-only token cannot
+change them; clearing or removing recent items needs the signed-in user).
+
+**403 `forbidden` on `POST /api/v1/auth/cli/revoke`** for any credential that is not a device token.
+
+The approval step answers its own refusals to the person approving, not to a device: `account_suspended`,
+`user_disabled` and `user_not_verified` (403) when the account or person cannot sign in; `password_change_required`
+(403) for a person who must change the password; `forbidden` (403) for an installation admin, which holds no device.
 
 ## Docker
 
