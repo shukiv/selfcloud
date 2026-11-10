@@ -385,9 +385,9 @@ func TestRemoveWorksWhenAnotherProfileHasABadAddress(t *testing.T) {
 		if code := Remove([]string{victim}, &out, &errOut); code != 0 {
 			t.Fatalf("rm %s with a bad address elsewhere: exit %d, stderr %q", victim, code, errOut.String())
 		}
-		left, err := profile.Open(dir).Load()
+		left, err := profile.Open(dir).LoadAny()
 		if err != nil {
-			t.Fatalf("after rm %s the file still refuses: %v", victim, err)
+			t.Fatalf("after rm %s the file cannot be read: %v", victim, err)
 		}
 		if _, gone := left.Profiles[victim]; gone || len(left.Profiles) != 1 {
 			t.Errorf("after rm %s the profiles are %v", victim, left.Profiles)

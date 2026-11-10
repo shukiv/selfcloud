@@ -254,7 +254,8 @@ func Remove(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return output.Fail(stderr, asJSON, err)
 	}
-	f, err := s.Load()
+	// rm does not use the addresses, so a bad one elsewhere in the file does not stop it (LoadAny).
+	f, err := s.LoadAny()
 	if err != nil {
 		return output.Fail(stderr, asJSON, err)
 	}

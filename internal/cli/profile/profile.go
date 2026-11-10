@@ -135,7 +135,13 @@ func validKind(k string) bool { return k == KindAdmin || k == KindAccount || k =
 
 // Load reads the file. A missing file is no profiles. A file or directory that any group or other user can read or
 // write is refused, and the message gives the chmod that fixes it. A symbolic link is refused.
-func (s *Store) Load() (File, error) {
+func (s *Store) Load() (File, error) { return s.load(true) }
+
+// LoadAny reads the file as Load does, but without checking the profiles' addresses. Only profile rm uses it, so that
+// a bad address in one profile does not stop another profile from being removed.
+func (s *Store) LoadAny() (File, error) { return s.load(false) }
+
+func (s *Store) load(checkAddresses bool) (File, error) {
 	empty := File{Version: fileVersion, Profiles: map[string]Profile{}}
 	if err := s.checkDir(); err != nil {
 		return File{}, err
@@ -181,9 +187,13 @@ func (s *Store) Load() (File, error) {
 		if !validKind(p.Kind) {
 			return File{}, exitcode.Usagef("%s holds a profile of an unknown kind", path)
 		}
-		// The address gets the rule add uses. The refusal does not repeat it: a bad address may hold a credential.
-		if _, err := client.ParseBaseURL(p.URL, true); err != nil {
-			return File{}, exitcode.Usagef("%s holds a profile with an address that is not valid", path)
+		// The address gets the rule add uses. The refusal names the profile, not the address: the address may hold a
+		// credential.
+		if checkAddresses {
+			if _, err := client.ParseBaseURL(p.URL, true); err != nil {
+				return File{}, exitcode.Usagef("%s: profile %s has an address that is not valid; remove it with profile rm",
+					path, Shown(name))
+			}
 		}
 	}
 	return f, nil
