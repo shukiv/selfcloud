@@ -234,8 +234,8 @@ type route struct {
 	mustChange bool
 	// noDevice refuses a terminal's device token (decision 125): the route mints or changes a credential that would
 	// outlive the device, such as a link, an editor's token or a sign-in link, or it starts or resumes an import job,
-	// which runs under the stored actor and never re-checks the token. Such a route answers forbidden with
-	// details.reason device_token, before its handler runs.
+	// which runs under the stored actor and never re-checks the token. Cancelling an import is refused with them, as
+	// resuming is. Such a route answers forbidden with details.reason device_token, before its handler runs.
 	noDevice bool
 }
 
