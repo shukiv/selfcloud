@@ -83,7 +83,7 @@ func TestRemoteCommandsCallTheirRoute(t *testing.T) {
 	recorded := httptest.NewServer(rec)
 	defer recorded.Close()
 	for _, c := range remoteCommands {
-		if c.route == "" {
+		if c.route == "" || c.notProbed != "" {
 			continue
 		}
 		args, ok := probes[c.name]

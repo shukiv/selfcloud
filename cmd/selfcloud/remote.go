@@ -9,6 +9,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/cli/apispec"
 	"github.com/shukiv/selfcloud/internal/cli/info"
 	"github.com/shukiv/selfcloud/internal/cli/profilecmd"
+	"github.com/shukiv/selfcloud/internal/cli/signin"
 )
 
 // remoteCommand is one command of the remote client. route is the server route it calls, or "" for a command that only
@@ -17,8 +18,22 @@ import (
 type remoteCommand struct {
 	name  string
 	route string
-	help  string
-	run   func(args []string, stdout, stderr io.Writer) int
+	// more lists the routes a command calls after route, in order. login calls start and then poll (decision 125).
+	more []string
+	// notProbed says why TestRemoteCommandsCallTheirRoute does not run the command against the server: the command needs a
+	// credential that the test cannot make (a person's approval in the browser, for a device token). Its own package records
+	// its calls instead.
+	notProbed string
+	help      string
+	run       func(args []string, stdout, stderr io.Writer) int
+}
+
+// routes returns every route the command calls, route first.
+func (c remoteCommand) routes() []string {
+	if c.route == "" {
+		return nil
+	}
+	return append([]string{c.route}, c.more...)
 }
 
 // remoteCommands lists the remote commands in the order the usage text shows them.
@@ -28,6 +43,20 @@ var remoteCommands = []remoteCommand{
 	{name: "api spec", route: "GET /api/v1/openapi.yaml", help: `  api spec [--out FILE [--overwrite]] [flags]
                                  the server's OpenAPI document, to standard output or to a new file
 `, run: apispec.Run},
+	{name: "login", route: "POST /api/v1/auth/cli/start", more: []string{"POST /api/v1/auth/cli/poll"},
+		notProbed: "needs a person to approve the sign-in in the browser; internal/cli/signin records its calls",
+		help: `  login --url ADDRESS [--profile NAME]
+                                 sign in at this terminal: prints a code and a page to open, waits for the approval, and
+                                 saves the device token in a profile (the password is never typed here)
+`, run: signin.Login},
+	{name: "logout", route: "POST /api/v1/auth/cli/revoke",
+		notProbed: "needs a device token; internal/cli/signin records its calls",
+		help: `  logout [--profile NAME]        end this terminal's sign-in on the server and remove its profile
+`, run: signin.Logout},
+	{name: "whoami", route: "GET /api/v1/folders",
+		notProbed: "needs a device token; internal/cli/signin records its calls",
+		help: `  whoami [--profile NAME]        the profile, its address, its kind and how many folders its token reaches
+`, run: signin.Whoami},
 	{name: "profile add", help: `  profile add NAME --url ADDRESS [--token-file FILE] [--ca-file FILE]
                                  save a profile; its key comes from --token-file or standard input, never from argv
 `, run: profilecmd.Add},

@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -82,7 +83,7 @@ func TestCLIParityCommands(t *testing.T) {
 			if command == "-" {
 				continue
 			}
-			if rc, ok := remoteNamed(command); !ok || rc.route != key {
+			if rc, ok := remoteNamed(command); !ok || !slices.Contains(rc.routes(), key) {
 				t.Errorf("docs/cli-parity.tsv: the route row %q names %q, which does not call that route", key, command)
 			}
 		}
@@ -99,9 +100,11 @@ func TestCLIParityCommands(t *testing.T) {
 			}
 			continue
 		}
-		if got, ok := routeRows[c.route]; !ok || got != c.name {
-			t.Errorf("remote command %q calls %s, but docs/cli-parity.tsv has no route row naming it (row names %q)",
-				c.name, c.route, got)
+		for _, route := range c.routes() {
+			if got, ok := routeRows[route]; !ok || got != c.name {
+				t.Errorf("remote command %q calls %s, but docs/cli-parity.tsv has no route row naming it (row names %q)",
+					c.name, route, got)
+			}
 		}
 	}
 }
