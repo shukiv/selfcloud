@@ -13,7 +13,7 @@ vi.mock("../lib/router", () => ({ go: goMock, signInURL: () => "/login" }));
 
 import CodeEditPage from "./CodeEditPage";
 import { signOut } from "../lib/auth";
-import { keepUnsaved, readUnsaved, SIGNOUT_CHANNEL, signedInHere } from "../lib/code/unsaved";
+import { keepUnsaved, noteSignedIn, readUnsaved, SIGNOUT_CHANNEL } from "../lib/code/unsaved";
 import { clearSession, session, setMe, setSignedIn } from "../lib/session";
 import { get, useStore } from "../lib/store";
 
@@ -252,7 +252,7 @@ beforeEach(() => {
   // The text kept across a sign-in lives in this tab's sessionStorage, so one test's kept text must not reach the next.
   sessionStorage.clear();
   // Another tab's sign-out sets a flag in this module; it must not reach the next test.
-  signedInHere();
+  noteSignedIn();
   goMock.mockClear();
   // go moves the router, so Close and Back are subject to the same unsaved guard as a link (design 4.6).
   goMock.mockImplementation((url: string) => navigateTo?.(url));
@@ -1659,6 +1659,59 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     expect(keptFor()).toHaveLength(1);
     setMe({ user: { id: "usr_2", role: "user" }, account: null, csrf_token: "csrf_two" } as never);
     expect(keptFor()).toEqual([]);
+  });
+
+  it("another tab's sign-out, then its sign-in: this tab keeps the text again when its session ends (N1)", async () => {
+    const other = new BroadcastChannel(SIGNOUT_CHANNEL);
+    try {
+      server();
+      render();
+      await waitFor(() => expect(content().textContent).toContain("{}"));
+      type(0, "x");
+      other.postMessage({ type: "signed-out" });
+      await pause();
+      other.postMessage({ type: "signed-in" });
+      await pause();
+      act(() => clearSession());
+      await waitFor(() => expect(keptFor()).toHaveLength(1));
+      expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}");
+    } finally {
+      other.close();
+    }
+  });
+
+  it("a sign-in in this tab posts a sign-in message to the other tabs, with no text in it (N1)", async () => {
+    const heard: unknown[] = [];
+    const listener = new BroadcastChannel(SIGNOUT_CHANNEL);
+    listener.onmessage = (e: MessageEvent) => heard.push(e.data);
+    try {
+      server();
+      render();
+      await waitFor(() => expect(content().textContent).toContain("{}"));
+      type(0, "x");
+      setSignedIn({ user: { id: "usr_1", role: "user" }, csrf_token: "csrf_again" } as never);
+      await waitFor(() => expect(heard).toHaveLength(1));
+      expect(heard[0]).toEqual({ type: "signed-in" });
+    } finally {
+      listener.close();
+    }
+  });
+
+  it("a sign-in as a person through setMe lets this tab keep the text again after another tab's sign-out (N6)", async () => {
+    const other = new BroadcastChannel(SIGNOUT_CHANNEL);
+    try {
+      server();
+      render();
+      await waitFor(() => expect(content().textContent).toContain("{}"));
+      type(0, "x");
+      other.postMessage({ type: "signed-out" });
+      await pause();
+      setMe({ user: { id: "usr_1", role: "user" }, account: null, csrf_token: "csrf_again" } as never);
+      act(() => clearSession());
+      await waitFor(() => expect(keptFor()).toHaveLength(1));
+    } finally {
+      other.close();
+    }
   });
 
   it("a write this tab refuses keeps today's wording for the ended sign-in, and Sign in asks first", async () => {

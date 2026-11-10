@@ -5,11 +5,11 @@ import {
   announceSignOut,
   dropUnsaved,
   keepUnsaved,
+  noteSignedIn,
   purgeAllUnsaved,
   purgeOtherUnsaved,
   readUnsaved,
   SIGNOUT_CHANNEL,
-  signedInHere,
   watchSignOuts,
 } from "./unsaved";
 
@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   sessionStorage.clear();
-  signedInHere();
+  noteSignedIn();
 });
 
 describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)", () => {
@@ -54,7 +54,7 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
       await pause();
       expect(keepUnsaved("usr_1", NOD, rec)).toBe(false);
       expect(readUnsaved("usr_1", NOD)).toBeNull();
-      signedInHere();
+      noteSignedIn();
       expect(keepUnsaved("usr_1", NOD, rec)).toBe(true);
     } finally {
       stop();
@@ -75,6 +75,43 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
     } finally {
       listener.close();
     }
+  });
+
+  it("a sign-in in another tab clears the flag here, so this tab keeps text again (N1)", async () => {
+    const stop = watchSignOuts();
+    const other = new BroadcastChannel(SIGNOUT_CHANNEL);
+    try {
+      other.postMessage({ type: "signed-out" });
+      await pause();
+      expect(keepUnsaved("usr_1", NOD, rec)).toBe(false);
+      other.postMessage({ type: "signed-in" });
+      await pause();
+      expect(keepUnsaved("usr_1", NOD, rec)).toBe(true);
+    } finally {
+      stop();
+      other.close();
+    }
+  });
+
+  it("a sign-in in this tab posts a sign-in message that carries no text (N1)", async () => {
+    const heard: unknown[] = [];
+    const listener = new BroadcastChannel(SIGNOUT_CHANNEL);
+    listener.onmessage = (e: MessageEvent) => heard.push(e.data);
+    try {
+      keepUnsaved("usr_1", NOD, rec);
+      noteSignedIn();
+      await pause();
+      expect(heard).toEqual([{ type: "signed-in" }]);
+    } finally {
+      listener.close();
+    }
+  });
+
+  it("stopping the watch closes this tab's channel (N2)", () => {
+    const close = vi.spyOn(BroadcastChannel.prototype, "close");
+    const stop = watchSignOuts();
+    stop();
+    expect(close).toHaveBeenCalled();
   });
 
   it("a browser without channels announces and watches nothing, and throws nothing", async () => {

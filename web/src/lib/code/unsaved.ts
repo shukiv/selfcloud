@@ -158,7 +158,7 @@ export function watchSignOuts(): () => void {
   };
 }
 
-// signedInHere is called when this tab signs a person in: keeping text is allowed again.
-export function signedInHere(): void {
+// noteSignedIn is called when this tab signs a person in: keeping text is allowed again.
+export function noteSignedIn(): void {
   endedElsewhere = false;
 }
