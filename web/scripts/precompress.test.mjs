@@ -108,23 +108,52 @@ test('files outside assets/ are never touched: the page, the offline page, the w
   );
 });
 
-test('a variant is never a source: a compressible .gz with no file beside it gets no variant of its own', () => {
+test('a source named .gz fails the build, names it, and writes nothing', () => {
   const dir = fixture({ 'assets/legacy.js.gz': text(4096) });
-  assert.equal(run(dir).status, 0);
-  assert.deepEqual(list(dir), ['assets/legacy.js.gz'], 'a variant of a variant was written');
+  const r = run(dir);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /legacy\.js\.gz/);
+  assert.deepEqual(list(dir), ['assets/legacy.js.gz'], 'a file was written beside a source named .gz');
 });
 
-test('the original file is not changed, and a second run adds nothing', () => {
+test('a source named .br fails the build too', () => {
+  const dir = fixture({ 'assets/app.js.br': text(4096) });
+  const r = run(dir);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.deepEqual(list(dir), ['assets/app.js.br'], 'a file was written beside a source named .br');
+});
+
+test('a nested folder under assets/ is compressed at every depth', () => {
+  const dir = fixture({ 'assets/chunks/deep/x.js': text(4096) });
+  assert.equal(run(dir).status, 0);
+  const gz = readFileSync(join(dir, 'assets/chunks/deep/x.js.gz'));
+  const br = readFileSync(join(dir, 'assets/chunks/deep/x.js.br'));
+  assert.deepEqual(gunzipSync(gz), text(4096));
+  assert.deepEqual(brotliDecompressSync(br), text(4096));
+});
+
+test('two fresh runs over the same files give byte-equal variants', () => {
+  const files = { 'assets/a.js': text(4096), 'assets/b/c.css': text(3000) };
+  const first = fixture(files);
+  const second = fixture(files);
+  assert.equal(run(first).status, 0);
+  assert.equal(run(second).status, 0);
+  for (const name of ['assets/a.js.gz', 'assets/a.js.br', 'assets/b/c.css.gz', 'assets/b/c.css.br']) {
+    assert.deepEqual(readFileSync(join(first, name)), readFileSync(join(second, name)), `${name} differs between runs`);
+  }
+});
+
+test('a second run on its own output is refused, and writes nothing', () => {
   const original = text(4096);
   const dir = fixture({ 'assets/app.js': original });
   assert.equal(run(dir).status, 0);
   const first = list(dir);
   const gzFirst = readFileSync(join(dir, 'assets/app.js.gz'));
-  assert.equal(run(dir).status, 0);
+  const again = run(dir);
+  assert.equal(again.status, 1, 'a second run over its own variants was not refused');
   assert.deepEqual(list(dir), first, 'a second run wrote other files');
   assert.deepEqual(readFileSync(join(dir, 'assets/app.js.gz')), gzFirst, 'a second run rewrote the gzip variant');
   assert.deepEqual(readFileSync(join(dir, 'assets/app.js')), original);
-  assert.ok(!first.some((n) => /\.(gz|br)\.(gz|br)$/.test(n)), `a variant of a variant: ${first}`);
 });
 
 test('a folder with no assets/ fails: the build has no files to compress', () => {
