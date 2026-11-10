@@ -96,6 +96,11 @@ var boundaryCases = []boundaryCase{
 		rec := callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared?"+q, nil)
 		return rec.Code, rec.Body.String()
 	}},
+	{"children, the folder listing", func(t *testing.T, fx *p1Fixture, q string) (int, string) {
+		boundaryNodes(t, fx.s, fx.key, fx.fld.ID)
+		rec := call(t, fx.s, "GET", "/api/v1/folders/"+fx.fld.ID+"/children?"+q, fx.key, nil)
+		return rec.Code, rec.Body.String()
+	}},
 	{"search", func(t *testing.T, fx *p1Fixture, q string) (int, string) {
 		boundaryNodes(t, fx.s, fx.key, fx.fld.ID)
 		rec := call(t, fx.s, "GET", "/api/v1/search?q=boundary&"+q, fx.key, nil)
