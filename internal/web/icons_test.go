@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -295,6 +296,80 @@ func TestLogoIsFittedWithItsMargin(t *testing.T) {
 	}
 	if got := rgbaAt(apple, 5, 5); got != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
 		t.Errorf("apple icon margin %v, want white", got)
+	}
+}
+
+// bigLogo is a 613 by 207 logo, 16 bits a channel: an opaque disc with a hard edge at fractional positions, and a band of partly
+// transparent pixels beside it.
+func bigLogo(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewNRGBA64(image.Rect(0, 0, 613, 207))
+	for y := 0; y < 207; y++ {
+		for x := 0; x < 613; x++ {
+			var c color.NRGBA64
+			switch {
+			case (x-300)*(x-300)+(y-100)*(y-100) < 90*90:
+				c = color.NRGBA64{R: 0x1234, G: 0xabcd, B: 0x5678, A: 0xffff}
+			case x > 500 && (x+y)%7 < 3:
+				c = color.NRGBA64{R: 0xffff, G: 0x2222, A: uint16(0x4000 + (x*y*37)%0x8000)}
+			}
+			img.SetNRGBA64(x, y, c)
+		}
+	}
+	return encodePNG(t, img)
+}
+
+// TestLogoIsReducedInOnePass: a 16-bit logo on the 192 and the apple icon is one reduction of the file, fitted in its margin and
+// composed on white. Each pixel is within one level of that reference. A picture reduced twice moves its edges by a row or more.
+func TestLogoIsReducedInOnePass(t *testing.T) {
+	data := bigLogo(t)
+	src, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := brandHandler(t, "Acme Drive", nil, pngFile(data))
+	for _, c := range []struct {
+		path string
+		size int
+	}{{"/brand/icon-192.png", 192}, {"/brand/apple-touch-icon.png", 180}} {
+		w, hgt := fitSize(613, 207, plainLogoSide(c.size))
+		x0, y0 := (c.size-w)/2, (c.size-hgt)/2
+		ref := scaleTo(src, w, hgt)
+		got := iconImage(t, h, c.path)
+		for y := 0; y < hgt; y++ {
+			for x := 0; x < w; x++ {
+				p := ref.NRGBAAt(x, y)
+				a := float64(p.A) / 255
+				want := [3]float64{
+					float64(p.R)*a + 255*(1-a),
+					float64(p.G)*a + 255*(1-a),
+					float64(p.B)*a + 255*(1-a),
+				}
+				g := rgbaAt(got, x0+x, y0+y)
+				for k, v := range []uint8{g.R, g.G, g.B} {
+					if d := math.Abs(float64(v) - math.Round(want[k])); d > 1 {
+						t.Fatalf("%s pixel (%d,%d) channel %d is %d, one reduction from the file gives %.1f", c.path, x, y, k, v, want[k])
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestRefusedLogoAllocatesLittle: a logo larger than the icons take is refused from its header, so the refusal costs little
+// memory. A valid 3000 pixel logo decoded in full would allocate about 36 MB. This test is not parallel: it reads the allocator's
+// totals.
+func TestRefusedLogoAllocatesLittle(t *testing.T) {
+	logo := pngFile(solidPNG(t, 3000, 3000, color.NRGBA{R: 1, G: 2, B: 3, A: 255}))
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, note := decodeLogo(logo)
+	runtime.ReadMemStats(&after)
+	if note == "" {
+		t.Fatal("a 3000 pixel logo was not refused")
+	}
+	if got := after.TotalAlloc - before.TotalAlloc; got > 1<<20 {
+		t.Errorf("refusing a 3000 pixel logo allocated %d bytes, want at most 1 MiB: the pixels were read before the size was checked", got)
 	}
 }
 
