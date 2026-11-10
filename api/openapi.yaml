@@ -2521,7 +2521,8 @@ paths:
         a signed-in person types at `verification_url`. That URL is the bare approval page; no code is in it. The request
         expires 600 seconds after this call, and polling does not move that. Ten starts an hour from one client address
         (`cli.start.ip`). `client_name` names the terminal in the approval page; it is optional and one line of text.
-        Refused from another site.
+        Refused from another site. Errors: `invalid_request` (400) for a `client_name` that is too long or not one line,
+        `rate_limited` (429).
       security: []
       requestBody:
         required: false
@@ -2550,7 +2551,8 @@ paths:
         `details.interval` in seconds, and the interval grows by 5 seconds each time. Once approved, the answer is the device
         token, once: the request is then gone, and any later poll gets `expired_token`. An unknown, spent or expired code
         also gets `expired_token`. Limited per device code (`cli.poll.code`) and per client address (`cli.poll.ip`).
-        Refused from another site.
+        Refused from another site. Errors: `invalid_request` (400) for a malformed device code, `authorization_pending` and
+        `slow_down` (400), `expired_token` (400), `rate_limited` (429).
       security: []
       requestBody:
         required: true
@@ -2586,6 +2588,7 @@ paths:
         terminal shows, with or without the dash. A wrong code counts against the request it names, and the fifth wrong
         code deletes that request. A wrong code that names no request gets the same answer. A must-change user gets
         `forbidden` with `details.reason` `password_change_required`. Limited per session and per address (`cli.approve`).
+        Errors: `invalid_request` (400), `unauthenticated` (401), `forbidden` (403), `rate_limited` (429).
       requestBody:
         required: true
         content:
@@ -2619,7 +2622,8 @@ paths:
         terminal's next poll receives a device token for that person. Only one approval is made per request. An installation
         admin is refused (`forbidden`), since it has no account. A must-change user is refused with
         `details.reason` `password_change_required`, and the request stays pending. The same wrong-code rules as `lookup`
-        apply.
+        apply. Errors: `invalid_request` (400), `unauthenticated` (401), `forbidden` (403, the admin and must-change refusals),
+        `conflict` (409, `already_approved`), `rate_limited` (429).
       requestBody:
         required: true
         content:
@@ -2658,7 +2662,8 @@ paths:
       description: |
         Needs a device token (`scd_`) and no body. The device ends on its next call. Any other credential is `forbidden`. A
         device whose password must change is refused with `details.reason` `password_change_required`, like any other route,
-        and the password change itself ends the device. The command-line client's `logout` calls this.
+        and the password change itself ends the device. The command-line client's `logout` calls this. Errors: `forbidden`
+        (403, for any credential that is not a device token), `unauthenticated` (401).
       responses:
         "204":
           description: Ended.
@@ -2671,7 +2676,7 @@ paths:
       summary: List the signed-in person's devices that still work (decision 125)
       description: |
         Needs the signed-in session. Lists the person's devices that are not revoked and not expired, and whose sign-in
-        is after the account's and the person's cut-offs. No token is ever shown.
+        is after the account's and the person's cut-offs. No token is ever shown. Errors: `unauthenticated` (401).
       responses:
         "200":
           description: The devices, newest first.
@@ -2684,10 +2689,10 @@ paths:
     delete:
       tags: [Auth]
       operationId: revokeCLIDevice
-      summary: End one of the signed-in person's devices, from Manage (decision 125)
+      summary: End one of the signed-in person's devices, from Signed-in devices (decision 125)
       description: |
         Needs the signed-in session and its CSRF token. The device's token ends on its next call. A device that is not the
-        person's, or is already ended, is `not_found`.
+        person's, or is already ended, is `not_found`. Errors: `unauthenticated` (401), `not_found` (404).
       parameters:
         - { name: dev, in: path, required: true, schema: { type: string } }
       responses:

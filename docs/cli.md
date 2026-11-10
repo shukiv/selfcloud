@@ -4,8 +4,8 @@
 they are described in the README. The remote ones call a server's HTTP API with a key, and they are described here.
 
 This document covers what exists now: the profiles, the connection rules, output and exit codes, and the commands
-`info`, `api spec` and `profile add|use|ls|rm`. Later groups (sign-in at a terminal, files, large files, sharing and
-the rest) are added to this document as they land.
+`info`, `api spec`, `profile add|use|ls|rm` and the sign-in at a terminal (`login`, `logout`, `whoami`). Later groups
+(files, large files, sharing and the rest) are added to this document as they land.
 
 ## Profiles
 
@@ -170,6 +170,44 @@ must be YAML; an HTML page is refused.
 ### `profile add|use|ls|rm`
 
 See Profiles above.
+
+## Sign-in at a terminal
+
+`selfcloud login --url https://selfcloud.example` signs the terminal in as the person who approves it, and saves a
+profile with a device token. The command takes no password and sends no credential. It asks the server for a sign-in,
+prints the approval page's address and the code on standard error (so `--json` output stays clean), and polls until
+someone approves it. The default profile name is `default`; `--profile name` chooses another, and an existing name is
+refused (exit 2) until it is removed with `profile rm`.
+
+To approve, a person signed in to the web interface opens the approval page, types the code the terminal shows, and
+checks the terminal's name and address before pressing "Approve sign-in". The code is never in the page's address.
+The terminal's next poll then receives the device token, once. The token starts with `scd_` and is saved in the
+profile, with the kind `device`. It is never printed, not on standard output, not on standard error, not in `--json`
+output and not in an error.
+
+- The sign-in ends 10 minutes after it starts. An ended sign-in, or one the terminal stops polling, exits 3 and saves
+  nothing.
+- `--token-file` is refused (exit 2): login reads no key. When `SELFCLOUD_TOKEN` is set, login ignores it and says so
+  on standard error in one line that does not show its value.
+- A plain `http://` address is refused unless it is a loopback address.
+
+`selfcloud logout --profile name` ends the profile's device token on the server, and then removes the profile. The
+request carries only that token, and goes only to the profile's own address; a `--url` that names another address is
+refused before any request. A profile that holds an account key or an admin key is not a sign-in, so logout refuses it
+before any request, and that key is not revoked. A token the server already refuses is removed from the profile. When
+the server cannot be reached, the profile and its token are kept, and `logout` can be run again (exit 1).
+
+`selfcloud whoami --profile name` reads `GET /api/v1/folders` with the profile's own token, sent only to the profile's
+own address. It prints the profile name, the address, the kind and the number of top-level folders the person can see.
+
+A device token meets these 403 answers besides the ones every credential meets (401 `unauthenticated` when the token has
+been ended or has expired, which the CLI reports as an authentication failure):
+
+- `forbidden` with `details.reason` `password_change_required`: the person must change the password first. Every route
+  is refused this way until the password is changed, and the change itself ends the device.
+- `account_suspended`, `user_disabled` and `user_not_verified`: the account or the person can no longer sign in, and the
+  device is ended by the same cut-off.
+- `forbidden` on `POST /api/v1/auth/cli/revoke` for any credential that is not a device token.
 
 ## Docker
 
