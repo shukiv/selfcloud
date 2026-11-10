@@ -42,16 +42,16 @@ func isolate(t *testing.T, token string) {
 	t.Setenv("SELFCLOUD_PROFILE", "")
 	t.Setenv("SELFCLOUD_URL", "")
 	t.Setenv("SELFCLOUD_TOKEN", token)
-	oldIn, oldTTY := stdin, isTerminal
-	t.Cleanup(func() { stdin, isTerminal = oldIn, oldTTY })
-	stdin = strings.NewReader("")
-	isTerminal = func(io.Reader) bool { return false }
+	oldIn, oldTTY := Stdin, IsTerminal
+	t.Cleanup(func() { Stdin, IsTerminal = oldIn, oldTTY })
+	Stdin = strings.NewReader("")
+	IsTerminal = func(io.Reader) bool { return false }
 }
 
 // typeAtTerminal makes standard input a terminal where text is typed, then ends.
 func typeAtTerminal(text string) {
-	stdin = strings.NewReader(text)
-	isTerminal = func(io.Reader) bool { return true }
+	Stdin = strings.NewReader(text)
+	IsTerminal = func(io.Reader) bool { return true }
 }
 
 // table writes rows the way the output package's tables are written: each cell but the last is padded to its column's

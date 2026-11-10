@@ -31,11 +31,12 @@ import (
 	"github.com/shukiv/selfcloud/internal/names"
 )
 
-// stdin is what a confirmation reads. Tests replace it.
-var stdin io.Reader = os.Stdin
+// Stdin is what a confirmation reads. Tests replace it, here and from the command's own package.
+var Stdin io.Reader = os.Stdin
 
-// isTerminal reports whether r is a terminal or another character device, where what is typed is shown. Tests replace it.
-var isTerminal = func(r io.Reader) bool {
+// IsTerminal reports whether r is a terminal or another character device, where what is typed is shown. Tests replace
+// it, here and from the command's own package.
+var IsTerminal = func(r io.Reader) bool {
 	f, ok := r.(*os.File)
 	if !ok {
 		return false
@@ -333,7 +334,7 @@ func confirmWith(yes bool, phrase func() (string, error), what string, stderr io
 	if yes {
 		return nil
 	}
-	if !isTerminal(stdin) {
+	if !IsTerminal(Stdin) {
 		return exitcode.Usagef("%s; give --yes to confirm when standard input is not a terminal", what)
 	}
 	p, err := phrase()
@@ -346,7 +347,7 @@ func confirmWith(yes bool, phrase func() (string, error), what string, stderr io
 // askPhrase shows the question and reads the answer, which must be phrase exactly.
 func askPhrase(phrase, what string, stderr io.Writer) error {
 	fmt.Fprintf(stderr, "%s. Type %s and press Enter to go on: ", what, phrase)
-	line, err := bufio.NewReader(stdin).ReadString('\n')
+	line, err := bufio.NewReader(Stdin).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return exitcode.Usagef("the answer could not be read; nothing was changed")
 	}
