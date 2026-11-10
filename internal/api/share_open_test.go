@@ -465,6 +465,9 @@ func TestVisitorIsCutOffFromEveryRouteButTheLinkedOnes(t *testing.T) {
 	tok := fx.visitAnyone(t, secret, "")
 	allowed := []string{
 		"GET /api/v1/nodes/{nod}",
+		// The trail of parents stops at the link's node: a visitor sees nothing above it (decision 132,
+		// TestAncestorsEndAtTheLinkRoot).
+		"GET /api/v1/nodes/{nod}/ancestors",
 		"GET /api/v1/nodes/{nod}/children",
 		"GET /api/v1/nodes/{nod}/content",
 		"HEAD /api/v1/nodes/{nod}/content",
