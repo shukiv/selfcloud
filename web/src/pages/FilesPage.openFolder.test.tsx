@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { LIMITS_STALE_MS, seedLimits } from "../lib/files/api";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { App as AntdApp } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -53,9 +54,25 @@ function reply(url: URL): unknown {
   if (p === "/api/v1/nodes/nod_topptop") {
     return { id: "nod_topptop", folder_id: FOLDER_ROOT, parent_id: null, name: "Top", kind: "dir", role: "editor", size: 0, created_at: "2026-10-01T00:00:00Z", modified_at: "2026-10-01T00:00:00Z", no_download: false, editors_can_share: false };
   }
-  if (p.endsWith("/children")) return { items: [], next_cursor: null };
+  if (p.endsWith("/children")) return { items: [row], next_cursor: null };
   return { items: [], next_cursor: null };
 }
+
+// row is one file in the top folder, so the listing draws its rows and its column headers.
+const row = {
+  id: "nod_aaaaaaaa",
+  folder_id: FOLDER_ROOT,
+  parent_id: null,
+  name: "alpha.txt",
+  kind: "file",
+  size: 10,
+  mime_type: "text/plain",
+  created_at: "2026-10-01T00:00:00Z",
+  modified_at: "2026-10-01T00:00:00Z",
+  role: "editor",
+  no_download: false,
+  editors_can_share: false,
+};
 
 let calls: string[] = [];
 
@@ -84,8 +101,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderAt(path: string) {
-  const qc = createQueryClient();
+function renderAt(path: string, client?: QueryClient) {
+  const qc = client ?? createQueryClient();
   const router = createMemoryRouter([{ path: "*", element: <FilesPage /> }], { initialEntries: [path] });
   render(
     <QueryClientProvider client={qc}>
@@ -114,6 +131,33 @@ describe("a folder open reads what it needs once (perf-1 3.2)", () => {
     await waitFor(() => expect(requestsTo(`/api/v1/nodes/nod_dirdirdi`)).toBeGreaterThan(0));
     await waitFor(() => expect(requestsTo(`/api/v1/nodes/nod_dirdirdi/children`)).toBeGreaterThan(0));
     expect(requestsTo("/api/v1/me")).toBe(1);
+  });
+
+  // The boot read of /api/v1/info seeds the upload limits. A fresh value is used on mount with no read; an older one is read again
+  // on mount, because the Settings page can change the limits without a restart (LOW-1, decision 127).
+  it("uses the boot's upload limits on mount while they are fresh, with no read of /info", async () => {
+    const qc = createQueryClient();
+    seedLimits(qc, { max_chunk_size: 1048576, max_file_size: 1 }, 0);
+    renderAt(`/files/${FOLDER_ROOT}`, qc);
+    await waitFor(() => expect(requestsTo(`/api/v1/folders/${FOLDER_ROOT}/children`)).toBeGreaterThan(0));
+    expect(requestsTo("/api/v1/info")).toBe(0);
+  });
+
+  it("reads /info on mount when the boot's upload limits are older than five minutes", async () => {
+    const qc = createQueryClient();
+    seedLimits(qc, { max_chunk_size: 1048576, max_file_size: 1 }, LIMITS_STALE_MS + 1000);
+    renderAt(`/files/${FOLDER_ROOT}`, qc);
+    await waitFor(() => expect(requestsTo("/api/v1/info")).toBe(1));
+  });
+
+  // The sort direction is part of the listing's key (childrenKey). Flipping it must read the listing again, in the new order.
+  it("reads the listing again in the new order when the sort direction flips", async () => {
+    renderAt(`/files/${FOLDER_ROOT}`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    fireEvent.click(screen.getByRole("button", { name: /size/i }));
+    await waitFor(() => expect(calls.some((u) => u.includes("/children") && u.includes("sort=size"))).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: /size/i }));
+    await waitFor(() => expect(calls.some((u) => u.includes("/children") && u.includes("order=desc"))).toBe(true));
   });
 
   it("starts the directory's listing before its stat has answered", async () => {

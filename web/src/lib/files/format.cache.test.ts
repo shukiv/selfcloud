@@ -32,6 +32,29 @@ describe('the formatters reuse their Intl objects', () => {
   });
 });
 
+// A formatter keeps the time zone it was built in, so the cache is keyed by the zone too: a date shown after the browser's zone
+// changed is in the new zone (LOW-2, decision 127). The zone is read at most once a second, so the clock is moved past that.
+describe('a change of time zone reaches the dates at once', () => {
+  const iso = '2026-10-01T10:00:00Z';
+  const savedTZ = process.env.TZ;
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (savedTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTZ;
+  });
+
+  it('shows the date in the zone the browser is in when it is read', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(iso));
+    process.env.TZ = 'UTC';
+    expect(formatDate(iso, 'en')).toBe(new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(iso)));
+    process.env.TZ = 'Asia/Tokyo';
+    vi.setSystemTime(new Date(Date.parse(iso) + 2000));
+    expect(formatDate(iso, 'en')).toBe(new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(iso)));
+  });
+});
+
 // The cache is keyed by the language: a switch of language changes the output at once, and back again.
 describe('a change of language changes the output at once', () => {
   const iso = '2026-10-01T10:00:00Z';
