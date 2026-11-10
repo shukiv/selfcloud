@@ -66,3 +66,34 @@ test('a missing group marker says it may have changed with the minifier or React
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stderr, /may have changed with the minifier or React/);
 });
+
+// sc1: the precompressed variants (.gz and .br beside each asset) are not checked as files of their own. Each one here carries
+// the marker of a group, so a checker that read it as a JavaScript file would find React's marker in several files and fail.
+test('the precompressed variants beside the build change nothing: the same pass, the same first-load line', () => {
+  const vendor = 'const PureComponent=1;const f="__reactFiber$";';
+  const parts = {
+    'index-AAAAAAAA.js': 'const a=1;',
+    'vendor-BBBBBBBB.js': vendor,
+    'csp-CCCCCCCC.js': 'const s=document.querySelector(\'meta[property="csp-nonce"]\');',
+    'antd-shared-DDDDDDDD.js': 'const t="rc-tooltip";',
+  };
+  const html =
+    `<!doctype html><html><head>${NONCE_META}` +
+    '<link rel="modulepreload" nonce="__SELFCLOUD_CSP_NONCE__" href="/assets/vendor-BBBBBBBB.js">' +
+    '<link rel="modulepreload" nonce="__SELFCLOUD_CSP_NONCE__" href="/assets/csp-CCCCCCCC.js">' +
+    '<link rel="modulepreload" nonce="__SELFCLOUD_CSP_NONCE__" href="/assets/antd-shared-DDDDDDDD.js">' +
+    '<script type="module" nonce="__SELFCLOUD_CSP_NONCE__" src="/assets/index-AAAAAAAA.js"></script></head><body></body></html>';
+  const plain = fixture(html, parts);
+  const before = check(plain);
+  assert.equal(before.status, 0, before.stdout + before.stderr);
+
+  const variants = {};
+  for (const [name, text] of Object.entries(parts)) {
+    variants[`${name}.gz`] = text;
+    variants[`${name}.br`] = text;
+  }
+  const withVariants = fixture(html, { ...parts, ...variants });
+  const after = check(withVariants);
+  assert.equal(after.status, 0, after.stdout + after.stderr);
+  assert.equal(after.stdout, before.stdout, 'the variants changed the checker\'s figures');
+});
