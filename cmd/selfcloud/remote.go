@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shukiv/selfcloud/internal/cli/apispec"
+	"github.com/shukiv/selfcloud/internal/cli/files"
 	"github.com/shukiv/selfcloud/internal/cli/info"
 	"github.com/shukiv/selfcloud/internal/cli/profilecmd"
 	"github.com/shukiv/selfcloud/internal/cli/signin"
@@ -66,7 +67,59 @@ var remoteCommands = []remoteCommand{
 `, run: profilecmd.List},
 	{name: "profile rm", help: `  profile rm NAME                remove a profile's local key (the server's key is not revoked)
 `, run: profilecmd.Remove},
+	{name: "ls", route: "GET /api/v1/folders/{fld}/children", more: []string{"GET /api/v1/nodes/{nod}/children"},
+		notProbed: filesProbeNote, help: `  ls [--folder FOLDER] [--all] [PATH | NODE]
+                                 the children of a path in a folder (--folder names it), or of a directory node
+`, run: files.Ls},
+	{name: "stat", route: "GET /api/v1/nodes/{nod}", notProbed: filesProbeNote,
+		help: `  stat NODE [--json]             one node: its id, folder, parent, name, kind, size and modified time
+`, run: files.Stat},
+	{name: "mkdir", route: "POST /api/v1/folders/{fld}/directories", notProbed: filesProbeNote,
+		help: `  mkdir --folder FOLDER [--parents] PATH
+                                 make a directory at a path in a folder (--parents makes the missing ones too)
+`, run: files.Mkdir},
+	{name: "touch", route: "POST /api/v1/folders/{fld}/files", notProbed: filesProbeNote,
+		help: `  touch --folder FOLDER [--parents] PATH
+                                 make a new, empty file at a path; a name in use is a conflict
+`, run: files.Touch},
+	{name: "mv", route: "POST /api/v1/nodes/{nod}/move", more: []string{"PATCH /api/v1/nodes/{nod}"},
+		notProbed: filesProbeNote, help: `  mv NODE DEST [--folder FOLDER] [--name NAME] [--replace [--yes]]
+  mv NODE --name NAME
+                                 move a node into a directory (DEST is a node id, or a path in --folder), or rename it
+`, run: files.Mv},
+	{name: "cp", route: "POST /api/v1/nodes/{nod}/copy", notProbed: filesProbeNote,
+		help: `  cp NODE DEST [--folder FOLDER] [--name NAME] [--replace [--yes]]
+                                 copy a node into a directory, as mv does for the destination
+`, run: files.Cp},
+	{name: "rm", route: "DELETE /api/v1/nodes/{nod}", notProbed: filesProbeNote,
+		help: `  rm NODE... [--yes]             move one or more nodes to the Trash (asks first)
+`, run: files.Rm},
+	{name: "trash ls", route: "GET /api/v1/trash", notProbed: filesProbeNote,
+		help: `  trash ls [--folder FOLDER] [--all]
+                                 the trashed nodes, of every folder or of one
+`, run: files.TrashLs},
+	{name: "trash restore", route: "POST /api/v1/nodes/{nod}/restore", notProbed: filesProbeNote,
+		help: `  trash restore NODE...          put one or more trashed nodes back where they were
+`, run: files.TrashRestore},
+	{name: "trash empty", route: "POST /api/v1/trash/empty", notProbed: filesProbeNote,
+		help: `  trash empty [--folder FOLDER] [--yes]
+                                 purge the trash for good, of every folder or of one (asks first)
+`, run: files.TrashEmpty},
+	{name: "trash rm", route: "DELETE /api/v1/trash/{nod}", notProbed: filesProbeNote,
+		help: `  trash rm NODE... [--yes]       purge one or more trashed nodes for good (asks first)
+`, run: files.TrashRm},
+	{name: "shortcut add", route: "POST /api/v1/nodes/{nod}/shortcuts", notProbed: filesProbeNote,
+		help: `  shortcut add DIR TARGET [--name NAME]
+                                 a shortcut to TARGET, in the directory DIR (both node ids)
+`, run: files.ShortcutAdd},
+	{name: "unlock", route: "POST /api/v1/nodes/{nod}/unlock", notProbed: filesProbeNote,
+		help: `  unlock NODE                    break the editing lock on a file
+`, run: files.Unlock},
 }
+
+// filesProbeNote says why the file commands are not run against the server by TestRemoteCommandsCallTheirRoute: they
+// need a credential the test cannot make without an account. Their own package records their calls.
+const filesProbeNote = "needs an account or device credential; internal/cli/files records its calls"
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
 func remoteUsage() string {

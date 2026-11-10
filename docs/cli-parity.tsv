@@ -48,38 +48,38 @@ fn	lib/comments/api.ts:listPeople	-	cli11	planned, cli11
 fn	lib/comments/api.ts:listReplies	-	cli11	planned, cli11
 fn	lib/comments/api.ts:listViewers	-	-	live presence of other viewers: a browser feature
 fn	lib/comments/api.ts:resolveComment	-	cli11	planned, cli11
-fn	lib/files/api.ts:childrenPage	-	cli5	planned, cli5
+fn	lib/files/api.ts:childrenPage	ls	cli5	built in cli5
 fn	lib/files/api.ts:commitUpload	-	cli6	planned, cli6
-fn	lib/files/api.ts:copyNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:copyNode	cp	cli5	built in cli5
 fn	lib/files/api.ts:createDocument	-	cli11	planned, cli11
-fn	lib/files/api.ts:createShortcut	-	cli5	planned, cli5
+fn	lib/files/api.ts:createShortcut	shortcut add	cli5	built in cli5
 fn	lib/files/api.ts:createZipJob	-	cli12	planned, cli12
-fn	lib/files/api.ts:deleteNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:deleteNode	rm	cli5	built in cli5
 fn	lib/files/api.ts:deleteVersion	-	cli11	planned, cli11
-fn	lib/files/api.ts:emptyTrashStep	-	cli5	planned, cli5
+fn	lib/files/api.ts:emptyTrashStep	trash empty	cli5	built in cli5
 fn	lib/files/api.ts:getJob	-	cli10	planned, cli10
 fn	lib/files/api.ts:getMe	-	-	browser session only; whoami reads GET /folders
 fn	lib/files/api.ts:getResume	-	-	media playback position: a player feature
 fn	lib/files/api.ts:inlineRange	-	-	the browser viewer's range read of a file: the text preview and the subtitles
 fn	lib/files/api.ts:listSubtitles	-	-	playback subtitles: a player feature
-fn	lib/files/api.ts:listTrash	-	cli5	planned, cli5
+fn	lib/files/api.ts:listTrash	trash ls	cli5	built in cli5
 fn	lib/files/api.ts:listVersions	-	cli11	planned, cli11
-fn	lib/files/api.ts:mkdir	-	cli5	planned, cli5
-fn	lib/files/api.ts:mkdirIn	-	cli5	planned, cli5
-fn	lib/files/api.ts:moveNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:mkdir	mkdir	cli5	built in cli5
+fn	lib/files/api.ts:mkdirIn	mkdir	cli5	built in cli5
+fn	lib/files/api.ts:moveNode	mv	cli5	built in cli5
 fn	lib/files/api.ts:myFolders	-	cli8	planned, cli8
-fn	lib/files/api.ts:purgeTrashed	-	cli5	planned, cli5
+fn	lib/files/api.ts:purgeTrashed	trash rm	cli5	built in cli5
 fn	lib/files/api.ts:putResume	-	-	media playback position: a player feature
-fn	lib/files/api.ts:refreshNode	-	cli5	planned, cli5
-fn	lib/files/api.ts:renameNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:refreshNode	stat	cli5	built in cli5
+fn	lib/files/api.ts:renameNode	mv	cli5	built in cli5
 fn	lib/files/api.ts:requestOfficeEditor	-	-	opens the Collabora editor in a browser tab
-fn	lib/files/api.ts:restoreNode	-	cli5	planned, cli5
+fn	lib/files/api.ts:restoreNode	trash restore	cli5	built in cli5
 fn	lib/files/api.ts:restoreVersion	-	cli11	planned, cli11
 fn	lib/files/api.ts:serverLimits	info	cli3	info covers the limits it reads
 fn	lib/files/api.ts:signedLink	-	cli7	planned, cli7
-fn	lib/files/api.ts:statNode	-	cli5	planned, cli5
-fn	lib/files/api.ts:unlockNode	-	cli5	planned, cli5
-fn	lib/files/api.ts:updateAppearance	-	cli5	planned, cli5
+fn	lib/files/api.ts:statNode	stat	cli5	built in cli5
+fn	lib/files/api.ts:unlockNode	unlock	cli5	built in cli5
+fn	lib/files/api.ts:updateAppearance	-	-	colours and icons are display only: no CLI
 fn	lib/files/api.ts:updateVersion	-	cli11	planned, cli11
 fn	lib/files/convert.ts:watchPreview	-	-	HTTP HEAD, rendered preview for the browser viewer
 fn	lib/files/convertLive.ts:liveExportDeps	-	cli11	planned, cli11
@@ -182,13 +182,13 @@ fn	lib/sharing/api.ts:setSharingSwitches	-	cli9	planned, cli9
 fn	lib/sharing/api.ts:sharedWithMe	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:transferOwnership	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:updateDropLink	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:updateNodeFlags	-	cli5	planned, cli5
+fn	lib/sharing/api.ts:updateNodeFlags	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:updateShareLink	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:updateSpaceSettings	-	cli8	planned, cli8
-fn	lib/sharing/api.ts:visitorChildren	-	cli5	planned, cli5
+fn	lib/sharing/api.ts:visitorChildren	-	cli6	planned, cli6
 fn	lib/sharing/api.ts:visitorInfo	-	-	visitor credential read, used inside get <share-url>
 fn	lib/sharing/api.ts:visitorLink	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:visitorNode	-	cli5	planned, cli5
+fn	lib/sharing/api.ts:visitorNode	-	cli6	planned, cli6
 fn	lib/stars.ts:clearRecent	-	cli11	planned, cli11
 fn	lib/stars.ts:listRecent	-	cli11	planned, cli11
 fn	lib/stars.ts:listSharedRecent	-	cli7	planned, cli7
@@ -217,7 +217,7 @@ route	DELETE /api/v1/admins/{usr}	-	cli9	planned, cli9
 route	DELETE /api/v1/auth/cli/devices/{dev}	-	cli4	the Signed-in devices page's revoke icon (/devices), with a signed-in session and CSRF token
 route	DELETE /api/v1/comments/{cmt}	-	cli11	planned, cli11
 route	DELETE /api/v1/folders/{fld}/hidden	-	cli8	planned, cli8
-route	DELETE /api/v1/nodes/{nod}	-	cli5	planned, cli5
+route	DELETE /api/v1/nodes/{nod}	rm	cli5	built in cli5
 route	DELETE /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
 route	DELETE /api/v1/nodes/{nod}/permissions/{subject}	-	cli7	planned, cli7
 route	DELETE /api/v1/nodes/{nod}/star	-	cli11	planned, cli11
@@ -227,7 +227,7 @@ route	DELETE /api/v1/playlists/{pls}/entries/{ple}	-	cli12	planned, cli12
 route	DELETE /api/v1/recent	-	cli11	planned, cli11
 route	DELETE /api/v1/recent/{nod}	-	cli11	planned, cli11
 route	DELETE /api/v1/share-links/{shl}	-	cli7	planned, cli7
-route	DELETE /api/v1/trash/{nod}	-	cli5	planned, cli5
+route	DELETE /api/v1/trash/{nod}	trash rm	cli5	built in cli5
 route	DELETE /api/v1/uploads/{upl}	-	cli6	planned, cli6
 route	DELETE /api/v1/zips/{zip}	-	cli12	planned, cli12
 route	GET /api/v1/access-requests	-	cli7	planned, cli7
@@ -259,7 +259,7 @@ route	GET /api/v1/admins	-	cli9	planned, cli9
 route	GET /api/v1/auth/cli/devices	-	cli4	the Signed-in devices page (/devices), with a signed-in session
 route	GET /api/v1/directory	-	cli11	planned, cli11
 route	GET /api/v1/folders	whoami	cli4	whoami reads it (design-cli 3.3); the folder commands come in cli8
-route	GET /api/v1/folders/{fld}/children	-	cli5	planned, cli5
+route	GET /api/v1/folders/{fld}/children	ls	cli5	built in cli5
 route	GET /api/v1/imports/sources	-	cli10	planned, cli10
 route	GET /api/v1/imports/{imp}	-	cli10	planned, cli10
 route	GET /api/v1/imports/{imp}/items	-	cli10	planned, cli10
@@ -270,10 +270,10 @@ route	GET /api/v1/links/{token}	-	-	an anonymous visitor opens a link in the bro
 route	GET /api/v1/me	-	-	browser session only; whoami reads GET /folders
 route	GET /api/v1/me/storage/largest	-	-	browser session only; the account form is storage largest --account
 route	GET /api/v1/media/tags	-	cli11	planned, cli11
-route	GET /api/v1/nodes/{nod}	-	cli5	planned, cli5
+route	GET /api/v1/nodes/{nod}	stat	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/access-requests	-	cli7	planned, cli7
 route	GET /api/v1/nodes/{nod}/activity	-	cli11	planned, cli11
-route	GET /api/v1/nodes/{nod}/children	-	cli5	planned, cli5
+route	GET /api/v1/nodes/{nod}/children	ls	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/comments	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/content	-	cli6	planned, cli6
 route	GET /api/v1/nodes/{nod}/exports/{drv}	-	cli11	planned, cli11
@@ -303,7 +303,7 @@ route	GET /api/v1/shared	-	cli7	planned, cli7
 route	GET /api/v1/starred	-	cli11	planned, cli11
 route	GET /api/v1/templates	-	cli11	planned, cli11
 route	GET /api/v1/templates/{id}/thumbnail	-	cli11	planned, cli11
-route	GET /api/v1/trash	-	cli5	planned, cli5
+route	GET /api/v1/trash	trash ls	cli5	built in cli5
 route	GET /api/v1/zips/{zip}	-	cli12	planned, cli12
 route	GET /brand/logo	-	-	static image for the web interface
 route	GET /healthz	-	-	platform health probe, not a user action
@@ -330,7 +330,7 @@ route	PATCH /api/v1/accounts/{acc}/webhooks/{hook}	-	cli10	planned, cli10
 route	PATCH /api/v1/comments/{cmt}	-	cli11	planned, cli11
 route	PATCH /api/v1/folders/{fld}/settings	-	cli8	planned, cli8
 route	PATCH /api/v1/me	-	-	browser session only; profile edits stay in the web interface
-route	PATCH /api/v1/nodes/{nod}	-	cli5	planned, cli5
+route	PATCH /api/v1/nodes/{nod}	mv	cli5	built in cli5
 route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
 route	PATCH /api/v1/notifications/settings	-	cli11	planned, cli11
 route	PATCH /api/v1/playlists/{pls}	-	cli12	planned, cli12
@@ -373,8 +373,8 @@ route	POST /api/v1/auth/password/reset	-	-	email reset from the sign-in page, ra
 route	POST /api/v1/auth/sign-in-link	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 route	POST /api/v1/auth/verify	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 route	POST /api/v1/comments/{cmt}/resolve	-	cli11	planned, cli11
-route	POST /api/v1/folders/{fld}/directories	-	cli5	planned, cli5
-route	POST /api/v1/folders/{fld}/files	-	cli5	planned, cli5
+route	POST /api/v1/folders/{fld}/directories	mkdir	cli5	built in cli5
+route	POST /api/v1/folders/{fld}/files	touch	cli5	built in cli5
 route	POST /api/v1/imports	-	cli10	planned, cli10
 route	POST /api/v1/imports/{imp}/cancel	-	cli10	planned, cli10
 route	POST /api/v1/imports/{imp}/pause	-	cli10	planned, cli10
@@ -382,17 +382,17 @@ route	POST /api/v1/imports/{imp}/resume	-	cli10	planned, cli10
 route	POST /api/v1/me/password	-	-	browser session only
 route	POST /api/v1/nodes/{nod}/access-requests	-	-	a viewer asks for access in the browser
 route	POST /api/v1/nodes/{nod}/comments	-	cli11	planned, cli11
-route	POST /api/v1/nodes/{nod}/copy	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/copy	cp	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/documents	-	cli11	planned, cli11
 route	POST /api/v1/nodes/{nod}/exports	-	cli11	planned, cli11
 route	POST /api/v1/nodes/{nod}/links	-	cli7	planned, cli7
-route	POST /api/v1/nodes/{nod}/move	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/move	mv	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/office	-	-	opens the Collabora editor in a browser tab
-route	POST /api/v1/nodes/{nod}/restore	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/restore	trash restore	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/share-links	-	cli7	planned, cli7
-route	POST /api/v1/nodes/{nod}/shortcuts	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/shortcuts	shortcut add	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/transfer-ownership	-	cli7	planned, cli7
-route	POST /api/v1/nodes/{nod}/unlock	-	cli5	planned, cli5
+route	POST /api/v1/nodes/{nod}/unlock	unlock	cli5	built in cli5
 route	POST /api/v1/nodes/{nod}/versions/{ver}/restore	-	cli11	planned, cli11
 route	POST /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
 route	POST /api/v1/notifications/{ntf}/read	-	cli11	planned, cli11
@@ -401,7 +401,7 @@ route	POST /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12
 route	POST /api/v1/share-links/{shl}/reset	-	cli7	planned, cli7
 route	POST /api/v1/share/open	-	cli6	planned, cli6
 route	POST /api/v1/share/renew	-	-	visitor credential refresh, used inside get <share-url>
-route	POST /api/v1/trash/empty	-	cli5	planned, cli5
+route	POST /api/v1/trash/empty	trash empty	cli5	built in cli5
 route	POST /api/v1/uploads	-	cli6	planned, cli6
 route	POST /api/v1/uploads/{upl}/commit	-	cli6	planned, cli6
 route	POST /api/v1/zips	-	cli12	planned, cli12
