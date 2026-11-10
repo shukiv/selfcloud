@@ -26,7 +26,10 @@ vi.mock('../api', async (orig) => {
       await net.gate;
       const anc = /^\/api\/v1\/nodes\/([^/]+)\/ancestors$/.exec(path.split('?')[0]);
       if (anc) {
-        if (net.ancestorsStatus || net.hidden.has(anc[1])) throw new real.ApiError(net.ancestorsStatus || 404, 'not_found', {}, 0);
+        if (net.ancestorsStatus) {
+          throw new real.ApiError(net.ancestorsStatus, net.ancestorsStatus === 404 ? 'not_found' : 'internal', {}, 0);
+        }
+        if (net.hidden.has(anc[1])) throw new real.ApiError(404, 'not_found', {}, 0);
         return { ancestors: net.ancestors.get(anc[1]) ?? [] };
       }
       const stat = /^\/api\/v1\/nodes\/([^/]+)$/.exec(path.split('?')[0]);
