@@ -28,6 +28,20 @@ async function openFile(page, name) {
 // typeText types text at the caret of the focused editor, as the keyboard does.
 const typeText = (page, text) => page.send('Input.insertText', { text });
 
+// spaTo moves the app to another address inside the page, as the router does: the history entry is pushed and the router is
+// told. A link click loads a new document instead, and an editor check could then read the page that is leaving (the
+// reload race of the Ctrl+S section).
+const spaTo = (page, path) =>
+  page.evaluate(`(() => { history.pushState({}, '', ${q(path)}); window.dispatchEvent(new PopStateEvent('popstate', { state: {} })); return true; })()`);
+
+// leaveEditor moves from the editor page to another address and waits until the editor has left the page. The router changes
+// the address at once, but React draws the new page a moment later: until then the old editor is still on the screen, and a
+// check that reads it would take it for the page it asked for.
+async function leaveEditor(page, path) {
+  await spaTo(page, path);
+  await page.waitFor(`location.pathname === ${q(path)} && !document.querySelector(${q(EDITOR_PAGE)})`, 20000);
+}
+
 // ctrlS presses Ctrl+S in the focused editor.
 async function ctrlS(page) {
   const key = { key: 's', code: 'KeyS', windowsVirtualKeyCode: 83, nativeVirtualKeyCode: 83, modifiers: 2 };
@@ -46,8 +60,8 @@ const statusText = (page) =>
 // openEditor opens the editor page for a node, as an editor's address does. It goes through the member's folder first, so a
 // second open of the same address is a fresh page.
 async function openEditor(h, page, folder, id, name) {
-  await h.navigateTo(page, `/files/${folder}`);
-  await h.navigateTo(page, `/edit/${id}?mode=edit`);
+  await leaveEditor(page, `/files/${folder}`);
+  await spaTo(page, `/edit/${id}?mode=edit`);
   await editorShows(page, name);
 }
 
@@ -77,7 +91,8 @@ async function putIfMatch(base, id, key, etag, body, type) {
 
 // stale names the save the section makes against a changed file: the server answers 412 on purpose, and only for that node.
 export async function ce2b1Checks(h, { page, base, accountKey, teamB, stale: staleIDs = new Set() }) {
-  const { check, api, navigateTo, rawPut } = h;
+  const { check, api, rawPut } = h;
+  const navigateTo = spaTo;
   const before = page.errors.length;
   const suffix = Date.now().toString(36);
   const names = {
@@ -132,13 +147,19 @@ export async function ce2b1Checks(h, { page, base, accountKey, teamB, stale: sta
     await page.waitFor(`document.querySelector(${q(`${EDITOR_PAGE} header [role="status"]`)})?.textContent.trim() === 'Saved'`, 15000);
     const stored = (await contentBytes(base, jsonID, accountKey)).toString('utf8');
     check(stored === 'X{\n  "a": 1\n}\n', `Ctrl+S saves the text, and the server holds it (${JSON.stringify(stored)})`);
-    await navigateTo(page, `/files/${pf}`);
+    await leaveEditor(page, `/files/${pf}`);
     await navigateTo(page, `/edit/${jsonID}?mode=edit`);
     await editorShows(page, names.json);
     const reloaded = await editorText(page);
     check(reloaded === 'X{\n  "a": 1\n}\n', `a reload of the editor shows the saved change (${JSON.stringify(reloaded)})`);
 
     // ---- The Save button stays enabled during a save and keeps the focus after it (LOW-1).
+    // A click in the code area puts the focus there, as a person's click does. The area is waited for first: after a reload the
+    // page is drawn again.
+    await page.waitFor(`!!document.querySelector(${q(`${EDITOR_PAGE} .cm-content[aria-label=${q(names.json)}]`)})`, 20000);
+    const spot = await page.evaluate(`(() => { const b = document.querySelector(${q(`${EDITOR_PAGE} .cm-content`)}).getBoundingClientRect(); return { x: b.left + 20, y: b.top + 10 }; })()`);
+    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: spot.x, y: spot.y, button: 'left', clickCount: 1 });
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: spot.x, y: spot.y, button: 'left', clickCount: 1 });
     await typeText(page, 'Z');
     await page.waitFor(`document.querySelector(${q(`${EDITOR_PAGE} header [role="status"]`)})?.textContent.trim() === 'Unsaved changes'`, 10000);
     const saveFocus = await page.evaluate(`(() => { const b = document.querySelector(${q(`${EDITOR_PAGE} header button[aria-label="Save"]`)}); if (!b) return null; b.focus(); b.click(); return { disabledAtClick: b.disabled, focusedAfter: document.activeElement === b }; })()`);
