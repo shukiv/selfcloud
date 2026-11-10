@@ -32,6 +32,10 @@ describe("empty table titles", () => {
     expect([...keys.keys()]).toEqual(expect.arrayContaining(["tenants.empty", "tenants.noMatch", "tenant.users.empty", "keys.empty", "audit.empty"]));
   });
 
+  it("are found in the source: the three lists on the one table in tl5 (decision 138)", () => {
+    expect([...keys.keys()]).toEqual(expect.arrayContaining(["requests.emptyTitle", "notifications.emptyTitle", "activity.emptyTitle"]));
+  });
+
   it.each(LANGS)("end with no full stop in %s", (lang) => {
     // The command-line strings (devices.empty) are a catalogue of their own (lib/cli/cliText.ts), read with the main one.
     const catalogue = {
@@ -39,6 +43,10 @@ describe("empty table titles", () => {
       ...(JSON.parse(readFileSync(join(src, "i18n", "cli", `${lang}.json`), "utf8")) as Record<string, string>),
       // The drive lists' empty titles are a catalogue of their own too (lib/drive/driveText.ts, tl4).
       ...(JSON.parse(readFileSync(join(src, "i18n", "drive", `${lang}.json`), "utf8")) as Record<string, string>),
+      // The three lists of tl5 read their titles from their own catalogues too (decision 138).
+      ...(JSON.parse(readFileSync(join(src, "i18n", "requests", `${lang}.json`), "utf8")) as Record<string, string>),
+      ...(JSON.parse(readFileSync(join(src, "i18n", "notifications", `${lang}.json`), "utf8")) as Record<string, string>),
+      ...(JSON.parse(readFileSync(join(src, "i18n", "comments", `${lang}.json`), "utf8")) as Record<string, string>),
     };
     const stopped = [...keys.keys()].filter((k) => {
       const v = catalogue[k];

@@ -91,8 +91,9 @@ describe("the notifications page: the list", () => {
     const second = screen.getByRole("button", { name: /A former member replied to your comment on Notes\.md/ });
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(container.textContent).not.toMatch(/ntf_|nod_/);
-    expect(within(first).getByText("Unread")).toBeTruthy();
-    expect(within(second).getByText("Read")).toBeTruthy();
+    // Each notice is a row of the table (tl5); its status is in the row.
+    expect(within(first.closest("tr") as HTMLElement).getByText("Unread")).toBeTruthy();
+    expect(within(second.closest("tr") as HTMLElement).getByText("Read")).toBeTruthy();
   });
 
   it("keeps the list, and says so, when a refresh fails", async () => {

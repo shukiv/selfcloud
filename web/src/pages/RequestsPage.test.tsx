@@ -148,7 +148,7 @@ describe("access requests", () => {
       return fail(404, "not_found");
     });
     renderPage();
-    const list = await screen.findByRole("list", { name: "Access requests" });
+    const list = await screen.findByRole("region", { name: "Access requests" });
     fireEvent.click(within(list).getByRole("button", { name: /^Deny/ }));
     expect(await screen.findByText("You can't decide this request.")).toBeTruthy();
   });
