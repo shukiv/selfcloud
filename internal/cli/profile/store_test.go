@@ -228,6 +228,39 @@ func TestValidName(t *testing.T) {
 	}
 }
 
+// TestLoadRefusesABadURL: a hand-edited address is checked when the file is read, with the rule that add uses. A user
+// name or password in it would otherwise be printed by ls and then refused by every command.
+func TestLoadRefusesABadURL(t *testing.T) {
+	t.Parallel()
+	for _, u := range []string{"https://admin:" + token + "@selfcloud.example", "ftp://selfcloud.example", "https://selfcloud.example/?q=1", "https://"} {
+		dir := privateDir(t)
+		body := `{"version":1,"profiles":{"home":{"url":"` + u + `","kind":"account","token":"` + token + `"}}}`
+		if err := os.WriteFile(filepath.Join(dir, "profiles.json"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Open(dir).Load()
+		if err == nil {
+			t.Errorf("a profile with address %q loaded", u)
+		} else if strings.Contains(err.Error(), token) {
+			t.Errorf("the refusal for %q names the credential: %v", u, err)
+		}
+	}
+}
+
+// TestLoadAcceptsASavedPlainHTTPAddress: an http address to a host that is not loopback is saved only when add was given
+// --insecure-http, so Load accepts the scheme; Connect still demands the flag on each use.
+func TestLoadAcceptsASavedPlainHTTPAddress(t *testing.T) {
+	t.Parallel()
+	dir := privateDir(t)
+	body := `{"version":1,"profiles":{"lan":{"url":"http://192.0.2.5","kind":"account","token":"` + token + `"}}}`
+	if err := os.WriteFile(filepath.Join(dir, "profiles.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir).Load(); err != nil {
+		t.Errorf("a saved http address was refused on load: %v", err)
+	}
+}
+
 func TestReadCredentialFile(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
