@@ -74,9 +74,19 @@ async function contentText(base, id, key) {
   return Buffer.from(await res.arrayBuffer()).toString('utf8');
 }
 
+// signInFromPage signs a person in on the sign-in page the app opened. A sign-in that was sent back to the editor has no account
+// menu (the editor is a full page), so the sign-in is done when either the menu or the editor's address is shown.
+async function signInFromPage(h, page, who) {
+  await page.waitFor(`!!document.getElementById('login-email')`, 15000);
+  await page.setInput('#login-email', who.email);
+  await page.setInput('#login-password', who.password);
+  await h.clickOn(page, 'form button[type="submit"]');
+  await page.waitFor(`!!document.querySelector('[data-testid="account-menu"]') || location.pathname.startsWith('/edit/')`, 15000);
+}
+
 // ce3Checks runs the section. ended collects the node IDs whose 401 is expected (the session ended on purpose).
 export async function ce3Checks(h, { page, base, accountKey, ended }) {
-  const { check, api, rawPut, signInHere, signIn, signOut, OWNER, MEMBER } = h;
+  const { check, api, rawPut, signIn, signOut, OWNER, MEMBER } = h;
   const before = page.errors.length;
   const suffix = Date.now().toString(36);
   const name = `ce3-keep-${suffix}.txt`;
@@ -111,7 +121,7 @@ export async function ce3Checks(h, { page, base, accountKey, ended }) {
     check(!asked, 'Sign in with the text kept asks nothing');
 
     // ---- The same person signs in again: the file opens with the text back, its notice, and the text unsaved.
-    await signInHere(page, MEMBER);
+    await signInFromPage(h, page, MEMBER);
     await openEditor(page, pf, id, name);
     await page.waitFor(`document.body.textContent.includes(${q(RESTORED)})`, 15000);
     const back = (await editorText(page)) ?? '';
@@ -136,7 +146,7 @@ export async function ce3Checks(h, { page, base, accountKey, ended }) {
     check((await keptFor(page, id)) === 1, 'the second text is kept in this tab');
     await clickIn(page, NOTICE_BUTTON, 'Sign in');
     await page.waitFor(`location.pathname === '/login' && !!document.getElementById('login-email')`, 15000);
-    await signInHere(page, OWNER);
+    await signInFromPage(h, page, OWNER);
     const leftAfterOwner = await keptFor(page, id);
     check(leftAfterOwner === 0, `another person's sign-in clears the member's kept text (${leftAfterOwner} left)`);
     await signOut(page);
