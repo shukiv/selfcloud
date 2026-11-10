@@ -6,6 +6,7 @@ import { Spin, ConfigProvider } from "antd";
 import type { Locale } from "antd/es/locale";
 import enUS from "antd/locale/en_US";
 import { loadInfo, loadMe } from "./lib/auth";
+import { installLimits } from "./lib/files/api";
 import { applyBrand, DEFAULT_BRAND, passwordMinLength } from "./lib/brand";
 import { maxExpiryDays } from "./lib/sharing/limits";
 import { CONVERT_FEATURE, featureOn, officeConvert } from "./lib/files/convert";
@@ -179,6 +180,8 @@ export function Boot({ children }: { children: ReactNode }) {
       maxExpiryDays.set(info?.sharingMaxExpiryDays ?? 0);
       officeConvert.set(info !== null && featureOn(info.features, CONVERT_FEATURE));
       officeEdit.set(info !== null && featureOn(info.features, EDIT_FEATURE));
+      // The upload limits of this read serve the files page too, so it does not read /info again (perf-1 3.2).
+      if (info?.limits) installLimits.set(info.limits);
       const me = await loadMe().catch(() => null);
       if (me) void markSignedIn();
       chooseLang(me);

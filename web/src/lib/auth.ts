@@ -14,16 +14,20 @@ export interface Info {
   sharingMaxExpiryDays: number;
   // features is the list of optional features the server has on, by name (see lib/files/convert.ts).
   features: unknown;
+  // limits is the upload limits the server gives, or null when it gives none (the files page keeps its own default).
+  limits: { max_chunk_size: number; max_file_size: number } | null;
 }
 
 // loadInfo reads the installation's name, colours and password rule; it needs no sign-in. A missing
 // or odd minimum falls back to 8, the server's floor.
 export async function loadInfo(): Promise<Info> {
-  const info = await api<{ brand?: Brand; password_min_length?: unknown; sharing_max_expiry_days?: unknown; features?: unknown }>(
-    'GET',
-    '/api/v1/info',
-    { noRedirect: true },
-  );
+  const info = await api<{
+    brand?: Brand;
+    password_min_length?: unknown;
+    sharing_max_expiry_days?: unknown;
+    features?: unknown;
+    limits?: { max_chunk_size: number; max_file_size: number };
+  }>('GET', '/api/v1/info', { noRedirect: true });
   const n = info.password_min_length;
   const min = typeof n === 'number' && Number.isInteger(n) && n >= 1 ? n : 8;
   return {
@@ -31,6 +35,7 @@ export async function loadInfo(): Promise<Info> {
     passwordMinLength: min,
     sharingMaxExpiryDays: sharingMaxExpiryDays(info),
     features: info.features,
+    limits: info.limits ?? null,
   };
 }
 

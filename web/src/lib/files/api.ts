@@ -2,7 +2,7 @@
 
 // The file routes the browser calls. Each returns what the server answers, or throws an ApiError.
 import { api, ApiError } from '../api';
-import { get } from '../store';
+import { get, writable } from '../store';
 import { session } from '../session';
 import type { Page, FolderAccess, Job, Node, SignedLink, TrashItem, Version } from './types';
 import type { SortDir, SortKey } from './sort';
@@ -234,10 +234,22 @@ export function commitUpload(uploadPath: string, body: { name?: string; on_confl
   return api<Node>('POST', `${uploadPath}/commit`, { body, timeoutMs: COMMIT_TIMEOUT_MS });
 }
 
-export function serverLimits(): Promise<{ max_chunk_size: number; max_file_size: number }> {
-  return api<{ limits?: { max_chunk_size: number; max_file_size: number } }>('GET', '/api/v1/info', {
-    noRedirect: true,
-  }).then((info) => info.limits ?? { max_chunk_size: 8 * 1024 * 1024, max_file_size: 0 });
+export interface ServerLimits {
+  max_chunk_size: number;
+  max_file_size: number;
+}
+
+// installLimits is the installation's upload limits, as the boot read of /api/v1/info gave them. It is set once per page load
+// (Boot), so the files page does not read /info again to size its uploads (perf-1 3.2).
+export const installLimits = writable<ServerLimits | null>(null);
+
+export async function serverLimits(): Promise<ServerLimits> {
+  const known = get(installLimits);
+  if (known !== null) return known;
+  const info = await api<{ limits?: ServerLimits }>('GET', '/api/v1/info', { noRedirect: true });
+  const limits = info.limits ?? { max_chunk_size: 8 * 1024 * 1024, max_file_size: 0 };
+  installLimits.set(limits);
+  return limits;
 }
 
 // A place in a video or audio file: the seconds the person stopped at and the file's length (0 when unknown).
