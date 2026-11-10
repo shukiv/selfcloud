@@ -17,7 +17,7 @@ CREATE TABLE bundle_jobs (
     user_id        TEXT    NOT NULL CHECK (length(user_id) BETWEEN 1 AND 64), -- the maker; the only one who reads it
     folder_id      TEXT    NOT NULL REFERENCES folders (id) ON DELETE CASCADE, -- the folder the zip is saved in
     parent_id      TEXT    NOT NULL DEFAULT '', -- the target directory; '' is the folder's root
-    name           TEXT    NOT NULL CHECK (length(CAST(name AS BLOB)) BETWEEN 1 AND 255), -- bytes, as design 2.1 says
+    name           TEXT    NOT NULL CHECK (length(CAST(name AS BLOB)) BETWEEN 1 AND 255), -- bytes
     name_key       TEXT    NOT NULL CHECK (length(CAST(name_key AS BLOB)) BETWEEN 1 AND 255),
     state          TEXT    NOT NULL CHECK (state IN ('pending', 'cancelling', 'ready', 'cancelled', 'failed')),
     phase          TEXT    NOT NULL DEFAULT 'snapshot' CHECK (phase IN ('snapshot', 'write')),

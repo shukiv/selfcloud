@@ -559,7 +559,7 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 	}
 	src := importSourceKey(cur, e.Key)
 	// The disk is checked in the reservation's own write (importReserve), so the check and the reservation see the same
-	// totals and a full disk leaves nothing reserved (decision 120, review M2).
+	// totals and a full disk leaves nothing reserved (decision 120).
 	skip, err := s.importReserve(ctx, impID, p, e, src)
 	if err != nil {
 		return err

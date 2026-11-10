@@ -80,7 +80,7 @@ func TestBlobCreateNamedRefusesBadNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// tmp- is the prefix RemoveStaleUploads sweeps, so a named partial must never take it (review L1).
+	// tmp- is the prefix RemoveStaleUploads sweeps, so a named partial must never take it.
 	for _, name := range []string{"", "../x.part", "a/b.part", ".hidden", "with space.part", strings.Repeat("a", 129), "tmp-bnd.part"} {
 		if w, err := d.CreateNamed(ctx, "acc_a", name, 1<<20); err == nil {
 			w.Abort()

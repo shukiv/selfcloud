@@ -488,7 +488,7 @@ func (s *Server) startZip(ctx context.Context, z *store.Zip, p *auth.Principal) 
 		}
 	}
 	s.atWrite()
-	// The pieces still arriving hold the disk in memory (review M3). Their lock is taken before the write, never inside it,
+	// The pieces still arriving hold the disk in memory. Their lock is taken before the write, never inside it,
 	// so the bytes read here are the ones the pieces hold while the zip reserves.
 	s.oneFlight.mu.Lock()
 	err = s.store.Write(ctx, func(tx *store.Tx) error {

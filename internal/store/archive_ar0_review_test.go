@@ -10,7 +10,7 @@ import (
 )
 
 // TestUnwrittenBytesIgnoresEndedBundles: a cancelled or failed bundle holds no disk. Its end write releases the
-// reservation, so a row that still carries one must not count (review M6, O1).
+// reservation, so a row that still carries one must not count.
 func TestUnwrittenBytesIgnoresEndedBundles(t *testing.T) {
 	s, ctx := archiveSetup(t)
 	rows := []string{
@@ -36,7 +36,7 @@ func TestUnwrittenBytesIgnoresEndedBundles(t *testing.T) {
 }
 
 // TestUnwrittenBytesCountsPausedImport: a paused import still holds its current entry's reservation until it ends
-// (review M6).
+// (paused imports hold their entry until they end).
 func TestUnwrittenBytesCountsPausedImport(t *testing.T) {
 	s, ctx := archiveSetup(t)
 	if _, err := s.w.ExecContext(ctx, `INSERT INTO import_jobs (id, job_id, account_id, user_id, source, folder_id, on_conflict, state, reserved_bytes, created_at, updated_at)
@@ -53,7 +53,7 @@ func TestUnwrittenBytesCountsPausedImport(t *testing.T) {
 }
 
 // TestFsckCountsSourceBlob: the blob an import reads through source_blob_id is named, referenced and recorded by the
-// check, so a blob the fsck would call unrecorded is reported when the import names it (review M6, the fsck clause).
+// check, so a blob the fsck would call unrecorded is reported when the import names it.
 func TestFsckCountsSourceBlob(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "fsck.db")
@@ -108,7 +108,7 @@ func TestFsckCountsSourceBlob(t *testing.T) {
 }
 
 // TestArchiveSumsUseIndexes: the install-wide sums read partial indexes, not the whole table, since bundle_jobs has no
-// expiry and grows (review L4). The plan must name the index.
+// expiry and grows, so the index must be used. The plan must name the index.
 func TestArchiveSumsUseIndexes(t *testing.T) {
 	s, ctx := archiveSetup(t)
 	plans := map[string]string{
@@ -137,8 +137,8 @@ func TestArchiveSumsUseIndexes(t *testing.T) {
 	}
 }
 
-// TestArchiveNameLimitIsBytes: a bundle's name is at most 255 bytes, as design 2.1 says, not 255 characters. 128
-// accented letters are 256 bytes and are refused (review L5).
+// TestArchiveNameLimitIsBytes: a bundle's name is at most 255 bytes, not 255 characters. 128
+// accented letters are 256 bytes and are refused.
 func TestArchiveNameLimitIsBytes(t *testing.T) {
 	s, ctx := archiveSetup(t)
 	if _, err := s.w.ExecContext(ctx, `INSERT INTO jobs (id, account_id, kind, target, status, created_at, updated_at)
@@ -154,7 +154,7 @@ func TestArchiveNameLimitIsBytes(t *testing.T) {
 	}
 }
 
-// TestImportSourceColumnsAgree: a node source names its node and no upload; an upload source names neither (review L5).
+// TestImportSourceColumnsAgree: a node source names its node and no upload; an upload source names neither.
 func TestImportSourceColumnsAgree(t *testing.T) {
 	s, ctx := archiveSetup(t)
 	base := `INSERT INTO import_jobs (id, job_id, account_id, user_id, source, folder_id, on_conflict, state, source_kind, source_node_id, created_at, updated_at)
@@ -171,7 +171,7 @@ func TestImportSourceColumnsAgree(t *testing.T) {
 }
 
 // TestBundleGoesWithItsFolder: a bundle row of a deleted folder is removed with it, so no pending row is left for a folder
-// that is gone (review L5).
+// that is gone.
 func TestBundleGoesWithItsFolder(t *testing.T) {
 	s, ctx := archiveSetup(t)
 	rows := []string{

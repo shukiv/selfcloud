@@ -82,7 +82,7 @@ func TestJobReadableCurrentRuleUnchanged(t *testing.T) {
 }
 
 // TestZipRestartNotRefusedByItsOwnReservation: a zip that crashed after its snapshot keeps its reservation (900 KiB here).
-// The restarted job must not count that reservation against the disk again: a 600 KiB zip fits a 1 MiB disk (review M1).
+// The restarted job must not count that reservation against the disk again: a 600 KiB zip fits a 1 MiB disk.
 func TestZipRestartNotRefusedByItsOwnReservation(t *testing.T) {
 	fx := zipFixture(t, func(c *config.Config) {
 		c.Storage.MinFree = 50
@@ -103,7 +103,7 @@ func TestZipRestartNotRefusedByItsOwnReservation(t *testing.T) {
 }
 
 // TestZipStartCountsPieceBytesInFlight: an upload piece whose bytes are still arriving holds the disk in memory, before
-// the database sees it. A zip start must count those bytes too (review M3). The disk is 1 MiB; 600 KiB of piece bytes
+// the database sees it. A zip start must count those bytes too. The disk is 1 MiB; 600 KiB of piece bytes
 // are in flight; a 600 KiB zip is refused.
 func TestZipStartCountsPieceBytesInFlight(t *testing.T) {
 	fx := zipFixture(t, func(c *config.Config) {
@@ -127,7 +127,7 @@ func TestZipStartCountsPieceBytesInFlight(t *testing.T) {
 }
 
 // TestAccountShareCountsZipReservations: an upload's share of the disk counts the account's stored zips, bundles and
-// imports as well as its uploads (review M4). A pending zip of 400 KiB, then an upload of 200 KiB, on a 1 MiB disk
+// imports as well as its uploads. A pending zip of 400 KiB, then an upload of 200 KiB, on a 1 MiB disk
 // whose share is 512 KiB: the upload is refused with scope account.
 func TestAccountShareCountsZipReservations(t *testing.T) {
 	fx := zipFixture(t, func(c *config.Config) {
