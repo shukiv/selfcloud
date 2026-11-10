@@ -254,6 +254,23 @@ func TestAstralFormatRunesRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFailCleansTheErrorCode: the server's error code is text the server chose, so it is cleaned like the message, in both
+// modes. An ESC and a C1 CSI in the code must not reach the terminal.
+func TestFailCleansTheErrorCode(t *testing.T) {
+	t.Parallel()
+	code := "bad\x1b[31mred" + ch(0x009b) + "x"
+	for _, asJSON := range []bool{false, true} {
+		var errOut bytes.Buffer
+		Fail(&errOut, asJSON, &client.APIError{Status: 400, Code: code, Message: "no"})
+		if strings.ContainsRune(errOut.String(), 0x1b) || strings.ContainsRune(errOut.String(), 0x9b) {
+			t.Errorf("json %v: stderr holds a control rune: %q", asJSON, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "bad") || !strings.Contains(errOut.String(), "red") {
+			t.Errorf("json %v: stderr = %q, want the code still readable", asJSON, errOut.String())
+		}
+	}
+}
+
 func TestJSONIsIndentedWithANewline(t *testing.T) {
 	t.Parallel()
 	var b bytes.Buffer
