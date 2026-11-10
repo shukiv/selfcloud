@@ -150,7 +150,8 @@ export async function em1Checks(h, { page, base, accountKey, accountID, MEMBER, 
   for (const f of found) {
     if (!f.empty) check(false, `em1: ${f.what} shows antd's Empty (none on the page: ${JSON.stringify(f.empty ?? null)})`);
     if (f.name) check(f.empty.text.startsWith('This folder is empty.'), `em1: ${f.what} shows the heading and the hint in antd's Empty (${f.empty.text})`);
-    else check(f.empty.text === f.text, `em1: ${f.what} shows antd's Empty with its words (${f.empty.text})`);
+    // The drive lists' empty body is the short title, then the description (tl4 r1), so the description ends the text.
+    else check(f.empty.text.endsWith(f.text), `em1: ${f.what} shows antd's Empty with its words (${f.empty.text})`);
     if (f.status !== null) check(f.empty.status === true, `em1: ${f.what} keeps its status region`);
     if (f.sideways !== null) check(f.sideways === false, `em1: ${f.what} does not scroll sideways`);
     if (f.rtl !== undefined) check(f.rtl === 'rtl', `em1: ${f.what} is right to left (${f.rtl})`);
