@@ -152,7 +152,8 @@ func (d *Dir) Create(ctx context.Context, accountID string, limit int64) (Writer
 // underscores, hyphens and dots, not starting with a dot. It names a file directly under uploads/<account>, so a path
 // element is refused here.
 func validPartialName(name string) bool {
-	if name == "" || len(name) > 128 || name[0] == '.' {
+	// tmp- is the prefix RemoveStaleUploads sweeps once old: a partial under it would be removed behind its job's back.
+	if name == "" || len(name) > 128 || name[0] == '.' || strings.HasPrefix(name, "tmp-") {
 		return false
 	}
 	for i := 0; i < len(name); i++ {
