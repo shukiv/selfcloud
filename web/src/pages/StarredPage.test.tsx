@@ -87,7 +87,8 @@ describe("Starred", () => {
     renderPage();
     const link = await screen.findByRole("link", { name: "Budget.pdf" });
     expect(link.getAttribute("href")).toBe("/n/nod_s1");
-    expect(screen.getByRole("button", { name: new RegExp(`^${translate("en", "starred.remove")}:`) })).toBeTruthy();
+    // The row's icon comes once the layout has its breakpoint, which can be a tick after the row is drawn: wait for it.
+    expect(await screen.findByRole("button", { name: new RegExp(`^${translate("en", "starred.remove")}:`) })).toBeTruthy();
     expect(screen.queryByText("nod_s1")).toBeNull();
   });
 

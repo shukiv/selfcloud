@@ -44,8 +44,9 @@ describe("people of a tenant as a table", () => {
     stubFetch(() => ({ status: 200, body: { items: [pendingOwner] } }));
     renderUsers();
     const region = await screen.findByRole("region", { name: "People" });
-    expect(within(region).getByRole("columnheader", { name: "Role" })).toBeTruthy();
-    expect(within(region).getByRole("columnheader", { name: "Status" })).toBeTruthy();
+    // The table is drawn before its headers settle on the window's layout: wait for each header rather than read it at once.
+    expect(await within(region).findByRole("columnheader", { name: "Role" })).toBeTruthy();
+    expect(await within(region).findByRole("columnheader", { name: "Status" })).toBeTruthy();
     expect(document.querySelector("ul[aria-label]")).toBeNull();
   });
 
