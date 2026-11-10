@@ -320,7 +320,8 @@ func TestNameGivenAsProfileFlagIsNotEchoed(t *testing.T) {
 	}
 	g.Profile = ""
 	t.Setenv("SELFCLOUD_PROFILE", "sc_admin_x")
-	_, err = Connect(g, &errOut, false)
+	// Needs a credential that is not given, so the stale name is not ignored and the error path is the one tested.
+	_, err = Connect(g, &errOut, true)
 	if err == nil || strings.Contains(err.Error(), "sc_admin_x") {
 		t.Errorf("SELFCLOUD_PROFILE with a key: err %v; the key must not be printed", err)
 	}

@@ -124,9 +124,11 @@ func Connect(g Global, stderr io.Writer, needCred bool) (*Conn, error) {
 		return nil, err
 	}
 
-	name := g.Profile
+	// A name from --profile is explicit and must name a profile. A name from SELFCLOUD_PROFILE or the current pointer is a
+	// default: when it names nothing, it is ignored if the call has its address and any credential it needs (decision 123).
+	name, explicit := g.Profile, true
 	if name == "" {
-		name = os.Getenv(envProfile)
+		name, explicit = os.Getenv(envProfile), false
 	}
 	if name == "" {
 		name = f.Current
@@ -135,10 +137,14 @@ func Connect(g Global, stderr io.Writer, needCred bool) (*Conn, error) {
 	haveProfile := false
 	if name != "" {
 		pr, ok := f.Profiles[name]
-		if !ok {
+		switch {
+		case ok:
+			p, haveProfile = pr, true
+		case !explicit && doesWithoutProfile(g, needCred):
+			name = ""
+		default:
 			return nil, exitcode.NotFoundf("no profile called %s; see selfcloud profile ls", profile.Shown(name))
 		}
-		p, haveProfile = pr, true
 	}
 
 	c := &Conn{}
@@ -207,6 +213,14 @@ func Connect(g Global, stderr io.Writer, needCred bool) (*Conn, error) {
 }
 
 // chooseCredential returns the credential and where it came from: the token file, the environment, or the profile.
+// doesWithoutProfile reports whether the call has an address, and a credential when needCred, from its flags or its
+// environment, so that it needs no profile.
+func doesWithoutProfile(g Global, needCred bool) bool {
+	hasURL := g.URL != "" || os.Getenv(envURL) != ""
+	hasCred := g.TokenFile != "" || strings.TrimSpace(os.Getenv(envToken)) != ""
+	return hasURL && (!needCred || hasCred)
+}
+
 func chooseCredential(g Global, p profile.Profile, haveProfile bool) (string, string, error) {
 	switch {
 	case g.TokenFile != "":
