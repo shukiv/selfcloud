@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Pencil, Settings, Share2, Trash2 } from "lucide-react";
-import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
-import { App, Alert, Button } from "antd";
+import { App, Alert, Button, Tag } from "antd";
 import { useFlight } from "../../lib/flight";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
@@ -12,16 +11,17 @@ import { statNode } from "../../lib/files/api";
 import type { FolderAccess, Node } from "../../lib/files/types";
 import { createSpace, deleteSpace, getSpace, listSpaces, renameSpace } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
+import { useAdminText } from "../../lib/manage/adminText";
 import type { Space } from "../../lib/manage/types";
 import { queryKey } from "../../lib/query";
 import { sessionChanged } from "../../lib/session";
+import Listing, { type ListColumn } from "../../components/files/Listing";
 import ShareDialog from "../../components/share/ShareDialog";
 import SpaceSettings from "../../components/share/SpaceSettings";
 import Confirm from "../../components/Confirm";
 import NameDialog from "../../components/manage/NameDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 import { LOCK } from "../../lib/manage/locks";
-import EmptyState from "../../components/EmptyState";
 
 // Spaces: the team spaces of the account. Sharing a space goes through the share dialog on its root, the same one the
 // file browser uses. Deleting a space removes it and everything in it for everyone.
@@ -64,6 +64,7 @@ function SpacesView() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const flight = useFlight();
   const { message } = App.useApp();
+  const adminText = useAdminText();
   // cancelDelete closes the dialog at once, busy or not: the delete on its way is aborted, and the spaces are read again (fu4).
   const cancelDelete = () => {
     if (flight.abort()) {
@@ -145,6 +146,29 @@ function SpacesView() {
   const failure = q.isError ? failureText(q.error, lang) : null;
   const loaded = q.data !== undefined;
 
+  // The flags a space has, as Tags in its Access column (design-tl 3.2, M4); on a phone they are the name's second line.
+  const flagsOf = (s: Space): string[] =>
+    [
+      s.members_only ? t("spaces.flag.membersOnly") : "",
+      s.sharing_managers_only ? t("spaces.flag.managersOnly") : "",
+      s.no_download_for_viewers ? t("spaces.flag.noDownload") : "",
+    ].filter(Boolean);
+  const columns: ListColumn<Space>[] = [
+    { key: "name", title: t("files.col.name"), render: (s) => <bdi>{s.name}</bdi> },
+    {
+      key: "access",
+      title: t("admin.table.access"),
+      secondary: true,
+      render: (s) => (
+        <>
+          {flagsOf(s).map((f) => (
+            <Tag key={f}>{f}</Tag>
+          ))}
+        </>
+      ),
+    },
+  ];
+
   return (
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, marginBlockEnd: 16 }}>
@@ -162,42 +186,45 @@ function SpacesView() {
 
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
-      {loaded && spaces.length === 0 && failure === null && (
-        <EmptyState role="status" text={t("spaces.empty")} />
-      )}
-
-      {spaces.length > 0 && (
-        <ul aria-label={t("manage.spaces.title")} style={{ margin: 0, padding: 0, listStyle: "none" }}>
-          {spaces.map((s) => {
-            const flags = [
-              s.members_only ? t("spaces.flag.membersOnly") : "",
-              s.sharing_managers_only ? t("spaces.flag.managersOnly") : "",
-              s.no_download_for_viewers ? t("spaces.flag.noDownload") : "",
-            ].filter(Boolean);
-            return (
-              <li
-                key={s.id}
-                className="row"
-                style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 0", borderBlockEnd: "1px solid var(--ant-color-split)" }}
-              >
-                <div style={{ minInlineSize: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>
-                    <bdi>{s.name}</bdi>
-                  </p>
-                  {flags.length > 0 && (
-                    <p style={{ margin: 0, fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{flags.join(" · ")}</p>
-                  )}
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <IconButton label={`${t("spaces.share")}: ${s.name}`} tip={t("spaces.share")} onClick={() => void openShare(s)} icon={<Share2 size={18} aria-hidden="true" focusable="false" />} />
-                  <IconButton label={`${t("spaces.settings")}: ${s.name}`} tip={t("spaces.settings")} onClick={() => setSettings(asAccess(s))} icon={<Settings size={18} aria-hidden="true" focusable="false" />} />
-                  <IconButton label={`${t("spaces.rename")}: ${s.name}`} tip={t("spaces.rename")} onClick={() => setRenaming(s)} icon={<Pencil size={18} aria-hidden="true" focusable="false" />} />
-                  <IconButton label={`${t("spaces.delete")}: ${s.name}`} tip={t("spaces.delete")} danger onClick={() => void openDelete(s)} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+      {loaded && (
+        <Listing
+          label={t("manage.spaces.title")}
+          items={spaces}
+          rowLabel={(s) => s.name}
+          columns={columns}
+          actions={(s) => [
+            {
+              key: "share",
+              label: `${t("spaces.share")}: ${s.name}`,
+              icon: <Share2 size={18} aria-hidden="true" focusable="false" />,
+              run: () => void openShare(s),
+            },
+            {
+              key: "settings",
+              label: `${t("spaces.settings")}: ${s.name}`,
+              icon: <Settings size={18} aria-hidden="true" focusable="false" />,
+              run: () => setSettings(asAccess(s)),
+            },
+            {
+              key: "rename",
+              label: `${t("spaces.rename")}: ${s.name}`,
+              icon: <Pencil size={18} aria-hidden="true" focusable="false" />,
+              run: () => setRenaming(s),
+            },
+            {
+              key: "delete",
+              label: `${t("spaces.delete")}: ${s.name}`,
+              icon: <Trash2 size={18} aria-hidden="true" focusable="false" />,
+              danger: true,
+              run: () => void openDelete(s),
+            },
+          ]}
+          empty={{
+            title: t("spaces.empty"),
+            description: adminText ? t("admin.empty.spaces") : undefined,
+            action: { label: t("spaces.new"), onClick: () => setCreating(true) },
+          }}
+        />
       )}
 
       {q.hasNextPage && (

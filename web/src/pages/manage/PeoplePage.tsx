@@ -1,27 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useState } from "react";
-import { Alert, Button, Dropdown, Tag, type MenuProps } from "antd";
-import { MoreVertical } from "lucide-react";
-import IconButton from "../../components/IconButton";
+import { Alert, Button, Tag } from "antd";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import Listing, { type ListColumn, type ListMenuEntry } from "../../components/files/Listing";
 import { useLang, useT } from "../../lib/i18n";
 import { listPeople, resendVerification, sendPasswordReset, updatePerson } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
 import { personLabel, statusTone } from "../../lib/manage/people";
+import { useAdminText } from "../../lib/manage/adminText";
 import type { Person, PersonReply } from "../../lib/manage/types";
 import { queryKey } from "../../lib/query";
-import { sessionChanged } from "../../lib/session";
+import { session, sessionChanged } from "../../lib/session";
+import { useStore } from "../../lib/store";
 import InviteDialog from "../../components/manage/InviteDialog";
 import PersonDialog from "../../components/manage/PersonDialog";
 import RemoveDialog from "../../components/manage/RemoveDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 import { LOCK } from "../../lib/manage/locks";
-import EmptyState from "../../components/EmptyState";
 
 // People: the account's owners and members, invited by email. An owner changes a person's role or status and removes a
-// person here. The server answers every change; a refusal is shown by its code and reason.
+// person here. The server answers every change; a refusal is shown by its code and reason. The list is the one Listing
+// (design-tl section 2): a row opens the person, and the row's ⋮ menu holds the changes.
 function PeopleView() {
   const { t } = useT();
   const lang = useLang();
@@ -36,6 +37,9 @@ function PeopleView() {
   const [detail, setDetail] = useState<Person | null>(null);
   const [removing, setRemoving] = useState<Person | null>(null);
   const once = useOncePer();
+  const adminText = useAdminText();
+  // The signed-in person's own row reads You (design-tl 2.2).
+  const me = useStore(session)?.user?.id;
 
   const q = useInfiniteQuery({
     queryKey: queryKey("manage", account, "people"),
@@ -98,25 +102,55 @@ function PeopleView() {
       return null;
     });
 
-  const menuFor = (p: Person): MenuProps["items"] => {
-    const items: NonNullable<MenuProps["items"]> = [];
-    if (p.status === "pending") items.push({ key: "resend", label: t("people.resend"), onClick: () => void resend(p) });
-    if (p.status === "active") items.push({ key: "reset", label: t("people.reset"), onClick: () => void reset(p) });
+  // menuFor is the row's ⋮ menu: only what the person's state allows. A row with a change on its way has its entries off.
+  const menuFor = (p: Person): ListMenuEntry[] => {
+    const busy = busyRows.has(p.id);
+    const items: ListMenuEntry[] = [];
+    if (p.status === "pending") items.push({ key: "resend", label: t("people.resend"), disabled: busy, onSelect: () => void resend(p) });
+    if (p.status === "active") items.push({ key: "reset", label: t("people.reset"), disabled: busy, onSelect: () => void reset(p) });
     items.push({
       key: "role",
       label: p.role === "owner" ? t("people.makeMember") : t("people.makeOwner"),
-      onClick: () => void changeRole(p),
+      disabled: busy,
+      onSelect: () => void changeRole(p),
     });
     if (p.status !== "pending") {
       items.push({
         key: "status",
         label: p.status === "disabled" ? t("people.enable") : t("people.disable"),
-        onClick: () => void changeStatus(p),
+        disabled: busy,
+        onSelect: () => void changeStatus(p),
       });
     }
-    items.push({ key: "remove", label: t("people.remove.open"), danger: true, onClick: () => setRemoving(p) });
+    items.push({ key: "remove", label: t("people.remove.open"), danger: true, disabled: busy, onSelect: () => setRemoving(p) });
     return items;
   };
+
+  const columns: ListColumn<Person>[] = [
+    {
+      key: "name",
+      title: t("files.col.name"),
+      render: (p) => (
+        <span style={{ minWidth: 0 }}>
+          <span>
+            <bdi>{personLabel(p)}</bdi>
+            {p.id === me && <Tag style={{ marginInlineStart: 8 }}>{t("share.you")}</Tag>}
+          </span>
+          <span style={{ display: "block", fontSize: 13, overflowWrap: "anywhere", color: "var(--ant-color-text-secondary)" }}>
+            <bdi>{p.email}</bdi>
+          </span>
+        </span>
+      ),
+    },
+    { key: "role", title: t("people.detail.role"), secondary: true, width: 140, render: (p) => <Tag>{t(`people.role.${p.role}`)}</Tag> },
+    {
+      key: "status",
+      title: t("people.detail.status"),
+      secondary: true,
+      width: 160,
+      render: (p) => <StatusTag tone={statusTone(p.status)} label={t(`people.status.${p.status}`)} />,
+    },
+  ];
 
   const failure = q.isError ? failureText(q.error, lang) : null;
   const loaded = q.data !== undefined;
@@ -138,44 +172,22 @@ function PeopleView() {
 
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
-      {loaded && people.length === 0 && failure === null && (
-        <EmptyState role="status" text={t("people.empty")} />
-      )}
-
-      {people.length > 0 && (
-        <ul aria-label={t("manage.people.title")} style={{ margin: 0, padding: 0, listStyle: "none" }}>
-          {people.map((p) => (
-            <li
-              key={p.id}
-              className="row person-row"
-              style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 0", borderBlockEnd: "1px solid var(--ant-color-split)" }}
-            >
-              <div style={{ flex: "1 1 200px", minInlineSize: 0 }}>
-                <p style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>
-                  <bdi>{personLabel(p)}</bdi>
-                </p>
-                <p style={{ margin: 0, color: "var(--ant-color-text-secondary)", overflowWrap: "anywhere" }}>
-                  <bdi>{p.email}</bdi>
-                </p>
-              </div>
-              <div>
-                <Tag>{t(`people.role.${p.role}`)}</Tag>
-              </div>
-              <div>
-                <StatusTag tone={statusTone(p.status)} label={t(`people.status.${p.status}`)} />
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Button size="small" onClick={() => setDetail(p)}>
-                  {t("people.open")}
-                  <span className="sr-only">: {personLabel(p)}</span>
-                </Button>
-                <Dropdown menu={{ items: menuFor(p) }} trigger={["click"]} disabled={busyRows.has(p.id)}>
-                  <IconButton aria-haspopup="menu" label={t("people.actionsFor", { name: personLabel(p) })} tip={t("files.selection.more")} disabled={busyRows.has(p.id)} icon={<MoreVertical size={18} aria-hidden="true" focusable="false" />} />
-                </Dropdown>
-              </div>
-            </li>
-          ))}
-        </ul>
+      {/* The table stays on screen when a refetch fails; with no first load, there is no table to keep. */}
+      {loaded && (
+        <Listing
+          label={t("manage.people.title")}
+          items={people}
+          rowLabel={personLabel}
+          moreLabel={(p) => t("people.actionsFor", { name: personLabel(p) })}
+          columns={columns}
+          menu={menuFor}
+          onOpen={(p) => setDetail(p)}
+          empty={{
+            title: t("people.empty"),
+            description: adminText ? t("admin.empty.people") : undefined,
+            action: { label: t("people.invite.open"), onClick: () => setInviting(true) },
+          }}
+        />
       )}
 
       {q.hasNextPage && (

@@ -5,5 +5,12 @@
   "admin.empty.keys": "Una clave de API permite que una aplicación gestione este cliente mediante la API.",
   "admin.empty.audit": "Aquí aparecen los inicios de sesión, los cambios en personas y claves, y otras acciones.",
   "admin.empty.noMatch": "Cambie la búsqueda o el filtro.",
+  "admin.empty.people": "Invite a la primera persona para empezar.",
+  "admin.empty.groups": "Un grupo permite compartir con varias personas a la vez.",
+  "admin.empty.spaces": "Cree uno para compartir archivos.",
+  "admin.empty.labels": "Añada un campo, como una fecha o una opción, para describir los elementos.",
+  "admin.table.access": "Acceso",
+  "admin.table.restricted": "Restringido",
+  "admin.table.values": "Elementos con un valor",
   "admin.removeFromAccount": "Quitar de la cuenta…"
 }

@@ -5,5 +5,12 @@
   "admin.empty.keys": "מפתח API מאפשר לאפליקציה לנהל את הלקוח הזה דרך ה-API.",
   "admin.empty.audit": "כניסות, שינויים באנשים ובמפתחות ופעולות אחרות מופיעים כאן.",
   "admin.empty.noMatch": "שנו את החיפוש או את הסינון.",
+  "admin.empty.people": "הזמינו את הראשון כדי להתחיל.",
+  "admin.empty.groups": "קבוצה מאפשרת לשתף עם כמה אנשים בבת אחת.",
+  "admin.empty.spaces": "צרו מרחב כדי לשתף קבצים.",
+  "admin.empty.labels": "הוסיפו שדה, כמו תאריך או בחירה, כדי לתאר פריטים.",
+  "admin.table.access": "גישה",
+  "admin.table.restricted": "מוגבל",
+  "admin.table.values": "פריטים עם ערך",
   "admin.removeFromAccount": "הסרה מהחשבון…"
 }

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Pencil, Trash2 } from "lucide-react";
-import IconButton from "../../components/IconButton";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { App, Alert, Button, Tag } from "antd";
 import { useFlight } from "../../lib/flight";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
 import { createLabelField, deleteLabelField, listLabelFields, updateLabelField, type LabelField, type LabelFieldBody, type LabelFieldPatch } from "../../lib/labels/api";
 import { failureText } from "../../lib/manage/failure";
+import { useAdminText } from "../../lib/manage/adminText";
 import { queryKey } from "../../lib/query";
 import { sessionChanged } from "../../lib/session";
+import Listing, { type ListColumn, type ListSort } from "../../components/files/Listing";
 import Confirm from "../../components/Confirm";
 import LabelDialog from "../../components/labels/LabelDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOnce } from "../../components/manage/OwnerPage";
-import EmptyState from "../../components/EmptyState";
 
 // Labels: the owner defines the fields that describe items. Every reader of an item sees its values; editors set them.
 // A restricted field is seen and set only by the managers of an item. Deleting a field removes its values, so the
@@ -42,6 +42,7 @@ function LabelsView() {
     setDeleting(null);
   };
   const once = useOnce();
+  const adminText = useAdminText();
 
   const q = useQuery({
     queryKey: queryKey("labels", "fields"),
@@ -49,8 +50,20 @@ function LabelsView() {
     enabled: account !== "",
     refetchOnMount: "always",
   });
-  const fields: LabelField[] = q.data ?? [];
+  const loaded: LabelField[] = q.data ?? [];
   const refresh = () => qc.invalidateQueries({ queryKey: queryKey("labels") });
+
+  // The fields are loaded whole, so Name sorts them here (design-tl section 5). The first order is A to Z by name.
+  const [sort, setSort] = useState<{ key: "name"; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
+  const sortBy = (key: string) => {
+    if (key !== "name") return;
+    setSort((s) => ({ key, dir: s.dir === "asc" ? "desc" : "asc" }));
+  };
+  const fields: LabelField[] = useMemo(() => {
+    const sign = sort.dir === "asc" ? 1 : -1;
+    return [...loaded].sort((a, b) => a.name.localeCompare(b.name, lang) * sign || a.id.localeCompare(b.id));
+  }, [loaded, sort, lang]);
+  const listSort: ListSort = { key: "name", dir: sort.dir, onSort: sortBy };
 
   // The delete dialog counts the values as they are when it opens: a value set since the list was loaded counts too.
   const askDelete = async (f: LabelField) => {
@@ -96,8 +109,29 @@ function LabelsView() {
     });
 
   // A failed refetch keeps the list that is shown; a failed first load shows the error and no empty list.
-  const loaded = q.data !== undefined;
+  const isLoaded = q.data !== undefined;
   const failure = q.isError ? failureText(q.error, lang) : null;
+
+  // The columns (design-tl 3.2, M6): Name sorts; on a phone the type, the restriction and the count are the name's second line.
+  const columns: ListColumn<LabelField>[] = [
+    { key: "name", title: t("files.col.name"), sortKey: "name", render: (f) => <bdi>{f.name}</bdi> },
+    { key: "type", title: t("labels.typeLabel"), secondary: true, width: 140, render: (f) => t(`labels.type.${f.type}`) },
+    {
+      key: "restricted",
+      title: t("admin.table.restricted"),
+      secondary: true,
+      width: 130,
+      render: (f) => (f.restricted ? <Tag>{t("labels.restrictedBadge")}</Tag> : null),
+    },
+    {
+      key: "values",
+      title: t("admin.table.values"),
+      secondary: true,
+      align: "end",
+      width: 150,
+      render: (f) => <span style={{ fontVariantNumeric: "tabular-nums" }}>{f.values ?? ""}</span>,
+    },
+  ];
 
   return (
     <div>
@@ -112,42 +146,40 @@ function LabelsView() {
       <p style={{ margin: "0 0 16px", color: "var(--ant-color-text-secondary)" }}>{t("labels.intro")}</p>
 
       {notice !== null && <Alert type="success" showIcon role="status" message={notice} style={{ marginBottom: 12 }} />}
-      {failure !== null && <Alert type={loaded ? "warning" : "error"} showIcon role="alert" message={failure} style={{ marginBottom: 12 }} />}
+      {failure !== null && <Alert type={isLoaded ? "warning" : "error"} showIcon role="alert" message={failure} style={{ marginBottom: 12 }} />}
 
-      {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
+      {!isLoaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
-      {loaded && fields.length === 0 && failure === null && (
-        <EmptyState role="status" text={t("labels.empty")} />
-      )}
-
-      {fields.length > 0 && (
-        <ul aria-label={t("manage.labels.title")} style={{ margin: 0, padding: 0, listStyle: "none" }}>
-          {fields.map((f) => (
-            <li
-              key={f.id}
-              className="row"
-              style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 0", borderBlockEnd: "1px solid var(--ant-color-split)" }}
-            >
-              <div style={{ display: "grid", gap: 4, minWidth: 0, flex: "1 1 180px" }}>
-                <p style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>
-                  <bdi>{f.name}</bdi>
-                </p>
-                <p style={{ margin: 0, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 13 }}>
-                  <span>{t(`labels.type.${f.type}`)}</span>
-                  {f.restricted && <Tag>{t("labels.restrictedBadge")}</Tag>}
-                  {f.values !== undefined && <span>{t("labels.valuesCount", { count: f.values })}</span>}
-                </p>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <IconButton label={`${t("labels.edit")}: ${f.name}`} tip={t("labels.edit")} onClick={() => setEditing(f)} icon={<Pencil size={18} aria-hidden="true" focusable="false" />} />
-                <IconButton label={`${t("labels.delete")}: ${f.name}`} tip={t("labels.delete")} danger
-                  onClick={() => {
-                    void askDelete(f);
-                  }} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
-              </div>
-            </li>
-          ))}
-        </ul>
+      {isLoaded && (
+        <Listing
+          label={t("manage.labels.title")}
+          items={fields}
+          rowLabel={(f) => f.name}
+          columns={columns}
+          sort={listSort}
+          actions={(f) => [
+            {
+              key: "edit",
+              label: `${t("labels.edit")}: ${f.name}`,
+              icon: <Pencil size={18} aria-hidden="true" focusable="false" />,
+              run: () => setEditing(f),
+            },
+            {
+              key: "delete",
+              label: `${t("labels.delete")}: ${f.name}`,
+              icon: <Trash2 size={18} aria-hidden="true" focusable="false" />,
+              danger: true,
+              run: () => {
+                void askDelete(f);
+              },
+            },
+          ]}
+          empty={{
+            title: t("labels.empty"),
+            description: adminText ? t("admin.empty.labels") : undefined,
+            action: { label: t("labels.new"), onClick: () => setEditing("new") },
+          }}
+        />
       )}
 
       {editing !== null && (

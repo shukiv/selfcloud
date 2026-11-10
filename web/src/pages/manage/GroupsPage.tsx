@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Pencil, Trash2, UserMinus, Users } from "lucide-react";
-import IconButton from "../../components/IconButton";
 
 import { useState } from "react";
 import { App, Alert, Button } from "antd";
@@ -11,19 +10,20 @@ import { addGroupMember, createGroup, deleteGroup, listGroupMembers, listGroups,
 import { collectAll } from "../../lib/manage/paging";
 import { failureText } from "../../lib/manage/failure";
 import { loadNames, NO_NAMES } from "../../lib/manage/names";
+import { useAdminText } from "../../lib/manage/adminText";
 import type { Group } from "../../lib/manage/types";
 import type { DirectoryEntry } from "../../lib/files/types";
 import { queryKey } from "../../lib/query";
 import { sessionChanged } from "../../lib/session";
+import Listing, { type ListColumn } from "../../components/files/Listing";
 import PeopleCombobox from "../../components/share/PeopleCombobox";
 import Confirm from "../../components/Confirm";
 import NameDialog from "../../components/manage/NameDialog";
 import { OwnerOnly, useAccountID, useManageTitle, useOncePer } from "../../components/manage/OwnerPage";
 import { LOCK } from "../../lib/manage/locks";
-import EmptyState from "../../components/EmptyState";
 
 // Groups: a group is a named set of people. A permission on a team space given to a group reaches each member at once,
-// and removing a member ends that access at once.
+// and removing a member ends that access at once. The groups and a group's members are the one Listing (design-tl 2).
 function GroupsView() {
   const { t } = useT();
   const lang = useLang();
@@ -43,6 +43,7 @@ function GroupsView() {
   const [comboKey, setComboKey] = useState(0);
   const [memberError, setMemberError] = useState<string | null>(null);
   const once = useOncePer();
+  const adminText = useAdminText();
 
   const q = useInfiniteQuery({
     queryKey: queryKey("manage", account, "groups"),
@@ -148,6 +149,12 @@ function GroupsView() {
   const failure = q.isError ? failureText(q.error, lang) : null;
   const loaded = q.data !== undefined;
 
+  // The groups: one name column, and the three icons of a row (each with its tooltip, and a name for a screen reader).
+  const groupColumns: ListColumn<Group>[] = [{ key: "name", title: t("files.col.name"), render: (g) => <bdi>{g.name}</bdi> }];
+  // A group's members: one name column and a Remove icon, which takes the member's name in its label.
+  const memberRows = (members.data ?? []).map((usr) => ({ id: usr, name: personText(usr) }));
+  const memberColumns: ListColumn<{ id: string; name: string }>[] = [{ key: "name", title: t("files.col.name"), render: (m) => <bdi>{m.name}</bdi> }];
+
   return (
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, marginBlockEnd: 16 }}>
@@ -164,29 +171,46 @@ function GroupsView() {
 
       {!loaded && q.isPending && account !== "" && <p role="status">{t("app.loading")}</p>}
 
-      {loaded && groups.length === 0 && failure === null && (
-        <EmptyState role="status" text={t("groups.empty")} />
-      )}
-
-      {groups.length > 0 && (
-        <ul aria-label={t("manage.groups.title")} style={{ margin: 0, padding: 0, listStyle: "none" }}>
-          {groups.map((g) => (
-            <li
-              key={g.id}
-              className="row"
-              style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 0", borderBlockEnd: "1px solid var(--ant-color-split)" }}
-            >
-              <p style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>
-                <bdi>{g.name}</bdi>
-              </p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <IconButton label={`${t("groups.members")}: ${g.name}`} tip={t("groups.members")} aria-pressed={open?.id === g.id} onClick={() => { setOpen(g); setMemberError(null); setAdding(null); }} icon={<Users size={18} aria-hidden="true" focusable="false" />} />
-                <IconButton label={`${t("groups.rename")}: ${g.name}`} tip={t("groups.rename")} onClick={() => setRenaming(g)} icon={<Pencil size={18} aria-hidden="true" focusable="false" />} />
-                <IconButton label={`${t("groups.delete")}: ${g.name}`} tip={t("groups.delete")} danger onClick={() => { setDeleteError(null); setDeleting(g); }} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
-              </div>
-            </li>
-          ))}
-        </ul>
+      {loaded && (
+        <Listing
+          label={t("manage.groups.title")}
+          items={groups}
+          rowLabel={(g) => g.name}
+          columns={groupColumns}
+          actions={(g) => [
+            {
+              key: "members",
+              label: `${t("groups.members")}: ${g.name}`,
+              icon: <Users size={18} aria-hidden="true" focusable="false" />,
+              run: () => {
+                setOpen(g);
+                setMemberError(null);
+                setAdding(null);
+              },
+            },
+            {
+              key: "rename",
+              label: `${t("groups.rename")}: ${g.name}`,
+              icon: <Pencil size={18} aria-hidden="true" focusable="false" />,
+              run: () => setRenaming(g),
+            },
+            {
+              key: "delete",
+              label: `${t("groups.delete")}: ${g.name}`,
+              icon: <Trash2 size={18} aria-hidden="true" focusable="false" />,
+              danger: true,
+              run: () => {
+                setDeleteError(null);
+                setDeleting(g);
+              },
+            },
+          ]}
+          empty={{
+            title: t("groups.empty"),
+            description: adminText ? t("admin.empty.groups") : undefined,
+            action: { label: t("groups.new"), onClick: () => setCreating(true) },
+          }}
+        />
       )}
 
       {q.hasNextPage && (
@@ -204,24 +228,23 @@ function GroupsView() {
           </h2>
           {memberError !== null && <Alert type="error" showIcon role="alert" message={memberError} style={{ marginBottom: 12 }} />}
           {members.isError && <Alert type="error" showIcon role="alert" message={failureText(members.error, lang)} style={{ marginBottom: 12 }} />}
-          {members.data !== undefined && members.data.length === 0 && (
-            <EmptyState size="compact" text={t("groups.noMembers")} />
-          )}
-          {members.data !== undefined && members.data.length > 0 && (
-            <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-              {members.data.map((usr) => (
-                <li
-                  key={usr}
-                  className="row"
-                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 0", borderBlockEnd: "1px solid var(--ant-color-split)" }}
-                >
-                  <p style={{ margin: 0 }}>
-                    <bdi>{personText(usr)}</bdi>
-                  </p>
-                  <IconButton label={`${t("groups.removeMember")}: ${personText(usr)}`} tip={t("groups.removeMember")} onClick={() => void removeMember(usr)} icon={<UserMinus size={18} aria-hidden="true" focusable="false" />} />
-                </li>
-              ))}
-            </ul>
+          {members.data !== undefined && (
+            <Listing
+              label={t("groups.members")}
+              items={memberRows}
+              rowLabel={(m) => m.name}
+              columns={memberColumns}
+              actions={(m) => [
+                {
+                  key: "remove",
+                  label: `${t("groups.removeMember")}: ${m.name}`,
+                  icon: <UserMinus size={18} aria-hidden="true" focusable="false" />,
+                  danger: true,
+                  run: () => void removeMember(m.id),
+                },
+              ]}
+              empty={{ title: t("groups.noMembers") }}
+            />
           )}
           <div style={{ marginBlockStart: 12 }} key={comboKey}>
             <PeopleCombobox

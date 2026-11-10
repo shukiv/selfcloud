@@ -5,5 +5,12 @@
   "admin.empty.keys": "Une clé d’API permet à une application de gérer ce locataire via l’API.",
   "admin.empty.audit": "Les connexions, les modifications des personnes et des clés, et les autres actions s’affichent ici.",
   "admin.empty.noMatch": "Modifiez la recherche ou le filtre.",
+  "admin.empty.people": "Invitez la première personne pour commencer.",
+  "admin.empty.groups": "Un groupe permet de partager avec plusieurs personnes à la fois.",
+  "admin.empty.spaces": "Créez-en un pour partager des fichiers.",
+  "admin.empty.labels": "Ajoutez un champ, comme une date ou un choix, pour décrire les éléments.",
+  "admin.table.access": "Accès",
+  "admin.table.restricted": "Restreint",
+  "admin.table.values": "Éléments avec une valeur",
   "admin.removeFromAccount": "Retirer du compte…"
 }
