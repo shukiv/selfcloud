@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../test/fetchStub";
@@ -50,11 +51,13 @@ function renderAt(url: string) {
 // renderEntry opens the page at an address, or at an entry with its own state (as a link from the top bar gives it).
 function renderEntry(entry: string | { pathname: string; search: string; state: unknown }) {
   return render(
-    <MemoryRouter initialEntries={[entry as never]}>
-      <Routes>
-        <Route path="/search" element={<SearchPage />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={[entry as never]}>
+        <Routes>
+          <Route path="/search" element={<SearchPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

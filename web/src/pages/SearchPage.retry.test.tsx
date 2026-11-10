@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadSearchText } from "../lib/search/text";
 import { stubFetch, type Answer } from "../test/fetchStub";
@@ -28,11 +29,13 @@ beforeEach(() => {
 describe("the search page when its strings fail to load", () => {
   it("says so, offers Try again, and the page works after a second try", async () => {
     render(
-      <MemoryRouter initialEntries={["/search"]}>
-        <Routes>
-          <Route path="/search" element={<SearchPage />} />
-        </Routes>
-      </MemoryRouter>,
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/search"]}>
+          <Routes>
+            <Route path="/search" element={<SearchPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Something went wrong");

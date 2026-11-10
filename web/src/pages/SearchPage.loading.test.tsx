@@ -2,6 +2,7 @@
 
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import SearchPage from "./SearchPage";
 
@@ -13,11 +14,13 @@ vi.mock("../lib/search/text", () => ({
 describe("the search page before its strings load", () => {
   it("its heading is a word of the main catalogue, never a raw key", () => {
     render(
-      <MemoryRouter initialEntries={["/search"]}>
-        <Routes>
-          <Route path="/search" element={<SearchPage />} />
-        </Routes>
-      </MemoryRouter>,
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/search"]}>
+          <Routes>
+            <Route path="/search" element={<SearchPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Search");
     expect(document.body.textContent ?? "").not.toMatch(/search\.[a-z]/);

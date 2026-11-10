@@ -4,6 +4,7 @@
 // relevance order, so no time column is marked as sorted; no selection; an item opens from its name; the menu is the ⋮ button.
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { session, type Session } from "../lib/session";
 import { folders } from "../lib/files/folders";
@@ -42,11 +43,13 @@ const SPACE = { id: "fld_a", name: "Finance", kind: "team", root_node_id: "root_
 
 function renderAt(url: string) {
   return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MemoryRouter initialEntries={[url]}>
       <Routes>
         <Route path="/search" element={<SearchPage />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
