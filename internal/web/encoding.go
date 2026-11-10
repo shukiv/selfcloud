@@ -25,6 +25,10 @@ func pickEncoding(accept string, hasBr, hasGzip bool) string {
 	for _, item := range strings.Split(accept, ",") {
 		coding, params, _ := strings.Cut(item, ";")
 		coding = strings.ToLower(strings.TrimSpace(coding))
+		if coding == "x-gzip" {
+			// RFC 9110 asks a recipient to read x-gzip as gzip.
+			coding = "gzip"
+		}
 		if coding == "" {
 			continue
 		}
