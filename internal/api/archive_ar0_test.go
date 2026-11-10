@@ -30,8 +30,8 @@ func TestUploadRefusedWhileZipReservesDisk(t *testing.T) {
 	}
 	rec := createUpload(t, fx.s, fx.key, 4<<30, md("folder", fx.fld.ID, "name", "big.bin"))
 	wantError(t, rec, http.StatusInsufficientStorage, "storage_full")
-	if d := decodeErrorDetails(t, rec); d["scope"] != "server" {
-		t.Errorf("scope = %v, want server", d["scope"])
+	if d := decodeErrorDetails(t, rec); d["scope"] != "server" || d["reason"] != "disk" {
+		t.Errorf("details scope %v reason %v, want server and disk", d["scope"], d["reason"])
 	}
 }
 
@@ -78,5 +78,72 @@ func TestJobReadableCurrentRuleUnchanged(t *testing.T) {
 		if got := jobReadable(job, c.p); got != c.want {
 			t.Errorf("%s: jobReadable = %v, want %v", name, got, c.want)
 		}
+	}
+}
+
+// TestZipRestartNotRefusedByItsOwnReservation: a zip that crashed after its snapshot keeps its reservation (900 KiB here).
+// The restarted job must not count that reservation against the disk again: a 600 KiB zip fits a 1 MiB disk (review M1).
+func TestZipRestartNotRefusedByItsOwnReservation(t *testing.T) {
+	fx := zipFixture(t, func(c *config.Config) {
+		c.Storage.MinFree = 50
+		c.Upload.MaxDiskSharePercent = 100
+	})
+	putNode(t, fx.s, fx.key, fx.fld.ID, "/a/big.bin", incompressible(600<<10))
+	fx.s.freeBytes = func(string) (uint64, error) { return 1<<20 + 50, nil }
+	z := createZip(t, fx, nil, fx.a.ID)
+	// The first run took its reservation at its snapshot end, then stopped before publish.
+	if err := fx.s.store.Write(context.Background(), func(tx *store.Tx) error {
+		return tx.SetZipSnapshot(context.Background(), z.Target, 900<<10, 1, 0, store.Now())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if j := runZip(t, fx, z.ID); j.Status != "succeeded" {
+		t.Fatalf("restarted zip %s (%s), want succeeded: its own old reservation is not a claim on the disk", j.Status, j.Error)
+	}
+}
+
+// TestZipStartCountsPieceBytesInFlight: an upload piece whose bytes are still arriving holds the disk in memory, before
+// the database sees it. A zip start must count those bytes too (review M3). The disk is 1 MiB; 600 KiB of piece bytes
+// are in flight; a 600 KiB zip is refused.
+func TestZipStartCountsPieceBytesInFlight(t *testing.T) {
+	fx := zipFixture(t, func(c *config.Config) {
+		c.Storage.MinFree = 50
+		c.Upload.MaxDiskSharePercent = 100
+	})
+	putNode(t, fx.s, fx.key, fx.fld.ID, "/a/big.bin", incompressible(600<<10))
+	fx.s.freeBytes = func(string) (uint64, error) { return 1<<20 + 50, nil }
+	fx.s.oneFlight.mu.Lock()
+	fx.s.oneFlight.total = 600 << 10
+	fx.s.oneFlight.mu.Unlock()
+	z := createZip(t, fx, nil, fx.a.ID)
+	j := runZip(t, fx, z.ID)
+	if j.Status != "failed" {
+		t.Fatalf("zip %s with 600 KiB of piece bytes in flight, want failed on the disk", j.Status)
+	}
+	got := decode[jobJSON](t, rawCall(t, fx.s, "GET", "/api/v1/jobs/"+z.ID, fx.key, "", nil))
+	if got.ErrorCode != "storage_full" || got.ErrorReason != "disk" {
+		t.Errorf("job error code %q reason %q, want storage_full with disk", got.ErrorCode, got.ErrorReason)
+	}
+}
+
+// TestAccountShareCountsZipReservations: an upload's share of the disk counts the account's stored zips, bundles and
+// imports as well as its uploads (review M4). A pending zip of 400 KiB, then an upload of 200 KiB, on a 1 MiB disk
+// whose share is 512 KiB: the upload is refused with scope account.
+func TestAccountShareCountsZipReservations(t *testing.T) {
+	fx := zipFixture(t, func(c *config.Config) {
+		c.Storage.MinFree = 50
+		c.Upload.MaxDiskSharePercent = 50
+	})
+	fx.s.freeBytes = func(string) (uint64, error) { return 1<<20 + 50, nil }
+	z := createZip(t, fx, nil, fx.a.ID)
+	if err := fx.s.store.Write(context.Background(), func(tx *store.Tx) error {
+		return tx.SetZipSnapshot(context.Background(), z.Target, 400<<10, 1, 0, store.Now())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec := createUpload(t, fx.s, fx.key, 200<<10, md("folder", fx.fld.ID, "name", "more.bin"))
+	wantError(t, rec, http.StatusInsufficientStorage, "storage_full")
+	if d := decodeErrorDetails(t, rec); d["scope"] != "account" {
+		t.Errorf("scope = %v, want account", d["scope"])
 	}
 }
