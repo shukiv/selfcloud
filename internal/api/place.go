@@ -19,14 +19,21 @@ import (
 // their routes admit; a share-link visitor is refused before this.
 func placeNames(ctx context.Context, q store.Querier, p *auth.Principal, parentIDs []string) (map[string]string, error) {
 	out := map[string]string{}
-	if len(parentIDs) == 0 {
+	// A top-level item has no parent: its "" is not an ID, and it is left out before the reach query.
+	ids := make([]string, 0, len(parentIDs))
+	for _, id := range parentIDs {
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
 		return out, nil
 	}
 	within := ""
 	if p.Token != nil {
 		within = p.Token.Node
 	}
-	rows, err := reachRowsIn(ctx, q, p, parentIDs, within)
+	rows, err := reachRowsIn(ctx, q, p, ids, within)
 	if err != nil {
 		return nil, err
 	}
