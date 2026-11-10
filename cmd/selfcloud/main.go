@@ -37,6 +37,11 @@ Commands:
                 (exit 0 clean, 1 findings, 2 cannot run; --json, --repair, --verify-content, --min-age)
   version       print the version
 
+Remote client (a server's address and a key, from flags, the environment or a profile):
+  info          the server's description (GET /api/v1/info)
+  api spec      the server's OpenAPI document
+  profile       add, use, ls and rm the local profiles
+
 Configuration comes from defaults, then the YAML file named by -config or
 $SELFCLOUD_CONFIG, then SELFCLOUD_* environment variables.
 `
@@ -61,6 +66,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return healthcheck(args[1:], stderr)
 	case "fsck":
 		return fsckCommand(args[1:], stdout, stderr)
+	case "info", "api", "profile":
+		if code, ok := remote(args, stdout, stderr); ok {
+			return code
+		}
+		fmt.Fprintf(stderr, "selfcloud: %s: no such command\n\n%s", args[0], remoteUsage())
+		return 2
 	case "thumb":
 		// The decoder's child process (internal/thumb). It is started by the server, with limits, and reads no config.
 		return thumb.Child(args[1:], os.Stdin, stdout, stderr)

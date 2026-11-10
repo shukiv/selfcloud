@@ -10,6 +10,10 @@ cmd	end-sessions	end-sessions	cli1	local only (design 4.6)
 cmd	generate-key	generate-key	pre-cli1	local only (design 4.6)
 cmd	list-keys	list-keys	pre-cli1	local only (design 4.6)
 cmd	new-signing-key	new-signing-key	pre-cli1	local only (design 4.6)
+cmd	profile add	profile add	cli3	local profiles file; no server call (design 3.4)
+cmd	profile ls	profile ls	cli3	local profiles file; no server call (design 3.4)
+cmd	profile rm	profile rm	cli3	local profiles file; no server call (design 3.4)
+cmd	profile use	profile use	cli3	local profiles file; no server call (design 3.4)
 cmd	recount-usage	recount-usage	pre-cli1	local only (design 4.6)
 cmd	reset-password	reset-password	cli1	local only (design 4.6)
 cmd	revoke-key	revoke-key	pre-cli1	local only (design 4.6)
@@ -22,7 +26,7 @@ fn	lib/auth.ts:changePassword	-	-	browser session only
 fn	lib/auth.ts:confirmDevice	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 fn	lib/auth.ts:confirmEmailChange	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 fn	lib/auth.ts:forgotPassword	-	-	email reset from the sign-in page, rate limited per address and IP; the CLI resets by user reset-password or admin reset-password
-fn	lib/auth.ts:loadInfo	-	cli3	planned, cli3
+fn	lib/auth.ts:loadInfo	info	cli3	info covers the fields it reads
 fn	lib/auth.ts:loadMe	-	-	browser session only; whoami reads GET /folders
 fn	lib/auth.ts:resetPassword	-	-	email reset from the sign-in page, rate limited per address and IP; the CLI resets by user reset-password or admin reset-password
 fn	lib/auth.ts:setLocale	-	-	browser session only; profile edits stay in the web interface
@@ -67,7 +71,7 @@ fn	lib/files/api.ts:renameNode	-	cli5	planned, cli5
 fn	lib/files/api.ts:requestOfficeEditor	-	-	opens the Collabora editor in a browser tab
 fn	lib/files/api.ts:restoreNode	-	cli5	planned, cli5
 fn	lib/files/api.ts:restoreVersion	-	cli11	planned, cli11
-fn	lib/files/api.ts:serverLimits	-	cli3	planned, cli3
+fn	lib/files/api.ts:serverLimits	info	cli3	info covers the limits it reads
 fn	lib/files/api.ts:signedLink	-	cli7	planned, cli7
 fn	lib/files/api.ts:statNode	-	cli5	planned, cli5
 fn	lib/files/api.ts:unlockNode	-	cli5	planned, cli5
@@ -121,7 +125,7 @@ fn	lib/manage/api.ts:deleteAllPublicLinks	-	cli7	planned, cli7
 fn	lib/manage/api.ts:deleteGroup	-	cli8	planned, cli8
 fn	lib/manage/api.ts:deleteSpace	-	cli8	planned, cli8
 fn	lib/manage/api.ts:getAccount	-	cli9	planned, cli9
-fn	lib/manage/api.ts:getInfo	-	cli3	planned, cli3
+fn	lib/manage/api.ts:getInfo	info	cli3	info covers the whole document
 fn	lib/manage/api.ts:getJob	-	cli10	planned, cli10
 fn	lib/manage/api.ts:getPerson	-	cli9	planned, cli9
 fn	lib/manage/api.ts:getSpace	-	cli8	planned, cli8
@@ -253,7 +257,7 @@ route	GET /api/v1/folders/{fld}/children	-	cli5	planned, cli5
 route	GET /api/v1/imports/sources	-	cli10	planned, cli10
 route	GET /api/v1/imports/{imp}	-	cli10	planned, cli10
 route	GET /api/v1/imports/{imp}/items	-	cli10	planned, cli10
-route	GET /api/v1/info	-	cli3	planned, cli3
+route	GET /api/v1/info	info	cli3	public route; info prints it
 route	GET /api/v1/jobs/{job}	-	cli10	planned, cli10
 route	GET /api/v1/label-fields	-	cli11	planned, cli11
 route	GET /api/v1/links/{token}	-	-	an anonymous visitor opens a link in the browser; get <share-url> covers the CLI case
@@ -283,7 +287,7 @@ route	GET /api/v1/notifications	-	cli11	planned, cli11
 route	GET /api/v1/notifications/settings	-	cli11	planned, cli11
 route	GET /api/v1/notifications/unread	-	cli11	planned, cli11
 route	GET /api/v1/notifications/unsubscribe	-	-	email unsubscribe link, opened by a mail client
-route	GET /api/v1/openapi.yaml	-	cli3	planned, cli3
+route	GET /api/v1/openapi.yaml	api spec	cli3	public route; api spec writes it
 route	GET /api/v1/playlists	-	cli12	planned, cli12
 route	GET /api/v1/playlists/{pls}	-	cli12	planned, cli12
 route	GET /api/v1/recent	-	cli11	planned, cli11
