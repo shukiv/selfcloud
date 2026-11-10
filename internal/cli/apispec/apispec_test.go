@@ -4,6 +4,7 @@ package apispec
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -99,6 +100,31 @@ func TestSpecOverwriteWithFlag(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(path); string(data) != spec {
 		t.Errorf("file = %q, want the spec with the old bytes gone", data)
+	}
+}
+
+// TestOverwriteFailureKeepsTheOriginal: the replacement is written beside the file and renamed over it, so a write that
+// fails part-way leaves the original whole and no temporary file behind.
+func TestOverwriteFailureKeepsTheOriginal(t *testing.T) {
+	isolate(t)
+	srv := specServer(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openapi.yaml")
+	if err := os.WriteFile(path, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeFault = func() error { return errors.New("simulated disk full") }
+	t.Cleanup(func() { writeFault = func() error { return nil } })
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"--url", srv.URL, "--out", path, "--overwrite"}, &out, &errOut); code == 0 {
+		t.Fatal("a failed write was reported as done")
+	}
+	if data, _ := os.ReadFile(path); string(data) != "mine" {
+		t.Errorf("the original was lost after a failed write: %q", data)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("a failed write left %d entries in the directory; want only the original", len(entries))
 	}
 }
 
