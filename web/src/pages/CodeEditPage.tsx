@@ -32,6 +32,7 @@ import { can, downloadAllowed } from "../lib/files/roles";
 import type { Node } from "../lib/files/types";
 import { useLang, useT } from "../lib/i18n";
 import { go, signInURL } from "../lib/router";
+import { clearSession } from "../lib/session";
 import { useStore } from "../lib/store";
 import { useModeOrLight } from "../theme/theme";
 
@@ -406,6 +407,8 @@ export default function CodeEditPage() {
   const blocked = blocker.state === "blocked" ? blocker : null;
   // askClose is the guard for a Close that would end a script's tab with unsaved text (MED-3): the same modal as a link.
   const [askClose, setAskClose] = useState(false);
+  // askSignIn is the guard for Sign in with unsaved text (HIGH-1): the same modal, and Leave there ends the sign-in.
+  const [askSignIn, setAskSignIn] = useState(false);
 
   // A reload or a close of the tab with unsaved text asks first, through the browser's own prompt (4.6).
   useEffect(() => {
@@ -441,13 +444,31 @@ export default function CodeEditPage() {
   };
   // The guard's three answers, for a blocked link and for a Close that asked (MED-3). Leave sets leaving first, so the close and the
   // back that follows it are not asked again.
+  // signInNow ends the sign-in and opens the sign-in page, as the app does on a 401 (lib/api.ts): the session is cleared, then the
+  // page is opened with replace. It runs only after the person chooses to leave, so the guard does not ask again (HIGH-1).
+  const signInNow = () => {
+    leaving.current = true;
+    setAskSignIn(false);
+    clearSession();
+    go(signInURL(), { replace: true });
+  };
+  // askSignInFirst is the page's Sign in choice: with unsaved text the guard asks first; without it the sign-in goes at once.
+  const askSignInFirst = () => {
+    if (dirty) setAskSignIn(true);
+    else signInNow();
+  };
   const stayHere = () => {
     if (blocked !== null) blocked.reset();
     setAskClose(false);
+    setAskSignIn(false);
   };
   const leaveNow = () => {
     if (blocked !== null) {
       blocked.proceed();
+      return;
+    }
+    if (askSignIn) {
+      signInNow();
       return;
     }
     leaving.current = true;
@@ -456,13 +477,16 @@ export default function CodeEditPage() {
   };
   const saveAndLeaveNow = () => {
     const gate = blocked;
+    const signingIn = askSignIn;
     void save().then((ok) => {
       if (!ok) {
         gate?.reset();
         setAskClose(false);
+        setAskSignIn(false);
         return;
       }
       if (gate !== null) gate.proceed();
+      else if (signingIn) signInNow();
       else leaveNow();
     });
   };
@@ -548,6 +572,7 @@ export default function CodeEditPage() {
             showIcon
             role={notice === "notUtf8" ? "status" : "alert"}
             message={noticeText(notice, ct)}
+            description={notice === "signedOut" ? ct.signedOutCopy : undefined}
             action={noticeAction(notice)}
           />
         </div>
@@ -585,8 +610,9 @@ export default function CodeEditPage() {
               showIcon
               role="alert"
               message={ct.signedOut}
+              description={ct.signedOutCopy}
               action={
-                <Button size="small" onClick={() => go(signInURL())}>
+                <Button size="small" onClick={askSignInFirst}>
                   {ct.signIn}
                 </Button>
               }
@@ -640,7 +666,7 @@ export default function CodeEditPage() {
         {conflict?.noName && <Alert type="error" showIcon role="alert" message={ct.noFreeName} />}
       </Modal>
       <Modal
-        open={blocked !== null || askClose}
+        open={blocked !== null || askClose || askSignIn}
         title={ct.leaveTitle}
         onCancel={stayHere}
         maskClosable={false}
@@ -705,10 +731,10 @@ export default function CodeEditPage() {
       );
     }
     // The sign-in ended: a retry would fail the same way, so the choice is to sign in again (MED-4). The draft is kept, and the
-    // unsaved guard asks before the sign-in page is opened.
+    // unsaved guard asks before the sign-in page is opened (HIGH-1).
     if (n === "signedOut") {
       return (
-        <Button size="small" onClick={() => go(signInURL())}>
+        <Button size="small" onClick={askSignInFirst}>
           {ct.signIn}
         </Button>
       );
