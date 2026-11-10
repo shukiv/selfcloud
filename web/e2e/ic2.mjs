@@ -7,7 +7,7 @@
 // active colour and its text is the on-active colour, and a folder below it keeps the bar with no fill; in light and dark. The
 // playlist drawer of an audio file opens with its shadow, and the stage and the rows show the file's type icon when there is no
 // cover. At 390 px the trash has no sideways scroll, and on a finger the icons are 44 px. The five drive lists (Starred, Recent, Shared with
-// me, Trash, Search) have no sideways scroll at 375 px, and no uncaught error, in English and light and in Hebrew and dark (tl4). Every folder made is deleted for good,
+// me, Trash, Search) have no sideways scroll at 375 px, and no uncaught error, in English and light and in Hebrew and dark (tl4). Each list's table is right to left in Hebrew, and its body's background in dark differs from light (tl4 r2). Every folder made is deleted for good,
 // and the theme and the window are put back. With SELFCLOUD_E2E_SHOTS set (a folder), the pictures named in the brief are saved.
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -249,6 +249,7 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
       { lang: 'English', theme: 'Light', dir: 'ltr' },
       { lang: 'עברית', theme: 'Dark', dir: 'rtl' },
     ];
+    const bodies = new Map();
     for (const set of sets) {
       await page.send('Page.navigate', { url: base + '/starred' });
       await page.waitFor(`location.pathname === '/starred'`, 15000);
@@ -268,7 +269,18 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
         check(sideways <= 0, `${path} has no sideways scroll at 375 px in ${set.lang} (${sideways} px over)`);
         const uncaught = page.errors.slice(before).filter((e) => e.startsWith('uncaught') || e.startsWith('the page renderer crashed'));
         check(uncaught.length === 0, `${path} shows no uncaught error in ${set.lang} ${set.theme} (${uncaught.join(' | ') || 'none'})`);
+        // The list table's direction, and its body's background (tl4 r2, 7(f)): right to left in Hebrew, and a body background in
+        // dark that differs from the light one.
+        const grid = await page.evaluate(`(() => { const t = document.querySelector('table'); if (!t) return null; const b = t.querySelector('tbody'); return { dir: getComputedStyle(t).direction, bg: b ? getComputedStyle(b).backgroundColor : null }; })()`);
+        check(grid !== null, `${path} draws its table in ${set.lang} (${JSON.stringify(grid)})`);
+        if (grid !== null && set.dir === 'rtl') check(grid.dir === 'rtl', `${path} draws its table right to left in Hebrew (${grid.dir})`);
+        if (grid !== null) bodies.set(`${path}|${set.theme}`, grid.bg);
       }
+    }
+    for (const path of lists) {
+      const light = bodies.get(`${path}|Light`);
+      const dark = bodies.get(`${path}|Dark`);
+      check(light !== undefined && dark !== undefined && light !== dark, `${path}'s table body is a different background in dark (${dark}) from light (${light})`);
     }
     await snap('ic2-lists-375.png');
   } finally {
