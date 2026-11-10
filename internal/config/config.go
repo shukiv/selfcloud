@@ -710,8 +710,7 @@ type UIConfig struct {
 	Brand BrandConfig `yaml:"brand"`
 }
 
-// DefaultBrandName is the name of a new installation, and the name that shows the SelfCloud artwork when no logo is set
-// (decision 109).
+// DefaultBrandName is the name of a new installation (decision 109).
 const DefaultBrandName = "SelfCloud"
 
 // BrandConfig is the installation-wide name, accent colour and logo of the web interface.
@@ -1249,11 +1248,11 @@ func setFromString(fv reflect.Value, s string) error {
 
 var accentPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
-// Artwork reports whether the installation shows the SelfCloud artwork: its name is the default one and it has no logo file. The
-// artwork is one picture with the name inside it, so an installation that names itself or sets a logo shows its own (decision
-// 109). An installation that picks the default name by hand gets the artwork too.
+// Artwork reports whether the installation shows the SelfCloud artwork: it has no logo file, whatever its name. The owner wants
+// the logo by default, not the name as text (decision 126, which changes decision 109's rule that a name of its own shows as
+// text). The name still titles the pages and labels the picture.
 func (b BrandConfig) Artwork() bool {
-	return b.Name == DefaultBrandName && b.LogoFile == ""
+	return b.LogoFile == ""
 }
 
 // validate checks the brand. The accent is only checked for form: MASTER.md asks the UI to refuse
