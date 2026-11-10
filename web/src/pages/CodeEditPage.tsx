@@ -525,6 +525,8 @@ export default function CodeEditPage() {
         <a
           href={folderHref}
           onClick={(e) => {
+            // Only a plain left click leaves the page here. A modifier (a new tab, a new window) or another button goes to the browser (LOW-A).
+            if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
             go(folderHref);
           }}
