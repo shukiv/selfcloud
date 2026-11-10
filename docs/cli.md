@@ -242,7 +242,7 @@ These commands work on the files the signed-in person can reach, with the creden
 folder walk the server does for a path.
 
 **Naming.** A node is named by its id, `nod_` and 26 characters; `stat` and `ls --json` print it. A folder is named by
-its id, `fld_` and 26 characters; a node document's `folder_id` holds it. A path starts with `/` and is walked by the
+its id, `fld_` and 26 characters; a node document's `folder_id` holds it, and no command lists folders yet (`folder ls` arrives in cli8). A path starts with `/` and is walked by the
 server from the folder given with `--folder`. Each name in a path is checked before the first request: it may not be
 empty, `.` or `..`, hold a `/` or a `\`, a control or an invisible character, start or end with a space, or be longer
 than 255 bytes. A refused name costs no request and changes nothing. A name is a name even when it looks like an id or
@@ -265,13 +265,20 @@ starts with `-`, because a path always starts with `/`.
 | `shortcut add DIR TARGET [--name N]` | a shortcut to TARGET in the directory DIR (both node ids); the target's name unless `--name` |
 | `unlock NODE` | breaks the editing lock on a file |
 
-`--json` prints the API's documents as they are; for a list, the items. `--folder` is required for a path and not used
-for a node id, which names its own folder.
+`--json` prints the API's document for `stat`, `mkdir`, `touch`, `mv` and `cp`, and the items of a list for `ls` and
+`trash ls`. `rm`, `trash restore`, `trash rm` and `unlock` print one object per target (`target`, `status`, and `error`
+when it failed), not the API's document. `trash empty` prints `{"purged": N}`.
 
-**Confirmation.** `rm`, `trash rm`, `trash empty` and `mv` or `cp` with `--replace` ask first, before anything is sent.
-At a terminal the command shows a phrase and waits for it, then Enter: the node's id for one target, `yes` for several,
-`empty` for `trash empty`, and `replace` for `--replace`. The phrase is the id, not the name, because a name would need a
-read first. Without a terminal the command refuses (exit 2) unless `--yes` is given.
+`--folder` is required for a path, and the path is walked in that folder. A node id needs no `--folder`: the node names
+its own folder, which `stat` and `ls --json` print as `folder_id`. `mv` and `cp` send the folder with a node-id
+destination when `--folder` is given, so the server checks the destination against the folder it is in. A path
+destination with no `--folder` is walked in the source node's folder.
+
+**Confirmation.** `rm`, `trash rm`, `trash empty` and `mv` or `cp` with `--replace` ask first. At a terminal the command
+shows a phrase and waits for it, then Enter: for one target of `rm` or `trash rm`, the node's name; for several targets,
+`yes`; `empty` for `trash empty`; `replace` for `--replace`. The name is read before the question: `rm` reads the node,
+and `trash rm` reads the Trash listing, because the node read does not serve a trashed node. Without a terminal the
+command refuses (exit 2) unless `--yes` is given, and reads nothing.
 
 **Several targets.** `rm`, `trash restore`, `trash rm` and `unlock` act on each target in turn, and every target is
 checked before the first request. Each result has its own line, or an object in `--json` with `target`, `status` and,
