@@ -181,6 +181,72 @@ func TestMissingNamedProfileIsNotFound(t *testing.T) {
 	}
 }
 
+// A stale implicit name (SELFCLOUD_PROFILE, or the current pointer) that names no profile is ignored when the call has its
+// address and any credential it needs without one. Otherwise it is not found. A name given by --profile is never ignored.
+func TestStaleEnvProfileIsIgnoredWhenFlagsGiveEverything(t *testing.T) {
+	isolate(t)
+	t.Setenv("SELFCLOUD_PROFILE", "gone")
+	g := goodGlobal()
+	g.URL = "https://flags.example"
+	g.TokenFile = tokenFile(t, accountKey)
+	var errOut bytes.Buffer
+	c, err := Connect(g, &errOut, true)
+	if err != nil {
+		t.Fatalf("a stale SELFCLOUD_PROFILE broke a call that has its address and credential: %v", err)
+	}
+	if c.Profile != "" || c.URL != "https://flags.example" {
+		t.Errorf("Conn = %+v, want the flag address and no profile", c)
+	}
+}
+
+func TestStaleCurrentPointerIsIgnoredForAFlagOnlyURL(t *testing.T) {
+	dir := isolate(t)
+	if err := profile.Open(dir).Save(profile.File{Version: 1, Current: "gone", Profiles: map[string]profile.Profile{}}); err != nil {
+		t.Fatal(err)
+	}
+	g := goodGlobal()
+	g.URL = "https://flags.example"
+	var errOut bytes.Buffer
+	if _, err := Connect(g, &errOut, false); err != nil {
+		t.Errorf("a stale current pointer broke a call that needs no credential: %v", err)
+	}
+}
+
+func TestStaleEnvProfileStillFailsWithoutTheFlags(t *testing.T) {
+	isolate(t)
+	t.Setenv("SELFCLOUD_PROFILE", "gone")
+	var errOut bytes.Buffer
+	_, err := Connect(goodGlobal(), &errOut, false)
+	if code, _, _ := exitcode.Of(err); code != exitcode.NotFound {
+		t.Errorf("exit = %d, want %d (err %v)", code, exitcode.NotFound, err)
+	}
+}
+
+func TestStaleEnvProfileWithAnAddressButNoCredentialStillFails(t *testing.T) {
+	isolate(t)
+	t.Setenv("SELFCLOUD_PROFILE", "gone")
+	g := goodGlobal()
+	g.URL = "https://flags.example"
+	var errOut bytes.Buffer
+	_, err := Connect(g, &errOut, true)
+	if code, _, _ := exitcode.Of(err); code != exitcode.NotFound {
+		t.Errorf("exit = %d, want %d (err %v)", code, exitcode.NotFound, err)
+	}
+}
+
+func TestNamedProfileIsNeverIgnored(t *testing.T) {
+	isolate(t)
+	g := goodGlobal()
+	g.Profile = "gone"
+	g.URL = "https://flags.example"
+	g.TokenFile = tokenFile(t, accountKey)
+	var errOut bytes.Buffer
+	_, err := Connect(g, &errOut, true)
+	if code, _, _ := exitcode.Of(err); code != exitcode.NotFound {
+		t.Errorf("--profile gone with flags: exit = %d, want %d (err %v)", code, exitcode.NotFound, err)
+	}
+}
+
 func TestSkipVerifyWarnsOnEveryUse(t *testing.T) {
 	isolate(t)
 	g := goodGlobal()
