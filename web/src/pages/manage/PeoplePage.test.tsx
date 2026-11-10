@@ -115,6 +115,22 @@ describe("the people list", () => {
     expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
+  // review L1: the name is a link-like button, so a keyboard user can open the person from the name itself.
+  it("the name is a button that opens the person's details (review L1)", async () => {
+    stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Name usr_a" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
+  // review L5: the email line takes its colour from the theme token, not from a CSS variable.
+  it("the email line's colour is a theme token, not a CSS variable (review L5)", async () => {
+    stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    const line = (await screen.findByText("usr_a@example.com")).parentElement as HTMLElement;
+    expect(line.style.color).toMatch(/^rgba?\(/);
+  });
+
   // design-tl 2.2 and the owner's rule: the signed-in person's own row reads "You".
   it("the signed-in person's own row reads You", async () => {
     stubFetch((c: Call) => (c.url.includes("/users") ? { status: 200, body: { items: [person("usr_owen", "active", "owner"), person("usr_a", "active")] } } : { status: 200, body: { items: [] } }));
