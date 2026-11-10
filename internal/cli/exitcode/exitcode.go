@@ -59,7 +59,8 @@ func ForAPI(status int, apiCode string) int {
 	switch {
 	case status >= 200 && status < 300:
 		return OK
-	case status == 404:
+	case status == 404, status == 410:
+		// 410 is a gone answer (link_expired and the like): the thing is not there now, so it is "not found" (decision 123).
 		return NotFound
 	case status == 400, status == 413, status == 415, status == 416, status == 422:
 		return Usage
