@@ -240,6 +240,26 @@ func TestErrorsNeverCarryAUserInfoCredential(t *testing.T) {
 	}
 }
 
+// TestNameGivenAsProfileFlagIsNotEchoed: a key given to --profile, or to SELFCLOUD_PROFILE, is not printed.
+func TestNameGivenAsProfileFlagIsNotEchoed(t *testing.T) {
+	isolate(t)
+	key := "sc_acct_Probe0123456789abcdefghijklmnop"
+	g := goodGlobal()
+	g.URL = "https://x.example"
+	g.Profile = key
+	var errOut bytes.Buffer
+	_, err := Connect(g, &errOut, false)
+	if err == nil || strings.Contains(err.Error(), key) || strings.Contains(errOut.String(), key) {
+		t.Errorf("--profile with a key: err %v; the key must not be printed", err)
+	}
+	g.Profile = ""
+	t.Setenv("SELFCLOUD_PROFILE", "sc_admin_x")
+	_, err = Connect(g, &errOut, false)
+	if err == nil || strings.Contains(err.Error(), "sc_admin_x") {
+		t.Errorf("SELFCLOUD_PROFILE with a key: err %v; the key must not be printed", err)
+	}
+}
+
 func TestParseAllowsFlagsAfterPositionals(t *testing.T) {
 	var out bytes.Buffer
 	fs := NewFlagSet("profile add")

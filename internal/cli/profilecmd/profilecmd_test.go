@@ -276,6 +276,51 @@ func TestLsWithNoFile(t *testing.T) {
 	}
 }
 
+// keyShaped are values a user might paste where a profile name belongs. The first is too long for the name rule; the
+// second passes the name rule, so the name rule alone does not keep it out of a message.
+var keyShaped = []string{"sc_acct_Probe0123456789abcdefghijklmnop", "sc_admin_x"}
+
+// TestNameThatIsAKeyIsNotEchoed: a key given where a profile name goes is not printed, by use, rm or add.
+func TestNameThatIsAKeyIsNotEchoed(t *testing.T) {
+	isolate(t)
+	pipe(t, accountKey)
+	add(t, "home", "--url", "https://selfcloud.example")
+	for _, k := range keyShaped {
+		var out, errOut bytes.Buffer
+		Use([]string{k}, &out, &errOut)
+		Remove([]string{k}, &out, &errOut)
+		Add([]string{k, "--url", "https://selfcloud.example"}, &out, &errOut)
+		if strings.Contains(out.String(), k) || strings.Contains(errOut.String(), k) {
+			t.Errorf("name %q was printed: stdout %q, stderr %q", k, out.String(), errOut.String())
+		}
+	}
+	var out, errOut bytes.Buffer
+	if code := Use([]string{"nosuch"}, &out, &errOut); code != 4 || !strings.Contains(errOut.String(), "nosuch") {
+		t.Errorf("a valid name that is missing: exit %d, stderr %q; want 4 and the name", code, errOut.String())
+	}
+}
+
+// TestRefusedCredentialIsNeverEchoed: a value that is not a key, given to profile add by a file or by standard input, is
+// refused without being printed. This also catches a refusal that appends the value.
+func TestRefusedCredentialIsNeverEchoed(t *testing.T) {
+	isolate(t)
+	value := "sct_REFUSEDSHAPED0123456789abcdef"
+	pipe(t, value)
+	var out, errOut bytes.Buffer
+	if code := Add([]string{"x", "--url", "https://selfcloud.example"}, &out, &errOut); code != 2 {
+		t.Errorf("stdin: exit %d, want 2", code)
+	}
+	tf := tokenFile(t, value, 0o600)
+	out.Reset()
+	errOut.Reset()
+	if code := Add([]string{"x", "--url", "https://selfcloud.example", "--token-file", tf}, &out, &errOut); code != 2 {
+		t.Errorf("token file: exit %d, want 2", code)
+	}
+	if strings.Contains(out.String(), value) || strings.Contains(errOut.String(), value) {
+		t.Errorf("the refused credential was printed: stdout %q, stderr %q", out.String(), errOut.String())
+	}
+}
+
 func TestRemoveOfTheCurrentProfileClearsIt(t *testing.T) {
 	dir := isolate(t)
 	pipe(t, accountKey)
