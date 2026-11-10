@@ -233,6 +233,38 @@ func TestImportEntryCountsPieceBytesInFlight(t *testing.T) {
 	}
 }
 
+// TestImportResumeReleasesItsStaleReservation: an import that stopped with its entry reserved resumes on a tight disk.
+// The stale reservation is released before the entry is checked, and the release is saved, so the 10 KiB entry sees
+// only its own bytes against 16 KiB usable and is admitted. If the release were not saved, the row would still count the
+// stale 10 KiB, and the entry would be refused as the disk's total would be 20 KiB.
+func TestImportResumeReleasesItsStaleReservation(t *testing.T) {
+	fx := newImportFixture(t)
+	minFree := uint64(fx.s.cfg.Storage.MinFree)
+	fx.s.freeBytes = func(string) (uint64, error) { return minFree + 16<<10, nil }
+	fx.s.cfg.Upload.MaxDiskSharePercent = 100
+	imp := fx.startOK(t, fx.archive(t, "big.zip", zipArchive(t, [][2]string{{"big.txt", strings.Repeat("0", 10240)}})), "")
+	ctx := context.Background()
+	if err := fx.s.store.Write(ctx, func(tx *store.Tx) error {
+		im, err := tx.Import(ctx, imp.ID)
+		if err != nil {
+			return err
+		}
+		im.ReservedBytes = 10 << 10
+		if err := tx.AdjustFolders(ctx, im.AccountID, store.FolderChange{FolderID: im.StagingFolderID,
+			Change: store.UsageChange{Reserved: im.ReservedBytes}}); err != nil {
+			return err
+		}
+		return tx.SaveImport(ctx, im, store.Now())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = fx.runJob(t)
+	got := fx.get(t, imp.ID)
+	if got.State != store.ImportDone || got.Files != 1 {
+		t.Fatalf("resumed import with a stale 10 KiB reservation: %+v, want done with its one file", got)
+	}
+}
+
 // A publish that writes one audit row per file floods the webhooks; the folder is reported once, as a copy reports a
 // large tree (F4).
 func TestImportPublishDoesNotFloodWebhooks(t *testing.T) {
