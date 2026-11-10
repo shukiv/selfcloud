@@ -23,6 +23,22 @@ export interface CodeText {
   empty: string;
   // The notice over a file that is not valid UTF-8 (design-ce 2.3). The character is the one shown for each bad sequence.
   notUtf8: string;
+  // The editor page (decision 124): the save and wrap buttons' names, the save states, and the notices of a save that did not
+  // happen. The page shows these words, never the server's.
+  save: string;
+  saving: string;
+  wrap: string;
+  reload: string;
+  reloadConfirm: string;
+  retry: string;
+  conflict: string;
+  locked: string;
+  forbidden: string;
+  gone: string;
+  notText: string;
+  tooLarge: string;
+  failed: string;
+  tooLargeToEdit: string;
 }
 
 export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
@@ -41,6 +57,20 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     go: "go",
     empty: "This file is empty.",
     notUtf8: "This file is not UTF-8 text. Characters that could not be read show as �.",
+    save: "Save",
+    saving: "Saving…",
+    wrap: "Wrap lines",
+    reload: "Reload",
+    reloadConfirm: "Unsaved changes will be lost. Reload the saved version?",
+    retry: "Try again",
+    conflict: "This file changed since you opened it. Reload it to see the saved version.",
+    locked: "This file is open in an office editor. Try again later.",
+    forbidden: "You can no longer save this file. The text stays here so you can copy it.",
+    gone: "This file was deleted. The text stays here so you can copy it.",
+    notText: "The text is not UTF-8, so it was not saved. The text stays here.",
+    tooLarge: "The file is too large to save here.",
+    failed: "Save failed. The text stays here, so try again.",
+    tooLargeToEdit: "This file is too large to edit here. You can download it.",
   },
   es: {
     find: "Buscar",
@@ -57,6 +87,20 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     go: "ir",
     empty: "Este archivo está vacío.",
     notUtf8: "Este archivo no es texto UTF-8. Los caracteres que no se pudieron leer se muestran como �.",
+    save: "Guardar",
+    saving: "Guardando…",
+    wrap: "Ajustar líneas",
+    reload: "Recargar",
+    reloadConfirm: "Se perderán los cambios sin guardar. ¿Recargar la versión guardada?",
+    retry: "Reintentar",
+    conflict: "Este archivo cambió desde que lo abrió. Recárguelo para ver la versión guardada.",
+    locked: "Este archivo está abierto en un editor de oficina. Inténtelo más tarde.",
+    forbidden: "Ya no puede guardar este archivo. El texto se queda aquí para que pueda copiarlo.",
+    gone: "Este archivo se eliminó. El texto se queda aquí para que pueda copiarlo.",
+    notText: "El texto no es UTF-8, así que no se guardó. El texto se queda aquí.",
+    tooLarge: "El archivo es demasiado grande para guardarlo aquí.",
+    failed: "No se pudo guardar. El texto se queda aquí; inténtelo de nuevo.",
+    tooLargeToEdit: "Este archivo es demasiado grande para editarlo aquí. Puede descargarlo.",
   },
   fr: {
     find: "Rechercher",
@@ -73,6 +117,20 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     go: "aller",
     empty: "Ce fichier est vide.",
     notUtf8: "Ce fichier n’est pas du texte UTF-8. Les caractères qui n’ont pas pu être lus s’affichent sous la forme �.",
+    save: "Enregistrer",
+    saving: "Enregistrement…",
+    wrap: "Retour à la ligne",
+    reload: "Recharger",
+    reloadConfirm: "Les modifications non enregistrées seront perdues. Recharger la version enregistrée ?",
+    retry: "Réessayer",
+    conflict: "Ce fichier a changé depuis son ouverture. Rechargez-le pour voir la version enregistrée.",
+    locked: "Ce fichier est ouvert dans un éditeur de bureautique. Réessayez plus tard.",
+    forbidden: "Vous ne pouvez plus enregistrer ce fichier. Le texte reste ici pour que vous puissiez le copier.",
+    gone: "Ce fichier a été supprimé. Le texte reste ici pour que vous puissiez le copier.",
+    notText: "Le texte n’est pas en UTF-8, il n’a donc pas été enregistré. Le texte reste ici.",
+    tooLarge: "Le fichier est trop volumineux pour être enregistré ici.",
+    failed: "L’enregistrement a échoué. Le texte reste ici ; réessayez.",
+    tooLargeToEdit: "Ce fichier est trop volumineux pour être modifié ici. Vous pouvez le télécharger.",
   },
   pt: {
     find: "Localizar",
@@ -89,6 +147,20 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     go: "ir",
     empty: "Este ficheiro está vazio.",
     notUtf8: "Este ficheiro não é texto UTF-8. Os caracteres que não foi possível ler aparecem como �.",
+    save: "Guardar",
+    saving: "A guardar…",
+    wrap: "Quebrar linhas",
+    reload: "Recarregar",
+    reloadConfirm: "As alterações não guardadas serão perdidas. Recarregar a versão guardada?",
+    retry: "Tentar de novo",
+    conflict: "Este ficheiro mudou desde que o abriu. Recarregue-o para ver a versão guardada.",
+    locked: "Este ficheiro está aberto num editor de escritório. Tente mais tarde.",
+    forbidden: "Já não pode guardar este ficheiro. O texto fica aqui para o poder copiar.",
+    gone: "Este ficheiro foi eliminado. O texto fica aqui para o poder copiar.",
+    notText: "O texto não está em UTF-8, por isso não foi guardado. O texto fica aqui.",
+    tooLarge: "O ficheiro é grande demais para ser guardado aqui.",
+    failed: "Não foi possível guardar. O texto fica aqui; tente de novo.",
+    tooLargeToEdit: "Este ficheiro é grande demais para ser editado aqui. Pode transferi-lo.",
   },
   ru: {
     find: "Найти",
@@ -105,6 +177,20 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     go: "перейти",
     empty: "Этот файл пуст.",
     notUtf8: "Этот файл не в кодировке UTF-8. Символы, которые не удалось прочитать, показаны как �.",
+    save: "Сохранить",
+    saving: "Сохранение…",
+    wrap: "Переносить строки",
+    reload: "Перезагрузить",
+    reloadConfirm: "Несохранённые изменения будут потеряны. Перезагрузить сохранённую версию?",
+    retry: "Повторить",
+    conflict: "Файл изменился после того, как вы его открыли. Перезагрузите его, чтобы увидеть сохранённую версию.",
+    locked: "Файл открыт в редакторе документов. Повторите позже.",
+    forbidden: "Вы больше не можете сохранить этот файл. Текст остаётся здесь, чтобы его можно было скопировать.",
+    gone: "Файл удалён. Текст остаётся здесь, чтобы его можно было скопировать.",
+    notText: "Текст не в кодировке UTF-8, поэтому он не сохранён. Текст остаётся здесь.",
+    tooLarge: "Файл слишком большой, чтобы сохранить его здесь.",
+    failed: "Не удалось сохранить. Текст остаётся здесь; попробуйте ещё раз.",
+    tooLargeToEdit: "Файл слишком большой, чтобы редактировать его здесь. Его можно скачать.",
   },
   ar: {
     find: "بحث",
@@ -121,6 +207,20 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     go: "انتقال",
     empty: "هذا الملف فارغ.",
     notUtf8: "هذا الملف ليس نصًا بترميز UTF-8. تظهر الأحرف التي تعذّرت قراءتها بالشكل �.",
+    save: "حفظ",
+    saving: "جارٍ الحفظ…",
+    wrap: "التفاف الأسطر",
+    reload: "إعادة التحميل",
+    reloadConfirm: "ستفقد التغييرات غير المحفوظة. هل تريد إعادة تحميل النسخة المحفوظة؟",
+    retry: "إعادة المحاولة",
+    conflict: "تغيّر هذا الملف منذ فتحته. أعد تحميله لترى النسخة المحفوظة.",
+    locked: "هذا الملف مفتوح في محرر مستندات. حاول لاحقًا.",
+    forbidden: "لم تعد تستطيع حفظ هذا الملف. يبقى النص هنا لتتمكن من نسخه.",
+    gone: "تم حذف هذا الملف. يبقى النص هنا لتتمكن من نسخه.",
+    notText: "النص ليس بترميز UTF-8، فلم يُحفظ. يبقى النص هنا.",
+    tooLarge: "الملف أكبر من أن يُحفظ هنا.",
+    failed: "تعذّر الحفظ. يبقى النص هنا؛ حاول مرة أخرى.",
+    tooLargeToEdit: "الملف أكبر من أن يُحرَّر هنا. يمكنك تنزيله.",
   },
   he: {
     find: "חיפוש",
@@ -137,6 +237,20 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     go: "מעבר",
     empty: "הקובץ הזה ריק.",
     notUtf8: "הקובץ הזה אינו טקסט בקידוד UTF-8. תווים שלא ניתן היה לקרוא מוצגים כ־�.",
+    save: "שמירה",
+    saving: "שומר…",
+    wrap: "גלישת שורות",
+    reload: "טעינה מחדש",
+    reloadConfirm: "שינויים שלא נשמרו יאבדו. לטעון מחדש את הגרסה השמורה?",
+    retry: "ניסיון נוסף",
+    conflict: "הקובץ השתנה מאז שפתחת אותו. טען אותו מחדש כדי לראות את הגרסה השמורה.",
+    locked: "הקובץ פתוח בעורך מסמכים. נסה שוב מאוחר יותר.",
+    forbidden: "אין לך עוד הרשאה לשמור את הקובץ הזה. הטקסט נשאר כאן כדי שתוכל להעתיק אותו.",
+    gone: "הקובץ נמחק. הטקסט נשאר כאן כדי שתוכל להעתיק אותו.",
+    notText: "הטקסט אינו בקידוד UTF-8 ולכן לא נשמר. הטקסט נשאר כאן.",
+    tooLarge: "הקובץ גדול מכדי לשמור כאן.",
+    failed: "השמירה נכשלה. הטקסט נשאר כאן; נסה שוב.",
+    tooLargeToEdit: "הקובץ גדול מכדי לערוך כאן. אפשר להוריד אותו.",
   },
 };
 

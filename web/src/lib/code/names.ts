@@ -28,8 +28,8 @@ export type Pack =
   | "dockerfile"
   | "text";
 
-// CODE_EXTENSIONS maps each listed extension (lower case, no dot) to its pack. Markdown has no colours until its pack
-// lands with the editor (design-ce 2.2); it still opens in the viewer.
+// CODE_EXTENSIONS maps each listed extension (lower case, no dot) to its pack. Markdown is shown as source, with colours from
+// its pack (design-ce 2.2, decision 124).
 export const CODE_EXTENSIONS: Readonly<Record<string, Pack>> = {
   js: "javascript",
   mjs: "javascript",

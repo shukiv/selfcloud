@@ -4,13 +4,13 @@
 // of its kind is shown, and never with the page. A read-only viewer needs the parser only, so each pack gives its Language
 // (javascriptLanguage and the rest), not its full support: the completions, snippets and lint that the support functions add
 // are never imported, and the bundler leaves them out. The legacy modes (Ruby, shell, TOML, properties, Dockerfile) are stream
-// parsers that the core's StreamLanguage runs. Plain text and Markdown have no pack here: Markdown's comes with the editor.
+// parsers that the core's StreamLanguage runs. Markdown's pack is @codemirror/lang-markdown (decision 124); plain text has none.
 // A switch, not an object keyed by pack: the source check refuses the text "javascript" followed by a colon anywhere.
 import type { Extension } from "@codemirror/state";
 import { StreamLanguage } from "@codemirror/language";
 import { extensionOf, type Pack } from "./names";
 
-// loadLanguage loads a pack's parser for a file of this name, or gives null for a pack with none (plain text, Markdown).
+// loadLanguage loads a pack's parser for a file of this name, or gives null for a pack with none (plain text).
 export function loadLanguage(pack: Pack, name: string): Promise<Extension | null> {
   switch (pack) {
     case "javascript":
@@ -52,6 +52,7 @@ export function loadLanguage(pack: Pack, name: string): Promise<Extension | null
     case "dockerfile":
       return import("@codemirror/legacy-modes/mode/dockerfile").then((m) => StreamLanguage.define(m.dockerFile));
     case "markdown":
+      return import("@codemirror/lang-markdown").then((m) => m.markdownLanguage);
     case "text":
       return Promise.resolve(null);
   }
