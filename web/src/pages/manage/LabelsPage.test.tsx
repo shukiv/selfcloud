@@ -175,4 +175,15 @@ describe("labels page", () => {
     expect(post?.url).toBe("/api/v1/accounts/acc_1/label-fields");
     expect(post?.body).toEqual({ name: "Due", type: "text", restricted: false });
   });
+
+  // review L4: Edit opens the field's form with its current name and type.
+  it("Edit opens the form for the field, with its name in it (review L4)", async () => {
+    stubFetch((c) => {
+      if (c.method === "GET") return { status: 200, body: { items: [STATUS] } };
+      return { status: 404, body: {} };
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit: Status" }));
+    await waitFor(() => expect((document.getElementById("label-form-name") as HTMLInputElement | null)?.value).toBe("Status"));
+  });
 });

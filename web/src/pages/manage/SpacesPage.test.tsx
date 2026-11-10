@@ -180,3 +180,28 @@ describe("team spaces", () => {
     expect(document.getElementById("space-delete-name")).toBeTruthy();
   });
 });
+
+// review L4: the Share, Settings and Rename icons, each tested on its own.
+describe("a space's Share, Settings and Rename icons (review L4)", () => {
+  it("Share reads the space's root node, which the share dialog works on", async () => {
+    const { calls } = stubFetch(answerFor(() => null));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Share: Plans" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "GET" && c.url === "/api/v1/nodes/nod_1")).toBe(true));
+  });
+
+  it("Settings opens the space's settings dialog, titled with its name", async () => {
+    stubFetch(answerFor(() => null));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Settings: Plans" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Settings for Plans");
+  });
+
+  it("Rename opens the rename dialog with the space's current name in it", async () => {
+    stubFetch(answerFor(() => null));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Rename: Plans" }));
+    await waitFor(() => expect((document.getElementById("space-rename-name") as HTMLInputElement | null)?.value).toBe("Plans"));
+  });
+});
