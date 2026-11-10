@@ -814,6 +814,15 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await waitFor(() => expect(s.puts()).toHaveLength(1));
   });
 
+  it("a file with a line past 2000 characters opens with wrapping off (design 3.2), and the wrap button still turns it on", async () => {
+    server({ body: new TextEncoder().encode(`{"a":"${"x".repeat(2500)}"}\n`) });
+    render();
+    await waitFor(() => expect(content().textContent).toContain('"a"'));
+    expect(content().classList.contains("cm-lineWrapping")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Wrap lines" }));
+    await waitFor(() => expect(content().classList.contains("cm-lineWrapping")).toBe(true));
+  });
+
   it("a .jsonc file is not linted: no marker and no count", async () => {
     server({ name: "a.jsonc", body: new TextEncoder().encode('{ // comment\n  "a": 1\n}\n') });
     render();

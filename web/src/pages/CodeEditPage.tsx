@@ -182,6 +182,8 @@ export default function CodeEditPage() {
           node: n,
         };
         readyRef.current = ready;
+        // The file's own rule sets the wrap: off for a long line (design 3.2), and the wrap button then turns it on.
+        setWrap(ready.wrap);
         setPage({ s: "ready", ready });
         if (!d.utf8) setNotice("notUtf8");
       } catch (err) {
@@ -342,6 +344,7 @@ export default function CodeEditPage() {
         key: ++keyRef.current,
       };
       readyRef.current = next;
+      setWrap(next.wrap);
       setPage({ s: "ready", ready: next });
       setSaveState(null);
       setCopied(null);
