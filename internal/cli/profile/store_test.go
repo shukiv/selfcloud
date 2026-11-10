@@ -244,6 +244,19 @@ func TestKindOf(t *testing.T) {
 	}
 }
 
+// TestKindOfRefusalNeverRepeatsTheValue: a refused value is not printed by the refusal. The marker is unique to the value,
+// since the refusal names the key prefixes itself.
+func TestKindOfRefusalNeverRepeatsTheValue(t *testing.T) {
+	t.Parallel()
+	_, err := KindOf("sct_REFUSEDVALUE0123456789")
+	if err == nil {
+		t.Fatal("a device-looking value of another kind was accepted")
+	}
+	if strings.Contains(err.Error(), "REFUSEDVALUE") {
+		t.Errorf("the refusal repeats the value: %v", err)
+	}
+}
+
 func TestValidName(t *testing.T) {
 	t.Parallel()
 	for _, n := range []string{"work", "a", "my-cloud_2", "x0"} {
