@@ -68,6 +68,8 @@ export interface CodeText {
   badName: string;
   folderGone: string;
   storageFull: string;
+  // The one message for a problem the JSON lint finds, in the editor's own words (LOW-7).
+  lintInvalid: string;
 }
 
 export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
@@ -123,6 +125,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     badName: "This name is too long or not allowed in this folder. Rename the copy and try again.",
     folderGone: "The folder for this copy is gone. The text stays here so you can copy it.",
     storageFull: "The storage is full. The text stays here, so free some space and try again.",
+    lintInvalid: "Not valid JSON here.",
   },
   es: {
     find: "Buscar",
@@ -176,6 +179,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     badName: "Este nombre es demasiado largo o no está permitido en esta carpeta. Cambie el nombre de la copia e inténtelo de nuevo.",
     folderGone: "La carpeta de esta copia ya no existe. El texto se queda aquí para que pueda copiarlo.",
     storageFull: "El almacenamiento está lleno. El texto se queda aquí; libere espacio e inténtelo de nuevo.",
+    lintInvalid: "Aquí no es JSON válido.",
   },
   fr: {
     find: "Rechercher",
@@ -229,6 +233,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     badName: "Ce nom est trop long ou non autorisé dans ce dossier. Renommez la copie et réessayez.",
     folderGone: "Le dossier de cette copie n’existe plus. Le texte reste ici pour que vous puissiez le copier.",
     storageFull: "Le stockage est plein. Le texte reste ici ; libérez de la place et réessayez.",
+    lintInvalid: "JSON non valide ici.",
   },
   pt: {
     find: "Localizar",
@@ -282,6 +287,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     badName: "Este nome é demasiado longo ou não é permitido nesta pasta. Mude o nome da cópia e tente de novo.",
     folderGone: "A pasta desta cópia já não existe. O texto fica aqui para o poder copiar.",
     storageFull: "O armazenamento está cheio. O texto fica aqui; liberte espaço e tente de novo.",
+    lintInvalid: "JSON inválido aqui.",
   },
   ru: {
     find: "Найти",
@@ -335,6 +341,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     badName: "Это имя слишком длинное или не разрешено в этой папке. Переименуйте копию и попробуйте ещё раз.",
     folderGone: "Папка для этой копии больше не существует. Текст остаётся здесь, чтобы вы могли его скопировать.",
     storageFull: "Хранилище заполнено. Текст остаётся здесь; освободите место и попробуйте ещё раз.",
+    lintInvalid: "Здесь не корректный JSON.",
   },
   ar: {
     find: "بحث",
@@ -388,6 +395,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     badName: "هذا الاسم طويل جدًا أو غير مسموح به في هذا المجلد. غيّر اسم النسخة وحاول مرة أخرى.",
     folderGone: "مجلد هذه النسخة لم يعد موجودًا. يبقى النص هنا لتتمكن من نسخه.",
     storageFull: "مساحة التخزين ممتلئة. يبقى النص هنا؛ أفرِغ بعض المساحة وحاول مرة أخرى.",
+    lintInvalid: "هذا ليس JSON صالحًا هنا.",
   },
   he: {
     find: "חיפוש",
@@ -441,6 +449,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     badName: "השם הזה ארוך מדי או אינו מותר בתיקייה הזו. שנה את שם העותק ונסה שוב.",
     folderGone: "התיקייה של העותק הזה כבר אינה קיימת. הטקסט נשאר כאן כדי שתוכל להעתיק אותו.",
     storageFull: "האחסון מלא. הטקסט נשאר כאן; פנה מקום ונסה שוב.",
+    lintInvalid: "כאן אין JSON תקין.",
   },
 };
 

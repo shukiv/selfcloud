@@ -18,6 +18,7 @@ import { useLang } from "../../lib/i18n";
 import { loadLanguage } from "../../lib/code/languages";
 import type { Pack } from "../../lib/code/names";
 import { codeText, phrasesOf } from "../../lib/code/text";
+import { translateLint } from "../../lib/code/lint";
 import { codeTheme, modeTheme } from "../../lib/code/theme";
 
 // EditorHandle is what the page reads from the editor: its whole text, with LF line breaks, and the find panel.
@@ -148,7 +149,7 @@ export default function CodeEditor({ initial, pack, name, dark, readOnly, wrap, 
             l.lintGutter(),
             l.linter(
               (v) => {
-                const found = parse(v);
+                const found = translateLint(parse(v), codeText(now.current.lang).lintInvalid);
                 now.current.onProblems(found.length);
                 return found;
               },
