@@ -45,6 +45,30 @@ func TestMvToAPathWithoutAFolderLeavesTheFolderToTheServer(t *testing.T) {
 	}
 }
 
+// TestMvAcrossFoldersSendsTheFolderWithTheParent: the API takes a node-id destination only with the folder it is in, so
+// --folder with an id is sent with the parent, and the move crosses folders.
+func TestMvAcrossFoldersSendsTheFolderWithTheParent(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("POST", nodePath(testNode, "/move"), ok(node(testNode, "a.txt", "file")))
+	wantCode(t, f.run(Mv, testNode, testDest, "--folder", testFolder), 0)
+	body := f.wantBody(0)
+	if body["parent"] != testDest || body["folder"] != testFolder || body["path"] != nil {
+		t.Fatalf("body %v: want the parent and the folder together", body)
+	}
+}
+
+func TestCpAcrossFoldersSendsTheFolderWithTheParent(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFake(t)
+	f.on("POST", nodePath(testNode, "/copy"), created(node(testOther, "a.txt", "file")))
+	wantCode(t, f.run(Cp, testNode, testDest, "--folder", testFolder), 0)
+	body := f.wantBody(0)
+	if body["parent"] != testDest || body["folder"] != testFolder {
+		t.Fatalf("body %v: want the parent and the folder together", body)
+	}
+}
+
 func TestMvRenameOnlyPatchesTheName(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
