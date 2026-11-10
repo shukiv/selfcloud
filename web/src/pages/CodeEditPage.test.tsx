@@ -931,9 +931,23 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     const s = server({
       put: () => {
         calls++;
+        // Only the overwrites reach this: a save refused by the If-Match check never does.
         if (calls === 1) throw new TypeError("connection lost");
-        if (calls === 2) return Response.json({ error: { code: "precondition_failed", details: {} } }, { status: 412 });
-        return Response.json({ id: NOD, etag: '"after"', mime_type: "application/json" });
+        return Response.json({
+          id: NOD,
+          folder_id: FLD,
+          parent_id: "nod_root",
+          name: "a.json",
+          kind: "file",
+          size: 2,
+          mime_type: "application/json",
+          etag: '"after"',
+          created_at: "2026-10-01T00:00:00Z",
+          modified_at: "2026-10-01T00:00:00Z",
+          role: "editor",
+          no_download: false,
+          editors_can_share: false,
+        });
       },
     });
     const d = await openConflict(s);
@@ -944,6 +958,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     fireEvent.click(within(modalWith(MAYBE)!).getByRole("button", { name: OVERWRITE }));
     await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
     s.touch("changed again\n");
+    type(0, "y");
     ctrlS();
     await waitFor(() => expect(dialogOpen()).toBe(true));
     await waitFor(() => expect(dialogHas(MESSAGE)).toBe(true));
