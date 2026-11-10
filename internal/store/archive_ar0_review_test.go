@@ -182,6 +182,16 @@ func TestImportSourceColumnsAgree(t *testing.T) {
 			t.Errorf("%s was accepted", name)
 		}
 	}
+	// A source blob belongs to a node source only. The control (a node source with a blob) shows the refusal below is
+	// the CHECK on the row and not a bad row.
+	blob := `INSERT INTO import_jobs (id, job_id, account_id, user_id, source, folder_id, on_conflict, state, source_kind, source_node_id, source_blob_id, created_at, updated_at)
+		VALUES (?, 'job_x', 'acc_a', 'usr_a', 'archive', 'fld_a', 'rename', 'queued', ?, ?, 'blb_x', 0, 0)`
+	if _, err := s.w.ExecContext(ctx, blob, "imp_blob_up", "upload", ""); err == nil {
+		t.Errorf("upload source with a source blob was accepted")
+	}
+	if _, err := s.w.ExecContext(ctx, blob, "imp_blob_node", "node", "nod_x"); err != nil {
+		t.Errorf("control: node source with a source blob was refused: %v", err)
+	}
 }
 
 // TestBundleGoesWithItsFolder: a bundle row of a deleted folder is removed with it, so no pending row is left for a folder
