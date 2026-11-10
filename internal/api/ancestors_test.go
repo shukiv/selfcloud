@@ -270,6 +270,44 @@ func TestAncestorsOfANodeOfAnotherAccountAreNotFound(t *testing.T) {
 	wantError(t, call(t, fx.s, "GET", "/api/v1/nodes/"+fx.deep.ID+"/ancestors", otherKey, nil), 404, apierr.NotFound)
 }
 
+// TestAncestorsCarryTheCreatorsName: directories a person made in her own folder carry her name as their creator, as
+// stat gives them. An account key has no name to show, so the chain here is made by a user, which is what this checks.
+func TestAncestorsCarryTheCreatorsName(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	// A name is shown only when the user has one, so the account key gives Ann one.
+	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID+"/users/"+fx.ann.ID, fx.key,
+		map[string]any{"display_name": "Ann Aron"}), 200)
+	pf := fx.personalFolder(t, fx.annSess)
+	wantStatus(t, callSession(t, fx.s, fx.annSess, "POST", "/api/v1/folders/"+pf+"/directories",
+		map[string]any{"path": "/mine/inner", "parents": true}), 201)
+	file := rawSession(t, fx.s, fx.annSess, "POST", "/api/v1/folders/"+pf+"/files?"+q("/mine/inner/f.txt"), "text", nil)
+	wantStatus(t, file, 201)
+	rec := ancestorsCall(t, fx.s, fx.annSess, decode[nodeJSON](t, file).ID)
+	wantStatus(t, rec, 200)
+	var body ancestorsBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Ancestors) != 3 {
+		t.Fatalf("got %d ancestors, want the personal folder's root, mine and inner", len(body.Ancestors))
+	}
+	for i, item := range body.Ancestors {
+		var n nodeJSON
+		if err := json.Unmarshal(item, &n); err != nil {
+			t.Fatal(err)
+		}
+		stat := callSession(t, fx.s, fx.annSess, "GET", "/api/v1/nodes/"+n.ID, nil)
+		wantStatus(t, stat, 200)
+		if i > 0 && n.CreatedByName != "Ann Aron" {
+			t.Errorf("item %d (%s) carries no creator name, and stat gives one", i, n.Name)
+		}
+		if !sameValue(t, item, stat.Body.Bytes()) {
+			t.Errorf("item %d is not the stat answer\nitem: %s\nstat: %s", i, item, stat.Body.String())
+		}
+	}
+}
+
 // TestAncestorsAnswerNoRoleForAnUnreachableFolderAndTheCallerWithNoCredential: no credential is refused as stat refuses.
 func TestAncestorsAnswerNoCredentialLikeStat(t *testing.T) {
 	t.Parallel()
