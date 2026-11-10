@@ -12,7 +12,9 @@ const goMock = vi.hoisted(() => vi.fn());
 vi.mock("../lib/router", () => ({ go: goMock, signInURL: () => "/login" }));
 
 import CodeEditPage from "./CodeEditPage";
-import { session } from "../lib/session";
+import { signOut } from "../lib/auth";
+import { keepUnsaved, readUnsaved } from "../lib/code/unsaved";
+import { clearSession, session, setSignedIn } from "../lib/session";
 import { get, useStore } from "../lib/store";
 
 // The page's meta nonce, as the server writes it: CodeMirror's style sheet is written with it.
@@ -247,6 +249,8 @@ function ctrlS() {
 const pause = () => new Promise((r) => setTimeout(r, 20));
 
 beforeEach(() => {
+  // The text kept across a sign-in lives in this tab's sessionStorage, so one test's kept text must not reach the next.
+  sessionStorage.clear();
   goMock.mockClear();
   // go moves the router, so Close and Back are subject to the same unsaved guard as a link (design 4.6).
   goMock.mockImplementation((url: string) => navigateTo?.(url));
@@ -258,6 +262,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   session.set(null);
+  sessionStorage.clear();
   // Each test's data router is stopped, so no navigation of one test reaches the next.
   router?.dispose();
   router = null;
@@ -645,8 +650,18 @@ function renderSignIn(path = `/edit/${NOD}?mode=edit`) {
   return rtlRender(<RouterProvider router={router} />);
 }
 
+// refuseStorage makes this tab's sessionStorage refuse every write (a full store, or one the browser blocks): the text is then not kept
+// across a sign-in (decision 133), and the sign-in asks first as decision 130 has it. The spy is restored after each test.
+function refuseStorage() {
+  return vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("full", "QuotaExceededError");
+  });
+}
+afterEach(() => vi.restoreAllMocks());
+
 describe("the sign-in from the page (review re-check 1, HIGH-1)", () => {
   it("Sign in with unsaved text asks first; after Leave the sign-in page shows and the session has ended", async () => {
+    refuseStorage();
     server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
     renderSignIn();
     await waitFor(() => expect(content().textContent).toContain("{}"));
@@ -663,6 +678,7 @@ describe("the sign-in from the page (review re-check 1, HIGH-1)", () => {
   });
 
   it("Stay on the question keeps the text and the session, and changes nothing", async () => {
+    refuseStorage();
     server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
     renderSignIn();
     await waitFor(() => expect(content().textContent).toContain("{}"));
@@ -1078,7 +1094,8 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     }
   });
 
-  it("a save the server answers 401 keeps the draft, names the ended sign-in, and Sign in asks before it leaves (MED-4)", async () => {
+  it("a save the server answers 401 keeps the draft, names the ended sign-in, and Sign in asks before it leaves when this tab cannot keep the text (MED-4)", async () => {
+    refuseStorage();
     server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
@@ -1196,5 +1213,184 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await new Promise((r) => setTimeout(r, 300));
     expect(document.querySelector(".cm-lint-marker")).toBeNull();
     expect(screen.queryByTestId("lint-count")).toBeNull();
+  });
+});
+
+// The notice texts of decision 133, as the English catalogue has them (lib/code/text.ts).
+const KEPT = "Unsaved changes are kept in this tab. They come back when the same person signs in and opens this file.";
+const RESTORED = "Unsaved changes from before the sign-in are back.";
+
+// keptFor lists this tab's stored entries for a file.
+const keptFor = (nod = NOD) => Object.keys(sessionStorage).filter((k) => k.includes(nod));
+
+// keptByLastSignIn opens the file, types x, and saves it while the server answers 401: the text is kept in this tab, and the page is
+// unmounted, as a sign-in leaves it. The server's answers are then the ordinary ones.
+async function keptByLastSignIn() {
+  const s = server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+  const first = render();
+  await waitFor(() => expect(content().textContent).toContain("{}"));
+  type(0, "x");
+  ctrlS();
+  await screen.findByText(KEPT);
+  first.unmount();
+  s.files[NOD]!.put = undefined;
+  return s;
+}
+
+describe("the unsaved text across a sign-in, for the same person (decision 133)", () => {
+  it("a save the server answers 401 keeps the text in this tab, says so, and Sign in goes on without asking", async () => {
+    server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+    renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText(KEPT)).toBeTruthy();
+    expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}");
+    fireEvent.click(within(alert).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(document.body.textContent).toContain("sign-in page"));
+    expect(dialogHas("Leave this file?")).toBe(false);
+    expect(get(session)).toBeNull();
+  });
+
+  it("the session the server ends while the page is open keeps the text, and the redirect is not held by the guard", async () => {
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    await screen.findByText("Unsaved changes");
+    // api.ts clears the session on a 401 and goes to the sign-in page in the same tick, while the page is still mounted. The guard
+    // would hold that redirect for unsaved text; the kept text lets it through, since nothing is lost.
+    await act(async () => {
+      clearSession();
+      void router!.navigate(`/files/${FLD}`);
+    });
+    await waitFor(() => expect(router!.state.location.pathname).toBe(`/files/${FLD}`));
+    expect(dialogHas("Leave this file?")).toBe(false);
+    expect(readUnsaved("usr_1", NOD)).toMatchObject({ text: "x{}", etag: ETAG });
+  });
+
+  it("the page's Sign in is not asked for text that is already kept", async () => {
+    server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+    renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    await screen.findByText(KEPT);
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(document.body.textContent).toContain("sign-in page"));
+    expect(dialogHas("Leave this file?")).toBe(false);
+    expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}");
+  });
+
+  it("an explicit sign-out writes nothing for the open file, and clears every text this tab kept", async () => {
+    keepUnsaved("usr_1", NOD_B, { text: "other", etag: ETAG_B, bom: false, sep: "\n" });
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    await signOut();
+    expect(setItem.mock.calls.some((c) => String(c[0]).includes(NOD))).toBe(false);
+    expect(keptFor()).toEqual([]);
+    expect(keptFor(NOD_B)).toEqual([]);
+  });
+
+  it("a file reopened by the same person comes back with its text, the notice, and the draft's ETag, and a save then meets the change", async () => {
+    const s = await keptByLastSignIn();
+    s.files[NOD]!.etag = '"moved-on"';
+    render();
+    await waitFor(() => expect(content().textContent).toContain("x{}"));
+    expect(await screen.findByText(RESTORED)).toBeTruthy();
+    ctrlS();
+    // The first PUT is the one that ended in 401 (keptByLastSignIn); this one is the save of the restored text.
+    await waitFor(() => expect(s.puts()).toHaveLength(2));
+    expect(s.puts()[1]!.init.headers).toMatchObject({ "If-Match": ETAG });
+    // The server refuses the stale ETag, so the conflict dialog opens, as for any changed file (decision 130).
+    await waitFor(() => expect(dialogHas("This file changed")).toBe(true));
+  });
+
+  it("a successful save of the restored text clears what this tab kept", async () => {
+    await keptByLastSignIn();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("x{}"));
+    ctrlS();
+    await screen.findByText("Saved");
+    expect(keptFor()).toEqual([]);
+  });
+
+  it("Discard throws the kept text away and shows the saved text", async () => {
+    await keptByLastSignIn();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("x{}"));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    expect(content().textContent).not.toContain("x{}");
+    expect(keptFor()).toEqual([]);
+    expect(screen.queryByText(RESTORED)).toBeNull();
+  });
+
+  it("Leave in the unsaved guard, with the person still signed in, discards the text kept for the file", async () => {
+    await keptByLastSignIn();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("x{}"));
+    await goTo(`/files/${FLD}`);
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Leave" }));
+    await waitFor(() => expect(router!.state.location.pathname).toBe(`/files/${FLD}`));
+    expect(keptFor()).toEqual([]);
+  });
+
+  it("a file opened for preview does not restore the kept text, and leaves it kept", async () => {
+    await keptByLastSignIn();
+    render(`/edit/${NOD}?mode=view`);
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    expect(content().textContent).not.toContain("x{}");
+    expect(screen.queryByText(RESTORED)).toBeNull();
+    expect(keptFor()).toHaveLength(1);
+  });
+
+  it("a different person's sign-in clears the text kept for the first, before the page shows anything", async () => {
+    await keptByLastSignIn();
+    expect(keptFor()).toHaveLength(1);
+    setSignedIn({ user: { id: "usr_2", role: "user" }, csrf_token: "csrf_two" } as never);
+    expect(keptFor()).toEqual([]);
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    expect(content().textContent).not.toContain("x{}");
+    expect(screen.queryByText(RESTORED)).toBeNull();
+  });
+
+  it("a file that now answers not found clears the text kept for it", async () => {
+    await keptByLastSignIn();
+    server({ read: 404 });
+    render();
+    await waitFor(() => expect(keptFor()).toEqual([]));
+  });
+
+  it("over the 2 MiB gate the text is not kept: the guard asks when the session ends, and nothing is written", async () => {
+    server({ body: new Uint8Array(2 * MiB - 4).fill(0x61) });
+    render();
+    await waitFor(() => expect(content().textContent?.length).toBeGreaterThan(1000));
+    type(0, "xxxxxxxxxx");
+    await screen.findByText("Unsaved changes");
+    act(() => clearSession());
+    // Nothing is kept over the gate, so the redirect the app makes next is held by the guard, which asks.
+    await goTo(`/files/${FLD}`);
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    expect(keptFor()).toEqual([]);
+  });
+
+  it("a write this tab refuses keeps today's wording for the ended sign-in, and Sign in asks first", async () => {
+    refuseStorage();
+    server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+    renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText(SIGNED_OUT_COPY)).toBeTruthy();
+    fireEvent.click(within(alert).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
   });
 });

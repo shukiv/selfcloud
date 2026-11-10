@@ -1,0 +1,107 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { dropUnsaved, keepUnsaved, purgeAllUnsaved, purgeOtherUnsaved, readUnsaved } from "./unsaved";
+
+const NOD = "nod_a1";
+const OTHER_NOD = "nod_b2";
+const rec = { text: "x{}", etag: '"e1"', bom: false, sep: "\n" as const };
+
+beforeEach(() => {
+  sessionStorage.clear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  sessionStorage.clear();
+});
+
+describe("the unsaved text kept across a sign-in (decision 133)", () => {
+  it("keeps the text, its ETag and its encoding facts for one person and file, and reads them back", () => {
+    expect(keepUnsaved("usr_1", NOD, rec)).toBe(true);
+    const got = readUnsaved("usr_1", NOD);
+    expect(got).toMatchObject({ text: "x{}", etag: '"e1"', bom: false, sep: "\n", enc: "utf-8" });
+    expect(typeof got?.at).toBe("number");
+  });
+
+  it("keeps the byte order mark and the line break a file had", () => {
+    keepUnsaved("usr_1", NOD, { text: "a\r\nb", etag: '"e2"', bom: true, sep: "\r\n" });
+    expect(readUnsaved("usr_1", NOD)).toMatchObject({ bom: true, sep: "\r\n" });
+  });
+
+  it("gives nothing for another person or another file", () => {
+    keepUnsaved("usr_1", NOD, rec);
+    expect(readUnsaved("usr_2", NOD)).toBeNull();
+    expect(readUnsaved("usr_1", OTHER_NOD)).toBeNull();
+  });
+
+  it("tells two people whose ids share a start apart", () => {
+    keepUnsaved("usr_1", NOD, rec);
+    expect(readUnsaved("usr_10", NOD)).toBeNull();
+  });
+
+  it("drops one entry, and leaves the others", () => {
+    keepUnsaved("usr_1", NOD, rec);
+    keepUnsaved("usr_1", OTHER_NOD, rec);
+    dropUnsaved("usr_1", NOD);
+    expect(readUnsaved("usr_1", NOD)).toBeNull();
+    expect(readUnsaved("usr_1", OTHER_NOD)).not.toBeNull();
+  });
+
+  it("purges every other person's entries, and keeps the person who signed in", () => {
+    keepUnsaved("usr_1", NOD, rec);
+    keepUnsaved("usr_10", NOD, rec);
+    keepUnsaved("usr_2", NOD, rec);
+    sessionStorage.setItem("unrelated", "keep");
+    purgeOtherUnsaved("usr_1");
+    expect(readUnsaved("usr_1", NOD)).not.toBeNull();
+    expect(readUnsaved("usr_10", NOD)).toBeNull();
+    expect(readUnsaved("usr_2", NOD)).toBeNull();
+    expect(sessionStorage.getItem("unrelated")).toBe("keep");
+  });
+
+  it("clears every entry at a sign-out, and nothing else", () => {
+    keepUnsaved("usr_1", NOD, rec);
+    keepUnsaved("usr_2", OTHER_NOD, rec);
+    sessionStorage.setItem("unrelated", "keep");
+    purgeAllUnsaved();
+    expect(readUnsaved("usr_1", NOD)).toBeNull();
+    expect(readUnsaved("usr_2", OTHER_NOD)).toBeNull();
+    expect(sessionStorage.getItem("unrelated")).toBe("keep");
+  });
+
+  it("reads nothing from an entry that is not a kept text", () => {
+    keepUnsaved("usr_1", NOD, rec);
+    const key = Object.keys(sessionStorage).find((k) => k.includes(NOD))!;
+    sessionStorage.setItem(key, "{not json");
+    expect(readUnsaved("usr_1", NOD)).toBeNull();
+    sessionStorage.setItem(key, JSON.stringify({ text: 3, etag: '"e"', bom: false, sep: "\n", enc: "utf-8" }));
+    expect(readUnsaved("usr_1", NOD)).toBeNull();
+    sessionStorage.setItem(key, JSON.stringify({ text: "x", etag: '"e"', bom: false, sep: "\n", enc: "latin-1" }));
+    expect(readUnsaved("usr_1", NOD)).toBeNull();
+  });
+
+  it("says a write that the store refuses was not kept, and does not throw", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
+    expect(() => keepUnsaved("usr_1", NOD, rec)).not.toThrow();
+    expect(keepUnsaved("usr_1", NOD, rec)).toBe(false);
+  });
+
+  it("reads, drops and purges without throwing when the store refuses", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    vi.spyOn(Storage.prototype, "key").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    expect(readUnsaved("usr_1", NOD)).toBeNull();
+    expect(() => dropUnsaved("usr_1", NOD)).not.toThrow();
+    expect(() => purgeOtherUnsaved("usr_1")).not.toThrow();
+    expect(() => purgeAllUnsaved()).not.toThrow();
+  });
+});
