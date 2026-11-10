@@ -153,6 +153,8 @@ type Result struct {
 	Verifications  int64 // expired or used verification and reset tokens removed
 	SignInLinks    int64 // expired or used sign-in links removed
 	DeviceConfirms int64 // expired or used device confirmations removed (sec2, decision 86)
+	CLIRequests    int64 // device sign-in requests past their end removed (decision 125)
+	CLIDevices     int64 // device tokens past their expiry removed (decision 125)
 	WOPISessions   int64 // office editing sessions past their end removed
 	Locks          int   // office editing locks past their expiry removed and audited (decision 32)
 	UnusedLocks    int   // office editing locks freed before their expiry, as no live editing session is on the file (decision 106)
@@ -372,6 +374,12 @@ func (w *Sweeper) Once(ctx context.Context, now time.Time) (Result, error) {
 			return err
 		}
 		if res.DeviceConfirms, err = tx.DeleteSpentDeviceConfirms(ctx, now); err != nil {
+			return err
+		}
+		if res.CLIRequests, err = tx.DeleteSpentCLIRequests(ctx, now); err != nil {
+			return err
+		}
+		if res.CLIDevices, err = tx.DeleteEndedCLIDevices(ctx, now); err != nil {
 			return err
 		}
 		if res.WOPISessions, err = tx.DeleteEndedWOPISessions(ctx, now); err != nil {

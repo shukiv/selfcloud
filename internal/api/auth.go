@@ -49,6 +49,8 @@ func (s *Server) authenticate(r *http.Request) (*auth.Principal, *store.Session,
 		p, err = s.authenticateKey(r.Context(), auth.AccountKeyPrefix, cred)
 	case strings.HasPrefix(cred, auth.TokenPrefix):
 		p, err = s.authenticateToken(r.Context(), cred)
+	case strings.HasPrefix(cred, auth.DevicePrefix):
+		p, err = s.authenticateDevice(r.Context(), cred)
 	case strings.HasPrefix(cred, auth.SharePrefix):
 		p, err = s.authenticateShare(r.Context(), cred)
 	default:
@@ -349,6 +351,11 @@ func delegated(p *auth.Principal, details map[string]any) map[string]any {
 	out := make(map[string]any, len(details)+2)
 	for k, v := range details {
 		out[k] = v
+	}
+	// A device token has no minting key: the action came from a terminal the person signed in at (decision 125).
+	if p.Token.Audience == auth.CLIAudience {
+		out["via"] = "cli"
+		return out
 	}
 	out["via"] = "delegated_token"
 	if p.Token.Audience == wopiAudience {

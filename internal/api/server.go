@@ -115,7 +115,11 @@ type Server struct {
 	// wopiTokens signs and verifies WOPI access tokens under a key of their own; office holds Collabora's discovery
 	// document and proof keys, and is nil while office.enabled is off. See office.go.
 	wopiTokens *tokenKeys
-	office     *wopi.Discovery
+	// deviceTokens signs and verifies device tokens under a key of their own (decision 125), and cliKeys holds the hash keys
+	// of a device sign-in's codes.
+	deviceTokens *tokenKeys
+	cliKeys      *cliCodeKeys
+	office       *wopi.Discovery
 	// webhookSeal encrypts webhook secrets at rest; see internal/webhook.
 	webhookSeal *webhook.Sealer
 	// webhookClient is the one client every webhook connection goes through (internal/webhook/client.go). It checks
@@ -303,6 +307,14 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
+	deviceTokens, err := deriveKeysUnder(links, deviceKeyLabel)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	cliKeys, err := deriveCLICodeKeys(links)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
 	shares, err := deriveShareKeys(links)
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
@@ -342,6 +354,8 @@ func New(opts Options) (*Server, error) {
 		links:         links,
 		tokens:        tokens,
 		wopiTokens:    wopiTokens,
+		deviceTokens:  deviceTokens,
+		cliKeys:       cliKeys,
 		webhookSeal:   webhookSeal,
 		webhookClient: webhookClient,
 		webhookClock:  time.Now,
@@ -379,6 +393,13 @@ func New(opts Options) (*Server, error) {
 			// Sign-in links: made by an account key, per account; redeemed per client address, as login is.
 			"signlink.create": newLimiter(60),
 			"signlink.ip":     newLimiter(cfg.RateLimit.PerIPPerMinute),
+			// Device sign-in (decision 125, design-cli 3.3). A terminal may start ten sign-ins an hour from one address, so at
+			// most ten requests are pending for it. A poll is limited per device code, and per address at a fixed rate; the
+			// interval the poll returns (slow_down) is the client's own pace. Approval is limited per session and per address.
+			"cli.start.ip":  newLimiterRate(cliStartPerHour, time.Hour),
+			"cli.poll.ip":   newLimiter(cliPollPerIPMinute),
+			"cli.poll.code": newLimiter(cliPollPerCodeMinute),
+			"cli.approve":   newLimiter(cliApprovePerMinute),
 			// Device confirmations (sec2, decision 86): a link is redeemed per client address, and a user gets at most
 			// deviceConfirmMailCap confirmation mails in deviceConfirmMailWindow. Fixed, as the mail limits are.
 			"device.confirm.ip":   newLimiter(cfg.RateLimit.PerIPPerMinute),
@@ -662,6 +683,16 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/auth/password/reset", handle: s.handleResetPassword, sameSite: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/auth/sign-in-link", handle: s.handleRedeemSignInLink, sameSite: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/auth/device-confirm", handle: s.handleDeviceConfirm, sameSite: true, imp: impRefuse},
+		// Device sign-in for the command-line client (decision 125). Start and poll take no credential, as sign-in does, and
+		// refuse another site. The browser routes take the session and its CSRF token. Revoke takes a device token; a device
+		// whose password must change is refused it like any other route, and the change itself ends the device (decision 125).
+		{method: http.MethodPost, path: "/api/v1/auth/cli/start", handle: s.handleCLIStart, sameSite: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/cli/poll", handle: s.handleCLIPoll, sameSite: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/cli/lookup", handle: s.handleCLILookup, session: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/cli/approve", handle: s.handleCLIApprove, session: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/auth/cli/revoke", handle: s.handleCLIRevoke, auth: true, imp: impRefuse},
+		{method: http.MethodGet, path: "/api/v1/auth/cli/devices", handle: s.handleCLIDevices, session: true, imp: impRefuse},
+		{method: http.MethodDelete, path: "/api/v1/auth/cli/devices/{dev}", handle: s.handleCLIDeviceRevoke, session: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/auth/email-change/confirm", handle: s.handleConfirmEmailChange, sameSite: true, imp: impRefuse},
 		// Go back ends an impersonation and restores the admin's session. It checks its own CSRF token, because the
 		// impersonation may be past its hour, and a route that required a live session could not run then.

@@ -5,6 +5,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/shukiv/selfcloud/internal/apierr"
+	"github.com/shukiv/selfcloud/internal/auth"
 	"github.com/shukiv/selfcloud/internal/store"
 )
 
@@ -117,7 +119,7 @@ func TestDeviceStartReturnsTheCodes(t *testing.T) {
 	if want := fx.s.origin + "/cli-approve"; st.VerificationURL != want {
 		t.Errorf("verification_url = %q, want %q", st.VerificationURL, want)
 	}
-	if strings.Contains(st.VerificationURL, strings.ReplaceAll(st.UserCode, "-", "")) || strings.Contains(st.VerificationURL, "-") {
+	if strings.Contains(st.VerificationURL, strings.ReplaceAll(st.UserCode, "-", "")) {
 		t.Errorf("verification_url %q carries the code", st.VerificationURL)
 	}
 	if st.Interval != 5 || st.ExpiresIn != 600 {
@@ -187,6 +189,7 @@ func TestDeviceRequestExpiresAtTenMinutes(t *testing.T) {
 	now = t0.Add(600*time.Second - time.Millisecond)
 	wantStatus(t, cliApprove(t, s, fx.memSess, st.UserCode), 200)
 
+	now = t0
 	st2 := cliStart(t, s)
 	now = t0.Add(600*time.Second + 2*time.Second)
 	e := wantError(t, cliApprove(t, s, fx.memSess, st2.UserCode), 400, apierr.InvalidRequest)
@@ -231,16 +234,21 @@ func TestDeviceWrongCodeAnswersAreAlike(t *testing.T) {
 	fx := newImpFix(t, false)
 	s := fx.s
 	st := cliStart(t, s)
-	a := decode[map[string]any](t, cliApprove(t, s, fx.memSess, otherCode(st.UserCode)))
-	// A code whose first group matches no request at all.
-	b := decode[map[string]any](t, cliApprove(t, s, fx.memSess, "BBBB-BBBB"))
-	if a["error"] == nil || b["error"] == nil {
-		t.Fatalf("both answers must be errors: %v and %v", a, b)
+	// The request id is each answer's own, so it is left out of the comparison.
+	body := func(rec *httptest.ResponseRecorder) string {
+		t.Helper()
+		e := decodeError(t, rec)
+		if rec.Code != 400 {
+			t.Fatalf("status %d, want 400: %s", rec.Code, rec.Body)
+		}
+		b, _ := json.Marshal(map[string]any{"code": e.Code, "message": e.Message, "details": e.Details})
+		return string(b)
 	}
-	ea, _ := json.Marshal(a["error"])
-	eb, _ := json.Marshal(b["error"])
-	if string(ea) != string(eb) {
-		t.Errorf("wrong code answers differ:\n  %s\n  %s", ea, eb)
+	a := body(cliApprove(t, s, fx.memSess, otherCode(st.UserCode)))
+	// A code whose first group matches no request at all.
+	b := body(cliApprove(t, s, fx.memSess, "BBBB-BBBB"))
+	if a != b {
+		t.Errorf("wrong code answers differ:\n  %s\n  %s", a, b)
 	}
 }
 
@@ -305,6 +313,9 @@ func TestDeviceMustChangeUserCannotApprove(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, false)
 	s := fx.s
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	now := t0
+	s.store.SetClock(func() time.Time { return now })
 	st := cliStart(t, s)
 	setMustChange(t, s, fx.acc.ID, fx.member.ID, true)
 	for _, rec := range []*httptest.ResponseRecorder{
@@ -313,6 +324,7 @@ func TestDeviceMustChangeUserCannotApprove(t *testing.T) {
 	} {
 		wantMustChangeRefusal(t, rec)
 	}
+	now = t0.Add(6 * time.Second) // past the first interval, so the poll is due
 	wantError(t, cliPoll(t, s, st.DeviceCode), 400, apierr.Code("authorization_pending"))
 	setMustChange(t, s, fx.acc.ID, fx.member.ID, false)
 	wantStatus(t, cliApprove(t, s, fx.memSess, st.UserCode), 200)
@@ -324,13 +336,21 @@ func TestDeviceInstallationAdminCannotApprove(t *testing.T) {
 	fx := newImpFix(t, false)
 	s := fx.s
 	_, adminSess := newAdminUser(t, s, fx.admin, "root@example.com")
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	now := t0
+	s.store.SetClock(func() time.Time { return now })
 	st := cliStart(t, s)
-	wantError(t, cliApprove(t, s, adminSess, st.UserCode), 403, apierr.Forbidden)
+	e := wantError(t, cliApprove(t, s, adminSess, st.UserCode), 403, apierr.Forbidden)
+	if !strings.Contains(e.Message, "installation admin") {
+		t.Errorf("message %q does not say why", e.Message)
+	}
+	now = t0.Add(6 * time.Second)
 	wantError(t, cliPoll(t, s, st.DeviceCode), 400, apierr.Code("authorization_pending"))
 }
 
-// A device token of a user whose password must change is refused as the user's session is, on GET /folders, with the
-// must-change reason. Its own revoke still works, as sign-out does.
+// A device token of a user whose password must change is refused as the user's session is, on GET /folders and on the
+// revoke route, with the must-change reason. The refusal ends nothing: once the flag clears, the token works again, and
+// revoke then ends it. The change of the password itself ends it (the cut-off, tested in TestDeviceTokenEndedByCutOffs).
 func TestDeviceTokenOfMustChangeUserRefused(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, false)
@@ -338,8 +358,10 @@ func TestDeviceTokenOfMustChangeUserRefused(t *testing.T) {
 	_, tok := approvedToken(t, s, fx.memSess)
 	setMustChange(t, s, fx.acc.ID, fx.member.ID, true)
 	wantMustChangeRefusal(t, getWith(t, s, tok, "/api/v1/folders"))
-	wantStatus(t, rawCall(t, s, "POST", "/api/v1/auth/cli/revoke", tok, "", nil), 204)
+	wantMustChangeRefusal(t, rawCall(t, s, "POST", "/api/v1/auth/cli/revoke", tok, "", nil))
 	setMustChange(t, s, fx.acc.ID, fx.member.ID, false)
+	wantStatus(t, getWith(t, s, tok, "/api/v1/folders"), 200)
+	wantStatus(t, rawCall(t, s, "POST", "/api/v1/auth/cli/revoke", tok, "", nil), 204)
 	wantError(t, getWith(t, s, tok, "/api/v1/folders"), 401, apierr.Unauthenticated)
 }
 
@@ -395,6 +417,11 @@ func TestDeviceManageListAndRevoke(t *testing.T) {
 	wantStatus(t, callSession(t, s, fx.memSess, "DELETE", "/api/v1/auth/cli/devices/"+id, nil), 204)
 	wantError(t, getWith(t, s, tok, "/api/v1/folders"), 401, apierr.Unauthenticated)
 	wantError(t, callSession(t, s, fx.memSess, "DELETE", "/api/v1/auth/cli/devices/"+id, nil), 404, apierr.NotFound)
+	rec = callSession(t, s, fx.memSess, "GET", "/api/v1/auth/cli/devices", nil)
+	wantStatus(t, rec, 200)
+	if strings.Contains(rec.Body.String(), id) {
+		t.Error("Manage still lists a revoked device")
+	}
 }
 
 // A device token is ended by each cut-off the design names: a password change, an account-wide revoke, a user revoke,
@@ -482,7 +509,7 @@ func TestDeviceSecretsStayOutOfLogsAndAudit(t *testing.T) {
 	if strings.Contains(buf.String(), tok) || strings.Contains(buf.String(), st.DeviceCode) || strings.Contains(buf.String(), st.UserCode) {
 		t.Error("the log holds a token or a code")
 	}
-	entries, _, err := s.store.AuditLog(context.Background(), fx.acc.ID, "", true, store.Page{})
+	entries, _, err := s.store.AuditLog(context.Background(), fx.acc.ID, "", true, store.Page{Limit: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -537,4 +564,66 @@ func TestDeviceRoutesAreMounted(t *testing.T) {
 			t.Errorf("%s is not mounted", p)
 		}
 	}
+}
+
+// Approval checks the approver, and the claim does too: a person who turned must-change after approving gets no token,
+// and the request is gone. The route refuses a must-change user before the approval, so this is the claim's own check.
+func TestDeviceApprovedThenMustChangeGetsNoToken(t *testing.T) {
+	t.Parallel()
+	fx := newImpFix(t, false)
+	s := fx.s
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	now := t0
+	s.store.SetClock(func() time.Time { return now })
+	st := cliStart(t, s)
+	wantStatus(t, cliApprove(t, s, fx.memSess, st.UserCode), 200)
+	setMustChange(t, s, fx.acc.ID, fx.member.ID, true)
+	now = t0.Add(6 * time.Second)
+	e := wantError(t, cliPoll(t, s, st.DeviceCode), 403, apierr.Forbidden)
+	if e.Details["reason"] != reasonPasswordChangeRequired {
+		t.Errorf("reason = %v, want %s", e.Details["reason"], reasonPasswordChangeRequired)
+	}
+	wantError(t, cliPoll(t, s, st.DeviceCode), 400, apierr.Code("expired_token"))
+}
+
+// A device token whose MAC was made under the delegated token key is refused, even with the device's own payload. The
+// two kinds have different keys, so a token of one never verifies as the other.
+func TestDeviceMACUnderTheDelegatedKeyIsRefused(t *testing.T) {
+	t.Parallel()
+	fx := newImpFix(t, false)
+	s := fx.s
+	_, dev := approvedToken(t, s, fx.memSess)
+	body, _, err := splitTokenUnder(auth.DevicePrefix, dev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl, err := parseDevicePayload(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(pl)
+	forged := auth.DevicePrefix + base64.RawURLEncoding.EncodeToString(b) + "." +
+		base64.RawURLEncoding.EncodeToString(tokenMAC(s.tokens.current.mac, b))
+	wantError(t, getWith(t, s, forged, "/api/v1/folders"), 401, apierr.Unauthenticated)
+}
+
+// A device token whose key id is not the signing key's is refused, as a delegated token's is.
+func TestDeviceTokenWithAnotherKeyIDIsRefused(t *testing.T) {
+	t.Parallel()
+	fx := newImpFix(t, false)
+	s := fx.s
+	_, dev := approvedToken(t, s, fx.memSess)
+	body, _, err := splitTokenUnder(auth.DevicePrefix, dev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl, err := parseDevicePayload(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl.KeyID = "AAAAAAAAAAAAAAAA"
+	b, _ := json.Marshal(pl)
+	forged := auth.DevicePrefix + base64.RawURLEncoding.EncodeToString(b) + "." +
+		base64.RawURLEncoding.EncodeToString(tokenMAC(s.deviceTokens.current.mac, b))
+	wantError(t, getWith(t, s, forged, "/api/v1/folders"), 401, apierr.Unauthenticated)
 }

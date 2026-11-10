@@ -214,10 +214,16 @@ func (k *tokenKeys) match(body, mac []byte) *tokenKey {
 // splitToken checks a token's outer shape and decodes its two parts. Its length is checked before
 // anything is decoded.
 func splitToken(tok string) (body, mac []byte, err error) {
-	if len(tok) > tokenMax || !strings.HasPrefix(tok, auth.TokenPrefix) {
+	return splitTokenUnder(auth.TokenPrefix, tok)
+}
+
+// splitTokenUnder is splitToken for a token of the given prefix. A device token is split with its own prefix, so a token
+// of one kind is never read as the other.
+func splitTokenUnder(prefix, tok string) (body, mac []byte, err error) {
+	if len(tok) > tokenMax || !strings.HasPrefix(tok, prefix) {
 		return nil, nil, errBadToken
 	}
-	b64, m64, ok := strings.Cut(tok[len(auth.TokenPrefix):], ".")
+	b64, m64, ok := strings.Cut(tok[len(prefix):], ".")
 	if !ok || b64 == "" || strings.Contains(m64, ".") {
 		return nil, nil, errBadToken
 	}
@@ -436,6 +442,13 @@ func callerLive(p *auth.Principal, d *store.Delegation, now time.Time) bool {
 	}
 	if callerKeyID(p) != "" {
 		if !d.KeyFound || d.KeyRevokedAt != nil || (d.KeyExpiresAt != nil && !now.Before(*d.KeyExpiresAt)) {
+			return false
+		}
+	}
+	// A device token names its row: the row must exist in the account for this user, not be revoked, and not have expired
+	// (decision 125). It has no minting key, so the key check above does not apply to it.
+	if p.Token != nil && p.Token.Audience == auth.CLIAudience {
+		if !d.DeviceFound || d.DeviceRevokedAt != nil || !now.Before(d.DeviceExpiresAt) {
 			return false
 		}
 	}

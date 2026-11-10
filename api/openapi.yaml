@@ -2511,6 +2511,190 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/auth/cli/start:
+    post:
+      tags: [Auth]
+      operationId: cliStart
+      summary: Start a device sign-in for the command-line client (decision 125)
+      description: |
+        No credential. Returns the device code, which the terminal keeps, and the user code, which the terminal shows and
+        a signed-in person types at `verification_url`. That URL is the bare approval page; no code is in it. The request
+        expires 600 seconds after this call, and polling does not move that. Ten starts an hour from one client address
+        (`cli.start.ip`). `client_name` names the terminal in the approval page; it is optional and one line of text.
+        Refused from another site.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_name: { type: string, maxLength: 80 }
+      responses:
+        "201":
+          description: Started. Cache-Control is no-store.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CLIStart" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/cli/poll:
+    post:
+      tags: [Auth]
+      operationId: cliPoll
+      summary: Ask whether a device sign-in was approved (decision 125)
+      description: |
+        No credential. The terminal polls with its device code. Until the person approves, the answer is
+        `authorization_pending`. A poll sooner than the interval (5 seconds at first) gets `slow_down`, with
+        `details.interval` in seconds, and the interval grows by 5 seconds each time. Once approved, the answer is the device
+        token, once: the request is then gone, and any later poll gets `expired_token`. An unknown, spent or expired code
+        also gets `expired_token`. Limited per device code (`cli.poll.code`) and per client address (`cli.poll.ip`).
+        Refused from another site.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_code]
+              properties:
+                device_code: { type: string, description: The device code from start. }
+      responses:
+        "200":
+          description: Approved. The device token is in the body, once. Cache-Control is no-store.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CLIToken" }
+        "400":
+          description: |
+            `authorization_pending`, `slow_down` or `expired_token` (see the description), or `invalid_request` for a body that
+            is not a device code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/cli/lookup:
+    post:
+      tags: [Auth]
+      operationId: cliLookup
+      summary: Show the sign-in a typed code names, before approval (decision 125)
+      description: |
+        The approval page's first step. Needs the signed-in session and its CSRF token. The code is the eight letters the
+        terminal shows, with or without the dash. A wrong code counts against the request it names, and the fifth wrong
+        code deletes that request. A wrong code that names no request gets the same answer. A must-change user gets
+        `forbidden` with `details.reason` `password_change_required`. Limited per session and per address (`cli.approve`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_code]
+              properties:
+                user_code: { type: string }
+      responses:
+        "200":
+          description: The request, with the client's name, address, user agent and its times.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CLIRequestDetails" }
+        "400":
+          description: |
+            `invalid_request` with `details.reason` `wrong_code`, `malformed_code` or `expired`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/cli/approve:
+    post:
+      tags: [Auth]
+      operationId: cliApprove
+      summary: Approve a terminal's sign-in as the signed-in person (decision 125)
+      description: |
+        Needs the signed-in session and its CSRF token. The request is approved for the person whose session this is, and the
+        terminal's next poll receives a device token for that person. Only one approval is made per request. An installation
+        admin is refused (`forbidden`), since it has no account. A must-change user is refused with
+        `details.reason` `password_change_required`, and the request stays pending. The same wrong-code rules as `lookup`
+        apply.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_code]
+              properties:
+                user_code: { type: string }
+      responses:
+        "200":
+          description: Approved. The terminal's next poll receives the token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [approved] }
+        "400":
+          description: The code was wrong, malformed or expired; see `lookup`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: The sign-in is already approved (`details.reason` `already_approved`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/cli/revoke:
+    post:
+      tags: [Auth]
+      operationId: cliRevoke
+      summary: End the device token that calls it (decision 125)
+      description: |
+        Needs a device token (`scd_`) and no body. The device ends on its next call. Any other credential is `forbidden`. A
+        device whose password must change is refused with `details.reason` `password_change_required`, like any other route,
+        and the password change itself ends the device. The command-line client's `logout` calls this.
+      responses:
+        "204":
+          description: Ended.
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/cli/devices:
+    get:
+      tags: [Auth]
+      operationId: listCLIDevices
+      summary: List the signed-in person's devices that still work (decision 125)
+      description: |
+        Needs the signed-in session. Lists the person's devices that are not revoked and not expired, and whose sign-in
+        is after the account's and the person's cut-offs. No token is ever shown.
+      responses:
+        "200":
+          description: The devices, newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CLIDeviceList" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/cli/devices/{dev}:
+    delete:
+      tags: [Auth]
+      operationId: revokeCLIDevice
+      summary: End one of the signed-in person's devices, from Manage (decision 125)
+      description: |
+        Needs the signed-in session and its CSRF token. The device's token ends on its next call. A device that is not the
+        person's, or is already ended, is `not_found`.
+      parameters:
+        - { name: dev, in: path, required: true, schema: { type: string } }
+      responses:
+        "204":
+          description: Ended.
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/auth/logout:
     post:
       tags: [Auth]
@@ -6187,6 +6371,47 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    CLIStart:
+      type: object
+      description: A device sign-in that has started (decision 125). The device code stays in the terminal.
+      required: [device_code, user_code, verification_url, interval, expires_in]
+      properties:
+        device_code: { type: string, description: Polls with this. 43 characters, base64url. }
+        user_code: { type: string, description: "Eight letters in two groups, such as BCDF-GHJK. Shown in the terminal only." }
+        verification_url: { type: string, description: The approval page. It takes no code in its link. }
+        interval: { type: integer, description: Seconds between polls. }
+        expires_in: { type: integer, description: Seconds until the request ends. }
+    CLIToken:
+      type: object
+      description: The device token of an approved sign-in, given once by the poll.
+      required: [token, expires_at]
+      properties:
+        token: { type: string, description: A device token, which starts with scd_. }
+        expires_at: { type: string, format: date-time }
+    CLIRequestDetails:
+      type: object
+      description: A pending sign-in, as the approval page shows it.
+      properties:
+        client_name: { type: string }
+        client_ip: { type: string, description: The address the terminal started from. }
+        user_agent: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    CLIDevice:
+      type: object
+      description: A device of the signed-in person. Its token is never shown.
+      properties:
+        id: { type: string }
+        client_name: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    CLIDeviceList:
+      type: object
+      required: [devices]
+      properties:
+        devices:
+          type: array
+          items: { $ref: "#/components/schemas/CLIDevice" }
     Template:
       type: object
       description: "A template New can start a document from (decision 105). `source` is `builtin` (ID `builtin:<name>`, no node) or `account` (ID and `node_id` are the file's node ID; `has_thumbnail` is set)."
@@ -7587,6 +7812,7 @@ components:
         | invalid_request, invalid_path, invalid_name | 400 | Malformed request, path or name. |
         | unauthenticated | 401 | No valid credential; sign in again. |
         | token_expired | 401 | Delegated token expired; refresh it and retry. |
+        | authorization_pending, slow_down, expired_token | 400 | A device sign-in poll that has no token yet: still waiting, poll less often (`details.interval`), or the sign-in has ended; start again at the terminal. |
         | forbidden | 403 | The caller may not do this. |
         | download_restricted | 403 | The no-download rule forbids this download, signed link or copy. Inline viewing, where the type allows it, still works. |
         | account_suspended, user_not_verified, user_disabled | 403 | Account or user state blocks access. |
@@ -7616,6 +7842,9 @@ components:
         - invalid_name
         - unauthenticated
         - token_expired
+        - authorization_pending
+        - slow_down
+        - expired_token
         - forbidden
         - download_restricted
         - account_suspended
