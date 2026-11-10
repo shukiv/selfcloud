@@ -240,6 +240,23 @@ func TestLogoRouteArtwork(t *testing.T) {
 	}
 }
 
+// TestWordmarkFollowsTheLogoFile: through the server's own wiring, an installation with its own name and no logo file serves the
+// SelfCloud wordmark that the sidebar draws, and one with a logo file serves none (decision 126).
+func TestWordmarkFollowsTheLogoFile(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, func(c *config.Config) { c.UI.Brand.Name = "Acme Drive" })
+	rec := serveRaw(t, s, http.MethodGet, "/brand/wordmark.svg")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `aria-label="SelfCloud"`) {
+		t.Errorf("custom name, no logo: %d %.200s", rec.Code, rec.Body.String())
+	}
+	logo := filepath.Join(t.TempDir(), "mark.png")
+	if err := os.WriteFile(logo, append([]byte("\x89PNG\r\n\x1a\n"), 0, 0, 0, 0), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s = newTestServer(t, func(c *config.Config) { c.UI.Brand = config.BrandConfig{Name: "Acme Drive", Accent: "#0F766E", LogoFile: logo} })
+	wantError(t, serveRaw(t, s, http.MethodGet, "/brand/wordmark.svg"), http.StatusNotFound, "not_found")
+}
+
 // TestConfigArtwork: the artwork shows whenever the installation has no logo file, whatever its name (decision 126, which
 // changes decision 109's Q4).
 func TestConfigArtwork(t *testing.T) {

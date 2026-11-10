@@ -169,12 +169,13 @@ func TestBrandSVGsAreServed(t *testing.T) {
 			t.Errorf("%s is not served by the web interface with the default brand", p)
 		}
 	}
+	// The artwork off is an installation with its own logo; the server's wiring of the flag is TestWordmarkFollowsTheLogoFile.
 	custom := pwaHandler(t, "Acme", "#053D8E")
 	if custom.Serves(httptest.NewRequest(http.MethodGet, wordmarkPath, nil)) {
-		t.Error("the wordmark is served for a custom name")
+		t.Error("the wordmark is served with the artwork off")
 	}
 	if !custom.Serves(httptest.NewRequest(http.MethodGet, markPath, nil)) {
-		t.Error("the mark is not served for a custom name")
+		t.Error("the mark is not served with the artwork off")
 	}
 	if w := get(t, art, http.MethodGet, wordmarkPath).Body.String(); !strings.Contains(w, `aria-label="SelfCloud"`) {
 		t.Error("the wordmark file is not the SelfCloud wordmark")
