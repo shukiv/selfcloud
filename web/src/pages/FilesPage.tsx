@@ -38,7 +38,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useLang, useT, translatePlural } from "../lib/i18n";
-import { useStore, get } from "../lib/store";
+import { derived, useStore, get } from "../lib/store";
 import { brand } from "../lib/brand";
 import { ApiError } from "../lib/apiError";
 import { go } from "../lib/router";
@@ -140,6 +140,11 @@ interface SelState extends Selection {
 }
 
 const NO_SEL: SelState = { ...EMPTY, anchorID: null, focusID: null };
+
+// doneUploads is the number of uploads that finished. The page reads only this number: an upload progress event replaces the
+// whole list, and a page that read the list would be drawn again for each event (perf-1 3.3). The number changes only when an
+// upload finishes, so the page renders for that and for nothing else.
+const doneUploads = derived(uploads, (list) => list.filter((u) => u.status === "done").length);
 
 // A menu that is taller than the room above and below the pointer shifts along the window as well as flipping (antd shifts only
 // the placements top, bottom, left and right, and the menus here use bottomLeft), and when it is taller than the window it scrolls
@@ -300,7 +305,7 @@ export default function FilesPage() {
   const brandName = useStore(brand).name;
   const folderList = useStore(folders);
   const hiddenList = useStore(hiddenFolders);
-  const uploadList = useStore(uploads);
+  const doneCount = useStore(doneUploads);
   const clip = useStore(clipboard);
   // officeOn is true while the server offers document previews (decision 59). Then an office document opens in the viewer.
   const officeOn = useStore(officeConvert);
@@ -559,7 +564,6 @@ export default function FilesPage() {
   }, [here, brandName, t]);
 
   // Uploads that finish add to the listing, so the listing reads again once for each one.
-  const doneCount = uploadList.filter((u) => u.status === "done").length;
   useEffect(() => {
     if (seenDone.current !== null && doneCount > seenDone.current) void reload();
     seenDone.current = doneCount;

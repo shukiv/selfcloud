@@ -151,9 +151,12 @@ describe("the files page under an upload (perf-1 3.3)", () => {
     await waitFor(() => expect(counts.listing).toBeGreaterThan(0));
     await waitFor(() => expect(api.childrenPage).toHaveBeenCalled());
     const reads = api.childrenPage.mock.calls.length;
+    // A part still moving reads nothing: only the finish reads the listing again.
     act(() => {
       uploads.store.set([file(1, "uploading")]);
     });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(api.childrenPage.mock.calls.length).toBe(reads);
     act(() => {
       uploads.store.set([file(1, "done")]);
     });
