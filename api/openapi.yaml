@@ -3275,6 +3275,39 @@ paths:
           description: Moved to the trash, or deleted.
         default: { $ref: "#/components/responses/Error" }
 
+  /api/v1/nodes/{nod}/ancestors:
+    parameters:
+      - $ref: "#/components/parameters/nod"
+    get:
+      tags: [Files]
+      operationId: listAncestors
+      summary: The reachable ancestors of a node, in one answer
+      description: |
+        The folders above a file or a directory, from the folder's root down to the parent, topmost first, the
+        parent last. The node itself is not in the list. A folder's root has none, and gets an empty list.
+        Each item is the answer `GET /nodes/{nod}` gives for that node, with the caller's `role` on it.
+        The walk stops at the first node the caller cannot reach, and nothing above that node is returned or
+        hinted at. Reach is the same access `GET /nodes/{nod}` uses: a share link stops at the link's node, a
+        person given a folder below the root stops at the grant, a delegated token's folder list and node scope
+        apply, and a trashed node or one below trash is not reached. The list is capped at the 64 nearest
+        ancestors the caller reaches. A node the caller cannot reach, a malformed ID and an unknown ID are
+        `not_found`, the same answer as `GET /nodes/{nod}`. Read-only: nothing is audited or changed.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The reachable ancestors of the node, topmost first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ancestors]
+                properties:
+                  ancestors:
+                    type: array
+                    maxItems: 64
+                    items: { $ref: "#/components/schemas/Node" }
+        default: { $ref: "#/components/responses/Error" }
+
   /api/v1/nodes/{nod}/children:
     parameters:
       - $ref: "#/components/parameters/nod"

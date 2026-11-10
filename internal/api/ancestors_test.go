@@ -124,11 +124,18 @@ func TestAncestorsStopAtAGrantBelowTheRoot(t *testing.T) {
 	if got := ancestorIDs(t, rec); !reflect.DeepEqual(got, []string{fx.b.ID}) {
 		t.Errorf("ancestors for the granted person = %v, want [b] only", got)
 	}
+	// The granted directory's own parent_id is the directory above it. GET /nodes/{nod} already shows that ID for the
+	// grant, and the item must equal the stat answer, so it stays. Nothing else above the grant may appear, the root
+	// least of all, and the parent's name may not.
 	root := fx.rootOf(t, fx.fld.ID)
-	for _, hidden := range []string{root, fx.a.ID} {
-		if strings.Contains(rec.Body.String(), hidden) {
-			t.Errorf("the answer names %s, which the person does not reach: %s", hidden, rec.Body.String())
-		}
+	if strings.Contains(rec.Body.String(), root) {
+		t.Errorf("the answer names the folder root, which the person does not reach: %s", rec.Body.String())
+	}
+	if strings.Count(rec.Body.String(), fx.a.ID) != 1 {
+		t.Errorf("the answer names the directory above the grant other than as the grant's parent_id: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"name":"a"`) {
+		t.Errorf("the answer names the directory above the grant: %s", rec.Body.String())
 	}
 	// The granted directory's own chain stops at the grant too: its parent is not reached.
 	if got := ancestorIDs(t, ancestorsCall(t, fx.s, fx.annSess, fx.b.ID)); len(got) != 0 {

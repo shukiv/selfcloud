@@ -710,6 +710,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/folders/{fld}/directories", handle: s.handleMkdir, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/folders/{fld}/files", handle: s.handleCreateFile, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}", handle: s.handleStatNode, auth: true, link: true, imp: impAllow},
+		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/ancestors", handle: s.handleListAncestors, auth: true, link: true, imp: impAllow},
 		{method: http.MethodPatch, path: "/api/v1/nodes/{nod}", handle: s.handleRenameNode, auth: true, imp: impAllow},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}", handle: s.handleDeleteNode, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/children", handle: s.handleListNodeChildren, auth: true, link: true, imp: impAllow},

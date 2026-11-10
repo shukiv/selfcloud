@@ -276,6 +276,7 @@ route	GET /api/v1/media/tags	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}	stat	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/access-requests	-	cli7	planned, cli7
 route	GET /api/v1/nodes/{nod}/activity	-	cli11	planned, cli11
+route	GET /api/v1/nodes/{nod}/ancestors	-	-	browser only: the trail of parents the web reads when a folder opens (decision 132); the CLI reads a folder by its path or ID
 route	GET /api/v1/nodes/{nod}/children	ls	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/comments	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/content	-	cli6	planned, cli6
