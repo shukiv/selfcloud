@@ -187,11 +187,13 @@ function StorageView() {
                   key: "used",
                   title: t("storage.used"),
                   align: "end",
+                  secondary: true,
                   render: (p) => <span style={{ whiteSpace: "nowrap" }}>{formatBytes(heldBytes(p), lang)}</span>,
                 },
                 {
                   key: "limit",
                   title: t("storage.limit"),
+                  secondary: true,
                   render: (p) => (
                     <span>
                       {limitText(p)}
@@ -233,12 +235,14 @@ function StorageView() {
                   key: "size",
                   title: t("storage.size"),
                   align: "end",
+                  secondary: true,
                   render: (f) => <span style={{ whiteSpace: "nowrap" }}>{formatBytes(f.used_bytes + f.reserved_bytes, lang)}</span>,
                 },
                 {
                   key: "files",
                   title: t("storage.files"),
                   align: "end",
+                  secondary: true,
                   render: (f) => <span style={{ whiteSpace: "nowrap" }}>{tp("storage.fileCount", f.used_files)}</span>,
                 },
               ]}
@@ -280,14 +284,15 @@ function StorageView() {
                   </span>
                 ),
               },
-              { key: "space", title: t("storage.space"), render: (f) => <bdi>{f.folder_name}</bdi> },
+              { key: "space", title: t("storage.space"), secondary: true, render: (f) => <bdi>{f.folder_name}</bdi> },
               {
                 key: "size",
                 title: t("storage.size"),
                 align: "end",
+                secondary: true,
                 render: (f) => <span style={{ whiteSpace: "nowrap" }}>{formatBytes(f.size, lang)}</span>,
               },
-              { key: "modified", title: t("storage.modified"), render: (f) => <time dateTime={f.modified_at}>{formatDate(f.modified_at, lang)}</time> },
+              { key: "modified", title: t("storage.modified"), secondary: true, render: (f) => <time dateTime={f.modified_at}>{formatDate(f.modified_at, lang)}</time> },
             ]}
             empty={{ title: t("storage.largestEmpty") }}
           />

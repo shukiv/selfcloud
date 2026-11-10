@@ -7,7 +7,7 @@ import { createQueryClient } from "../../lib/query";
 import { limitBytes } from "../../lib/quota";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch } from "../../test/fetchStub";
-import { phoneViewport } from "../../test/viewport";
+import { desktopViewport, phoneViewport } from "../../test/viewport";
 import StoragePage from "./StoragePage";
 
 function signedAs(): Session {
@@ -39,8 +39,16 @@ function renderPage() {
   return qc;
 }
 
-beforeEach(() => session.set(signedAs()));
-afterEach(() => session.set(null));
+// The desktop columns are the default here; a test of the phone layout asks for it (round 2, H1).
+let restoreView: () => void = () => undefined;
+beforeEach(() => {
+  restoreView = desktopViewport();
+  session.set(signedAs());
+});
+afterEach(() => {
+  restoreView();
+  session.set(null);
+});
 
 describe("manage storage", () => {
   it("a failed first load shows the error, never the empty states (guard: error before the empty states)", async () => {
@@ -95,7 +103,7 @@ describe("manage storage", () => {
       renderPage();
       const people = await screen.findByRole("region", { name: "People, by use" });
       expect(within(people).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Person", "Actions"]);
-      expect(people.querySelector("tbody tr td")?.textContent).toContain("Follows the default");
+      expect(people.querySelector('tbody tr[data-id="usr_a"] td')?.textContent).toContain("Follows the default");
       const spaces = screen.getByRole("region", { name: "Team spaces" });
       expect(within(spaces).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Team space"]);
       const largest = await screen.findByRole("region", { name: "Largest files in team spaces" });

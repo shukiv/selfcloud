@@ -191,10 +191,11 @@ function LinksView() {
                 </span>
               ),
             },
-            { key: "audience", title: t("links.filter.audience"), render: (l) => text(audienceLabel(l)) },
+            { key: "audience", title: t("links.filter.audience"), secondary: true, render: (l) => text(audienceLabel(l)) },
             {
               key: "kind",
               title: t("links.filter.kind"),
+              secondary: true,
               render: (l) => (
                 <span style={{ display: "block" }}>
                   <span style={{ display: "block" }}>{text(kindLabel(l))}</span>
@@ -205,6 +206,7 @@ function LinksView() {
             {
               key: "created",
               title: t("keys.created"),
+              secondary: true,
               render: (l) => (
                 <span style={{ display: "block" }}>
                   <time dateTime={l.created_at}>{formatDate(l.created_at, lang)}</time>
@@ -215,6 +217,7 @@ function LinksView() {
             {
               key: "status",
               title: t("people.detail.status"),
+              secondary: true,
               render: (l) => (
                 <span style={{ display: "block" }}>
                   <span style={{ display: "block" }}>{l.expires_at ? t("links.ends", { date: formatDate(l.expires_at, lang) }) : t("links.noEnd")}</span>

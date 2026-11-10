@@ -32,6 +32,7 @@ export function auditColumns(t: (key: string) => string, lang: Lang, said: (e: A
       key: "when",
       title: t("audit.col.when"),
       ariaSort: "descending",
+      secondary: true,
       width: 180,
       render: (e) => (
         <time dateTime={e.time} style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>

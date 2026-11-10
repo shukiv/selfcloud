@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
-import { phoneViewport } from "../../test/viewport";
+import { desktopViewport, phoneViewport } from "../../test/viewport";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import AuditPage from "./AuditPage";
@@ -37,8 +37,16 @@ function renderPage() {
   return qc;
 }
 
-beforeEach(() => session.set(signedAs()));
-afterEach(() => session.set(null));
+// The desktop columns are the default here; a test of the phone layout asks for it (round 2, H1).
+let restoreView: () => void = () => undefined;
+beforeEach(() => {
+  restoreView = desktopViewport();
+  session.set(signedAs());
+});
+afterEach(() => {
+  restoreView();
+  session.set(null);
+});
 
 // Decision 122 (tl3): the audit log is the one table. Its When header is descending with no button, its rows are named by
 // their sentence, and an empty log keeps its header row with the title in the body.

@@ -5,7 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
-import { phoneViewport } from "../../test/viewport";
+import { desktopViewport, phoneViewport } from "../../test/viewport";
 import { fail, stubFetch, type Call } from "../../test/fetchStub";
 import OverviewPage from "./OverviewPage";
 
@@ -31,8 +31,16 @@ function renderPage() {
   );
 }
 
-beforeEach(() => session.set(signedAs()));
-afterEach(() => session.set(null));
+// The desktop columns are the default here; a test of the phone layout asks for it (round 2, H1).
+let restoreView: () => void = () => undefined;
+beforeEach(() => {
+  restoreView = desktopViewport();
+  session.set(signedAs());
+});
+afterEach(() => {
+  restoreView();
+  session.set(null);
+});
 
 describe("the owner overview", () => {
   it("a new account with one person and no team space gets the next steps (guard: the fresh rule)", async () => {
