@@ -108,7 +108,7 @@ func Add(args []string, stdout, stderr io.Writer) int {
 		return output.Fail(stderr, asJSON, err)
 	}
 	if _, ok := f.Profiles[name]; ok {
-		return output.Fail(stderr, asJSON, exitcode.Usagef("profile %q exists; remove it with profile rm first", name))
+		return output.Fail(stderr, asJSON, exitcode.Usagef("profile %s exists; remove it with profile rm first", profile.Shown(name)))
 	}
 	f.Profiles[name] = profile.Profile{URL: u.String(), Kind: kind, Token: tok, CAFile: caFile}
 	if f.Current == "" {
@@ -155,7 +155,7 @@ func Use(args []string, stdout, stderr io.Writer) int {
 	}
 	name := pos[0]
 	if _, ok := f.Profiles[name]; !ok {
-		return output.Fail(stderr, asJSON, exitcode.NotFoundf("no profile named %q", name))
+		return output.Fail(stderr, asJSON, exitcode.NotFoundf("no profile called %s", profile.Shown(name)))
 	}
 	f.Current = name
 	if err := s.Save(f); err != nil {
@@ -260,7 +260,7 @@ func Remove(args []string, stdout, stderr io.Writer) int {
 	}
 	name := pos[0]
 	if _, ok := f.Profiles[name]; !ok {
-		return output.Fail(stderr, asJSON, exitcode.NotFoundf("no profile named %q", name))
+		return output.Fail(stderr, asJSON, exitcode.NotFoundf("no profile called %s", profile.Shown(name)))
 	}
 	delete(f.Profiles, name)
 	wasCurrent := f.Current == name

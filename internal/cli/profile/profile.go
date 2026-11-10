@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/shukiv/selfcloud/internal/auth"
@@ -84,6 +85,24 @@ func ValidName(name string) error {
 		return exitcode.Usagef("a profile name is 1 to 32 lower-case letters, digits, '-' or '_', starting with a letter or digit")
 	}
 	return nil
+}
+
+// credentialPrefixes start the values a key or a token has. A name with one of them is never printed in a message.
+var credentialPrefixes = []string{"sc_", "scd_", "sct_", "scl_"}
+
+// Shown returns a name for a message. A valid profile name that is not shaped like a credential is quoted; anything else
+// reads "that name", so a key pasted where a name goes is not repeated. The name rule alone is not enough: sc_admin_x
+// passes it.
+func Shown(name string) string {
+	if ValidName(name) != nil {
+		return "that name"
+	}
+	for _, p := range credentialPrefixes {
+		if strings.HasPrefix(name, p) {
+			return "that name"
+		}
+	}
+	return strconv.Quote(name)
 }
 
 // KindOf returns the kind of a credential by its prefix. It refuses anything that is not a key or a device token, and

@@ -136,7 +136,7 @@ func Connect(g Global, stderr io.Writer, needCred bool) (*Conn, error) {
 	if name != "" {
 		pr, ok := f.Profiles[name]
 		if !ok {
-			return nil, exitcode.NotFoundf("no profile named %q; see selfcloud profile ls", name)
+			return nil, exitcode.NotFoundf("no profile called %s; see selfcloud profile ls", profile.Shown(name))
 		}
 		p, haveProfile = pr, true
 	}
