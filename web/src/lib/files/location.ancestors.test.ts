@@ -172,6 +172,43 @@ describe('the place a folder open shows does not change', () => {
   });
 });
 
+describe('the place of a share link and of a folder root', () => {
+  it('for a directory under a share link: the link node is the top the visitor sees, with no parent, so it is the root of the place', async () => {
+    // A visitor of the link on b sees b with no parent (the server hides the link node's parent), and nothing above it.
+    setTree(['nod_b', 'nod_c']);
+    const linkNode = { ...(net.nodes.get('nod_b') as Record<string, unknown>), parent_id: null };
+    net.nodes.set('nod_b', linkNode);
+    net.ancestors.set('nod_c', [linkNode]);
+    const here = await open('nod_c');
+    expect(here).toMatchObject({
+      folder: 'fld_a',
+      folderName: 'Team A',
+      rootReachable: true,
+      trail: [],
+      reach: [],
+      path: '/c',
+      dir: { id: 'nod_c', name: 'c' },
+    });
+  });
+
+  it('for a folder root: the place is the root, with no trail, no ancestors read and the path /', async () => {
+    const listing = childrenPage('fld_a', null);
+    const here = await locate('fld_a', null, [folder], listing);
+    await listing;
+    expect(here).toMatchObject({
+      folder: 'fld_a',
+      folderName: 'Team A',
+      folderRole: 'editor',
+      dir: null,
+      rootReachable: true,
+      trail: [],
+      reach: [],
+      path: '/',
+    });
+    expect(net.calls.filter(isAncestors)).toHaveLength(0);
+  });
+});
+
 describe('ancestorsOrNull', () => {
   it('answers the list, or null when the caller cannot reach the node', async () => {
     expect(await ancestorsOrNull('nod_c')).toEqual(net.ancestors.get('nod_c'));
