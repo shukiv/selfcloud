@@ -4,6 +4,7 @@ package info
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -107,6 +108,30 @@ func TestInfoNotJSONIsAFailure(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Errorf("stdout = %q, want nothing", out.String())
+	}
+}
+
+// TestInfoJSONEscapesFormatRunes: the server's document is passed through, but a raw C1 or bidi rune in one of its strings
+// reaches the terminal only as an escape. The value decodes the same.
+func TestInfoJSONEscapesFormatRunes(t *testing.T) {
+	isolate(t)
+	name := string(rune(0x009b)) + "31mSelfCloud" + string(rune(0x202e))
+	raw := `{"name":"` + name + `","version":"1.2.3"}`
+	srv := fakeServer(t, http.StatusOK, raw)
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"--url", srv.URL, "--json"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, stderr %q", code, errOut.String())
+	}
+	for _, r := range []rune{0x009b, 0x202e} {
+		if strings.ContainsRune(out.String(), r) {
+			t.Errorf("info --json printed %U raw: %q", r, out.String())
+		}
+	}
+	var back struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &back); err != nil || back.Name != name {
+		t.Errorf("decoded name = %q, %v; want the server's", back.Name, err)
 	}
 }
 

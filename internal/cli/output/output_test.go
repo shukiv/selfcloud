@@ -4,6 +4,7 @@ package output
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -81,6 +82,127 @@ func TestKeyValues(t *testing.T) {
 	}
 	if got, want := b.String(), "name=SelfCloud\nfeatures=\n"; got != want {
 		t.Errorf("KeyValues = %q, want %q", got, want)
+	}
+}
+
+// ch returns the rune with the given code point. The source holds only ASCII, so no format character sits raw in it.
+func ch(n rune) string { return string(n) }
+
+// hostile are server strings a terminal would act on, or that could make the output lie: a C1 CSI (U+009B), a C1 OSC
+// (U+009D), a bidi override (U+202E), the line and paragraph separators (U+2028, U+2029), a zero-width space (U+200B)
+// and a byte order mark (U+FEFF). Each must leave nothing behind but a space.
+var hostile = []string{
+	"\u009b31m",
+	"\u009d0;title\u0007",
+	"a" + ch(0x202e) + "b",
+	"a" + ch(0x2028) + "b",
+	"a" + ch(0x2029) + "b",
+	ch(0x200b) + "z",
+	ch(0xfeff) + "z",
+}
+
+// unchanged are plain strings that must come through as they are.
+var unchanged = []string{"x y", "naïve 日本", "ünïcode ✓"}
+
+// badRunes are the runes that must not reach a terminal from any path.
+var badRunes = []rune{0x009b, 0x009d, 0x202e, 0x2028, 0x2029, 0x0007, 0x200b, 0xfeff}
+
+func TestCleanReplacesControlAndFormatRunes(t *testing.T) {
+	t.Parallel()
+	for _, in := range hostile {
+		got := clean(in)
+		for _, r := range badRunes {
+			if strings.ContainsRune(got, r) {
+				t.Errorf("clean(%q) = %q, still holds %U", in, got, r)
+			}
+		}
+	}
+	if got := clean("a\u009b31mb"); got != "a 31mb" {
+		t.Errorf("clean of a C1 CSI = %q, want %q", got, "a 31mb")
+	}
+	for _, in := range unchanged {
+		if got := clean(in); got != in {
+			t.Errorf("clean(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
+
+func TestTableAndKeyValuesCleanHostileCells(t *testing.T) {
+	t.Parallel()
+	var b bytes.Buffer
+	if err := Table(&b, []string{"NAME" + ch(0x202e), "URL"}, [][]string{{"\u009b31mhome", "https://a.example" + ch(0x2028)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := KeyValues(&b, []KV{{"name\u009d0;title\u0007", ch(0x202e) + "evil"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range badRunes {
+		if strings.ContainsRune(b.String(), r) {
+			t.Errorf("output holds %U: %q", r, b.String())
+		}
+	}
+	if !strings.Contains(b.String(), "name 0;title") {
+		t.Errorf("output = %q, want the key cleaned in place", b.String())
+	}
+}
+
+// TestFailCleansTheMessageInBothModes: a server message printed in text mode or in the JSON envelope is cleaned first.
+func TestFailCleansTheMessageInBothModes(t *testing.T) {
+	t.Parallel()
+	hostileErr := errors.New("bad\u009b31m name " + ch(0x202e) + "evil" + ch(0x2028))
+	for _, asJSON := range []bool{false, true} {
+		var errOut bytes.Buffer
+		Fail(&errOut, asJSON, hostileErr)
+		for _, r := range badRunes {
+			if strings.ContainsRune(errOut.String(), r) {
+				t.Errorf("json %v: stderr holds %U: %q", asJSON, r, errOut.String())
+			}
+		}
+	}
+}
+
+// TestJSONEscapesFormatRunes: a JSON document keeps its values, and a terminal sees no raw control or format rune. The
+// escape is valid JSON that decodes to the same string.
+func TestJSONEscapesFormatRunes(t *testing.T) {
+	t.Parallel()
+	v := map[string]string{"a": "x" + ch(0x009b) + "31m" + ch(0x202e) + "y" + ch(0x2028), "b": "plain 日"}
+	var b bytes.Buffer
+	if err := JSON(&b, v); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range badRunes {
+		if strings.ContainsRune(b.String(), r) {
+			t.Errorf("JSON output holds %U raw: %q", r, b.String())
+		}
+	}
+	var back map[string]string
+	if err := json.Unmarshal(b.Bytes(), &back); err != nil {
+		t.Fatalf("the output is not JSON: %v", err)
+	}
+	if back["a"] != v["a"] || back["b"] != v["b"] {
+		t.Errorf("the values changed: %q", back)
+	}
+}
+
+// TestIndentedPassesTheDocumentThrough: a server's JSON document is indented and keeps its values, with no raw format rune.
+func TestIndentedPassesTheDocumentThrough(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`{"name":"` + ch(0x009b) + `31m","n":1}`)
+	var b bytes.Buffer
+	if err := Indented(&b, raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range badRunes {
+		if strings.ContainsRune(b.String(), r) {
+			t.Errorf("indented output holds %U raw: %q", r, b.String())
+		}
+	}
+	var back map[string]any
+	if err := json.Unmarshal(b.Bytes(), &back); err != nil || back["name"] != ch(0x009b)+"31m" {
+		t.Errorf("decoded = %v, %v; want the same name", back, err)
+	}
+	if err := Indented(&b, []byte("<html>")); err == nil {
+		t.Error("a non-JSON answer was indented")
 	}
 }
 
