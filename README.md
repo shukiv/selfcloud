@@ -324,8 +324,10 @@ The viewer reads the first 1 MiB and says so when the file is larger. A file tha
 still opens, read-only, with a notice that it is not UTF-8 text and a Download button. A line longer than 2,000 characters turns line
 wrapping off, and the code area scrolls sideways. Markdown, CSV and logs show as text, without colours. A browser that sends
 a CSV file as `application/vnd.ms-excel` stores it with that office type, so it opens in the office editor (rule 1).
-Editing in the browser is not built yet. The server keeps its own copy of the code list (`internal/api/textnames.go`): a
-`PUT` of content to a file it names must be UTF-8 text (decision 113).
+Editing text in the browser: an editor sees a pencil in the preview of a text or code file, and the editor opens full page
+(decision 124). Ctrl or Cmd+S, or the Save icon, saves; a save is refused, and the page says so, when the file changed on the
+server. The conflict dialog, keep as a copy, the unsaved-changes guard and JSON lint are not built yet. The server keeps its own
+copy of the code list (`internal/api/textnames.go`): a `PUT` of content to a file it names must be UTF-8 text (decision 113).
 
 ## Off by default
 
