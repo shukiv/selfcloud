@@ -12,7 +12,9 @@ import { brand } from "../lib/brand";
 import { session, sessionChanged, sessionKey, signingOut } from "../lib/session";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { formatBytes, formatDate } from "../lib/files/format";
-import { folders } from "../lib/files/folders";
+import { useLocationSpaces } from "../lib/drive/spaces";
+import { useLoadMoreSentinel } from "../lib/files/loadMoreSentinel";
+import DriveTextFailure from "../components/drive/DriveTextFailure";
 import { kindOf } from "../lib/files/kind";
 import { listStarred, unstarNode, type StarredItem } from "../lib/stars";
 import { useDriveText } from "../lib/drive/driveText";
@@ -34,8 +36,9 @@ export default function StarredPage() {
   const me = useStore(session);
   const signedIn = me !== null;
   const sk = sessionKey(me);
-  const allFolders = useStore(folders);
-  const driveReady = useDriveText();
+  const spaces = useLocationSpaces(signedIn);
+  const drive = useDriveText();
+  const driveReady = drive.ready;
   const [items, setItems] = useState<StarredItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,9 +103,10 @@ export default function StarredPage() {
     }
   };
 
+  const sentinel = useLoadMoreSentinel(cursor !== null, loading, () => void load(false, cursor));
   const columns: ListColumn<StarredItem>[] = [
     { key: "name", title: t("files.col.name"), render: (n) => <DriveName node={n} /> },
-    { key: "where", title: t("drive.col.location"), secondary: true, render: (n) => locationOf(n, allFolders, t("nav.files")) },
+    { key: "where", title: t("drive.col.location"), secondary: true, render: (n) => locationOf(n, spaces, t("nav.files")) },
     {
       key: "when",
       title: t("drive.col.starredOn"),
@@ -119,7 +123,8 @@ export default function StarredPage() {
 
       {error !== null && <Alert type="error" showIcon role="alert" message={error} style={{ marginBlockEnd: 12 }} />}
 
-      {(!driveReady || (loading && items.length === 0)) && error === null && <Skeleton active />}
+      {drive.failed && <DriveTextFailure retry={drive.retry} />}
+      {((!driveReady && !drive.failed) || (loading && items.length === 0)) && error === null && <Skeleton active />}
 
       {driveReady && (items.length > 0 || (!loading && error === null)) && (
         <div className="items">
@@ -147,6 +152,7 @@ export default function StarredPage() {
         </div>
       )}
 
+      {cursor !== null && <div ref={sentinel} aria-hidden="true" />}
       {cursor !== null && (
         <div style={{ marginBlockStart: 12 }}>
           <Button disabled={loading} onClick={() => void load(false, cursor)}>

@@ -6,7 +6,8 @@
 // Empty trash is an icon with its name (tl4); in dark the icons keep no border. The sidebar: a top-level place (a space) is filled with the
 // active colour and its text is the on-active colour, and a folder below it keeps the bar with no fill; in light and dark. The
 // playlist drawer of an audio file opens with its shadow, and the stage and the rows show the file's type icon when there is no
-// cover. At 390 px the trash has no sideways scroll, and on a finger the icons are 44 px. Every folder made is deleted for good,
+// cover. At 390 px the trash has no sideways scroll, and on a finger the icons are 44 px. The five drive lists (Starred, Recent, Shared with
+// me, Trash, Search) have no sideways scroll at 375 px, and no uncaught error, in English and light and in Hebrew and dark (tl4). Every folder made is deleted for good,
 // and the theme and the window are put back. With SELFCLOUD_E2E_SHOTS set (a folder), the pictures named in the brief are saved.
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -221,7 +222,7 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     await page.waitFor(`location.pathname === '/trash'`, 15000);
     // The trash is read after the page loads; wait for its row, not a fixed time, so the checks below measure a drawn row (gate
     // stvl1 e2e-4 measured before the row came, and found no button).
-    // On a phone the row's icons collapse into its ⋮ button (design-tl section 4, tl4), so the phone checks read that button.
+    // On a phone the row's icons collapse into its ⋮ button (tl4), so the phone checks read that button.
     const moreSel = '.trash-item button[aria-label^="More actions for"]';
     await page.waitFor(`!!document.querySelector(${JSON.stringify(moreSel)})`, 15000);
     const sideways = await page.evaluate(`document.documentElement.scrollWidth - window.innerWidth`);
@@ -236,6 +237,33 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     const inline = await page.evaluate(`!!document.querySelector('.trash-item button[aria-label^="Restore:"]')`);
     check(!inline, 'on a finger the Restore icon is in the ⋮ menu, not inline on the row (tl4)');
     await snap('ic2-phone-390.png');
+
+    // ---- The five drive lists (tl4 r1): at 375 px each has no sideways scroll, in English and light and in Hebrew (RTL) and dark,
+    // and no uncaught exception shows on any of them in either set.
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+    const lists = ['/starred', '/recent', '/shared', '/trash', '/search?q=budget'];
+    const sets = [
+      { lang: 'English', theme: 'Light', dir: 'ltr' },
+      { lang: 'עברית', theme: 'Dark', dir: 'rtl' },
+    ];
+    for (const set of sets) {
+      await setLanguage(page, set.lang);
+      await page.waitFor(`document.documentElement.dir === ${q(set.dir)}`, 10000);
+      await setTheme(page, set.theme);
+      await sleep(300);
+      for (const path of lists) {
+        const before = page.errors.length;
+        await page.send('Page.navigate', { url: base + path });
+        await page.waitFor(`location.pathname === ${q(path.split('?')[0])}`, 15000);
+        await page.waitFor(`!!document.querySelector('.items, .shared, .empty, [role="alert"], [role="status"]')`, 15000).catch(() => undefined);
+        await sleep(500);
+        const sideways = await page.evaluate(`document.documentElement.scrollWidth - window.innerWidth`);
+        check(sideways <= 0, `${path} has no sideways scroll at 375 px in ${set.lang} (${sideways} px over)`);
+        const uncaught = page.errors.slice(before).filter((e) => e.startsWith('uncaught') || e.startsWith('the page renderer crashed'));
+        check(uncaught.length === 0, `${path} shows no uncaught error in ${set.lang} ${set.theme} (${uncaught.join(' | ') || 'none'})`);
+      }
+    }
+    await snap('ic2-lists-375.png');
   } finally {
     await setLanguage(page, 'English').catch(() => undefined);
     await setTheme(page, themeWas === 'dark' ? 'Dark' : 'Light').catch(() => undefined);

@@ -30,7 +30,9 @@ import {
 import { loadSearchText } from "../lib/search/text";
 import { snippetParts } from "../lib/search/snippet";
 import { formatBytes, formatDate } from "../lib/files/format";
-import { folders } from "../lib/files/folders";
+import { useLocationSpaces } from "../lib/drive/spaces";
+import { useLoadMoreSentinel } from "../lib/files/loadMoreSentinel";
+import DriveTextFailure from "../components/drive/DriveTextFailure";
 import { kindOf } from "../lib/files/kind";
 import { useDriveText } from "../lib/drive/driveText";
 import { locationOf } from "../lib/drive/location";
@@ -81,8 +83,9 @@ export default function SearchPage() {
   const brandName = useStore(brand).name;
   const me = useStore(session);
   const sk = sessionKey(me);
-  const allFolders = useStore(folders);
-  const driveReady = useDriveText();
+  const spaces = useLocationSpaces(me !== null);
+  const drive = useDriveText();
+  const driveReady = drive.ready;
   const [params, setParams] = useSearchParams();
   const key = params.toString();
   const state = useMemo(() => stateFromParams(new URLSearchParams(key)), [key]);
@@ -243,10 +246,11 @@ export default function SearchPage() {
   const empty = !loading && failure === null && problem === null && asked && items.length === 0 && cursor === null;
   const pageEmpty = !loading && failure === null && problem === null && asked && items.length === 0 && cursor !== null;
   const hasSnippet = items.some((h) => h.snippet !== undefined);
+  const sentinel = useLoadMoreSentinel(cursor !== null, loading, loadMore);
 
   const setInText = (inText: boolean) => write((s) => ({ ...s, inText, kind: inText ? "" : s.kind }));
 
-  // A result's snippet is its second line, under the name: its matches are marked, and it is text, never markup (oe1 and HitRow's rule).
+  // A result's snippet is its second line, under the name: its matches are marked, and it is text, never markup (oe1).
   const snippetLine = (h: SearchHit) =>
     h.snippet ? (
       <span style={{ display: "block", marginBlockStart: 2, fontSize: token.fontSizeSM, color: token.colorTextSecondary, overflowWrap: "anywhere" }}>
@@ -265,12 +269,20 @@ export default function SearchPage() {
     ) : null;
   // The results are in relevance order, so no column is marked as sorted: the time column is not the order of the rows.
   const columns: ListColumn<SearchHit>[] = [
-    { key: "name", title: t("files.col.name"), render: (h) => <DriveName node={h}>{snippetLine(h)}</DriveName> },
+    {
+      key: "name",
+      title: t("files.col.name"),
+      render: (h) => (
+        <DriveName node={h} linkColour>
+          {snippetLine(h)}
+        </DriveName>
+      ),
+    },
     {
       key: "where",
       title: t("drive.col.location"),
       secondary: true,
-      render: (h) => locationOf({ place: h.place, folder_id: h.folder_id, parent_id: h.parent_id }, allFolders, t("nav.files")),
+      render: (h) => locationOf({ place: h.place, folder_id: h.folder_id, parent_id: h.parent_id }, spaces, t("nav.files")),
     },
     { key: "modified", title: t("files.col.modified"), secondary: true, render: (h) => <time dateTime={h.modified_at}>{formatDate(h.modified_at, lang)}</time> },
     { key: "size", title: t("files.col.size"), secondary: true, align: "end", render: (h) => (h.kind === "dir" ? "—" : formatBytes(h.size, lang)) },
@@ -359,6 +371,7 @@ export default function SearchPage() {
               />
             )}
 
+            {drive.failed && <DriveTextFailure retry={drive.retry} />}
             {loading && items.length === 0 && (
               <>
                 <p role="status" style={{ margin: "0 0 8px", color: token.colorTextSecondary }}>
@@ -391,6 +404,7 @@ export default function SearchPage() {
               <p style={{ margin: "8px 0 0", fontSize: token.fontSizeSM, color: token.colorTextSecondary }}>{t("search.snippetNote")}</p>
             )}
 
+            {cursor !== null && <div ref={sentinel} aria-hidden="true" />}
             {cursor !== null && (
               <div style={{ marginBlockStart: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                 <Button onClick={loadMore} disabled={loading} style={coarse ? { minHeight: 44 } : undefined}>

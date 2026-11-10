@@ -23,6 +23,8 @@ import type { Page, TrashItem } from "../lib/files/types";
 import { useDriveText } from "../lib/drive/driveText";
 import { locationOf } from "../lib/drive/location";
 import { useLoadMoreSentinel } from "../lib/files/loadMoreSentinel";
+import { useLocationSpaces } from "../lib/drive/spaces";
+import DriveTextFailure from "../components/drive/DriveTextFailure";
 
 // Trash lists items deleted but not yet gone for good, on the one table (tl4, decision 137). Restore brings items back, in one
 // action or one at a time; deleting for good cannot be undone, so it asks first, and it is for a manager of the item only.
@@ -38,7 +40,9 @@ export default function TrashPage() {
   const qc = useQueryClient();
   const allFolders = useStore(folders);
   const me = useStore(session);
-  const driveReady = useDriveText();
+  const spaces = useLocationSpaces(me !== null);
+  const drive = useDriveText();
+  const driveReady = drive.ready;
   const [folder, setFolder] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +158,7 @@ export default function TrashPage() {
       key: "where",
       title: t("drive.col.originalLocation"),
       secondary: true,
-      render: (it) => locationOf({ place: it.place, folder_id: it.folder_id, parent_id: it.original_parent_id }, allFolders, t("nav.files")),
+      render: (it) => locationOf({ place: it.place, folder_id: it.folder_id, parent_id: it.original_parent_id }, spaces, t("nav.files")),
     },
     {
       key: "deleted",
@@ -211,7 +215,9 @@ export default function TrashPage() {
         <Alert type="error" showIcon role="alert" message={fileErrorText(trashQ.error, lang)} style={{ marginBottom: 12 }} />
       )}
 
-      {loading || !driveReady ? (
+      {drive.failed ? (
+        <DriveTextFailure retry={drive.retry} />
+      ) : loading || !driveReady ? (
         <div role="status" aria-busy="true">
           <span className="sr-only">{t("app.loading")}</span>
           <Skeleton active paragraph={{ rows: 4 }} />

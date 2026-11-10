@@ -13,12 +13,14 @@ import { brand } from "../lib/brand";
 import { session, sessionChanged, sessionKey, signingOut } from "../lib/session";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { formatDate } from "../lib/files/format";
-import { folders } from "../lib/files/folders";
+import { useLocationSpaces } from "../lib/drive/spaces";
 import { kindOf } from "../lib/files/kind";
 import { activityKey, lastActivity, mergeRecent, type RecentItem } from "../lib/recent";
 import { clearRecent, listRecent, removeRecent } from "../lib/stars";
 import { useDriveText } from "../lib/drive/driveText";
 import { locationOf } from "../lib/drive/location";
+import { useLoadMoreSentinel } from "../lib/files/loadMoreSentinel";
+import DriveTextFailure from "../components/drive/DriveTextFailure";
 
 // Recent: the items the caller opened or changed lately, most recent first, on the one table (tl4, decision 137). It is private to
 // the caller and kept for 30 days, at most 500 items. Removing one takes it off this list only; clearing empties the whole list
@@ -36,8 +38,9 @@ export default function RecentPage() {
   const me = useStore(session);
   const signedIn = me !== null;
   const sk = sessionKey(me);
-  const allFolders = useStore(folders);
-  const driveReady = useDriveText();
+  const spaces = useLocationSpaces(signedIn);
+  const drive = useDriveText();
+  const driveReady = drive.ready;
   const [items, setItems] = useState<RecentItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,9 +130,10 @@ export default function RecentPage() {
     setClearError(null);
   };
 
+  const sentinel = useLoadMoreSentinel(cursor !== null, loading, () => void load(false, cursor));
   const columns: ListColumn<RecentItem>[] = [
     { key: "name", title: t("files.col.name"), render: (n) => <DriveName node={n} /> },
-    { key: "where", title: t("drive.col.location"), secondary: true, render: (n) => locationOf(n, allFolders, t("nav.files")) },
+    { key: "where", title: t("drive.col.location"), secondary: true, render: (n) => locationOf(n, spaces, t("nav.files")) },
     {
       key: "opened",
       title: t("drive.col.opened"),
@@ -153,7 +157,8 @@ export default function RecentPage() {
 
       {error !== null && <Alert type="error" showIcon role="alert" message={error} style={{ marginBlockEnd: 12 }} />}
 
-      {(!driveReady || (loading && items.length === 0)) && error === null && <Skeleton active />}
+      {drive.failed && <DriveTextFailure retry={drive.retry} />}
+      {((!driveReady && !drive.failed) || (loading && items.length === 0)) && error === null && <Skeleton active />}
 
       {driveReady && (items.length > 0 || (!loading && error === null)) && (
         <div className="items">
@@ -179,6 +184,7 @@ export default function RecentPage() {
         </div>
       )}
 
+      {cursor !== null && <div ref={sentinel} aria-hidden="true" />}
       {cursor !== null && (
         <div style={{ marginBlockStart: 12 }}>
           <Button disabled={loading} onClick={() => void load(false, cursor)}>

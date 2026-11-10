@@ -182,7 +182,7 @@ export interface ItemListingProps<T extends { id: string }> {
   bulk?: (ids: string[]) => SelectionAction[];
   sort?: ListSort;
   // onOpen opens a row: Enter on the row, or a plain click on it. On a list with a selection, Ctrl, Cmd and Shift clicks and the
-  // checkboxes select instead (tl4, design-tl 2.2).
+  // checkboxes select instead (tl4).
   onOpen?: (row: T) => void;
   // empty is what the table's body shows when there are no rows, under the header row, which stays (design-tl 2.5).
   empty: ListEmpty;

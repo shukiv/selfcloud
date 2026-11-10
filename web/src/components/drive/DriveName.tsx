@@ -26,7 +26,9 @@ export function openDrive(n: Node): void {
   if (to !== null) go(to);
 }
 
-export default function DriveName({ node, children }: { node: Node; children?: ReactNode }) {
+// A name is set in the text colour at weight 500, as the mockup draws it. A search result keeps the link colour (linkColour), which
+// the search contrast check reads (decision 137).
+export default function DriveName({ node, children, linkColour = false }: { node: Node; children?: ReactNode; linkColour?: boolean }) {
   const { token } = theme.useToken();
   const editorOn = useStore(officeEdit);
   const to = drivePath(node);
@@ -40,7 +42,7 @@ export default function DriveName({ node, children }: { node: Node; children?: R
           <a
             href={to}
             onClick={(e) => officeLinkClick(e, node, editorOn, get(routerLocation).path + get(routerLocation).search, go)}
-            style={{ fontWeight: 600, color: token.colorLink }}
+            style={linkColour ? { fontWeight: 600, color: token.colorLink } : { fontWeight: 500, color: token.colorText }}
           >
             {name}
           </a>

@@ -17,6 +17,8 @@ import { kindOf } from "../lib/files/kind";
 import { sharedWithMe, type SharedNode } from "../lib/sharing/api";
 import type { Page } from "../lib/files/types";
 import { useDriveText } from "../lib/drive/driveText";
+import { useLoadMoreSentinel } from "../lib/files/loadMoreSentinel";
+import DriveTextFailure from "../components/drive/DriveTextFailure";
 
 // Shared with me: the items other people shared with the caller, each at the role it has, on the one table (tl4, decision 137), in
 // the order the server gives them, newest share first. An item opens through its address (/n/{nod}), like any link a share mail
@@ -27,7 +29,8 @@ export default function SharedPage() {
   const brandName = useStore(brand).name;
   const me = useStore(session);
   const signedIn = me !== null;
-  const driveReady = useDriveText();
+  const drive = useDriveText();
+  const driveReady = drive.ready;
 
   const q = useInfiniteQuery({
     queryKey: queryKey("shared"),
@@ -40,6 +43,7 @@ export default function SharedPage() {
 
   const items = useMemo<SharedNode[]>(() => (q.data?.pages ?? []).flatMap((p) => p.items), [q.data]);
   const hasMore = q.hasNextPage === true;
+  const sentinel = useLoadMoreSentinel(hasMore, q.isFetchingNextPage, () => void q.fetchNextPage());
   const hasData = q.data !== undefined;
 
   useEffect(() => {
@@ -54,7 +58,7 @@ export default function SharedPage() {
   const columns: ListColumn<SharedNode>[] = [
     { key: "name", title: t("files.col.name"), render: (n) => <DriveName node={n} /> },
     { key: "by", title: t("drive.col.sharedBy"), secondary: true, render: (n) => ownerText(n) },
-    { key: "role", title: t("files.col.role"), secondary: true, render: (n) => <Tag>{t(`role.${n.role ?? "viewer"}`)}</Tag> },
+    { key: "role", title: t("drive.col.yourRole"), secondary: true, render: (n) => <Tag>{t(`role.${n.role ?? "viewer"}`)}</Tag> },
     {
       key: "when",
       title: t("drive.col.sharedOn"),
@@ -72,7 +76,8 @@ export default function SharedPage() {
 
       {failure !== null && <Alert type={hasData ? "warning" : "error"} showIcon role="alert" message={failure} style={{ marginBottom: 12 }} />}
 
-      {(!driveReady || (!hasData && q.isPending && signedIn)) && <Skeleton active />}
+      {drive.failed && <DriveTextFailure retry={drive.retry} />}
+      {((!driveReady && !drive.failed) || (!hasData && q.isPending && signedIn)) && <Skeleton active />}
 
       {driveReady && hasData && (items.length > 0 || failure === null) && (
         <div className="shared">
@@ -89,6 +94,7 @@ export default function SharedPage() {
         </div>
       )}
 
+      {hasMore && <div ref={sentinel} aria-hidden="true" />}
       {hasMore && (
         <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
           <Button onClick={() => void q.fetchNextPage()} loading={q.isFetchingNextPage}>
