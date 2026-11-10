@@ -177,6 +177,11 @@ export interface ItemListingProps<T extends { id: string }> {
   menu?: (row: T) => ListMenuEntry[];
   // rowClassName gives a row its class, for the page's own hooks and styles.
   rowClassName?: (row: T) => string;
+  // rowTestID gives a row its test id, for the page's e2e checks (tl5, decision 138).
+  rowTestID?: (row: T) => string | undefined;
+  // phone forces the phone layout whatever the window is: a secondary column is the name's second line, and the row's icons are
+  // the ⋮ menu. A narrow side panel asks for it, since the window is wider than the panel (design-tl 4, tl5).
+  phone?: boolean;
   // selectable gives the list a selection: checkboxes, the selection keys, and a selection bar with the bulk icons.
   selectable?: boolean;
   bulk?: (ids: string[]) => SelectionAction[];
@@ -391,9 +396,11 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   const renderItems = (q: ItemListingProps<T>) => {
     const [nameCol, ...others] = q.columns;
     // Below md the secondary columns are the name's second line; a phone or a finger has the ⋮ menu alone (the design, not in this repository, section 4).
-    const seconds = narrow ? others.filter((c) => c.secondary) : [];
-    const shown = narrow ? others.filter((c) => !c.secondary) : others;
-    const menuOnly = narrow || coarse;
+    // A page that asks for the phone layout (a narrow panel) has it at any width.
+    const phoneHere = narrow || q.phone === true;
+    const seconds = phoneHere ? others.filter((c) => c.secondary) : [];
+    const shown = phoneHere ? others.filter((c) => !c.secondary) : others;
+    const menuOnly = phoneHere || coarse;
     const selectable = q.selectable === true;
     const picked = selectable ? sel.selected : NO_IDS;
     const anyPicked = picked.size > 0;
@@ -534,6 +541,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       ...(selectable ? { "aria-selected": picked.has(r.id) } : {}),
       tabIndex: sel.focusID === r.id ? 0 : -1,
       "data-id": r.id,
+      "data-testid": q.rowTestID?.(r),
       onFocus: () => sel.setFocus(r.id),
       onKeyDown: onItemKey,
       onClick: (e: ReactMouseEvent<HTMLElement>) => {
