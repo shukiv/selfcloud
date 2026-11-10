@@ -126,6 +126,23 @@ func TestRemoteCommandsCallTheirRoute(t *testing.T) {
 	}
 }
 
+// TestUndeclaredCallsAreReported: a call that is neither the command's route, a route it calls after that, nor a read it
+// declares is reported; a declared read is not.
+func TestUndeclaredCallsAreReported(t *testing.T) {
+	c := remoteCommand{name: "synthetic", route: "GET /api/v1/a", more: []string{"POST /api/v1/m"},
+		reads: []string{"GET /api/v1/r"}}
+	got := undeclaredCalls(c, []string{"GET /api/v1/a", "GET /api/v1/r", "POST /api/v1/m", "DELETE /api/v1/x"})
+	if !slices.Equal(got, []string{"DELETE /api/v1/x"}) {
+		t.Errorf("undeclaredCalls = %v, want [DELETE /api/v1/x]", got)
+	}
+	if got := undeclaredCalls(c, []string{"GET /api/v1/a", "GET /api/v1/r"}); len(got) != 0 {
+		t.Errorf("declared calls reported: %v", got)
+	}
+	if got := undeclaredCalls(c, nil); len(got) != 0 {
+		t.Errorf("no calls reported: %v", got)
+	}
+}
+
 func TestInfoOnTheRealServerPrintsItsVersion(t *testing.T) {
 	isolateRemote(t)
 	srv, _ := newRealServer(t)
