@@ -57,7 +57,11 @@ func TestMkdirRefusesTheRootAndMissingFolder(t *testing.T) {
 	isolate(t, testAccountKey)
 	f := newFake(t)
 	wantCode(t, f.run(Mkdir, "--folder", testFolder, "/"), 2)
-	wantCode(t, f.run(Mkdir, "/x"), 2) // no folder
+	res := f.run(Mkdir, "/x") // no folder
+	wantCode(t, res, 2)
+	if !strings.Contains(res.stderr, "--folder") {
+		t.Fatalf("stderr %q: a path without --folder must say so", res.stderr)
+	}
 	wantCode(t, f.run(Mkdir, "--folder", testFolder), 2)
 	f.wantNoCalls()
 }
@@ -65,7 +69,7 @@ func TestMkdirRefusesTheRootAndMissingFolder(t *testing.T) {
 // TestMkdirAndTouchRefuseHostileNames: the same name rules as ls, before any call.
 func TestMkdirAndTouchRefuseHostileNames(t *testing.T) {
 	isolate(t, testAccountKey)
-	for _, p := range []string{"/..", "/a/../b", "/a//b", "/a/\x00b", "/ x", "x", "/a\\b", "/a/‮b"} {
+	for _, p := range []string{"/..", "/a/../b", "/a//b", "/a/\x00b", "/ x", "x", "docs/x", "dir", "/a\\b", "/a/‮b"} {
 		f := newFake(t)
 		if res := f.run(Mkdir, "--folder", testFolder, p); res.code != 2 {
 			t.Errorf("mkdir %q: exit %d, want 2", p, res.code)
