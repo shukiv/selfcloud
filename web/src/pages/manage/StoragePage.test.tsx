@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { limitBytes } from "../../lib/quota";
 import { session, type Session } from "../../lib/session";
-import { fail, stubFetch } from "../../test/fetchStub";
+import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
 import { desktopViewport, phoneViewport } from "../../test/viewport";
 import StoragePage from "./StoragePage";
 
@@ -112,6 +112,50 @@ describe("manage storage", () => {
     } finally {
       undo();
     }
+  });
+
+  // Round 2 (M5): the people table's Load more appends the next page of people; a failed next page keeps the first one.
+  const CY = { id: "usr_c", display_name: "Cy", email: "cy@example.com", status: "active", used_bytes: 5, reserved_bytes: 0, quota_bytes: null, effective_quota_bytes: null };
+  const pagedPeople = (c: Call, second: Answer) => {
+    if (c.url.includes("/storage/largest")) return { status: 200, body: { items: [] } };
+    if (c.url.includes("/storage")) {
+      return c.url.includes("p2") ? second : { status: 200, body: { ...ACCOUNT_STORAGE, users: [ACCOUNT_STORAGE.users[0]], users_next_cursor: "p2" } };
+    }
+    return fail(404, "not_found");
+  };
+
+  it("the people table's Load more appends the next page of people (round 2, M5)", async () => {
+    stubFetch((c) => pagedPeople(c, { status: 200, body: { ...ACCOUNT_STORAGE, users: [CY], users_next_cursor: null } }));
+    renderPage();
+    const people = await screen.findByRole("region", { name: "People, by use" });
+    expect(await within(people).findByText("Ada")).toBeTruthy();
+    fireEvent.click(within(document.getElementById("people-storage") as HTMLElement).getByRole("button", { name: "Load more" }));
+    expect(await within(people).findByText("Cy")).toBeTruthy();
+    expect(within(people).getByText("Ada")).toBeTruthy();
+  });
+
+  it("a failed next page of people keeps the first one and shows the error (round 2, M5)", async () => {
+    stubFetch((c) => pagedPeople(c, fail(403, "forbidden")));
+    renderPage();
+    const people = await screen.findByRole("region", { name: "People, by use" });
+    expect(await within(people).findByText("Ada")).toBeTruthy();
+    fireEvent.click(within(document.getElementById("people-storage") as HTMLElement).getByRole("button", { name: "Load more" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(within(people).getByText("Ada")).toBeTruthy();
+  });
+
+  // Round 2 (M7): a person's Change icon opens the limit dialog for that person.
+  it("a person's Change icon opens the limit dialog for that person (round 2, M7)", async () => {
+    stubFetch((c) => {
+      if (c.url.includes("/storage/largest")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/storage")) return { status: 200, body: ACCOUNT_STORAGE };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Change limit: Bo" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Bo");
+    expect(dialog.textContent).not.toContain("Ada");
   });
 
   it("the team spaces sort by name, ascending first, and the header's click reverses it with aria-sort", async () => {

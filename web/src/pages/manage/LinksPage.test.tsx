@@ -137,6 +137,38 @@ describe("links", () => {
     expect(screen.queryByRole("button", { name: "Delete all public links" })).toBeNull();
   });
 
+  // Round 2 (M5): Load more appends the next page of links; a failed next page keeps the first one, with the error.
+  const SECOND_LINK = { ...LINK, id: "shl_2", item_name: "budget.xlsx", item_path: "Plans/budget.xlsx" };
+  it("Load more appends the next page of links (round 2, M5)", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("/share-links")) {
+        return c.url.includes("c2") ? { status: 200, body: { items: [SECOND_LINK] } } : { status: 200, body: { items: [LINK], next_cursor: "c2" } };
+      }
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Links" });
+    expect(await within(region).findByText("report.pdf")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await within(region).findByText("budget.xlsx")).toBeTruthy();
+    expect(within(region).getByText("report.pdf")).toBeTruthy();
+  });
+
+  it("a failed next page keeps the first one and shows the error (round 2, M5)", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("/share-links")) {
+        return c.url.includes("c2") ? fail(403, "forbidden") : { status: 200, body: { items: [LINK], next_cursor: "c2" } };
+      }
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Links" });
+    expect(await within(region).findByText("report.pdf")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(within(region).getByText("report.pdf")).toBeTruthy();
+  });
+
   it("the audience filter asks the server for that audience (guard: filter in the request)", async () => {
     const { calls } = stubFetch((c) => {
       if (c.url.includes("/sharing-policy")) return { status: 200, body: { public_links: true, anyone_links: 1 } };

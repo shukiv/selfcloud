@@ -108,6 +108,37 @@ describe("the audit log", () => {
     expect(await screen.findByText(/The account has too many people to look up every name here/)).toBeTruthy();
   });
 
+  // Round 2 (M5): Load more appends the next page of the log; a failed next page keeps the first one, with the error.
+  it("Load more appends the next page of the log (round 2, M5)", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("/audit")) {
+        return c.url.includes("c2") ? { status: 200, body: { items: [{ ...ENTRY, id: "aud_2", action: "user.create" }] } } : { status: 200, body: { items: [ENTRY], next_cursor: "c2" } };
+      }
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Audit log" });
+    expect(await within(region).findByText("folder.create")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await within(region).findByText("user.create")).toBeTruthy();
+    expect(within(region).getByText("folder.create")).toBeTruthy();
+  });
+
+  it("a failed next page keeps the first one and shows the error (round 2, M5)", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("/audit")) {
+        return c.url.includes("c2") ? fail(403, "forbidden") : { status: 200, body: { items: [ENTRY], next_cursor: "c2" } };
+      }
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Audit log" });
+    expect(await within(region).findByText("folder.create")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(within(region).getByText("folder.create")).toBeTruthy();
+  });
+
   it("the action filter is sent to the server (guard: action in the request)", async () => {
     const { calls } = stubFetch((c: Call) => (c.url.includes("/audit") ? { status: 200, body: { items: [ENTRY] } } : { status: 200, body: { items: [] } }));
     renderPage();
