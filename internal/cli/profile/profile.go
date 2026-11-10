@@ -204,7 +204,7 @@ func (s *Store) Save(f File) error {
 		return err
 	}
 	data = append(data, '\n')
-	suffix, err := randomHex(8)
+	suffix, err := newSuffix()
 	if err != nil {
 		return err
 	}
@@ -259,6 +259,9 @@ func (s *Store) ensureDir() error {
 	}
 	return os.MkdirAll(s.Dir, 0o700)
 }
+
+// newSuffix names the temporary file Save writes. A test replaces it to make the name known.
+var newSuffix = func() (string, error) { return randomHex(8) }
 
 func randomHex(n int) (string, error) {
 	b := make([]byte, n)

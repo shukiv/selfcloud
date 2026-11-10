@@ -193,6 +193,36 @@ func TestSaveIsAtomic(t *testing.T) {
 	}
 }
 
+// TestSaveRefusesAnExistingTempFile: the temporary name is already taken, so Save fails and the file that holds it is
+// left as it was. This is not parallel: it replaces newSuffix. Without O_EXCL the write would truncate that file and the
+// rename would carry on.
+func TestSaveRefusesAnExistingTempFile(t *testing.T) {
+	dir := privateDir(t)
+	s := saveSample(t, dir)
+	planted := filepath.Join(dir, ".profiles-fixed.tmp")
+	if err := os.WriteFile(planted, []byte("someone else's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := newSuffix
+	newSuffix = func() (string, error) { return "fixed", nil }
+	t.Cleanup(func() { newSuffix = old })
+	changed := sample()
+	changed.Current = ""
+	if err := s.Save(changed); err == nil {
+		t.Fatal("Save reused a temporary name that already existed")
+	}
+	if data, _ := os.ReadFile(planted); string(data) != "someone else's" {
+		t.Errorf("the existing temporary file was written: %q", data)
+	}
+	f, err := Open(dir).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Current != "home" {
+		t.Errorf("the profiles file changed after a refused save: %+v", f)
+	}
+}
+
 func TestKindOf(t *testing.T) {
 	t.Parallel()
 	ok := map[string]string{
