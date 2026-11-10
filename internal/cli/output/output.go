@@ -139,7 +139,9 @@ func Fail(stderr io.Writer, asJSON bool, err error) int {
 	if err == nil {
 		return exitcode.OK
 	}
+	// The code is text the server chose, as the message is, so it is cleaned in both modes.
 	msg = clean(msg)
+	name = clean(name)
 	if asJSON {
 		var env struct {
 			Error struct {
