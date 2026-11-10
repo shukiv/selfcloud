@@ -65,6 +65,7 @@ import { ce1Checks } from './ce1.mjs';
 import { ce2b1Checks } from './ce2b1.mjs';
 import { ce2b2Checks } from './ce2b2.mjs';
 import { ce3Checks } from './ce3.mjs';
+import { et1Checks } from './et1.mjs';
 import { tl1Checks } from './tl1.mjs';
 import { tl3Checks } from './tl3.mjs';
 import { menuHeaderText, pickMenuEntry } from './menu.mjs';
@@ -1047,6 +1048,8 @@ async function main() {
     if (!only || onlySet.has('ce2b-1')) await ce2b1Checks(h, { page, base, accountKey, teamB, stale: ce2b1Stale });
     if (!only || onlySet.has('ce2b-2')) await ce2b2Checks(h, { page, base, accountKey, stale: ce2b2Stale, taken: ce2b2Taken });
     if (!only || onlySet.has('ce3')) await ce3Checks(h, { page, base, accountKey, ended: ce3Ended });
+    // The editor takes a file's version from the node's answer when a proxy drops the content's ETag (slice et1, decision 135).
+    if (!only || onlySet.has('et1')) await et1Checks(h, { page, base, accountKey });
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
