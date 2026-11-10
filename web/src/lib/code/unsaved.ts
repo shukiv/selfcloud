@@ -105,3 +105,11 @@ export function purgeAllUnsaved(): void {
     }
   }
 }
+
+// Scaffolding for the red tests of review round 1 (MED-4): the names exist, with no behaviour yet.
+export const SIGNOUT_CHANNEL = "selfcloud-code-unsaved";
+export function announceSignOut(): void {}
+export function watchSignOuts(): () => void {
+  return () => undefined;
+}
+export function signedInHere(): void {}

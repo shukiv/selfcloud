@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { dropUnsaved, keepUnsaved, purgeAllUnsaved, purgeOtherUnsaved, readUnsaved } from "./unsaved";
+import {
+  announceSignOut,
+  dropUnsaved,
+  keepUnsaved,
+  purgeAllUnsaved,
+  purgeOtherUnsaved,
+  readUnsaved,
+  SIGNOUT_CHANNEL,
+  signedInHere,
+  watchSignOuts,
+} from "./unsaved";
 
 const NOD = "nod_a1";
 const OTHER_NOD = "nod_b2";
 const rec = { text: "x{}", etag: '"e1"', bom: false, sep: "\n" as const };
+// pause lets a channel message be delivered between two channel objects of this process.
+const pause = () => new Promise((r) => setTimeout(r, 50));
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -14,6 +26,70 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   sessionStorage.clear();
+  signedInHere();
+});
+
+describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)", () => {
+  it("clears every entry in this tab when another tab of the browser announces an explicit sign-out", async () => {
+    const stop = watchSignOuts();
+    const other = new BroadcastChannel(SIGNOUT_CHANNEL);
+    try {
+      keepUnsaved("usr_1", NOD, rec);
+      keepUnsaved("usr_2", OTHER_NOD, rec);
+      other.postMessage({ type: "signed-out" });
+      await pause();
+      expect(readUnsaved("usr_1", NOD)).toBeNull();
+      expect(readUnsaved("usr_2", OTHER_NOD)).toBeNull();
+    } finally {
+      stop();
+      other.close();
+    }
+  });
+
+  it("keeps nothing in this tab after another tab's sign-out, until this tab signs in again", async () => {
+    const stop = watchSignOuts();
+    const other = new BroadcastChannel(SIGNOUT_CHANNEL);
+    try {
+      other.postMessage({ type: "signed-out" });
+      await pause();
+      expect(keepUnsaved("usr_1", NOD, rec)).toBe(false);
+      expect(readUnsaved("usr_1", NOD)).toBeNull();
+      signedInHere();
+      expect(keepUnsaved("usr_1", NOD, rec)).toBe(true);
+    } finally {
+      stop();
+      other.close();
+    }
+  });
+
+  it("announceSignOut sends a message that carries no text, to the other tabs", async () => {
+    const heard: unknown[] = [];
+    const listener = new BroadcastChannel(SIGNOUT_CHANNEL);
+    listener.onmessage = (e: MessageEvent) => heard.push(e.data);
+    try {
+      keepUnsaved("usr_1", NOD, rec);
+      announceSignOut();
+      await pause();
+      expect(heard).toHaveLength(1);
+      expect(JSON.stringify(heard)).not.toContain("x{}");
+    } finally {
+      listener.close();
+    }
+  });
+
+  it("a browser without channels announces and watches nothing, and throws nothing", async () => {
+    vi.stubGlobal("BroadcastChannel", undefined);
+    try {
+      vi.resetModules();
+      const m = await import("./unsaved");
+      expect(() => m.announceSignOut()).not.toThrow();
+      const stop = m.watchSignOuts();
+      expect(m.keepUnsaved("usr_1", NOD, rec)).toBe(true);
+      expect(() => stop()).not.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("the unsaved text kept across a sign-in (decision 133)", () => {

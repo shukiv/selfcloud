@@ -13,8 +13,8 @@ vi.mock("../lib/router", () => ({ go: goMock, signInURL: () => "/login" }));
 
 import CodeEditPage from "./CodeEditPage";
 import { signOut } from "../lib/auth";
-import { keepUnsaved, readUnsaved } from "../lib/code/unsaved";
-import { clearSession, session, setSignedIn } from "../lib/session";
+import { keepUnsaved, readUnsaved, SIGNOUT_CHANNEL, signedInHere } from "../lib/code/unsaved";
+import { clearSession, session, setMe, setSignedIn } from "../lib/session";
 import { get, useStore } from "../lib/store";
 
 // The page's meta nonce, as the server writes it: CodeMirror's style sheet is written with it.
@@ -251,6 +251,8 @@ const pause = () => new Promise((r) => setTimeout(r, 20));
 beforeEach(() => {
   // The text kept across a sign-in lives in this tab's sessionStorage, so one test's kept text must not reach the next.
   sessionStorage.clear();
+  // Another tab's sign-out sets a flag in this module; it must not reach the next test.
+  signedInHere();
   goMock.mockClear();
   // go moves the router, so Close and Back are subject to the same unsaved guard as a link (design 4.6).
   goMock.mockImplementation((url: string) => navigateTo?.(url));
@@ -1378,6 +1380,282 @@ describe("the unsaved text across a sign-in, for the same person (decision 133)"
     // Nothing is kept over the gate, so the redirect the app makes next is held by the guard, which asks.
     await goTo(`/files/${FLD}`);
     await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    expect(keptFor()).toEqual([]);
+  });
+
+  it("an over-gate text after a kept draft drops the draft, so a later sign-in and open restore nothing (MED-1)", async () => {
+    server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+    const first = renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    await screen.findByText(KEPT);
+    expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}");
+    type(0, "a".repeat(2 * MiB));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    expect(keptFor()).toEqual([]);
+    fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Stay" }));
+    await waitFor(() => expect(dialogOpen()).toBe(false));
+    first.unmount();
+    renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    expect(content().textContent).not.toContain("x{}");
+    expect(screen.queryByText(RESTORED)).toBeNull();
+  });
+
+  it("a refused write after a kept draft drops the draft, so a later sign-in and open restore nothing (MED-1)", async () => {
+    server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+    const first = renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    await screen.findByText(KEPT);
+    const refused = refuseStorage();
+    type(0, "y");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    refused.mockRestore();
+    expect(keptFor()).toEqual([]);
+    fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Stay" }));
+    await waitFor(() => expect(dialogOpen()).toBe(false));
+    first.unmount();
+    renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    expect(content().textContent).not.toContain("x{}");
+    expect(screen.queryByText(RESTORED)).toBeNull();
+  });
+
+  it("a 401 during a save keeps the text typed while the save ran, not the text the save sent (MED-2)", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const s = server({
+      put: async () => {
+        await gate;
+        return Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 });
+      },
+    });
+    renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    await waitFor(() => expect(s.puts()).toHaveLength(1));
+    type(view().state.doc.length, "y");
+    await act(async () => release());
+    await screen.findByText(KEPT);
+    expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}y");
+    expect(content().textContent).toContain("x{}y");
+  });
+
+  it("a 401 during an overwrite keeps the text typed while it ran, not the text it sent (MED-2)", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const s = server({
+      put: async () => {
+        await gate;
+        return Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 });
+      },
+    });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: OVERWRITE }));
+    await waitFor(() => expect(s.puts()).toHaveLength(2));
+    type(view().state.doc.length, "y");
+    await act(async () => release());
+    await waitFor(() => expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}y"));
+  });
+
+  it("a 401 during a keep as a copy keeps the text typed while it ran, not the text it sent (MED-2)", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const s = server({
+      post: async () => {
+        await gate;
+        return Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 });
+      },
+    });
+    const d = await openConflict(s);
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    await waitFor(() => expect(s.copies()).toHaveLength(1));
+    type(view().state.doc.length, "y");
+    await act(async () => release());
+    await waitFor(() => expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}y"));
+  });
+
+  it("Sign in does not ask when this tab keeps the text, and keeps the text typed after the session ended (MED-3)", async () => {
+    server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+    renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    await screen.findByText(KEPT);
+    type(view().state.doc.length, "y");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(document.body.textContent).toContain("sign-in page"));
+    expect(dialogHas("Leave this file?")).toBe(false);
+    expect(readUnsaved("usr_1", NOD)?.text).toBe("x{}y");
+  });
+
+  it("an explicit sign-out sends its message on the sign-out channel, and the message carries no text (MED-4)", async () => {
+    const heard: unknown[] = [];
+    const listener = new BroadcastChannel(SIGNOUT_CHANNEL);
+    listener.onmessage = (e: MessageEvent) => heard.push(e.data);
+    try {
+      server();
+      render();
+      await waitFor(() => expect(content().textContent).toContain("{}"));
+      type(0, "x");
+      await signOut();
+      await waitFor(() => expect(heard.length).toBeGreaterThan(0));
+      expect(JSON.stringify(heard)).not.toContain("x{}");
+    } finally {
+      listener.close();
+    }
+  });
+
+  it("another tab's explicit sign-out clears the text this tab kept, and a session end after it keeps nothing (MED-4)", async () => {
+    const other = new BroadcastChannel(SIGNOUT_CHANNEL);
+    try {
+      keepUnsaved("usr_1", NOD_B, { text: "other", etag: ETAG_B, bom: false, sep: "\n" });
+      server();
+      render();
+      await waitFor(() => expect(content().textContent).toContain("{}"));
+      type(0, "x");
+      other.postMessage({ type: "signed-out" });
+      await waitFor(() => expect(keptFor(NOD_B)).toEqual([]));
+      act(() => clearSession());
+      await pause();
+      expect(keptFor()).toEqual([]);
+    } finally {
+      other.close();
+    }
+  });
+
+  it("a sign-in in this tab after another tab's sign-out keeps the text again (MED-4)", async () => {
+    const other = new BroadcastChannel(SIGNOUT_CHANNEL);
+    try {
+      server();
+      render();
+      await waitFor(() => expect(content().textContent).toContain("{}"));
+      other.postMessage({ type: "signed-out" });
+      await pause();
+      setSignedIn({ user: { id: "usr_1", role: "user" }, csrf_token: "csrf_again" } as never);
+      type(0, "x");
+      act(() => clearSession());
+      await waitFor(() => expect(keptFor()).toHaveLength(1));
+    } finally {
+      other.close();
+    }
+  });
+
+  it("a session end with the saved text drops the older draft, so the next open restores nothing (LOW-7)", async () => {
+    server();
+    const first = render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    act(() => clearSession());
+    await waitFor(() => expect(keptFor()).toHaveLength(1));
+    first.unmount();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("x{}"));
+    // The person reverts to the saved text, then the session ends again.
+    view().dispatch({ changes: { from: 0, to: 1 } });
+    expect(content().textContent).not.toContain("x{}");
+    act(() => {
+      session.set({ user: { id: "usr_1", role: "user" }, csrf: "csrf_again" } as never);
+      clearSession();
+    });
+    await pause();
+    expect(keptFor()).toEqual([]);
+  });
+
+  it("a restored text takes the byte order mark and the line break of the draft, not the file's (LOW-8)", async () => {
+    keepUnsaved("usr_1", NOD, { text: "a\nb", etag: ETAG, bom: true, sep: "\r\n" });
+    const s = server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("a"));
+    ctrlS();
+    await waitFor(() => expect(s.puts()).toHaveLength(1));
+    const sent = new Uint8Array(s.puts()[0]!.init.body as ArrayBuffer);
+    expect([...sent.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(new TextDecoder().decode(sent.slice(3))).toBe("a\r\nb");
+  });
+
+  it("a kept text over the editor's 2 MiB gate is not restored, and the file opens as it is (LOW-8)", async () => {
+    keepUnsaved("usr_1", NOD, { text: "x".repeat(2 * MiB + 1), etag: ETAG, bom: false, sep: "\n" });
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    expect(screen.queryByText(RESTORED)).toBeNull();
+    expect(content().textContent).not.toContain("xxxx");
+  });
+
+  it("Keep as a copy clears the text kept for the file, since the copy took it (MED-5a)", async () => {
+    await keptByLastSignIn();
+    const s = server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("x{}"));
+    s.touch("changed by someone else\n");
+    ctrlS();
+    const d = await screen.findByRole("dialog");
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    expect(await screen.findByText("Saved as a (2).json")).toBeTruthy();
+    expect(keptFor()).toEqual([]);
+  });
+
+  it("a save the server answers forbidden clears the text kept for the file (MED-5b)", async () => {
+    await keptByLastSignIn();
+    server({ put: () => Response.json({ error: { code: "forbidden", details: {} } }, { status: 403 }) });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("x{}"));
+    ctrlS();
+    await waitFor(() => expect(keptFor()).toEqual([]));
+  });
+
+  it("an overwrite the server answers forbidden clears the text kept for the file (MED-5b)", async () => {
+    await keptByLastSignIn();
+    const s = server({ put: () => Response.json({ error: { code: "forbidden", details: {} } }, { status: 403 }) });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("x{}"));
+    s.touch("changed by someone else\n");
+    ctrlS();
+    const d = await screen.findByRole("dialog");
+    fireEvent.click(within(d).getByRole("button", { name: OVERWRITE }));
+    await waitFor(() => expect(keptFor()).toEqual([]));
+  });
+
+  it("a copy the server answers forbidden clears the text kept for the file (MED-5b)", async () => {
+    await keptByLastSignIn();
+    const s = server({ post: () => Response.json({ error: { code: "forbidden", details: {} } }, { status: 403 }) });
+    render();
+    await waitFor(() => expect(content().textContent).toContain("x{}"));
+    s.touch("changed by someone else\n");
+    ctrlS();
+    const d = await screen.findByRole("dialog");
+    fireEvent.click(within(d).getByRole("button", { name: COPY }));
+    await waitFor(() => expect(keptFor()).toEqual([]));
+  });
+
+  it("Close on a tab a script opened, with no leave guard in the way, discards the kept text when the person leaves (MED-5c)", async () => {
+    const closeSpy = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    try {
+      await keptByLastSignIn();
+      server();
+      render(`/edit/${NOD}?mode=edit&tab=1`);
+      await waitFor(() => expect(content().textContent).toContain("x{}"));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+      fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Leave" }));
+      await waitFor(() => expect(closeSpy).toHaveBeenCalled());
+      expect(keptFor()).toEqual([]);
+    } finally {
+      closeSpy.mockRestore();
+    }
+  });
+
+  it("a different person's session read at boot clears the text kept for the first person (MED-5d)", async () => {
+    await keptByLastSignIn();
+    expect(keptFor()).toHaveLength(1);
+    setMe({ user: { id: "usr_2", role: "user" }, account: null, csrf_token: "csrf_two" } as never);
     expect(keptFor()).toEqual([]);
   });
 
