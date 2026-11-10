@@ -48,7 +48,7 @@ const searchRequests = (page) => page.sent.filter((r) => r.url.includes(SEARCH_P
 
 // resultNames lists the names of the rows of the results list, in order.
 const resultNames = (page) =>
-  page.evaluate(`[...document.querySelectorAll(${q(RESULTS + ' li')})].map((li) => li.querySelector('bdi')?.textContent ?? '')`);
+  page.evaluate(`[...document.querySelectorAll(${q(RESULTS + ' tbody tr[data-id]')})].map((li) => li.querySelector('bdi')?.textContent ?? '')`);
 
 // alertShows says whether an alert on the page shows the text.
 const alertShows = (page, text) =>
@@ -248,7 +248,7 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
   check(textNames.includes('Harbour plan.txt'), `a text search lists the file the word is in, by its name (${JSON.stringify(textNames)})`);
   const img = await page.evaluate(`document.querySelectorAll(${q(RESULTS + ' img')}).length`);
   check(img === 0, `a snippet carries no markup (${img} img elements)`);
-  const lightText = await page.evaluate(`(${contrastReport.toString()})(${q(RESULTS + ' li a')}, 'Clear filters', ${q(RESULTS + ' mark')})`);
+  const lightText = await page.evaluate(`(${contrastReport.toString()})(${q(RESULTS + ' tbody a')}, 'Clear filters', ${q(RESULTS + ' mark')})`);
   check(
     lightText.link >= WARNING_CONTRAST && lightText.mark >= WARNING_CONTRAST,
     `light: a result name and a snippet mark reach ${WARNING_CONTRAST}:1 (${JSON.stringify(lightText)})`,
@@ -297,7 +297,7 @@ export async function q4Checks(h, { page, base, accountKey, teamA }) {
     await setTheme(page, theme);
     await sleep(600);
     await page.waitFor(`!!document.querySelector(${q('[data-testid="search-chip"]')})`, 10000);
-    const report = await page.evaluate(`(${contrastReport.toString()})(${q(RESULTS + ' li a')}, 'Clear filters', null)`);
+    const report = await page.evaluate(`(${contrastReport.toString()})(${q(RESULTS + ' tbody a')}, 'Clear filters', null)`);
     check(
       report.link >= WARNING_CONTRAST && report.clear >= WARNING_CONTRAST,
       `${theme.toLowerCase()}: a result name and Clear filters reach ${WARNING_CONTRAST}:1 (${JSON.stringify(report)})`,

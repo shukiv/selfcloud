@@ -3,7 +3,7 @@
 // Slice ic2: icons first on the other pages, and the owner's notes of the dev run (decision 72). A browser with a mouse, at 1280
 // wide, is checked for a sample of each group: the sign-in page's language and theme are icon buttons with names and tooltips,
 // and no segmented switch; the trash's Restore and Delete forever are borderless 40 px icons with names, a tooltip on hover, and
-// Empty trash keeps its words; in dark the icons keep no border. The sidebar: a top-level place (a space) is filled with the
+// Empty trash is an icon with its name (tl4); in dark the icons keep no border. The sidebar: a top-level place (a space) is filled with the
 // active colour and its text is the on-active colour, and a folder below it keeps the bar with no fill; in light and dark. The
 // playlist drawer of an audio file opens with its shadow, and the stage and the rows show the file's type icon when there is no
 // cover. At 390 px the trash has no sideways scroll, and on a finger the icons are 44 px. Every folder made is deleted for good,
@@ -90,8 +90,9 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     check(restore && restore.text === '' && restore.border === '0px' && restore.w === 40 && restore.h === 40, `Restore is a borderless 40 px icon with no words (${JSON.stringify(restore)})`);
     const purge = await iconState(page, '.trash-item button[aria-label^="Delete forever:"]');
     check(purge && purge.text === '' && purge.border === '0px', `Delete forever is a borderless icon with no words (${JSON.stringify(purge)})`);
-    const empty = await page.evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Empty trash') ? 'words' : null`);
-    check(empty === 'words', "Empty trash keeps its words (the page's main call)");
+    // Empty trash is an icon with its name (tl4, decision 137): no words, and the name is its tooltip.
+    const empty = await page.evaluate(`(() => { const b = document.querySelector('button[aria-label="Empty trash"]'); return b ? (b.textContent.trim() === '' ? 'icon' : 'words') : null; })()`);
+    check(empty === 'icon', 'Empty trash is an icon with its name and no words (tl4)');
     const restoreTip = await tipAfter(page, '.trash-item button[aria-label^="Restore:"]');
     check(restoreTip.includes('Restore'), `Restore shows its tooltip on hover (${restoreTip})`);
     await snap('ic2-trash-light.png');
@@ -220,17 +221,20 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
     await page.waitFor(`location.pathname === '/trash'`, 15000);
     // The trash is read after the page loads; wait for its row, not a fixed time, so the checks below measure a drawn row (gate
     // stvl1 e2e-4 measured before the row came, and found no button).
-    const restoreSel = '.trash-item button[aria-label^="Restore:"]';
-    await page.waitFor(`!!document.querySelector(${JSON.stringify(restoreSel)})`, 15000);
+    // On a phone the row's icons collapse into its ⋮ button (design-tl section 4, tl4), so the phone checks read that button.
+    const moreSel = '.trash-item button[aria-label^="More actions for"]';
+    await page.waitFor(`!!document.querySelector(${JSON.stringify(moreSel)})`, 15000);
     const sideways = await page.evaluate(`document.documentElement.scrollWidth - window.innerWidth`);
     check(sideways <= 0, `the trash has no sideways scroll at 390 px (${sideways} px over)`);
     await setPhone(page, true);
     // The finger's sizes apply on the next render, and the button grows to them through its transition: wait for the exact
     // size the check asserts, not a rounded one (gate fu5a read 43.97 px mid-transition). The check reads what is there after
     // the wait, met or not.
-    await page.waitFor(`(() => { const b = document.querySelector(${JSON.stringify(restoreSel)}); if (!b) return false; const r = b.getBoundingClientRect(); return r.height === 44 && r.width === 44; })()`, 5000).catch(() => undefined);
-    const coarse = await iconState(page, '.trash-item button[aria-label^="Restore:"]');
-    check(coarse && coarse.h === 44 && coarse.w === 44, `on a finger the Restore icon is 44 px (${JSON.stringify(coarse)})`);
+    await page.waitFor(`(() => { const b = document.querySelector(${JSON.stringify(moreSel)}); if (!b) return false; const r = b.getBoundingClientRect(); return r.height === 44 && r.width === 44; })()`, 5000).catch(() => undefined);
+    const coarse = await iconState(page, moreSel);
+    check(coarse && coarse.h === 44 && coarse.w === 44, `on a finger the row's More button is 44 px (${JSON.stringify(coarse)})`);
+    const inline = await page.evaluate(`!!document.querySelector('.trash-item button[aria-label^="Restore:"]')`);
+    check(!inline, 'on a finger the Restore icon is in the ⋮ menu, not inline on the row (tl4)');
     await snap('ic2-phone-390.png');
   } finally {
     await setLanguage(page, 'English').catch(() => undefined);
