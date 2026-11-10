@@ -20,6 +20,8 @@ function signedAs(id: string): Session {
 const device = (id: string, client_name: string) => ({
   id,
   client_name,
+  client_ip: "",
+  user_agent: "",
   created_at: "2026-11-10T08:00:00Z",
   expires_at: "2026-12-10T08:00:00Z",
 });
@@ -45,6 +47,19 @@ describe("signed-in devices", () => {
     const row = (await screen.findByText("laptop")).closest("tr");
     expect(row).not.toBeNull();
     expect(within(row as HTMLElement).getAllByText(/2026/).length).toBe(2);
+  });
+
+  it("shows the terminal's address in its own column, as the approval page showed it", async () => {
+    stubFetch((c: Call) => {
+      if (c.url === "/api/v1/auth/cli/devices") {
+        return { status: 200, body: { devices: [{ ...device("dev_1", "laptop"), client_ip: "198.51.100.23", user_agent: "selfcloud/1" }] } };
+      }
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const row = (await screen.findByText("laptop")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("198.51.100.23")).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Address" })).toBeTruthy();
   });
 
   it("with no device, says so as the title, and offers no add action", async () => {
