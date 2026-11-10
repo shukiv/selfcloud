@@ -3,6 +3,7 @@
 import { get, writable } from './store';
 import { clearShares } from './pwa/share';
 import { markSignedIn } from './pwa/cacheState';
+import { purgeOtherUnsaved } from './code/unsaved';
 import type { Account, Me, SignedIn, User } from './types';
 
 export interface Session {
@@ -40,6 +41,8 @@ export function setSignedIn(s: SignedIn): void {
   const before = get(session);
   if (before !== null && before.user.id !== s.user.id) clearShares();
   session.set({ user: s.user, account: null, csrf: s.csrf_token, publicLinks: false });
+  // Unsaved editor text kept for another person is dropped before anything is shown (decision 133).
+  purgeOtherUnsaved(s.user.id);
 }
 
 export function setMe(me: Me): void {
@@ -58,6 +61,7 @@ export function setMe(me: Me): void {
     tenantAccess: me.tenant_access === true,
     mailConfigured: me.mail_configured === true,
   });
+  purgeOtherUnsaved(me.user.id);
 }
 
 // forcePasswordChange records that the person must change the password. A refused request says so, so the page

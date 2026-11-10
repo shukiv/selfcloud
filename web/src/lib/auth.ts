@@ -6,6 +6,7 @@ import type { Brand } from './brand';
 import type { Me, SignedIn, SignedInLink } from './types';
 import { sharingMaxExpiryDays } from './sharing/api';
 import { markSignedOut } from "./pwa/cacheState";
+import { purgeAllUnsaved } from "./code/unsaved";
 
 export interface Info {
   brand: Brand | null;
@@ -137,6 +138,9 @@ export async function signOut(): Promise<void> {
   } finally {
     clearTimeout(timer);
     clearSession();
+    // An explicit sign-out clears the unsaved editor text this tab kept, for every person (decision 133). The editor's watch
+    // ignores this sign-out, so it does not keep the text again.
+    purgeAllUnsaved();
     // The app's caches go too, so a shared computer keeps no app files after sign-out (decision 65).
     await markSignedOut();
     endSignOut();
