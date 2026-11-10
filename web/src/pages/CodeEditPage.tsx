@@ -264,16 +264,19 @@ export default function CodeEditPage() {
   };
 
   // keep writes the text into this tab's store for the person who opened the file, with the ETag a save of it is checked against
-  // (decision 133). It says whether the store kept it: a text over the editor's gate, or one the store refuses, is not kept.
+  // (decision 133). It says whether the store kept it: a text over the editor's gate, or one the store refuses, is not kept. A text that
+  // is not kept also drops the older draft for the file, so a stale text never comes back (MED-1).
   const keep = (text: string): boolean => {
     const r = readyRef.current;
     const u = openUser.current;
     if (r === null || u === null || !r.utf8 || !fitsDraft(text, r.bom, r.sep)) {
       keptText.current = null;
+      if (u !== null) dropUnsaved(u, nod);
       return false;
     }
     const ok = keepUnsaved(u, nod, { text, etag: file.current.etag, bom: r.bom, sep: r.sep });
     keptText.current = ok ? text : null;
+    if (!ok) dropUnsaved(u, nod);
     return ok;
   };
 
@@ -526,13 +529,22 @@ export default function CodeEditPage() {
     clearSession();
     go(signInURL(), { replace: true });
   };
-  // askSignInFirst is the page's Sign in choice: with unsaved text the guard asks first; without it the sign-in goes at once. Text this
-  // tab kept for the sign-in (the same text) goes with it, so there is nothing to ask (decision 133).
+  // askSignInFirst is the page's Sign in choice. Without unsaved text the sign-in goes at once. With unsaved text, this tab keeps the text
+  // first (decision 133), and the sign-in goes at once when it does, since nothing is lost, text typed after the session ended included.
+  // Only a text this tab cannot keep (over the gate, or refused by the store) asks first, in the leave modal (decision 130, HIGH-1).
   const askSignInFirst = () => {
     const cur = handle.current?.text();
-    const keptNow = cur !== undefined && cur === keptText.current;
-    if (dirty && !keptNow) setAskSignIn(true);
-    else signInNow();
+    if (cur === undefined) {
+      signInNow();
+      return;
+    }
+    if (cur === saved.current) {
+      drop();
+      signInNow();
+      return;
+    }
+    if (keep(cur)) signInNow();
+    else setAskSignIn(true);
   };
 
   // sessionEnded runs when the session ends from the person who has this file open, other than by a sign-out (decision 133). The
