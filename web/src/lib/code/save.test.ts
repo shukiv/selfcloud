@@ -126,6 +126,31 @@ describe("readWhole", () => {
   });
 });
 
+describe("saveText's timeout", () => {
+  it("gives up on a save with no answer after 60 s: the request is aborted, and the save is failed (Retry)", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_, reject) => {
+            init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const pending = saveText(NODE_ID, OLD_ETAG, STORED, bytes(1));
+      const signal = (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.signal;
+      expect(signal).toBeDefined();
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signal?.aborted).toBe(true);
+      expect(await pending).toEqual({ ok: false, why: "failed" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 // lastInit is the request init of the last fetch call made in this test.
 function lastInit(): RequestInit & { headers?: Record<string, string> } {
   const f = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;

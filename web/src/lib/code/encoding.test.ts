@@ -1,10 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { decodeText, sniff, SNIFF_BYTES } from "./encoding";
+import { decodeText, sniff, sniffWhole, SNIFF_BYTES } from "./encoding";
 
 const bytes = (...xs: number[]) => new Uint8Array(xs);
 const utf8 = (s: string) => new TextEncoder().encode(s);
+
+// The editor reads the whole file, so its check reads all of it (MED-2): a NUL past the first 8 KiB makes the file binary.
+describe("the whole-file sniff at /edit/", () => {
+  it("refuses a NUL byte past the first 8 KiB as binary", () => {
+    const late = new Uint8Array(SNIFF_BYTES + 10).fill(0x61);
+    late[SNIFF_BYTES + 2] = 0;
+    expect(sniffWhole(late)).toBe("binary");
+  });
+
+  it("refuses a NUL byte at the very end of a file", () => {
+    const end = new Uint8Array(3 * SNIFF_BYTES).fill(0x61);
+    end[end.length - 1] = 0;
+    expect(sniffWhole(end)).toBe("binary");
+  });
+
+  it("calls a whole file with no NUL text, and still refuses UTF-16 by its mark", () => {
+    expect(sniffWhole(new Uint8Array(3 * SNIFF_BYTES).fill(0x61))).toBe("text");
+    expect(sniffWhole(bytes(0xff, 0xfe, 0x61, 0x00))).toBe("utf16");
+  });
+});
 
 // The read side of the text rule (design-ce 2.3 and 4.8). The write side comes with the editor.
 describe("the sniff", () => {
