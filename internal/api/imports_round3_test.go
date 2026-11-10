@@ -185,10 +185,10 @@ func TestImportEntryLargerThanTheDiskPauses(t *testing.T) {
 	}
 }
 
-// TestImportEntryCheckSeesReservationMadeAfterIt: the disk check of an entry is made in the write that reserves it, so an
-// upload that takes the disk after the entry arrives is counted. The competing upload is made at the entry's fault point,
-// which runs outside every write, so the reservation is not blocked by it. Before the fix the entry was checked first
-// and reserved later, and it was admitted beside the upload (decision 120, M2).
+// TestImportEntryCheckSeesReservationMadeAfterIt: an entry is refused when a reservation takes the disk between the
+// entry's arrival and its reservation's write. The competing upload is made at the before-reserve fault point, which
+// runs outside every write, so the upload's own write is not blocked. The check that refuses the entry is the one inside
+// the reservation's write, so a check made before the fault point does not see the upload and does not refuse the entry.
 func TestImportEntryCheckSeesReservationMadeAfterIt(t *testing.T) {
 	fx := newImportFixture(t)
 	minFree := uint64(fx.s.cfg.Storage.MinFree)
@@ -197,7 +197,7 @@ func TestImportEntryCheckSeesReservationMadeAfterIt(t *testing.T) {
 	imp := fx.startOK(t, fx.archive(t, "big.zip", zipArchive(t, [][2]string{{"big.txt", strings.Repeat("0", 10240)}})), "")
 	taken := false
 	fx.s.importFault = func(stage string) error {
-		if stage == "entry" && !taken {
+		if stage == "before-reserve" && !taken {
 			taken = true
 			rec := createUpload(t, fx.s, fx.key, 10<<10, md("folder", fx.folder, "name", "competing.bin"))
 			if rec.Code != http.StatusCreated {

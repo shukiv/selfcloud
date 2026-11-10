@@ -560,6 +560,11 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 	src := importSourceKey(cur, e.Key)
 	// The disk is checked in the reservation's own write (importReserve), so the check and the reservation see the same
 	// totals and a full disk leaves nothing reserved (decision 120).
+	// before-reserve is a fault point between the entry's arrival and its reservation's write. A test makes a competing
+	// reservation here, so the check inside the write is the one that must see it.
+	if err := s.importFaultAt("before-reserve"); err != nil {
+		return err
+	}
 	skip, err := s.importReserve(ctx, impID, p, e, src)
 	if err != nil {
 		return err
