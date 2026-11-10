@@ -9,20 +9,26 @@ import { useLoadMoreSentinel } from "./loadMoreSentinel";
 type Fire = (isIntersecting: boolean) => void;
 let observers: Fire[] = [];
 
+// A fake observer delivers nothing once it is disconnected, as a real one does, so a test can tell a dead observer from a live one.
 class FakeObserver {
+  private live = true;
   constructor(private readonly cb: (entries: { isIntersecting: boolean }[]) => void) {
-    observers.push((isIntersecting) => this.cb([{ isIntersecting }]));
+    observers.push((isIntersecting) => {
+      if (this.live) this.cb([{ isIntersecting }]);
+    });
   }
   observe() {}
-  disconnect() {}
+  disconnect() {
+    this.live = false;
+  }
   unobserve() {}
   takeRecords() {
     return [];
   }
 }
 
-function Probe(props: { enabled: boolean; loading: boolean; more: () => void }) {
-  const ref = useLoadMoreSentinel(props.enabled, props.loading, props.more);
+function Probe(props: { enabled: boolean; loading: boolean; failed?: boolean; more: () => void }) {
+  const ref = useLoadMoreSentinel(props.enabled, props.loading, props.failed ?? false, props.more);
   return <div ref={ref} data-testid="sentinel" />;
 }
 
@@ -50,10 +56,30 @@ describe("useLoadMoreSentinel", () => {
     expect(more).not.toHaveBeenCalled();
   });
 
-  it("watches again once the load ends, so a sentinel still in view asks for the next page", () => {
+  it("watches again once a load succeeds, so a sentinel still in view asks for the next page", () => {
     const more = vi.fn();
     const { rerender } = render(<Probe enabled loading more={more} />);
     rerender(<Probe enabled loading={false} more={more} />);
+    observers.at(-1)?.(true);
+    expect(more).toHaveBeenCalledTimes(1);
+  });
+
+  // tl4 r2, N1: a failed next page must not be asked for again by the sentinel. Its observer would fire at once, since the
+  // sentinel is still in view, and the request would fail and repeat with no delay. Only Load more tries again, and a later
+  // successful load re-arms the sentinel.
+  it("after a failed next page, asks nothing on its own: no observer is made until a load succeeds", () => {
+    const more = vi.fn();
+    const { rerender } = render(<Probe enabled loading={false} more={more} />);
+    rerender(<Probe enabled loading more={more} />);
+    rerender(<Probe enabled loading={false} failed more={more} />);
+    const made = observers.length;
+    // The sentinel is still in view, so a live observer would ask at once. None may be made.
+    expect(observers.length).toBe(made);
+    observers.at(-1)?.(true);
+    expect(more).not.toHaveBeenCalled();
+    // The Load more button tries again: a load that succeeds re-arms the sentinel.
+    rerender(<Probe enabled loading more={more} />);
+    rerender(<Probe enabled loading={false} failed={false} more={more} />);
     observers.at(-1)?.(true);
     expect(more).toHaveBeenCalledTimes(1);
   });
