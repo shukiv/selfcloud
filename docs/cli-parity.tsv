@@ -30,6 +30,7 @@ fn	lib/auth.ts:signIn	-	-	browser sign-in flow; the CLI signs in with cli4, neve
 fn	lib/auth.ts:signInWithLink	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
 fn	lib/auth.ts:signOut	-	-	browser sign-in flow; the CLI's `logout` deletes its own device token (cli4)
 fn	lib/auth.ts:verifyAccount	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
+fn	lib/code/read.ts:readHead	-	-	the browser viewer's range read of a file's first bytes: the code viewer's sniff and its text
 fn	lib/comments/api.ts:createComment	-	cli11	planned, cli11
 fn	lib/comments/api.ts:deleteComment	-	cli11	planned, cli11
 fn	lib/comments/api.ts:editComment	-	cli11	planned, cli11
@@ -86,6 +87,10 @@ fn	lib/files/playlists.ts:reorderEntries	-	cli12	planned, cli12
 fn	lib/files/playlists.ts:replaceEntries	-	cli12	planned, cli12
 fn	lib/files/tags.ts:getMediaTags	-	cli11	planned, cli11
 fn	lib/files/tags.ts:getNodeTags	-	cli11	planned, cli11
+fn	lib/files/templates.ts:createFromTemplate	-	cli11	planned, cli11
+fn	lib/files/templates.ts:getTemplatesFolder	-	cli11	planned, cli11
+fn	lib/files/templates.ts:listTemplatesPage	-	cli11	planned, cli11
+fn	lib/files/templates.ts:setTemplatesFolder	-	cli11	planned, cli11
 fn	lib/files/thumbnail.ts:liveDeps	-	cli11	planned, cli11
 fn	lib/files/thumbnail.ts:watchThumbnail	-	cli11	planned, cli11
 fn	lib/files/tus.ts:createUpload	-	cli6	planned, cli6
@@ -287,6 +292,7 @@ route	GET /api/v1/share/info	-	-	visitor credential read, used inside get <share
 route	GET /api/v1/shared	-	cli7	planned, cli7
 route	GET /api/v1/starred	-	cli11	planned, cli11
 route	GET /api/v1/templates	-	cli11	planned, cli11
+route	GET /api/v1/templates/{id}/thumbnail	-	cli11	planned, cli11
 route	GET /api/v1/trash	-	cli5	planned, cli5
 route	GET /api/v1/zips/{zip}	-	cli12	planned, cli12
 route	GET /brand/logo	-	-	static image for the web interface
