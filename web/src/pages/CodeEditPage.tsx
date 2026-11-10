@@ -281,8 +281,17 @@ export default function CodeEditPage() {
   };
 
   // signedOutNotice is the notice for a sign-in that ended while the text was unsaved: kept, when this tab kept the text, and the
-  // copy-first words otherwise (design 4.3, decision 133).
-  const signedOutNotice = (text: string): "signedOutKept" | "signedOut" => (keep(text) ? "signedOutKept" : "signedOut");
+  // copy-first words otherwise (design 4.3, decision 133). It keeps the editor's text as it is now, not the text a save sent: the
+  // person may have typed while the save ran, and that text is the one on the page (MED-2). The text it was sent with is only the
+  // fallback for a page with no editor.
+  const signedOutNotice = (sent: string): "signedOutKept" | "signedOut" => {
+    const cur = handle.current?.text() ?? sent;
+    if (cur === saved.current) {
+      drop();
+      return "signedOut";
+    }
+    return keep(cur) ? "signedOutKept" : "signedOut";
+  };
 
   // openConflict opens the dialog for a save refused with 412 (4.4): the check reads the file's current ETag with HEAD, and the
   // dialog's Overwrite saves over it. A check that fails shows its notice instead of the dialog.
