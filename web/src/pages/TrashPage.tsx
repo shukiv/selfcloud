@@ -22,6 +22,7 @@ import { kindOf } from "../lib/files/kind";
 import type { Page, TrashItem } from "../lib/files/types";
 import { useDriveText } from "../lib/drive/driveText";
 import { locationOf } from "../lib/drive/location";
+import { useLoadMoreSentinel } from "../lib/files/loadMoreSentinel";
 
 // Trash lists items deleted but not yet gone for good, on the one table (tl4, decision 137). Restore brings items back, in one
 // action or one at a time; deleting for good cannot be undone, so it asks first, and it is for a manager of the item only.
@@ -132,6 +133,7 @@ export default function TrashPage() {
 
   const anyManager = items.some(canPurge);
   const loading = trashQ.isPending;
+  const sentinel = useLoadMoreSentinel(trashQ.hasNextPage, trashQ.isFetchingNextPage, () => void trashQ.fetchNextPage());
 
   function days(it: TrashItem): string {
     return translatePlural(lang, "trash.purge", daysUntil(it.purge_at));
@@ -158,6 +160,7 @@ export default function TrashPage() {
       key: "deleted",
       title: t("drive.col.deletedOn"),
       secondary: true,
+      ariaSort: "descending",
       render: (it) => (
         <span style={{ display: "block" }}>
           <time dateTime={it.trashed_at}>{formatDate(it.trashed_at, lang)}</time>
@@ -204,13 +207,16 @@ export default function TrashPage() {
       )}
       {notice && <Alert type="success" showIcon role="status" message={notice} style={{ marginBottom: 12 }} />}
       {error && <Alert type="error" showIcon role="alert" message={error} style={{ marginBottom: 12 }} />}
+      {trashQ.isError && items.length > 0 && (
+        <Alert type="error" showIcon role="alert" message={fileErrorText(trashQ.error, lang)} style={{ marginBottom: 12 }} />
+      )}
 
       {loading || !driveReady ? (
         <div role="status" aria-busy="true">
           <span className="sr-only">{t("app.loading")}</span>
           <Skeleton active paragraph={{ rows: 4 }} />
         </div>
-      ) : trashQ.isError ? (
+      ) : trashQ.isError && items.length === 0 ? (
         <Alert type="error" showIcon role="alert" message={fileErrorText(trashQ.error, lang)} />
       ) : (
         <div className="items">
@@ -267,6 +273,9 @@ export default function TrashPage() {
             empty={{ title: t("drive.empty.trash"), className: "empty" }}
           />
         </div>
+      )}
+      {trashQ.hasNextPage && (
+        <div ref={sentinel} aria-hidden="true" />
       )}
       {trashQ.hasNextPage && (
         <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>

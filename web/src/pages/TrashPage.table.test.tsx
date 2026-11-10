@@ -148,4 +148,45 @@ describe("Trash is one table (tl4, decision 137)", () => {
     expect(within(region).getByRole("columnheader", { name: "Deleted on" })).toBeTruthy();
     expect(region.querySelector(".empty")?.textContent).toContain("The trash is empty");
   });
+
+  it("marks the Deleted on column as the order the rows are in, newest first", async () => {
+    renderTrash([item("t1", "Old logo.png", "editor")]);
+    const region = await table();
+    expect(within(region).getByRole("columnheader", { name: "Deleted on" }).getAttribute("aria-sort")).toBe("descending");
+  });
+
+  it("adds the next page's items on Load more", async () => {
+    api.listTrash.mockResolvedValueOnce({ items: [item("t1", "Old logo.png", "editor")], next_cursor: "c2" });
+    api.listTrash.mockResolvedValueOnce({ items: [item("t2", "Draft.xlsx", "editor")], next_cursor: undefined });
+    renderTrash([]);
+    await table();
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    const region = await table();
+    await waitFor(() => expect(within(region).getByRole("row", { name: "Draft.xlsx" })).toBeTruthy());
+    expect(within(region).getByRole("row", { name: "Old logo.png" })).toBeTruthy();
+  });
+
+  it("keeps the rows on screen when the next page fails, and says why above them", async () => {
+    api.listTrash.mockResolvedValueOnce({ items: [item("t1", "Old logo.png", "editor")], next_cursor: "c2" });
+    api.listTrash.mockRejectedValueOnce(new Error("offline"));
+    renderTrash([]);
+    await table();
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    const region = screen.getByRole("region", { name: "Trash" });
+    expect(within(region).getByRole("row", { name: "Old logo.png" })).toBeTruthy();
+  });
+
+  it("deletes for good only the selected items the person manages", async () => {
+    api.purgeTrashed.mockResolvedValue(undefined);
+    renderTrash([item("t1", "Old logo.png", "manager"), item("t2", "Draft.xlsx", "editor")]);
+    const region = await table();
+    fireEvent.click(within(region).getByRole("checkbox", { name: "Select Old logo.png" }));
+    fireEvent.click(within(region).getByRole("checkbox", { name: "Select Draft.xlsx" }));
+    fireEvent.click(await waitFor(() => within(region).getByRole("button", { name: "Delete forever" })));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete forever" }));
+    await waitFor(() => expect(api.purgeTrashed).toHaveBeenCalledWith("t1"));
+    expect(api.purgeTrashed).not.toHaveBeenCalledWith("t2");
+  });
 });
