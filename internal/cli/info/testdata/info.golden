@@ -1,0 +1,10 @@
+name=SelfCloud
+version=1.2.3
+public_url=https://drive.example
+web_interface=true
+password_min_length=8
+max_file_size=107374182400
+max_chunk_size=67108864
+sharing_max_expiry_days=30
+features=office_convert
+brand_name=SelfCloud

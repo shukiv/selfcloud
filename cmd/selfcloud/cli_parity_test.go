@@ -28,9 +28,11 @@ func parityTableRoot(t *testing.T) string {
 	}
 }
 
-// TestCLIParityCommands keeps the admin table and docs/cli-parity.tsv in step (design section 5.2): every cmd row names a
-// command in the table, every table entry has a cmd row, and every row whose command is not "-" names a registered
-// command. The check that a remote command calls its route is cli3's, when the first remote command exists.
+// TestCLIParityCommands keeps the command tables and docs/cli-parity.tsv in step (design section 5.2). Every row whose
+// command is not "-" names a registered command. Each admin command has a cmd row. Each remote command that reaches a
+// route has a route row that names it and that route; each remote command that reaches no route has a cmd row. A route
+// row names a remote command only when that command calls the row's route. The recording check that a command makes
+// exactly that call is TestRemoteCommandsCallTheirRoute.
 func TestCLIParityCommands(t *testing.T) {
 	t.Parallel()
 	f, err := os.Open(filepath.Join(parityTableRoot(t), "docs", "cli-parity.tsv"))
@@ -46,26 +48,60 @@ func TestCLIParityCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docs/cli-parity.tsv: %v", err)
 	}
-	registered := func(name string) bool {
+	adminNamed := func(name string) bool {
 		_, ok := adminCommandNamed(name)
 		return ok
 	}
+	remoteNamed := func(name string) (remoteCommand, bool) {
+		for _, c := range remoteCommands {
+			if c.name == name {
+				return c, true
+			}
+		}
+		return remoteCommand{}, false
+	}
+	registered := func(name string) bool {
+		_, ok := remoteNamed(name)
+		return ok || adminNamed(name)
+	}
 	cmdRows := map[string]bool{}
+	routeRows := map[string]string{} // route key -> the command the row names
 	for _, rec := range recs[1:] {
 		kind, key, command := rec[0], rec[1], rec[2]
 		if command != "-" && !registered(command) {
-			t.Errorf("docs/cli-parity.tsv: %s %q names the command %q, which no admin command registers", kind, key, command)
+			t.Errorf("docs/cli-parity.tsv: %s %q names the command %q, which no command registers", kind, key, command)
 		}
-		if kind == "cmd" {
+		switch kind {
+		case "cmd":
 			cmdRows[key] = true
 			if !registered(key) {
-				t.Errorf("docs/cli-parity.tsv: the cmd row %q is not in the admin command table", key)
+				t.Errorf("docs/cli-parity.tsv: the cmd row %q is not a registered command", key)
+			}
+		case "route":
+			routeRows[key] = command
+			if command == "-" {
+				continue
+			}
+			if rc, ok := remoteNamed(command); !ok || rc.route != key {
+				t.Errorf("docs/cli-parity.tsv: the route row %q names %q, which does not call that route", key, command)
 			}
 		}
 	}
 	for _, c := range adminCommands {
 		if !cmdRows[c.name] {
 			t.Errorf("admin command %q is in the table but has no cmd row in docs/cli-parity.tsv", c.name)
+		}
+	}
+	for _, c := range remoteCommands {
+		if c.route == "" {
+			if !cmdRows[c.name] {
+				t.Errorf("remote command %q is in the table but has no cmd row in docs/cli-parity.tsv", c.name)
+			}
+			continue
+		}
+		if got, ok := routeRows[c.route]; !ok || got != c.name {
+			t.Errorf("remote command %q calls %s, but docs/cli-parity.tsv has no route row naming it (row names %q)",
+				c.name, c.route, got)
 		}
 	}
 }

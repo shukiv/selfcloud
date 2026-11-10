@@ -1,0 +1,14 @@
+[
+  {
+    "name": "home",
+    "url": "https://selfcloud.example",
+    "kind": "account",
+    "current": false
+  },
+  {
+    "name": "work",
+    "url": "https://work.example",
+    "kind": "admin",
+    "current": true
+  }
+]
