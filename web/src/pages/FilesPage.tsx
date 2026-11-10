@@ -71,6 +71,7 @@ import { can, downloadAllowed, atLeast } from "../lib/files/roles";
 import { shareCap } from "../lib/sharing/roles";
 import { kindOf } from "../lib/files/kind";
 import { opensInViewer } from "../lib/code/kind";
+import { codeMenuEntry } from "../lib/code/edit";
 import { tapOpens } from "../lib/files/tap";
 import { readPrefs, writePrefs, type ViewPrefs } from "../lib/files/viewPrefs";
 import { UndoStack } from "../lib/files/undo";
@@ -1671,6 +1672,21 @@ export default function FilesPage() {
           const mode = editorEntry(single, editorOn);
           if (mode) openEditorTab(single.id, mode, path + search, coarsePointer(), go);
         }
+      },
+    },
+    {
+      // The code editor's entry, for an editor of a text or code file of up to 2 MiB (decision 124). Only one of the two editor
+      // entries is ever shown: an office file has the office entry above, and a code file has this one.
+      key: "editCode",
+      label: t("files.act.openEditor"),
+      icon: <Pencil {...ic} />,
+      group: 1,
+      section: "first",
+      hidden: !items.some(codeMenuEntry),
+      fits: single !== null && codeMenuEntry(single),
+      enabled: single !== null && codeMenuEntry(single),
+      run: () => {
+        if (single) openEditorTab(single.id, "edit", path + search, coarsePointer(), go);
       },
     },
     {

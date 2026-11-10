@@ -35,7 +35,8 @@ import ShareHold from "./components/share/ShareHold";
 const FilesPage = lazy(() => import("./pages/FilesPage"));
 const NodeLinkPage = lazy(() => import("./pages/NodeLinkPage"));
 const NewGalleryPage = lazy(() => import("./pages/NewGallery"));
-const OfficeEditPage = lazy(() => import("./pages/OfficeEditPage"));
+// The /edit/ address: a code file opens the code editor, anything else the office editor (pages/EditRoute.tsx).
+const EditRoute = lazy(() => import("./pages/EditRoute"));
 const NewDocumentWaitPage = lazy(() => import("./pages/NewDocumentWaitPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
 const SharedPage = lazy(() => import("./pages/SharedPage"));
@@ -297,7 +298,7 @@ export function Gate() {
   // The office editor is a page of its own: full window, outside the shell, with its own slim bar (decision 102). The
   // installation admin's refusal is the one the drive pages give (DRIVE_VIEWS).
   if (view === "edit") {
-    return <Suspense fallback={<PageLoading />}>{me.user.role === "admin" ? <NotFoundPage /> : path === "/edit/wait" ? <NewDocumentWaitPage /> : <OfficeEditPage />}</Suspense>;
+    return <Suspense fallback={<PageLoading />}>{me.user.role === "admin" ? <NotFoundPage /> : path === "/edit/wait" ? <NewDocumentWaitPage /> : <EditRoute />}</Suspense>;
   }
   return (
     <Shell>
@@ -341,7 +342,7 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "change-password": return <ChangePasswordPage />;
     case "files": return <FilesPage />;
     case "node": return <NodeLinkPage />;
-    case "edit": return <OfficeEditPage />;
+    case "edit": return <EditRoute />;
     case "new": return <NewGalleryPage />;
     case "trash": return <TrashPage />;
     case "shared": return <SharedPage />;

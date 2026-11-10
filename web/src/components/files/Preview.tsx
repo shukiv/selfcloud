@@ -21,6 +21,7 @@ import { startDownload } from "../../lib/files/ops";
 import { startPlayback, type PlaybackSeed } from "../../lib/files/playback";
 import { downloadAllowed } from "../../lib/files/roles";
 import type { Node } from "../../lib/files/types";
+import { codeEditEntry } from "../../lib/code/edit";
 import { needsSniff } from "../../lib/code/kind";
 import { codeNamed } from "../../lib/code/names";
 import { readCode, sniffs, type Code } from "../../lib/code/read";
@@ -352,6 +353,15 @@ export default function Preview({
               label={editorMode === "view" ? t("files.act.openViewer") : t("files.act.openEditor")}
               onClick={() => openEditorTab(node.id, editorMode, get(routerLocation).path + get(routerLocation).search, coarsePointer(), go)}
               icon={editorMode === "view" ? <BookOpen size={18} aria-hidden="true" focusable="false" /> : <Pencil size={18} aria-hidden="true" focusable="false" />}
+            />
+          )}
+          {/* The pencil of a code file: for an editor only, and only once the text is shown as text (decision 124). */}
+          {node && view.status === "ready" && view.code !== undefined && view.code.utf8 && codeEditEntry(node, view.code.viewer) === "edit" && (
+            <IconButton
+              className="editor-btn"
+              label={t("files.act.openEditor")}
+              onClick={() => openEditorTab(node.id, "edit", get(routerLocation).path + get(routerLocation).search, coarsePointer(), go)}
+              icon={<Pencil size={18} aria-hidden="true" focusable="false" />}
             />
           )}
           {officeFile && canDownload && exportFormats.length > 0 && (
