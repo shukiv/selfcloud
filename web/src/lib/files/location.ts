@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ApiError } from '../apiError';
-import { childrenPage, statOrNull } from './api';
-import { reachableAncestors } from './breadcrumbs';
+import { ancestorsOrNull, childrenPage, statOrNull } from './api';
 import type { FolderAccess, Node, Role } from './types';
 
 // Here is where the browser is: a folder, and a directory in it (null for the folder's root). trail is the
@@ -67,9 +66,10 @@ export async function locate(
     };
   }
 
-  const dir = await statOrNull(dirID);
-  if (!dir || dir.kind !== 'dir' || dir.folder_id !== folder) return null;
-  const chain = await reachableAncestors(dir.parent_id, (id) => statOrNull(id));
+  // The directory and its reachable ancestors come in two answers read at once (perf-1 3.2, decision 132): the chain
+  // is the server's walk, which stops at the first folder the caller does not reach.
+  const [dir, chain] = await Promise.all([statOrNull(dirID), ancestorsOrNull(dirID)]);
+  if (!dir || dir.kind !== 'dir' || dir.folder_id !== folder || chain === null) return null;
   const rootReachable = chain.length > 0 && chain[0].parent_id === null;
   // The chain's first node is the folder root when it is reachable; the rest is the trail below it.
   const trail = rootReachable ? chain.slice(1) : [];

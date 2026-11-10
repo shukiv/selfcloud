@@ -76,6 +76,24 @@ export async function statOrNull(nod: string): Promise<Node | null> {
   }
 }
 
+// ancestors reads the folders above a node the caller reaches, topmost first and the parent last, in one answer
+// (decision 132). The server stops at the first folder the caller does not reach, so nothing above it is returned.
+export async function ancestors(nod: string): Promise<Node[]> {
+  needSession();
+  const out = await api<{ ancestors: Node[] }>('GET', `/api/v1/nodes/${nod}/ancestors`);
+  return out.ancestors;
+}
+
+// ancestorsOrNull reads them, or null when the caller cannot reach the node (not_found). Other errors throw.
+export async function ancestorsOrNull(nod: string): Promise<Node[] | null> {
+  try {
+    return await ancestors(nod);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'not_found') return null;
+    throw err;
+  }
+}
+
 export function renameNode(nod: string, name: string, ifMatch?: string): Promise<Node> {
   return api<Node>('PATCH', `/api/v1/nodes/${nod}`, {
     body: { name },

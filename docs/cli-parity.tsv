@@ -52,6 +52,7 @@ fn	lib/comments/api.ts:listPeople	-	cli11	planned, cli11
 fn	lib/comments/api.ts:listReplies	-	cli11	planned, cli11
 fn	lib/comments/api.ts:listViewers	-	-	live presence of other viewers: a browser feature
 fn	lib/comments/api.ts:resolveComment	-	cli11	planned, cli11
+fn	lib/files/api.ts:ancestors	-	-	browser only: the trail of parents the web reads when a folder opens (decision 132)
 fn	lib/files/api.ts:childrenPage	ls	cli5	built in cli5
 fn	lib/files/api.ts:commitUpload	-	cli6	planned, cli6
 fn	lib/files/api.ts:copyNode	cp	cli5	built in cli5

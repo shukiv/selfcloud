@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { formatBytes, formatDate, daysUntil, formatRate } from './format';
-import { reachableAncestors, trimCrumbs } from './breadcrumbs';
+import { trimCrumbs } from './breadcrumbs';
 import { sortNodes, nextSort } from './sort';
 import { clickSelect, moveFocus, selectAll, pruneSelection, EMPTY, type Selection } from './selection';
 import { conflictReducer, INITIAL_CONFLICT } from './conflict';
@@ -86,32 +86,6 @@ describe('breadcrumbs', () => {
     expect(trimCrumbs(items, 1).length).toBe(4); // first, gap, two at the end
   });
 
-  it('walks parents upward and stops at the first node that cannot be reached', async () => {
-    const tree: Record<string, Node> = {
-      'nod_c000000001': node({ id: 'nod_c000000001', name: 'C', kind: 'dir', parent_id: 'nod_b000000001' }),
-      'nod_b000000001': node({ id: 'nod_b000000001', name: 'B', kind: 'dir', parent_id: 'nod_a000000001' }),
-      'nod_a000000001': node({ id: 'nod_a000000001', name: 'A', kind: 'dir', parent_id: null }),
-    };
-    // The root is not reachable: the walk from C stops at B, and A is never shown.
-    const seen: string[] = [];
-    const fetchNode = async (id: string) => {
-      seen.push(id);
-      if (id === 'nod_a000000001') return null;
-      return tree[id] ?? null;
-    };
-    const chain = await reachableAncestors('nod_b000000001', fetchNode);
-    expect(chain.map((n) => n.name)).toEqual(['B']);
-    expect(seen).toEqual(['nod_b000000001', 'nod_a000000001']);
-  });
-
-  it('returns the whole chain, root first, when every ancestor is reachable', async () => {
-    const tree: Record<string, Node> = {
-      'nod_b000000001': node({ id: 'nod_b000000001', name: 'B', kind: 'dir', parent_id: 'nod_a000000001' }),
-      'nod_a000000001': node({ id: 'nod_a000000001', name: 'A', kind: 'dir', parent_id: null }),
-    };
-    const chain = await reachableAncestors('nod_b000000001', async (id) => tree[id] ?? null);
-    expect(chain.map((n) => n.name)).toEqual(['A', 'B']);
-  });
 });
 
 describe('sorting', () => {
