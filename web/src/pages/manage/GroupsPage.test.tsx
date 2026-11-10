@@ -214,17 +214,53 @@ describe("the open group after a rename", () => {
   });
 
   // design-tl 2.2 and decision 114: the open group's Members icon is pressed, so a screen reader says which group's members show.
-  it("the open group's Members icon is aria-pressed=true, and the other groups' is aria-pressed=false", async () => {
-    const OTHER = { ...GROUP, id: "grp_2", name: "Sales" };
+  // Only the open group is pressed; the others have no pressed state at all (review M1).
+  const OTHER = { ...GROUP, id: "grp_2", name: "Sales" };
+  const twoGroups = () =>
     stubFetch((c) => {
       if (c.url.includes("/groups/grp_1/members")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/groups/grp_2/members")) return { status: 200, body: { items: [] } };
       if (c.url.includes("/groups")) return { status: 200, body: { items: [GROUP, OTHER] } };
       return { status: 200, body: { items: [] } };
     });
+
+  it("the open group's Members icon is aria-pressed=true, and no other group's icon has a pressed state (review M1)", async () => {
+    twoGroups();
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Members: Finance" }));
     await screen.findByRole("region", { name: "Members" });
     expect(screen.getByRole("button", { name: "Members: Finance" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Members: Sales" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Members: Sales" }).hasAttribute("aria-pressed")).toBe(false);
+  });
+
+  it("the pressed Members icon has the pressed look, the class IconButton draws for it (review M1, visual cue)", async () => {
+    twoGroups();
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Members: Finance" }));
+    await screen.findByRole("region", { name: "Members" });
+    expect(screen.getByRole("button", { name: "Members: Finance" }).classList.contains("icon-btn--pressed")).toBe(true);
+    expect(screen.getByRole("button", { name: "Members: Sales" }).classList.contains("icon-btn--pressed")).toBe(false);
+  });
+
+  it("opening another group moves the pressed state to it (review M1)", async () => {
+    twoGroups();
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Members: Finance" }));
+    await screen.findByRole("region", { name: "Members" });
+    fireEvent.click(screen.getByRole("button", { name: "Members: Sales" }));
+    await waitFor(() => expect(document.getElementById("members-title")?.textContent).toBe("Sales"));
+    expect(screen.getByRole("button", { name: "Members: Sales" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Members: Finance" }).hasAttribute("aria-pressed")).toBe(false);
+  });
+
+  it("a second click on the open group's Members icon closes its members, and nothing is pressed (review M1)", async () => {
+    twoGroups();
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Members: Finance" }));
+    await screen.findByRole("region", { name: "Members" });
+    fireEvent.click(screen.getByRole("button", { name: "Members: Finance" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Members" })).toBeNull());
+    expect(document.getElementById("members-title")).toBeNull();
+    expect(screen.getByRole("button", { name: "Members: Finance" }).hasAttribute("aria-pressed")).toBe(false);
   });
 });
