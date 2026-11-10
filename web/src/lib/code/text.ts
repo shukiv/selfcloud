@@ -39,6 +39,7 @@ export interface CodeText {
   tooLarge: string;
   failed: string;
   tooLargeToEdit: string;
+  binary: string;
 }
 
 export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
@@ -71,6 +72,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     tooLarge: "The file is too large to save here.",
     failed: "Save failed. The text stays here, so try again.",
     tooLargeToEdit: "This file is too large to edit here. You can download it.",
+    binary: "This file is not text, so it cannot be edited here. You can download it.",
   },
   es: {
     find: "Buscar",
@@ -101,6 +103,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     tooLarge: "El archivo es demasiado grande para guardarlo aquí.",
     failed: "No se pudo guardar. El texto se queda aquí; inténtelo de nuevo.",
     tooLargeToEdit: "Este archivo es demasiado grande para editarlo aquí. Puede descargarlo.",
+    binary: "Este archivo no es texto, así que no se puede editar aquí. Puede descargarlo.",
   },
   fr: {
     find: "Rechercher",
@@ -131,6 +134,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     tooLarge: "Le fichier est trop volumineux pour être enregistré ici.",
     failed: "L’enregistrement a échoué. Le texte reste ici ; réessayez.",
     tooLargeToEdit: "Ce fichier est trop volumineux pour être modifié ici. Vous pouvez le télécharger.",
+    binary: "Ce fichier n’est pas du texte, il ne peut donc pas être modifié ici. Vous pouvez le télécharger.",
   },
   pt: {
     find: "Localizar",
@@ -161,6 +165,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     tooLarge: "O ficheiro é grande demais para ser guardado aqui.",
     failed: "Não foi possível guardar. O texto fica aqui; tente de novo.",
     tooLargeToEdit: "Este ficheiro é grande demais para ser editado aqui. Pode transferi-lo.",
+    binary: "Este ficheiro não é texto, por isso não pode ser editado aqui. Pode transferi-lo.",
   },
   ru: {
     find: "Найти",
@@ -191,6 +196,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     tooLarge: "Файл слишком большой, чтобы сохранить его здесь.",
     failed: "Не удалось сохранить. Текст остаётся здесь; попробуйте ещё раз.",
     tooLargeToEdit: "Файл слишком большой, чтобы редактировать его здесь. Его можно скачать.",
+    binary: "Это не текстовый файл, поэтому его нельзя редактировать здесь. Его можно скачать.",
   },
   ar: {
     find: "بحث",
@@ -221,6 +227,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     tooLarge: "الملف أكبر من أن يُحفظ هنا.",
     failed: "تعذّر الحفظ. يبقى النص هنا؛ حاول مرة أخرى.",
     tooLargeToEdit: "الملف أكبر من أن يُحرَّر هنا. يمكنك تنزيله.",
+    binary: "هذا الملف ليس نصًا، لذا لا يمكن تحريره هنا. يمكنك تنزيله.",
   },
   he: {
     find: "חיפוש",
@@ -251,6 +258,7 @@ export const CODE_TEXT: Readonly<Record<Lang, CodeText>> = {
     tooLarge: "הקובץ גדול מכדי לשמור כאן.",
     failed: "השמירה נכשלה. הטקסט נשאר כאן; נסה שוב.",
     tooLargeToEdit: "הקובץ גדול מכדי לערוך כאן. אפשר להוריד אותו.",
+    binary: "הקובץ הזה אינו טקסט, ולכן אי אפשר לערוך אותו כאן. אפשר להוריד אותו.",
   },
 };
 

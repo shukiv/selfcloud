@@ -18,7 +18,7 @@ import CodeEditor, { type EditorHandle } from "../components/files/CodeEditor";
 import IconButton from "../components/IconButton";
 import { ApiError } from "../lib/apiError";
 import { brand } from "../lib/brand";
-import { decodeText } from "../lib/code/encoding";
+import { decodeText, sniffWhole } from "../lib/code/encoding";
 import { encodeDraft, EDIT_LIMIT, lineBreakOf, normalizeText } from "../lib/code/edit";
 import { packOf, type Pack } from "../lib/code/names";
 import { codeText } from "../lib/code/text";
@@ -40,9 +40,9 @@ type OpenFailure = "notFound" | "forbidden" | "failed";
 // SaveState is the bar's save state. null is nothing to say yet.
 type SaveState = "saved" | "unsaved" | "saving" | "failed" | null;
 
-// Notice is a note in the page's notice area: a save that did not happen (its SaveFailure), a file that is not UTF-8, or one too
-// large to edit.
-type Notice = SaveFailure | "notUtf8" | "tooLargeToEdit" | null;
+// Notice is a note in the page's notice area: a save that did not happen (its SaveFailure), a file that is not UTF-8, one too
+// large to edit, or one that is not text at all (binary: a NUL byte anywhere in the file, MED-2).
+type Notice = SaveFailure | "notUtf8" | "tooLargeToEdit" | "binary" | null;
 
 // Ready is an open file: its text as the editor starts with it, and what the save needs to write it back (the BOM and the line
 // break the file had). initial changes with each reload, and key remounts the editor with it.
@@ -60,7 +60,12 @@ interface Ready {
   node: Node;
 }
 
-type Page = { s: "opening" } | { s: "failed"; why: OpenFailure } | { s: "tooLarge"; name: string; node: Node } | { s: "ready"; ready: Ready };
+type Page =
+  | { s: "opening" }
+  | { s: "failed"; why: OpenFailure }
+  | { s: "tooLarge"; name: string; node: Node }
+  | { s: "binary"; name: string; node: Node }
+  | { s: "ready"; ready: Ready };
 
 // failureOf reads a refusal of the open by its status.
 function failureOf(err: unknown): OpenFailure {
@@ -95,6 +100,9 @@ export default function CodeEditPage() {
   const file = useRef({ etag: "", mime: "application/octet-stream" });
   const saved = useRef("");
   const saving = useRef(false);
+  // openGen counts the opens. A save answers for the open it was sent in: an answer for a file the page has since left is not
+  // shown, and does not touch the new file's state (LOW-2).
+  const openGen = useRef(0);
   const keyRef = useRef(0);
   // The latest page and save, read by the editor's keys, which are bound once for the editor's text.
   const readyRef = useRef<Ready | null>(null);
@@ -103,8 +111,13 @@ export default function CodeEditPage() {
   useEffect(() => {
     if (!valid) return;
     let cancelled = false;
+    openGen.current++;
     readyRef.current = null;
     handle.current = null;
+    // The new file starts with no save in flight and no ETag, saved text or type of the last file (LOW-2).
+    saving.current = false;
+    saved.current = "";
+    file.current = { etag: "", mime: "application/octet-stream" };
     setPage({ s: "opening" });
     setSaveState(null);
     setNotice(null);
@@ -120,6 +133,12 @@ export default function CodeEditPage() {
         }
         const got = await readWhole(nod);
         if (cancelled) return;
+        // The editor has the whole file, so the sniff reads all of it: a NUL byte anywhere means it is not text (MED-2).
+        if (sniffWhole(got.bytes) === "binary") {
+          setPage({ s: "binary", name: n.name, node: n });
+          setNotice("binary");
+          return;
+        }
         const d = decodeText(got.bytes, false);
         file.current = { etag: got.etag, mime: n.mime_type ?? "application/octet-stream" };
         const initial = normalizeText(d.text);
@@ -169,10 +188,12 @@ export default function CodeEditPage() {
     const text = handle.current?.text();
     if (text === undefined || text === saved.current) return;
     const bytes = encodeDraft(text, r.bom, r.sep);
+    const gen = openGen.current;
     saving.current = true;
     setSaveState("saving");
     setNotice(null);
     const got = await saveText(nod, file.current.etag, file.current.mime, bytes);
+    if (gen !== openGen.current) return;
     saving.current = false;
     if (got.ok) {
       file.current = { etag: got.node.etag ?? "", mime: got.node.mime_type ?? file.current.mime };
@@ -242,10 +263,12 @@ export default function CodeEditPage() {
             : saveState === "failed"
               ? t("files.editor.saveFailed")
               : null;
-  const name = page.s === "ready" ? page.ready.name : page.s === "tooLarge" ? page.name : "";
+  const name = page.s === "ready" ? page.ready.name : page.s === "tooLarge" || page.s === "binary" ? page.name : "";
   // The download rule is the preview's (lib/files/roles.ts): a no-download file may still be downloaded by a contributor and above.
-  const canDownload = (page.s === "ready" && downloadAllowed(page.ready.node)) || (page.s === "tooLarge" && downloadAllowed(page.node));
-  const nodeId = page.s === "ready" ? page.ready.node.id : page.s === "tooLarge" ? page.node.id : "";
+  const canDownload =
+    (page.s === "ready" && downloadAllowed(page.ready.node)) ||
+    ((page.s === "tooLarge" || page.s === "binary") && downloadAllowed(page.node));
+  const nodeId = page.s === "ready" ? page.ready.node.id : page.s === "tooLarge" || page.s === "binary" ? page.node.id : "";
 
   return (
     <div
@@ -271,7 +294,7 @@ export default function CodeEditPage() {
           </span>
         )}
         {canWrite && (
-          <IconButton label={ct.save} onClick={() => void saveRef.current()} disabled={saveState === "saving"} icon={<Save size={18} aria-hidden="true" focusable="false" />} />
+          <IconButton label={ct.save} onClick={() => void saveRef.current()} icon={<Save size={18} aria-hidden="true" focusable="false" />} />
         )}
         {ready !== null && (
           <IconButton label={ct.find} onClick={() => handle.current?.find()} className="find-btn" icon={<Search size={18} aria-hidden="true" focusable="false" />} />
@@ -332,6 +355,8 @@ export default function CodeEditPage() {
         return c.notUtf8;
       case "tooLargeToEdit":
         return c.tooLargeToEdit;
+      case "binary":
+        return c.binary;
       case "conflict":
         return c.conflict;
       case "locked":
@@ -366,7 +391,7 @@ export default function CodeEditPage() {
         </Button>
       );
     }
-    if ((n === "notUtf8" || n === "tooLargeToEdit") && canDownload) {
+    if ((n === "notUtf8" || n === "tooLargeToEdit" || n === "binary") && canDownload) {
       return (
         <Button size="small" onClick={() => void startDownload(nodeId)}>
           {t("files.act.download")}

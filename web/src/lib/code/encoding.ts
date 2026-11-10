@@ -14,9 +14,14 @@ export type Sniff = "text" | "binary" | "utf16";
 // sniff reads the first SNIFF_BYTES of a file. A UTF-16 byte order mark, either order, means UTF-16. Otherwise a NUL byte
 // means binary. An empty file is text.
 export function sniff(head: Uint8Array): Sniff {
-  const b = head.subarray(0, SNIFF_BYTES);
-  if (b.length >= 2 && ((b[0] === 0xff && b[1] === 0xfe) || (b[0] === 0xfe && b[1] === 0xff))) return "utf16";
-  return b.includes(0) ? "binary" : "text";
+  return sniffWhole(head.subarray(0, SNIFF_BYTES));
+}
+
+// sniffWhole is the same rule over all of a file's bytes. The editor reads the whole file, so it checks the whole file: a NUL
+// byte anywhere makes it binary, not only one in the first 8 KiB (MED-2).
+export function sniffWhole(all: Uint8Array): Sniff {
+  if (all.length >= 2 && ((all[0] === 0xff && all[1] === 0xfe) || (all[0] === 0xfe && all[1] === 0xff))) return "utf16";
+  return all.includes(0) ? "binary" : "text";
 }
 
 // Decoded is the text the viewer shows. bom says the bytes start with a UTF-8 byte order mark: it is left out of the text

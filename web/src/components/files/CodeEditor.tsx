@@ -84,6 +84,8 @@ export default function CodeEditor({ initial, pack, name, dark, readOnly, wrap, 
             keymap.of([
               {
                 key: "Mod-s",
+                // The find panel's own keys run under its scope, so Ctrl+S typed there saves too (MED-1).
+                scope: "editor search-panel",
                 run: () => {
                   now.current.onSave();
                   return true;

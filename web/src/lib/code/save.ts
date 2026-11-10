@@ -18,6 +18,9 @@ export type SaveFailure = "conflict" | "locked" | "forbidden" | "gone" | "notTex
 
 export type SaveResult = { ok: true; node: Node } | { ok: false; why: SaveFailure };
 
+// SAVE_TIMEOUT_MS is how long a save may wait for its answer before it is given up as failed (LOW-3).
+export const SAVE_TIMEOUT_MS = 60_000;
+
 const FAILURE_BY_STATUS: Readonly<Record<number, SaveFailure>> = {
   400: "notText",
   403: "forbidden",
@@ -90,30 +93,39 @@ export async function saveText(nod: string, etag: string, storedType: string, by
   };
   const csrf = currentCsrf();
   if (csrf) headers["X-CSRF-Token"] = csrf;
-  let res: Response;
+  // A save with no answer within SAVE_TIMEOUT_MS is aborted and reads as failed, so the page offers a retry (LOW-3). The timer
+  // runs until the answer's body is read, since a body can stall too.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), SAVE_TIMEOUT_MS);
   try {
-    res = await fetch(`/api/v1/nodes/${encodeURIComponent(nod)}/content`, {
-      method: "PUT",
-      headers,
-      body: bytes as BodyInit,
-      credentials: "same-origin",
-      cache: "no-store",
-    });
-  } catch {
-    return { ok: false, why: "failed" };
+    let res: Response;
+    try {
+      res = await fetch(`/api/v1/nodes/${encodeURIComponent(nod)}/content`, {
+        method: "PUT",
+        headers,
+        body: bytes as BodyInit,
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: ctrl.signal,
+      });
+    } catch {
+      return { ok: false, why: "failed" };
+    }
+    if (res.status !== 200) {
+      await res.body?.cancel().catch(() => undefined);
+      return { ok: false, why: FAILURE_BY_STATUS[res.status] ?? "failed" };
+    }
+    let got: unknown;
+    try {
+      got = await res.json();
+    } catch {
+      return { ok: false, why: "failed" };
+    }
+    if (typeof got !== "object" || got === null || typeof (got as { etag?: unknown }).etag !== "string") {
+      return { ok: false, why: "failed" };
+    }
+    return { ok: true, node: got as Node };
+  } finally {
+    clearTimeout(timer);
   }
-  if (res.status !== 200) {
-    await res.body?.cancel().catch(() => undefined);
-    return { ok: false, why: FAILURE_BY_STATUS[res.status] ?? "failed" };
-  }
-  let got: unknown;
-  try {
-    got = await res.json();
-  } catch {
-    return { ok: false, why: "failed" };
-  }
-  if (typeof got !== "object" || got === null || typeof (got as { etag?: unknown }).etag !== "string") {
-    return { ok: false, why: "failed" };
-  }
-  return { ok: true, node: got as Node };
 }
