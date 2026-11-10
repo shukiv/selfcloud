@@ -201,10 +201,11 @@ func TestSharedAtIsTheGrantTimeOnEveryOrder(t *testing.T) {
 	fx := newSharingFixture(t)
 	before := time.Now()
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
+	after := time.Now()
 
 	def := sharedAtOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared", nil))
 	rec := sharedAtOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared?order=recent", nil))
-	wantSharedAtSince(t, "b", def["b"], before)
+	wantSharedAtWithin(t, "b", def["b"], before, after)
 	if def["b"] != rec["b"] {
 		t.Errorf("shared_at on b = %q in the default order, %q in the recent order", def["b"], rec["b"])
 	}
@@ -219,13 +220,35 @@ func TestSharedAtOfAGroupGrant(t *testing.T) {
 	before := time.Now()
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+fx.deep.ID+"/permissions/"+grp, fx.key,
 		map[string]any{"role": "viewer"}), 200)
+	after := time.Now()
 
 	got := sharedAtOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared", nil))
-	wantSharedAtSince(t, "file.txt", got["file.txt"], before)
+	wantSharedAtWithin(t, "file.txt", got["file.txt"], before, after)
 }
 
-// wantSharedAtSince fails unless text is a time from since to now: the grant's time, not the epoch or a zero value.
-func wantSharedAtSince(t *testing.T, name, text string, since time.Time) {
+// TestSharedAtRisesWithALaterVisit: a grant, then a visit to an organisation link on the same node. The default order's
+// shared_at is the visit's time, the later of the two, as the recent order's is.
+func TestSharedAtRisesWithALaterVisit(t *testing.T) {
+	t.Parallel()
+	fx := newLinkFixture(t)
+	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
+	time.Sleep(3 * time.Millisecond)
+	from := time.Now()
+	_, url := fx.makeLink(t, fx.b.ID, "viewer")
+	fx.openedAs(t, fx.annSess, secretOf(t, url))
+	to := time.Now()
+
+	def := sharedAtOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared", nil))
+	rec := sharedAtOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared?order=recent", nil))
+	wantSharedAtWithin(t, "b", def["b"], from, to)
+	if def["b"] != rec["b"] {
+		t.Errorf("shared_at on b = %q in the default order, %q in the recent order", def["b"], rec["b"])
+	}
+}
+
+// wantSharedAtWithin fails unless text is a time from from to to, both as the test saw them: the time of the call that
+// made the change, not the epoch, a zero value or an earlier change.
+func wantSharedAtWithin(t *testing.T, name, text string, from, to time.Time) {
 	t.Helper()
 	if text == "" {
 		t.Fatalf("%s carries no shared_at", name)
@@ -234,8 +257,9 @@ func wantSharedAtSince(t *testing.T, name, text string, since time.Time) {
 	if err != nil {
 		t.Fatalf("shared_at of %s = %q: %v", name, text, err)
 	}
-	if at.Before(since.Truncate(time.Millisecond)) || at.After(time.Now().Add(time.Second)) {
-		t.Errorf("shared_at of %s = %v, want a time from %v to now", name, at, since)
+	// Store times are whole milliseconds, so the lower bound is cut to one.
+	if at.Before(from.Truncate(time.Millisecond)) || at.After(to) {
+		t.Errorf("shared_at of %s = %v, want a time from %v to %v", name, at, from, to)
 	}
 }
 
