@@ -35,6 +35,13 @@ func TestMeasureAncestors(t *testing.T) {
 	}
 	mkdirs(t, s, key, f.ID, "/"+strings.Join(segs, "/"))
 	deep := putNode(t, s, key, f.ID, "/"+strings.Join(segs, "/")+"/f.txt", "x")
+	// Sixty-four directories down: the answer is capped at the 64 nearest ancestors, the most one request can give.
+	var segs64 []string
+	for i := 1; i <= 64; i++ {
+		segs64 = append(segs64, fmt.Sprintf("n%d", i))
+	}
+	mkdirs(t, s, key, f.ID, "/"+strings.Join(segs64, "/"))
+	deepest := putNode(t, s, key, f.ID, "/"+strings.Join(segs64, "/")+"/f.txt", "x")
 
 	srv := httptest.NewServer(s.Handler())
 	defer srv.Close()
@@ -64,7 +71,7 @@ func TestMeasureAncestors(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		nod  string
-	}{{"depth 1", shallow.ID}, {"depth 10", deep.ID}} {
+	}{{"depth 1", shallow.ID}, {"depth 10", deep.ID}, {"depth 64", deepest.ID}} {
 		// The chain the walk visits, read once from the answer itself.
 		var chain []string
 		{
