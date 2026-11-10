@@ -180,7 +180,7 @@ export interface ItemListingProps<T extends { id: string }> {
   // rowTestID gives a row its test id, for the page's e2e checks (tl5, decision 138).
   rowTestID?: (row: T) => string | undefined;
   // phone forces the phone layout whatever the window is: a secondary column is the name's second line, and the row's icons are
-  // the ⋮ menu. A narrow side panel asks for it, since the window is wider than the panel (design-tl 4, tl5).
+  // the ⋮ menu. A narrow side panel asks for it, since the window is wider than the panel (tl5, decision 138).
   phone?: boolean;
   // selectable gives the list a selection: checkboxes, the selection keys, and a selection bar with the bulk icons.
   selectable?: boolean;

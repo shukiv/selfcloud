@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Slice tl5 (design-tl, decision 138): the access requests, the notifications and the activity are tables. Checked as the signed-in
+// Slice tl5 (decision 138, the slice's design not in this repository): the access requests, the notifications and the activity are tables. Checked as the signed-in
 // owner: at 375 pixels neither the requests page nor the notifications page scrolls sideways, and each draws its table (a region
 // with a header row, and its body either with rows or with the empty table's title); in Hebrew both are right to left; in dark mode
 // both draw their table with no page error. The activity list is in an item's comments panel, which the r7 and r7b sections check.
