@@ -142,8 +142,6 @@ export default function CodeEditPage() {
   const readyRef = useRef<Ready | null>(null);
   // openUser is the person the open file was opened by: text kept for the file is theirs, whoever signs in later (decision 133).
   const openUser = useRef<string | null>(null);
-  // keptText is the text this tab kept when a sign-in ended, so the page's Sign in does not ask again for the same text.
-  const keptText = useRef<string | null>(null);
 
   // The page opens the file each time the address changes: a read with no Range, so the whole file, and its ETag kept.
   useEffect(() => {
@@ -153,7 +151,6 @@ export default function CodeEditPage() {
     readyRef.current = null;
     handle.current = null;
     openUser.current = get(session)?.user.id ?? null;
-    keptText.current = null;
     // The new file starts with no save in flight and no ETag, saved text or type of the last file (LOW-2).
     saving.current = false;
     saved.current = "";
@@ -195,7 +192,6 @@ export default function CodeEditPage() {
         file.current = { etag: kept ? kept.etag : got.etag, mime: n.mime_type ?? "application/octet-stream" };
         saved.current = serverText;
         const initial = kept ? kept.text : serverText;
-        if (kept) keptText.current = kept.text;
         const ready: Ready = {
           name: n.name,
           folder: n.folder_id,
@@ -260,7 +256,6 @@ export default function CodeEditPage() {
   // drop clears the text kept for the open file, when a save took it, a discard was chosen, or the file is gone or forbidden.
   const drop = () => {
     if (openUser.current !== null) dropUnsaved(openUser.current, nod);
-    keptText.current = null;
   };
 
   // keep writes the text into this tab's store for the person who opened the file, with the ETag a save of it is checked against
@@ -270,12 +265,10 @@ export default function CodeEditPage() {
     const r = readyRef.current;
     const u = openUser.current;
     if (r === null || u === null || !r.utf8 || !fitsDraft(text, r.bom, r.sep)) {
-      keptText.current = null;
       if (u !== null) dropUnsaved(u, nod);
       return false;
     }
     const ok = keepUnsaved(u, nod, { text, etag: file.current.etag, bom: r.bom, sep: r.sep });
-    keptText.current = ok ? text : null;
     if (!ok) dropUnsaved(u, nod);
     return ok;
   };
