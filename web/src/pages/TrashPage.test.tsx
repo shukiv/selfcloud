@@ -23,6 +23,16 @@ vi.mock("../lib/files/folders", async () => {
 });
 
 import TrashPage from "./TrashPage";
+import { desktopViewport } from "../test/viewport";
+
+// The drive lists draw their row icons inline on a desktop window (tl4): the tests here read the desktop layout.
+let undoView: () => void = () => undefined;
+beforeEach(() => {
+  undoView = desktopViewport();
+});
+afterEach(() => {
+  undoView();
+});
 
 function item(id: string, name: string, role: Role): TrashItem {
   return {
@@ -67,7 +77,7 @@ function renderTrash(items: TrashItem[]) {
 }
 
 // row waits for the listing to arrive, then returns the item's list entry.
-const row = async (name: string) => (await screen.findByText(name)).closest("li") as HTMLElement;
+const row = async (name: string) => (await screen.findByText(name)).closest("tr") as HTMLElement;
 
 // fu8: a space's trash that is read again when it is picked again, even inside the window in which a read is fresh. The
 // clock is frozen, so the second pick always falls inside that window.
@@ -181,8 +191,8 @@ describe("TrashPage", () => {
 
   it("an empty trash shows antd's Empty with its words, in the status region (decision 111)", async () => {
     renderTrash([]);
-    await screen.findByText("The trash is empty.");
-    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe("The trash is empty.");
+    await screen.findByText("The trash is empty");
+    expect(document.querySelector('[role="status"] .empty-title')?.textContent).toBe("The trash is empty");
   });
 
   it("empty trash loops emptyTrashStep while the server says more remain", async () => {
@@ -218,9 +228,9 @@ describe("TrashPage reads and refreshes", () => {
     session.set(null);
   });
 
-  it("looks up each place once, and only the places that arrive with a new page", async () => {
-    const first = { ...item("t1", "a.txt", "editor"), original_parent_id: "p1" };
-    const second = { ...item("t2", "b.txt", "editor"), original_parent_id: "p2" };
+  it("shows each item's place as the server gives it, page after page, and asks no parent for one (tl4, decision 136)", async () => {
+    const first = { ...item("t1", "a.txt", "editor"), original_parent_id: "p1", place: "Plans" };
+    const second = { ...item("t2", "b.txt", "editor"), original_parent_id: "p2", place: "Archive" };
     api.listTrash.mockReset();
     api.listTrash.mockResolvedValueOnce({ items: [first], next_cursor: "c2" }).mockResolvedValueOnce({ items: [second], next_cursor: undefined });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -229,14 +239,12 @@ describe("TrashPage reads and refreshes", () => {
         <TrashPage />
       </QueryClientProvider>,
     );
-    await screen.findByText("a.txt");
-    await waitFor(() => expect(api.statOrNull).toHaveBeenCalledWith("p1"));
+    const region = await screen.findByRole("region", { name: "Trash" });
+    expect(within(region).getByRole("row", { name: "a.txt" }).textContent).toContain("Plans");
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     await screen.findByText("b.txt");
-    await waitFor(() => expect(api.statOrNull).toHaveBeenCalledWith("p2"));
-    const calls = api.statOrNull.mock.calls.map((c) => c[0] as string);
-    expect(calls.filter((id) => id === "p1").length).toBe(1);
-    expect(calls.filter((id) => id === "p2").length).toBe(1);
+    expect(within(region).getByRole("row", { name: "b.txt" }).textContent).toContain("Archive");
+    expect(api.statOrNull).not.toHaveBeenCalled();
   });
 
   it("restore refreshes the folder's listings and places, not only the trash", async () => {
@@ -251,12 +259,11 @@ describe("TrashPage reads and refreshes", () => {
       </QueryClientProvider>,
     );
     await screen.findByText("a.txt");
-    const row = (await screen.findByText("a.txt")).closest("li") as HTMLElement;
+    const row = (await screen.findByText("a.txt")).closest("tr") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: /^Restore/ }));
     await waitFor(() => expect(api.restoreNode).toHaveBeenCalled());
     const keys = spy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey.join("/"));
     expect(keys.some((k) => k.endsWith("/children"))).toBe(true);
-    expect(keys.some((k) => k.endsWith("/place"))).toBe(true);
   });
 
   it("reads the trash again on each visit, even inside the stale window", async () => {
@@ -309,5 +316,5 @@ describe("TrashPage restore by role", () => {
 
 // row_ waits for an item by name and returns its list entry.
 async function row_(name: string): Promise<HTMLElement> {
-  return (await screen.findByText(name)).closest("li") as HTMLElement;
+  return (await screen.findByText(name)).closest("tr") as HTMLElement;
 }

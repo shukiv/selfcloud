@@ -8,6 +8,16 @@ import { session, type Session } from "../lib/session";
 import { setLang, translate } from "../lib/i18n";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
 import StarredPage from "./StarredPage";
+import { desktopViewport } from "../test/viewport";
+
+// The drive lists draw their row icons inline on a desktop window (tl4): the tests here read the desktop layout.
+let undoView: () => void = () => undefined;
+beforeEach(() => {
+  undoView = desktopViewport();
+});
+afterEach(() => {
+  undoView();
+});
 
 function signedAs(id: string, role: "owner" | "member" = "member"): Session {
   return {
@@ -61,6 +71,8 @@ describe("Starred icon buttons name their item", () => {
     });
     renderPage();
     await screen.findByRole("link", { name: "Budget.pdf" });
+    // The row icons draw inline once the breakpoint is known, which is after the table's first draw.
+    await screen.findByRole("columnheader", { name: "Starred on" });
     expect(screen.getByRole("button", { name: "Remove star: Budget.pdf" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove star: Plan.doc" })).toBeTruthy();
   });
@@ -91,7 +103,7 @@ describe("Starred", () => {
     renderPage();
     expect(await screen.findByText(translate("en", "starred.empty"))).toBeTruthy();
     // The empty state is antd's Empty, in the status region (decision 111).
-    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe(translate("en", "starred.empty"));
+    expect(document.querySelector('[role="status"] .empty-desc')?.textContent).toBe(translate("en", "starred.empty"));
   });
 
   it("removing a star sends one request, takes the item off the list, and leaves the item itself", async () => {

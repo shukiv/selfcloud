@@ -8,6 +8,16 @@ import { session, type Session } from "../lib/session";
 import { setLang, translate } from "../lib/i18n";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
 import RecentPage from "./RecentPage";
+import { desktopViewport } from "../test/viewport";
+
+// The drive lists draw their row icons inline on a desktop window (tl4): the tests here read the desktop layout.
+let undoView: () => void = () => undefined;
+beforeEach(() => {
+  undoView = desktopViewport();
+});
+afterEach(() => {
+  undoView();
+});
 
 function signedAs(id: string): Session {
   return {
@@ -57,11 +67,11 @@ afterEach(() => {
 });
 
 describe("Recent clear is written out", () => {
-  it("the clear-all button shows its words, not an icon alone (decision 72: no icon says it plainly)", async () => {
+  it("the clear-all button is an icon with its name and no words, as the drive lists' icons are (tl4)", async () => {
     stubFetch((c: Call) => (c.url.startsWith(RECENT) ? { status: 200, body: { items: [recent("nod_r1", "Plan.txt")] } } : fail(404, "x")));
     renderPage();
     const clear = await screen.findByRole("button", { name: "Clear all" });
-    expect(clear.textContent).toBe("Clear all");
+    expect(clear.textContent).toBe("");
   });
 });
 
@@ -86,7 +96,7 @@ describe("Recent", () => {
     renderPage();
     expect(await screen.findByText(translate("en", "recent.empty"))).toBeTruthy();
     // The empty state is antd's Empty, in the status region (decision 111).
-    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe(translate("en", "recent.empty"));
+    expect(document.querySelector('[role="status"] .empty-desc')?.textContent).toBe(translate("en", "recent.empty"));
     expect(screen.queryByRole("button", { name: CLEAR })).toBeNull();
   });
 

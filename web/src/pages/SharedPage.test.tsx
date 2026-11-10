@@ -7,6 +7,16 @@ import { createQueryClient, queryKey } from "../lib/query";
 import { session, type Session } from "../lib/session";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
 import SharedPage from "./SharedPage";
+import { desktopViewport } from "../test/viewport";
+
+// The drive lists draw their row icons inline on a desktop window (tl4): the tests here read the desktop layout.
+let undoView: () => void = () => undefined;
+beforeEach(() => {
+  undoView = desktopViewport();
+});
+afterEach(() => {
+  undoView();
+});
 
 function signedAs(id: string): Session {
   return {
@@ -58,8 +68,8 @@ describe("shared with me marks a shortcut in words", () => {
       body: { items: [{ ...item("nod_3", "Gone link", "mateo"), kind: "shortcut", unavailable: true }], next_cursor: null },
     }));
     renderPage();
-    const list = await screen.findByRole("list", { name: "Shared with me" });
-    expect(within(within(list).getAllByRole("listitem")[0]).getByText("Unavailable")).toBeTruthy();
+    const list = await screen.findByRole("region", { name: "Shared with me" });
+    expect(within(within(list).getAllByRole("row").filter((r) => r.hasAttribute("data-id"))[0]).getByText("Unavailable")).toBeTruthy();
   });
 });
 
@@ -71,8 +81,8 @@ describe("shared with me", () => {
         : fail(404, "not_found"),
     );
     renderPage();
-    const list = await screen.findByRole("list", { name: "Shared with me" });
-    const rows = within(list).getAllByRole("listitem");
+    const list = await screen.findByRole("region", { name: "Shared with me" });
+    const rows = within(list).getAllByRole("row").filter((r) => r.hasAttribute("data-id"));
     expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining("Mine.txt"), expect.stringContaining("Theirs.txt")]);
     expect(within(rows[0]).getByText("You")).toBeTruthy();
     expect(within(rows[1]).queryByText("You")).toBeNull();
@@ -83,7 +93,7 @@ describe("shared with me", () => {
     renderPage();
     expect(await screen.findByText("Nothing is shared with you yet. Ask an owner of your organisation to share a folder.")).toBeTruthy();
     // The empty state is antd's Empty, in the status region (decision 111).
-    expect(document.querySelector('[role="status"] .ant-empty .ant-empty-description')?.textContent).toBe(
+    expect(document.querySelector('[role="status"] .empty-desc')?.textContent).toBe(
       "Nothing is shared with you yet. Ask an owner of your organisation to share a folder.",
     );
   });

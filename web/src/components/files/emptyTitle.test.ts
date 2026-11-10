@@ -37,6 +37,8 @@ describe("empty table titles", () => {
     const catalogue = {
       ...(JSON.parse(readFileSync(join(src, "i18n", `${lang}.json`), "utf8")) as Record<string, string>),
       ...(JSON.parse(readFileSync(join(src, "i18n", "cli", `${lang}.json`), "utf8")) as Record<string, string>),
+      // The drive lists' empty titles are a catalogue of their own too (lib/drive/driveText.ts, tl4).
+      ...(JSON.parse(readFileSync(join(src, "i18n", "drive", `${lang}.json`), "utf8")) as Record<string, string>),
     };
     const stopped = [...keys.keys()].filter((k) => {
       const v = catalogue[k];
