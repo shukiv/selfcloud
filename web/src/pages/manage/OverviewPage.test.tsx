@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
@@ -76,6 +76,41 @@ describe("the owner overview", () => {
     } finally {
       undo();
     }
+  });
+
+  // Round 2 (M8): an activity row is named by its sentence and shows its action code.
+  it("each activity row shows its action code, and is named by its sentence (round 2, M8)", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("/usage")) return { status: 200, body: USAGE };
+      if (c.url.includes("/folders")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/audit")) return { status: 200, body: { items: [ACTIVITY] } };
+      if (c.url.includes("/users")) return { status: 200, body: { items: [] } };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Recent activity" });
+    const row = (await waitFor(() => {
+      const r = region.querySelector('tbody tr[data-id="aud_1"]') as HTMLElement | null;
+      if (r === null) throw new Error("no row yet");
+      return r;
+    })) as HTMLElement;
+    expect(row.textContent).toContain("folder.create");
+    expect((row.getAttribute("aria-label") ?? "").length).toBeGreaterThan(5);
+    expect(row.getAttribute("aria-label")).not.toBe("folder.create");
+  });
+
+  // Round 2 (M4): the overview keeps its ten rows, as the base did; the design's "five" was wrong (decision 122).
+  it("the overview asks the server for ten activity rows (round 2, M4)", async () => {
+    const { calls } = stubFetch((c: Call) => {
+      if (c.url.includes("/usage")) return { status: 200, body: USAGE };
+      if (c.url.includes("/folders")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/audit")) return { status: 200, body: { items: [] } };
+      if (c.url.includes("/users")) return { status: 200, body: { items: [] } };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    await screen.findByRole("region", { name: "Recent activity" });
+    expect(calls.some((c) => c.url.includes("/audit") && c.url.includes("limit=10"))).toBe(true);
   });
 
   it("the recent activity is a table whose empty body keeps the headers (decision 122)", async () => {
