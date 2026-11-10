@@ -230,7 +230,7 @@ func TestFF1FilterPlansAndTimings(t *testing.T) {
 	}
 
 	// The backfill: the column and one UPDATE over every node (the migration's shape).
-	// The column is added by migration 0050, which openTest has already run, so it is not added here (the first run
+	// The column is added by migration 0053, which openTest has already run, so it is not added here (the first run
 	// failed on the duplicate column). The statement below is the migration's backfill.
 	backfill := exec("BACKFILL type_group, one UPDATE over all nodes", `UPDATE nodes SET type_group = `+groupCaseSQL("nodes."))
 

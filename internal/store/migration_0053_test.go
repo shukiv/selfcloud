@@ -11,21 +11,21 @@ import (
 	"testing"
 )
 
-// TestMigration0050BackfillsEveryRowLikeGroupOf runs the real runner up to migration 49 on an empty database, seeds nodes
+// TestMigration0053BackfillsEveryRowLikeGroupOf runs the real runner up to migration 52 on an empty database, seeds nodes
 // of every shape the group rule distinguishes (a name and a media type that disagree, dotted names, a trailing dot, upper
-// case, parameters and spaces in the type, folders and shortcuts), then applies 50 alone. Every row's type_group must equal
+// case, parameters and spaces in the type, folders and shortcuts), then applies 53 alone. Every row's type_group must equal
 // groupOf on that row, so the SQL backfill cannot drift from the Go rule.
-func TestMigration0050BackfillsEveryRowLikeGroupOf(t *testing.T) {
+func TestMigration0053BackfillsEveryRowLikeGroupOf(t *testing.T) {
 	ctx := context.Background()
 	migs, err := loadMigrations()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migs) < 50 || migs[49].version != 50 {
-		t.Fatalf("migration 50 is not in the embedded list (%d migrations)", len(migs))
+	if len(migs) < 53 || migs[52].version != 53 {
+		t.Fatalf("migration 53 is not in the embedded list (%d migrations)", len(migs))
 	}
 
-	path := filepath.Join(t.TempDir(), "at49.db")
+	path := filepath.Join(t.TempDir(), "at52.db")
 	w, err := sql.Open("sqlite", dsn(path, []string{"busy_timeout(10000)", "foreign_keys(1)", "synchronous(NORMAL)", "journal_mode(WAL)"}, "immediate"))
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestMigration0050BackfillsEveryRowLikeGroupOf(t *testing.T) {
 		name       TEXT    NOT NULL,
 		applied_at INTEGER NOT NULL
 	)`)
-	if err := s.applyMigrations(ctx, migs[:49]); err != nil {
+	if err := s.applyMigrations(ctx, migs[:52]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -88,7 +88,7 @@ func TestMigration0050BackfillsEveryRowLikeGroupOf(t *testing.T) {
 			fmt.Sprintf("nod_%02d", i), f.name, fmt.Sprintf("k%02d", i), f.kind, f.mime)
 	}
 
-	if err := s.applyMigrations(ctx, migs[49:50]); err != nil {
+	if err := s.applyMigrations(ctx, migs[52:53]); err != nil {
 		t.Fatal(err)
 	}
 

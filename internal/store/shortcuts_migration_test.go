@@ -164,7 +164,7 @@ func TestUpgradeFrom0018RebuildsNodes(t *testing.T) {
 			t.Errorf("seeded node %s after the upgrade = %d, %v; want 1", id, c, err)
 		}
 	}
-	// The five type-group indexes come from migration 0050 (decision 110), which the upgrade runs too.
+	// The type-group indexes come from migration 0053 (decision 110), which the upgrade runs too.
 	wantIndexes := []string{"nodes_blob", "nodes_child", "nodes_folder", "nodes_list_modified", "nodes_list_modified_group",
 		"nodes_list_name", "nodes_list_name_group", "nodes_list_size", "nodes_list_size_group", "nodes_root", "nodes_size",
 		"nodes_size_account_group", "nodes_size_group", "nodes_target", "nodes_trash", "nodes_trash_group"}
