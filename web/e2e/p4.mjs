@@ -45,15 +45,15 @@ export async function p4Setup(h, base, accountKey, { accountID, teamA }) {
 // p4OwnerChecks, as the owner: the page lists the fields and defines one; the drawer shows the value and sets a text.
 export async function p4OwnerChecks(page, h, { api, base, accountKey, teamA, reportID }) {
   await h.navigateTo(page, '/manage/labels');
-  await page.waitFor(`!!document.querySelector('ul[aria-label="Labels"]') && document.querySelector('ul[aria-label="Labels"]').textContent.includes('Status')`, 15000);
-  h.check(await page.evaluate(`document.querySelector('ul[aria-label="Labels"]').textContent.includes('Items with a value: 1')`), 'Manage > Labels lists the Status field, with one item holding a value');
+  await page.waitFor(`!!document.querySelector('[role="region"][aria-label="Labels"]') && document.querySelector('[role="region"][aria-label="Labels"]').textContent.includes('Status')`, 15000);
+  h.check(await page.evaluate(`document.querySelector('[role="region"][aria-label="Labels"] tr[aria-label="Status"] td:nth-child(4)')?.textContent.trim() === '1'`), 'Manage > Labels lists the Status field, with one item holding a value');
 
   await h.clickButton(page, 'New field');
   await page.waitFor(`!!document.getElementById('label-form-name')`);
   await page.setInput('#label-form-name', 'Note');
   await h.clickButton(page, 'Create');
   await page.waitFor(`[...document.querySelectorAll('[role="status"]')].some((s) => s.textContent.trim() === 'Saved.')`, 15000);
-  await page.waitFor(`document.querySelector('ul[aria-label="Labels"]').textContent.includes('Note')`, 15000);
+  await page.waitFor(`document.querySelector('[role="region"][aria-label="Labels"]').textContent.includes('Note')`, 15000);
   h.check(true, 'the owner defines a text field in the dialog, and the page lists it');
   await shot(page, 'labels-manage-light.png');
 
@@ -85,7 +85,7 @@ export async function p4OwnerChecks(page, h, { api, base, accountKey, teamA, rep
 
   // Dark, then phone without a horizontal scroll, then Hebrew right to left, on the labels page.
   await h.navigateTo(page, '/manage/labels');
-  await page.waitFor(`document.querySelector('ul[aria-label="Labels"]')?.textContent.includes('Note')`, 15000);
+  await page.waitFor(`document.querySelector('[role="region"][aria-label="Labels"]')?.textContent.includes('Note')`, 15000);
   await setTheme(page, 'Dark');
   await page.waitFor(`document.documentElement.dataset.theme === 'dark'`);
   await shot(page, 'labels-manage-dark.png');
@@ -100,7 +100,7 @@ export async function p4OwnerChecks(page, h, { api, base, accountKey, teamA, rep
   await h.clickOn(page, '[data-testid="language"]');
   await clickText(page, '.ant-dropdown-menu-item', 'עברית');
   // The list's own label is translated in Hebrew, so the list is found by its text, not by its name.
-  await page.waitFor(`document.documentElement.dir === 'rtl' && [...document.querySelectorAll('ul')].some((u) => u.textContent.includes('Note'))`, 15000);
+  await page.waitFor(`document.documentElement.dir === 'rtl' && [...document.querySelectorAll('table')].some((t) => t.textContent.includes('Note'))`, 15000);
   await shot(page, 'labels-manage-hebrew.png');
   h.check(true, 'Hebrew lays the labels page out right to left');
   await h.clickOn(page, '[data-testid="language"]');

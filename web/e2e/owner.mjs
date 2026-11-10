@@ -4,7 +4,9 @@
 // with the mail sink and waitForMail. Selectors follow the React DOM: antd alerts (.ant-alert), the Modal of Recent's
 // Clear confirmation (.ant-modal), and the ids the pages keep from Svelte.
 
-import { accountName } from './media.mjs';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { accountName, setTheme } from './media.mjs';
 
 const q = (v) => JSON.stringify(v);
 const rowSel = (name) => `[role="row"][aria-label="${name.replace(/["\\]/g, '\\$&')}"]`;
@@ -147,6 +149,49 @@ export async function ownerChecks(page, h, { base, sink, waitForMail, INVITEE })
   await dialogSubmit(h, page);
   await page.waitFor(`document.querySelector('main').textContent.includes('Lab')`);
   h.check(true, 'the owner creates a team space');
+
+  if (process.env.SHOTS_DIR) await tl2Shots(page, h);
+}
+
+// The pictures of the three Manage lists the slice tl2 moved onto the table, when SHOTS_DIR is set: each list in light, dark,
+// at phone width, and in Hebrew. The gate leaves SHOTS_DIR unset.
+const TL2_LISTS = [
+  ['people', '/manage/people'],
+  ['groups', '/manage/groups'],
+  ['spaces', '/manage/spaces'],
+];
+async function tl2Shots(page, h) {
+  const snap = async (name) => {
+    // A frame taken during the page's entrance shows a half-drawn list.
+    await new Promise((r) => setTimeout(r, 800));
+    const { data } = await page.send('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(process.env.SHOTS_DIR, name), Buffer.from(data, 'base64'));
+  };
+  const each = async (suffix) => {
+    for (const [name, path] of TL2_LISTS) {
+      await h.navigateTo(page, path);
+      await page.waitFor(`document.querySelectorAll('[role="region"] tbody tr[data-id]').length > 0`, 15000);
+      await snap(`tl2-${name}-${suffix}.png`);
+    }
+  };
+  await each('light');
+  await setTheme(page, 'Dark');
+  await page.waitFor(`document.documentElement.dataset.theme === 'dark'`);
+  await each('dark');
+  await setTheme(page, 'Light');
+  await page.waitFor(`document.documentElement.dataset.theme === 'light'`);
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true });
+  await page.waitFor(`document.documentElement.scrollWidth <= document.documentElement.clientWidth`, 8000);
+  await each('phone');
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await h.clickOn(page, '[data-testid="language"]');
+  await page.evaluate(`(() => { const m = [...document.querySelectorAll('.ant-dropdown-menu-item')].find((e) => e.textContent.trim() === 'עברית'); if (!m) return false; m.click(); return true; })()`);
+  await page.waitFor(`document.documentElement.dir === 'rtl'`, 15000);
+  await each('hebrew');
+  await h.clickOn(page, '[data-testid="language"]');
+  await page.evaluate(`(() => { const m = [...document.querySelectorAll('.ant-dropdown-menu-item')].find((e) => e.textContent.trim() === 'English'); if (!m) return false; m.click(); return true; })()`);
+  await page.waitFor(`document.documentElement.dir === 'ltr'`, 15000);
+  h.check(true, 'the tl2 lists are shown in light, dark, phone width and Hebrew');
 }
 
 // p1Setup gives the member a 1 MB file in My files, through the account key, before the owner sets its limit.
@@ -162,7 +207,10 @@ export async function p1Setup(h, base, accountKey, memberID, randomBytes) {
 export async function p1OwnerChecks(page, h, { MEMBER }) {
   await h.navigateTo(page, '/manage/people');
   await page.waitFor(`location.pathname === '/manage/people' && document.querySelector('main').textContent.includes(${q(MEMBER.name)})`);
-  await clickInRow(page, MEMBER.name, 'Details');
+  // A row of People opens the person by a click on it (design-tl 3.2, M1): its name is no longer a Details button.
+  await page.waitFor(
+    `(() => { const r = document.querySelector(${q(`[role="row"][aria-label=${JSON.stringify(MEMBER.name)}]`)}); if (!r) return false; r.querySelector('td').click(); return true; })()`,
+  );
   await page.waitFor(`!!document.getElementById('person-limit')`);
   await h.clickButton(page, 'Change limit');
   await page.waitFor(`!!document.querySelector('[role="dialog"] input[aria-label="Amount"]')`);
