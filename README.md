@@ -29,8 +29,10 @@ Open `http://localhost:8080/` for the web interface, or `curl localhost:8080/api
 A checkout with no Node can still build the Go binary: the web interface then shows a page saying it is
 not built, because the committed placeholder is what gets embedded.
 
-The build also writes compressed copies of the web interface's files (`.br` and `.gz` beside each one), and
-the server sends the copy a browser asks for. A proxy in front need not compress the app's files.
+The build also writes compressed copies (`.br` and `.gz`) beside each compressible file under `assets/`, and
+the server sends the copy a browser asks for. A proxy in front of the server must honour `Vary: Accept-Encoding`,
+or pass the app's assets through without caching them: a cache that ignores `Vary` could serve the brotli copy
+to a client that takes only gzip.
 
 Developing the web interface:
 
