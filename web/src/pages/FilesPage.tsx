@@ -48,7 +48,7 @@ import { folders, hiddenFolders, loadFolders, loadHiddenFolders } from "../lib/f
 import { keepTargetOnSave } from "../lib/files/appearance";
 import { folderPageReader } from "../lib/files/folderPages";
 import { focusAfterClose } from "../lib/files/focusAfterClose";
-import { childrenPage, copyNode, deleteNode, getJob, getMe, moveNode, renameNode, restoreNode, serverLimits, statOrNull, type Transfer } from "../lib/files/api";
+import { childrenPage, copyNode, deleteNode, getJob, getMe, moveNode, renameNode, restoreNode, readLimits, statOrNull, type Transfer } from "../lib/files/api";
 import { locate, type Here } from "../lib/files/location";
 import { starNode, unstarNode } from "../lib/stars";
 import { fileErrorText } from "../lib/files/fileErrors";
@@ -614,7 +614,7 @@ export default function FilesPage() {
   }, [doneCount]);
 
   useEffect(() => {
-    void serverLimits()
+    void readLimits(qc)
       .then((l) => manager.setChunkSize(l.max_chunk_size))
       .catch(() => undefined);
   }, []);

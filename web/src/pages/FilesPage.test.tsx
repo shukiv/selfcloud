@@ -34,7 +34,7 @@ const api = vi.hoisted(() => ({
   copyNode: vi.fn(),
   mkdir: vi.fn(),
   getJob: vi.fn(),
-  serverLimits: vi.fn(),
+  readLimits: vi.fn(),
 }));
 const place = vi.hoisted(() => ({ role: "editor" as Role, noDownload: false, folderName: "Team A", rootNodeID: null as string | null, trail: [] as Node[] }));
 const uploadsMock = vi.hoisted(() => ({ add: vi.fn(), setChunkSize: vi.fn() }));
@@ -214,7 +214,7 @@ beforeEach(() => {
   place.rootNodeID = null;
   session.set(signedAs("u1"));
   api.getMe.mockResolvedValue({ personal_folder_id: "fld_me" });
-  api.serverLimits.mockResolvedValue({ max_chunk_size: 1048576, max_file_size: 1 });
+  api.readLimits.mockResolvedValue({ max_chunk_size: 1048576, max_file_size: 1 });
   api.childrenPage.mockResolvedValue({ items: [node("n1", "alpha.txt"), node("n2", "beta.txt")], next_cursor: undefined });
   api.statOrNull.mockImplementation(async (id: string) => (id === "n1" ? node("n1", "alpha.txt") : id === "n2" ? node("n2", "beta.txt") : null));
   uploadList.store.set([]);

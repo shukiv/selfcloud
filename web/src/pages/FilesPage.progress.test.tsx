@@ -21,7 +21,7 @@ const api = vi.hoisted(() => ({
   getMe: vi.fn(),
   childrenPage: vi.fn(),
   statOrNull: vi.fn(),
-  serverLimits: vi.fn(),
+  readLimits: vi.fn(),
 }));
 
 vi.mock("../components/files/Listing", async (orig) => {
@@ -119,7 +119,7 @@ beforeEach(() => {
   session.set(signedAs("u1"));
   folders.set([space]);
   api.getMe.mockResolvedValue({ personal_folder_id: "fld_me" });
-  api.serverLimits.mockResolvedValue({ max_chunk_size: 1048576, max_file_size: 1 });
+  api.readLimits.mockResolvedValue({ max_chunk_size: 1048576, max_file_size: 1 });
   api.statOrNull.mockResolvedValue(null);
   api.childrenPage.mockResolvedValue({ items: [row] as Node[], next_cursor: undefined });
   uploads.store.set([]);

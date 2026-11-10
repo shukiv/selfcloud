@@ -2,7 +2,8 @@
 
 // The file routes the browser calls. Each returns what the server answers, or throws an ApiError.
 import { api, ApiError } from '../api';
-import { get, writable } from '../store';
+import type { QueryClient } from '@tanstack/react-query';
+import { get } from '../store';
 import { session } from '../session';
 import type { Page, FolderAccess, Job, Node, SignedLink, TrashItem, Version } from './types';
 import type { SortDir, SortKey } from './sort';
@@ -239,17 +240,24 @@ export interface ServerLimits {
   max_file_size: number;
 }
 
-// installLimits is the installation's upload limits, as the boot read of /api/v1/info gave them. It is set once per page load
-// (Boot), so the files page does not read /info again to size its uploads (perf-1 3.2).
-export const installLimits = writable<ServerLimits | null>(null);
+// LIMITS_STALE_MS is how long the upload limits are used without a read. The boot read seeds them (seedLimits), so the files page
+// does not read /info on each mount; after five minutes they are read again, since the Settings page can change them (LOW-1).
+export const LIMITS_STALE_MS = 5 * 60_000;
+const LIMITS_KEY = ['installation', 'upload-limits'];
 
-export async function serverLimits(): Promise<ServerLimits> {
-  const known = get(installLimits);
-  if (known !== null) return known;
+async function fetchLimits(): Promise<ServerLimits> {
   const info = await api<{ limits?: ServerLimits }>('GET', '/api/v1/info', { noRedirect: true });
-  const limits = info.limits ?? { max_chunk_size: 8 * 1024 * 1024, max_file_size: 0 };
-  installLimits.set(limits);
-  return limits;
+  return info.limits ?? { max_chunk_size: 8 * 1024 * 1024, max_file_size: 0 };
+}
+
+// readLimits answers the upload limits: the seeded or cached value while it is fresh, otherwise a read of /api/v1/info.
+export function readLimits(qc: QueryClient): Promise<ServerLimits> {
+  return qc.fetchQuery({ queryKey: LIMITS_KEY, queryFn: fetchLimits, staleTime: LIMITS_STALE_MS });
+}
+
+// seedLimits keeps limits the boot read of /api/v1/info gave, as read ageMs ago.
+export function seedLimits(qc: QueryClient, limits: ServerLimits, ageMs = 0): void {
+  qc.setQueryData<ServerLimits>(LIMITS_KEY, limits, { updatedAt: Date.now() - ageMs });
 }
 
 // A place in a video or audio file: the seconds the person stopped at and the file's length (0 when unknown).

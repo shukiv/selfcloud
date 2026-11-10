@@ -6,7 +6,8 @@ import { Spin, ConfigProvider } from "antd";
 import type { Locale } from "antd/es/locale";
 import enUS from "antd/locale/en_US";
 import { loadInfo, loadMe } from "./lib/auth";
-import { installLimits } from "./lib/files/api";
+import { seedLimits } from "./lib/files/api";
+import { useQueryClient } from "@tanstack/react-query";
 import { applyBrand, DEFAULT_BRAND, passwordMinLength } from "./lib/brand";
 import { maxExpiryDays } from "./lib/sharing/limits";
 import { CONVERT_FEATURE, featureOn, officeConvert } from "./lib/files/convert";
@@ -158,6 +159,7 @@ function Loading() {
 // chooses the language, before anything else is drawn.
 export function Boot({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
+  const qc = useQueryClient();
   const started = useRef(false);
   // Links are listened to in their own effect: StrictMode runs an effect twice, and the boot below
   // must not run twice, since a failed second run would leave the page unready.
@@ -180,8 +182,8 @@ export function Boot({ children }: { children: ReactNode }) {
       maxExpiryDays.set(info?.sharingMaxExpiryDays ?? 0);
       officeConvert.set(info !== null && featureOn(info.features, CONVERT_FEATURE));
       officeEdit.set(info !== null && featureOn(info.features, EDIT_FEATURE));
-      // The upload limits of this read serve the files page too, so it does not read /info again (perf-1 3.2).
-      if (info?.limits) installLimits.set(info.limits);
+      // The upload limits of this read seed the files page, which uses them while they are fresh (perf-1 3.2, LOW-1).
+      if (info?.limits) seedLimits(qc, info.limits);
       const me = await loadMe().catch(() => null);
       if (me) void markSignedIn();
       chooseLang(me);
