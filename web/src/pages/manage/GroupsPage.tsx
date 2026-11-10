@@ -182,6 +182,8 @@ function GroupsView() {
               key: "members",
               label: `${t("groups.members")}: ${g.name}`,
               icon: <Users size={18} aria-hidden="true" focusable="false" />,
+              // The open group's Members icon is pressed: the members under the list are its (design-tl 2.2, decision 114).
+              pressed: open?.id === g.id,
               run: () => {
                 setOpen(g);
                 setMemberError(null);

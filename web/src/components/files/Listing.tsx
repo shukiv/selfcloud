@@ -122,6 +122,9 @@ export interface ListAction {
   run: () => void;
   disabled?: boolean;
   danger?: boolean;
+  // pressed is the state of a toggle-like action, such as a group's Members while that group is open: the inline icon says it
+  // as aria-pressed (true or false). Left out, the icon has no pressed state. A menu entry has none (design-tl 7).
+  pressed?: boolean;
 }
 
 // ListMenuEntry is one entry of a row's ⋮ menu, after the row's actions that do not fit inline. An entry with an href is
@@ -333,12 +336,13 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   // row's icons turn disabled under the pressed one while its request is on its way (decision 114). index.css passes its
   // pointer to the wrapper, as for a disabled one, so it has no hover background and shows the not-allowed cursor; its colour is
   // set here too, so it wins over a danger icon's, which IconButton sets inline.
-  const rowIcon = (a: { key: string; label: string; icon: ReactNode; run: () => void; disabled?: boolean; danger?: boolean }, tab?: number) => (
+  const rowIcon = (a: { key: string; label: string; icon: ReactNode; run: () => void; disabled?: boolean; danger?: boolean; pressed?: boolean }, tab?: number) => (
     <IconButton
       key={a.key}
       label={a.label}
       icon={a.icon}
       tabIndex={tab}
+      aria-pressed={a.pressed}
       aria-disabled={a.disabled ? true : undefined}
       danger={a.danger}
       style={a.disabled ? { color: token.colorTextDisabled } : undefined}
