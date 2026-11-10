@@ -23,7 +23,13 @@ const (
 	// SharePrefix starts the credential a visitor gets from opening a link that anyone can open. It
 	// differs from the other prefixes, so it is never mistaken for a key or a token.
 	SharePrefix = "scl_"
+	// DevicePrefix starts the device token a person gets by signing in at a terminal (decision 125). It has its own
+	// payload and MAC key, so a delegated token is never mistaken for it, nor it for one.
+	DevicePrefix = "scd_"
 )
+
+// CLIAudience is the audience of a device token. A device token is the only credential with it.
+const CLIAudience = "cli"
 
 // keySecretLen is the length of 32 random bytes in unpadded base64url.
 const keySecretLen = 43
@@ -101,11 +107,14 @@ type TokenScope struct {
 	// All is set for a token that names no folders: it reaches every folder its user reaches, and
 	// Folders is empty. Only a token with a user may be All. The user's own access decides what it
 	// reaches; the token adds only its role cap. A token without the field keeps its folder list.
-	All      bool      `json:"all,omitempty"`
-	Node     string    `json:"node,omitempty"` // a directory of one of Folders; "" for the whole folders
-	Write    bool      `json:"write"`          // false: read only
-	Audience string    `json:"audience"`       // "api"; the only audience in use
-	MintedBy string    `json:"minted_by"`
+	All      bool   `json:"all,omitempty"`
+	Node     string `json:"node,omitempty"` // a directory of one of Folders; "" for the whole folders
+	Write    bool   `json:"write"`          // false: read only
+	Audience string `json:"audience"`       // "api"; the only audience in use
+	MintedBy string `json:"minted_by"`
+	// Device is the cli_devices row of a device token (audience cli). It is "" for every other token, and a device token
+	// has no MintedBy, since no account key made it.
+	Device   string    `json:"device,omitempty"`
 	IssuedAt time.Time `json:"issued_at"`
 	// ExpiresAt bounds anything the token creates that outlives the request, such as a signed link.
 	// A queued job does not check it: the job was authorised when it was queued.

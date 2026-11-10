@@ -122,14 +122,11 @@ func KindOf(tok string) (string, error) {
 		return KindAdmin, nil
 	case strings.HasPrefix(tok, auth.AccountKeyPrefix) && len(tok) > len(auth.AccountKeyPrefix):
 		return KindAccount, nil
-	case strings.HasPrefix(tok, deviceTokenPrefix) && len(tok) > len(deviceTokenPrefix):
+	case strings.HasPrefix(tok, auth.DevicePrefix) && len(tok) > len(auth.DevicePrefix):
 		return KindDevice, nil
 	}
 	return "", exitcode.Usagef("the credential is not an admin key (sc_admin_), an account key (sc_acct_) or a device token (scd_)")
 }
-
-// deviceTokenPrefix starts a device token. internal/auth does not define it yet; cli4 adds the kind.
-const deviceTokenPrefix = "scd_"
 
 func validKind(k string) bool { return k == KindAdmin || k == KindAccount || k == KindDevice }
 

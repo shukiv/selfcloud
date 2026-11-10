@@ -80,6 +80,7 @@ type Config struct {
 	Upload    UploadConfig    `yaml:"upload"`
 	Links     LinksConfig     `yaml:"links"`
 	Tokens    TokensConfig    `yaml:"tokens"`
+	CLI       CLIConfig       `yaml:"cli"`
 	Webhooks  WebhooksConfig  `yaml:"webhooks"`
 	CORS      CORSConfig      `yaml:"cors"`
 	UI        UIConfig        `yaml:"ui"`
@@ -693,6 +694,13 @@ type TokensConfig struct {
 	MaxTTL Duration `yaml:"max_ttl"`
 }
 
+// CLIConfig holds the settings of the command-line client's sign-in (decision 125).
+type CLIConfig struct {
+	// DeviceTokenTTL is how long a device token lasts from its sign-in. It is not bounded by tokens.max_ttl, which is for
+	// the delegated tokens the API mints. Revoking a device, or a password change, ends it sooner.
+	DeviceTokenTTL Duration `yaml:"device_token_ttl"`
+}
+
 // CORSConfig controls cross-origin requests from browser applications.
 type CORSConfig struct {
 	// AllowedOrigins lists the origins (scheme, host and port, such as https://app.example.com)
@@ -795,6 +803,7 @@ func Defaults() *Config {
 		Versions: VersionsConfig{MaxCount: 100, MaxAge: Duration(30 * 24 * time.Hour), MaxKept: 200},
 		Links:    LinksConfig{DefaultTTL: Duration(5 * time.Minute), MaxTTL: Duration(24 * time.Hour)},
 		Tokens:   TokensConfig{MaxTTL: Duration(time.Hour)},
+		CLI:      CLIConfig{DeviceTokenTTL: Duration(720 * time.Hour)},
 		Upload: UploadConfig{
 			MaxFileSize:           100 * GiB,
 			MaxChunkSize:          64 * MiB,
@@ -992,6 +1001,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Tokens.MaxTTL < Duration(time.Minute) {
 		bad("tokens.max_ttl must be at least one minute")
+	}
+	if c.CLI.DeviceTokenTTL < Duration(time.Minute) {
+		bad("cli.device_token_ttl must be at least one minute")
 	}
 	for _, o := range c.CORS.AllowedOrigins {
 		if err := checkOrigin(o); err != nil {

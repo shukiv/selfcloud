@@ -28,6 +28,11 @@ type Delegation struct {
 	// UserMustChangePassword is the user's must_change_password flag, read in the same query. It is
 	// false when there is no user. A token acting as the user is refused where a session would be.
 	UserMustChangePassword bool
+	// The device fields are filled only by DeviceAccess, for a device token (decision 125). Delegation leaves them zero, so
+	// a device token checked against Delegation fails closed: DeviceFound is false.
+	DeviceFound     bool       // the device row exists in the account and belongs to the user
+	DeviceRevokedAt *time.Time // the device was revoked
+	DeviceExpiresAt time.Time  // the device's token expires at this moment
 }
 
 // Delegation reads the state of the account, of the key keyID and of the user userID, in one
