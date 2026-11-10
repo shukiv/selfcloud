@@ -235,6 +235,65 @@ The approval step answers its own refusals to the person approving, not to a dev
 `user_disabled` and `user_not_verified` (403) when the account or person cannot sign in; `password_change_required`
 (403) for a person who must change the password; `forbidden` (403) for an installation admin, which holds no device.
 
+## Files
+
+These commands work on the files the signed-in person can reach, with the credential of the profile, `--token-file` or
+`SELFCLOUD_TOKEN`. Each one calls the API route that `docs/cli-parity.tsv` names for it, and nothing else, except the
+folder walk the server does for a path.
+
+**Naming.** A node is named by its id, `nod_` and 26 characters; `stat` and `ls --json` print it. A folder is named by
+its id, `fld_` and 26 characters; a node document's `folder_id` holds it. A path starts with `/` and is walked by the
+server from the folder given with `--folder`. Each name in a path is checked before the first request: it may not be
+empty, `.` or `..`, hold a `/` or a `\`, a control or an invisible character, start or end with a space, or be longer
+than 255 bytes. A refused name costs no request and changes nothing. A name is a name even when it looks like an id or
+starts with `-`, because a path always starts with `/`.
+
+| Command | What it does |
+|---|---|
+| `ls [--folder F] [--all] [PATH \| NODE]` | the children of a path (default `/`, the folder's root), or of a directory node; `--all` follows every page |
+| `stat NODE` | one node: id, folder, parent, name, kind, size, MIME type, modified time, role |
+| `mkdir --folder F [--parents] PATH` | a directory; `--parents` makes the missing ones on the way; an existing one is a conflict unless `--parents` |
+| `touch --folder F [--parents] PATH` | a new, empty file; a name in use is a conflict. The API cannot change a file's time, so `touch` never changes an existing one |
+| `mv NODE DEST [--folder F] [--name N] [--replace --yes]` | moves a node into the directory DEST (a node id, or a path walked in `--folder`), under its own name or `--name` |
+| `mv NODE --name N` | renames a node in place |
+| `cp NODE DEST [--folder F] [--name N] [--replace --yes]` | copies a node into a directory, as `mv` does |
+| `rm NODE... [--yes]` | moves one or more nodes to the Trash |
+| `trash ls [--folder F] [--all]` | the trashed nodes, of every folder or of one |
+| `trash restore NODE...` | puts trashed nodes back where they were |
+| `trash empty [--folder F] [--yes]` | purges the trash for good, of every folder or of one; the command goes on until the API says none is left |
+| `trash rm NODE... [--yes]` | purges trashed nodes for good |
+| `shortcut add DIR TARGET [--name N]` | a shortcut to TARGET in the directory DIR (both node ids); the target's name unless `--name` |
+| `unlock NODE` | breaks the editing lock on a file |
+
+`--json` prints the API's documents as they are; for a list, the items. `--folder` is required for a path and not used
+for a node id, which names its own folder.
+
+**Confirmation.** `rm`, `trash rm`, `trash empty` and `mv` or `cp` with `--replace` ask first, before anything is sent.
+At a terminal the command shows a phrase and waits for it, then Enter: the node's id for one target, `yes` for several,
+`empty` for `trash empty`, and `replace` for `--replace`. The phrase is the id, not the name, because a name would need a
+read first. Without a terminal the command refuses (exit 2) unless `--yes` is given.
+
+**Several targets.** `rm`, `trash restore`, `trash rm` and `unlock` act on each target in turn, and every target is
+checked before the first request. Each result has its own line, or an object in `--json` with `target`, `status` and,
+when it failed, the API's `error`. The exit code is 0 when every target is done, 7 when some are done and some are not,
+and 1 when none is. With one target the command exits with that target's own code.
+
+**Exit codes.** The table in section "Exit codes" applies: 2 for a usage or confirmation refusal,
+3 for a refusal by the server (for example a name in use, or a viewer's delete), 4 for a node or folder that is not there.
+
+**A device sign-in.** No file command is refused by the API's `device_token` reason, which is for the routes that mint a
+credential. The one refusal a terminal meets here is `unlock`: the API refuses lock break to every token that acts for a
+user, with a message and no reason, and the command adds that a terminal cannot break a lock and the browser can. The
+other refusals that apply to a device token are listed in "What a device token is refused".
+
+```
+selfcloud ls --folder fld_… /
+selfcloud mkdir --folder fld_… --parents /photos/2026
+selfcloud mv nod_… /archive --folder fld_…
+selfcloud rm nod_… --yes
+selfcloud trash ls --all
+```
+
 ## Docker
 
 The image holds the same binary. A remote command in a container needs the profiles file mounted; the directory must be
