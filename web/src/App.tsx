@@ -61,18 +61,20 @@ const AdminTenantPage = lazy(() => import("./pages/admin/TenantPage"));
 const AdminAdminsPage = lazy(() => import("./pages/admin/AdminsPage"));
 const AdminInstallationPage = lazy(() => import("./pages/admin/InstallationPage"));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
+const CliApprovePage = lazy(() => import("./pages/CliApprovePage"));
+const DevicesPage = lazy(() => import("./pages/DevicesPage"));
 
 // The views are the address's pages, read the way the Svelte build reads them, so both interfaces
 // agree on what an address means.
 type View =
   | "login" | "verify" | "reset" | "confirm-device" | "forgot" | "sign-in" | "share-link" | "email-change"
   | "files" | "node" | "starred" | "recent" | "shared" | "requests" | "trash" | "storage" | "search" | "notifications"
-  | "edit" | "new" | "manage" | "admin" | "change-password" | "share" | "notfound";
+  | "edit" | "new" | "manage" | "admin" | "change-password" | "share" | "devices" | "cli-approve" | "notfound";
 
-const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link", "email-change"];
+const PUBLIC_VIEWS: View[] = ["login", "verify", "reset", "confirm-device", "forgot", "sign-in", "share-link", "email-change", "cli-approve"];
 
 // The views of the drive: the files and the pages that list them. An installation admin is refused these.
-const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share"];
+const DRIVE_VIEWS: View[] = ["files", "node", "edit", "new", "starred", "recent", "shared", "requests", "trash", "storage", "search", "notifications", "share", "devices"];
 
 export function viewFor(path: string): View {
   // The root is My files: the gate sends a person there (or to the admin's home) with a replace, so it is never drawn.
@@ -101,6 +103,8 @@ export function viewFor(path: string): View {
     case "/notifications": return "notifications";
     case "/share": return "share";
     case "/change-password": return "change-password";
+    case "/devices": return "devices";
+    case "/cli-approve": return "cli-approve";
     default: return "notfound";
   }
 }
@@ -219,6 +223,13 @@ function Public({ view }: { view: View }) {
     case "reset": return <ResetPage />;
     case "confirm-device": return <ConfirmDevicePage />;
     case "email-change": return <EmailChangePage />;
+    case "cli-approve":
+      // The page draws its own layout, and needs the signed-in person's session to approve.
+      return (
+        <Suspense fallback={<PageLoading />}>
+          <CliApprovePage />
+        </Suspense>
+      );
     case "forgot": return <ForgotPage />;
     case "sign-in": return <SignInPage />;
     case "share-link":
@@ -342,6 +353,7 @@ function signedPage(view: View, path: string, user: User): ReactNode {
     case "search": return <SearchPage />;
     case "notifications": return <NotificationsPage />;
     case "share": return <SharePage />;
+    case "devices": return <DevicesPage />;
     case "manage":
       if (target === null || target.area !== "manage" || !mayOpen(target, user)) return <NotFoundPage />;
       return manageSection(target.section);

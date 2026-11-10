@@ -66,6 +66,7 @@ import { tl1Checks } from './tl1.mjs';
 import { tl3Checks } from './tl3.mjs';
 import { menuHeaderText, pickMenuEntry } from './menu.mjs';
 import { saveFailure } from './diag.mjs';
+import { cli4Checks } from './cli4.mjs';
 
 const execFileP = promisify(execFile);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -861,7 +862,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, ce1, sb, zr1e, pwa, sec2, admin or tl1 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, ce1, sb, zr1e, pwa, sec2, admin, tl1 or cli4 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -996,6 +997,8 @@ async function main() {
     // The Storage page (slice st, decision 79): the member's My files, read in light, dark, Hebrew and at phone width.
     // The page is signed in as the member here (the sections above sign the member in last).
     if (!only || onlySet.has('st')) await stChecks(h, { page, base, accountKey, accountID, memberID, MEMBER, dir });
+    // Slice cli4 (decision 125): a terminal's device sign-in is approved on /cli-approve, listed on Signed-in devices, and signed out.
+    if (!only || onlySet.has('cli4')) await cli4Checks(h, { page, base, MEMBER });
     // Slice em1 (decision 111): the empty states are antd's Empty. The member's empty pages and one compact case.
     if (!only || onlySet.has('em1')) await em1Checks(h, { page, base, accountKey, accountID, MEMBER, dir });
     // The read-only code viewer (slice ce1, decision 115): the member's own files, in light, dark, Hebrew and at 375 px.

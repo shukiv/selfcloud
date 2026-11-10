@@ -552,6 +552,8 @@ export default function Shell({ children }: { children: ReactNode }) {
   );
   const accountEntries: NonNullable<MenuProps["items"]> = [
     { key: "password", label: t("user.changePassword") },
+    // An installation admin holds no device sign-in, so the page is not theirs (App.tsx refuses it as a drive page).
+    ...(me?.user.role === "admin" ? [] : [{ key: "devices", label: t("user.devices") }]),
     ...(offerInstall ? [{ key: "install", label: t("pwa.install") }] : []),
     ...(offerIosInstall ? [{ key: "addHome", label: t("pwa.addToHome") }] : []),
     ...(impersonating ? [] : [{ key: "signout", label: t("user.signOut") }]),
@@ -707,6 +709,7 @@ export default function Shell({ children }: { children: ReactNode }) {
                     items: userItems,
                     onClick: ({ key }) => {
                       if (key === "password") navigate("/change-password");
+                      if (key === "devices") navigate("/devices");
                       if (key === "install") void promptInstall();
                       if (key === "addHome") setIosFor(who);
                       if (key === "signout") void logout();
