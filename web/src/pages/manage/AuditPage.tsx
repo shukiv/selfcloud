@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Alert, Button, Select } from "antd";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
+import { useAdminText } from "../../lib/manage/adminText";
 import { auditLog } from "../../lib/manage/api";
 import { AUDIT_ACTIONS } from "../../lib/manage/actions";
 import { failureText } from "../../lib/manage/failure";
@@ -17,6 +18,7 @@ import { OwnerOnly, useAccountID, useManageTitle } from "../../components/manage
 // everyone but its user, and this page shows the list exactly as the server answers it.
 function AuditView() {
   const { t } = useT();
+  const adminText = useAdminText();
   const lang = useLang();
   const account = useAccountID();
   useManageTitle("manage.audit.title");
@@ -80,7 +82,7 @@ function AuditView() {
           rowLabel={said}
           columns={auditColumns(t, lang, said)}
           // The audit log has no create action.
-          empty={{ title: t("audit.empty") }}
+          empty={{ title: t("audit.empty"), description: adminText ? t("admin.empty.audit") : undefined }}
         />
       )}
 

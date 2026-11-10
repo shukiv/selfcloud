@@ -3,6 +3,7 @@
 import { Button, Tag } from "antd";
 import { Download, RotateCcw, Trash2 } from "lucide-react";
 import { useLang, useT } from "../../lib/i18n";
+import { useAdminText } from "../../lib/manage/adminText";
 import { formatBytes, formatDate } from "../../lib/files/format";
 import { kindOf } from "../../lib/files/kind";
 import { coarsePointer, officeEdit, plainClick, type LinkClick } from "../../lib/files/editor";
@@ -40,6 +41,7 @@ export default function LargestFilesCard({
   onRestore: (id: string) => void;
 }) {
   const { t } = useT();
+  const adminText = useAdminText();
   const lang = useLang();
   const top = files.reduce((m, f) => Math.max(m, f.size), 0);
   return (
@@ -163,7 +165,7 @@ export default function LargestFilesCard({
               },
             },
           ]}
-          empty={{ title: t("storage.largestEmpty") }}
+          empty={{ title: t("storage.largestEmpty"), description: adminText ? t("manage.empty.largest") : undefined }}
         />
       )}
 

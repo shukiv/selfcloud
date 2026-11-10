@@ -7,6 +7,7 @@ import { App, Alert, Button, Select } from "antd";
 import { useFlight } from "../../lib/flight";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
+import { useAdminText } from "../../lib/manage/adminText";
 import { formatDate } from "../../lib/files/format";
 import { getSharingPolicy, deleteShareLink } from "../../lib/sharing/api";
 import { failureText } from "../../lib/manage/failure";
@@ -40,6 +41,7 @@ import { LOCK } from "../../lib/manage/locks";
 // sit on, and are not listed here.
 function LinksView() {
   const { t } = useT();
+  const adminText = useAdminText();
   const lang = useLang();
   const qc = useQueryClient();
   const account = useAccountID();
@@ -240,7 +242,7 @@ function LinksView() {
               },
             },
           ]}
-          empty={{ title: t("links.empty") }}
+          empty={{ title: t("links.empty"), description: adminText ? t("manage.empty.links") : undefined }}
         />
       )}
 

@@ -4,6 +4,7 @@ import { lazy, Suspense } from "react";
 import { Alert } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
+import { useAdminText } from "../../lib/manage/adminText";
 import { formatNumber } from "../../lib/files/format";
 import { auditLog, listSpaces, usage } from "../../lib/manage/api";
 import { collectAll } from "../../lib/manage/paging";
@@ -39,6 +40,7 @@ async function readOverview(account: string): Promise<Overview> {
 
 function OverviewView() {
   const { t, tp } = useT();
+  const adminText = useAdminText();
   const lang = useLang();
   const account = useAccountID();
   useManageTitle("manage.overview.title");
@@ -141,7 +143,7 @@ function OverviewView() {
               items={data.activity}
               rowLabel={said}
               columns={auditColumns(t, lang, said)}
-              empty={{ title: t("manage.overview.noActivity") }}
+              empty={{ title: t("manage.overview.noActivity"), description: adminText ? t("manage.empty.activity") : undefined }}
             />
           </section>
         </>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Alert, Button, Modal, Tag } from "antd";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useLang, useT } from "../../lib/i18n";
+import { useAdminText } from "../../lib/manage/adminText";
 import { formatBytes, formatDate, formatNumber } from "../../lib/files/format";
 import { failureText } from "../../lib/manage/failure";
 import { personLabel } from "../../lib/manage/people";
@@ -28,6 +29,7 @@ import Listing from "../../components/files/Listing";
 // files; the server leaves those out.
 function StorageView() {
   const { t, tp } = useT();
+  const adminText = useAdminText();
   const lang = useLang();
   const qc = useQueryClient();
   const account = useAccountID();
@@ -210,7 +212,7 @@ function StorageView() {
                   run: () => setEditingPerson(p),
                 },
               ]}
-              empty={{ title: t("storage.peopleEmpty") }}
+              empty={{ title: t("storage.peopleEmpty"), description: adminText ? t("manage.empty.people") : undefined }}
             />
             {q.hasNextPage && (
               <div style={{ display: "flex", justifyContent: "center", marginBlockStart: 12 }}>
@@ -248,7 +250,7 @@ function StorageView() {
               ]}
               // The team spaces are the whole list (the first page of the account's read), so the sort is on the client.
               sort={{ key: "name", dir: spaceDir, onSort: () => setSpaceDir((d) => (d === "asc" ? "desc" : "asc")) }}
-              empty={{ title: t("storage.spacesEmpty") }}
+              empty={{ title: t("storage.spacesEmpty"), description: adminText ? t("manage.empty.spaces") : undefined }}
             />
           </section>
         </>
@@ -294,7 +296,7 @@ function StorageView() {
               },
               { key: "modified", title: t("storage.modified"), secondary: true, render: (f) => <time dateTime={f.modified_at}>{formatDate(f.modified_at, lang)}</time> },
             ]}
-            empty={{ title: t("storage.largestEmpty") }}
+            empty={{ title: t("storage.largestEmpty"), description: adminText ? t("manage.empty.largest") : undefined }}
           />
         )}
         {largest.hasNextPage && (
