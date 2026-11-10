@@ -369,3 +369,28 @@ func TestSecretNameWithoutPrefixIsNotPrinted(t *testing.T) {
 		t.Errorf("the pasted secret was printed: stdout %q, stderr %q", out.String(), errOut.String())
 	}
 }
+
+// TestRemoveWorksWhenAnotherProfileHasABadAddress: a hand-edited bad address in one profile must not stop rm from removing
+// a profile, whichever one it is. Every other command still refuses the file.
+func TestRemoveWorksWhenAnotherProfileHasABadAddress(t *testing.T) {
+	dir := isolate(t)
+	bad := profile.Profile{URL: "ftp://selfcloud.example", Kind: profile.KindAccount, Token: accountKey}
+	good := profile.Profile{URL: "https://selfcloud.example", Kind: profile.KindAccount, Token: accountKey}
+	for _, victim := range []string{"lan", "home"} {
+		f := profile.File{Version: 1, Current: "home", Profiles: map[string]profile.Profile{"home": good, "lan": bad}}
+		if err := profile.Open(dir).Save(f); err != nil {
+			t.Fatal(err)
+		}
+		var out, errOut bytes.Buffer
+		if code := Remove([]string{victim}, &out, &errOut); code != 0 {
+			t.Fatalf("rm %s with a bad address elsewhere: exit %d, stderr %q", victim, code, errOut.String())
+		}
+		left, err := profile.Open(dir).Load()
+		if err != nil {
+			t.Fatalf("after rm %s the file still refuses: %v", victim, err)
+		}
+		if _, gone := left.Profiles[victim]; gone || len(left.Profiles) != 1 {
+			t.Errorf("after rm %s the profiles are %v", victim, left.Profiles)
+		}
+	}
+}

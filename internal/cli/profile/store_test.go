@@ -360,3 +360,17 @@ func TestReadCredentialReader(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadNamesTheBadProfile: the refusal names the profile with the bad address, so the user can find it.
+func TestLoadNamesTheBadProfile(t *testing.T) {
+	t.Parallel()
+	dir := privateDir(t)
+	body := `{"version":1,"profiles":{"lan":{"url":"ftp://selfcloud.example","kind":"account","token":"` + token + `"}}}`
+	if err := os.WriteFile(filepath.Join(dir, "profiles.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(dir).Load()
+	if err == nil || !strings.Contains(err.Error(), `"lan"`) {
+		t.Errorf("err = %v, want the refusal to name the profile \"lan\"", err)
+	}
+}
