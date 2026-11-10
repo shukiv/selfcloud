@@ -50,7 +50,7 @@ func Add(args []string, stdout, stderr io.Writer) int {
 	set.StringVar(&url, "url", "", "the server's `address`, https://host")
 	set.StringVar(&tokenFile, "token-file", "", "read the credential from `file`, which must be private (chmod 600)")
 	set.StringVar(&caFile, "ca-file", "", "trust the roots in the PEM `file`; the path is saved with the profile")
-	set.BoolVar(&insecureHTTP, "insecure-http", false, "allow plain http to a host that is not loopback (warns; saved)")
+	set.BoolVar(&insecureHTTP, "insecure-http", false, "allow plain http to a host that is not loopback (warns; not saved, so later uses need it too)")
 	set.BoolVar(&asJSON, "json", false, "print JSON")
 	pos, err := conn.Parse(set, args, stdout)
 	if err != nil {
