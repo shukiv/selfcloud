@@ -207,11 +207,13 @@ function render(path = `/edit/${NOD}?mode=edit`) {
   return rtlRender(<RouterProvider router={router} />);
 }
 
-// goTo moves the test's router to an address, as a link does, and waits for the navigation inside act. A navigation left pending
-// by one test stops the next test's first render, so every navigation of a test goes through here.
+// goTo moves the test's router to an address, as a link does. The navigation is not awaited: the unsaved guard may hold it (the
+// navigation then waits for the person's choice, which the test makes), and a navigation left pending stops the next test's first
+// render. The act lets an unblocked navigation settle inside the test.
 async function goTo(path: string) {
   await act(async () => {
-    await router!.navigate(path);
+    void router!.navigate(path);
+    await pause();
   });
 }
 
@@ -423,6 +425,8 @@ describe("the editor page", () => {
     ctrlS();
     await waitFor(() => expect(s.puts()).toHaveLength(1));
     await goTo(`/edit/${NOD_B}?mode=edit`);
+    // The save is still in flight, so the unsaved guard asks first: the person chooses to leave, and the answer then finds the old file.
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Leave" }));
     await waitFor(() => expect(document.querySelector('.cm-content[aria-label="b.json"]')).not.toBeNull());
     await act(async () => hold.release());
     await pause();
@@ -578,6 +582,13 @@ async function openConflict(s: ReturnType<typeof server>) {
   return screen.findByRole("dialog");
 }
 
+// dialogOpen says a modal is open. jsdom never ends an antd motion, so a dialog that is closing keeps its leave classes: it is
+// closed, though it stays in the page.
+const dialogOpen = () => {
+  const m = document.querySelector(".ant-modal");
+  return m !== null && !m.className.includes("ant-zoom-leave");
+};
+
 // postPaths is the path each copy was sent to, decoded.
 const postPaths = (s: ReturnType<typeof server>) => s.copies().map((c) => new URL(c.url, "http://localhost").searchParams.get("path"));
 
@@ -596,7 +607,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     const s = server();
     const d = await openConflict(s);
     fireEvent.click(within(d).getByRole("button", { name: KEEP }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(dialogOpen()).toBe(false));
     expect(content().textContent).toContain("x{}");
     expect(s.puts()).toHaveLength(1);
     ctrlS();
@@ -615,7 +626,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     });
     fireEvent.click(within(pop).getByRole("button", { name: "Reload" }));
     await waitFor(() => expect(content().textContent).toContain("changed by someone else"));
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(dialogOpen()).toBe(false));
   });
 
   it("Keep as a copy saves the draft under the next free name beside the file, and leaves the original as it was", async () => {
@@ -661,7 +672,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     const d = await openConflict(s);
     const touched = s.files[NOD]!.etag;
     fireEvent.click(within(d).getByRole("button", { name: OVERWRITE }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(dialogOpen()).toBe(false));
     expect(await screen.findByText("Saved")).toBeTruthy();
     const last = s.puts()[1]!;
     expect(last.init.headers).toMatchObject({ "If-Match": touched });
@@ -682,7 +693,7 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await waitFor(() => expect(s.calls.filter((c) => c.method === "HEAD")).toHaveLength(2));
     const again = await screen.findByRole("dialog");
     fireEvent.click(within(again).getByRole("button", { name: OVERWRITE }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(dialogOpen()).toBe(false));
     expect(s.puts()).toHaveLength(3);
   });
 
@@ -691,9 +702,11 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
     type(0, "x");
+    // The guard reads the save state from the last render: the unsaved state is drawn first, then the navigation is made.
+    await screen.findByText("Unsaved changes");
     await goTo(`/files/${FLD}`);
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Stay" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(dialogOpen()).toBe(false));
     expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
     expect(content().textContent).toContain("x{}");
     expect(s.puts()).toHaveLength(0);
@@ -704,6 +717,8 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
     type(0, "x");
+    // The guard reads the save state from the last render: the unsaved state is drawn first, then the navigation is made.
+    await screen.findByText("Unsaved changes");
     await goTo(`/files/${FLD}`);
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Leave" }));
     await waitFor(() => expect(router!.state.location.pathname).toBe(`/files/${FLD}`));
@@ -715,6 +730,8 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
     type(0, "x");
+    // The guard reads the save state from the last render: the unsaved state is drawn first, then the navigation is made.
+    await screen.findByText("Unsaved changes");
     await goTo(`/files/${FLD}`);
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Save and leave" }));
     await waitFor(() => expect(router!.state.location.pathname).toBe(`/files/${FLD}`));
@@ -728,9 +745,11 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await waitFor(() => expect(content().textContent).toContain("{}"));
     type(0, "x");
     s.touch("changed by someone else\n");
+    await screen.findByText("Unsaved changes");
     await goTo(`/files/${FLD}`);
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Save and leave" }));
-    expect(within(await screen.findByRole("dialog")).getByRole("button", { name: RELOAD })).toBeTruthy();
+    // The guard's dialog closes as the conflict's opens, so the conflict's own button is found on the whole page.
+    expect(await screen.findByRole("button", { name: RELOAD })).toBeTruthy();
     expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
   });
 
@@ -739,9 +758,10 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
     type(0, "x");
+    await screen.findByText("Unsaved changes");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(within(await screen.findByRole("dialog")).getByRole("button", { name: "Stay" })).toBeTruthy();
-    expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Stay" }));
+    await waitFor(() => expect(router!.state.location.pathname).toBe(`/edit/${NOD}`));
   });
 
   it("a navigation to the same address does not ask", async () => {
@@ -749,9 +769,9 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     render();
     await waitFor(() => expect(content().textContent).toContain("{}"));
     type(0, "x");
-    act(() => navigateTo!(`/edit/${NOD}?mode=edit`));
+    await goTo(`/edit/${NOD}?mode=edit`);
     await pause();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(dialogOpen()).toBe(false);
   });
 
   it("beforeunload is cancelled while the text is unsaved, and not once it is saved", async () => {

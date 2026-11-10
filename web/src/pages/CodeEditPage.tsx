@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The code editor, full page, in its own tab (design-ce 3.2, 3.4, 4.2, 4.3, decision 124). The address is /edit/<node>, the
+// The code editor, full page, in its own tab (design-ce 3.2, 3.4, 4.2 to 4.6, decisions 124 and 130). The address is /edit/<node>, the
 // one the office editor uses; App sends a code file here and an office file to OfficeEditPage. The page reads the file (a GET
 // of the whole content, which keeps its ETag), shows it in CodeMirror, and saves on an explicit save only: a button, or Ctrl or
 // Cmd+S. A save is a PUT with If-Match set to the ETag read, and the stored type sent unchanged. A viewer, or an editor who
@@ -8,19 +8,20 @@
 //
 // The page is drawn outside the app shell, with a slim bar: the app's mark (to the folder), the file's name, the save state,
 // then icon buttons with tooltips (Save, Find, Wrap lines, Close). Close ends the tab a script opened, and otherwise goes back.
-// A save that did not happen says why, with the draft kept on the page; a conflict offers a reload (the full conflict dialog and
-// keep-as-a-copy are the next slice).
+// A save refused with 412 opens the conflict dialog (4.4): reload theirs, keep as a copy, overwrite theirs, or keep my draft. Unsaved
+// text asks before the page is left by a link, Close or Back, and before a reload or close of the tab (4.6).
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { Alert, Button, Popconfirm, Spin } from "antd";
-import { Save, Search, WrapText, X } from "lucide-react";
+import { useBlocker, useLocation } from "react-router-dom";
+import { Alert, Button, Modal, Popconfirm, Spin } from "antd";
+import { Copy, Pencil, RotateCcw, Save, Search, WrapText, X } from "lucide-react";
 import CodeEditor, { type EditorHandle } from "../components/files/CodeEditor";
 import IconButton from "../components/IconButton";
 import { ApiError } from "../lib/apiError";
 import { brand } from "../lib/brand";
 import { decodeText, sniffWhole } from "../lib/code/encoding";
-import { encodeDraft, EDIT_LIMIT, lineBreakOf, normalizeText } from "../lib/code/edit";
-import { packOf, type Pack } from "../lib/code/names";
+import { encodeDraft, EDIT_LIMIT, lineBreakOf, mixedBreaks, normalizeText } from "../lib/code/edit";
+import { headEtag, keepCopy } from "../lib/code/conflict";
+import { extensionOf, packOf, type Pack } from "../lib/code/names";
 import { codeText } from "../lib/code/text";
 import { readWhole, saveText, type SaveFailure } from "../lib/code/save";
 import { wraps } from "../lib/code/lines";
@@ -45,19 +46,32 @@ type SaveState = "saved" | "unsaved" | "saving" | "failed" | null;
 type Notice = SaveFailure | "notUtf8" | "tooLargeToEdit" | "binary" | null;
 
 // Ready is an open file: its text as the editor starts with it, and what the save needs to write it back (the BOM and the line
-// break the file had). initial changes with each reload, and key remounts the editor with it.
+// break the file had). initial changes with each reload, and key remounts the editor with it. mixed says the file uses more than
+// one line-break style (4.8).
 interface Ready {
   name: string;
   folder: string | null;
   canEdit: boolean;
   utf8: boolean;
   bom: boolean;
+  mixed: boolean;
   sep: "\n" | "\r\n" | "\r";
   initial: string;
   pack: Pack;
+  // lint is the JSON lint for a file that is JSON by its name (jsonc allows comments, so it is not linted).
+  lint: boolean;
   wrap: boolean;
   key: number;
   node: Node;
+}
+
+// Conflict is the conflict dialog's state (4.4): the draft the refused save sent (its text, and its bytes as the save encoded them),
+// the file's ETag as the check read it, and whether a copy found no free name. null when the dialog is closed.
+interface Conflict {
+  text: string;
+  bytes: Uint8Array;
+  etag: string;
+  noName: boolean;
 }
 
 type Page =
@@ -95,6 +109,11 @@ export default function CodeEditPage() {
   // closed is set when a save finds the file gone or the person no longer allowed to write it: the text stays, read-only.
   const [closed, setClosed] = useState(false);
   const [wrap, setWrap] = useState(true);
+  // conflict is the dialog of a save refused with 412 (4.4). copied is the copy the last "Keep as a copy" made: its name and id, for
+  // the page's notice and its link. problems is the JSON lint's count, shown in the bar when it is not 0.
+  const [conflict, setConflict] = useState<Conflict | null>(null);
+  const [copied, setCopied] = useState<{ id: string; name: string } | null>(null);
+  const [problems, setProblems] = useState(0);
   const handle = useRef<EditorHandle | null>(null);
   // The file's ETag and stored type, as the last read or save gave them; the text it was last saved as (LF line breaks).
   const file = useRef({ etag: "", mime: "application/octet-stream" });
@@ -122,6 +141,9 @@ export default function CodeEditPage() {
     setSaveState(null);
     setNotice(null);
     setClosed(false);
+    setConflict(null);
+    setCopied(null);
+    setProblems(0);
     void (async () => {
       try {
         const n = await statNode(nod);
@@ -150,9 +172,11 @@ export default function CodeEditPage() {
           canEdit,
           utf8: d.utf8,
           bom: d.bom,
+          mixed: mixedBreaks(d.text),
           sep: lineBreakOf(d.text),
           initial,
           pack: packOf(n.name) ?? "text",
+          lint: packOf(n.name) === "json" && extensionOf(n.name) === "json",
           wrap: wraps(initial),
           key: ++keyRef.current,
           node: n,
@@ -172,6 +196,8 @@ export default function CodeEditPage() {
   const ready = page.s === "ready" ? page.ready : null;
   // The editor is read-only for a viewer, for a file that is not UTF-8, and once a save found the file gone or forbidden.
   const readOnly = ready === null || !ready.canEdit || !ready.utf8 || closed;
+  // dirty is unsaved text: the draft differs from the saved text, or a save of it has not been answered (4.6).
+  const dirty = saveState === "unsaved" || saveState === "saving" || saveState === "failed";
 
   // onChange sets the save state from the text: unsaved while it differs from the saved text.
   const onChange = () => {
@@ -180,50 +206,145 @@ export default function CodeEditPage() {
     setSaveState(cur === saved.current ? "saved" : "unsaved");
   };
 
+  // applySaved takes an answer of 200 for the text that was sent: the node's ETag is the next If-Match, and the text is the saved text.
+  const applySaved = (node: Node, text: string) => {
+    file.current = { etag: node.etag ?? "", mime: node.mime_type ?? file.current.mime };
+    saved.current = text;
+    const now = handle.current?.text();
+    setSaveState(now === text ? "saved" : "unsaved");
+  };
+
+  // openConflict opens the dialog for a save refused with 412 (4.4): the check reads the file's current ETag with HEAD, and the
+  // dialog's Overwrite saves over it. A check that fails shows its notice instead of the dialog.
+  const openConflict = async (text: string, bytes: Uint8Array, gen: number) => {
+    setSaveState("unsaved");
+    const h = await headEtag(nod);
+    if (gen !== openGen.current) return;
+    if (!h.ok) {
+      setNotice(h.why);
+      setSaveState("failed");
+      if (h.why === "forbidden" || h.why === "gone") setClosed(true);
+      return;
+    }
+    setConflict({ text, bytes, etag: h.etag, noName: false });
+  };
+
   // save writes the draft with If-Match and the stored type. It sends nothing when the text is the saved text, or while a save is
-  // in flight, or when the file is not the person's to write. A draft the server refuses stays on the page.
-  const save = async () => {
+  // in flight, or when the file is not the person's to write. A draft the server refuses stays on the page. It answers whether the
+  // draft is saved (true when there was nothing to save), so a guard can leave once it is.
+  const save = async (): Promise<boolean> => {
     const r = readyRef.current;
-    if (r === null || !r.canEdit || !r.utf8 || closed || saving.current) return;
+    if (r === null || !r.canEdit || !r.utf8 || closed || saving.current) return false;
     const text = handle.current?.text();
-    if (text === undefined || text === saved.current) return;
+    if (text === undefined) return false;
+    if (text === saved.current) return true;
     const bytes = encodeDraft(text, r.bom, r.sep);
     const gen = openGen.current;
     saving.current = true;
     setSaveState("saving");
     setNotice(null);
+    setCopied(null);
     const got = await saveText(nod, file.current.etag, file.current.mime, bytes);
-    if (gen !== openGen.current) return;
+    if (gen !== openGen.current) return false;
     saving.current = false;
     if (got.ok) {
-      file.current = { etag: got.node.etag ?? "", mime: got.node.mime_type ?? file.current.mime };
-      saved.current = text;
-      const now = handle.current?.text();
-      setSaveState(now === text ? "saved" : "unsaved");
+      applySaved(got.node, text);
+      return true;
+    }
+    if (got.why === "conflict") {
+      await openConflict(text, bytes, gen);
+      return false;
+    }
+    setSaveState("failed");
+    setNotice(got.why);
+    if (got.why === "forbidden" || got.why === "gone") setClosed(true);
+    return false;
+  };
+  // The editor's Ctrl or Cmd+S runs the latest save.
+  const saveRef = useRef(save);
+  saveRef.current = save;
+
+  // overwrite saves the draft over the changed file, with the ETag the check read (the dialog's third choice). A second change after the
+  // check opens the dialog again, with a fresh check.
+  const overwrite = async () => {
+    const c = conflict;
+    if (c === null) return;
+    const gen = openGen.current;
+    saving.current = true;
+    setSaveState("saving");
+    const got = await saveText(nod, c.etag, file.current.mime, c.bytes);
+    if (gen !== openGen.current) return;
+    saving.current = false;
+    setConflict(null);
+    if (got.ok) {
+      applySaved(got.node, c.text);
+      return;
+    }
+    if (got.why === "conflict") {
+      await openConflict(c.text, c.bytes, gen);
       return;
     }
     setSaveState("failed");
     setNotice(got.why);
     if (got.why === "forbidden" || got.why === "gone") setClosed(true);
   };
-  // The editor's Ctrl or Cmd+S runs the latest save.
-  const saveRef = useRef(save);
-  saveRef.current = save;
+
+  // keepAsCopy saves the draft as a new file beside the original (the dialog's second choice). The original is not changed, and the
+  // draft stays on the page, so it is still unsaved here.
+  const keepAsCopy = async () => {
+    const c = conflict;
+    const r = readyRef.current;
+    if (c === null || r === null) return;
+    const gen = openGen.current;
+    const got = await keepCopy(r.node, file.current.mime, c.bytes);
+    if (gen !== openGen.current) return;
+    if (got.ok) {
+      setConflict(null);
+      setSaveState("unsaved");
+      setCopied({ id: got.node.id, name: got.node.name });
+      return;
+    }
+    if (got.why === "noName") {
+      setConflict({ ...c, noName: true });
+      return;
+    }
+    setConflict(null);
+    setSaveState("failed");
+    setNotice(got.why);
+    if (got.why === "forbidden" || got.why === "gone") setClosed(true);
+  };
+
+  // keepDraft closes the dialog and keeps the draft on the page: the next save is checked again (the dialog's fourth choice).
+  const keepDraft = () => {
+    setConflict(null);
+    setSaveState("unsaved");
+  };
 
   // reload throws the draft away and shows the file as it is on the server now (the conflict's reload choice, asked first).
   const reload = async () => {
     const r = readyRef.current;
     if (r === null) return;
+    setConflict(null);
     try {
       const got = await readWhole(nod);
       const d = decodeText(got.bytes, false);
       file.current = { ...file.current, etag: got.etag };
       const initial = normalizeText(d.text);
       saved.current = initial;
-      const next: Ready = { ...r, initial, utf8: d.utf8, bom: d.bom, sep: lineBreakOf(d.text), wrap: wraps(initial), key: ++keyRef.current };
+      const next: Ready = {
+        ...r,
+        initial,
+        utf8: d.utf8,
+        bom: d.bom,
+        mixed: mixedBreaks(d.text),
+        sep: lineBreakOf(d.text),
+        wrap: wraps(initial),
+        key: ++keyRef.current,
+      };
       readyRef.current = next;
       setPage({ s: "ready", ready: next });
       setSaveState(null);
+      setCopied(null);
       setNotice(d.utf8 ? null : "notUtf8");
     } catch (err) {
       const why = failureOf(err);
@@ -231,6 +352,25 @@ export default function CodeEditPage() {
       if (why === "forbidden" || why === "notFound") setClosed(true);
     }
   };
+
+  // The unsaved guard (4.6): a link, Back or Close that would leave the page with unsaved text asks first. A move to the same address
+  // is not a leave.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
+  );
+  const blocked = blocker.state === "blocked" ? blocker : null;
+
+  // A reload or a close of the tab with unsaved text asks first, through the browser's own prompt (4.6).
+  useEffect(() => {
+    if (!dirty) return;
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [dirty]);
 
   const folderHref = ready?.folder ? `/files/${ready.folder}` : "/files";
   const back = () => go(from ?? folderHref);
@@ -269,6 +409,7 @@ export default function CodeEditPage() {
     (page.s === "ready" && downloadAllowed(page.ready.node)) ||
     ((page.s === "tooLarge" || page.s === "binary") && downloadAllowed(page.node));
   const nodeId = page.s === "ready" ? page.ready.node.id : page.s === "tooLarge" || page.s === "binary" ? page.node.id : "";
+  const problemsText = problems === 1 ? ct.problemOne : ct.problemMany.replace("{n}", String(problems));
 
   return (
     <div
@@ -288,6 +429,11 @@ export default function CodeEditPage() {
         <p style={{ flex: "1 1 auto", minWidth: 0, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>
           <bdi>{name}</bdi>
         </p>
+        {problems > 0 && (
+          <span data-testid="lint-count" style={{ flex: "none", fontSize: 13, color: "var(--ant-color-text-secondary, #5a6b85)" }}>
+            {problemsText}
+          </span>
+        )}
         {stateText !== null && (
           <span role="status" style={{ flex: "none", fontSize: 13, color: "var(--ant-color-text-secondary, #5a6b85)" }}>
             {stateText}
@@ -321,6 +467,26 @@ export default function CodeEditPage() {
           />
         </div>
       )}
+      {copied !== null && (
+        <div style={{ padding: "8px 12px" }}>
+          <Alert
+            type="success"
+            showIcon
+            role="status"
+            message={ct.savedAs.replace("{name}", copied.name)}
+            action={
+              <Button size="small" onClick={() => go(`/edit/${copied.id}?mode=edit`)}>
+                {ct.open}
+              </Button>
+            }
+          />
+        </div>
+      )}
+      {ready?.mixed && (
+        <div style={{ padding: "8px 12px" }}>
+          <Alert type="warning" showIcon role="status" message={ct.mixedBreaks} />
+        </div>
+      )}
       {notice === null && page.s === "opening" && (
         <div role="status" style={{ display: "grid", placeItems: "center", padding: 24 }}>
           <Spin tip={t("files.editor.opening")} />
@@ -342,9 +508,61 @@ export default function CodeEditPage() {
           wrap={wrap}
           onChange={onChange}
           onSave={() => void saveRef.current()}
+          lint={page.ready.lint}
+          onProblems={setProblems}
           handle={handle}
         />
       )}
+      <Modal
+        open={conflict !== null}
+        title={ct.conflictTitle}
+        onCancel={keepDraft}
+        maskClosable={false}
+        destroyOnHidden
+        footer={
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
+            <Popconfirm title={ct.reloadConfirm} okText={ct.reload} cancelText={t("common.cancel")} onConfirm={() => void reload()}>
+              <Button icon={<RotateCcw size={16} aria-hidden="true" focusable="false" />}>{ct.reloadTheirs}</Button>
+            </Popconfirm>
+            <Button icon={<Copy size={16} aria-hidden="true" focusable="false" />} onClick={() => void keepAsCopy()}>
+              {ct.keepCopy}
+            </Button>
+            <Button type="primary" icon={<Save size={16} aria-hidden="true" focusable="false" />} onClick={() => void overwrite()}>
+              {ct.overwrite}
+            </Button>
+            <Button icon={<Pencil size={16} aria-hidden="true" focusable="false" />} onClick={keepDraft}>
+              {ct.keepDraft}
+            </Button>
+          </div>
+        }
+      >
+        <p>{ct.conflict}</p>
+        {conflict?.noName && <Alert type="error" showIcon role="alert" message={ct.noFreeName} />}
+      </Modal>
+      <Modal
+        open={blocked !== null}
+        title={ct.leaveTitle}
+        onCancel={() => blocked?.reset()}
+        maskClosable={false}
+        destroyOnHidden
+        footer={
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
+            <Button onClick={() => blocked?.reset()}>{ct.stay}</Button>
+            <Button onClick={() => blocked?.proceed()}>{ct.leave}</Button>
+            <Button
+              type="primary"
+              onClick={() => {
+                const gate = blocked;
+                void save().then((ok) => (ok ? gate?.proceed() : gate?.reset()));
+              }}
+            >
+              {ct.saveAndLeave}
+            </Button>
+          </div>
+        }
+      >
+        <p>{ct.leaveBody}</p>
+      </Modal>
     </div>
   );
 
@@ -374,16 +592,9 @@ export default function CodeEditPage() {
     }
   }
 
-  // noticeAction is the notice's one choice: a reload for a conflict, a retry for a save that may work again, a download for
-  // a file that is not UTF-8 or too large to edit.
+  // noticeAction is the notice's one choice: a retry for a save that may work again, a download for a file that is not UTF-8 or too
+  // large to edit. A conflict has its own dialog.
   function noticeAction(n: Exclude<Notice, null>) {
-    if (n === "conflict") {
-      return (
-        <Popconfirm title={ct.reloadConfirm} okText={ct.reload} cancelText={t("common.cancel")} onConfirm={() => void reload()}>
-          <Button size="small">{ct.reload}</Button>
-        </Popconfirm>
-      );
-    }
     if (n === "locked" || n === "failed") {
       return (
         <Button size="small" onClick={() => void saveRef.current()}>

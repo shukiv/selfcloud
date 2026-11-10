@@ -39,6 +39,10 @@ export interface CodeEditorProps {
   // onChange is told each change to the text; onSave is told Ctrl or Cmd+S.
   onChange: () => void;
   onSave: () => void;
+  // lint turns on the JSON lint for a file that is JSON by its name (not jsonc, which allows comments). The lint package loads only
+  // then (design 7.2). onProblems is told the count of problems each time the lint runs, 0 when there are none (decision 130).
+  lint: boolean;
+  onProblems: (n: number) => void;
   // handle receives the editor's handle while it is shown, and null when it goes.
   handle: { current: EditorHandle | null };
 }
@@ -48,7 +52,7 @@ function readOnlyFacets(readOnly: boolean): Extension {
   return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
 }
 
-export default function CodeEditor({ initial, pack, name, dark, readOnly, wrap, onChange, onSave, handle }: CodeEditorProps) {
+export default function CodeEditor({ initial, pack, name, dark, readOnly, wrap, onChange, onSave, lint, onProblems, handle }: CodeEditorProps) {
   const lang = useLang();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -58,10 +62,11 @@ export default function CodeEditor({ initial, pack, name, dark, readOnly, wrap, 
     language: new Compartment(),
     readOnly: new Compartment(),
     wrap: new Compartment(),
+    lint: new Compartment(),
   });
   // The callbacks and the look are read through refs: the editor is made once for its text, and it calls the latest ones.
-  const now = useRef({ dark, lang, onChange, onSave, readOnly, wrap });
-  now.current = { dark, lang, onChange, onSave, readOnly, wrap };
+  const now = useRef({ dark, lang, onChange, onSave, readOnly, wrap, onProblems });
+  now.current = { dark, lang, onChange, onSave, readOnly, wrap, onProblems };
 
   useEffect(() => {
     const parent = host.current;
@@ -100,6 +105,7 @@ export default function CodeEditor({ initial, pack, name, dark, readOnly, wrap, 
           c.mode.of(modeTheme(now.current.dark)),
           c.phrases.of(EditorState.phrases.of(phrasesOf(codeText(now.current.lang)))),
           c.language.of([]),
+          c.lint.of([]),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) now.current.onChange();
           }),
@@ -126,6 +132,36 @@ export default function CodeEditor({ initial, pack, name, dark, readOnly, wrap, 
       made.destroy();
     };
   }, [initial, pack, name]);
+
+  // The JSON lint: its package and the JSON parser load only for a JSON file, once the editor exists (design 7.2). The count is
+  // reported each time the lint runs. A failed load leaves the text without markers, and never blocks a save.
+  useEffect(() => {
+    const made = view.current;
+    if (!lint || made === null) return;
+    let live = true;
+    Promise.all([import("@codemirror/lint"), import("@codemirror/lang-json")])
+      .then(([l, j]) => {
+        if (!live || view.current !== made) return;
+        const parse = j.jsonParseLinter();
+        made.dispatch({
+          effects: parts.current.lint.reconfigure([
+            l.lintGutter(),
+            l.linter(
+              (v) => {
+                const found = parse(v);
+                now.current.onProblems(found.length);
+                return found;
+              },
+              { delay: 300 },
+            ),
+          ]),
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [lint, initial, pack, name]);
 
   useEffect(() => {
     view.current?.dispatch({ effects: parts.current.mode.reconfigure(modeTheme(dark)) });
