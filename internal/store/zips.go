@@ -198,7 +198,6 @@ func (s *Store) ZipTree(ctx context.Context, accountID, rootID string, limit int
 	return out, rows.Err()
 }
 
-// SetZipSnapshot records the snapshot of a pending zip. Its byte total is reserved until the zip is ready or failed.
 // ClearZipReservation releases a pending zip's own reservation inside tx. A restarted run starts from the snapshot again, so
 // the reservation its earlier run took is not a claim on the disk (decision 120). The write rolls back on a refusal, so
 // the reservation is kept then.
@@ -207,6 +206,7 @@ func (tx *Tx) ClearZipReservation(ctx context.Context, id string) error {
 	return err
 }
 
+// SetZipSnapshot records the snapshot of a pending zip. Its byte total is reserved until the zip is ready or failed.
 func (tx *Tx) SetZipSnapshot(ctx context.Context, id string, reserved int64, entries, skipped int, at time.Time) error {
 	_, err := tx.q.ExecContext(ctx, `UPDATE zips SET reserved = ?, entries = ?, skipped = ?, snapshot_at = ?
 		WHERE id = ? AND state = 'pending'`, reserved, entries, skipped, millis(at), id)
