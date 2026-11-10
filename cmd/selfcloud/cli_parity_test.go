@@ -93,6 +93,23 @@ func TestCLIParityCommands(t *testing.T) {
 			t.Errorf("admin command %q is in the table but has no cmd row in docs/cli-parity.tsv", c.name)
 		}
 	}
+	// A declared read is a route another command owns, which this command calls for a check of its own (design-cli 3.7:
+	// rm reads a node's name before it asks). It must have a row naming that other command, and it must not be one of this
+	// command's own routes, which the rows above already cover.
+	for _, c := range remoteCommands {
+		for _, read := range c.reads {
+			owner, ok := routeRows[read]
+			switch {
+			case !ok:
+				t.Errorf("remote command %q declares the read %s, which has no route row in docs/cli-parity.tsv", c.name, read)
+			case owner == c.name:
+				t.Errorf("remote command %q declares the read %s, which is its own route; a read must belong to another command", c.name, read)
+			}
+			if slices.Contains(c.routes(), read) {
+				t.Errorf("remote command %q declares the read %s, which is already one of its routes", c.name, read)
+			}
+		}
+	}
 	for _, c := range remoteCommands {
 		if c.route == "" {
 			if !cmdRows[c.name] {
