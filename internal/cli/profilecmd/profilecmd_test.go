@@ -343,3 +343,13 @@ func TestRemoveOfTheCurrentProfileClearsIt(t *testing.T) {
 		t.Errorf("rm of a missing profile: exit %d, want 4", code)
 	}
 }
+
+// TestInsecureHTTPHelpSaysNotSaved: the flag is not stored, so the help must not say it is.
+func TestInsecureHTTPHelpSaysNotSaved(t *testing.T) {
+	var out, errOut bytes.Buffer
+	Add([]string{"-h"}, &out, &errOut)
+	help := out.String() + errOut.String()
+	if !strings.Contains(help, "not saved") || strings.Contains(help, "(warns; saved)") {
+		t.Errorf("the --insecure-http help does not say the flag is not saved:\n%s", help)
+	}
+}
