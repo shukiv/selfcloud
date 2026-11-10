@@ -151,7 +151,8 @@ describe("the people list", () => {
     const headers = within(screen.getByRole("region", { name: "People" })).getAllByRole("columnheader").map((h) => h.textContent);
     expect(headers).not.toContain("Role");
     expect(headers).not.toContain("Status");
-    expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["More actions for Name usr_a"]);
+    // The name is a link-like button that opens the person (review L1); the actions are the ⋮ button alone.
+    expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label") ?? b.textContent)).toEqual(["Name usr_a", "More actions for Name usr_a"]);
   });
 });
 

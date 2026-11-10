@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useState } from "react";
-import { Alert, Button, Tag } from "antd";
+import { Alert, Button, Tag, theme as antdTheme } from "antd";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import Listing, { type ListColumn, type ListMenuEntry } from "../../components/files/Listing";
 import { useLang, useT } from "../../lib/i18n";
@@ -38,6 +38,7 @@ function PeopleView() {
   const [removing, setRemoving] = useState<Person | null>(null);
   const once = useOncePer();
   const adminText = useAdminText();
+  const { token } = antdTheme.useToken();
   // The signed-in person's own row reads You (design-tl 2.2).
   const me = useStore(session)?.user?.id;
 
@@ -133,10 +134,20 @@ function PeopleView() {
       render: (p) => (
         <span style={{ minWidth: 0 }}>
           <span>
-            <bdi>{personLabel(p)}</bdi>
+            {/* The name is a link-like button (review L1): a keyboard user opens the person from it. It stops the click here, so the row does not open it twice. */}
+            <Button
+              type="link"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDetail(p);
+              }}
+              style={{ padding: 0, height: "auto", whiteSpace: "normal", textAlign: "start" }}
+            >
+              <bdi>{personLabel(p)}</bdi>
+            </Button>
             {p.id === me && <Tag style={{ marginInlineStart: 8 }}>{t("share.you")}</Tag>}
           </span>
-          <span style={{ display: "block", fontSize: 13, overflowWrap: "anywhere", color: "var(--ant-color-text-secondary)" }}>
+          <span style={{ display: "block", fontSize: 13, overflowWrap: "anywhere", color: token.colorTextSecondary }}>
             <bdi>{p.email}</bdi>
           </span>
         </span>
