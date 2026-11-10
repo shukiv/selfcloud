@@ -117,9 +117,10 @@ var remoteCommands = []remoteCommand{
 `, run: files.Unlock},
 }
 
-// filesProbeNote says why the file commands are not run against the server by TestRemoteCommandsCallTheirRoute: they
-// need a credential the test cannot make without an account. Their own package records their calls.
-const filesProbeNote = "needs an account or device credential; internal/cli/files records its calls"
+// filesProbeNote says why the file commands are not run against the server by TestRemoteCommandsCallTheirRoute: the probe
+// table is static, and each file command needs a credential and a folder or node that the test would have to make first.
+// A fixture pass could do it; this slice does not. Their own package records each command's calls against a fake server.
+const filesProbeNote = "needs an account, a folder and a node made first; internal/cli/files records its calls"
 
 // remoteUsage returns the remote commands' lines of the usage text, built from remoteCommands.
 func remoteUsage() string {
