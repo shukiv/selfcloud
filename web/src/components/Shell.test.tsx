@@ -557,6 +557,29 @@ describe("the Requests entry", () => {
     expect((await screen.findByTestId("account-menu")).className).toMatch(/\bicon-btn\b/);
   });
 
+  // Signed-in devices (decision 125) is in the account menu of every signed-in person except an installation admin, who
+  // holds no device sign-in. A member and an owner see it after Change password; an admin sees the menu without it.
+  it("the account menu offers Signed-in devices to a member and an owner, and not to an installation admin", async () => {
+    for (const role of ["member", "owner"] as const) {
+      signIn(role);
+      const { unmount } = renderShell("/files");
+      fireEvent.click(await screen.findByTestId("account-menu"));
+      const menu = await screen.findByRole("menu", { name: `Signed in as olivia@example.com` });
+      const items = within(menu).getAllByRole("menuitem").map((m) => m.textContent);
+      expect(items, `${role} menu`).toContain("Signed-in devices");
+      expect(items.indexOf("Signed-in devices")).toBe(items.indexOf("Change password") + 1);
+      unmount();
+    }
+    signIn("admin");
+    const { unmount } = renderShell("/files");
+    fireEvent.click(await screen.findByTestId("account-menu"));
+    const menu = await screen.findByRole("menu", { name: `Signed in as olivia@example.com` });
+    const items = within(menu).getAllByRole("menuitem").map((m) => m.textContent);
+    expect(items).toContain("Change password");
+    expect(items, "admin menu").not.toContain("Signed-in devices");
+    unmount();
+  });
+
   // Decision 95: "Signed in as" is a header on the menu, not a disabled item. It is not a menu item (no menuitem, no aria-disabled),
   // the menu is named by it so a screen reader hears it once, and the first item a keyboard reaches is Change password.
   it("the account menu's Signed in as line is a header, not a disabled menu item, and Change password comes first", async () => {
