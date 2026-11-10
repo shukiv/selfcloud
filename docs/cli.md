@@ -56,8 +56,8 @@ that profile needs `--insecure-http` too. `--insecure-skip-verify` is not accept
 | `account` | `sc_acct_` | `selfcloud admin create-account` (local) |
 | `device` | `scd_` | device sign-in, a later slice; the prefix is recognised now |
 
-Any other value is refused. A key is never printed, by any command, in any output format. Its kind is printed by
-`profile ls`, and nothing else about it.
+Any other value is refused. No command in this slice prints a key: `profile add` and `profile ls` show the kind, and a
+refusal says what was wrong without repeating the value.
 
 ## Where the address and the key come from
 
@@ -72,7 +72,8 @@ Flags win, then the environment, then the profile, then the defaults.
 
 A profile's key is sent only to that profile's own address. If the address is given another way (`--url` or
 `SELFCLOUD_URL` pointing elsewhere), a command that needs a key refuses, and says to pass `--token-file` or set
-`SELFCLOUD_TOKEN` for that address. A command that needs no key (such as `info`) runs without the profile's key.
+`SELFCLOUD_TOKEN` for that address. A command that needs no key (such as `info`) sends none when the address is not the
+profile's own; when it is, the profile's key is sent with the request, as it is for every command.
 
 A token file must be private (no group or other bits), a regular file, and hold one line.
 
@@ -110,7 +111,8 @@ command fails at once, and the error says how long the server asked to wait. Oth
   message cannot make a terminal act or misreport. In `--json` those characters are written as `\uXXXX` escapes (a rune above
   U+FFFF as a surrogate pair), which decode to the same text; a byte that is not valid UTF-8 is written as U+FFFD.
 - **Errors** go to standard error. Without `--json`, one line: `selfcloud: <code>: <message>`. With `--json`, the API's
-  envelope: `{"error":{"code":"…","message":"…"}}`.
+  envelope: `{"error":{"code":"…","message":"…"}}`. The server's error code is cleaned the same way as its message, in
+  both modes; a code with a control or format character shows as spaces.
 
 The codes are the API's where the server answered. Otherwise the CLI uses one of: `usage` (a flag or argument is wrong),
 `not_found` (no such profile), `unreachable` (no connection), `tls` (a certificate did not verify), `timeout`,
@@ -141,7 +143,8 @@ selfcloud info --json            # with a profile: selfcloud info --profile home
 ```
 
 Prints the server's name, version, public address, whether the web interface is on, the minimum password length, the
-size limits, the sharing limit in days, the optional features and the brand name. It needs no key. `--json` prints the
+size limits, the sharing limit in days, the optional features and the brand name. The route is public, so the call needs
+no key; the profile's key is sent only as described under "Where the address and the key come from". `--json` prints the
 whole document.
 
 ### `api spec`
@@ -167,9 +170,12 @@ private on the host.
 
 ```sh
 mkdir -m 700 profiles
-printf '%s\n' "$KEY" | docker run --rm -i -v "$PWD/profiles:/root/.config/selfcloud" <image> selfcloud profile add home --url https://selfcloud.example
-docker run --rm -v "$PWD/profiles:/root/.config/selfcloud" <image> selfcloud info --profile home
+printf '%s\n' "$KEY" | docker run --rm -i --user "$(id -u):$(id -g)" -e SELFCLOUD_PROFILES_DIR=/profiles -v "$PWD/profiles:/profiles" <image> selfcloud profile add home --url https://selfcloud.example
+docker run --rm --user "$(id -u):$(id -g)" -e SELFCLOUD_PROFILES_DIR=/profiles -v "$PWD/profiles:/profiles" <image> selfcloud info --profile home
 ```
+
+The container runs as the host user, so the mounted directory and its file keep the private modes the CLI requires. This
+example was written but not run against an image.
 
 A local command runs in the running server's container, against its data folder, with no key:
 
