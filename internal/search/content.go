@@ -56,8 +56,9 @@ func (r *Request) contentSQL(after Pos, limit int) (string, []any, error) {
 	}
 	var args []any
 	var b strings.Builder
-	// The order rests on INDEXED BY nodes_blob, the part the tests prove: the full-text table is the outer loop, its text rows
-	// come next, then their nodes through the blob index. Once the partial index on nodes existed (review M1 of ff1a,
+	// The order rests on INDEXED BY nodes_blob, the part the tests prove: it pins how nodes is reached, through the blob index.
+	// The plan this is written for has the full-text table as the outer loop, then its text rows, then their nodes; the tests
+	// check that plan's first step and the pages, not the whole loop order. Once the partial index on nodes existed (review M1 of ff1a,
 	// bisected to 8b247ba), the planner put nodes outside the match, the pages followed the nodes' order, and hits repeated
 	// or were skipped. The CROSS JOIN keywords are not proven to matter: an ordinary-JOIN mutant with the INDEXED BY passes
 	// the paging and plan tests (one run on fa53d965: all three tests pass).
