@@ -6,6 +6,7 @@ import LargestFilesCard from "./LargestFiles";
 import type { LargestFile } from "../../lib/storage/api";
 import { officeEdit } from "../../lib/files/editor";
 import { contentPath } from "../../lib/files/api";
+import { phoneViewport } from "../../test/viewport";
 
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -85,6 +86,20 @@ describe("the largest files are one table (decision 122)", () => {
     renderCard();
     const link = screen.getByRole("link", { name: "Download: scan.pdf" });
     expect(link.getAttribute("href")).toBe(contentPath("nod_pdf1"));
+  });
+
+  // Round 2 (M6): on a phone every action is in the row's ⋮ menu, and the menu keeps all three, Download among them.
+  it("on a phone the ⋮ menu keeps every action, Download among them (round 2, M6)", async () => {
+    const undo = phoneViewport();
+    try {
+      renderCard();
+      const row = screen.getByRole("row", { name: "scan.pdf" });
+      fireEvent.click(row.querySelector('button[aria-haspopup="menu"]') as HTMLElement);
+      const items = (await screen.findAllByRole("menuitem")).map((m) => m.textContent);
+      expect(items).toEqual(["Download: scan.pdf", "Move to trash: scan.pdf", "Open"]);
+    } finally {
+      undo();
+    }
   });
 
   it("an empty card keeps its headers, and its title is in the table body", () => {
