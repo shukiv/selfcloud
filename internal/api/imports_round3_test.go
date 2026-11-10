@@ -214,6 +214,25 @@ func TestImportEntryCheckSeesReservationMadeAfterIt(t *testing.T) {
 	}
 }
 
+// TestImportEntryCountsPieceBytesInFlight: an import entry's reservation counts the piece bytes still arriving for
+// one-request writes, as a zip start does. The disk has 16 KiB usable and 8 KiB of piece bytes are in flight; a 10 KiB
+// entry alone would fit, so it is refused only because the in-flight bytes are counted.
+func TestImportEntryCountsPieceBytesInFlight(t *testing.T) {
+	fx := newImportFixture(t)
+	minFree := uint64(fx.s.cfg.Storage.MinFree)
+	fx.s.freeBytes = func(string) (uint64, error) { return minFree + 16<<10, nil }
+	fx.s.cfg.Upload.MaxDiskSharePercent = 100
+	fx.s.oneFlight.mu.Lock()
+	fx.s.oneFlight.total = 8 << 10
+	fx.s.oneFlight.mu.Unlock()
+	imp := fx.startOK(t, fx.archive(t, "big.zip", zipArchive(t, [][2]string{{"big.txt", strings.Repeat("0", 10240)}})), "")
+	_ = fx.runJob(t)
+	got := fx.get(t, imp.ID)
+	if got.State != store.ImportPaused || got.PauseReason != string(apierr.StorageFull) || got.Files != 0 {
+		t.Fatalf("entry admitted with 8 KiB of piece bytes in flight: %+v, want paused with storage_full and no file", got)
+	}
+}
+
 // A publish that writes one audit row per file floods the webhooks; the folder is reported once, as a copy reports a
 // large tree (F4).
 func TestImportPublishDoesNotFloodWebhooks(t *testing.T) {
