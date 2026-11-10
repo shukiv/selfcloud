@@ -82,6 +82,19 @@ describe("keepCopy", () => {
     expect(f.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(1);
   });
 
+  it("says whether a request was sent: a folder walk that fails sent none, a lost copy was sent (LOW-B)", async () => {
+    // The walk is a GET of the folder; the copy is a POST. A walk that fails before any POST has no copy in flight.
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit = {}) => {
+      if ((init.method ?? "GET") === "GET") throw new TypeError("offline");
+      return created("x");
+    }));
+    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "failed", sent: false });
+    fake(() => {
+      throw new TypeError("connection lost");
+    });
+    expect(await keepCopy(file, "application/json", new Uint8Array())).toEqual({ ok: false, why: "failed", sent: true });
+  });
+
   it("names a copy in a folder two levels down, outermost folder first (LOW-1)", async () => {
     const nodes: Record<string, unknown> = {
       nod_dir: { id: "nod_dir", folder_id: "fld_b", parent_id: "nod_root", name: "docs", kind: "dir", etag: '"d"' },

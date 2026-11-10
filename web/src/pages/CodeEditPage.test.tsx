@@ -4,7 +4,8 @@ import "../test/rangeRects";
 import { act, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
 import { forEachDiagnostic } from "@codemirror/lint";
-import { createMemoryRouter, RouterProvider, useNavigate, type NavigateFunction } from "react-router-dom";
+import { createMemoryRouter, Navigate, RouterProvider, useLocation, useNavigate, type NavigateFunction } from "react-router-dom";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const goMock = vi.hoisted(() => vi.fn());
@@ -12,6 +13,7 @@ vi.mock("../lib/router", () => ({ go: goMock, signInURL: () => "/login" }));
 
 import CodeEditPage from "./CodeEditPage";
 import { session } from "../lib/session";
+import { get, useStore } from "../lib/store";
 
 // The page's meta nonce, as the server writes it: CodeMirror's style sheet is written with it.
 const meta = document.createElement("meta");
@@ -591,7 +593,8 @@ const MESSAGE = "This file changed since you opened it. Reload it to see the sav
 // The new notices of the review round 1 fixes (decision 130): the sign-in that ended, a copy refused by name or folder, a full store.
 const SIGNED_OUT = "Your sign-in has ended. The text stays here. Sign in again to save it.";
 const BAD_NAME = "This name is too long or not allowed in this folder. Rename the copy and try again.";
-const FOLDER_GONE = "The folder for this copy is gone. The text stays here so you can copy it.";
+const SIGNED_OUT_COPY = "Unsaved changes are not kept across sign-in. Copy the text first, then sign in.";
+const FOLDER_GONE ="The folder for this copy is gone. The text stays here so you can copy it.";
 const STORAGE_FULL = "The storage is full. The text stays here, so free some space and try again.";
 
 // openConflict opens the file, types a draft, and saves it after another client changed the file: the save is refused with 412,
@@ -619,6 +622,72 @@ const dialogOpen = () => {
 
 // postPaths is the path each copy was sent to, decoded.
 const postPaths = (s: ReturnType<typeof server>) => s.copies().map((c) => new URL(c.url, "http://localhost").searchParams.get("path"));
+
+// SignInGate is App.tsx's Gate for the two addresses these tests use (its rules at lines 262 to 270, and the signed-out redirect after
+// them): a signed-out person is sent to the sign-in page, and a signed-in person who opens it is sent back to the editor. The real
+// Gate also draws the shell, which these tests do not need.
+function SignInGate({ children }: { children: ReactNode }) {
+  const me = useStore(session);
+  const loc = useLocation();
+  if (loc.pathname === "/login" && me !== null) return <Navigate to={`/edit/${NOD}?mode=edit`} replace />;
+  if (loc.pathname !== "/login" && me === null) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function renderSignIn(path = `/edit/${NOD}?mode=edit`) {
+  router = createMemoryRouter(
+    [
+      { path: "/edit/:nod", element: <SignInGate><Grab /><CodeEditPage /></SignInGate> },
+      { path: "/login", element: <SignInGate><p>sign-in page</p></SignInGate> },
+    ],
+    { initialEntries: [path] },
+  );
+  return rtlRender(<RouterProvider router={router} />);
+}
+
+describe("the sign-in from the page (review re-check 1, HIGH-1)", () => {
+  it("Sign in with unsaved text asks first; after Leave the sign-in page shows and the session has ended", async () => {
+    server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+    renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText(SIGNED_OUT_COPY)).toBeTruthy();
+    fireEvent.click(within(alert).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Leave" }));
+    await waitFor(() => expect(document.body.textContent).toContain("sign-in page"));
+    expect(get(session)).toBeNull();
+    expect(router!.state.location.pathname).toBe("/login");
+  });
+
+  it("Stay on the question keeps the text and the session, and changes nothing", async () => {
+    server({ put: () => Response.json({ error: { code: "unauthenticated", details: {} } }, { status: 401 }) });
+    renderSignIn();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    type(0, "x");
+    ctrlS();
+    const alert = await screen.findByRole("alert");
+    fireEvent.click(within(alert).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(dialogHas("Leave this file?")).toBe(true));
+    fireEvent.click(within(modalWith("Leave this file?")!).getByRole("button", { name: "Stay" }));
+    await waitFor(() => expect(dialogOpen()).toBe(false));
+    await pause();
+    expect(get(session)).not.toBeNull();
+    expect(router!.state.location.pathname).toBe(`/edit/${NOD}`);
+    expect(content().textContent).toContain("x{}");
+    expect(document.body.textContent).not.toContain("sign-in page");
+  });
+
+  it("the open's Sign in reaches the sign-in page when there is no text to keep", async () => {
+    server({ read: 401 });
+    renderSignIn();
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(document.body.textContent).toContain("sign-in page"));
+    expect(get(session)).toBeNull();
+  });
+});
 
 describe("the editor's conflict dialog, copies, guards and lint (decision 130)", () => {
   it("a save the server refuses with 412 opens the dialog with its four choices, and reads the file's ETag by HEAD", async () => {
@@ -1093,6 +1162,20 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await pause();
     expect(content().textContent).toContain("bee");
     expect(content().textContent).not.toContain("{}");
+  });
+
+  it("the app mark opens in a new tab with a modifier key, and leaves the page only on a plain click (LOW-A)", async () => {
+    server();
+    render();
+    await waitFor(() => expect(content().textContent).toContain("{}"));
+    const mark = document.querySelector<HTMLAnchorElement>(`[data-testid="code-editor-page"] a[href="/files/${FLD}"]`)!;
+    // fireEvent returns false when the default was prevented: a modifier click must leave the browser its new tab.
+    expect(fireEvent.click(mark, { ctrlKey: true })).toBe(true);
+    expect(fireEvent.click(mark, { metaKey: true })).toBe(true);
+    expect(fireEvent.click(mark, { shiftKey: true })).toBe(true);
+    expect(goMock).not.toHaveBeenCalled();
+    expect(fireEvent.click(mark)).toBe(false);
+    expect(goMock).toHaveBeenCalledWith(`/files/${FLD}`);
   });
 
   it("a JSON problem is reported in the editor's words, not the parser's (LOW-7)", async () => {
