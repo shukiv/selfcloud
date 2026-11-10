@@ -83,7 +83,8 @@ func Unlock(args []string, stdout, stderr io.Writer) int {
 	}
 	if _, err := send(c, request{method: "POST", path: nodeRoute(nodeID, "/unlock")}); err != nil {
 		var apiErr *client.APIError
-		if c.Kind == profile.KindDevice && errors.As(err, &apiErr) && apiErr.Status == 403 {
+		// The reason-less lock refusal is the one a terminal cannot get past; a refusal that names its reason is the API's own.
+		if c.Kind == profile.KindDevice && errors.As(err, &apiErr) && apiErr.Status == 403 && apiErr.Reason == "" {
 			err = &exitcode.Error{Exit: exitcode.Refused, Name: "forbidden",
 				Message: apiErr.Message + "; a terminal's sign-in cannot break a lock, so use the browser"}
 		}
