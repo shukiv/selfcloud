@@ -127,6 +127,47 @@ func TestPlacesIsAFixedNumberOfQueries(t *testing.T) {
 	}
 }
 
+// TestPlaceNamesNothingOfAnotherAccount: a parent in account B is never named to a caller of account A, whether a user or
+// the account key, and a parent in A is never named to B's key. A's user gets the name of her own parent b, as a control.
+func TestPlaceNamesNothingOfAnotherAccount(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
+	accB, keyB := newAccount(t, fx.s, fx.admin, "Other")
+	fldB := newFolder(t, fx.s, keyB, accB.ID, "Team")
+	xB := mkdirs(t, fx.s, keyB, fldB.ID, "/x")
+
+	names := func(p *auth.Principal, parent string) string {
+		t.Helper()
+		var out []string
+		err := fx.s.store.Read(context.Background(), func(q store.Querier) error {
+			var err error
+			out, err = placesIn(context.Background(), q, p, []*nodeJSON{{ParentID: &parent}})
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out[0]
+	}
+	ann := userOf(fx.acc.ID, fx.ann.ID)
+	key := &auth.Principal{Kind: auth.KindAccountKey, AccountID: fx.acc.ID}
+	keyOfB := &auth.Principal{Kind: auth.KindAccountKey, AccountID: accB.ID}
+
+	if got := names(ann, xB.ID); got != "" {
+		t.Errorf("a user of A named B's parent %q", got)
+	}
+	if got := names(key, xB.ID); got != "" {
+		t.Errorf("A's key named B's parent %q", got)
+	}
+	if got := names(keyOfB, fx.b.ID); got != "" {
+		t.Errorf("B's key named A's parent %q", got)
+	}
+	if got := names(ann, fx.b.ID); got != "b" {
+		t.Errorf("control: ann's parent b is named %q, want %q", got, "b")
+	}
+}
+
 // TestPlaceFollowsATokenNodeOnSharedAndTrash: a token confined to node b (acting as ann) names only what is inside b. On
 // the shared list, b's parent a is outside, so b's place is "", and deep's parent b is inside, so deep's place is "b".
 // On the trash, ann's trashed deep names b; ann's trashed b names nothing, its parent a being outside.
