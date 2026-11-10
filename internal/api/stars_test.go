@@ -375,17 +375,27 @@ func TestSharedRecentOrder(t *testing.T) {
 	if items[0].ID != fx.c.ID || items[1].ID != fx.sib.ID || items[2].ID != fx.b.ID {
 		t.Errorf("order = %s %s %s, want c, sib, b", items[0].Name, items[1].Name, items[2].Name)
 	}
+	recentAt := map[string]time.Time{}
 	for _, it := range items {
-		if it.SharedAt == nil {
+		if it.SharedAt.IsZero() {
 			t.Errorf("%s carries no shared_at", it.Name)
 		}
+		recentAt[it.ID] = it.SharedAt
 	}
-	// The default order is node ID order, and carries no shared_at.
+	// The default order is node ID order, and carries shared_at too: the same time the recent order gives each node
+	// (tl4a, decision 136).
 	def := callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared", nil)
 	wantStatus(t, def, 200)
-	for _, it := range decode[listResponse[sharedItem]](t, def).Items {
-		if it.SharedAt != nil {
-			t.Errorf("the default order carries shared_at on %s", it.Name)
+	defItems := decode[listResponse[sharedItem]](t, def).Items
+	if len(defItems) != len(items) {
+		t.Fatalf("default order lists %d items, the recent order %d", len(defItems), len(items))
+	}
+	for _, it := range defItems {
+		if it.SharedAt.IsZero() {
+			t.Errorf("the default order carries no shared_at on %s", it.Name)
+		}
+		if !it.SharedAt.Equal(recentAt[it.ID]) {
+			t.Errorf("shared_at on %s = %v in the default order, %v in the recent order", it.Name, it.SharedAt, recentAt[it.ID])
 		}
 	}
 	wantError(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared?order=name", nil), 400, apierr.InvalidRequest)

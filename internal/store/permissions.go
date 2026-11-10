@@ -362,8 +362,9 @@ func (s *Store) queryPermissions(ctx context.Context, query string, args ...any)
 }
 
 // SharedNode is a node that carries a permission for a user, directly or through a group, with the
-// highest rank of those permissions on it. SharedAt is set when the list is ordered by recency: the later of the
-// permission's creation and the user's visit to an organisation link on the node.
+// highest rank of those permissions on it. SharedAt is set in every order: the later of the permission's creation
+// (the newest of the live ones, for a node granted more than once) and the user's visit to an organisation link on
+// the node.
 type SharedNode struct {
 	NodeID   string
 	Rank     int
@@ -414,12 +415,9 @@ func (s *Store) SharedNodesFiltered(ctx context.Context, accountID, userID strin
 		args = append(args, fargs...)
 	}
 	// The shared time is the permission's creation or the visit, whichever is later, for each branch.
-	atPerm, atLink := "pm.created_at", "v.visited_at"
+	atPerm, atLink := "pm.created_at AS at", "v.visited_at AS at"
 	var cursorCond, order string
 	var having []string
-	if byRecent {
-		atPerm, atLink = "pm.created_at AS at", "v.visited_at AS at"
-	}
 	if p.Cursor != "" {
 		// The recent order's cursor is the shared time and the node ID; the default order's is the node ID alone.
 		if byRecent {
@@ -452,11 +450,7 @@ func (s *Store) SharedNodesFiltered(ctx context.Context, accountID, userID strin
 		cursorCond = " HAVING " + strings.Join(having, " AND ")
 	}
 	args = append(args, p.Limit+1)
-	sharedCol := ""
-	if byRecent {
-		sharedCol = ", MAX(src.at)"
-	}
-	rows, err := s.r.QueryContext(ctx, `SELECT src.node_id, MAX(`+fmt.Sprintf(roleRankSQL, "src.role")+`)`+sharedCol+`
+	rows, err := s.r.QueryContext(ctx, `SELECT src.node_id, MAX(`+fmt.Sprintf(roleRankSQL, "src.role")+`), MAX(src.at)
 		FROM (
 			SELECT pm.node_id AS node_id, pm.role AS role, `+atPerm+` FROM permissions pm
 			WHERE pm.account_id = ? AND `+subjectPredicate+` AND `+liveClause+`
@@ -478,15 +472,11 @@ func (s *Store) SharedNodesFiltered(ctx context.Context, accountID, userID strin
 	var out []SharedNode
 	for rows.Next() {
 		var sn SharedNode
-		if byRecent {
-			var at int64
-			if err := rows.Scan(&sn.NodeID, &sn.Rank, &at); err != nil {
-				return nil, "", err
-			}
-			sn.SharedAt = fromMillis(at)
-		} else if err := rows.Scan(&sn.NodeID, &sn.Rank); err != nil {
+		var at int64
+		if err := rows.Scan(&sn.NodeID, &sn.Rank, &at); err != nil {
 			return nil, "", err
 		}
+		sn.SharedAt = fromMillis(at)
 		out = append(out, sn)
 	}
 	if err := rows.Err(); err != nil {

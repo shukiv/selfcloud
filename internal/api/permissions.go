@@ -467,12 +467,7 @@ func (s *Server) handleSharedWithMe(w http.ResponseWriter, r *http.Request) erro
 		}
 		j := toNodeJSON(n)
 		j.Role = role
-		item := sharedItem{nodeJSON: j}
-		if byRecent {
-			at := sn.SharedAt
-			item.SharedAt = &at
-		}
-		items = append(items, item)
+		items = append(items, sharedItem{nodeJSON: j, SharedAt: sn.SharedAt})
 	}
 	ptrs := make([]*nodeJSON, len(items))
 	for i := range items {
@@ -495,10 +490,11 @@ func (s *Server) handleSharedWithMe(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 
-// sharedItem is a node in the shared list. With order=recent it carries when the node was shared with the caller.
+// sharedItem is a node in the shared list. It carries shared_at in every order: when the node was shared with the caller,
+// the later of the permission's creation and the caller's visit to an organisation link on it (store.SharedNode).
 type sharedItem struct {
 	nodeJSON
-	SharedAt *time.Time `json:"shared_at,omitempty"`
+	SharedAt time.Time `json:"shared_at"`
 	// Place is the name of the item's parent, when the caller reaches the parent (placeNames).
 	Place string `json:"place,omitempty"`
 }

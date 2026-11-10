@@ -5,6 +5,7 @@ package api
 import (
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // placesOf reads a list answer and returns the "place" of each item by its name, read by its JSON name so the test does
@@ -198,30 +199,43 @@ func TestSearchPlaceIsEmptyForAnUnreachableParent(t *testing.T) {
 func TestSharedAtIsTheGrantTimeOnEveryOrder(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
+	before := time.Now()
 	fx.setPerm(t, fx.b.ID, fx.ann.ID, "viewer")
 
 	def := sharedAtOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared", nil))
 	rec := sharedAtOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared?order=recent", nil))
-	if def["b"] == "" {
-		t.Fatalf("the default order carries no shared_at on b")
-	}
+	wantSharedAtSince(t, "b", def["b"], before)
 	if def["b"] != rec["b"] {
 		t.Errorf("shared_at on b = %q in the default order, %q in the recent order", def["b"], rec["b"])
 	}
 }
 
-// TestSharedAtOfAGroupGrant: a grant to a group the caller is in sets shared_at too.
+// TestSharedAtOfAGroupGrant: a grant to a group the caller is in sets shared_at too, at the time of that grant.
 func TestSharedAtOfAGroupGrant(t *testing.T) {
 	t.Parallel()
 	fx := newSharingFixture(t)
 	grp := fx.group(t, "Team A")
 	fx.inGroup(t, grp, fx.ann.ID, true)
+	before := time.Now()
 	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/nodes/"+fx.deep.ID+"/permissions/"+grp, fx.key,
 		map[string]any{"role": "viewer"}), 200)
 
 	got := sharedAtOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared", nil))
-	if got["file.txt"] == "" {
-		t.Fatalf("a group grant carries no shared_at (answer %v)", got)
+	wantSharedAtSince(t, "file.txt", got["file.txt"], before)
+}
+
+// wantSharedAtSince fails unless text is a time from since to now: the grant's time, not the epoch or a zero value.
+func wantSharedAtSince(t *testing.T, name, text string, since time.Time) {
+	t.Helper()
+	if text == "" {
+		t.Fatalf("%s carries no shared_at", name)
+	}
+	at, err := time.Parse(time.RFC3339Nano, text)
+	if err != nil {
+		t.Fatalf("shared_at of %s = %q: %v", name, text, err)
+	}
+	if at.Before(since.Truncate(time.Millisecond)) || at.After(time.Now().Add(time.Second)) {
+		t.Errorf("shared_at of %s = %v, want a time from %v to now", name, at, since)
 	}
 }
 
