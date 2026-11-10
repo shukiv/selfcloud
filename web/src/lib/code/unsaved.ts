@@ -113,9 +113,10 @@ export function purgeAllUnsaved(): void {
 // behaviour: each tab's own text is kept as before.
 export const SIGNOUT_CHANNEL = "selfcloud-code-unsaved";
 const SIGNED_OUT = "signed-out";
+const SIGNED_IN = "signed-in";
 
 // endedElsewhere is set in a tab that heard another tab's sign-out. The session end that follows is that sign-out, so this tab keeps
-// nothing until it signs a person in again (signedInHere).
+// nothing until a sign-in happens in this browser: this tab's own, or another tab's sign-in message (noteSignedIn).
 let endedElsewhere = false;
 
 // channel is this tab's one channel, made on first use. Its own messages are not delivered to it, so a sign-out in this tab does not
@@ -149,16 +150,31 @@ export function watchSignOuts(): () => void {
   if (ch === null) return () => undefined;
   ch.onmessage = (e: MessageEvent) => {
     const msg = e.data as { type?: unknown } | null;
+    if (msg?.type === SIGNED_IN) {
+      // A sign-in anywhere in this browser ends the keep-nothing window. It names no person and drops no text: the purge of other
+      // people's drafts is the signing-in tab's own, at its sign-in (session.ts).
+      endedElsewhere = false;
+      return;
+    }
     if (msg?.type !== SIGNED_OUT) return;
     endedElsewhere = true;
     purgeAllUnsaved();
   };
   return () => {
+    // Stopping the watch closes this tab's channel. A later announce or watch opens a new one.
     ch.onmessage = null;
+    ch.close();
+    if (channel === ch) channel = null;
   };
 }
 
-// noteSignedIn is called when this tab signs a person in: keeping text is allowed again.
+// noteSignedIn is called when this tab signs a person in (session.ts). It keeps text again in this tab, and tells the other tabs of
+// the browser, which keep text again too (review round 2, N1). The message carries no text.
 export function noteSignedIn(): void {
   endedElsewhere = false;
+  try {
+    openChannel()?.postMessage({ type: SIGNED_IN });
+  } catch {
+    // A channel that refuses the message: the other tabs keep their window, as they do in a browser without channels.
+  }
 }
