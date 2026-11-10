@@ -130,6 +130,7 @@ func TestArchiveSumsUseIndexes(t *testing.T) {
 			plan = append(plan, detail)
 		}
 		rows.Close()
+		t.Logf("EXPLAIN QUERY PLAN for %s: %v", index, plan)
 		if !strings.Contains(strings.Join(plan, "; "), index) {
 			t.Errorf("plan %v does not use %s", plan, index)
 		}

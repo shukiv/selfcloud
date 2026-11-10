@@ -2842,11 +2842,15 @@ paths:
         checked against the same quota: a write that grows usage past it is refused, and one
         that shrinks it always passes.
 
-        Disk: the unwritten bytes of every open upload must fit in the free space of the server
-        less `storage.min_free`, or the answer is `storage_full` (507) with `details.scope`
-        `server`. When creating, one account's unwritten bytes may not exceed
+        Disk: the unwritten bytes of every unfinished writer must fit in the free space of the
+        server less `storage.min_free`, or the answer is `storage_full` (507) with
+        `details.scope` `server` and `details.reason` `disk`. The unfinished writers are the open
+        uploads, the pending and cancelling bundles (their reservation less what they wrote), the
+        unfinished imports (their current entry), and the pending stored zips (their reservation).
+        When creating, one account's unwritten bytes may not exceed
         `upload.max_disk_share_percent` of that space, or the answer is `storage_full` with
-        `details.scope` `account`. Both refusals carry `required_bytes` and `available_bytes`.
+        `details.scope` `account`; the account's bytes include its stored zips, bundles and imports
+        as well as its uploads. Both refusals carry `required_bytes` and `available_bytes`.
 
         Lifetime: an upload expires `upload.max_lifetime` after its creation (default 7 days),
         however often it is written to, and `upload.expiry` (default 24 h) after its last write.
@@ -7561,7 +7565,7 @@ components:
         | internal | 500 | Server fault; quote request_id. |
         | unavailable | 503 | Shutting down or in maintenance; see Retry-After. |
         | quota_exceeded | 507 | The write would take the account past its quota, past its reservation cap when it has no quota, or a member's My files past its own limit. `required_bytes`, `available_bytes`, `scope` (`quota`, `account_reservations`, `user`). The numbers go only where the operation says who learns them (design section 8, "Who learns the numbers"). For a drop link's visitor: the same code with the message "this link cannot take the file now" and no details. |
-        | storage_full | 507 | The disk cannot hold the open uploads, or this account's share of them. `required_bytes`, `available_bytes`, `scope` (`server`, `account`). For a drop link's visitor: `quota_exceeded` with the generic message, as above. |
+        | storage_full | 507 | The disk cannot hold the unfinished writes (uploads, bundles, imports and stored zips), or this account's share of them. `required_bytes`, `available_bytes`, `scope` (`server`, `account`), and `reason` (`disk` for the server's disk, the one a stored zip or an import's entry can meet). For a drop link's visitor: `quota_exceeded` with the generic message, as above. |
       enum:
         - invalid_request
         - invalid_path
@@ -7977,7 +7981,7 @@ components:
           enum: [queued, running, succeeded, failed]
         error: { type: string, description: Why the job failed. The server's own text, for people who read logs; the interface does not show it. }
         error_code: { type: string, description: "For a failed zip job, the API error code of its refusal (too_large, storage_full), or absent." }
-        error_reason: { type: string, description: "For a failed zip job, the reason of that refusal (zip_disk, zip_account_disk), or absent." }
+        error_reason: { type: string, description: "For a failed zip job, the reason of that refusal (zip_disk, zip_account_disk, disk), or absent." }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         finished_at: { type: [string, "null"], format: date-time }
