@@ -165,6 +165,10 @@ export default function LargestFilesCard({
               },
             },
           ]}
+          // A row opens its file as the menu's Open does (an office file in its editor's tab, another in this tab).
+          onOpen={(f) => {
+            if (!openFileTab(f.id, f.mime_type)) window.open(`/n/${encodeURIComponent(f.id)}`, "_self");
+          }}
           empty={{ title: t("storage.largestEmpty"), description: adminText ? t("manage.empty.largest") : undefined }}
         />
       )}

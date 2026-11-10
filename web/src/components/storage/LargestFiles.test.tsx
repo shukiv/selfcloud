@@ -141,6 +141,8 @@ describe("a file's row opens the file (round 2, LOW)", () => {
   it("Enter on a row opens the file the same way", () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     renderCard();
+    // Enter opens the focused row, which is the first row until the focus moves: the test focuses the row it means.
+    fireEvent.focus(rowOf("scan.pdf"));
     fireEvent.keyDown(rowOf("scan.pdf"), { key: "Enter" });
     expect(open).toHaveBeenCalledWith("/n/nod_pdf1", "_self");
   });

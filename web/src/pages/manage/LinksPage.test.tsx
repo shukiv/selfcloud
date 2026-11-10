@@ -96,12 +96,15 @@ describe("a link row opens its item (round 2, LOW)", () => {
     expect(open).toHaveBeenCalledWith("/n/nod_1", "_self");
   });
 
-  it("a hidden item does not open: the server hides its name and its place", async () => {
+  // A hidden item opens nothing, whether or not its name came back: each of the two is a reason on its own.
+  it.each([
+    ["a hidden item, with its name", { hidden: true }],
+    ["an item with no name the viewer may see", { item_name: null, item_path: null }],
+  ])("%s does not open", async (_label, over) => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
-    const hidden = { ...LINK, hidden: true, item_name: null, item_path: null };
     stubFetch((c) => {
       if (c.url.includes("/sharing-policy")) return { status: 200, body: { public_links: true, anyone_links: 1 } };
-      return { status: 200, body: { items: [hidden] } };
+      return { status: 200, body: { items: [{ ...LINK, ...over }] } };
     });
     renderPage();
     fireEvent.click(await row());

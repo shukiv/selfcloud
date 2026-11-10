@@ -242,6 +242,10 @@ function LinksView() {
               },
             },
           ]}
+          // A row opens its item in this tab; a hidden item, whose name the server keeps back, opens nothing.
+          onOpen={(l) => {
+            if (!l.hidden && l.item_name !== null) window.open(`/n/${encodeURIComponent(l.node_id)}`, "_self");
+          }}
           empty={{ title: t("links.empty"), description: adminText ? t("manage.empty.links") : undefined }}
         />
       )}
