@@ -19,7 +19,7 @@ const api = vi.hoisted(() => ({
 vi.mock("../lib/files/api", () => api);
 vi.mock("../lib/files/folders", async () => {
   const { writable } = await import("../lib/store");
-  return { folders: writable([]), loadFolders: async () => [] };
+  return { folders: writable([]), loadFolders: async () => [], hiddenFolders: writable([]), loadHiddenFolders: async () => [] };
 });
 
 import TrashPage from "./TrashPage";

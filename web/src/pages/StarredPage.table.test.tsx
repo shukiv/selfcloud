@@ -102,7 +102,8 @@ describe("Starred is one table (tl4, decision 137)", () => {
     );
     renderPage();
     const region = await table();
-    expect(within(region).getByRole("button", { name: "Remove star: Budget.pdf" })).toBeTruthy();
+    // The table is drawn before its rows arrive, so the test waits for the first icon.
+    await within(region).findByRole("button", { name: "Remove star: Budget.pdf" });
     const row1 = within(region).getByRole("row", { name: "Budget.pdf" });
     expect(row1.textContent).toContain("Budget");
     // A top-level item shows its space: its parent is the space's root, which names nothing.

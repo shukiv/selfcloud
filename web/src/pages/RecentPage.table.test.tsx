@@ -7,7 +7,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../lib/query";
 import { session, type Session } from "../lib/session";
-import { folders } from "../lib/files/folders";
+import { folders, hiddenFolders } from "../lib/files/folders";
 import type { FolderAccess } from "../lib/files/types";
 import { fail, stubFetch, type Call } from "../test/fetchStub";
 import { desktopViewport } from "../test/viewport";
@@ -43,27 +43,40 @@ const recent = (id: string, name: string, over: Record<string, unknown> = {}) =>
 });
 
 const SPACE = { id: "fld_a", name: "Finance", kind: "team", root_node_id: "root_a" } as unknown as FolderAccess;
+const HIDDEN = { id: "fld_h", name: "Archive", kind: "team", root_node_id: "root_h" } as unknown as FolderAccess;
 
 let undoView: () => void = () => undefined;
 beforeEach(() => {
   undoView = desktopViewport();
   session.set(signedAs("olivia"));
   folders.set([SPACE]);
+  hiddenFolders.set([HIDDEN]);
 });
 
 afterEach(() => {
   undoView();
   session.set(null);
   folders.set([]);
+  hiddenFolders.set([]);
 });
+
+function renderPage() {
+  return render(
+    <QueryClientProvider client={createQueryClient()}>
+      <RecentPage />
+    </QueryClientProvider>,
+  );
+}
 
 const table = () => screen.findByRole("region", { name: "Recent" });
 
 describe("Recent is one table (tl4, decision 137)", () => {
   it("draws the columns Name, Location and Opened, with Opened as the time column in order (aria-sort descending)", async () => {
+    // The secondary columns show once the breakpoint is known, which is after the table's first draw.
     stubFetch((c: Call) => (c.url.startsWith("/api/v1/recent") ? { status: 200, body: { items: [recent("nod_r1", "Budget.xlsx", { parent_id: "dir_f", place: "Finance" })] } } : fail(404, "not_found")));
     render(<RecentPage />, { wrapper: ({ children }) => <QueryClientProvider client={createQueryClient()}>{children}</QueryClientProvider> });
     const region = await table();
+    await screen.findByRole("columnheader", { name: "Opened" });
     const heads = within(region).getAllByRole("columnheader").map((h) => h.textContent ?? "");
     expect(heads).toEqual(expect.arrayContaining(["Name", "Location", "Opened"]));
     expect(screen.getByRole("columnheader", { name: "Opened" }).getAttribute("aria-sort")).toBe("descending");
@@ -73,7 +86,8 @@ describe("Recent is one table (tl4, decision 137)", () => {
     stubFetch((c: Call) => (c.url.startsWith("/api/v1/recent") ? { status: 200, body: { items: [recent("nod_r1", "Budget.xlsx")] } } : fail(404, "not_found")));
     render(<RecentPage />, { wrapper: ({ children }) => <QueryClientProvider client={createQueryClient()}>{children}</QueryClientProvider> });
     const region = await table();
-    expect(within(region).getByRole("button", { name: "Remove Budget.xlsx from Recent" })).toBeTruthy();
+    // The row, and its Remove icon, are drawn after the first answer: the test waits for the icon.
+    await within(region).findByRole("button", { name: "Remove Budget.xlsx from Recent" });
     expect(within(region).queryByRole("checkbox")).toBeNull();
   });
 
@@ -93,5 +107,46 @@ describe("Recent is one table (tl4, decision 137)", () => {
     const region = await table();
     expect(within(region).getByRole("columnheader", { name: "Opened" })).toBeTruthy();
     expect(region.querySelector(".empty")?.textContent).toContain("Nothing here yet");
+  });
+
+  it("names each item's location: its place, the space for an item at its top, a hidden space's name, or nothing", async () => {
+    stubFetch((c: Call) =>
+      c.url.startsWith("/api/v1/recent")
+        ? {
+            status: 200,
+            body: {
+              items: [
+                recent("nod_r1", "Budget.xlsx", { parent_id: "dir_f", place: "Budget" }),
+                recent("nod_r2", "Plan.doc", { parent_id: "root_a" }),
+                recent("nod_r3", "Memo.txt", { folder_id: "fld_h", parent_id: "root_h" }),
+                recent("nod_r4", "Loose.txt", { parent_id: "dir_gone" }),
+              ],
+            },
+          }
+        : fail(404, "not_found"),
+    );
+    renderPage();
+    const region = await table();
+    await within(region).findByRole("link", { name: "Loose.txt" });
+    const where = (name: string) => within(within(region).getByRole("row", { name })).getAllByRole("cell")[1]?.textContent ?? "";
+    expect(where("Budget.xlsx")).toBe("Budget");
+    expect(where("Plan.doc")).toBe("Finance");
+    expect(where("Memo.txt")).toBe("Archive");
+    expect(where("Loose.txt")).toBe("");
+  });
+
+  it("adds the next page's items on Load more", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("cursor=")) return { status: 200, body: { items: [recent("nod_r2", "Plan.doc", { parent_id: "root_a" })] } };
+      if (c.url.startsWith("/api/v1/recent")) {
+        return { status: 200, body: { items: [recent("nod_r1", "Budget.xlsx", { parent_id: "dir_f", place: "Budget" })], next_cursor: "c2" } };
+      }
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const region = await table();
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    await within(region).findByRole("row", { name: "Plan.doc" });
+    expect(within(region).getByRole("row", { name: "Budget.xlsx" })).toBeTruthy();
   });
 });

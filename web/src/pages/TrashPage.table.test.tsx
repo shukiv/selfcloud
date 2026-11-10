@@ -24,6 +24,8 @@ vi.mock("../lib/files/folders", async () => {
   return {
     folders: writable([{ id: "f1", name: "Finance", kind: "team", root_node_id: "root_f1", access: "write", role: "manager" }]),
     loadFolders: async () => [],
+    hiddenFolders: writable([]),
+    loadHiddenFolders: async () => [],
   };
 });
 
@@ -93,6 +95,8 @@ describe("Trash is one table (tl4, decision 137)", () => {
   it("draws the columns Name, Original location, Deleted on and Size", async () => {
     renderTrash([item("t1", "Old logo.png", "editor")]);
     const region = await table();
+    // The secondary columns show once the breakpoint is known, which is after the table's first draw.
+    await screen.findByRole("columnheader", { name: "Deleted on" });
     const heads = within(region).getAllByRole("columnheader").map((h) => h.textContent ?? "");
     expect(heads).toEqual(expect.arrayContaining(["Name", "Original location", "Deleted on", "Size"]));
   });

@@ -2,7 +2,7 @@
 
 // Shared with me on the one table (tl4, decision 137): columns, Shared by from the owner's name, the role, Shared on from shared_at
 // as the time column, and the empty state inside the table.
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../lib/query";
@@ -67,14 +67,14 @@ afterEach(() => {
 const table = () => screen.findByRole("region", { name: "Shared with me" });
 
 describe("Shared with me is one table (tl4, decision 137)", () => {
-  it("draws the columns Name, Shared by, Your access and Shared on", async () => {
+  it("draws the columns Name, Shared by, Your role and Shared on", async () => {
     stubFetch((c: Call) => (c.url.startsWith("/api/v1/shared") ? { status: 200, body: { items: [shared("nod_h1", "Supplier contract.pdf")] } } : fail(404, "not_found")));
     renderPage();
     const region = await table();
     // The secondary columns show once the breakpoint is known, which is after the table's first draw.
     await screen.findByRole("columnheader", { name: "Shared on" });
     const heads = within(region).getAllByRole("columnheader").map((h) => h.textContent ?? "");
-    expect(heads).toEqual(expect.arrayContaining(["Name", "Shared by", "Your access", "Shared on"]));
+    expect(heads).toEqual(expect.arrayContaining(["Name", "Shared by", "Your role", "Shared on"]));
   });
 
   it("shows the owner's name and the role, and dates the row from shared_at (not modified_at)", async () => {
@@ -108,5 +108,18 @@ describe("Shared with me is one table (tl4, decision 137)", () => {
     const region = await table();
     expect(within(region).getByRole("columnheader", { name: "Shared on" })).toBeTruthy();
     expect(region.querySelector(".empty")?.textContent).toContain("Nothing is shared with you yet");
+  });
+
+  it("adds the next page's items on Load more", async () => {
+    stubFetch((c: Call) => {
+      if (c.url.includes("cursor=c2")) return { status: 200, body: { items: [shared("nod_h2", "Budget.xlsx")] } };
+      if (c.url.startsWith("/api/v1/shared")) return { status: 200, body: { items: [shared("nod_h1", "Supplier contract.pdf")], next_cursor: "c2" } };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const region = await table();
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(within(region).getByRole("row", { name: "Budget.xlsx" })).toBeTruthy());
+    expect(within(region).getByRole("row", { name: "Supplier contract.pdf" })).toBeTruthy();
   });
 });

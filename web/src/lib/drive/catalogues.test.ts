@@ -22,6 +22,7 @@ describe("the drive lists' catalogues", () => {
         "drive.col.sharedBy",
         "drive.col.sharedOn",
         "drive.col.starredOn",
+        "drive.col.yourRole",
         "drive.empty.recent",
         "drive.empty.search",
         "drive.empty.searchPage",

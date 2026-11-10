@@ -106,6 +106,20 @@ describe("Search results are one table (tl4, decision 137)", () => {
     for (const h of within(region).getAllByRole("columnheader")) expect(h.getAttribute("aria-sort")).toBeNull();
   });
 
+  it("names each result's location: its place, the space for a result at its top, or nothing", async () => {
+    answer([
+      hit("nod_b", "Budget 2027.xlsx", { place: "Budget", parent_id: "dir_f" }),
+      hit("nod_c", "Plan.doc", { parent_id: "root_a" }),
+      hit("nod_d", "Loose.txt", { parent_id: "dir_gone" }),
+    ]);
+    renderAt("/search?q=budget");
+    const region = await results();
+    const where = (name: string) => within(within(region).getByRole("row", { name })).getAllByRole("cell")[1]?.textContent ?? "";
+    expect(where("Budget 2027.xlsx")).toBe("Budget");
+    expect(where("Plan.doc")).toBe("Finance");
+    expect(where("Loose.txt")).toBe("");
+  });
+
   it("offers no selection", async () => {
     answer([hit("nod_b", "Budget 2027.xlsx")]);
     renderAt("/search?q=budget");
