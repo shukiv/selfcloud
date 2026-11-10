@@ -119,6 +119,48 @@ describe("the largest files are one table (decision 122)", () => {
   });
 });
 
+// Round 2 (LOW): a row opens its file, as Enter and a click open a row of any list (decision 122).
+describe("a file's row opens the file (round 2, LOW)", () => {
+  beforeEach(() => {
+    officeEdit.set(true);
+    pointer(false);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    officeEdit.set(false);
+  });
+  const rowOf = (name: string) => screen.getByText(name).closest("tr") as HTMLElement;
+
+  it("a click on a row opens a file that is not an office document in this tab", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderCard();
+    fireEvent.click(rowOf("scan.pdf"));
+    expect(open).toHaveBeenCalledWith("/n/nod_pdf1", "_self");
+  });
+
+  it("Enter on a row opens the file the same way", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderCard();
+    fireEvent.keyDown(rowOf("scan.pdf"), { key: "Enter" });
+    expect(open).toHaveBeenCalledWith("/n/nod_pdf1", "_self");
+  });
+
+  it("a click on an office file's name opens its editor tab once, and the row does not open it again", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderCard();
+    fireEvent.click(nameLink("letter.docx"));
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith("/n/nod_office1?tab=1", "_blank", "noopener");
+  });
+
+  it("a click on a row's icon does not open the file", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderCard();
+    fireEvent.click(rowOf("scan.pdf").querySelector("button") as HTMLElement);
+    expect(open).not.toHaveBeenCalled();
+  });
+});
+
 describe("the Largest files links (decision 102, round 2 R6, and the rules of the editor's open)", () => {
   beforeEach(() => {
     officeEdit.set(true);

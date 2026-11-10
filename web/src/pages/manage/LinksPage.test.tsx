@@ -3,7 +3,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
@@ -66,6 +66,59 @@ afterEach(() => {
 });
 
 const isLinkDelete = (c: Call) => c.method === "DELETE" && c.url === "/api/v1/share-links/shl_1";
+
+// Round 2 (LOW): a row opens its item, as Enter and a click open a row of any list (decision 122).
+describe("a link row opens its item (round 2, LOW)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  const row = async () => (await screen.findByRole("region", { name: "Links" })).querySelector("tbody tr[data-id]") as HTMLElement;
+
+  it("a click on the row opens the item it shares, in this tab", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    stubFetch((c) => {
+      if (c.url.includes("/sharing-policy")) return { status: 200, body: { public_links: true, anyone_links: 1 } };
+      return { status: 200, body: { items: [LINK] } };
+    });
+    renderPage();
+    fireEvent.click(await row());
+    expect(open).toHaveBeenCalledWith("/n/nod_1", "_self");
+  });
+
+  it("Enter on the row opens the item the same way", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    stubFetch((c) => {
+      if (c.url.includes("/sharing-policy")) return { status: 200, body: { public_links: true, anyone_links: 1 } };
+      return { status: 200, body: { items: [LINK] } };
+    });
+    renderPage();
+    fireEvent.keyDown(await row(), { key: "Enter" });
+    expect(open).toHaveBeenCalledWith("/n/nod_1", "_self");
+  });
+
+  it("a hidden item does not open: the server hides its name and its place", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const hidden = { ...LINK, hidden: true, item_name: null, item_path: null };
+    stubFetch((c) => {
+      if (c.url.includes("/sharing-policy")) return { status: 200, body: { public_links: true, anyone_links: 1 } };
+      return { status: 200, body: { items: [hidden] } };
+    });
+    renderPage();
+    fireEvent.click(await row());
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("the row's Delete icon asks about the link and does not open the item", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    stubFetch((c) => {
+      if (c.url.includes("/sharing-policy")) return { status: 200, body: { public_links: true, anyone_links: 1 } };
+      return { status: 200, body: { items: [LINK] } };
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete link: report.pdf" }));
+    expect(open).not.toHaveBeenCalled();
+  });
+});
 
 describe("links icon buttons name their item", () => {
   it("each row's Delete link names the item the link shares", async () => {
