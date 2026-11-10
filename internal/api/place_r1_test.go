@@ -126,3 +126,32 @@ func TestPlacesIsAFixedNumberOfQueries(t *testing.T) {
 		t.Errorf("a page ran %d queries, want at most 3", many)
 	}
 }
+
+// TestPlaceFollowsAnOrganisationLinkBothWays: a visit to an organisation link reaches the node and what is below it, and
+// nothing above it. ann opens a link on deep: deep is hers, and its parent b is not, so deep's place is "". ann opens a
+// link on b with a grant on deep: deep's parent b is reached through the link, so deep's place is "b", and b's parent a
+// is not, so b's place is "".
+func TestPlaceFollowsAnOrganisationLinkBothWays(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a link on the file does not reach its parent", func(t *testing.T) {
+		t.Parallel()
+		fx := newLinkFixture(t)
+		_, url := fx.makeLink(t, fx.deep.ID, "viewer")
+		fx.openedAs(t, fx.annSess, secretOf(t, url))
+
+		got := placesOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared", nil))
+		wantPlaces(t, got, map[string]string{"file.txt": ""})
+	})
+
+	t.Run("a link on the parent reaches the file's place", func(t *testing.T) {
+		t.Parallel()
+		fx := newLinkFixture(t)
+		fx.setPerm(t, fx.deep.ID, fx.ann.ID, "viewer")
+		_, url := fx.makeLink(t, fx.b.ID, "viewer")
+		fx.openedAs(t, fx.annSess, secretOf(t, url))
+
+		got := placesOf(t, callSession(t, fx.s, fx.annSess, "GET", "/api/v1/shared", nil))
+		wantPlaces(t, got, map[string]string{"file.txt": "b", "b": ""})
+	})
+}
