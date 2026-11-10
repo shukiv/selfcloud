@@ -601,6 +601,19 @@ func (s *Server) handleCLIRevoke(w http.ResponseWriter, r *http.Request) error {
 }
 
 // cliDeviceJSON is one device in the Manage list. Its token is never shown.
+// isDeviceToken reports whether p acts with a terminal's device token (decision 125). Such a token has no minting key, so
+// MintedBy is empty for it; the audience is what tells it apart.
+func isDeviceToken(p *auth.Principal) bool {
+	return p != nil && p.Token != nil && p.Token.Audience == auth.CLIAudience
+}
+
+// delegatedOrigin reports whether a token's rights come from something other than the person's own browser session: a
+// token minted by an account key, or a device token. Such a token never gets Save As, and the editor's own checks treat
+// it as a delegated one (review H1).
+func delegatedOrigin(t *auth.TokenScope) bool {
+	return t != nil && (t.MintedBy != "" || t.Audience == auth.CLIAudience)
+}
+
 type cliDeviceJSON struct {
 	ID         string    `json:"id"`
 	ClientName string    `json:"client_name"`

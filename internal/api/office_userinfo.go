@@ -36,7 +36,7 @@ func (s *Server) handleWOPIPutUserInfo(w http.ResponseWriter, r *http.Request) e
 		s.wopiFail(w, r, notFound("node"))
 		return nil
 	}
-	if g.p.Token != nil && g.p.Token.MintedBy != "" {
+	if delegatedOrigin(g.p.Token) {
 		if info := infoFrom(r.Context()); info != nil {
 			info.clientFault = true
 		}

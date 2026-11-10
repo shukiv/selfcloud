@@ -130,7 +130,7 @@ func saveAsNames(source, relative, suggestedHdr string) (string, bool, error) {
 // specification's example); an overwrite is refused separately, for a token that is not writable. A delegated token keeps
 // its scope, though saveAsOffered never offers Save As to one.
 func saveAsPrincipal(p *auth.Principal) *auth.Principal {
-	if p.Token == nil || p.Token.MintedBy != "" {
+	if p.Token == nil || delegatedOrigin(p.Token) {
 		return p
 	}
 	scope := *p.Token
@@ -147,7 +147,7 @@ func saveAsPrincipal(p *auth.Principal) *auth.Principal {
 func copyPrincipal(p *auth.Principal) *auth.Principal {
 	// A token minted by a delegated key is never lifted, whatever the write refuses earlier: returned as it is, its node
 	// scope still refuses the copy (decision 87, the defence in depth of the round 3 review).
-	if p.Token == nil || p.Token.MintedBy != "" {
+	if p.Token == nil || delegatedOrigin(p.Token) {
 		return p
 	}
 	scope := *p.Token
@@ -273,7 +273,7 @@ func (s *Server) saveAsFail(w http.ResponseWriter, r *http.Request, err error) {
 // to the file's directory. CheckFileInfo says UserCanNotWriteRelative when it is false, and PUT_RELATIVE answers 501 then.
 // A caller the directory does not reach is refused as the others are, and any other failure is returned.
 func saveAsOffered(ctx context.Context, rd saveAsReader, p *auth.Principal, n *store.Node, restricted bool) (bool, error) {
-	if p == nil || (p.Token != nil && p.Token.MintedBy != "") {
+	if p == nil || (p.Token != nil && delegatedOrigin(p.Token)) {
 		return false, nil
 	}
 	if restricted || n.ParentID == "" {

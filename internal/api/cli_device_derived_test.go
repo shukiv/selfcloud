@@ -66,6 +66,9 @@ func TestDeviceTokenRefusedDerivedCredentialRoutes(t *testing.T) {
 		{"POST", "/api/v1/accounts/" + fx.acc.ID + "/users/" + fx.ann.ID + "/password-reset"},
 		{"POST", "/api/v1/accounts/" + fx.acc.ID + "/users/" + fx.ann.ID + "/verification"},
 		{"POST", "/api/v1/share/renew"},
+		{"POST", "/api/v1/accounts/" + fx.acc.ID + "/webhooks"},
+		{"PATCH", "/api/v1/accounts/" + fx.acc.ID + "/webhooks/hook_none"},
+		{"POST", "/api/v1/accounts/" + fx.acc.ID + "/webhooks/hook_none/secret"},
 	}
 	for _, rt := range routes {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {

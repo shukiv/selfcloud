@@ -232,6 +232,10 @@ type route struct {
 	// mustChange admits a user whose password an admin typed (decision 41). Every other route refuses that
 	// user with password_change_required.
 	mustChange bool
+	// noDevice refuses a terminal's device token (decision 125): the route mints or changes a credential that would
+	// outlive the device, such as a link, an editor's token or a sign-in link. Such a route answers forbidden with
+	// details.reason device_token, before its handler runs.
+	noDevice bool
 }
 
 // impClass classifies a route for a session that is an installation admin's sign-in-as (decision 41).
@@ -613,12 +617,12 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens", handle: s.handleMintToken, auth: true, imp: impRefuse},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/tokens/revoke", handle: s.handleRevokeTokens, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/audit", handle: s.handleAuditLog, auth: true, imp: impAllow},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleCreateWebhook, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleCreateWebhook, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks", handle: s.handleListWebhooks, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleGetWebhook, auth: true, imp: impAllow},
-		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleUpdateWebhook, auth: true, imp: impRefuse},
+		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleUpdateWebhook, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/webhooks/{hook}", handle: s.handleDeleteWebhook, auth: true, imp: impRefuse},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/secret", handle: s.handleRotateWebhookSecret, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/secret", handle: s.handleRotateWebhookSecret, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/test", handle: s.handleTestWebhook, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries", handle: s.handleListWebhookDeliveries, auth: true, imp: impAllow},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/webhooks/{hook}/deliveries/{dlv}/retry", handle: s.handleRetryWebhookDelivery, auth: true, imp: impRefuse},
@@ -667,9 +671,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleGetUser, auth: true, imp: impAllow},
 		{method: http.MethodPatch, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleUpdateUser, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/accounts/{acc}/users/{usr}", handle: s.handleDeleteUser, auth: true, imp: impRefuse},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/verification", handle: s.handleSendVerification, auth: true, imp: impRefuse},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/password-reset", handle: s.handlePasswordReset, auth: true, imp: impRefuse},
-		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/sign-in-links", handle: s.handleCreateSignInLink, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/verification", handle: s.handleSendVerification, auth: true, imp: impRefuse, noDevice: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/password-reset", handle: s.handlePasswordReset, auth: true, imp: impRefuse, noDevice: true},
+		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/sign-in-links", handle: s.handleCreateSignInLink, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users/{usr}/tokens/revoke", handle: s.handleRevokeUserTokens, auth: true, imp: impRefuse},
 		// An installation admin's typed password and sign-in-as (decision 41). Both need the admin's own session, not a key,
 		// and the admin's password again; both are off unless admin.tenant_access is on.
@@ -726,7 +730,7 @@ func (s *Server) routes() []route {
 		{method: http.MethodHead, path: "/api/v1/nodes/{nod}/tags", handle: s.handleGetTags, auth: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/media/tags", handle: s.handleTagsBatch, auth: true, imp: impAllow},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/content", handle: s.handlePutContent, auth: true, imp: impAllow},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/links", handle: s.handleCreateLink, auth: true, link: true, imp: impAllow, noDevice: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/permissions", handle: s.handleListNodePermissions, auth: true, imp: impAllow},
 		{method: http.MethodPut, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleSetNodePermission, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/nodes/{nod}/permissions/{subject}", handle: s.handleRemoveNodePermission, auth: true, imp: impRefuse},
@@ -770,15 +774,15 @@ func (s *Server) routes() []route {
 		{method: http.MethodGet, path: "/api/v1/recent", handle: s.handleListRecent, auth: true, imp: impAllow},
 		{method: http.MethodDelete, path: "/api/v1/recent", handle: s.handleClearRecent, auth: true, imp: impRefuse},
 		{method: http.MethodDelete, path: "/api/v1/recent/{nod}", handle: s.handleRemoveRecent, auth: true, imp: impRefuse},
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleCreateShareLink, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleCreateShareLink, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodGet, path: "/api/v1/nodes/{nod}/share-links", handle: s.handleListShareLinks, auth: true, imp: impAllow},
-		{method: http.MethodPatch, path: "/api/v1/share-links/{shl}", handle: s.handleUpdateShareLink, auth: true, imp: impRefuse},
-		{method: http.MethodPost, path: "/api/v1/share-links/{shl}/reset", handle: s.handleResetShareLink, auth: true, imp: impRefuse},
+		{method: http.MethodPatch, path: "/api/v1/share-links/{shl}", handle: s.handleUpdateShareLink, auth: true, imp: impRefuse, noDevice: true},
+		{method: http.MethodPost, path: "/api/v1/share-links/{shl}/reset", handle: s.handleResetShareLink, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodDelete, path: "/api/v1/share-links/{shl}", handle: s.handleDeleteShareLink, auth: true, imp: impRefuse},
 		// Opening a link checks its own credential: the handler answers a dead link the same way for every caller.
 		{method: http.MethodPost, path: "/api/v1/share/open", handle: s.handleOpenShareLink, imp: impAllow},
 		// Renewing a visitor credential: the credential itself is the caller.
-		{method: http.MethodPost, path: "/api/v1/share/renew", handle: s.handleRenewShareCredential, auth: true, link: true, drop: true, imp: impAllow},
+		{method: http.MethodPost, path: "/api/v1/share/renew", handle: s.handleRenewShareCredential, auth: true, link: true, drop: true, imp: impAllow, noDevice: true},
 		// What a drop link's visitor may upload, and what the drop page shows: the credential is the caller.
 		{method: http.MethodGet, path: "/api/v1/share/info", handle: s.handleShareInfo, auth: true, drop: true, imp: impAllow},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/storage-policy", handle: s.handleGetStoragePolicy, auth: true, imp: impAllow},
@@ -825,7 +829,7 @@ func (s *Server) routes() []route {
 		// Office editing (decision 31). The editor route is for a person; the /wopi routes are called by Collabora
 		// and carry their token in the query, so they are secretPath. All of them answer not_found while office.enabled
 		// is off, and the /wopi routes check their proof and token before anything else.
-		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/office", handle: s.handleOpenOffice, auth: true, imp: impRefuse},
+		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/office", handle: s.handleOpenOffice, auth: true, imp: impRefuse, noDevice: true},
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/unlock", handle: s.handleBreakNodeLock, auth: true, imp: impRefuse},
 		// New documents (decision 91): a blank Word, Excel or PowerPoint file in a folder, with file creation's rights.
 		{method: http.MethodPost, path: "/api/v1/nodes/{nod}/documents", handle: s.handleCreateDocument, auth: true, imp: impRefuse},
@@ -899,6 +903,11 @@ func (s *Server) wrap(rt route) http.Handler {
 			if p != nil && p.Kind == auth.KindShareLink && !admitsVisitor(rt, p.Link) {
 				s.writeError(w, r, apierr.New(apierr.Forbidden,
 					"a link that anyone can open does not reach this").With("reason", "link_route"))
+				return
+			}
+			if rt.noDevice && isDeviceToken(p) {
+				s.writeError(w, r, apierr.New(apierr.Forbidden,
+					"a terminal's sign-in does not make this; use the browser").With("reason", "device_token"))
 				return
 			}
 			if info != nil {
