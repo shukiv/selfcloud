@@ -183,11 +183,12 @@ function GroupsView() {
               label: `${t("groups.members")}: ${g.name}`,
               icon: <Users size={18} aria-hidden="true" focusable="false" />,
               // The open group's Members icon is pressed: the members under the list are its (design-tl 2.2, decision 114).
-              pressed: open?.id === g.id,
+              // Only that icon has a pressed state; a second click on it closes the members (review M1).
+              pressed: open?.id === g.id ? true : undefined,
               run: () => {
-                setOpen(g);
                 setMemberError(null);
                 setAdding(null);
+                setOpen(open?.id === g.id ? null : g);
               },
             },
             {

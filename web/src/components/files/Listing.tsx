@@ -342,7 +342,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       label={a.label}
       icon={a.icon}
       tabIndex={tab}
-      aria-pressed={a.pressed}
+      pressed={a.pressed}
       aria-disabled={a.disabled ? true : undefined}
       danger={a.danger}
       style={a.disabled ? { color: token.colorTextDisabled } : undefined}
