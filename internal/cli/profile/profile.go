@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/shukiv/selfcloud/internal/auth"
+	"github.com/shukiv/selfcloud/internal/cli/client"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
 )
 
@@ -179,6 +180,10 @@ func (s *Store) Load() (File, error) {
 		}
 		if !validKind(p.Kind) {
 			return File{}, exitcode.Usagef("%s holds a profile of an unknown kind", path)
+		}
+		// The address gets the rule add uses. The refusal does not repeat it: a bad address may hold a credential.
+		if _, err := client.ParseBaseURL(p.URL, true); err != nil {
+			return File{}, exitcode.Usagef("%s holds a profile with an address that is not valid", path)
 		}
 	}
 	return f, nil
