@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -32,8 +32,16 @@ func isolateRemote(t *testing.T) {
 // newRealServer serves the real API from a temporary store, the way the server does, on loopback.
 func newRealServer(t *testing.T) (*httptest.Server, *api.Server) {
 	t.Helper()
+	srv, _, s := serveDir(t, t.TempDir())
+	return srv, s
+}
+
+// serveDir serves the real API from the store in dir, on loopback, the way the server does. It returns the store too,
+// for a test that makes rows the API has no route for yet.
+func serveDir(t *testing.T, dir string) (*httptest.Server, *store.Store, *api.Server) {
+	t.Helper()
 	cfg := config.Defaults()
-	cfg.DataDir = t.TempDir()
+	cfg.DataDir = dir
 	cfg.Storage.MinFree = 0
 	cfg.Store.Path = filepath.Join(cfg.DataDir, "selfcloud.db")
 	if err := cfg.Validate(); err != nil {
@@ -50,7 +58,7 @@ func newRealServer(t *testing.T) (*httptest.Server, *api.Server) {
 	}
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
-	return srv, s
+	return srv, st, s
 }
 
 // recorder wraps a handler and keeps the method and path of each call, the way a recording transport would.
@@ -67,47 +75,53 @@ func (r *recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.next.ServeHTTP(w, req)
 }
 
-// probes is how the recording check calls each remote command that reaches a route. A new remote command with a route
-// needs its probe here; the check fails until it has one.
+// probes is how the recording check calls each remote command that reaches a route and needs no fixture. The file
+// commands need one, and are in fileProbes (files_probe_test.go). A new remote command with a route needs its probe in
+// one of the two; the check fails until it has one.
 var probes = map[string][]string{
 	"info":     {},
 	"api spec": {},
 }
 
-// TestRemoteCommandsCallTheirRoute: each remote command runs against the real server through a recording handler, and
-// the only call it makes is the route its table entry names (design section 5.2).
+// TestRemoteCommandsCallTheirRoute: each remote command runs against the real server through a recording handler. Every
+// call it makes is its own route, or a read it declares (remote.go, reads), and its route is among them (design
+// section 5.2). A command that calls anything else fails the build.
 func TestRemoteCommandsCallTheirRoute(t *testing.T) {
 	isolateRemote(t)
-	_, s := newRealServer(t)
-	rec := &recorder{next: s.Handler()}
-	recorded := httptest.NewServer(rec)
-	defer recorded.Close()
+	p := newFileProbe(t)
 	for _, c := range remoteCommands {
 		if c.route == "" || c.notProbed != "" {
 			continue
 		}
-		args, ok := probes[c.name]
-		if !ok {
+		var args []string
+		if fixture, ok := fileProbes[c.name]; ok {
+			args = fixture(p)
+		} else if static, ok := probes[c.name]; ok {
+			args = static
+		} else {
 			t.Errorf("remote command %q reaches %s and has no probe in this test", c.name, c.route)
 			continue
 		}
-		rec.mu.Lock()
-		rec.calls = nil
-		rec.mu.Unlock()
+		p.reset()
 		var out, errOut bytes.Buffer
-		words := strings.Fields(c.name)
-		full := append(append([]string{}, words...), args...)
-		full = append(full, "--url", recorded.URL)
-		code, ok2 := remote(full, &out, &errOut)
-		if !ok2 || code != 0 {
-			t.Errorf("%s: exit %d, matched %v, stderr %q", c.name, code, ok2, errOut.String())
+		full := append(append([]string{}, strings.Fields(c.name)...), args...)
+		full = append(full, "--url", p.recURL)
+		code, matched := remote(full, &out, &errOut)
+		if !matched || code != 0 {
+			t.Errorf("%s: exit %d, matched %v, stderr %q", c.name, code, matched, errOut.String())
 			continue
 		}
-		rec.mu.Lock()
-		calls := append([]string(nil), rec.calls...)
-		rec.mu.Unlock()
-		if !reflect.DeepEqual(calls, []string{c.route}) {
-			t.Errorf("%s: recorded calls %v, want exactly [%s]", c.name, calls, c.route)
+		allowed := append(c.routes(), c.reads...)
+		var routes []string
+		for _, call := range p.recorded() {
+			r := routeOf(call)
+			routes = append(routes, r)
+			if !slices.Contains(allowed, r) {
+				t.Errorf("%s: call %s is neither its route nor a read it declares %v", c.name, r, allowed)
+			}
+		}
+		if !slices.Contains(routes, c.route) {
+			t.Errorf("%s: its route %s was never called; calls %v", c.name, c.route, routes)
 		}
 	}
 }
