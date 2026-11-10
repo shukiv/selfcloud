@@ -50,7 +50,7 @@ describe("currentEtag (decision 135)", () => {
   const statOf = (etag: string | undefined) => ({ ...file, etag }) as unknown as Node;
 
   it("reads the current ETag from the node's stat, and sends no HEAD and no content request", async () => {
-    const f = vi.fn(async () => Response.json(statOf('"e1"')));
+    const f = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(async () => Response.json(statOf('"e1"')));
     vi.stubGlobal("fetch", f);
     expect(await currentEtag("nod_a1")).toEqual({ ok: true, etag: '"e1"' });
     expect(f).toHaveBeenCalledTimes(1);
