@@ -58,6 +58,19 @@ var groupByExt, groupByMime = func() (map[string]string, map[string]string) {
 	return ext, mime
 }()
 
+// asciiLower folds A to Z only, as SQLite's lower() does without ICU. strings.ToLower folds all of Unicode, and the
+// backfill (migration 0050) would then disagree with groupOf on a name such as one with the Kelvin sign (review L1 of
+// ff1a). Trimming is done with strings.Trim(s, " "), spaces only, as SQLite's trim() does.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}
+
 // groupOf returns the type group of an entry: "" for a folder, a shortcut, or a file no group knows. A file's extension
 // (the text after its last dot, lower case) decides when it is in the table. Otherwise its media type (parameters dropped,
 // lower case) decides: first an exact member, then the video and audio prefixes.
@@ -66,11 +79,11 @@ func groupOf(kind, name, mime string) string {
 		return ""
 	}
 	if i := strings.LastIndexByte(name, '.'); i >= 0 && i < len(name)-1 {
-		if g, ok := groupByExt[strings.ToLower(name[i+1:])]; ok {
+		if g, ok := groupByExt[asciiLower(name[i+1:])]; ok {
 			return g
 		}
 	}
-	base := strings.ToLower(strings.TrimSpace(strings.SplitN(mime, ";", 2)[0]))
+	base := asciiLower(strings.Trim(strings.SplitN(mime, ";", 2)[0], " "))
 	if g, ok := groupByMime[base]; ok {
 		return g
 	}
