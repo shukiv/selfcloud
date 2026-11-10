@@ -206,7 +206,8 @@ export async function l4Checks(h, { page, base, accountKey, teamA, teamB, fake, 
 
     // The member, an editor, sees the lock in Details but has no way to end it.
     const menuNote = await rowMenu(page, noteName);
-    check(!menuNote.includes('Open in editor') && !menuNote.includes('Open in viewer'), 'a text file gets no editor entry');
+    // A text file has the code editor's entry for an editor (decision 124), and no office entry: the office viewer is not offered.
+    check(menuNote.includes('Open in editor') && !menuNote.includes('Open in viewer'), `a text file gets the code editor's entry and no office viewer (${menuNote.join(', ') || 'no entries'})`);
     await closeMenu(page);
 
     // ---- The viewer, on Team B: Open in viewer, read only, no lock.

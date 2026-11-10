@@ -62,6 +62,7 @@ import { sec2Checks } from './sec2.mjs';
 import { stChecks } from './st.mjs';
 import { em1Checks } from './em1.mjs';
 import { ce1Checks } from './ce1.mjs';
+import { ce2b1Checks } from './ce2b1.mjs';
 import { tl1Checks } from './tl1.mjs';
 import { tl3Checks } from './tl3.mjs';
 import { menuHeaderText, pickMenuEntry } from './menu.mjs';
@@ -92,6 +93,9 @@ const s4bRefused = new Set();
 // The node IDs the ce1 section locks with the no-download rule. The section fills it before the read the server refuses, so an
 // inline 403 counts as expected only for a node the section locked.
 const ce1Locked = new Set();
+// The node IDs the ce2b-1 section saves against a file changed on the server. The server answers 412 to that save on purpose; the
+// section fills the set before the save, so a 412 counts as expected only for a node the section made stale.
+const ce2b1Stale = new Set();
 
 // The answers the run causes on purpose: the start-up probe of an anonymous visitor, and a sign-in link
 // used a second time. The browser logs each as a failed request; the run counts them instead.
@@ -171,6 +175,15 @@ const EXPECTED = [
   {
     name: 'restricted read',
     matches: (e) => restrictedOnPurpose(e, ce1Locked),
+  },
+  // The editor's save against a file changed on the server is refused with 412 (ce2b1Checks, decision 124). Only a node the
+  // section made stale counts.
+  {
+    name: 'stale save',
+    matches: (e) => {
+      const m = /\/api\/v1\/nodes\/([^/]+)\/content$/.exec(e.url ?? '');
+      return e.source === 'network' && m !== null && ce2b1Stale.has(m[1]) && /status of 412\b/.test(e.text ?? '');
+    },
   },
   // The member's upload over its limit is refused by the server.
   {
@@ -1003,6 +1016,8 @@ async function main() {
     if (!only || onlySet.has('em1')) await em1Checks(h, { page, base, accountKey, accountID, MEMBER, dir });
     // The read-only code viewer (slice ce1, decision 115): the member's own files, in light, dark, Hebrew and at 375 px.
     if (!only || onlySet.has('ce1')) await ce1Checks(h, { page, base, accountKey, MEMBER, teamB, locked: ce1Locked });
+    // The code editor and its save (slice ce2b-1, decision 124): the pencil, the editor page, Ctrl+S, the conflict and Hebrew.
+    if (!only || onlySet.has('ce2b-1')) await ce2b1Checks(h, { page, base, accountKey, teamB, stale: ce2b1Stale });
     if (!only || onlySet.has('d3')) await d3Checks(h, { page, ADMIN, MEMBER });
     if (!only || onlySet.has('x3')) await x3Checks(h, { page, base, accountKey, accountID, memberID });
     if (!only || onlySet.has('x4')) await x4Checks(h, { page, base, accountKey, accountID, memberID });
