@@ -65,13 +65,13 @@ describe("the column titles of a Manage list, before the admin catalogue has loa
     stubFetch(() => ({ status: 200, body: { items: [NOTE] } }));
     renderIn("labels");
     const region = await screen.findByRole("region", { name: "Labels" });
-    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Type", "Restricted", "Items with a value"]);
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Type", "Restricted", "Items with a value", "Actions"]);
   });
 
   it("Team spaces names its columns in words, never with a key", async () => {
     stubFetch((c) => (c.url.startsWith("/api/v1/accounts/acc_1/folders") ? { status: 200, body: { items: [SPACE] } } : { status: 404, body: {} }));
     renderIn("spaces");
     const region = await screen.findByRole("region", { name: "Team spaces" });
-    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Access"]);
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Access", "Actions"]);
   });
 });

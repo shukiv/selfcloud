@@ -9,8 +9,5 @@
   "admin.empty.groups": "Un groupe permet de partager avec plusieurs personnes à la fois.",
   "admin.empty.spaces": "Créez-en un pour partager des fichiers.",
   "admin.empty.labels": "Ajoutez un champ, comme une date ou un choix, pour décrire les éléments.",
-  "admin.table.access": "Accès",
-  "admin.table.restricted": "Restreint",
-  "admin.table.values": "Éléments avec une valeur",
   "admin.removeFromAccount": "Retirer du compte…"
 }

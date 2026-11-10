@@ -9,8 +9,5 @@
   "admin.empty.groups": "تتيح المجموعة المشاركة مع عدة أشخاص دفعة واحدة.",
   "admin.empty.spaces": "أنشئوا واحدة لمشاركة الملفات.",
   "admin.empty.labels": "أضيفوا حقلًا، مثل تاريخ أو خيار، لوصف العناصر.",
-  "admin.table.access": "الوصول",
-  "admin.table.restricted": "مقيّد",
-  "admin.table.values": "العناصر ذات قيمة",
   "admin.removeFromAccount": "إزالة من الحساب…"
 }

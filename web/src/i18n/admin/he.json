@@ -9,8 +9,5 @@
   "admin.empty.groups": "קבוצה מאפשרת לשתף עם כמה אנשים בבת אחת.",
   "admin.empty.spaces": "צרו מרחב כדי לשתף קבצים.",
   "admin.empty.labels": "הוסיפו שדה, כמו תאריך או בחירה, כדי לתאר פריטים.",
-  "admin.table.access": "גישה",
-  "admin.table.restricted": "מוגבל",
-  "admin.table.values": "פריטים עם ערך",
   "admin.removeFromAccount": "הסרה מהחשבון…"
 }

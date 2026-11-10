@@ -9,8 +9,5 @@
   "admin.empty.groups": "Группа позволяет делиться сразу с несколькими людьми.",
   "admin.empty.spaces": "Создайте одно, чтобы делиться файлами.",
   "admin.empty.labels": "Добавьте поле, например дату или выбор, чтобы описать элементы.",
-  "admin.table.access": "Доступ",
-  "admin.table.restricted": "Ограничено",
-  "admin.table.values": "Элементы со значением",
   "admin.removeFromAccount": "Удалить из аккаунта…"
 }

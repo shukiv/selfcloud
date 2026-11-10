@@ -157,7 +157,7 @@ function SpacesView() {
     { key: "name", title: t("files.col.name"), render: (s) => <bdi>{s.name}</bdi> },
     {
       key: "access",
-      title: t("admin.table.access"),
+      title: t("manage.col.access"),
       secondary: true,
       render: (s) => (
         <>

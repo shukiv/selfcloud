@@ -118,14 +118,14 @@ function LabelsView() {
     { key: "type", title: t("labels.typeLabel"), secondary: true, width: 140, render: (f) => t(`labels.type.${f.type}`) },
     {
       key: "restricted",
-      title: t("admin.table.restricted"),
+      title: t("manage.col.restricted"),
       secondary: true,
       width: 130,
       render: (f) => (f.restricted ? <Tag>{t("labels.restrictedBadge")}</Tag> : null),
     },
     {
       key: "values",
-      title: t("admin.table.values"),
+      title: t("manage.col.values"),
       secondary: true,
       align: "end",
       width: 150,

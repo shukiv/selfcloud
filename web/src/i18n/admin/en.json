@@ -9,8 +9,5 @@
   "admin.empty.groups": "A group lets you share with several people at once.",
   "admin.empty.spaces": "Create one to share files.",
   "admin.empty.labels": "Add a field, such as a date or a choice, to describe items.",
-  "admin.table.access": "Access",
-  "admin.table.restricted": "Restricted",
-  "admin.table.values": "Items with a value",
   "admin.removeFromAccount": "Remove from account…"
 }
