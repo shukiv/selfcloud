@@ -75,6 +75,20 @@ func (r *recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.next.ServeHTTP(w, req)
 }
 
+// undeclaredCalls returns the routes, as the route table writes them, that a command called and that are neither its
+// route, a route it calls after that, nor a read it declares. Any such call is a fault: the command reaches a route the
+// table does not name.
+func undeclaredCalls(c remoteCommand, routes []string) []string {
+	allowed := append(c.routes(), c.reads...)
+	var out []string
+	for _, r := range routes {
+		if !slices.Contains(allowed, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // probes is how the recording check calls each remote command that reaches a route and needs no fixture. The file
 // commands need one, and are in fileProbes (files_probe_test.go). A new remote command with a route needs its probe in
 // one of the two; the check fails until it has one.
@@ -111,14 +125,12 @@ func TestRemoteCommandsCallTheirRoute(t *testing.T) {
 			t.Errorf("%s: exit %d, matched %v, stderr %q", c.name, code, matched, errOut.String())
 			continue
 		}
-		allowed := append(c.routes(), c.reads...)
 		var routes []string
 		for _, call := range p.recorded() {
-			r := routeOf(call)
-			routes = append(routes, r)
-			if !slices.Contains(allowed, r) {
-				t.Errorf("%s: call %s is neither its route nor a read it declares %v", c.name, r, allowed)
-			}
+			routes = append(routes, routeOf(call))
+		}
+		for _, r := range undeclaredCalls(c, routes) {
+			t.Errorf("%s: call %s is neither its route nor a read it declares", c.name, r)
 		}
 		if !slices.Contains(routes, c.route) {
 			t.Errorf("%s: its route %s was never called; calls %v", c.name, c.route, routes)
