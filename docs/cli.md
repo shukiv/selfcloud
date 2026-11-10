@@ -28,7 +28,15 @@ A profile is a name for a server address and a key. The profiles file is one JSO
   interrupted write leaves the old file whole. A file, or a directory, that any other user can read or enter is refused,
   and the message gives the `chmod` that fixes it. A symbolic link is refused.
 - **Which profile is used.** `--profile NAME`, then `SELFCLOUD_PROFILE`, then the current profile (`profile use`). The
-  first profile added becomes current.
+  first profile added becomes current. A name given with `--profile` must name a profile. A name from `SELFCLOUD_PROFILE`
+  or the current profile that names none is ignored when the command has its address and any key it needs; a one-line
+  note on standard error says where it came from, and never repeats the name.
+- **Names in messages.** A name that starts with `sc_`, `scd_`, `sct_` or `scl_` is shown as "that name" in error
+  messages, even when it is a valid name (for example `sc_ops`), so a key pasted where a name goes is not repeated. Such a
+  name still shows in `profile ls` and in the success lines. A value that is not a valid name is shown as "that name" too.
+- **A bad address.** A profile whose address is not valid (a user name in it, a scheme other than http or https, a query,
+  or no host) makes every `profile` command and every remote command refuse the file, and the message names the profile.
+  `profile rm NAME` still works, so the bad profile can be removed.
 
 Commands:
 
