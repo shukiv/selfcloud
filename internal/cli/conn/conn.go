@@ -126,12 +126,12 @@ func Connect(g Global, stderr io.Writer, needCred bool) (*Conn, error) {
 
 	// A name from --profile is explicit and must name a profile. A name from SELFCLOUD_PROFILE or the current pointer is a
 	// default: when it names nothing, it is ignored if the call has its address and any credential it needs (decision 123).
-	name, explicit := g.Profile, true
+	name, explicit, staleFrom := g.Profile, true, ""
 	if name == "" {
-		name, explicit = os.Getenv(envProfile), false
+		name, explicit, staleFrom = os.Getenv(envProfile), false, envProfile
 	}
 	if name == "" {
-		name = f.Current
+		name, staleFrom = f.Current, "the current profile"
 	}
 	var p profile.Profile
 	haveProfile := false
@@ -141,6 +141,9 @@ func Connect(g Global, stderr io.Writer, needCred bool) (*Conn, error) {
 		case ok:
 			p, haveProfile = pr, true
 		case !explicit && doesWithoutProfile(g, needCred):
+			// The note names where the name came from, never the name itself: it may be a pasted credential.
+			fmt.Fprintf(stderr, "selfcloud: note: %s names no profile; it is ignored for this command, which uses the "+
+				"address and credential it was given\n", staleFrom)
 			name = ""
 		default:
 			return nil, exitcode.NotFoundf("no profile called %s; see selfcloud profile ls", profile.Shown(name))
