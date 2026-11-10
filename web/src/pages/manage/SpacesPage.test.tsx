@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
+import { expectEmptyTable } from "../../test/emptyTable";
+import { DESKTOP, PHONE, setViewport } from "../../test/viewport";
 import SpacesPage from "./SpacesPage";
 
 function signedAs(): Session {
@@ -43,8 +45,15 @@ function renderPage() {
   return qc;
 }
 
-beforeEach(() => session.set(signedAs()));
-afterEach(() => session.set(null));
+let restoreViewport: () => void = () => undefined;
+beforeEach(() => {
+  session.set(signedAs());
+  restoreViewport = setViewport(DESKTOP);
+});
+afterEach(() => {
+  session.set(null);
+  restoreViewport();
+});
 
 const isSpaceDelete = (c: Call) => c.method === "DELETE" && c.url === "/api/v1/accounts/acc_1/folders/fld_1";
 
@@ -59,7 +68,25 @@ function answerFor(del: (c: Call) => { status: number; body?: unknown } | null) 
   };
 }
 
+// openDelete opens the space's delete confirmation. Delete is the fourth action, so it is in the row's ⋮ menu (design-tl 2.2).
+async function openDelete() {
+  fireEvent.click(await screen.findByRole("button", { name: "More actions for Plans" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Delete: Plans" }));
+}
+
 describe("team spaces", () => {
+  // The owner's rule of 2026-11-09 (decision 114): the empty table keeps its headers, with the Empty and New team space in the body.
+  it("an empty list keeps its table and headers, with the title, description and New team space in the body", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderPage();
+    await expectEmptyTable("Team spaces", {
+      headers: ["Name", "Access"],
+      title: "No team spaces yet",
+      description: "Create one to share files.",
+      action: "New team space",
+    });
+  });
+
   it("a failed first load shows the error, never the empty message (guard: error before the empty state)", async () => {
     stubFetch((c) => (c.url.includes("/folders") ? fail(403, "forbidden") : { status: 200, body: { items: [] } }));
     renderPage();
@@ -67,10 +94,53 @@ describe("team spaces", () => {
     expect(screen.queryByText(/No team spaces yet/)).toBeNull();
   });
 
+  // design-tl 3.2 (M4): Share, Settings and Rename are inline icons on a desktop; the fourth action, Delete, is in the ⋮ menu.
+  it("a space has three icons inline on a desktop, and Delete in its ⋮ menu", async () => {
+    stubFetch(answerFor(() => null));
+    renderPage();
+    const row = await screen.findByRole("row", { name: "Plans" });
+    expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Share: Plans",
+      "Settings: Plans",
+      "Rename: Plans",
+      "More actions for Plans",
+    ]);
+  });
+
+  // design-tl 4: below md the flags are the name's second line, and the actions are the ⋮ menu alone.
+  it("on a phone the flags are the name's second line, and the actions are one ⋮ menu", async () => {
+    restoreViewport();
+    restoreViewport = setViewport(PHONE);
+    stubFetch(answerFor(() => null));
+    renderPage();
+    const row = await screen.findByRole("row", { name: "Plans" });
+    expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["More actions for Plans"]);
+    const headers = within(screen.getByRole("region", { name: "Team spaces" })).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(headers).not.toContain("Access");
+  });
+
+  // The Access column shows each flag the space has as a Tag on a desktop (design-tl 3.2, M4).
+  it("a space's flags are Tags in its Access cell on a desktop", async () => {
+    stubFetch((c) => (c.url.startsWith("/api/v1/accounts/acc_1/folders") ? { status: 200, body: { items: [{ ...SPACE, members_only: true }] } } : fail(404, "not_found")));
+    renderPage();
+    const row = await screen.findByRole("row", { name: "Plans" });
+    expect(within(row).getByText("Members only").className).toContain("ant-tag");
+  });
+
+  // Below md the flags are the name's second line, in muted text (design-tl 4).
+  it("on a phone the flags are the name's second line", async () => {
+    restoreViewport();
+    restoreViewport = setViewport(PHONE);
+    stubFetch((c) => (c.url.startsWith("/api/v1/accounts/acc_1/folders") ? { status: 200, body: { items: [{ ...SPACE, members_only: true }] } } : fail(404, "not_found")));
+    renderPage();
+    const row = await screen.findByRole("row", { name: "Plans" });
+    expect(row.querySelector(".row-second")?.textContent).toBe("Members only");
+  });
+
   it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
     const { calls } = stubFetch((c) => (isSpaceDelete(c) ? new Promise<Answer>(() => undefined) : answerFor(() => null)(c)));
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: /Delete.*Plans/ }));
+    await openDelete();
     await screen.findByRole("button", { name: /Delete team space/ });
     fireEvent.change(document.getElementById("space-delete-name") as HTMLInputElement, { target: { value: "Plans" } });
     fireEvent.click(await screen.findByRole("button", { name: /Delete team space/ }));
@@ -83,7 +153,7 @@ describe("team spaces", () => {
   it("deleting a space needs its exact name typed; the button stays off until it matches (guard: requireName on the confirmation)", async () => {
     const { calls } = stubFetch(answerFor(() => null));
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: /Delete.*Plans/ }));
+    await openDelete();
     const go = await screen.findByRole("button", { name: /Delete team space/ });
     expect((go as HTMLButtonElement).disabled).toBe(true);
     const input = document.getElementById("space-delete-name") as HTMLInputElement;
@@ -101,7 +171,7 @@ describe("team spaces", () => {
       answerFor((c) => (isSpaceDelete(c) ? { status: 403, body: { error: { code: "forbidden", message: "SERVER-ONLY" } } } : null)),
     );
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: /Delete.*Plans/ }));
+    await openDelete();
     await screen.findByRole("button", { name: /Delete team space/ });
     fireEvent.change(document.getElementById("space-delete-name") as HTMLInputElement, { target: { value: "Plans" } });
     fireEvent.click(screen.getByRole("button", { name: /Delete team space/ }));

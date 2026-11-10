@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "antd";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
+import { expectEmptyTable } from "../../test/emptyTable";
+import { DESKTOP, PHONE, setViewport } from "../../test/viewport";
 import GroupsPage from "./GroupsPage";
 
 function signedAs(): Session {
@@ -32,17 +34,58 @@ function renderPage() {
   return qc;
 }
 
-beforeEach(() => session.set(signedAs()));
-afterEach(() => session.set(null));
+let restoreViewport: () => void = () => undefined;
+beforeEach(() => {
+  session.set(signedAs());
+  restoreViewport = setViewport(DESKTOP);
+});
+afterEach(() => {
+  session.set(null);
+  restoreViewport();
+});
 
 const isGroupDelete = (c: Call) => c.method === "DELETE" && c.url === "/api/v1/accounts/acc_1/groups/grp_1";
 
 describe("groups", () => {
+  // The owner's rule of 2026-11-09 (decision 114): the empty table keeps its header, with the title, the description and New group.
+  it("an empty list keeps its table and its Name header, with the Empty and New group in the body", async () => {
+    stubFetch((c) => (c.url.includes("/groups") ? { status: 200, body: { items: [] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    await expectEmptyTable("Groups", {
+      headers: ["Name"],
+      title: "No groups yet",
+      description: "A group lets you share with several people at once.",
+      action: "New group",
+    });
+  });
+
   it("a failed first load shows the error, never the empty message (guard: error before the empty state)", async () => {
     stubFetch((c) => (c.url.includes("/groups") ? fail(403, "forbidden") : { status: 200, body: { items: [] } }));
     renderPage();
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.queryByText(/No groups yet/)).toBeNull();
+  });
+
+  // design-tl 3.2 (M2): Members, Rename and Delete are the row's three icons, each with its tooltip and a name for a screen reader.
+  it("each group has its three icons inline on a desktop, named for the group", async () => {
+    stubFetch((c) => (c.url.includes("/groups") && c.method === "GET" ? { status: 200, body: { items: [GROUP] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    const row = await screen.findByRole("row", { name: "Finance" });
+    // A group has no menu entries of its own, so the row has no ⋮ button on a desktop.
+    expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["Members: Finance", "Rename: Finance", "Delete: Finance"]);
+  });
+
+  // design-tl 4: on a phone the three icons are the ⋮ menu, and the list keeps its one Name column.
+  it("on a phone the group's actions are one ⋮ menu, with Members, Rename and Delete in it", async () => {
+    restoreViewport();
+    restoreViewport = setViewport(PHONE);
+    stubFetch((c) => (c.url.includes("/groups") && c.method === "GET" ? { status: 200, body: { items: [GROUP] } } : { status: 200, body: { items: [] } }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "More actions for Finance" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByText("Members: Finance")).toBeTruthy();
+    expect(within(menu).getByText("Rename: Finance")).toBeTruthy();
+    expect(within(menu).getByText("Delete: Finance")).toBeTruthy();
   });
 
   it("a double click on delete sends one request (guard: the once-at-a-time check)", async () => {
@@ -140,7 +183,8 @@ describe("the open group after a rename", () => {
     await waitFor(() => expect(document.getElementById("members-title")?.textContent).toBe("Accounts"));
   });
 
-  it("a group with no members shows antd's compact Empty with its words (decision 111)", async () => {
+  // design-tl 3.2 (M3): a group's members are a table too; with no member the table keeps its Name header, and the body says so.
+  it("a group with no members keeps its table and header, and the body's title says there are none", async () => {
     stubFetch((c) => {
       if (c.url.includes("/groups/grp_1/members")) return { status: 200, body: { items: [] } };
       if (c.url.includes("/groups")) return { status: 200, body: { items: [GROUP] } };
@@ -148,9 +192,24 @@ describe("the open group after a rename", () => {
     });
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: /Members.*Finance/ }));
-    await screen.findByText("No members yet.");
-    const region = document.querySelector('section[aria-labelledby="members-title"]');
-    expect(region?.querySelector(".ant-empty.ant-empty-normal .ant-empty-description")?.textContent).toBe("No members yet.");
+    const region = await screen.findByRole("region", { name: "Members" });
+    expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name"]);
+    await waitFor(() => expect(region.querySelector("tbody .empty-title")?.textContent).toBe("No members yet"));
+    expect(region.querySelector("tbody .empty-desc")).toBeNull();
+    expect(region.querySelector("tbody button")).toBeNull();
+  });
+
+  // The members rows: each member is a row with its name and a Remove icon with the member's name in its label.
+  it("each member has a Remove icon named for the member", async () => {
+    stubFetch((c) => {
+      if (c.url.includes("/groups/grp_1/members")) return { status: 200, body: { items: [{ user_id: "usr_dana", created_at: "2026-10-01T00:00:00Z" }] } };
+      if (c.url.includes("/people") || c.url.includes("/names")) return { status: 200, body: { items: [{ id: "usr_dana", display_name: "Dana", email: "dana@example.com", status: "active", role: "member" }] } };
+      if (c.url.includes("/groups")) return { status: 200, body: { items: [GROUP] } };
+      return { status: 200, body: { items: [] } };
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Members.*Finance/ }));
+    const region = await screen.findByRole("region", { name: "Members" });
+    expect(await within(region).findByRole("button", { name: /^Remove: / })).toBeTruthy();
   });
 });
-

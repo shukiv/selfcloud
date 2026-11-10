@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createQueryClient } from "../../lib/query";
 import { session, type Session } from "../../lib/session";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
+import { expectEmptyTable } from "../../test/emptyTable";
+import { DESKTOP, PHONE, setViewport } from "../../test/viewport";
 import LabelsPage from "./LabelsPage";
 
 function signedAs(): Session {
@@ -39,26 +41,83 @@ function renderPage() {
   );
 }
 
-beforeEach(() => session.set(signedAs()));
-afterEach(() => session.set(null));
+let restoreViewport: () => void = () => undefined;
+beforeEach(() => {
+  session.set(signedAs());
+  restoreViewport = setViewport(DESKTOP);
+});
+afterEach(() => {
+  session.set(null);
+  restoreViewport();
+});
 
 const isDelete = (c: Call) => c.method === "DELETE" && c.url === "/api/v1/accounts/acc_1/label-fields/lbf_status";
+
+// The rows of the labels table, in the order they are drawn, by their ids.
+const rowIDs = (region: HTMLElement) => [...region.querySelectorAll<HTMLElement>("tbody tr[data-id]")].map((r) => r.dataset.id);
 
 describe("labels page", () => {
   it("a failed first load shows the error, never the empty message", async () => {
     stubFetch(() => fail(500, "internal"));
     renderPage();
     expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.queryByText("No label fields yet.")).toBeNull();
+    expect(screen.queryByText("No labels yet")).toBeNull();
   });
 
-  it("lists each field with its type, its restriction and how many items hold a value", async () => {
+  // The owner's rule of 2026-11-09 (decision 114), and the mockup's "No labels yet": the table keeps its headers.
+  it("an empty list keeps its table and headers, with the title, description and New field in the body", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [] } }));
+    renderPage();
+    await expectEmptyTable("Labels", {
+      headers: ["Name", "Type", "Restricted", "Items with a value"],
+      title: "No labels yet",
+      description: "Add a field, such as a date or a choice, to describe items.",
+      action: "New field",
+    });
+  });
+
+  it("lists each field as a row, with its type, its restriction and how many items hold a value", async () => {
     stubFetch(() => ({ status: 200, body: { items: [NOTE, STATUS] } }));
     renderPage();
-    const list = await screen.findByRole("list", { name: "Labels" });
-    expect(within(list).getByText("Note")).toBeTruthy();
-    expect(within(list).getByText("Restricted")).toBeTruthy();
-    expect(within(list).getByText("Items with a value: 3")).toBeTruthy();
+    const region = await screen.findByRole("region", { name: "Labels" });
+    const status = within(region).getByRole("row", { name: "Status" });
+    expect(within(status).getByText("Restricted").className).toContain("ant-tag");
+    expect(status.querySelectorAll("td")[3]?.textContent).toBe("3");
+    expect(within(region).getByRole("row", { name: "Note" }).querySelectorAll("td")[1]?.textContent).toBe("Text");
+  });
+
+  // design-tl 5: the list is loaded whole, so Name sorts it here. The first order is by name, A to Z; a second click reverses it.
+  it("sorts by name: A to Z first, then Z to A, with aria-sort on the Name header", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [STATUS, NOTE] } }));
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Labels" });
+    await waitFor(() => expect(rowIDs(region)).toEqual(["lbf_note", "lbf_status"]));
+    const head = within(region).getAllByRole("columnheader")[0];
+    expect(head.getAttribute("aria-sort")).toBe("ascending");
+    fireEvent.click(within(head).getByRole("button", { name: "Name" }));
+    await waitFor(() => expect(rowIDs(region)).toEqual(["lbf_status", "lbf_note"]));
+    expect(head.getAttribute("aria-sort")).toBe("descending");
+  });
+
+  // Only the sortable header is a button: the other headers are plain, so a click on them does nothing.
+  it("only the Name header is a button", async () => {
+    stubFetch(() => ({ status: 200, body: { items: [NOTE] } }));
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Labels" });
+    const heads = within(region).getAllByRole("columnheader");
+    expect(heads.slice(1).every((h) => within(h).queryByRole("button") === null)).toBe(true);
+  });
+
+  // design-tl 2.2: on a phone the type, the restriction and the count are the name's second line, and the row's actions are ⋮.
+  it("on a phone the type, restriction and count are the name's second line, and the actions are one ⋮ menu", async () => {
+    restoreViewport();
+    restoreViewport = setViewport(PHONE);
+    stubFetch(() => ({ status: 200, body: { items: [STATUS] } }));
+    renderPage();
+    const region = await screen.findByRole("region", { name: "Labels" });
+    const row = within(region).getByRole("row", { name: "Status" });
+    expect(row.querySelector(".row-second")?.textContent).toBe("Choice · Restricted · 3");
+    expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["More actions for Status"]);
   });
 
   it("a delete that never answers: Cancel closes the dialog and aborts the request (fu4, item 2)", async () => {
