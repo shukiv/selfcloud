@@ -77,7 +77,6 @@ fn	lib/files/api.ts:renameNode	mv	cli5	built in cli5
 fn	lib/files/api.ts:requestOfficeEditor	-	-	opens the Collabora editor in a browser tab
 fn	lib/files/api.ts:restoreNode	trash restore	cli5	built in cli5
 fn	lib/files/api.ts:restoreVersion	-	cli11	planned, cli11
-fn	lib/files/api.ts:serverLimits	info	cli3	info covers the limits it reads
 fn	lib/files/api.ts:signedLink	-	cli7	planned, cli7
 fn	lib/files/api.ts:statNode	stat	cli5	built in cli5
 fn	lib/files/api.ts:unlockNode	unlock	cli5	built in cli5
