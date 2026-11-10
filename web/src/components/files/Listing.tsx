@@ -125,6 +125,9 @@ export interface ListAction {
   // pressed is the state of a toggle-like action, such as a group's Members while that group is open: the inline icon says it
   // as aria-pressed (true or false). Left out, the icon has no pressed state. A menu entry has none (design-tl 7).
   pressed?: boolean;
+  // href makes the action a real link (round 2 of tl3): inline it is an anchor the browser follows, so a middle click opens a
+  // new tab and Copy link works; in the ⋮ menu it is the menu's link, and a plain click runs run.
+  href?: string;
 }
 
 // ListMenuEntry is one entry of a row's ⋮ menu, after the row's actions that do not fit inline. An entry with an href is
@@ -336,19 +339,22 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   // row's icons turn disabled under the pressed one while its request is on its way (decision 114). index.css passes its
   // pointer to the wrapper, as for a disabled one, so it has no hover background and shows the not-allowed cursor; its colour is
   // set here too, so it wins over a danger icon's, which IconButton sets inline.
-  const rowIcon = (a: { key: string; label: string; icon: ReactNode; run: () => void; disabled?: boolean; danger?: boolean; pressed?: boolean }, tab?: number) => (
+  const rowIcon = (a: ListAction, tab?: number) => (
     <IconButton
       key={a.key}
       label={a.label}
       icon={a.icon}
       tabIndex={tab}
       pressed={a.pressed}
+      href={a.href}
       aria-disabled={a.disabled ? true : undefined}
       danger={a.danger}
       style={a.disabled ? { color: token.colorTextDisabled } : undefined}
       onClick={(e) => {
         e.stopPropagation();
         if (a.disabled) return;
+        // A link follows its own address: the browser's click does that, so run is not called for it.
+        if (a.href) return;
         a.run();
       }}
       onKeyDown={keysStop}
@@ -391,7 +397,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         const inline = menuOnly ? [] : acts.slice(0, 3);
         const rest = menuOnly ? acts : acts.slice(3);
         const entries: ListMenuEntry[] = [
-          ...rest.map((a) => ({ key: `act-${a.key}`, label: a.label, icon: a.icon, danger: a.danger, disabled: a.disabled, onSelect: a.run })),
+          ...rest.map((a) => ({ key: `act-${a.key}`, label: a.label, icon: a.icon, danger: a.danger, disabled: a.disabled, href: a.href, onSelect: a.run })),
           ...(q.menu?.(r) ?? []),
         ];
         return [r.id, { inline, entries }] as const;

@@ -133,7 +133,9 @@ export default function LargestFilesCard({
               key: "download",
               label: t("storage.act.downloadFor", { name: f.name }),
               icon: <Download size={18} aria-hidden="true" focusable="false" />,
-              // A download is the file's own address with the attachment disposition: the browser saves it, and the page stays.
+              // A download is the file's own address with the attachment disposition: a link, so the browser saves it and a
+              // middle click or Copy link works (round 2, M2). run serves the ⋮ menu's plain click.
+              href: contentPath(f.id),
               run: () => window.location.assign(contentPath(f.id)),
             },
             f.in_trash
