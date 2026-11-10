@@ -3,43 +3,42 @@
 import { useEffect, useMemo } from "react";
 import { Alert, Button, Skeleton, Tag } from "antd";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import Listing, { type ListColumn } from "../components/files/Listing";
+import Icon from "../components/files/Icon";
+import DriveName, { openDrive } from "../components/drive/DriveName";
 import { useLang, useT } from "../lib/i18n";
-import { get, useStore } from "../lib/store";
+import { useStore } from "../lib/store";
 import { brand } from "../lib/brand";
 import { session } from "../lib/session";
-import { officeEdit, officeLinkClick } from "../lib/files/editor";
-import { go, location as routerLocation } from "../lib/router";
 import { queryKey } from "../lib/query";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { formatDate } from "../lib/files/format";
 import { kindOf } from "../lib/files/kind";
-import { sharedWithMe } from "../lib/sharing/api";
-import type { Node, Page } from "../lib/files/types";
-import Icon from "../components/files/Icon";
-import KindMarks from "../components/files/KindMarks";
-import EmptyState from "../components/EmptyState";
+import { sharedWithMe, type SharedNode } from "../lib/sharing/api";
+import type { Page } from "../lib/files/types";
+import { useDriveText } from "../lib/drive/driveText";
 
-// Shared with me: the items other people shared with the caller, each at the role it has, in the order the server
-// gives them. An item opens in its folder, through its address (/n/{nod}), like any link a share mail carries.
-// A failed refresh or a failed load-more keeps the list on screen and shows the failure above it.
+// Shared with me: the items other people shared with the caller, each at the role it has, on the one table (tl4, decision 137), in
+// the order the server gives them, newest share first. An item opens through its address (/n/{nod}), like any link a share mail
+// carries. A failed refresh or a failed load-more keeps the list on screen and shows the failure above it.
 export default function SharedPage() {
   const { t } = useT();
   const lang = useLang();
   const brandName = useStore(brand).name;
-  const editorOn = useStore(officeEdit);
   const me = useStore(session);
   const signedIn = me !== null;
+  const driveReady = useDriveText();
 
   const q = useInfiniteQuery({
     queryKey: queryKey("shared"),
     queryFn: ({ pageParam }: { pageParam: string | undefined }) => sharedWithMe(pageParam),
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last: Page<Node>) => last.next_cursor,
+    getNextPageParam: (last: Page<SharedNode>) => last.next_cursor,
     enabled: signedIn,
     refetchOnMount: "always",
   });
 
-  const items = useMemo<Node[]>(() => (q.data?.pages ?? []).flatMap((p) => p.items), [q.data]);
+  const items = useMemo<SharedNode[]>(() => (q.data?.pages ?? []).flatMap((p) => p.items), [q.data]);
   const hasMore = q.hasNextPage === true;
   const hasData = q.data !== undefined;
 
@@ -47,11 +46,23 @@ export default function SharedPage() {
     document.title = `${t("nav.shared")} · ${brandName}`;
   }, [t, brandName]);
 
-  // ownerText names the owner when it is the caller; otherwise the API gives no name, and nothing is shown.
-  const ownerText = (n: Node): string =>
-    n.owner_id !== undefined && me !== null && n.owner_id === me.user.id ? t("files.details.you") : "";
+  // ownerText names the owner: "You" when it is the caller, otherwise the name the API gives, or nothing when it gives none.
+  const ownerText = (n: SharedNode): string => (n.owner_id !== undefined && me !== null && n.owner_id === me.user.id ? t("files.details.you") : (n.owner_name ?? ""));
 
   const failure = q.isError ? fileErrorText(q.error, lang) : null;
+
+  const columns: ListColumn<SharedNode>[] = [
+    { key: "name", title: t("files.col.name"), render: (n) => <DriveName node={n} /> },
+    { key: "by", title: t("drive.col.sharedBy"), secondary: true, render: (n) => ownerText(n) },
+    { key: "role", title: t("files.col.role"), secondary: true, render: (n) => <Tag>{t(`role.${n.role ?? "viewer"}`)}</Tag> },
+    {
+      key: "when",
+      title: t("drive.col.sharedOn"),
+      secondary: true,
+      ariaSort: "descending",
+      render: (n) => (n.shared_at ? <time dateTime={n.shared_at}>{formatDate(n.shared_at, lang)}</time> : ""),
+    },
+  ];
 
   return (
     <div>
@@ -59,52 +70,23 @@ export default function SharedPage() {
         {t("nav.shared")}
       </h1>
 
-      {failure !== null && (
-        <Alert type={hasData ? "warning" : "error"} showIcon role="alert" message={failure} style={{ marginBottom: 12 }} />
-      )}
+      {failure !== null && <Alert type={hasData ? "warning" : "error"} showIcon role="alert" message={failure} style={{ marginBottom: 12 }} />}
 
-      {!hasData && q.isPending && signedIn && <Skeleton active />}
+      {(!driveReady || (!hasData && q.isPending && signedIn)) && <Skeleton active />}
 
-      {hasData && items.length === 0 && failure === null && (
-        <EmptyState role="status" text={t("shared.empty")} />
-      )}
-
-      {items.length > 0 && (
-        <ul className="shared" aria-label={t("nav.shared")} style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>
-          {items.map((n) => {
-            const owner = ownerText(n);
-            return (
-              <li
-                key={n.id}
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  gap: "8px 12px",
-                  minHeight: 44,
-                  padding: "8px 12px",
-                  border: "1px solid var(--ant-color-border)",
-                  borderRadius: 4,
-                }}
-              >
-                <Icon kind={kindOf(n)} size={24} node={n} />
-                <a
-                  href={`/n/${n.id}`}
-                  onClick={(e) => officeLinkClick(e, n, editorOn, get(routerLocation).path + get(routerLocation).search, go)}
-                  style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere", fontWeight: 600 }}
-                >
-                  <bdi>{n.name}</bdi>
-                </a>
-                <KindMarks node={n} />
-                <Tag>{t(`role.${n.role ?? "viewer"}`)}</Tag>
-                <span style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>
-                  {t("shared.lastChange", { date: formatDate(n.modified_at, lang) })}
-                </span>
-                {owner !== "" && <span style={{ fontSize: 14, color: "var(--ant-color-text-secondary)" }}>{owner}</span>}
-              </li>
-            );
-          })}
-        </ul>
+      {driveReady && hasData && (items.length > 0 || failure === null) && (
+        <div className="shared">
+          <Listing<SharedNode>
+            label={t("nav.shared")}
+            items={items}
+            rowLabel={(n) => n.name}
+            columns={columns}
+            icon={(n) => <Icon kind={kindOf(n)} size={24} node={n} />}
+            menu={(n) => [{ key: "open", label: t("files.act.open"), onSelect: () => openDrive(n) }]}
+            onOpen={(n) => openDrive(n)}
+            empty={{ title: t("drive.empty.shared"), description: t("shared.empty"), className: "empty" }}
+          />
+        </div>
       )}
 
       {hasMore && (

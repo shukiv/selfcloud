@@ -28,10 +28,17 @@ import {
   type SearchState,
 } from "../lib/search/query";
 import { loadSearchText } from "../lib/search/text";
-import HitRow from "../components/search/HitRow";
+import { snippetParts } from "../lib/search/snippet";
+import { formatBytes, formatDate } from "../lib/files/format";
+import { folders } from "../lib/files/folders";
+import { kindOf } from "../lib/files/kind";
+import { useDriveText } from "../lib/drive/driveText";
+import { locationOf } from "../lib/drive/location";
+import Listing, { type ListColumn } from "../components/files/Listing";
+import Icon from "../components/files/Icon";
+import DriveName, { openDrive } from "../components/drive/DriveName";
 import SearchFilters from "../components/search/SearchFilters";
 import { useDraft } from "../components/search/useDraft";
-import EmptyState from "../components/EmptyState";
 
 // searchErrorText is the text of a failed search, by its code. The server's own text is never shown.
 export function searchErrorText(err: unknown, lang: Lang): string {
@@ -74,6 +81,8 @@ export default function SearchPage() {
   const brandName = useStore(brand).name;
   const me = useStore(session);
   const sk = sessionKey(me);
+  const allFolders = useStore(folders);
+  const driveReady = useDriveText();
   const [params, setParams] = useSearchParams();
   const key = params.toString();
   const state = useMemo(() => stateFromParams(new URLSearchParams(key)), [key]);
@@ -237,6 +246,36 @@ export default function SearchPage() {
 
   const setInText = (inText: boolean) => write((s) => ({ ...s, inText, kind: inText ? "" : s.kind }));
 
+  // A result's snippet is its second line, under the name: its matches are marked, and it is text, never markup (oe1 and HitRow's rule).
+  const snippetLine = (h: SearchHit) =>
+    h.snippet ? (
+      <span style={{ display: "block", marginBlockStart: 2, fontSize: token.fontSizeSM, color: token.colorTextSecondary, overflowWrap: "anywhere" }}>
+        <bdi>
+          {snippetParts(h.snippet).map((part, i) =>
+            part.hit ? (
+              <mark key={i} style={{ background: token.colorWarningBg, color: token.colorText, borderRadius: 2, fontWeight: 600 }}>
+                {part.text}
+              </mark>
+            ) : (
+              <span key={i}>{part.text}</span>
+            ),
+          )}
+        </bdi>
+      </span>
+    ) : null;
+  // The results are in relevance order, so no column is marked as sorted: the time column is not the order of the rows.
+  const columns: ListColumn<SearchHit>[] = [
+    { key: "name", title: t("files.col.name"), render: (h) => <DriveName node={h}>{snippetLine(h)}</DriveName> },
+    {
+      key: "where",
+      title: t("drive.col.location"),
+      secondary: true,
+      render: (h) => locationOf({ place: h.place, folder_id: h.folder_id, parent_id: h.parent_id }, allFolders, t("nav.files")),
+    },
+    { key: "modified", title: t("files.col.modified"), secondary: true, render: (h) => <time dateTime={h.modified_at}>{formatDate(h.modified_at, lang)}</time> },
+    { key: "size", title: t("files.col.size"), secondary: true, align: "end", render: (h) => (h.kind === "dir" ? "—" : formatBytes(h.size, lang)) },
+  ];
+
   return (
     <div>
       {/* The heading uses the main catalogue's word for search: it is shown before the page's own strings have loaded. */}
@@ -329,24 +368,28 @@ export default function SearchPage() {
               </>
             )}
 
-            {items.length > 0 && (
-              <ul
-                aria-label={t("search.results")}
-                data-testid="search-results"
-                style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}
-              >
-                {items.map((h) => (
-                  <HitRow key={h.id} hit={h} />
-                ))}
-              </ul>
+            {driveReady && (items.length > 0 || empty || pageEmpty) && (
+              <div className="items" data-testid="search-results">
+                <Listing<SearchHit>
+                  label={t("search.results")}
+                  items={items}
+                  rowLabel={(h) => h.name}
+                  columns={columns}
+                  icon={(h) => <Icon kind={kindOf(h)} size={24} node={h} />}
+                  menu={(h) => [{ key: "open", label: t("files.act.open"), onSelect: () => openDrive(h) }]}
+                  onOpen={(h) => openDrive(h)}
+                  empty={{
+                    title: cursor === null ? t("drive.empty.search") : t("drive.empty.searchPage"),
+                    description: cursor === null ? t("search.empty") : t("search.pageEmpty"),
+                    className: "empty",
+                  }}
+                />
+              </div>
             )}
 
             {hasSnippet && items.length > 0 && (
               <p style={{ margin: "8px 0 0", fontSize: token.fontSizeSM, color: token.colorTextSecondary }}>{t("search.snippetNote")}</p>
             )}
-
-            {empty && <EmptyState role="status" text={t("search.empty")} />}
-            {pageEmpty && <EmptyState role="status" text={t("search.pageEmpty")} />}
 
             {cursor !== null && (
               <div style={{ marginBlockStart: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>

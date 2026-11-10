@@ -1,38 +1,43 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useEffect, useMemo, useState } from "react";
-import { useInfiniteQuery, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Modal, Select, Skeleton, theme as antdTheme } from "antd";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Alert, Button, Modal, Select, Skeleton } from "antd";
 import { ArchiveRestore, Trash2 } from "lucide-react";
 import IconButton from "../components/IconButton";
+import Listing, { type ListColumn } from "../components/files/Listing";
+import Icon from "../components/files/Icon";
+import KindMarks from "../components/files/KindMarks";
 import { useLang, useT, translatePlural } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { session } from "../lib/session";
 import { queryKey, refreshTree } from "../lib/query";
 import { refreshMyStorage } from "../lib/storage/api";
 import { folders, loadFolders } from "../lib/files/folders";
-import { personLabel } from "../lib/files/people";
-import { emptyTrashStep, getMe, listTrash, purgeTrashed, restoreNode, statOrNull } from "../lib/files/api";
+import { emptyTrashStep, getMe, listTrash, purgeTrashed, restoreNode } from "../lib/files/api";
 import { fileErrorText } from "../lib/files/fileErrors";
-import { daysUntil, formatDate } from "../lib/files/format";
+import { daysUntil, formatBytes, formatDate } from "../lib/files/format";
 import { atLeast } from "../lib/files/roles";
 import { kindOf } from "../lib/files/kind";
 import type { Page, TrashItem } from "../lib/files/types";
-import Icon from "../components/files/Icon";
-import KindMarks from "../components/files/KindMarks";
-import EmptyState from "../components/EmptyState";
+import { useDriveText } from "../lib/drive/driveText";
+import { locationOf } from "../lib/drive/location";
 
-// Trash lists items deleted but not yet gone for good. Restore brings one back; deleting for good cannot be
-// undone, so it asks first.
-type Confirm = { kind: "purge"; item: TrashItem } | { kind: "empty" } | null;
+// Trash lists items deleted but not yet gone for good, on the one table (tl4, decision 137). Restore brings items back, in one
+// action or one at a time; deleting for good cannot be undone, so it asks first, and it is for a manager of the item only.
+// Empty trash is an icon with a name, and it asks first too.
+type Confirm = { kind: "purge"; items: TrashItem[] } | { kind: "empty" } | null;
+
+const canRestore = (it: TrashItem) => it.role !== undefined && atLeast(it.role, "editor");
+const canPurge = (it: TrashItem) => it.role === "manager";
 
 export default function TrashPage() {
   const { t } = useT();
   const lang = useLang();
-  const { token } = antdTheme.useToken();
   const qc = useQueryClient();
   const allFolders = useStore(folders);
   const me = useStore(session);
+  const driveReady = useDriveText();
   const [folder, setFolder] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,71 +64,43 @@ export default function TrashPage() {
   });
   const items = useMemo<TrashItem[]>(() => (trashQ.data?.pages ?? []).flatMap((p) => p.items), [trashQ.data]);
 
-  // places names where each item was, for as far as the caller can reach. Where it cannot be reached, the
-  // place is the space the item is in, or an unknown place.
-  const parentIDs = useMemo(() => [...new Set(items.map((i) => i.original_parent_id))].sort(), [items]);
-  // One cached lookup per place: when a page adds places, only those are looked up.
-  const placeQs = useQueries({
-    queries: parentIDs.map((id) => ({
-      queryKey: queryKey("trash-place", id),
-      enabled: signedIn,
-      queryFn: async () => {
-        const parent = await statOrNull(id);
-        return parent ? (parent.parent_id === null ? "" : parent.name) : "";
-      },
-    })),
-  });
-  const places: Record<string, string> = {};
-  parentIDs.forEach((id, i) => {
-    const name = placeQs[i]?.data;
-    if (name !== undefined) places[id] = name;
-  });
-
-  function placeOf(it: TrashItem): string {
-    const name = places[it.original_parent_id];
-    if (name === undefined) return "";
-    if (name !== "") return name;
-    const f = allFolders.find((x) => x.id === it.folder_id);
-    return f ? f.name : t("trash.place.unknown");
-  }
-
-
-  // byLine names who trashed the item, or nothing when the caller cannot name them.
-  function byLine(it: TrashItem): string {
-    const who = personLabel(it.trashed_by, me, t);
-    return who ? ` · ${t("trash.by", { who })}` : "";
-  }
-
-  function days(it: TrashItem): string {
-    return translatePlural(lang, "trash.purge", daysUntil(it.purge_at));
-  }
-
   // A restore or a purge changes the trash and the listings and places it touches, and the bytes the sidebar's meter shows.
   function refresh() {
     void refreshMyStorage().catch(() => undefined);
     return refreshTree(qc);
   }
 
-  async function restore(it: TrashItem) {
+  // restoreMany brings the given items back, one after another; a failure shows its error and stops there.
+  async function restoreMany(list: TrashItem[]) {
     setNotice(null);
     setError(null);
+    const names: string[] = [];
     try {
-      const back = await restoreNode(it.id);
-      setNotice(back.name !== it.name ? t("trash.restoredAs", { name: back.name }) : t("trash.restored", { name: it.name }));
+      for (const it of list) {
+        const back = await restoreNode(it.id);
+        names.push(back.name !== it.name ? t("trash.restoredAs", { name: back.name }) : t("trash.restored", { name: it.name }));
+      }
+      if (names.length > 0) setNotice(names.join(" "));
       await refresh();
     } catch (err) {
       setError(fileErrorText(err, lang));
+      await refresh();
     }
   }
 
-  async function purge(it: TrashItem) {
+  // purgeMany deletes the given items for good, one after another, after the person has confirmed.
+  async function purgeMany(list: TrashItem[]) {
     setConfirm(null);
+    setNotice(null);
     try {
-      await purgeTrashed(it.id);
-      setNotice(t("trash.purged", { name: it.name }));
+      for (const it of list) {
+        await purgeTrashed(it.id);
+        setNotice(t("trash.purged", { name: it.name }));
+      }
       await refresh();
     } catch (err) {
       setError(fileErrorText(err, lang));
+      await refresh();
     }
   }
 
@@ -153,8 +130,43 @@ export default function TrashPage() {
     document.title = `${t("trash.title")} · ${t("nav.trash")}`;
   }, [t]);
 
-  const anyManager = items.some((i) => i.role === "manager");
+  const anyManager = items.some(canPurge);
   const loading = trashQ.isPending;
+
+  function days(it: TrashItem): string {
+    return translatePlural(lang, "trash.purge", daysUntil(it.purge_at));
+  }
+
+  const columns: ListColumn<TrashItem>[] = [
+    {
+      key: "name",
+      title: t("files.col.name"),
+      render: (it) => (
+        <span className="name" style={{ display: "block", minWidth: 0, overflowWrap: "anywhere", fontWeight: 600 }}>
+          <bdi>{it.name}</bdi>
+          <KindMarks node={it} />
+        </span>
+      ),
+    },
+    {
+      key: "where",
+      title: t("drive.col.originalLocation"),
+      secondary: true,
+      render: (it) => locationOf({ place: it.place, folder_id: it.folder_id, parent_id: it.original_parent_id }, allFolders, t("nav.files")),
+    },
+    {
+      key: "deleted",
+      title: t("drive.col.deletedOn"),
+      secondary: true,
+      render: (it) => (
+        <span style={{ display: "block" }}>
+          <time dateTime={it.trashed_at}>{formatDate(it.trashed_at, lang)}</time>
+          <span style={{ display: "block", fontSize: 14, opacity: 0.75 }}>{days(it)}</span>
+        </span>
+      ),
+    },
+    { key: "size", title: t("files.col.size"), secondary: true, align: "end", render: (it) => (it.kind === "dir" ? "—" : formatBytes(it.size, lang)) },
+  ];
 
   return (
     <>
@@ -177,9 +189,13 @@ export default function TrashPage() {
           />
         </label>
         {anyManager && (
-          <Button danger onClick={() => setConfirm({ kind: "empty" })} disabled={emptying !== null}>
-            {t("trash.empty")}
-          </Button>
+          <IconButton
+            label={t("trash.empty")}
+            danger
+            disabled={emptying !== null}
+            onClick={() => setConfirm({ kind: "empty" })}
+            icon={<Trash2 size={18} aria-hidden="true" focusable="false" />}
+          />
         )}
       </div>
 
@@ -189,45 +205,68 @@ export default function TrashPage() {
       {notice && <Alert type="success" showIcon role="status" message={notice} style={{ marginBottom: 12 }} />}
       {error && <Alert type="error" showIcon role="alert" message={error} style={{ marginBottom: 12 }} />}
 
-      {loading ? (
+      {loading || !driveReady ? (
         <div role="status" aria-busy="true">
           <span className="sr-only">{t("app.loading")}</span>
           <Skeleton active paragraph={{ rows: 4 }} />
         </div>
       ) : trashQ.isError ? (
         <Alert type="error" showIcon role="alert" message={fileErrorText(trashQ.error, lang)} />
-      ) : items.length === 0 ? (
-        <EmptyState role="status" text={t("trash.empty.none")} />
       ) : (
-        <ul aria-label={t("trash.title")} style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>
-          {items.map((it) => (
-            <li
-              key={it.id}
-              className="trash-item"
-              style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: 12, border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 4 }}
-            >
-              <Icon kind={kindOf(it)} size={28} node={it} />
-              <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-                <p className="name" style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>
-                  <bdi>{it.name}</bdi>
-                  <KindMarks node={it} />
-                </p>
-                <p style={{ margin: 0, fontSize: 14, opacity: 0.75 }}>
-                  {placeOf(it) && `${t("trash.was", { place: placeOf(it) })} · `}
-                  {t("trash.trashedOn", { date: formatDate(it.trashed_at, lang) })}
-                  {byLine(it)}
-                </p>
-                <p style={{ margin: 0, fontSize: 14, opacity: 0.75 }}>{days(it)}</p>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {it.role && atLeast(it.role, "editor") && <IconButton label={`${t("trash.restore")}: ${it.name}`} tip={t("trash.restore")} onClick={() => void restore(it)} icon={<ArchiveRestore size={18} aria-hidden="true" focusable="false" />} />}
-                {it.role === "manager" && (
-                  <IconButton label={`${t("trash.purgeNow")}: ${it.name}`} tip={t("trash.purgeNow")} danger onClick={() => setConfirm({ kind: "purge", item: it })} icon={<Trash2 size={18} aria-hidden="true" focusable="false" />} />
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="items">
+          <Listing<TrashItem>
+            label={t("trash.title")}
+            items={items}
+            rowLabel={(it) => it.name}
+            rowClassName={() => "trash-item"}
+            columns={columns}
+            icon={(it) => <Icon kind={kindOf(it)} size={28} node={it} />}
+            selectable
+            bulk={(ids) => {
+              const picked = items.filter((it) => ids.includes(it.id));
+              return [
+                {
+                  key: "restore",
+                  label: t("trash.restore"),
+                  icon: <ArchiveRestore size={18} aria-hidden="true" focusable="false" />,
+                  enabled: picked.some(canRestore),
+                  run: () => void restoreMany(picked.filter(canRestore)),
+                },
+                {
+                  key: "purge",
+                  label: t("trash.purgeNow"),
+                  icon: <Trash2 size={18} aria-hidden="true" focusable="false" />,
+                  enabled: picked.some(canPurge),
+                  run: () => setConfirm({ kind: "purge", items: picked.filter(canPurge) }),
+                },
+              ];
+            }}
+            actions={(it) => [
+              ...(canRestore(it)
+                ? [
+                    {
+                      key: "restore",
+                      label: `${t("trash.restore")}: ${it.name}`,
+                      icon: <ArchiveRestore size={18} aria-hidden="true" focusable="false" />,
+                      run: () => void restoreMany([it]),
+                    },
+                  ]
+                : []),
+              ...(canPurge(it)
+                ? [
+                    {
+                      key: "purge",
+                      label: `${t("trash.purgeNow")}: ${it.name}`,
+                      icon: <Trash2 size={18} aria-hidden="true" focusable="false" />,
+                      danger: true,
+                      run: () => setConfirm({ kind: "purge", items: [it] }),
+                    },
+                  ]
+                : []),
+            ]}
+            empty={{ title: t("drive.empty.trash"), className: "empty" }}
+          />
+        </div>
       )}
       {trashQ.hasNextPage && (
         <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
@@ -247,7 +286,7 @@ export default function TrashPage() {
         maskClosable={false}
         onOk={() => {
           if (confirm?.kind === "empty") void emptyTrash();
-          else if (confirm?.kind === "purge") void purge(confirm.item);
+          else if (confirm?.kind === "purge") void purgeMany(confirm.items);
         }}
       >
         <p>{confirm?.kind === "empty" ? t("trash.empty.body") : t("trash.purge.body")}</p>
@@ -255,4 +294,3 @@ export default function TrashPage() {
     </>
   );
 }
-

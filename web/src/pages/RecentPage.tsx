@@ -2,22 +2,27 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Modal, Skeleton } from "antd";
-import { X } from "lucide-react";
+import { Eraser, X } from "lucide-react";
+import Listing, { type ListColumn } from "../components/files/Listing";
+import Icon from "../components/files/Icon";
 import IconButton from "../components/IconButton";
+import DriveName, { openDrive } from "../components/drive/DriveName";
 import { useLang, useT } from "../lib/i18n";
 import { useStore } from "../lib/store";
 import { brand } from "../lib/brand";
 import { session, sessionChanged, sessionKey, signingOut } from "../lib/session";
 import { fileErrorText } from "../lib/files/fileErrors";
 import { formatDate } from "../lib/files/format";
+import { folders } from "../lib/files/folders";
+import { kindOf } from "../lib/files/kind";
 import { activityKey, lastActivity, mergeRecent, type RecentItem } from "../lib/recent";
 import { clearRecent, listRecent, removeRecent } from "../lib/stars";
-import NodeRow from "../components/home/NodeRow";
-import EmptyState from "../components/EmptyState";
+import { useDriveText } from "../lib/drive/driveText";
+import { locationOf } from "../lib/drive/location";
 
-// Recent: the items the caller opened or changed lately, most recent first. It is private to the caller and kept for 30
-// days, at most 500 items. Removing one takes it off this list only; clearing empties the whole list after the person
-// confirms, and changes no file. A failed first load shows its error and no empty state. Every request is watched for a
+// Recent: the items the caller opened or changed lately, most recent first, on the one table (tl4, decision 137). It is private to
+// the caller and kept for 30 days, at most 500 items. Removing one takes it off this list only; clearing empties the whole list
+// after the person confirms, and changes no file. A failed first load shows its error and no table. Every request is watched for a
 // change of session, and a double click sends one request.
 const PAGE = 20;
 
@@ -31,6 +36,8 @@ export default function RecentPage() {
   const me = useStore(session);
   const signedIn = me !== null;
   const sk = sessionKey(me);
+  const allFolders = useStore(folders);
+  const driveReady = useDriveText();
   const [items, setItems] = useState<RecentItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,37 +127,56 @@ export default function RecentPage() {
     setClearError(null);
   };
 
-  const empty = !loading && items.length === 0 && error === null;
+  const columns: ListColumn<RecentItem>[] = [
+    { key: "name", title: t("files.col.name"), render: (n) => <DriveName node={n} /> },
+    { key: "where", title: t("drive.col.location"), secondary: true, render: (n) => locationOf(n, allFolders, t("nav.files")) },
+    {
+      key: "opened",
+      title: t("drive.col.opened"),
+      secondary: true,
+      ariaSort: "descending",
+      render: (n) => {
+        const act = lastActivity(n);
+        return <time dateTime={act.at}>{t(activityKey(act), { date: formatDate(act.at, lang) })}</time>;
+      },
+    },
+  ];
 
   return (
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 12px", marginBlockEnd: 16 }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{t("nav.recent")}</h1>
-        {items.length > 0 && <Button onClick={() => setAskClear(true)}>{t("recent.clear")}</Button>}
+        {items.length > 0 && (
+          <IconButton label={t("recent.clear")} onClick={() => setAskClear(true)} icon={<Eraser size={18} aria-hidden="true" focusable="false" />} />
+        )}
       </div>
 
       {error !== null && <Alert type="error" showIcon role="alert" message={error} style={{ marginBlockEnd: 12 }} />}
 
-      {loading && items.length === 0 && error === null && <Skeleton active />}
+      {(!driveReady || (loading && items.length === 0)) && error === null && <Skeleton active />}
 
-      {empty && <EmptyState role="status" className="empty" text={t("recent.empty")} />}
-
-      {items.length > 0 && (
-        <ul className="items" aria-label={t("nav.recent")} style={{ display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" }}>
-          {items.map((n) => {
-            const act = lastActivity(n);
-            return (
-              <NodeRow
-                key={n.id}
-                node={n}
-                meta={t(activityKey(act), { date: formatDate(act.at, lang) })}
-                action={
-                  <IconButton disabled={busy.includes(n.id)} label={t("recent.removeName", { name: n.name })} tip={t("recent.remove")} onClick={() => void remove(n)} icon={<X size={18} aria-hidden="true" focusable="false" />} />
-                }
-              />
-            );
-          })}
-        </ul>
+      {driveReady && (items.length > 0 || (!loading && error === null)) && (
+        <div className="items">
+          <Listing<RecentItem>
+            label={t("nav.recent")}
+            items={items}
+            rowLabel={(n) => n.name}
+            columns={columns}
+            icon={(n) => <Icon kind={kindOf(n)} size={24} node={n} />}
+            actions={(n) => [
+              {
+                key: "remove",
+                label: t("recent.removeName", { name: n.name }),
+                icon: <X size={18} aria-hidden="true" focusable="false" />,
+                disabled: busy.includes(n.id),
+                run: () => void remove(n),
+              },
+            ]}
+            menu={(n) => [{ key: "open", label: t("files.act.open"), onSelect: () => openDrive(n) }]}
+            onOpen={(n) => openDrive(n)}
+            empty={{ title: t("drive.empty.recent"), description: t("recent.empty"), className: "empty" }}
+          />
+        </div>
       )}
 
       {cursor !== null && (
