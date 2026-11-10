@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LargestFilesCard from "./LargestFiles";
 import type { LargestFile } from "../../lib/storage/api";
 import { officeEdit } from "../../lib/files/editor";
+import { contentPath } from "../../lib/files/api";
 
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -77,6 +78,13 @@ describe("the largest files are one table (decision 122)", () => {
     expect(within(region).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Size", "Old versions", "Modified", "Actions"]);
     expect(region.querySelector('tbody tr[data-id="nod_pdf1"]')?.getAttribute("aria-label")).toBe("scan.pdf");
     expect(container.querySelectorAll("tbody td .item-name").length).toBe(2);
+  });
+
+  // Round 2 (M2): Download is a real link to the file's own address, so a middle click, a new tab and Copy link work as before.
+  it("Download is a link to the file's own address (round 2, M2)", () => {
+    renderCard();
+    const link = screen.getByRole("link", { name: "Download: scan.pdf" });
+    expect(link.getAttribute("href")).toBe(contentPath("nod_pdf1"));
   });
 
   it("an empty card keeps its headers, and its title is in the table body", () => {
