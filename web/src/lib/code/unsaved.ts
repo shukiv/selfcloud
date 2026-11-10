@@ -25,6 +25,8 @@ const keyOf = (user: string, node: string) => `${PREFIX}${encodeURIComponent(use
 
 // keepUnsaved stores a text for a person's file. It says whether the store took it: false is "not kept" (the store refused, or is full).
 export function keepUnsaved(user: string, node: string, text: Omit<Kept, "enc" | "at">): boolean {
+  // A tab that heard another tab's explicit sign-out keeps nothing until the next sign-in (see endedElsewhere).
+  if (endedElsewhere) return false;
   try {
     const rec: Kept = { text: text.text, etag: text.etag, bom: text.bom, sep: text.sep, enc: "utf-8", at: Date.now() };
     window.sessionStorage.setItem(keyOf(user, node), JSON.stringify(rec));
@@ -106,10 +108,57 @@ export function purgeAllUnsaved(): void {
   }
 }
 
-// Scaffolding for the red tests of review round 1 (MED-4): the names exist, with no behaviour yet.
+// The sign-out channel (decision 133, rule 5): an explicit sign-out tells the other tabs of this browser, so that each drops the text
+// it kept. The message carries no text, only the fact. A browser without channels has no other tab to tell, and keeps today's
+// behaviour: each tab's own text is kept as before.
 export const SIGNOUT_CHANNEL = "selfcloud-code-unsaved";
-export function announceSignOut(): void {}
-export function watchSignOuts(): () => void {
-  return () => undefined;
+const SIGNED_OUT = "signed-out";
+
+// endedElsewhere is set in a tab that heard another tab's sign-out. The session end that follows is that sign-out, so this tab keeps
+// nothing until it signs a person in again (signedInHere).
+let endedElsewhere = false;
+
+// channel is this tab's one channel, made on first use. Its own messages are not delivered to it, so a sign-out in this tab does not
+// set the flag here.
+let channel: BroadcastChannel | null = null;
+
+function openChannel(): BroadcastChannel | null {
+  if (channel !== null) return channel;
+  if (typeof BroadcastChannel !== "function") return null;
+  try {
+    channel = new BroadcastChannel(SIGNOUT_CHANNEL);
+  } catch {
+    return null;
+  }
+  return channel;
 }
-export function signedInHere(): void {}
+
+// announceSignOut tells the other tabs that the person signed out on purpose. The sign-out calls it after this tab's own purge.
+export function announceSignOut(): void {
+  try {
+    openChannel()?.postMessage({ type: SIGNED_OUT });
+  } catch {
+    // A channel that refuses the message: the other tabs keep their text, as they do in a browser without channels.
+  }
+}
+
+// watchSignOuts makes this tab hear the other tabs' explicit sign-outs: it drops every text it kept and keeps nothing until the next
+// sign-in. It returns the function that stops the watch. session.ts starts it when the app loads, so every tab has it.
+export function watchSignOuts(): () => void {
+  const ch = openChannel();
+  if (ch === null) return () => undefined;
+  ch.onmessage = (e: MessageEvent) => {
+    const msg = e.data as { type?: unknown } | null;
+    if (msg?.type !== SIGNED_OUT) return;
+    endedElsewhere = true;
+    purgeAllUnsaved();
+  };
+  return () => {
+    ch.onmessage = null;
+  };
+}
+
+// signedInHere is called when this tab signs a person in: keeping text is allowed again.
+export function signedInHere(): void {
+  endedElsewhere = false;
+}

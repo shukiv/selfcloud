@@ -3,7 +3,7 @@
 import { get, writable } from './store';
 import { clearShares } from './pwa/share';
 import { markSignedIn } from './pwa/cacheState';
-import { purgeOtherUnsaved } from './code/unsaved';
+import { purgeOtherUnsaved, signedInHere, watchSignOuts } from './code/unsaved';
 import type { Account, Me, SignedIn, User } from './types';
 
 export interface Session {
@@ -24,6 +24,10 @@ export interface Session {
 
 export const session = writable<Session | null>(null);
 
+// Another tab's explicit sign-out drops this tab's unsaved editor text (decision 133). The watch runs for the life of the tab, since the
+// text a tab kept waits in it whether or not the editor is open.
+watchSignOuts();
+
 // flash is a one-line notice shown on the next page, such as "password changed".
 export const flash = writable<string | null>(null);
 
@@ -41,7 +45,8 @@ export function setSignedIn(s: SignedIn): void {
   const before = get(session);
   if (before !== null && before.user.id !== s.user.id) clearShares();
   session.set({ user: s.user, account: null, csrf: s.csrf_token, publicLinks: false });
-  // Unsaved editor text kept for another person is dropped before anything is shown (decision 133).
+  // Unsaved editor text kept for another person is dropped before anything is shown (decision 133). A sign-in lets this tab keep text again.
+  signedInHere();
   purgeOtherUnsaved(s.user.id);
 }
 
@@ -61,6 +66,7 @@ export function setMe(me: Me): void {
     tenantAccess: me.tenant_access === true,
     mailConfigured: me.mail_configured === true,
   });
+  signedInHere();
   purgeOtherUnsaved(me.user.id);
 }
 
