@@ -35,7 +35,7 @@ async function idOf(page, name) {
 
 // namesShown reads the names in the largest-files table, as the page draws them.
 const namesShown = (page) =>
-  page.evaluate(`[...document.querySelectorAll('.storage-table tbody th[scope="row"] bdi')].map((b) => b.textContent.trim())`);
+  page.evaluate(`[...document.querySelectorAll('.item-list tbody .item-name')].map((b) => b.textContent.trim())`);
 
 // chipClick presses the filter chip with this label, and waits until the chip is pressed and the list is read again (the
 // list's skeleton is gone once the server has answered).
@@ -189,7 +189,7 @@ export async function stChecks(h, { page, base, accountKey, accountID, memberID,
     // The table's wrapper hides overflow, so the page can pass the scroll check while its columns are cut off: the row
     // actions must sit inside the screen.
     // Both edges count: in Hebrew the table is mirrored and its actions sit on the left.
-    const reach = await page.evaluate(`(() => { const b = [...document.querySelectorAll('.storage-table tbody .ant-btn')].map((x) => x.getBoundingClientRect()); return b.length ? { n: b.length, left: Math.min(...b.map((r) => r.left)), right: Math.max(...b.map((r) => r.right)) } : null; })()`);
+    const reach = await page.evaluate(`(() => { const b = [...document.querySelectorAll('.item-list tbody .ant-btn')].map((x) => x.getBoundingClientRect()); return b.length ? { n: b.length, left: Math.min(...b.map((r) => r.left)), right: Math.max(...b.map((r) => r.right)) } : null; })()`);
     check(reach !== null && reach.n > 0 && reach.left >= 0 && reach.right <= phone.width,
       `at 390 px the row actions are on the screen (${reach ? `${reach.n} actions from ${Math.round(reach.left)} to ${Math.round(reach.right)} px of ${phone.width}` : 'no actions'})`);
     await snap('st-phone.png');

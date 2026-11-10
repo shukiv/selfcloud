@@ -252,7 +252,7 @@ export async function p1MemberChecks(page, h, { dir, writeFile, randomBytes, joi
   await page.waitFor(`location.pathname === '/storage' && (${meterAlt}).includes(' used: ')`);
   const alt = await page.evaluate(meterAlt);
   h.check(alt.includes(' of 10 MB used: '), `the storage page shows the meter against the 10 MB limit (${alt})`);
-  await page.waitFor(`[...document.querySelectorAll('.storage-table th')].some((th) => th.textContent.includes('p1-ledger.bin'))`, 15000);
+  await page.waitFor(`[...document.querySelectorAll('.item-name')].some((n) => n.textContent.includes('p1-ledger.bin'))`, 15000);
   h.check(true, "the storage page lists the member's largest file");
 }
 
