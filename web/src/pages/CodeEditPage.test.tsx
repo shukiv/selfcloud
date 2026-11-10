@@ -3,6 +3,7 @@
 import "../test/rangeRects";
 import { act, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
+import { forEachDiagnostic } from "@codemirror/lint";
 import { createMemoryRouter, RouterProvider, useNavigate, type NavigateFunction } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1092,6 +1093,16 @@ describe("the editor's conflict dialog, copies, guards and lint (decision 130)",
     await pause();
     expect(content().textContent).toContain("bee");
     expect(content().textContent).not.toContain("{}");
+  });
+
+  it("a JSON problem is reported in the editor's words, not the parser's (LOW-7)", async () => {
+    const LINT_INVALID = "Not valid JSON here.";
+    server({ body: new TextEncoder().encode("{") });
+    render();
+    await screen.findByText("1 problem");
+    const messages: string[] = [];
+    forEachDiagnostic(view().state, (d) => messages.push(d.message));
+    expect(messages).toEqual([LINT_INVALID]);
   });
 
   it("a .jsonc file is not linted: no marker and no count", async () => {
