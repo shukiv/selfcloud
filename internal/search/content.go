@@ -77,6 +77,11 @@ func (r *Request) contentSQL(after Pos, limit int) (string, []any, error) {
 		b.WriteString(" AND n.kind = ?")
 		args = append(args, r.Kind)
 	}
+	// The type group (decision 110), as the name query applies it: a file group keeps that group's files.
+	if r.Group != "" {
+		b.WriteString(" AND n.type_group = ?")
+		args = append(args, r.Group)
+	}
 	if len(r.Exts) > 0 {
 		marks := make([]string, len(r.Exts))
 		for i, e := range r.Exts {
