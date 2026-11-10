@@ -558,14 +558,8 @@ func (s *Server) importFileEntry(ctx context.Context, impID string, p *auth.Prin
 		return err
 	}
 	src := importSourceKey(cur, e.Key)
-	if have, err := s.store.ImportSourceNode(ctx, cur.AccountID, cur.FolderID, store.SourceArchive, src); err != nil {
-		return err
-	} else if have == "" {
-		// The disk is checked before the reservation, so a full disk leaves nothing reserved.
-		if err := s.checkDiskNow(ctx, cur.AccountID, e.Size); err != nil {
-			return s.importDiskPause(err)
-		}
-	}
+	// The disk is checked in the reservation's own write (importReserve), so the check and the reservation see the same
+	// totals and a full disk leaves nothing reserved (decision 120, review M2).
 	skip, err := s.importReserve(ctx, impID, p, e, src)
 	if err != nil {
 		return err
@@ -680,6 +674,10 @@ func (s *Server) importReserve(ctx context.Context, impID string, p *auth.Princi
 				return err
 			}
 			im.ReservedBytes = 0
+			// The row holds the release too, so the disk check below does not count the entry's old reservation.
+			if err := tx.SaveImport(ctx, im, store.Now()); err != nil {
+				return err
+			}
 		}
 		have, err := tx.ImportSourceNode(ctx, im.AccountID, im.FolderID, store.SourceArchive, src)
 		if err != nil {
@@ -696,6 +694,11 @@ func (s *Server) importReserve(ctx context.Context, impID string, p *auth.Princi
 			skip = true
 			return tx.SaveImport(ctx, im, store.Now())
 		}
+		// The disk must hold this entry as well as what every unfinished writer holds (decision 120). It is checked
+		// before the reservation is written, in the same write, so a refused entry reserves nothing.
+		if err := s.checkDiskTx(ctx, tx, im.AccountID, e.Size, 0); err != nil {
+			return err
+		}
 		if err := s.applyUsage(ctx, tx, p, im.AccountID, store.FolderChange{FolderID: im.StagingFolderID,
 			Change: store.UsageChange{Reserved: e.Size}}); err != nil {
 			return err
@@ -710,7 +713,7 @@ func (s *Server) importReserve(ctx context.Context, impID string, p *auth.Princi
 	if errors.As(err, &ae) && ae.Code == apierr.QuotaExceeded {
 		return false, &importPause{reason: string(apierr.QuotaExceeded)}
 	}
-	return false, err
+	return false, s.importDiskPause(err)
 }
 
 // importDiskPause turns a full disk into a pause.
