@@ -123,3 +123,20 @@ func TestDeviceTokenNeverGetsSaveAs(t *testing.T) {
 		t.Fatalf("saveAsPrincipal lifted a device token: node %q write %v", got.Token.Node, got.Token.Write)
 	}
 }
+
+// An upload session a device starts is read and written with the device's token on each call, so it ends with the device:
+// the next call after revocation is refused (review H1, the derived-credential audit).
+func TestDeviceDerivedUploadEndsWithRevoke(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	wantStatus(t, call(t, fx.s, "PUT", "/api/v1/accounts/"+fx.acc.ID+"/folders/"+fx.fld.ID+"/grants/"+fx.ann.ID, fx.key,
+		map[string]any{"level": "write"}), 200)
+	_, dtok := approvedToken(t, fx.s, fx.annSess)
+	made := createUpload(t, fx.s, dtok, 5, md("folder", fx.fld.ID, "name", "from-device.txt"))
+	if made.Code != http.StatusCreated {
+		t.Fatalf("the device could not start an upload: %d %s", made.Code, made.Body.String())
+	}
+	loc := made.Header().Get("Location")
+	wantStatus(t, callSession(t, fx.s, fx.annSess, "DELETE", "/api/v1/auth/cli/devices/"+deviceIDOf(t, fx, fx.annSess), nil), 204)
+	wantError(t, call(t, fx.s, "HEAD", loc, dtok, nil), http.StatusUnauthorized, apierr.Unauthenticated)
+}
