@@ -478,7 +478,24 @@ func TestSettingsLiveSessionLifetimes(t *testing.T) {
 	wantError(t, callSession(t, s, bob, "GET", "/api/v1/me", nil), 401, apierr.Unauthenticated)
 }
 
-// TestSettingsSignInAsKeepsItsOwnHour: a lower idle timeout does not end a sign-in-as, which keeps the hour it was given.
+// TestSettingsMinFreeReachesTheDerivedPools: the thumbnail and conversion pools ask for storage.min_free at each write, so
+// a change reaches them without a restart.
+func TestSettingsMinFreeReachesTheDerivedPools(t *testing.T) {
+	t.Parallel()
+	fx := newOfficeFixture(t)
+	if fx.s.derivedPool == nil || fx.s.convertPool == nil {
+		t.Fatal("the office fixture has no derived pools")
+	}
+	wantStatus(t, patchSettings(t, fx.s, fx.admin, map[string]any{"storage.min_free": "5GiB"}), 200)
+	if got := fx.s.derivedPool.MinFree(); got != 5<<30 {
+		t.Errorf("the thumbnail pool's min free = %d, want 5 GiB", got)
+	}
+	if got := fx.s.convertPool.MinFree(); got != 5<<30 {
+		t.Errorf("the conversion pool's min free = %d, want 5 GiB", got)
+	}
+}
+
+// TestSettingsSignInAsKeepsItsOwnHour:a lower idle timeout does not end a sign-in-as, which keeps the hour it was given.
 func TestSettingsSignInAsKeepsItsOwnHour(t *testing.T) {
 	t.Parallel()
 	fx := newImpFix(t, true)
