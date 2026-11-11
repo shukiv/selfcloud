@@ -68,6 +68,7 @@ import { ce2b2Checks } from './ce2b2.mjs';
 import { ce3Checks } from './ce3.mjs';
 import { et1Checks } from './et1.mjs';
 import { tl1Checks } from './tl1.mjs';
+import { se3Checks } from './se3.mjs';
 import { tl3Checks } from './tl3.mjs';
 import { tl5Checks } from './tl5.mjs';
 import { menuHeaderText, pickMenuEntry } from './menu.mjs';
@@ -937,7 +938,7 @@ async function main() {
     const memberItems = await menuTexts(page);
     check(!memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no admin pages');
     check(!memberItems.includes('Overview') && !memberItems.some((t) => t === 'Tenants' || t === 'Admins'), 'a member sees no Admin link');
-    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, ce1, sb, zr1e, pwa, sec2, admin, tl1, an2 or cli4 runs that slice's checks alone, to work on them quickly; a full run never sets it.
+    // SELFCLOUD_E2E_ONLY=fb (the file browser's checks, the New menu's read-only reason among them), media, w1, w2, sd1, x2, q4, r7, r7b, d1, d2, i1, l1, l4, l6, d3, x3, x4, x6, ks, fu3a, fu3b, st, ce1, sb, zr1e, pwa, sec2, admin, tl1, se3, an2 or cli4 runs that slice's checks alone, to work on them quickly; a full run never sets it.
     const only = process.env.SELFCLOUD_E2E_ONLY;
     // SELFCLOUD_E2E_ONLY takes one section or a comma list (d2,d3); the sections run in the order of the run.
     const onlySet = only ? new Set(only.split(',').map((x) => x.trim()).filter(Boolean)) : null;
@@ -1134,12 +1135,14 @@ async function main() {
     }
     if (only && onlySet.has('fu10')) await peopleFocusChecks(page, { base, accountID, accountKey, MEMBER, OWNER, check });
     // The installation admin's checks (admin: the tenants list, a new tenant and its key) and slice tl1's tables, each on its
-    // own as the admin (SELFCLOUD_E2E_ONLY=admin, tl1 or admin,tl1). The full run reaches both below, in its own order.
-    if (only && (onlySet.has('admin') || onlySet.has('tl1'))) {
+    // own as the admin (SELFCLOUD_E2E_ONLY=admin, tl1 or admin,tl1). The full run reaches both below, in its own order. Slice se3's
+    // Settings page runs the same way (SELFCLOUD_E2E_ONLY=se3).
+    if (only && (onlySet.has('admin') || onlySet.has('tl1') || onlySet.has('se3'))) {
       await signOut(page);
       await signIn(page, ADMIN);
       if (onlySet.has('admin')) await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
       if (onlySet.has('tl1')) await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
+      if (onlySet.has('se3')) await se3Checks(h, { page, base, adminKey });
     }
     // Slice tl3 (decision 122): the owner's tables, on their own as the owner (SELFCLOUD_E2E_ONLY=tl3). The full run reaches
     // them after the owner's management pages.
@@ -1177,6 +1180,8 @@ async function main() {
     await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
     // Slice tl1 (design-tl): the admin's lists are tables. Checked on the admin's pages, while the admin is still signed in.
     await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
+    // Slice se3 (decision 143): the Settings page, on the admin's session.
+    await se3Checks(h, { page, base, adminKey });
     await signOut(page);
     await signIn(page, MEMBER);
     await owner.memberNotFound(page, h);

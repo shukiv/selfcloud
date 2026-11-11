@@ -3,7 +3,7 @@
 import { render, waitFor } from "@testing-library/react";
 import { RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createAppRouter } from "./lib/router";
+import { createAppRouter, go } from "./lib/router";
 import { session, type Session } from "./lib/session";
 import { setLang } from "./lib/i18n";
 import { ThemeProvider } from "./theme/theme";
@@ -120,6 +120,22 @@ describe("an installation admin reaches the admin pages and no drive page", () =
       expect((await reach("admin", path)).text).toContain(NOT_FOUND);
     },
   );
+
+  it("a move inside the app from another page to the old Installation address lands on Settings", async () => {
+    session.set(person("admin"));
+    window.history.replaceState(null, "", "/admin/tenants");
+    const router = createAppRouter([{ path: "*", element: <Gate /> }]);
+    const view = render(
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>,
+    );
+    await waitFor(() => expect(document.body.textContent).toContain("stub admin tenants"));
+    go("/admin/installation");
+    await waitFor(() => expect(window.location.pathname).toBe("/admin/settings"));
+    await waitFor(() => expect(document.body.textContent).toContain("stub admin settings"));
+    view.unmount();
+  });
 
   it("the root is the admin's home, the tenants list, reached with a replace", async () => {
     const got = await reach("admin", "/");
