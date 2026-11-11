@@ -258,6 +258,24 @@ func TestGetShareRenewsTheVisitorCredential(t *testing.T) {
 	}
 }
 
+// TestShareLinkIsCheckedFirst: a share link's address is checked before the destination or standard input is read, so a
+// plain-http link to a host that is not loopback is refused for what it is, and the password is not read for it.
+func TestShareLinkIsCheckedFirst(t *testing.T) {
+	isolate(t, testAccountKey)
+	in := strings.NewReader("a password\n")
+	Stdin = in
+	good := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	missing := filepath.Join(t.TempDir(), "no", "such", "dir") + "/"
+	res := getShare(t, "http://192.0.2.10/s#"+good, missing, "--password-stdin")
+	wantCode(t, res, 2)
+	if !strings.Contains(res.stderr, "plain http") {
+		t.Errorf("the refusal is not about the link's plain http: %q", res.stderr)
+	}
+	if in.Len() != len("a password\n") {
+		t.Error("the password was read for a link that is refused")
+	}
+}
+
 // TestShareURLRules: a share link is https (or loopback http), ends in /s, and carries its secret in the fragment.
 // Anything else is refused before any request, and a credential flag does not apply to it.
 func TestShareURLRules(t *testing.T) {
