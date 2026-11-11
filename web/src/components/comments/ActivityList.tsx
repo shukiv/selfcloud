@@ -32,7 +32,7 @@ export default function ActivityList({ nodeID }: { nodeID: string }) {
   const youWord = t("comments.mine");
   const formerWord = t("comments.former");
   const eventText = (e: ActivityEntry) => renderSentence(activitySentence(e, youWord, formerWord).sentence, (key, params) => translate(lang, key, params));
-  const sentinel = useLoadMoreSentinel(q.hasNextPage && !q.isFetchNextPageError, q.isFetchingNextPage, () => void q.fetchNextPage());
+  const sentinel = useLoadMoreSentinel(q.hasNextPage, q.isFetchingNextPage, q.isFetchNextPageError, () => void q.fetchNextPage());
 
   const columns: ListColumn<ActivityEntry>[] = [
     {

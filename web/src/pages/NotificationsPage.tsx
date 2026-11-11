@@ -95,7 +95,7 @@ export default function NotificationsPage() {
   const { token } = theme.useToken();
   // The next page is asked for when the end of the list comes into view, once. A failed next page is not asked for again by
   // itself: the message says Show more asks again.
-  const sentinel = useLoadMoreSentinel(!!list.hasNextPage && !list.isFetchNextPageError, list.isFetchingNextPage, () => void list.fetchNextPage());
+  const sentinel = useLoadMoreSentinel(!!list.hasNextPage, list.isFetchingNextPage, list.isFetchNextPageError, () => void list.fetchNextPage());
 
   const columns: ListColumn<Notice>[] = [
     {
