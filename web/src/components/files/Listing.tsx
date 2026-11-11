@@ -237,17 +237,28 @@ function RowActs({ id, show, children }: { id: string; show: boolean; children: 
 }
 
 // usePressFocus makes a press on a row and its click one update. The browser focuses a row on the press, and the click then
-// selects it, and both used to set state: two renders of the list for one click. A focus that comes during a press is the press's
-// own, so it is held, and the click applies it (in its capture phase, ahead of the click's own update, so the two are one render).
+// selects it, and both used to set state: two renders of the list for one click. A focus that comes during a mouse's press is the
+// press's own, so it is held, and the click applies it, in the click's bubble phase, in the batch of the click's own update.
+// It is not applied in the capture phase: a browser lets React's microtask run between the root's capture listener and its bubble
+// listener, so an update made in the capture phase is drawn before the click's own handlers run. That is a second pass over the
+// list, and a controlled checkbox that React draws in between loses its click.
 // pressing is the row whose press has not ended; pendingClick is a row whose release was on that same row, so its click is still to
-// come. A release anywhere else, or a cancel (a touch that turns into a scroll), has no click on the row: the focus is applied
-// there if it is in the row, which is what the browser did on the press, and otherwise left alone. Any key ends a press that
-// was never released, so a keyboard focus is never held.
+// come. The click reaches the row's own handler (settle), or the handler of a control in the row that stops the click (it settles
+// too), or the checkbox's selection, which sets the focus itself (consume). If none does, the click did not come: the focus is
+// applied a turn later. A release anywhere else, or a cancel, has no click on the row: the focus is applied there if it is in the
+// row, which is what the browser did on the press, and otherwise left alone. A finger's focus comes after its release (the
+// browser's mouse events for a tap), so a touch holds nothing. Any key ends a press that was never released, so a keyboard focus
+// is never held.
 function usePressFocus(apply: (id: string) => void) {
   const applyRef = useRef(apply);
   applyRef.current = apply;
   const pressing = useRef<string | null>(null);
   const pendingClick = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTimer = () => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  };
   useEffect(() => {
     const release = (e: PointerEvent) => {
       const id = pressing.current;
@@ -256,6 +267,14 @@ function usePressFocus(apply: (id: string) => void) {
       const target = e.target instanceof Element ? e.target : null;
       if (e.type === "pointerup" && target?.closest(`[data-id="${CSS.escape(id)}"]`)) {
         pendingClick.current = id;
+        // A mouse's click follows its release in the same turn of the event loop, so this runs after it.
+        clearTimer();
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          if (pendingClick.current !== id) return;
+          pendingClick.current = null;
+          applyRef.current(id);
+        }, 0);
         return;
       }
       const focusedRow = document.activeElement instanceof Element ? document.activeElement.closest("[data-id]") : null;
@@ -264,6 +283,7 @@ function usePressFocus(apply: (id: string) => void) {
     const key = () => {
       pressing.current = null;
       pendingClick.current = null;
+      clearTimer();
     };
     window.addEventListener("pointerup", release, true);
     window.addEventListener("pointercancel", release, true);
@@ -272,27 +292,40 @@ function usePressFocus(apply: (id: string) => void) {
       window.removeEventListener("pointerup", release, true);
       window.removeEventListener("pointercancel", release, true);
       window.removeEventListener("keydown", key, true);
+      clearTimer();
     };
+    // clearTimer reads a ref only: it is the same at every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return useMemo(
     () => ({
       // down is a press on the row.
-      down: (id: string) => {
-        pressing.current = id;
+      down: (id: string, pointerType: string) => {
+        clearTimer();
         pendingClick.current = null;
+        pressing.current = pointerType === "touch" ? null : id;
       },
       // focus is a focus that reached the row: a press's own is held, any other is applied.
       focus: (id: string) => {
         if (pressing.current === id) return;
         applyRef.current(id);
       },
-      // clickCapture applies the focus a press held, when its click comes.
-      clickCapture: (id: string) => {
+      // settle applies the focus a press held, with the click that came of it: it is called from the click's own handlers.
+      settle: (id: string) => {
         if (pendingClick.current !== id) return;
         pendingClick.current = null;
+        clearTimer();
         applyRef.current(id);
       },
+      // consume drops the focus a press held, for a click whose own update sets the focus (a selection).
+      consume: (id: string) => {
+        if (pendingClick.current !== id) return;
+        pendingClick.current = null;
+        clearTimer();
+      },
     }),
+    // clearTimer reads a ref only: it is the same at every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 }
@@ -334,7 +367,8 @@ interface FileHandlers {
   renameChange: (value: string) => void;
   rename: (commit: boolean) => void;
   keyDown: (e: ReactKeyboardEvent<HTMLElement>) => void;
-  focus: (id: string) => void;
+  // settle applies the focus the press on the item held, with the click of a control that stops the click at the control.
+  settle: (id: string) => void;
   context: (id: string, x: number, y: number, keyboardOrigin?: HTMLElement) => void;
   acts: (n: Node) => RowAct[];
   act: (n: Node, key: string) => void;
@@ -437,6 +471,7 @@ const FileMore = memo(function FileMore({ n, tab, H }: { n: Node; tab: number; H
       aria-haspopup="menu"
       onClick={(e) => {
         e.stopPropagation();
+        H.settle(n.id);
         const r = e.currentTarget.getBoundingClientRect();
         // The menu opens at the button's start edge: its left in English, its right in Hebrew (review fix 11). A key's click has
         // no pointer, so its detail is 0: the menu then takes the focus (review fix 1).
@@ -505,6 +540,7 @@ const FileRowEnd = memo(function FileRowEnd({ n, selected, focused, coarse, H }:
                     tabIndex={tab}
                     onClick={(e) => {
                       e.stopPropagation();
+                      H.settle(n.id);
                       H.act(n, a.key);
                     }}
                     onKeyDown={keysStop}
@@ -675,7 +711,10 @@ const FileTile = memo(function FileTile({ kind, n, selected, focused, cut, coars
 interface PresetHandlers {
   act: (row: { id: string }, key: string) => void;
   entry: (row: { id: string }, key: string) => void;
+  // pick is a checkbox's selection of a row: it sets the focus itself, so the focus a press held is dropped.
   pick: ListSelection["pick"];
+  // settle applies the focus the press on the row held, with the click of a control that stops the click at the control.
+  settle: (id: string) => void;
 }
 
 // PresetCheck is a preset row's checkbox, which takes the icon's place on a mouse's screen.
@@ -727,6 +766,7 @@ const PresetEnd = memo(
                 style={a.disabled ? { color: token.colorTextDisabled } : undefined}
                 onClick={(e) => {
                   e.stopPropagation();
+                  PH.settle(row.id);
                   if (a.disabled) return;
                   // A link follows its own address: the browser's click does that, so run is not called for it.
                   if (a.href) return;
@@ -745,7 +785,10 @@ const PresetEnd = memo(
               label={moreLabel}
               tip={moreTip}
               icon={MORE_ICON}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                PH.settle(row.id);
+              }}
               onDoubleClick={(e) => e.stopPropagation()}
             />
           </Dropdown>
@@ -824,11 +867,24 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
   // render, and the rows and tiles that hold them are drawn again only when their own props change (decision 128).
   const latest = useRef(p);
   latest.current = p;
+  // A press on a row focuses it, and its click selects it: one update (usePressFocus). A preset list's focus is the shared
+  // selection's; My files' is the page's.
+  const pf = usePressFocus((id) => {
+    const cur = latest.current;
+    if (isItems(cur)) {
+      sel.setFocus(id);
+      return;
+    }
+    const i = cur.items.findIndex((x) => x.id === id);
+    if (i >= 0) cur.onFocusItem(i);
+  });
   const H = useMemo<FileHandlers>(() => {
     const files = () => latest.current as ListingProps;
     const at = (id: string) => (files().items as Node[]).findIndex((x) => x.id === id);
     return {
+      // A click that selects sets the focus itself, so the focus a press held is dropped.
       click: (id, e) => {
+        pf.consume(id);
         const i = at(id);
         if (i >= 0) files().onRowClick(i, e);
       },
@@ -836,10 +892,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       renameChange: (value) => files().onRenameChange(value),
       rename: (commit) => files().onRename(commit),
       keyDown: (e) => files().onKeyDown(e),
-      focus: (id) => {
-        const i = at(id);
-        if (i >= 0) files().onFocusItem(i);
-      },
+      settle: (id) => pf.settle(id),
       // The menu's origin is passed only for a key's press, as the page took it before (four arguments otherwise).
       context: (id, x, y, origin) => {
         const i = at(id);
@@ -850,7 +903,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       acts: (n) => files().rowActs?.(n) ?? [],
       act: (n, key) => files().rowActs?.(n).find((a) => a.key === key && a.enabled)?.run(),
     };
-  }, []);
+  }, [pf]);
   const PH = useMemo<PresetHandlers>(() => {
     const items = () => latest.current as unknown as ItemListingProps<{ id: string }>;
     // entriesOf is a row's ⋮ menu: the row's actions and the page's menu entries, all of them.
@@ -864,16 +917,16 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         if (a && !a.disabled && !a.href) a.run();
       },
       entry: (row, key) => entriesOf(row).find((x) => x.key === key)?.onSelect(),
-      pick: (id, how) => sel.pick(id, how),
+      // A checkbox's pick sets the focus itself, so the focus a press held is dropped.
+      pick: (id, how) => {
+        pf.consume(id);
+        sel.pick(id, how);
+      },
+      settle: (id) => pf.settle(id),
     };
+    // sel.pick is the same function at every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  // A press on a row focuses it, and its click selects it: one update (usePressFocus). A preset list's focus is the shared
-  // selection's; My files' is the page's.
-  const pf = usePressFocus((id) => {
-    if (isItems(latest.current)) sel.setFocus(id);
-    else H.focus(id);
-  });
+  }, [pf]);
   // RH are the DOM handlers of My files' rows and tiles. They name the item by the element's data-id, so one set serves every
   // row and tile, and a row or tile that holds them is not drawn again when the page renders.
   const RH = useMemo<RowHandlers>(() => {
@@ -886,7 +939,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       onDragStart: (e: ReactDragEvent<HTMLElement>) => e.preventDefault(),
       onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
         const id = idOf(e);
-        pf.down(id);
+        pf.down(id, e.pointerType);
         pointer.current = e.pointerType;
         pressed.current = false;
         endPress();
@@ -923,9 +976,9 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         endPress();
         H.context(idOf(e), e.clientX, e.clientY);
       },
-      // The focus of a press is applied here, in the click's capture phase, so the click's selection and its focus are one render.
-      onClickCapture: (e: ReactMouseEvent<HTMLElement>) => pf.clickCapture(idOf(e)),
       onClick: (e: ReactMouseEvent<HTMLElement>) => {
+        // The focus of a press is applied here, in the batch of the click's own update, so the two are one render.
+        pf.settle(idOf(e));
         // The checkbox column has its own handler, so a click on it must not also select the row.
         if (inCheck(e)) return;
         // A click in the row's own rename field places the cursor there; the item is not opened by it.
@@ -950,7 +1003,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         if (inCheck(e) && !e.key.startsWith("Arrow")) return;
         H.keyDown(e);
       },
-      // A focus that comes from a press is the click's (onClickCapture); any other focus is the row's own.
+      // A focus that comes from a press is the click's (settle); any other focus is the row's own.
       onFocus: (e: ReactFocusEvent<HTMLElement>) => pf.focus(idOf(e)),
     };
     // pointer, press, pressed, liftPending and endPress are refs and a function over them: the same at every render.
@@ -1053,7 +1106,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
 
     // A mouse's checkbox takes the icon's place, as in My files: on a hovered or selected row, and on every row while
     // anything is selected (the shared CSS decides). A finger keeps the checkbox column instead.
-    const check = (r: T) => <PresetCheck id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} pick={sel.pick} />;
+    const check = (r: T) => <PresetCheck id={r.id} checked={picked.has(r.id)} name={q.rowLabel(r)} pick={PH.pick} />;
     const nameCell = (r: T) => (
       <div style={{ minWidth: 0 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%", verticalAlign: "middle" }}>
@@ -1148,12 +1201,12 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
       tabIndex: sel.focusID === r.id ? 0 : -1,
       "data-id": r.id,
       "data-testid": q.rowTestID?.(r),
-      // The focus that comes from a press is the click's (onClickCapture), so a press that selects is one update; any other focus is
-      // the row's own.
+      // The focus that comes from a press is the click's (settle), so a press that selects is one update; any other focus is the
+      // row's own.
       onFocus: () => pf.focus(r.id),
-      onClickCapture: () => pf.clickCapture(r.id),
       onKeyDown: onItemKey,
       onClick: (e: ReactMouseEvent<HTMLElement>) => {
+        pf.settle(r.id);
         if (isControl(e)) return;
         // The tap that ends a long press is part of the press: it opens and selects nothing.
         if (pressed.current) {
@@ -1165,7 +1218,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
         else if (selectable) sel.pick(r.id);
       },
       onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
-        pf.down(r.id);
+        pf.down(r.id, e.pointerType);
         endPress();
         pressed.current = false;
         if (e.pointerType !== "touch" || entriesOf(r).length === 0) return;
@@ -1249,7 +1302,7 @@ export default function Listing<T extends { id: string }>(p: ListingProps | Item
                   ),
                   getCheckboxProps: () => ({ tabIndex: -1 }),
                   selectedRowKeys: [...picked],
-                  onSelect: (r) => sel.pick(r.id, { toggle: true }),
+                  onSelect: (r) => PH.pick(r.id, { toggle: true }),
                   onSelectAll: (checked) => (checked ? sel.selectAll() : sel.clear()),
                 }
               : undefined
