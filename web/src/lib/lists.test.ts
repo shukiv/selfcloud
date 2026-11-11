@@ -55,9 +55,27 @@ describe("useListSelection", () => {
 
 // key builds a key event as React gives it to a row's handler. on says where the key came from: the row itself, a button
 // in the row, or a menu the row opened, which React passes up to the row although it is not in the row's DOM.
-function key(k: string, mods: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {}, on: "row" | "button" | "menu" = "row") {
+function key(
+  k: string,
+  mods: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {},
+  on: "row" | "button" | "menu" | "input" | "textarea" | "select" | "combobox" = "row",
+) {
   const row = document.createElement("tr");
-  const target = on === "row" ? row : on === "button" ? row.appendChild(document.createElement("button")) : document.createElement("li");
+  const field = (tag: string, role?: string) => {
+    const el = row.appendChild(document.createElement(tag));
+    if (role) el.setAttribute("role", role);
+    return el;
+  };
+  const target =
+    on === "row"
+      ? row
+      : on === "button"
+        ? row.appendChild(document.createElement("button"))
+        : on === "menu"
+          ? document.createElement("li")
+          : on === "combobox"
+            ? field("div", "combobox")
+            : field(on);
   const preventDefault = vi.fn();
   const e = { key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...mods, target, currentTarget: row, preventDefault };
   return e as unknown as KeyboardEvent<HTMLElement> & { preventDefault: typeof preventDefault };
@@ -94,6 +112,20 @@ describe("useListKeys", () => {
     expect(focusRow).toHaveBeenCalledTimes(1);
     expect(onOpen).not.toHaveBeenCalled();
     expect(selection.pick).not.toHaveBeenCalled();
+  });
+
+  it("an arrow from a field in the row (an input, a textarea, a select, a combobox) is the field's: the rows do not move, and Escape still clears", () => {
+    const { press, focusRow, selection } = setup();
+    for (const on of ["input", "textarea", "select", "combobox"] as const) {
+      for (const k of ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"]) {
+        const e = key(k, {}, on);
+        press(e);
+        expect(e.preventDefault).not.toHaveBeenCalled();
+      }
+      press(key("Escape", {}, on));
+    }
+    expect(focusRow).not.toHaveBeenCalled();
+    expect(selection.clear).toHaveBeenCalledTimes(4);
   });
 
   it("a key from a menu the row opened (a portal outside the row) is the menu's: no key moves the rows from there", () => {

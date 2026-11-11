@@ -85,6 +85,7 @@ export interface ListKeysOptions {
 // Home and End go to the first and the last row, Enter opens, and on a list with a selection Space toggles, Shift
 // extends, Ctrl or Cmd with A selects all and Escape clears. A key from a control inside a row (a link, a button) keeps
 // its own meaning, except the arrows, which move on from it; Home and End move only from the row itself. A key from a
+// field inside a row (an input, a textarea, a select, a combobox) is the field's, Escape apart. A key from a
 // portal the row opened (a menu, a dialog) is left to the portal.
 export function useListKeys(o: ListKeysOptions): (e: KeyboardEvent<HTMLElement>) => void {
   const ref = useRef(o);
@@ -94,6 +95,8 @@ export function useListKeys(o: ListKeysOptions): (e: KeyboardEvent<HTMLElement>)
     if (ids.length === 0 || e.altKey) return;
     // React passes a key in a portal the row opened (its ⋮ menu, a dialog) up to the row; that key is the portal's.
     if (e.target instanceof Node && !e.currentTarget.contains(e.target)) return;
+    // A field in the row (an input, a textarea, a select, a combobox) keeps its arrows and its other keys; only Escape goes on.
+    if (e.target instanceof Element && e.target.matches("input, textarea, select, [role=combobox]") && e.key !== "Escape") return;
     const at = focusID === null ? -1 : ids.indexOf(focusID);
     const onRow = e.target === e.currentTarget;
     const moveTo = (i: number) => {

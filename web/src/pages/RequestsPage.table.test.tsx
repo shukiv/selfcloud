@@ -140,6 +140,16 @@ describe("access requests are one table (tl5, decision 138)", () => {
     expect(within(row).getByRole("button", { name: "More actions for Zoe Ng" })).toBeTruthy();
   });
 
+  it("keeps the arrow keys for the Grant select: ArrowDown on it leaves the focus on it", async () => {
+    answer([zoe, ann]);
+    renderPage();
+    const row = await screen.findByRole("row", { name: "Zoe Ng" });
+    const grant = within(row).getByRole("combobox");
+    grant.focus();
+    fireEvent.keyDown(grant, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(grant);
+  });
+
   it("keeps the table on screen when no request waits, with its title and the sentence in the body", async () => {
     answer([]);
     renderPage();
