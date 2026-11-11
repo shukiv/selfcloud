@@ -199,6 +199,31 @@ func TestStreamErrorIsDecoded(t *testing.T) {
 	}
 }
 
+// TestAPIErrorCarriesTheDetails: the error's details come through, so a transfer can read the state an upload waits in
+// or the offset the server holds. They are data for the command, not part of the message.
+func TestAPIErrorCarriesTheDetails(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = io.WriteString(w, `{"error":{"code":"conflict","message":"the name is taken",`+
+			`"details":{"state":"awaiting_commit","upload_id":"upl_x","offset":42}}}`)
+	}))
+	defer srv.Close()
+	c := newClient(t, srv.URL)
+	_, err := c.Stream(context.Background(), Request{Method: "PATCH", Path: "/api/v1/uploads/x"}, time.Second)
+	var ae *APIError
+	if !errors.As(err, &ae) {
+		t.Fatalf("err %v is not an APIError", err)
+	}
+	if ae.Details["state"] != "awaiting_commit" || ae.Details["offset"] != float64(42) {
+		t.Errorf("Details = %v", ae.Details)
+	}
+	if strings.Contains(ae.Error(), "awaiting_commit") {
+		t.Errorf("the message carries the details: %q", ae.Error())
+	}
+}
+
 // TestStreamDoesNotFollowRedirects: a redirect is the answer, and its target is never called, so the credential never
 // reaches another origin.
 func TestStreamDoesNotFollowRedirects(t *testing.T) {
