@@ -58,12 +58,13 @@ describe("useListSelection", () => {
 function key(
   k: string,
   mods: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {},
-  on: "row" | "button" | "menu" | "input" | "textarea" | "select" | "combobox" = "row",
+  on: "row" | "button" | "menu" | "input" | "textarea" | "select" | "combobox" | "checkbox" = "row",
 ) {
   const row = document.createElement("tr");
   const field = (tag: string, role?: string) => {
     const el = row.appendChild(document.createElement(tag));
     if (role) el.setAttribute("role", role);
+    if (on === "checkbox") el.setAttribute("type", "checkbox");
     return el;
   };
   const target =
@@ -75,7 +76,7 @@ function key(
           ? document.createElement("li")
           : on === "combobox"
             ? field("div", "combobox")
-            : field(on);
+            : field(on === "checkbox" ? "input" : on);
   const preventDefault = vi.fn();
   const e = { key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...mods, target, currentTarget: row, preventDefault };
   return e as unknown as KeyboardEvent<HTMLElement> & { preventDefault: typeof preventDefault };
@@ -126,6 +127,18 @@ describe("useListKeys", () => {
     }
     expect(focusRow).not.toHaveBeenCalled();
     expect(selection.clear).toHaveBeenCalledTimes(4);
+  });
+
+  it("a row's checkbox is not a field: arrows and Shift with an arrow from it move and extend, and Space and Enter stay its own", () => {
+    const { press, focusRow, onOpen, selection } = setup();
+    press(key("ArrowDown", {}, "checkbox"));
+    expect(focusRow).toHaveBeenLastCalledWith("c");
+    press(key("ArrowDown", { shiftKey: true }, "checkbox"));
+    expect(selection.pick).toHaveBeenLastCalledWith("c", { range: true, toggle: false });
+    press(key(" ", {}, "checkbox"));
+    press(key("Enter", {}, "checkbox"));
+    expect(selection.pick).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
   });
 
   it("a key from a menu the row opened (a portal outside the row) is the menu's: no key moves the rows from there", () => {
