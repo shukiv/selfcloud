@@ -343,11 +343,15 @@ func (c *Config) Change(set map[string]string, reset []string) (*Config, error) 
 	return next, nil
 }
 
+// StoredApplied reports whether ApplyStored has run on c, or on the configuration c was changed from.
+func (c *Config) StoredApplied() bool { return c.applied }
+
 // ApplyStored applies the settings table's rows to c, in place. A row for an unknown key, for a key that needs a
 // restart, or for a key the file or the environment writes is not applied, and skip is told why. The rows that are
 // valid together are applied together; if they are not, each is tried alone in key order, and one that fails is skipped
 // and named. A row never stops the server: the file can always override it.
 func (c *Config) ApplyStored(rows map[string]string, skip func(key, reason string)) {
+	defer func() { c.applied = true }()
 	if skip == nil {
 		skip = func(string, string) {}
 	}

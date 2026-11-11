@@ -262,15 +262,18 @@ func New(opts Options) (*Server, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	// The settings table's rows apply before anything reads the configuration. A row that cannot apply is skipped and
-	// logged, never fatal: the config file can always set the key, and it wins.
-	rows, err := opts.Store.Settings(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("api: settings: %w", err)
+	// The settings table's rows apply before anything reads the configuration, unless the command that opened the
+	// database already applied them. A row that cannot apply is skipped and logged, never fatal: the config file can
+	// always set the key, and it wins.
+	if !opts.Config.StoredApplied() {
+		rows, err := opts.Store.Settings(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("api: settings: %w", err)
+		}
+		opts.Config.ApplyStored(rows, func(key, reason string) {
+			log.Warn("a stored setting is not applied", "key", key, "reason", reason)
+		})
 	}
-	opts.Config.ApplyStored(rows, func(key, reason string) {
-		log.Warn("a stored setting is not applied", "key", key, "reason", reason)
-	})
 	snap := new(atomic.Pointer[config.Config])
 	snap.Store(opts.Config)
 	minFree := func() uint64 { return uint64(snap.Load().Storage.MinFree) }

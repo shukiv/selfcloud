@@ -100,6 +100,9 @@ type Config struct {
 	present map[string]Source
 	// stored holds the settings table's values this configuration applies, by YAML path, as their stored text.
 	stored map[string]string
+	// applied is true once ApplyStored has run on this configuration, so a server given it does not apply the table
+	// again.
+	applied bool
 }
 
 // UsersConfig controls users, verification and password reset.
