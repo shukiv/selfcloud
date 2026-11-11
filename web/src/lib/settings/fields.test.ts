@@ -20,6 +20,35 @@ describe("the settings page's fields", () => {
     expect(new Set(all).size).toBe(all.length);
   });
 
+  it("states each range as the server holds it: the same floor, cap and zero", () => {
+    const go = readFileSync(resolve(__dirname, "../../../../internal/config/settings.go"), "utf8");
+    const block = go.slice(go.indexOf("var settingDefs"), go.indexOf("// factKeys"));
+    const unit = { minute: 60e9, hour: 3600e9, day: 86400e9, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3, TiB: 1024 ** 4 };
+    const evaluate = (expr: string): number => {
+      const text = expr.replace(/int64\(/g, "(").trim();
+      if (!/^[\w\s*()+]+$/.test(text)) throw new Error(`cannot read ${expr}`);
+      return Function(...Object.keys(unit), `return (${text});`)(...Object.values(unit)) as number;
+    };
+    const specs = new Map(SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.fields)).map((f) => [f.key, f]));
+    let compared = 0;
+    for (const m of block.matchAll(/\{key: "([a-z_.]+)", typ: Type(\w+)([^}\n]*)\}/g)) {
+      const [, key, typ, rest] = m;
+      const min = /min: ([^,}]+?)(?:,|$)/.exec(rest)?.[1];
+      const max = /max: ([^,}]+?)(?:,|$)/.exec(rest)?.[1];
+      const zero = /zero: true/.test(rest);
+      const spec = specs.get(key);
+      expect(spec, key).toBeDefined();
+      if (min === undefined || max === undefined) {
+        expect(spec?.range, `${key} has no range`).toBeUndefined();
+        continue;
+      }
+      const scale = typ === "Duration" ? 1e9 : 1;
+      expect(spec?.range, key).toEqual({ min: evaluate(min) / scale, max: evaluate(max) / scale, ...(zero ? { zero: true } : {}) });
+      compared++;
+    }
+    expect(compared).toBeGreaterThan(15);
+  });
+
   it("has English text for every label, help line, note, group and section", () => {
     const missing: string[] = [];
     const need = (k: string) => {

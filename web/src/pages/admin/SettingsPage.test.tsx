@@ -3,7 +3,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, Link, RouterProvider } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session, type Session } from "../../lib/session";
 import type { Setting } from "../../lib/settings/api";
 import { fail, stubFetch, type Answer, type Call } from "../../test/fetchStub";
@@ -14,10 +14,10 @@ import SettingsPage from "./SettingsPage";
 
 // The server the page talks to: GET /settings and /info answer from state, and PATCH applies the change the way the API
 // does for the cases a test needs (a stored value, or a reset), unless the test gives its own answer.
-function server(over: Record<string, Partial<Setting>> = {}, patch?: (c: Call) => Answer) {
+function server(over: Record<string, Partial<Setting>> = {}, patch?: (c: Call) => Answer, infoBody: unknown = info) {
   let state = settingsAnswer(over);
   return stubFetch((c) => {
-    if (c.url === "/api/v1/info") return { status: 200, body: info };
+    if (c.url === "/api/v1/info") return { status: 200, body: infoBody };
     if (c.url === "/api/v1/settings" && c.method === "GET") return { status: 200, body: state };
     if (c.url === "/api/v1/settings" && c.method === "PATCH") {
       if (patch) {
@@ -159,6 +159,25 @@ describe("what a row shows", () => {
     expect(within(r).getByRole("switch").getAttribute("aria-checked")).toBe("true");
     expect(within(r).getByText("Applies at the next start")).toBeTruthy();
     expect(within(r).queryByRole("button", { name: /Back to the default/ })).toBeNull();
+  });
+
+  it("shows the office pair as the server sends it at its default: read-only, applies at the next start, and not set in the config file", async () => {
+    server();
+    renderPage();
+    await screen.findByRole("region", { name: "Sign-in, search, office and administration" });
+    for (const key of ["office.enabled", "office.discovery_url"]) {
+      const r = row(key);
+      expect(within(r).getByText("Applies at the next start")).toBeTruthy();
+      expect(within(r).queryByText("Set in the server's config file")).toBeNull();
+      expect(within(r).getByText("Default", { selector: ".ant-tag" })).toBeTruthy();
+    }
+  });
+
+  it("marks a value the environment writes as set in the server's config file", async () => {
+    server({ "search.enabled": { value: false, source: "env", locked: true } });
+    renderPage();
+    await screen.findByRole("region", { name: "Sign-in, search, office and administration" });
+    expect(within(row("search.enabled")).getByText("Set in the server's config file")).toBeTruthy();
   });
 
   it("keeps a restart setting read-only even when the server does not call it locked", async () => {
@@ -325,6 +344,37 @@ describe("what the server answers to a change", () => {
     expect(within(row("versions.max_count")).getByText(/must not be negative/)).toBeTruthy();
   });
 
+  it("shows the messages that name no field in the section's notice", async () => {
+    server({}, () => fail(400, "invalid_request", { reason: "invalid_setting", keys: [], errors: ["a rule across the settings broke"] }));
+    renderPage();
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    fireEvent.change(numberBox("upload.max_file_size"), { target: { value: "200" } });
+    fireEvent.click(save("Uploads and storage"));
+    expect((await within(region("Uploads and storage")).findByRole("alert")).textContent).toContain("a rule across the settings broke");
+  });
+
+  it("disables every section's Save while one Save is out", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => (release = r));
+    const { calls } = stubFetch(async (c) => {
+      if (c.url === "/api/v1/info") return { status: 200, body: info };
+      if (c.method === "PATCH") {
+        await held;
+        return { status: 200, body: settingsAnswer() };
+      }
+      return { status: 200, body: settingsAnswer() };
+    });
+    renderPage();
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    fireEvent.change(numberBox("upload.max_file_size"), { target: { value: "200" } });
+    fireEvent.change(numberBox("versions.max_count"), { target: { value: "7" } });
+    fireEvent.click(save("Uploads and storage"));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect((save("Sharing, trash and versions") as HTMLButtonElement).disabled).toBe(true);
+    release();
+    await waitFor(() => expect((save("Sharing, trash and versions") as HTMLButtonElement).disabled).toBe(false));
+  });
+
   it("says which keys are now locked on a 409, and reloads", async () => {
     let locked = false;
     const { calls } = stubFetch((c) => {
@@ -419,9 +469,83 @@ describe("leaving with unsaved changes", () => {
     fireEvent.change(numberBox("upload.max_file_size"), { target: { value: "5" } });
     await waitFor(() => {
       const dirty = new Event("beforeunload", { cancelable: true });
+      const prevent = vi.spyOn(dirty, "preventDefault");
       window.dispatchEvent(dirty);
-      expect(dirty.defaultPrevented).toBe(true);
+      // A browser asks only when the handler calls preventDefault: an empty returnValue alone does not prompt.
+      expect(prevent).toHaveBeenCalled();
     });
+  });
+
+  it("a click on the backdrop does not close the leave prompt: Leave still goes on", async () => {
+    server();
+    const { router } = renderPage();
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    fireEvent.change(numberBox("upload.max_file_size"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("link", { name: "Tenants" }));
+    await screen.findByText("Leave without saving?");
+    const wrap = document.querySelector(".ant-modal-wrap") as HTMLElement;
+    fireEvent.click(wrap);
+    fireEvent.click(await screen.findByRole("button", { name: "Leave" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/tenants"));
+  });
+});
+
+// The layout follows the width of the page's content, not the window's: the docked sidebar takes 264 px of a window from 992 px.
+describe("the layout follows the content's width", () => {
+  const saved = globalThis.ResizeObserver;
+  const contentWidth = (width: number) => {
+    globalThis.ResizeObserver = class {
+      private cb: ResizeObserverCallback;
+      constructor(cb: ResizeObserverCallback) {
+        this.cb = cb;
+      }
+      observe() {
+        this.cb([{ contentRect: { width } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+  };
+  afterEach(() => {
+    globalThis.ResizeObserver = saved;
+  });
+  const twoColumns = (key: string) => row(key).style.gridTemplateColumns.includes("340px");
+
+  it("beside the cards from 900 px of content, with two-column rows", async () => {
+    contentWidth(968);
+    server();
+    renderPage();
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    expect(screen.getByRole("navigation", { name: "Sections" })).toBeTruthy();
+    expect(twoColumns("upload.max_file_size")).toBe(true);
+  });
+
+  it("a window of 1000 px with the sidebar docked (about 700 px of content) stacks the cards, with two-column rows", async () => {
+    contentWidth(700);
+    server();
+    renderPage();
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getAllByRole("region")).toHaveLength(4);
+    expect(twoColumns("upload.max_file_size")).toBe(true);
+  });
+
+  it("a narrow card stacks each row's input under its text", async () => {
+    contentWidth(620);
+    server();
+    renderPage();
+    await screen.findByRole("region", { name: "Uploads and storage" });
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(twoColumns("upload.max_file_size")).toBe(false);
+  });
+
+  it("tabs below 600 px of content, whatever the window is", async () => {
+    contentWidth(560);
+    server();
+    renderPage();
+    expect(await screen.findByRole("tablist")).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
   });
 });
 
@@ -474,6 +598,16 @@ describe("the layout", () => {
     expect(within(about).getByText("trusted_proxies")).toBeTruthy();
     expect(within(about).getByText("10.0.0.0/8, 192.168.0.0/16")).toBeTruthy();
     expect(within(about).getByText("listen")).toBeTruthy();
+  });
+
+  it("About writes the piece size and the largest file in the same units as the cards", async () => {
+    server({}, undefined, { ...info, limits: { max_file_size: 100 * 1024 ** 3, max_chunk_size: 64 * 1024 ** 2 } });
+    renderPage();
+    await screen.findByRole("region", { name: "About" });
+    const about = region("About");
+    expect(within(about).getByText("100 GB")).toBeTruthy();
+    expect(within(about).getByText("64 MB")).toBeTruthy();
+    expect(numberBox("upload.max_file_size").value).toBe("100");
   });
 
   it("keeps the page after a failed refresh of an answer it already has", async () => {

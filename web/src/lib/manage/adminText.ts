@@ -4,7 +4,7 @@
 // 114). They are a catalogue of their own,
 // loaded with the admin pages, so the main catalogues (which every page loads) do not grow with them: the Russian one is at
 // its budget. The keys are read with the main translator once loaded. English is loaded with each language, as the fallback.
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { addCatalogue, useLang, type Lang } from "../i18n";
 
 type Catalogue = { default: Record<string, string> };
@@ -34,19 +34,34 @@ export async function loadAdminText(l: Lang): Promise<void> {
 // useAdminText loads the admin strings of the current language and says whether they are there. The component re-renders
 // when they arrive. Until then, or if the load fails, a caller leaves out what they say: an empty table keeps its title.
 export function useAdminText(): boolean {
+  return useAdminTextState().ready;
+}
+
+// useAdminTextState is useAdminText that also says when the load failed, and can try it again: a page whose whole body is
+// made of these strings shows an error with a retry instead of waiting for ever.
+export function useAdminTextState(): { ready: boolean; failed: boolean; retry: () => void } {
   const l = useLang();
   const [, bump] = useReducer((n: number) => n + 1, 0);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const ready = loaded.has(l) && loaded.has("en");
   useEffect(() => {
     if (ready) return;
     let live = true;
     loadAdminText(l).then(
       () => live && bump(),
-      () => undefined,
+      () => live && setFailed(true),
     );
     return () => {
       live = false;
     };
-  }, [l, ready]);
-  return ready;
+  }, [l, ready, attempt]);
+  return {
+    ready,
+    failed: failed && !ready,
+    retry: () => {
+      setFailed(false);
+      setAttempt((n) => n + 1);
+    },
+  };
 }

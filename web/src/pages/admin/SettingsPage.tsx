@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Alert, Modal, Tabs } from "antd";
+import { Alert, Button, Modal, Tabs } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useBlocker } from "react-router-dom";
-import { useLang, useT } from "../../lib/i18n";
+import { translate, useLang, useT } from "../../lib/i18n";
 import { brand } from "../../lib/brand";
 import { useStore } from "../../lib/store";
 import { isAdmin, session } from "../../lib/session";
 import { queryKey } from "../../lib/query";
 import { getInfo } from "../../lib/manage/api";
 import { failureText } from "../../lib/manage/failure";
-import { useAdminText } from "../../lib/manage/adminText";
+import { useAdminTextState } from "../../lib/manage/adminText";
 import { changeSettings, getSettings, type SettingsChange } from "../../lib/settings/api";
 import { fieldKeys, SECTIONS, type SectionId, type SectionSpec } from "../../lib/settings/fields";
 import { draftOf, isChanged, refusal, sectionChange, type Draft, type Edits } from "../../lib/settings/form";
@@ -32,12 +32,35 @@ export default function SettingsPage() {
 type Tab = SectionId;
 const TABS: Tab[] = [...SECTIONS.map((s) => s.id), "about"];
 
-// useWide says whether the window is 768 px or more: the section list sits beside the cards there, and the sections are tabs
-// below it.
-function useWide(): boolean {
+// The layout follows the width of the page's own content, not the window's: the docked sidebar takes 264 px of a window from 992 px.
+// Below TABS_BELOW the sections are tabs; from LIST_FROM the section list sits beside the cards; in between the cards are stacked.
+// A row puts its input beside its text when the card is at least ROW_FROM wide.
+export const TABS_BELOW = 600;
+export const LIST_FROM = 900;
+const ROW_FROM = 600;
+const LIST_WIDTH = 224;
+// The section list sticks below the 56 px top bar, with a gap.
+const SECTION_LIST_TOP = 72;
+const CARD_PADDING = 48;
+
+export interface Layout {
+  tabs: boolean;
+  list: boolean;
+  rowWide: boolean;
+}
+
+export function layoutFor(width: number): Layout {
+  const list = width >= LIST_FROM;
+  return { tabs: width < TABS_BELOW, list, rowWide: width - (list ? LIST_WIDTH : 0) - CARD_PADDING >= ROW_FROM };
+}
+
+// useLayout measures the page's content. Until it is measured (a window with no layout, as in a test) the window's own width
+// stands in: 768 px and up is a roomy content, below it a phone's.
+function useLayout(ref: RefObject<HTMLElement | null>): Layout {
   const query = "(min-width: 768px)";
-  const read = () => (typeof window.matchMedia === "function" ? window.matchMedia(query).matches : true);
-  const [wide, setWide] = useState(read);
+  const viewport = () => (typeof window.matchMedia === "function" ? window.matchMedia(query).matches : true);
+  const [wide, setWide] = useState(viewport);
+  const [measured, setMeasured] = useState<number | null>(null);
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const m = window.matchMedia(query);
@@ -46,7 +69,20 @@ function useWide(): boolean {
     m.addEventListener?.("change", on);
     return () => m.removeEventListener?.("change", on);
   }, []);
-  return wide;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = (w: number) => setMeasured(w > 0 ? w : null);
+    read(el.getBoundingClientRect().width);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (typeof w === "number") read(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return layoutFor(measured ?? (wide ? 1200 : 375));
 }
 
 function SettingsView() {
@@ -55,8 +91,10 @@ function SettingsView() {
   const brandName = useStore(brand).name;
   const qc = useQueryClient();
   const guard = useGuard();
-  const ready = useAdminText();
-  const wide = useWide();
+  const { ready, failed: textFailed, retry: retryText } = useAdminTextState();
+  const root = useRef<HTMLDivElement>(null);
+  const layout = useLayout(root);
+  const wide = layout.rowWide;
   const settingsKey = queryKey("settings");
   const infoKey = queryKey("installation");
   const q = useQuery({ queryKey: settingsKey, queryFn: getSettings, refetchOnMount: "always", retry: false });
@@ -70,7 +108,7 @@ function SettingsView() {
   const settings = answer?.settings ?? [];
 
   useEffect(() => {
-    document.title = `${t("settings.title")} · ${brandName}`;
+    document.title = `${t("nav.settings")} · ${brandName}`;
   }, [t, brandName, ready]);
 
   const sectionDirty = (s: SectionSpec) =>
@@ -97,7 +135,7 @@ function SettingsView() {
   // The section list marks the section in view.
   const [inView, setInView] = useState<Tab>("uploads");
   useEffect(() => {
-    if (!wide || answer === undefined || typeof IntersectionObserver === "undefined") return;
+    if (!layout.list || answer === undefined || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(
       (entries) => {
         const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
@@ -113,7 +151,7 @@ function SettingsView() {
       }
     }
     return () => io.disconnect();
-  }, [wide, answer]);
+  }, [layout.list, layout.tabs, answer]);
 
   const dropEdits = (keys: string[]) =>
     setEdits((cur) => {
@@ -174,6 +212,9 @@ function SettingsView() {
         const r = refusal(e);
         if (r.kind === "invalid") {
           setErrors((cur) => ({ ...cur, ...Object.fromEntries(Object.entries(r.fields).map(([k, m]) => [k, m ?? t("settings.refused")])) }));
+          if (r.unmatched.length > 0 || Object.keys(r.fields).length === 0) {
+            setNotice(section.id, { kind: "error", text: r.unmatched.join(" ") || t("settings.refused") });
+          }
         } else if (r.kind === "locked") {
           // The keys are locked now: their edits go, the rest stay, and the answer is read again.
           dropEdits(r.keys);
@@ -196,7 +237,7 @@ function SettingsView() {
       errors={errors}
       notice={notices[s.id] ?? null}
       dirty={sectionDirty(s)}
-      busy={busy === s.id}
+      busy={busy !== null}
       wide={wide}
       onChange={(k, v) => change(s, k, v)}
       onReset={(k) => reset(s, k)}
@@ -214,12 +255,25 @@ function SettingsView() {
   };
 
   let body: ReactNode = null;
-  if (!ready || (answer === undefined && !q.isError)) {
+  if (textFailed) {
+    body = (
+      <Alert
+        type="error"
+        showIcon
+        role="alert"
+        message={translate(lang, "error.network")}
+        action={<Button size="small" onClick={retryText}>{translate(lang, "files.retry")}</Button>}
+      />
+    );
+  } else if (!ready || (answer === undefined && !q.isError)) {
     body = <p role="status">{t("app.loading")}</p>;
-  } else if (answer !== undefined) {
-    body = wide ? (
+  } else if (answer !== undefined && !layout.tabs) {
+    const stacked = <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>{cards.map((c) => c.node)}</div>;
+    body = !layout.list ? (
+      stacked
+    ) : (
       <div style={{ display: "grid", gridTemplateColumns: "200px minmax(0, 1fr)", gap: 24, alignItems: "start" }}>
-        <nav aria-label={t("settings.sections")} style={{ position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: 2, borderInlineStart: "2px solid var(--ant-color-split)" }}>
+        <nav aria-label={t("settings.sections")} style={{ position: "sticky", top: SECTION_LIST_TOP, display: "flex", flexDirection: "column", gap: 2, borderInlineStart: "2px solid var(--ant-color-split)" }}>
           {TABS.map((id) => (
             <button
               key={id}
@@ -241,9 +295,11 @@ function SettingsView() {
             </button>
           ))}
         </nav>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>{cards.map((c) => c.node)}</div>
+        {stacked}
       </div>
-    ) : (
+    );
+  } else if (answer !== undefined) {
+    body = (
       <Tabs
         activeKey={tab}
         onChange={(k) => setTab(k as Tab)}
@@ -254,8 +310,8 @@ function SettingsView() {
   }
 
   return (
-    <div style={{ minWidth: 0 }}>
-      <h1 style={pageTitle}>{t("settings.title")}</h1>
+    <div ref={root} style={{ minWidth: 0 }}>
+      <h1 style={pageTitle}>{t("nav.settings")}</h1>
       {ready && <p style={{ margin: "-8px 0 16px", color: "var(--ant-color-text-secondary)", maxWidth: "70ch" }}>{t("settings.intro")}</p>}
       {q.isError && <Alert type="error" showIcon role="alert" message={failureText(q.error, lang)} style={{ marginBlockEnd: 16 }} />}
       {body}

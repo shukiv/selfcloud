@@ -53,7 +53,7 @@ export default function FieldRow({ spec, setting, edit, error, wide, onChange, o
         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, fontWeight: 500 }}>
           {changed && <span role="img" aria-label={t("settings.changed")} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--ant-color-primary)", display: "inline-block" }} />}
           <span>{label}</span>
-          {setting.locked ? (
+          {setting.source === "file" || setting.source === "env" ? (
             <Tag icon={<Lock size={12} aria-hidden="true" style={{ marginInlineEnd: 4, verticalAlign: "-1px" }} />} style={{ marginInlineEnd: 0 }}>
               {t("settings.locked")}
             </Tag>

@@ -97,7 +97,17 @@ describe("a refused change", () => {
 
   it("gives a key no message of its own a general one, so it is still marked", () => {
     const got = refusal(e(400, "invalid_request", { reason: "invalid_setting", keys: ["trash.retention"], errors: ["something else"] }));
-    expect(got).toEqual({ kind: "invalid", fields: { "trash.retention": null } });
+    expect(got).toEqual({ kind: "invalid", fields: { "trash.retention": null }, unmatched: ["something else"] });
+  });
+
+  it("keeps a message that names no key, and a refusal that names no key at all", () => {
+    expect(refusal(e(400, "invalid_request", { reason: "invalid_setting", keys: [], errors: ["a rule broke"] }))).toEqual({
+      kind: "invalid",
+      fields: {},
+      unmatched: ["a rule broke"],
+    });
+    const got = refusal(e(400, "invalid_request", { reason: "invalid_setting", keys: ["trash.retention"], errors: ["trash.retention is low", "a rule broke"] }));
+    expect(got).toEqual({ kind: "invalid", fields: { "trash.retention": "trash.retention is low" }, unmatched: ["a rule broke"] });
   });
 
   it("names the keys a 409 says are locked", () => {

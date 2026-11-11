@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { useLang, useT } from "../../../lib/i18n";
-import { formatBytes } from "../../../lib/files/format";
+import { formatSizeBytes } from "../../../lib/settings/format";
 import type { Info } from "../../../lib/manage/types";
 import type { Fact } from "../../../lib/settings/api";
 import { CardFrame } from "./SectionCard";
@@ -38,8 +38,8 @@ export default function About({ info, facts, failure }: { info: Info | undefined
           row(t("settings.about.version"), <span style={mono}>{info.version}</span>, "version"),
           row(t("settings.about.publicUrl"), <bdi>{info.public_url}</bdi>, "publicUrl"),
           row(t("settings.about.webInterface"), t(info.web_interface ? "settings.on" : "settings.off"), "webInterface"),
-          row(t("settings.about.pieceSize"), formatBytes(info.limits.max_chunk_size, lang), "pieceSize"),
-          row(t("settings.about.largestFile"), formatBytes(info.limits.max_file_size, lang), "largestFile"),
+          row(t("settings.about.pieceSize"), formatSizeBytes(info.limits.max_chunk_size, lang), "pieceSize"),
+          row(t("settings.about.largestFile"), formatSizeBytes(info.limits.max_file_size, lang), "largestFile"),
         ]}
       </dl>
       <p style={{ display: "flex", flexWrap: "wrap", gap: 16, margin: "12px 0 0" }}>

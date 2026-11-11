@@ -10,6 +10,13 @@ type IntlUnit = "kilobyte" | "megabyte" | "gigabyte" | "terabyte" | "minute" | "
 function withUnit(n: number, unit: IntlUnit, lang: string): string {
   // A size is "64 MB" and a duration "3 days": the short form for bytes, the long one for time.
   const display = unit.endsWith("byte") ? "short" : "long";
+  if (display === "short") {
+    // Some languages write one byte unit before its number ("MB1" in Hebrew), which a sentence cannot hold. The number comes first,
+    // with the unit's own word as it is written beside any other number.
+    const fmt = new Intl.NumberFormat(lang, { style: "unit", unit, unitDisplay: display, maximumFractionDigits: 4 });
+    const word = fmt.formatToParts(2).find((p) => p.type === "unit")?.value ?? unit;
+    return `${new Intl.NumberFormat(lang, { maximumFractionDigits: 4 }).format(n)} ${word}`;
+  }
   return new Intl.NumberFormat(lang, { style: "unit", unit, unitDisplay: display, maximumFractionDigits: 4 }).format(n);
 }
 

@@ -97,7 +97,7 @@ export function messagesFor(key: string, messages: string[]): string[] {
 }
 
 export type Refusal =
-  | { kind: "invalid"; fields: Record<string, string | null> }
+  | { kind: "invalid"; fields: Record<string, string | null>; unmatched: string[] }
   | { kind: "locked"; keys: string[] }
   | { kind: "other"; error: unknown };
 
@@ -116,7 +116,9 @@ export function refusal(err: unknown): Refusal {
         const own = messagesFor(key, errors);
         fields[key] = own.length > 0 ? own.join(" ") : null;
       }
-      return { kind: "invalid", fields };
+      // A message that names none of the keys would be lost: it is kept for the section's notice.
+      const unmatched = errors.filter((m) => !keys.some((key) => messagesFor(key, [m]).length > 0));
+      return { kind: "invalid", fields, unmatched };
     }
     if (err.status === 409 && err.details.reason === "setting_locked") {
       return { kind: "locked", keys: strings(err.details.keys) };
