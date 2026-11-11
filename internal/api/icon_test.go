@@ -102,7 +102,8 @@ func TestTruncatedIconFileNamesItsSettingOnce(t *testing.T) {
 	}
 }
 
-// TestLogoPNGStillStartsWhenTooBig: a logo of 3000 pixels starts the server, and one Info line says the icons show the mark.
+// TestLogoPNGStillStartsWhenTooBig: a logo of 3000 pixels starts the server, one Info line says the icons show the mark, and
+// one Warn line says it is larger than an uploaded logo may be (decision 141).
 func TestLogoPNGStillStartsWhenTooBig(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
@@ -110,8 +111,22 @@ func TestLogoPNGStillStartsWhenTooBig(t *testing.T) {
 	if _, err := startWithLog(t, &buf, func(c *config.Config) { c.UI.Brand.Name = "Acme Drive"; c.UI.Brand.LogoFile = logo }); err != nil {
 		t.Fatalf("a logo of 3000 pixels stopped the start: %v", err)
 	}
-	if n := strings.Count(buf.String(), "ui.brand.logo_file"); n != 1 {
-		t.Errorf("the log names the logo %d times, want once:\n%s", n, buf.String())
+	info, warn := 0, 0
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if !strings.Contains(line, "ui.brand.logo_file") {
+			continue
+		}
+		switch {
+		case strings.Contains(line, "level=INFO") && strings.Contains(line, "the SelfCloud mark"):
+			info++
+		case strings.Contains(line, "level=WARN") && strings.Contains(line, "4194304 pixels in all"):
+			warn++
+		default:
+			t.Errorf("another line names the logo: %s", line)
+		}
+	}
+	if info != 1 || warn != 1 {
+		t.Errorf("the log names the logo in %d Info and %d Warn lines, want one each:\n%s", info, warn, buf.String())
 	}
 }
 
