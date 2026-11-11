@@ -116,6 +116,10 @@ export default function RequestsPage() {
   useEffect(() => {
     if (after === null || rows.some((r) => r.id === after.gone)) return;
     setAfter(null);
+    // The focus is moved only when it has fallen to the page body, which is where the removed button left it; a control the person
+    // moved to meanwhile keeps it.
+    const now = document.activeElement;
+    if (now !== null && now !== document.body) return;
     const tr = [...(table.current?.querySelectorAll<HTMLElement>("tr.request") ?? [])].find((el) => el.dataset.id === after.next);
     const control = tr?.querySelector<HTMLElement>("a[href], button:not([aria-disabled]), input, [role=combobox]");
     (control ?? tr ?? heading.current)?.focus();

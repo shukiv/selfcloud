@@ -200,6 +200,31 @@ describe("access requests", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Access requests" })));
   });
 
+  it("after a decision the focus is not taken from a control the person moved to meanwhile", async () => {
+    let decided = false;
+    stubFetch(async (c: Call) => {
+      if (c.url === "/api/v1/access-requests") {
+        const all = [request("arq_1", "viewer", "Ann Lee"), request("arq_2", "editor", "Ben Ko")];
+        return { status: 200, body: { items: decided ? all.slice(1) : all } };
+      }
+      if (c.url === "/api/v1/nodes/nod_item") return { status: 200, body: node("manager", false) };
+      if (c.url === "/api/v1/access-requests/arq_1/deny") {
+        await new Promise((r) => setTimeout(r, 30));
+        decided = true;
+        return { status: 200, body: request("arq_1", "viewer", "Ann Lee") };
+      }
+      return fail(404, "not_found");
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Deny: Ann Lee" }));
+    const benRow = screen.getByRole("row", { name: "Ben Ko" });
+    const grant = within(benRow).getByRole("combobox");
+    grant.focus();
+    await waitFor(() => expect(screen.queryByRole("row", { name: "Ann Lee" })).toBeNull());
+    await screen.findByText(/Request from Ann Lee declined/);
+    expect(document.activeElement).toBe(grant);
+  });
+
   it("a hidden item is named by no ID, and a person without a name is shown as A person", async () => {
     stubFetch((c: Call) => {
       if (c.url === "/api/v1/access-requests") return { status: 200, body: { items: [request("arq_1", "viewer")] } };
