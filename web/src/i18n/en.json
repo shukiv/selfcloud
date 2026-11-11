@@ -790,6 +790,7 @@
   "audit.account.create.plain": "{actor} created a tenant.",
   "audit.admin.create.plain": "{actor} added an admin.",
   "audit.admin.delete.plain": "{actor} removed an admin.",
+  "audit.installation.settings": "{actor} changed the installation's settings.",
   "audit.viaAnAdmin": "Done by an installation admin, signed in as this user.",
   "audit.link.delete_public": "{actor} removed every link that anyone can open.",
   "audit.link.expired": "{actor} removed a link to an item after its end date.",

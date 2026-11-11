@@ -179,6 +179,9 @@ function baseSentence(entry: AuditEntry, names: Names): Sentence {
     case 'admin.delete':
       if (person === undefined) return { key: 'audit.admin.delete.plain', params: { actor } };
       return { key: 'audit.admin.delete', params: { actor, target } };
+    // The details are the changed settings by key; the sentence says only that the settings changed (decision 139).
+    case 'installation.settings':
+      return { key: 'audit.installation.settings', params: { actor } };
     // A change of address reads as the update it is (decision 89); it needs no sentence of its own.
     case 'user.email_changed':
       return { key: 'audit.user.update', params: { actor, target } };

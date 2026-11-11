@@ -790,6 +790,7 @@
   "audit.account.create.plain": "{actor} יצר לקוח.",
   "audit.admin.create.plain": "{actor} הוסיף מנהל.",
   "audit.admin.delete.plain": "{actor} הסיר מנהל.",
+  "audit.installation.settings": "{actor} שינה את הגדרות ההתקנה.",
   "audit.viaAnAdmin": "בוצע על ידי מנהל התקנה, מחובר כמשתמש הזה.",
   "audit.link.delete_public": "{actor} הסיר את כל הקישורים שכל אחד יכול לפתוח.",
   "audit.link.expired": "{actor} הסיר קישור לפריט אחרי תאריך הסיום שלו.",

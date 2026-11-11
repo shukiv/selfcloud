@@ -790,6 +790,7 @@
   "audit.account.create.plain": "أنشأ {actor} مستأجرًا.",
   "audit.admin.create.plain": "أضاف {actor} مديرًا.",
   "audit.admin.delete.plain": "أزال {actor} مديرًا.",
+  "audit.installation.settings": "غيّر {actor} إعدادات التثبيت.",
   "audit.viaAnAdmin": "نفّذه مدير تثبيت، مسجّلًا الدخول باسم هذا المستخدم.",
   "audit.link.delete_public": "أزال {actor} كل الروابط التي يمكن لأي شخص فتحها.",
   "audit.link.expired": "أزال {actor} رابطًا إلى عنصر بعد انتهاء مدته.",

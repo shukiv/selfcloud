@@ -125,6 +125,10 @@ const ROWS: Row[] = [
   { action: 'account.create', actor: user, target: 'acc_1', details: { name: 'Acme' } },
   { action: 'admin.create', actor: user, target: 'usr_gone', details: {} },
   { action: 'admin.delete', actor: user, target: 'usr_gone', details: {} },
+  {
+    action: 'installation.settings', actor: user, target: 'settings',
+    details: { 'trash.retention': { old: '720h0m0s', new: '48h0m0s', source: 'settings' } },
+  },
   { action: 'user.verify', actor: user, target: 'usr_gone', details: {} },
 ];
 

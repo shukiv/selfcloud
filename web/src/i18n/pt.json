@@ -790,6 +790,7 @@
   "audit.account.create.plain": "{actor} criou um cliente.",
   "audit.admin.create.plain": "{actor} adicionou um administrador.",
   "audit.admin.delete.plain": "{actor} removeu um administrador.",
+  "audit.installation.settings": "{actor} alterou as configurações da instalação.",
   "audit.viaAnAdmin": "Feito por um administrador da instalação, com sessão iniciada como este utilizador.",
   "audit.link.delete_public": "{actor} removeu todos os links que qualquer pessoa pode abrir.",
   "audit.link.expired": "{actor} removeu um link para um item após a data de término.",

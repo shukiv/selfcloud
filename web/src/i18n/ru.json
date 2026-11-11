@@ -790,6 +790,7 @@
   "audit.account.create.plain": "{actor} создал(а) арендатора.",
   "audit.admin.create.plain": "{actor} добавил(а) администратора.",
   "audit.admin.delete.plain": "{actor} удалил(а) администратора.",
+  "audit.installation.settings": "{actor} изменил(а) настройки установки.",
   "audit.viaAnAdmin": "Сделано администратором установки, вошедшим под этим пользователем.",
   "audit.link.delete_public": "{actor} удалил(а) все ссылки, которые может открыть любой.",
   "audit.link.expired": "{actor} удалил(а) ссылку на объект после окончания срока.",
