@@ -114,11 +114,12 @@ func TestBrandRebuildOfTheNotBuiltPage(t *testing.T) {
 }
 
 // TestBrandSwapWhileServing: pages, manifests and icons served while the brand is swapped again and again each come from one
-// brand whole (run with -race).
+// brand whole (run with -race). The names hold a space, which the page's random base64 nonce never does, so a count of them
+// counts the brand alone.
 func TestBrandSwapWhileServing(t *testing.T) {
-	h := newTestHandler(t, liveFiles(), Options{BrandName: "One", BrandAccent: "#053D8E", BrandArtwork: true})
+	h := newTestHandler(t, liveFiles(), Options{BrandName: "Brand One", BrandAccent: "#053D8E", BrandArtwork: true})
 	brands := map[string]*Brand{}
-	for _, name := range []string{"One", "Two"} {
+	for _, name := range []string{"Brand One", "Brand Two"} {
 		b, err := h.BuildBrand(BrandOptions{Name: name, Accent: "#053D8E", Artwork: true})
 		if err != nil {
 			t.Fatal(err)
@@ -137,19 +138,19 @@ func TestBrandSwapWhileServing(t *testing.T) {
 			default:
 			}
 			if i%2 == 0 {
-				h.UseBrand(brands["Two"])
+				h.UseBrand(brands["Brand Two"])
 			} else {
-				h.UseBrand(brands["One"])
+				h.UseBrand(brands["Brand One"])
 			}
 		}
 	}()
 	for i := 0; i < 200; i++ {
 		body := get(t, h, http.MethodGet, "/").Body.String()
-		one, two := strings.Count(body, "One"), strings.Count(body, "Two")
+		one, two := strings.Count(body, "Brand One"), strings.Count(body, "Brand Two")
 		if one+two != 2 || (one != 0 && two != 0) {
 			t.Fatalf("a page with two brands: %.200s", body)
 		}
-		if m := manifestOf(t, h); m.Name != "One" && m.Name != "Two" {
+		if m := manifestOf(t, h); m.Name != "Brand One" && m.Name != "Brand Two" {
 			t.Fatalf("manifest name %q", m.Name)
 		}
 	}
