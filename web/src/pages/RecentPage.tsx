@@ -45,7 +45,7 @@ export default function RecentPage() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // moreFailed: the last next page failed, so the sentinel waits for Load more (tl4 r2, N1).
+  // moreFailed: the last next page failed, so the sentinel waits for Load more.
   const [moreFailed, setMoreFailed] = useState(false);
   const [busy, setBusy] = useState<string[]>([]);
   const inFlight = useRef(new Set<string>());
@@ -66,7 +66,7 @@ export default function RecentPage() {
         setError(null);
         setMoreFailed(false);
       } catch (err) {
-        // A failed next page is not asked for again by the sentinel; Load more tries again (tl4 r2, N1).
+        // A failed next page is not asked for again by the sentinel; Load more tries again.
         if (!reset) setMoreFailed(true);
         if (!changed() && !signingOut()) setError(fileErrorText(err, langRef.current));
       } finally {
