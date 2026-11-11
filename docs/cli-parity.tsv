@@ -302,6 +302,7 @@ route	GET /api/v1/playlists	-	cli12	planned, cli12
 route	GET /api/v1/playlists/{pls}	-	cli12	planned, cli12
 route	GET /api/v1/recent	-	cli11	planned, cli11
 route	GET /api/v1/search	-	cli11	planned, cli11
+route	GET /api/v1/settings	-	se4	planned, se4 (settings get)
 route	GET /api/v1/share/info	-	-	visitor credential read, used inside get <share-url>
 route	GET /api/v1/shared	-	cli7	planned, cli7
 route	GET /api/v1/starred	-	cli11	planned, cli11
@@ -338,6 +339,7 @@ route	PATCH /api/v1/nodes/{nod}	mv	cli5	built in cli5
 route	PATCH /api/v1/nodes/{nod}/versions/{ver}	-	cli11	planned, cli11
 route	PATCH /api/v1/notifications/settings	-	cli11	planned, cli11
 route	PATCH /api/v1/playlists/{pls}	-	cli12	planned, cli12
+route	PATCH /api/v1/settings	-	se4	planned, se4 (settings set and settings reset)
 route	PATCH /api/v1/share-links/{shl}	-	cli7	planned, cli7
 route	PATCH /api/v1/uploads/{upl}	-	cli6	planned, cli6
 route	POST /api/v1/access-requests/{arq}/approve	-	cli7	planned, cli7

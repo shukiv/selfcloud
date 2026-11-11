@@ -59,6 +59,11 @@ tags:
     description: Named sets of users of one account. A permission may name a group.
   - name: Admins
     description: Installation admin users.
+  - name: Settings
+    description: |
+      The installation's settings that are safe to change while the server runs (decision 139). A setting the config
+      file or a `SELFCLOUD_*` environment variable writes is locked. The others may be changed here; the change is
+      stored, audited and seen by the next request, with no restart.
   - name: Accounts
     description: |
       Accounts are tenants. Installation admin keys manage them; an account key manages one
@@ -1934,6 +1939,57 @@ paths:
       security: [{ bearer: [] }, { session: [] }]
       responses:
         "204": { description: Deleted. }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/settings:
+    get:
+      tags: [Settings]
+      operationId: getSettings
+      summary: Read the installation's settings
+      description: |
+        An installation admin, by admin key or by its own session; a sign-in-as is refused (`403`, `details.reason`
+        `impersonation`). Each setting gives its value, its built-in default, where the value comes from and whether it
+        may be changed here. The facts are read-only infrastructure the config file owns; no secret is among them.
+      security: [{ bearer: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The settings, sorted by key, and the facts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Settings]
+      operationId: changeSettings
+      summary: Change the installation's settings
+      description: |
+        An installation admin, by admin key or by its own session with its CSRF token; a sign-in-as is refused.
+        `set` stores values, and `reset` removes stored values so the defaults apply. Name only the settings that
+        change. The change is all or nothing:
+
+        - a name that is not a setting: `400 invalid_request`, `details.reason` `unknown_setting`, `details.keys`;
+        - a setting the config file or the environment writes, or one read only at start (`restart`):
+          `409 conflict`, `details.reason` `setting_locked`, `details.keys`;
+        - a value of the wrong JSON type, one that does not parse, one outside the setting's floor and cap, or a
+          combination the config file's rules refuse (such as a piece size above the largest file): `400
+          invalid_request`, `details.reason` `invalid_setting`, `details.keys` (every invalid key) and
+          `details.errors` (each message, in the style of the config file's errors).
+
+        A change that alters a value or its source writes one `installation.settings` audit entry, whose details give
+        each changed key's `old` and `new` value and its new `source`. The answer is the settings after the change.
+        Lowering `sessions.idle_timeout`, `sessions.max_age` or their admin pair ends the sessions past the new limit
+        at their next request; turning `admin.tenant_access` off refuses the next sign-in-as and ends the running ones.
+      security: [{ bearer: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingsChange" }
+      responses:
+        "200":
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
         default: { $ref: "#/components/responses/Error" }
   /api/v1/accounts/{acc}/users:
     parameters:
@@ -8022,6 +8078,67 @@ components:
           type: array
           items: { $ref: "#/components/schemas/User" }
         next_cursor: { type: string }
+
+    Settings:
+      type: object
+      required: [settings, facts]
+      properties:
+        settings:
+          type: array
+          items: { $ref: "#/components/schemas/Setting" }
+        facts:
+          type: array
+          items: { $ref: "#/components/schemas/SettingFact" }
+
+    Setting:
+      type: object
+      description: |
+        One setting. `value` and `default` have the JSON shape of `type`: a boolean for `bool`, an integer for `int`, and
+        a string for `duration` (such as `"48h0m0s"`), `bytes` (such as `"64MiB"`) and `string`.
+      required: [key, type, value, default, source, locked, restart]
+      properties:
+        key:
+          type: string
+          description: The setting's path in the config file, such as `upload.max_file_size`.
+        type: { type: string, enum: [bool, int, duration, bytes, string] }
+        value: { description: The value the server uses now. }
+        default: { description: The built-in default, which a reset returns to unless the file or environment sets the key. }
+        source:
+          type: string
+          enum: [default, file, env, settings]
+          description: Where the value comes from. `settings` is a value stored through this API.
+        locked:
+          type: boolean
+          description: True when the config file or the environment writes the key, or when it is read only at start.
+        restart:
+          type: boolean
+          description: True for a setting the server reads only at start; it is set in the config file.
+
+    SettingFact:
+      type: object
+      description: A read-only value the config file owns, such as `public_url` or `data_dir`. No secret is listed.
+      required: [key, value, source]
+      properties:
+        key: { type: string }
+        value: { description: A string, a boolean, an integer or a list of strings. }
+        source: { type: string, enum: [default, file, env] }
+
+    SettingsChange:
+      type: object
+      additionalProperties: false
+      description: At least one setting, at most 64; a key may not be both set and reset.
+      properties:
+        set:
+          type: object
+          description: |
+            New values by key. A `bool` takes `true` or `false`; an `int` a whole number; a `duration` a string such as
+            `"48h"`; a `bytes` setting a string such as `"64MiB"` or a whole number of bytes. A value must also lie
+            within the setting's floor and cap (decision 139) and pass the config file's rules on the whole configuration.
+          additionalProperties: true
+        reset:
+          type: array
+          description: Keys whose stored value is removed, so the default applies.
+          items: { type: string }
 
     AccountUpdate:
       type: object
