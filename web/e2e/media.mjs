@@ -613,6 +613,25 @@ export async function mediaChecks(h, { page, base, accountKey, teamA }) {
     await closePreview(page);
   });
 
+  // ---- 5b. a mouse's click on a row's checkbox selects the row, and a second click clears it ----
+  // The click is a real one (the browser's own events). Between the capture and the bubble phases of such a click React draws what
+  // was changed in the capture phase, and a checkbox it draws then loses the click: a listing must not change state there (decision 128).
+  await step('a mouse click on a row checkbox selects the row and clears it', async () => {
+    await open('List');
+    const row = itemSel('pic.png');
+    // The box shows on a hovered row, or a row with the focus: the focus is given by script, and the click on the box is the real one.
+    await page.evaluate(`document.querySelector(${q(row)}).focus()`);
+    await page.waitFor(`getComputedStyle(document.querySelector(${q(row)}).querySelector('.row-check')).display !== 'none'`, 10000);
+    const rect = () => page.evaluate(`(() => { const r = document.querySelector(${q(row)}).querySelector('.row-check input').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await click(page, await rect());
+    const selected = () => page.evaluate(`document.querySelector(${q(row)}).getAttribute('aria-selected') === 'true'`);
+    await page.waitFor(`document.querySelector(${q(row)}).getAttribute('aria-selected') === 'true'`, 5000).catch(() => undefined);
+    check(await selected(), 'a real mouse click on a row checkbox selects the row');
+    await click(page, await rect());
+    await page.waitFor(`document.querySelector(${q(row)}).getAttribute('aria-selected') !== 'true'`, 5000).catch(() => undefined);
+    check(!(await selected()), 'a second real mouse click on the checkbox clears the row');
+  });
+
   // ---- 6. real playback: a video, an audio file and a picture ----
   await step('a video plays', async () => {
     await open('List');
