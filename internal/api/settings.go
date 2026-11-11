@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -85,13 +86,17 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	var in struct {
-		Set   map[string]json.RawMessage `json:"set"`
-		Reset []string                   `json:"reset"`
+		Set   json.RawMessage `json:"set"`
+		Reset []string        `json:"reset"`
 	}
 	if err := decodeJSON(w, r, &in); err != nil {
 		return err
 	}
-	keys, err := changeKeys(in.Set, in.Reset)
+	set, err := settingValues(in.Set)
+	if err != nil {
+		return err
+	}
+	keys, err := changeKeys(set, in.Reset)
 	if err != nil {
 		return err
 	}
@@ -105,8 +110,8 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) err
 	}
 	texts := map[string]string{}
 	var problems []config.Problem
-	for _, k := range slices.Sorted(maps.Keys(in.Set)) {
-		text, err := config.SettingText(k, in.Set[k])
+	for _, k := range slices.Sorted(maps.Keys(set)) {
+		text, err := config.SettingText(k, set[k])
 		if err != nil {
 			problems = append(problems, config.Problem{Keys: []string{k}, Message: err.Error()})
 			continue
@@ -149,6 +154,41 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) err
 	}
 	writeJSON(w, http.StatusOK, settingsOf(s.settings()))
 	return nil
+}
+
+// settingValues reads the set object of a change token by token, so a key named twice is refused rather than the later
+// value silently winning. A missing or null set is an empty one. A key longer than maxSettingKey is refused before it is
+// compared, so no answer repeats a long key.
+func settingValues(raw json.RawMessage) (map[string]json.RawMessage, error) {
+	out := map[string]json.RawMessage{}
+	if len(raw) == 0 || string(raw) == "null" {
+		return out, nil
+	}
+	notObject := apierr.New(apierr.InvalidRequest, "set must be an object of settings and their values")
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return nil, notObject
+	}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, notObject
+		}
+		k, _ := tok.(string)
+		if len(k) > maxSettingKey {
+			return nil, apierr.Newf(apierr.InvalidRequest, "a setting's name is longer than %d bytes", maxSettingKey)
+		}
+		if _, dup := out[k]; dup {
+			return nil, apierr.New(apierr.InvalidRequest, "the setting "+k+" is named twice in set").
+				With("keys", []string{k})
+		}
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return nil, notObject
+		}
+		out[k] = v
+	}
+	return out, nil
 }
 
 // changeKeys checks the shape of a change and returns its keys, sorted: at least one, at most maxSettingsChange, none
