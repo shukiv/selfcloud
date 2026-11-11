@@ -18,6 +18,7 @@ import { fileErrorText } from "../lib/files/fileErrors";
 import { translate } from "../lib/i18n";
 import { myStorage } from "../lib/storage/api";
 import { newPlace, newPlaceFailure } from "../lib/files/newPlace";
+import { treePlace } from "../lib/files/treePlace";
 import { officeEdit } from "../lib/files/editor";
 import { officeConvert } from "../lib/files/convert";
 
@@ -36,7 +37,9 @@ const api = vi.hoisted(() => ({
   getJob: vi.fn(),
   readLimits: vi.fn(),
 }));
-const place = vi.hoisted(() => ({ role: "editor" as Role, noDownload: false, folderName: "Team A", rootNodeID: null as string | null, trail: [] as Node[] }));
+// truncated gives the place of a folder more than 64 levels down (decision 140): the trail is the 64 nearest, the root is not
+// known, and so there is no space name and no path.
+const place = vi.hoisted(() => ({ role: "editor" as Role, noDownload: false, folderName: "Team A", rootNodeID: null as string | null, trail: [] as Node[], truncated: false }));
 const uploadsMock = vi.hoisted(() => ({ add: vi.fn(), setChunkSize: vi.fn() }));
 const uploadList = vi.hoisted(() => {
   return { store: null as unknown as { set: (v: unknown[]) => void } };
@@ -52,16 +55,17 @@ vi.mock("../lib/files/location", async (orig) => ({
   ...(await orig<typeof import("../lib/files/location")>()),
   locate: vi.fn(async (folder: string, dirID: string | null) => ({
     folder,
-    folderName: place.folderName,
+    folderName: place.truncated ? null : place.folderName,
     folderRole: place.role,
     dir: dirID ? { id: dirID, name: "Reports", kind: "dir", role: place.role } : null,
     dirRole: place.role,
     trail: place.trail,
-    rootReachable: true,
+    rootReachable: !place.truncated,
+    truncated: place.truncated,
     rootNodeID: place.rootNodeID,
     reach: [],
     spaceNoDownload: place.noDownload,
-    path: dirID ? "/Reports" : "/",
+    path: place.truncated ? null : dirID ? "/Reports" : "/",
   })),
 }));
 // swallowed waits out the window in which the page swallows a click after a drag (useGestures, swallowClick: 50 ms). A dialog's button
@@ -212,6 +216,7 @@ beforeEach(() => {
   place.trail = [];
   place.folderName = "Team A";
   place.rootNodeID = null;
+  place.truncated = false;
   session.set(signedAs("u1"));
   api.getMe.mockResolvedValue({ personal_folder_id: "fld_me" });
   api.readLimits.mockResolvedValue({ max_chunk_size: 1048576, max_file_size: 1 });
@@ -645,6 +650,44 @@ describe("a session change stops the work it started", () => {
   });
 });
 
+// A folder more than 64 levels down (decision 140): the place is the 64 nearest folders, and the space's root is not known. What
+// needs the root is off, not guessed.
+describe("a place more than 64 levels down", () => {
+  const A = { folder_id: "fld_aaaaaaaa", kind: "dir" as const, mime_type: undefined };
+  beforeEach(() => {
+    place.truncated = true;
+    place.trail = [node("nod_top00001", "Top", { ...A, parent_id: "nod_above001" }), node("nod_mid00001", "Mid", { ...A, parent_id: "nod_top00001" })];
+  });
+
+  it("starts its breadcrumbs with the mark for the folders above, and has no crumb for the space's root", async () => {
+    renderAt(`${FOLDER}/nod_shown001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    const nav = screen.getByRole("navigation", { name: "Location" });
+    const items = Array.from(nav.querySelectorAll("ol > li:not(.ant-breadcrumb-separator)"));
+    expect(items[0].textContent).toContain("More folders above");
+    expect(items[0].querySelector("a")).toBeNull();
+    const links = within(nav).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")]);
+    expect(links).toEqual([
+      ["Top", `${FOLDER}/nod_top00001`],
+      ["Mid", `${FOLDER}/nod_mid00001`],
+    ]);
+    expect(within(nav).queryByRole("link", { name: "Team A" })).toBeNull();
+    expect(items[items.length - 1].textContent).toBe("Reports");
+  });
+
+  it("gives the folder tree the trail and the folder shown, and no top folder in place of the space", async () => {
+    renderAt(`${FOLDER}/nod_shown001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await waitFor(() => expect(get(treePlace)).toEqual({ folder: "fld_aaaaaaaa", chain: ["nod_top00001", "nod_mid00001", "nod_shown001"], top: undefined }));
+  });
+
+  it("offers no New folder and no folder upload, which go by the path from the root, and still takes files", async () => {
+    renderAt(`${FOLDER}/nod_shown001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    await waitFor(() => expect(get(newPlace)).toMatchObject({ canFolder: false, canUploadFolder: false, canUpload: true }));
+  });
+});
+
 // Slice sd1 (decision 104): a folder of the sidebar's tree is a drag source, and the sidebar's Trash takes a drop. The sidebar is not
 // rendered here: a tree row and the Trash entry are the DOM the sidebar draws, with the attributes the sidebar draws (Shell, FolderTree).
 describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
@@ -843,6 +886,22 @@ describe("slice sd1: the sidebar's tree and Trash as drag places", () => {
     await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_reports1"));
     await waitFor(() => expect(window.location.pathname).toBe(`${FOLDER}/nod_docs0001`));
     expect(window.history.length).toBe(depth);
+  });
+
+  it("moving the topmost folder of a trail cut at 64 to the Trash leaves the page on that folder's parent, not the space's root", async () => {
+    // The place is more than 64 levels down (decision 140): Top is the topmost folder of its trail, and its parent is above the trail.
+    window.history.replaceState(null, "", "/");
+    place.truncated = true;
+    place.trail = [dirNode("nod_top00001", "Top", { ...A, parent_id: "nod_above001" }), dirNode("nod_mid00001", "Mid", { ...A, parent_id: "nod_top00001" })];
+    renderAt(`${FOLDER}/nod_pics0001`);
+    await screen.findByRole("row", { name: "alpha.txt" });
+    dragFrom(treeRow("nod_top00001", "Top", "nod_above001"), trashEntry());
+    release();
+    await swallowed();
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to trash" }));
+    await waitFor(() => expect(api.deleteNode).toHaveBeenCalledWith("nod_top00001"));
+    await waitFor(() => expect(window.location.pathname).toBe(`${FOLDER}/nod_above001`));
   });
 
   it("a folder of the listing moved to the Trash leaves the page where it is, and so does its Undo", async () => {

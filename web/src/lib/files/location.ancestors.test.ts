@@ -12,6 +12,8 @@ const net = vi.hoisted(() => ({
   nodes: new Map<string, Record<string, unknown>>(),
   hidden: new Set<string>(),
   ancestors: new Map<string, Record<string, unknown>[]>(),
+  // truncated holds the directories whose answer the server marks truncated. Any other answer has no such field, as before.
+  truncated: new Set<string>(),
   ancestorsStatus: 0,
   calls: [] as string[],
   gate: Promise.resolve(),
@@ -30,7 +32,7 @@ vi.mock('../api', async (orig) => {
           throw new real.ApiError(net.ancestorsStatus, net.ancestorsStatus === 404 ? 'not_found' : 'internal', {}, 0);
         }
         if (net.hidden.has(anc[1])) throw new real.ApiError(404, 'not_found', {}, 0);
-        return { ancestors: net.ancestors.get(anc[1]) ?? [] };
+        return { ancestors: net.ancestors.get(anc[1]) ?? [], ...(net.truncated.has(anc[1]) ? { truncated: true } : {}) };
       }
       const stat = /^\/api\/v1\/nodes\/([^/]+)$/.exec(path.split('?')[0]);
       if (stat) {
@@ -50,29 +52,43 @@ function dir(id: string, parent: string | null, name: string): Record<string, un
 
 const folder = { id: 'fld_a', name: 'Team A', role: 'editor', no_download_for_viewers: false } as unknown as FolderAccess;
 
+const smallTree = () => [dir('nod_root', null, ''), dir('nod_a', 'nod_root', 'a'), dir('nod_b', 'nod_a', 'b'), dir('nod_c', 'nod_b', 'c')];
+
+// deepTree is the folder's root and d1 to dN, each in the one before: dN is N levels below the root, with N ancestors.
+function deepTree(depth: number): Record<string, unknown>[] {
+  const out = [dir('nod_root', null, '')];
+  for (let i = 1; i <= depth; i++) out.push(dir(`nod_d${i}`, i === 1 ? 'nod_root' : `nod_d${i - 1}`, `d${i}`));
+  return out;
+}
+
 // setTree makes the stand-in network's tree for a caller who reaches the given nodes: each node's stat, and each directory's
-// ancestors answer, topmost first, stopping at the first node the caller does not reach, as the server does.
-function setTree(reached: string[]): void {
-  const all = [dir('nod_root', null, ''), dir('nod_a', 'nod_root', 'a'), dir('nod_b', 'nod_a', 'b'), dir('nod_c', 'nod_b', 'c')];
+// ancestors answer, topmost first, as the server gives it: it stops at the first node the caller does not reach, it holds at
+// most the 64 nearest, and it is marked truncated when the caller reaches the folder above the 64th (decision 140).
+function setTree(reached: string[], all = smallTree()): void {
   net.nodes.clear();
   net.hidden.clear();
   net.ancestors.clear();
+  net.truncated.clear();
   for (const n of all) {
     net.nodes.set(n.id as string, n);
     if (!reached.includes(n.id as string)) net.hidden.add(n.id as string);
   }
   net.nodes.set('nod_file', { id: 'nod_file', folder_id: 'fld_a', parent_id: 'nod_c', name: 'f.txt', kind: 'file', role: 'manager', size: 0, type: 'text/plain' });
-  // Each directory's answer: its ancestors the caller reaches, topmost first, stopping at the first one it does not.
   const parentOf = new Map(all.map((n) => [n.id as string, n.parent_id as string | null]));
   for (const n of all) {
     const out: Record<string, unknown>[] = [];
-    for (let id = parentOf.get(n.id as string) ?? null; id !== null; id = parentOf.get(id) ?? null) {
+    let id = parentOf.get(n.id as string) ?? null;
+    for (; id !== null && out.length < 64; id = parentOf.get(id) ?? null) {
       if (!reached.includes(id)) break;
       out.unshift(net.nodes.get(id) as Record<string, unknown>);
     }
     net.ancestors.set(n.id as string, out);
+    if (id !== null && out.length === 64 && reached.includes(id)) net.truncated.add(n.id as string);
   }
 }
+
+const ids = (nodes: { id: string }[]) => nodes.map((n) => n.id);
+const dIDs = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => `nod_d${from + i}`);
 
 // open runs a folder open the way the files page does: its listing starts first, then the place is located.
 async function open(dirID: string) {
@@ -205,6 +221,7 @@ describe('the place of a share link and of a folder root', () => {
       folderRole: 'editor',
       dir: null,
       rootReachable: true,
+      truncated: false,
       trail: [],
       reach: [],
       path: '/',
@@ -213,9 +230,58 @@ describe('the place of a share link and of a folder root', () => {
   });
 });
 
+describe('a folder deeper than 64 levels (decision 140)', () => {
+  it('65 levels down: the 64 nearest folders are the trail, marked truncated, with no root, no space name and no path', async () => {
+    const all = deepTree(65);
+    setTree(ids(all as { id: string }[]), all);
+    const here = await open('nod_d65');
+    expect(here).toMatchObject({
+      folder: 'fld_a',
+      folderName: null,
+      rootReachable: false,
+      truncated: true,
+      reach: [],
+      path: null,
+      dir: { id: 'nod_d65', name: 'd65' },
+      dirRole: 'manager',
+    });
+    expect(ids(here!.trail)).toEqual(dIDs(1, 64));
+  });
+
+  it('64 levels down: the place is as it was, from the root, with the path from it and no mark', async () => {
+    const all = deepTree(64);
+    setTree(ids(all as { id: string }[]), all);
+    const here = await open('nod_d64');
+    expect(here).toMatchObject({
+      folderName: 'Team A',
+      rootReachable: true,
+      truncated: false,
+      reach: [],
+      path: `/${dIDs(1, 64).map((id) => id.slice(4)).join('/')}`,
+      dir: { id: 'nod_d64', name: 'd64' },
+    });
+    expect(ids(here!.trail)).toEqual(dIDs(1, 63));
+  });
+
+  it('70 levels down below a grant on the 64th: the server does not mark it, and the place is the grant place it was', async () => {
+    const all = deepTree(70);
+    setTree(dIDs(6, 70), all);
+    const here = await open('nod_d70');
+    expect(here).toMatchObject({ folderName: null, rootReachable: false, truncated: false, trail: [], path: null });
+    expect(ids(here!.reach)).toEqual(dIDs(6, 70));
+  });
+
+  it('a directory a few levels down is not marked', async () => {
+    expect(await open('nod_c')).toMatchObject({ truncated: false, rootReachable: true });
+  });
+});
+
 describe('ancestorsOrNull', () => {
-  it('answers the list, or null when the caller cannot reach the node', async () => {
-    expect(await ancestorsOrNull('nod_c')).toEqual(net.ancestors.get('nod_c'));
+  it('answers the list and its mark, or null when the caller cannot reach the node', async () => {
+    expect(await ancestorsOrNull('nod_c')).toEqual({ ancestors: net.ancestors.get('nod_c'), truncated: false });
+    const all = deepTree(65);
+    setTree(ids(all as { id: string }[]), all);
+    expect((await ancestorsOrNull('nod_d65'))?.truncated).toBe(true);
     net.ancestorsStatus = 404;
     expect(await ancestorsOrNull('nod_c')).toBeNull();
   });
