@@ -1142,7 +1142,7 @@ async function main() {
       await signIn(page, ADMIN);
       if (onlySet.has('admin')) await owner.adminChecks(page, h, { base, adminKey, adminPassword: ADMIN.password, TENANT });
       if (onlySet.has('tl1')) await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
-      if (onlySet.has('se3')) await se3Checks(h, { page, base, adminKey });
+      if (onlySet.has('se3')) await se3Checks(h, { page, base, adminKey, ADMIN });
     }
     // Slice tl3 (decision 122): the owner's tables, on their own as the owner (SELFCLOUD_E2E_ONLY=tl3). The full run reaches
     // them after the owner's management pages.
@@ -1181,7 +1181,7 @@ async function main() {
     // Slice tl1 (design-tl): the admin's lists are tables. Checked on the admin's pages, while the admin is still signed in.
     await tl1Checks(h, { page, base, adminKey, accountID, accountKey });
     // Slice se3 (decision 143): the Settings page, on the admin's session.
-    await se3Checks(h, { page, base, adminKey });
+    await se3Checks(h, { page, base, adminKey, ADMIN });
     await signOut(page);
     await signIn(page, MEMBER);
     await owner.memberNotFound(page, h);

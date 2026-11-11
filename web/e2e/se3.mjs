@@ -8,6 +8,9 @@
 //  4. Unsaved changes ask before the sidebar leaves the page; Stay keeps the page and the change.
 //  5. At 375 px the sections are tabs and nothing scrolls sideways; in Hebrew the page is right to left, the section list sits
 //     at the right of the cards and nothing scrolls sideways at 375 px; and dark mode draws the page. None logs a page error.
+//  6. The label column is readable at 768, 992, 1000, 1150 and 1280 px (the layout follows the content's width).
+//  7. Signed out, the old address goes to sign-in and back to Settings; so does /login?next= the old address, and the address
+//     with a trailing slash lands on Settings.
 // Run alone with SELFCLOUD_E2E_ONLY=se3: run.mjs signs the admin in first.
 import { setLanguage, setTheme, sleep } from './media.mjs';
 
@@ -33,7 +36,7 @@ async function stored(h, base, adminKey, key) {
   return got.settings.find((s) => s.key === key);
 }
 
-export async function se3Checks(h, { page, base, adminKey }) {
+export async function se3Checks(h, { page, base, adminKey, ADMIN }) {
   const { check, navigateTo } = h;
   const errorsBefore = page.errors.length;
   try {
@@ -104,6 +107,20 @@ export async function se3Checks(h, { page, base, adminKey }) {
     await page.waitFor(`document.querySelector(${q(box('versions.max_count'))}).value === '100'`, 5000);
     check(true, 'Discard puts the section back as the server has it');
 
+    // 4b. The label column keeps a readable width at every window width, with the sidebar docked from 992 px: either at least
+    //     200 px, or the row is one stacked column.
+    for (const width of [768, 992, 1000, 1150, 1280]) {
+      await setWidth(page, width);
+      await page.waitFor(`!!${row('upload.max_file_size')}`, 10000);
+      await sleep(400);
+      const col = await page.evaluate(`(() => {
+        const r = ${row('upload.max_file_size')};
+        return { label: r.firstElementChild.getBoundingClientRect().width, columns: getComputedStyle(r).gridTemplateColumns.split(' ').length, sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth };
+      })()`);
+      check((col.label >= 200 || col.columns === 1) && !col.sideways, `at ${width} px the label column is ${Math.round(col.label)} px wide in ${col.columns} column(s), with no sideways scroll`);
+    }
+    await setWidth(page, 1280);
+
     // 5. A phone, Hebrew and the dark theme.
     await setWidth(page, 375);
     await page.waitFor(`!!document.querySelector('[role="tablist"]') && !document.querySelector('nav[aria-label="Sections"]')`, 10000);
@@ -140,6 +157,26 @@ export async function se3Checks(h, { page, base, adminKey }) {
     await setTheme(page, 'Light');
     await page.waitFor(`document.documentElement.dataset.theme === 'light'`, 10000);
     check(page.errors.length === errorsBefore, `the Settings checks log no page error (${page.errors.slice(errorsBefore).join(' | ') || 'none'})`);
+
+    // 6. The old address when signed out, with a trailing slash, and through the sign-in's ?next=.
+    const onSettings = async (what) => {
+      await page.waitFor(`location.pathname === '/admin/settings' && document.querySelector('h1')?.textContent === 'Settings' && !!document.getElementById('settings-uploads')`, 20000);
+      check(true, what);
+    };
+    await h.signOut(page);
+    await page.goto(`${base}/admin/installation`);
+    await page.waitFor(`location.pathname === '/login'`, 15000);
+    const next = await page.evaluate(`new URLSearchParams(location.search).get('next')`);
+    check(next === '/admin/installation', `a signed-out load of the old address goes to sign-in, which returns to it (next=${next})`);
+    await h.signInHere(page, ADMIN);
+    await onSettings('signing in from the old address lands on Settings, not on a blank page');
+    await page.goto(`${base}/admin/installation/`);
+    await onSettings('the old address with a trailing slash lands on Settings');
+    await h.signOut(page);
+    await page.goto(`${base}/login?next=%2Fadmin%2Finstallation`);
+    await h.signInHere(page, ADMIN);
+    await onSettings('signing in through /login?next= the old address lands on Settings');
+    check(page.errors.length === errorsBefore, `the old-address checks log no page error (${page.errors.slice(errorsBefore).join(' | ') || 'none'})`);
   } finally {
     // The window comes back whatever happened, and a retention left set is cleared.
     await setWidth(page, 1280).catch(() => undefined);
