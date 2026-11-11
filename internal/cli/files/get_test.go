@@ -480,6 +480,30 @@ func TestGetRefusesAStrayPartFile(t *testing.T) {
 	}
 }
 
+// TestGetStopsWhenTheFileKeepsChanging: a server that answers every range with the whole file says each time that the
+// file changed; get starts again three times, then stops (exit 1) and says why, rather than loop.
+func TestGetStopsWhenTheFileKeepsChanging(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFileServer(t, "moving.bin", bytes.Repeat([]byte("m"), 3000), "")
+	whole := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/content") {
+			r.Header.Del("Range")
+		}
+		f.handle(w, r)
+	}))
+	t.Cleanup(whole.Close)
+	var out, errOut bytes.Buffer
+	code := Get([]string{f.nodeID, t.TempDir(), "--piece-size", "1MiB", "--url", whole.URL}, &out, &errOut)
+	res := result{code: code, stdout: out.String(), stderr: errOut.String()}
+	wantCode(t, res, 1)
+	if !strings.Contains(res.stderr, "kept changing") {
+		t.Errorf("stderr %q does not say the file kept changing", res.stderr)
+	}
+	if n := f.contentCalls(); n != maxRestarts+1 {
+		t.Errorf("%d content requests, want %d", n, maxRestarts+1)
+	}
+}
+
 // TestGetRefusesADirectory: get takes a file.
 func TestGetRefusesADirectory(t *testing.T) {
 	isolate(t, testAccountKey)

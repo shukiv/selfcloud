@@ -392,9 +392,6 @@ func (d *downloader) fetch(ctx context.Context) error {
 	for {
 		var err error
 		if restat {
-			if restarts++; restarts > maxRestarts {
-				return errors.New("the file kept changing on the server during the download; try again later")
-			}
 			var ver version
 			if _, ver, err = fileVersion(ctx, d.src, d.nodeID); err == nil {
 				d.ver, restat = ver, false
@@ -415,6 +412,10 @@ func (d *downloader) fetch(ctx context.Context) error {
 				tries = 0
 			}
 			if changed {
+				// A failed read of the new version below is a failure like any other; only a change counts here.
+				if restarts++; restarts > maxRestarts {
+					return errors.New("the file kept changing on the server during the download; try again later")
+				}
 				fmt.Fprintln(d.stderr, "selfcloud: the file changed on the server during the download; starting again "+
 					"on its new version")
 				restat = true
