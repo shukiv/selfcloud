@@ -165,6 +165,9 @@ type nodeView struct {
 	ModifiedAt string  `json:"modified_at"`
 	Role       string  `json:"role"`
 	TrashedAt  string  `json:"trashed_at"`
+	// ETag is the file's version and SHA256 its digest; get reads both. The API may leave out the digest.
+	ETag   string `json:"etag"`
+	SHA256 string `json:"sha256"`
 }
 
 // decodeNode reads one node document.
