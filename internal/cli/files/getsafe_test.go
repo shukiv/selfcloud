@@ -94,6 +94,54 @@ func TestOldPartRefusesAHardLink(t *testing.T) {
 	}
 }
 
+// asAnotherUser makes the command see every file as another user's, since a test cannot chown.
+func asAnotherUser(t *testing.T) {
+	t.Helper()
+	old := currentUID
+	t.Cleanup(func() { currentUID = old })
+	currentUID = func() int { return os.Geteuid() + 1 }
+}
+
+// TestGetRefusesAPartFileOfAnotherUser: a part file another user owns, such as one made ahead in a shared directory
+// under the server's name, is never reopened, so the download never goes into it. Without --overwrite it is refused
+// (exit 2), even with a record of this client; with --overwrite it is removed and made again.
+func TestGetRefusesAPartFileOfAnotherUser(t *testing.T) {
+	isolate(t, testAccountKey)
+	f := newFileServer(t, "o.bin", []byte("server bytes"), sha([]byte("server bytes")))
+	dest := t.TempDir()
+	part := filepath.Join(dest, "o.bin.part")
+	if err := os.WriteFile(part, []byte("theirs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recordPart(t, f, dest, "o.bin")
+	asAnotherUser(t)
+	res := f.get(f.nodeID, dest)
+	wantCode(t, res, 2)
+	if !strings.Contains(res.stderr, "o.bin.part") || !strings.Contains(res.stderr, "another user") {
+		t.Errorf("the refusal does not name the part file and its owner: %q", res.stderr)
+	}
+	if b, _ := os.ReadFile(part); string(b) != "theirs" {
+		t.Errorf("the other user's part file holds %q", b)
+	}
+	wantCode(t, f.get(f.nodeID, dest, "--overwrite"), 0)
+	if b, _ := os.ReadFile(filepath.Join(dest, "o.bin")); string(b) != "server bytes" {
+		t.Errorf("the file holds %q", b)
+	}
+}
+
+// TestOldPartRefusesAnotherUsersFile: a part file another user owns is not reopened.
+func TestOldPartRefusesAnotherUsersFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.bin.part"), []byte("held"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	asAnotherUser(t)
+	if pf, err := oldPart(openRoot(t, dir), "f.bin", true); err == nil {
+		pf.close()
+		t.Fatal("another user's part file was reopened")
+	}
+}
+
 // TestGetRefusesAHiddenNameFromTheServer: a name from the server that starts with a dot would make a hidden file, such
 // as a shell's start-up file in the home directory, so it is refused (exit 2) before anything is fetched, and the error
 // names the file and says how to name the destination. A destination the person names may start with a dot.
