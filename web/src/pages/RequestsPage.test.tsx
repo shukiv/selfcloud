@@ -134,6 +134,47 @@ describe("access requests", () => {
     await waitFor(() => expect(approvals).toEqual([{}]));
   });
 
+  it("a double click on Approve sends one approval, and no second one when the first has answered", async () => {
+    const calls: Call[] = [];
+    stubFetch(async (c: Call) => {
+      if (c.url === "/api/v1/access-requests") return { status: 200, body: { items: [request("arq_1", "viewer", "Mateo")] } };
+      if (c.url === "/api/v1/nodes/nod_item") return { status: 200, body: node("manager", false) };
+      if (c.url === "/api/v1/access-requests/arq_1/approve") {
+        calls.push(c);
+        // The answer takes time, as a network does, so the second click comes while the first is on its way.
+        await new Promise((r) => setTimeout(r, 30));
+        return { status: 200, body: request("arq_1", "viewer", "Mateo") };
+      }
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const approve = await screen.findByRole("button", { name: /^Approve/ });
+    fireEvent.click(approve);
+    fireEvent.click(approve);
+    await screen.findByText(/Access given to Mateo/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("reads the list again after an approval", async () => {
+    let lists = 0;
+    stubFetch((c: Call) => {
+      if (c.url === "/api/v1/access-requests") {
+        lists++;
+        return { status: 200, body: { items: lists === 1 ? [request("arq_1", "viewer", "Mateo")] : [] } };
+      }
+      if (c.url === "/api/v1/nodes/nod_item") return { status: 200, body: node("manager", false) };
+      if (c.url === "/api/v1/access-requests/arq_1/approve") return { status: 200, body: request("arq_1", "viewer", "Mateo") };
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const approve = await screen.findByRole("button", { name: /^Approve/ });
+    const before = lists;
+    fireEvent.click(approve);
+    await screen.findByText("Nothing to decide");
+    expect(lists).toBeGreaterThan(before);
+    expect(screen.queryByText("Mateo")).toBeNull();
+  });
+
   it("a hidden item is named by no ID, and a person without a name is shown as A person", async () => {
     stubFetch((c: Call) => {
       if (c.url === "/api/v1/access-requests") return { status: 200, body: { items: [request("arq_1", "viewer")] } };

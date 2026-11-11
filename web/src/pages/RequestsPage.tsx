@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Select, Skeleton } from "antd";
 import { Check, X } from "lucide-react";
 import Listing, { type ListAction, type ListColumn } from "../components/files/Listing";
@@ -105,6 +105,9 @@ export default function RequestsPage() {
     return fileErrorText(err, lang);
   };
 
+  // sending is set the moment a decision is sent and cleared when it has settled, so a second press that comes before the page has
+  // drawn the first one's pending state sends nothing (the mutation's own pending flag is drawn a moment later).
+  const sending = useRef(false);
   // decide sends one decision, then refreshes the list and the count, unless the session has ended meanwhile.
   const decide = useMutation({
     mutationFn: async ({ row, approve }: { row: Row; approve: boolean }) => {
@@ -131,7 +134,15 @@ export default function RequestsPage() {
       if (ctx?.changed()) return;
       setActionError(decisionError(err));
     },
+    onSettled: () => {
+      sending.current = false;
+    },
   });
+  const send = (row: Row, approve: boolean) => {
+    if (sending.current) return;
+    sending.current = true;
+    decide.mutate({ row, approve });
+  };
 
   const failure = q.isError ? fileErrorText(q.error, lang) : null;
 
@@ -222,14 +233,14 @@ export default function RequestsPage() {
                     label: `${t("requests.approve")}: ${name}`,
                     icon: <Check size={18} aria-hidden="true" focusable="false" />,
                     disabled: decide.isPending,
-                    run: () => decide.mutate({ row, approve: true }),
+                    run: () => send(row, true),
                   },
                   {
                     key: "deny",
                     label: `${t("requests.deny")}: ${name}`,
                     icon: <X size={18} aria-hidden="true" focusable="false" />,
                     disabled: decide.isPending,
-                    run: () => decide.mutate({ row, approve: false }),
+                    run: () => send(row, false),
                   },
                 ];
               }}
