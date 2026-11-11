@@ -175,6 +175,31 @@ describe("access requests", () => {
     expect(screen.queryByText("Mateo")).toBeNull();
   });
 
+  it("after a decision the focus goes to the next row's first control, or to the page heading when no row is left", async () => {
+    let decided: string[] = [];
+    stubFetch((c: Call) => {
+      if (c.url === "/api/v1/access-requests") {
+        const all = [request("arq_1", "viewer", "Ann Lee"), request("arq_2", "editor", "Ben Ko")];
+        return { status: 200, body: { items: all.filter((r) => !decided.includes(r.id)) } };
+      }
+      if (c.url === "/api/v1/nodes/nod_item") return { status: 200, body: node("manager", false) };
+      if (c.url.startsWith("/api/v1/access-requests/") && c.url.endsWith("/deny")) {
+        decided = [...decided, c.url.split("/")[4] as string];
+        return { status: 200, body: request("arq_1", "viewer", "Ann Lee") };
+      }
+      return fail(404, "not_found");
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Deny: Ann Lee" }));
+    await waitFor(() => expect(screen.queryByRole("row", { name: "Ann Lee" })).toBeNull());
+    const next = screen.getByRole("row", { name: "Ben Ko" });
+    await waitFor(() => expect(next.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement).not.toBe(next);
+    fireEvent.click(screen.getByRole("button", { name: "Deny: Ben Ko" }));
+    await screen.findByText("Nothing to decide");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Access requests" })));
+  });
+
   it("a hidden item is named by no ID, and a person without a name is shown as A person", async () => {
     stubFetch((c: Call) => {
       if (c.url === "/api/v1/access-requests") return { status: 200, body: { items: [request("arq_1", "viewer")] } };

@@ -108,6 +108,18 @@ export default function RequestsPage() {
   // sending is set the moment a decision is sent and cleared when it has settled, so a second press that comes before the page has
   // drawn the first one's pending state sends nothing (the mutation's own pending flag is drawn a moment later).
   const sending = useRef(false);
+  // after says which row a decision has removed and which row takes the focus. The focus moves when the list no longer holds the
+  // removed row, to the first control of the next row, or to the page's heading when no row is left; the button that had it is gone.
+  const [after, setAfter] = useState<{ gone: string; next: string | null } | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const table = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (after === null || rows.some((r) => r.id === after.gone)) return;
+    setAfter(null);
+    const tr = [...(table.current?.querySelectorAll<HTMLElement>("tr.request") ?? [])].find((el) => el.dataset.id === after.next);
+    const control = tr?.querySelector<HTMLElement>("a[href], button:not([aria-disabled]), input, [role=combobox]");
+    (control ?? tr ?? heading.current)?.focus();
+  }, [after, rows]);
   // decide sends one decision, then refreshes the list and the count, unless the session has ended meanwhile.
   const decide = useMutation({
     mutationFn: async ({ row, approve }: { row: Row; approve: boolean }) => {
@@ -121,18 +133,23 @@ export default function RequestsPage() {
     onMutate: () => {
       setActionError(null);
       setNotice(null);
+      setAfter(null);
       return { changed: sessionChanged() };
     },
     onSuccess: async ({ row, approve }, _vars, ctx) => {
       if (ctx.changed()) return;
       const name = who(row.req);
       setNotice(approve ? t("requests.approved", { name }) : t("requests.denied", { name }));
+      // The row is about to leave the list: the focus goes to the row after it, or the one before it, once the list has been read.
+      const at = rows.findIndex((r) => r.id === row.id);
+      setAfter({ gone: row.id, next: rows[at + 1]?.id ?? rows[at - 1]?.id ?? null });
       await qc.invalidateQueries({ queryKey: queryKey("requests") });
       void refreshPendingRequests();
     },
     onError: (err, _vars, ctx) => {
       if (ctx?.changed()) return;
       setActionError(decisionError(err));
+      setAfter(null);
     },
     onSettled: () => {
       sending.current = false;
@@ -204,7 +221,9 @@ export default function RequestsPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 16px" }}>{t("requests.title")}</h1>
+      <h1 ref={heading} tabIndex={-1} style={{ fontSize: 20, fontWeight: 600, margin: "0 0 16px", outline: "none" }}>
+        {t("requests.title")}
+      </h1>
 
       {notice !== null && <Alert type="success" showIcon role="status" message={notice} style={{ marginBottom: 12 }} />}
       {actionError !== null && <Alert type="error" showIcon role="alert" message={actionError} style={{ marginBottom: 12 }} />}
@@ -218,7 +237,7 @@ export default function RequestsPage() {
         <DriveTextFailure retry={rt.retry} />
       ) : !rt.ready ? null : (
         hasData && (
-          <div className="requests">
+          <div className="requests" ref={table}>
             <Listing<Row>
               label={t("requests.title")}
               items={rows}
