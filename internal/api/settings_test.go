@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -707,6 +708,40 @@ func TestSettingsTableIsReadAtStart(t *testing.T) {
 	info := decode[infoResponse](t, do(t, second.Handler(), "GET", "/api/v1/info"))
 	if info.Limits.MaxChunkSize != 8<<20 {
 		t.Errorf("info piece size at start = %d", info.Limits.MaxChunkSize)
+	}
+}
+
+// TestSettingsTableIsAppliedOnceAtStart: a configuration the command already applied the table to is not applied again
+// by the server, so a row the file overrides is logged once at start, not twice.
+func TestSettingsTableIsAppliedOnceAtStart(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cfg := configFrom(t, t.TempDir(), "trash:\n  retention: 96h\n", nil)
+	seedMigratedDB(t, cfg.Store.Path)
+	st, err := store.Open(ctx, store.Options{Path: cfg.Store.Path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.Write(ctx, func(tx *store.Tx) error { return tx.SetSetting(ctx, "trash.retention", "48h0m0s") }); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	skipped := 0
+	cfg.ApplyStored(rows, func(string, string) { skipped++ }) // as a command does when it opens the database
+	if skipped != 1 {
+		t.Fatalf("the command skipped %d rows, want the one the file overrides", skipped)
+	}
+	var logs strings.Builder
+	if _, err := New(Options{Config: cfg, Store: st, Mailer: &mail.Recorder{},
+		Logger: slog.New(slog.NewTextHandler(&logs, nil))}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(logs.String(), "a stored setting is not applied") {
+		t.Errorf("the server applied the table again:\n%s", logs.String())
 	}
 }
 

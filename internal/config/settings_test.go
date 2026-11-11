@@ -210,6 +210,24 @@ func TestApplyStoredTwiceIsTheSame(t *testing.T) {
 	}
 }
 
+// TestApplyStoredMarksTheConfig: a configuration records that the table was applied to it, failing rows and all, and a
+// change keeps the mark, so a server given it does not apply the table a second time.
+func TestApplyStoredMarksTheConfig(t *testing.T) {
+	t.Parallel()
+	c := Defaults()
+	if c.StoredApplied() {
+		t.Fatal("a fresh configuration says the table was applied")
+	}
+	c.ApplyStored(map[string]string{"nope.key": "1"}, nil)
+	if !c.StoredApplied() {
+		t.Fatal("after ApplyStored the configuration does not say so")
+	}
+	next, err := c.Change(map[string]string{"trash.retention": "48h"}, nil)
+	if err != nil || !next.StoredApplied() {
+		t.Errorf("a change lost the mark: %v", err)
+	}
+}
+
 // TestChangeIsAllOrNothing: one bad value among good ones refuses the whole change, names the bad key only, and leaves the
 // configuration as it was.
 func TestChangeIsAllOrNothing(t *testing.T) {
