@@ -4,6 +4,7 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
@@ -110,8 +111,8 @@ func TestAncestorsOfAnImpersonatedPerson(t *testing.T) {
 	}
 
 	// The admin's own read of the same node is refused, as stat refuses it.
+	adminStat := callSession(t, fx.s, fx.adminSess, "GET", "/api/v1/nodes/"+file.ID, nil)
+	wantError(t, adminStat, http.StatusForbidden, apierr.Forbidden)
 	adminRead := callSession(t, fx.s, fx.adminSess, "GET", "/api/v1/nodes/"+file.ID+"/ancestors", nil)
-	if adminRead.Code == 200 {
-		t.Errorf("an installation admin read the ancestors of a person's file: %s", adminRead.Body.String())
-	}
+	wantError(t, adminRead, http.StatusForbidden, apierr.Forbidden)
 }
