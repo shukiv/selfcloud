@@ -1096,8 +1096,11 @@ func (c *Config) Validate() error {
 			bad("mail.from %q is not an address: %v", c.Mail.From, err)
 		}
 	}
+	// Each wrong value of the brand is its own error, naming its whole key, so the settings API names every one (decision 141).
 	if err := c.UI.Brand.validate(); err != nil {
-		bad("ui.brand: %v", err)
+		for _, e := range unjoin(err) {
+			bad("%v", e)
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -1358,22 +1361,22 @@ func (b BrandConfig) Artwork() bool {
 
 // validate checks the brand. The accent is only checked for form: MASTER.md asks the UI to refuse
 // a colour that fails contrast, but black or white text always reaches 4.5:1 on any colour, so that
-// rule could never refuse anything and is not enforced.
+// rule could never refuse anything and is not enforced. Every wrong value is reported, each naming its
+// whole key, so the settings API can name each one (decision 141).
 func (b BrandConfig) validate() error {
+	var errs []error
+	bad := func(format string, args ...any) { errs = append(errs, fmt.Errorf("ui.brand."+format, args...)) }
 	n := utf8.RuneCountInString(b.Name)
-	if n == 0 {
-		return errors.New("name is empty")
-	}
-	if n > 64 {
-		return errors.New("name is longer than 64 characters")
-	}
-	for _, r := range b.Name {
-		if unicode.IsControl(r) {
-			return errors.New("name contains a control character")
-		}
+	switch {
+	case n == 0:
+		bad("name is empty")
+	case n > 64:
+		bad("name is longer than 64 characters")
+	case strings.IndexFunc(b.Name, unicode.IsControl) >= 0:
+		bad("name contains a control character")
 	}
 	if !accentPattern.MatchString(b.Accent) {
-		return fmt.Errorf("accent %q is not a colour as #rrggbb", b.Accent)
+		bad("accent %q is not a colour as #rrggbb", b.Accent)
 	}
 	colours := []struct{ key, value string }{
 		{"palette.light.accent", b.Palette.Light.Accent},
@@ -1399,22 +1402,22 @@ func (b BrandConfig) validate() error {
 	for _, c := range colours {
 		// An empty token keeps the default; any other value must be a colour.
 		if c.value != "" && !accentPattern.MatchString(c.value) {
-			return fmt.Errorf("%s %q is not a colour as #rrggbb", c.key, c.value)
+			bad("%s %q is not a colour as #rrggbb", c.key, c.value)
 		}
 	}
 	if b.LogoFile != "" {
 		switch strings.ToLower(filepath.Ext(b.LogoFile)) {
 		case ".png", ".svg":
 		default:
-			return fmt.Errorf("logo_file %q must be a .png or .svg file", b.LogoFile)
+			bad("logo_file %q must be a .png or .svg file", b.LogoFile)
 		}
 	}
 	if b.IconFile != "" {
 		switch strings.ToLower(filepath.Ext(b.IconFile)) {
 		case ".png", ".svg":
 		default:
-			return fmt.Errorf("icon_file %q must be a .png or .svg file", b.IconFile)
+			bad("icon_file %q must be a .png or .svg file", b.IconFile)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }

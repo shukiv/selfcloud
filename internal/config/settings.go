@@ -47,14 +47,20 @@ const (
 // settingDef is one setting the settings API shows. A restart setting is shown read-only, because the server reads it
 // once at start. A value set through the settings table is held to min and max, in the field's own unit (bytes,
 // nanoseconds or the number), on top of Validate; with zero set, 0 is allowed too, and means no limit, as in the file.
-// A setting with min and max both 0 has no bounds of its own.
+// A setting with min and max both 0 has no bounds of its own. maxJSON is the longest value the API reads for it, in bytes
+// of JSON; 0 is MaxSettingValue.
 type settingDef struct {
 	key      string
 	typ      SettingType
 	restart  bool
 	min, max int64
 	zero     bool
+	maxJSON  int
 }
+
+// maxNameJSON is the longest JSON the settings API reads for ui.brand.name. The file allows 64 characters, and a client
+// may write each as a \u escape pair of 12 bytes: 770 bytes in all, quotes included. No refusal of the name repeats it.
+const maxNameJSON = 1024
 
 const (
 	minute = int64(time.Minute)
@@ -84,6 +90,29 @@ var settingDefs = []settingDef{
 	// and readiness refuse before the disk is full. The file may still set less.
 	{key: "storage.min_free", typ: TypeBytes, min: 256 * int64(MiB), max: int64(TiB)},
 	{key: "trash.retention", typ: TypeDuration, min: day, max: 3650 * day},
+	// The brand (decision 141): the file's own rules check it (BrandConfig.validate), with no bounds of its own. A colour
+	// is #rrggbb, and a palette or sidebar token may be empty, which keeps the default look for it.
+	{key: "ui.brand.accent", typ: TypeString},
+	{key: "ui.brand.name", typ: TypeString, maxJSON: maxNameJSON},
+	{key: "ui.brand.palette.dark.accent", typ: TypeString},
+	{key: "ui.brand.palette.dark.accent_border", typ: TypeString},
+	{key: "ui.brand.palette.dark.accent_fill", typ: TypeString},
+	{key: "ui.brand.palette.dark.accent_fill_active", typ: TypeString},
+	{key: "ui.brand.palette.dark.accent_fill_hover", typ: TypeString},
+	{key: "ui.brand.palette.dark.accent_soft", typ: TypeString},
+	{key: "ui.brand.palette.dark.accent_text", typ: TypeString},
+	{key: "ui.brand.palette.light.accent", typ: TypeString},
+	{key: "ui.brand.palette.light.accent_border", typ: TypeString},
+	{key: "ui.brand.palette.light.accent_fill", typ: TypeString},
+	{key: "ui.brand.palette.light.accent_fill_active", typ: TypeString},
+	{key: "ui.brand.palette.light.accent_fill_hover", typ: TypeString},
+	{key: "ui.brand.palette.light.accent_soft", typ: TypeString},
+	{key: "ui.brand.palette.light.accent_text", typ: TypeString},
+	{key: "ui.brand.sidebar.active", typ: TypeString},
+	{key: "ui.brand.sidebar.bg", typ: TypeString},
+	{key: "ui.brand.sidebar.caption", typ: TypeString},
+	{key: "ui.brand.sidebar.on_active", typ: TypeString},
+	{key: "ui.brand.sidebar.text", typ: TypeString},
 	{key: "upload.max_chunk_size", typ: TypeBytes, min: int64(MiB), max: int64(4 * GiB)},
 	{key: "upload.max_file_size", typ: TypeBytes, min: int64(MiB), max: int64(16 * TiB)},
 	{key: "upload.max_small_file_size", typ: TypeBytes, min: 64 * int64(KiB), max: int64(GiB)},
@@ -192,8 +221,8 @@ func (c *Config) StoredText(key string) (string, bool) {
 	return t, ok
 }
 
-// MaxSettingValue is the longest JSON value of a setting, in bytes. The longest a setting needs is a size in bytes, 20
-// digits at most.
+// MaxSettingValue is the longest JSON value of a setting, in bytes, but for the brand's name (maxNameJSON). The longest
+// the others need is a size in bytes, 20 digits at most.
 const MaxSettingValue = 64
 
 // ValueText returns the value of the setting key as the text the table would hold for it, or "" for an unknown key.
@@ -207,16 +236,20 @@ func (c *Config) ValueText(key string) string {
 
 // SettingText turns a JSON value from the settings API into the text the setting is stored as. The JSON type must be the
 // setting's: a string is not a bool, and a fraction, an exponent or an overflow is not an integer. The text is parsed and
-// bounded later, by Change. A value longer than MaxSettingValue bytes is refused before it is read, so no error repeats a
-// long input.
+// bounded later, by Change. A value longer than MaxSettingValue bytes (maxNameJSON for the name) is refused before it is
+// read, so no error repeats a long input.
 func SettingText(key string, raw []byte) (string, error) {
 	d, ok := lookupDef(key)
 	if !ok {
 		return "", fmt.Errorf("config: %s is not a setting", key)
 	}
+	limit := MaxSettingValue
+	if d.maxJSON > 0 {
+		limit = d.maxJSON
+	}
 	raw = bytes.TrimSpace(raw)
-	if len(raw) > MaxSettingValue {
-		return "", fmt.Errorf("config: %s is longer than %d bytes", key, MaxSettingValue)
+	if len(raw) > limit {
+		return "", fmt.Errorf("config: %s is longer than %d bytes", key, limit)
 	}
 	s := string(raw)
 	bad := func(want string) error { return fmt.Errorf("config: %s must be %s", key, want) }
@@ -251,8 +284,46 @@ func SettingText(key string, raw []byte) (string, error) {
 			return "", bad(`a size as a string, such as "64MiB", or a whole number of bytes`)
 		}
 		return strconv.FormatInt(n, 10), nil
+	case TypeString:
+		if d.restart {
+			break
+		}
+		var text string
+		if !strings.HasPrefix(s, `"`) || json.Unmarshal(raw, &text) != nil {
+			return "", bad("a string")
+		}
+		return text, nil
 	}
 	return "", fmt.Errorf("config: %s is read at start and is set in the config file only", key)
+}
+
+// The settings table's rows of the pictures an admin uploads (decision 141). They are not settings: the picture routes
+// write them, the server reads them at start, and the settings API cannot name them. Each holds the picture's type and
+// the SHA-256 of its bytes. The config file locks a picture by writing the key that names its file, which the API cannot
+// name either.
+const (
+	LogoPicture = "ui.brand.logo"
+	IconPicture = "ui.brand.icon"
+)
+
+// pictureFiles names, for each picture's row, the config key of its file.
+var pictureFiles = map[string]string{LogoPicture: "ui.brand.logo_file", IconPicture: "ui.brand.icon_file"}
+
+// IsPicture reports whether key is the settings table's row of an uploaded picture.
+func IsPicture(key string) bool {
+	_, ok := pictureFiles[key]
+	return ok
+}
+
+// PictureLocked reports whether the config file or the environment writes the file key of the picture named key, even
+// empty, which locks the picture against the API as decision 139 locks a setting.
+func (c *Config) PictureLocked(key string) bool {
+	file, ok := pictureFiles[key]
+	if !ok {
+		return false
+	}
+	_, written := c.present[file]
+	return written
 }
 
 // Problem is one reason a change is refused. Keys are the changed keys its message names.
@@ -349,7 +420,8 @@ func (c *Config) StoredApplied() bool { return c.applied }
 // ApplyStored applies the settings table's rows to c, in place. A row for an unknown key, for a key that needs a
 // restart, or for a key the file or the environment writes is not applied, and skip is told why. The rows that are
 // valid together are applied together; if they are not, each is tried alone in key order, and one that fails is skipped
-// and named. A row never stops the server: the file can always override it.
+// and named. A row never stops the server: the file can always override it. The pictures' rows are left out without a
+// word: the server reads them itself (decision 141).
 func (c *Config) ApplyStored(rows map[string]string, skip func(key, reason string)) {
 	defer func() { c.applied = true }()
 	if skip == nil {
@@ -359,6 +431,7 @@ func (c *Config) ApplyStored(rows map[string]string, skip func(key, reason strin
 	for _, k := range slices.Sorted(maps.Keys(rows)) {
 		d, ok := lookupDef(k)
 		switch {
+		case IsPicture(k):
 		case !ok:
 			skip(k, "not a setting of this version")
 		case d.restart:
