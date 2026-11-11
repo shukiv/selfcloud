@@ -7,7 +7,7 @@ import type { User } from './types';
 // not-found view, not a redirect (docs/design.md, section 10).
 
 export type ManageSection = 'overview' | 'people' | 'groups' | 'spaces' | 'storage' | 'labels' | 'links' | 'audit';
-export type AdminSection = 'tenants' | 'tenant' | 'admins' | 'installation';
+export type AdminSection = 'tenants' | 'tenant' | 'admins' | 'settings';
 
 export type Target =
   | { area: 'manage'; section: ManageSection }
@@ -37,7 +37,7 @@ export function targetOf(path: string): Target | null {
     return { area: 'admin', section: 'tenants', account: null };
   }
   if (clean === '/admin/admins') return { area: 'admin', section: 'admins', account: null };
-  if (clean === '/admin/installation') return { area: 'admin', section: 'installation', account: null };
+  if (clean === '/admin/settings') return { area: 'admin', section: 'settings', account: null };
   const tenant = /^\/admin\/tenants\/([A-Za-z0-9_]+)$/.exec(clean);
   if (tenant) return { area: 'admin', section: 'tenant', account: tenant[1] };
   return null;

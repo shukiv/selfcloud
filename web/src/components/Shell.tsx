@@ -93,7 +93,7 @@ function navFor(admin: boolean, owner: boolean, t: (k: string) => string, pendin
         items: [
           { key: "/admin/tenants", label: t("nav.tenants"), icon: icon(Building2) },
           { key: "/admin/admins", label: t("nav.admins"), icon: icon(UserRound) },
-          { key: "/admin/installation", label: t("nav.installation"), icon: icon(Settings) },
+          { key: "/admin/settings", label: t("nav.settings"), icon: icon(Settings) },
         ],
       },
     ];

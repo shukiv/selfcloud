@@ -62,7 +62,7 @@ const ManageAuditPage = lazy(() => import("./pages/manage/AuditPage"));
 const AdminTenantsPage = lazy(() => import("./pages/admin/TenantsPage"));
 const AdminTenantPage = lazy(() => import("./pages/admin/TenantPage"));
 const AdminAdminsPage = lazy(() => import("./pages/admin/AdminsPage"));
-const AdminInstallationPage = lazy(() => import("./pages/admin/InstallationPage"));
+const AdminSettingsPage = lazy(() => import("./pages/admin/SettingsPage"));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 const CliApprovePage = lazy(() => import("./pages/CliApprovePage"));
 const DevicesPage = lazy(() => import("./pages/DevicesPage"));
@@ -300,6 +300,10 @@ export function Gate() {
   if (path === "/") {
     return <Navigate to={homeFor(me.user)} replace />;
   }
+  // The Installation page is Settings now (decision 143): its old address goes there, with a replace so Back leaves it.
+  if (path === "/admin/installation") {
+    return <Navigate to="/admin/settings" replace />;
+  }
   // The office editor is a page of its own: full window, outside the shell, with its own slim bar (decision 102). The
   // installation admin's refusal is the one the drive pages give (DRIVE_VIEWS).
   if (view === "edit") {
@@ -332,7 +336,7 @@ function adminSection(target: Extract<Target, { area: "admin" }>): ReactNode {
     case "tenants": return <AdminTenantsPage />;
     case "tenant": return <AdminTenantPage account={target.account ?? ""} />;
     case "admins": return <AdminAdminsPage />;
-    case "installation": return <AdminInstallationPage />;
+    case "settings": return <AdminSettingsPage />;
   }
 }
 

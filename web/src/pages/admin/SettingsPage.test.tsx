@@ -161,6 +161,15 @@ describe("what a row shows", () => {
     expect(within(r).queryByRole("button", { name: /Back to the default/ })).toBeNull();
   });
 
+  it("keeps a restart setting read-only even when the server does not call it locked", async () => {
+    server({ "office.enabled": { value: true, source: "default", locked: false, restart: true } });
+    renderPage();
+    await screen.findByRole("region", { name: "Sign-in, search, office and administration" });
+    const r = row("office.enabled");
+    expect((within(r).getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
+    expect(within(r).getByText("Applies at the next start")).toBeTruthy();
+  });
+
   it("states the rules: the allowed range, and what lowering a session limit does", async () => {
     server();
     renderPage();
@@ -368,9 +377,13 @@ describe("leaving with unsaved changes", () => {
     fireEvent.click(screen.getByRole("link", { name: "Tenants" }));
     expect(await screen.findByText("Leave without saving?")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Stay" }));
-    await waitFor(() => expect(screen.queryByText("Leave without saving?")).toBeNull());
+    await waitFor(() => expect(router.state.blockers.size).toBeGreaterThan(0));
     expect(router.state.location.pathname).toBe("/admin/settings");
     expect(numberBox("upload.max_file_size").value).toBe("5");
+    // The guard is still in place: the next try to leave asks again.
+    fireEvent.click(screen.getByRole("link", { name: "Tenants" }));
+    await waitFor(() => expect(screen.getAllByText("Leave without saving?").length).toBeGreaterThan(0));
+    expect(router.state.location.pathname).toBe("/admin/settings");
   });
 
   it("Leave goes on to the page", async () => {
