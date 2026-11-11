@@ -309,7 +309,7 @@ type callLog struct {
 func (l *callLog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := &seen{method: r.Method, path: r.URL.Path, auth: r.Header.Get("Authorization"),
 		offset: r.Header.Get("Upload-Offset"), checksum: r.Header.Get("Upload-Checksum"), length: r.ContentLength,
-		rng: r.Header.Get("Range"),
+		rng:     r.Header.Get("Range"),
 		ifRange: r.Header.Get("If-Range")}
 	l.mu.Lock()
 	l.calls = append(l.calls, c)

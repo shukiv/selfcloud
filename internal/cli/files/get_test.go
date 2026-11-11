@@ -118,9 +118,10 @@ func TestGetDownloadsAFileInRanges(t *testing.T) {
 
 // TestGetResumesFromThePartFileAfterThreeCuts is the fault-injection proof for downloads (design-cli section 6): a 5 MiB
 // file in 1 MiB ranges comes back identical after three cut connections. Each range after a cut starts at the size of
-// the part file, so the bytes that arrived are not fetched again.
+// the part file, so the bytes that arrived are not fetched again. The budgets are smaller than put's: a download keeps
+// the bytes of a cut range, so less is sent again after each cut.
 func TestGetResumesFromThePartFileAfterThreeCuts(t *testing.T) {
-	cut := newCutter(true, -1, 3*mib/2, 5*mib/4, 13*mib/5)
+	cut := newCutter(true, -1, 3*mib/2, 5*mib/4, 13*mib/10)
 	l := newLive(t, nil, cut)
 	l.isolate()
 	noWait(t)

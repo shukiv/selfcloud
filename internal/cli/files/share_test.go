@@ -266,11 +266,11 @@ func TestShareURLRules(t *testing.T) {
 	base := strings.Replace(f.srv.URL, "127.0.0.1", "localhost", 1)
 	good := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" // 43 base64url characters, the secret's shape
 	for _, bad := range []string{
-		base + "/s",                         // no secret
-		base + "/s#short",                   // not a secret's shape
-		base + "/s?x=1#" + good,             // a query
-		base + "/files#" + good,             // not a share page
-		"http://192.0.2.10/s#" + good,       // plain http that is not loopback
+		base + "/s",                   // no secret
+		base + "/s#short",             // not a secret's shape
+		base + "/s?x=1#" + good,       // a query
+		base + "/files#" + good,       // not a share page
+		"http://192.0.2.10/s#" + good, // plain http that is not loopback
 		"ftp://" + f.srv.Listener.Addr().String() + "/s#" + good,
 		"https://user:pw@example.test/s#" + good, // a user name in it
 	} {
