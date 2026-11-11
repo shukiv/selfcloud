@@ -3348,8 +3348,12 @@ paths:
       description: |
         The folders above a file or a directory, topmost first, the parent last: from the folder's root down to the
         parent, but at most the 64 nearest ancestors. For a node more than 64 levels below its root the list starts at
-        the 64th-nearest ancestor, not at the root. The node itself is not in the list. A folder's root has none, and
-        gets an empty list.
+        the 64th-nearest ancestor, not at the root, and `truncated` says so (decision 140). The node itself is not in
+        the list. A folder's root has none, and gets an empty list.
+        `truncated` is true only when the list holds 64 items and the caller reaches the folder above the topmost one,
+        by the same rules as each item. When the caller does not reach that folder, the answer is the one a chain that
+        ends at the topmost item gives, with `truncated` false, so it never tells that a folder the caller cannot
+        reach exists. A client that reads the first item as the folder's root checks `truncated` first.
         Each item is the answer `GET /nodes/{nod}` gives for that node, with the caller's `role` on it.
         The walk stops at the first node the caller cannot reach, and nothing above that node is returned or
         hinted at. Reach is the same access `GET /nodes/{nod}` uses: a share link stops at the link's node, a
@@ -3365,12 +3369,17 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [ancestors]
+                required: [ancestors, truncated]
                 properties:
                   ancestors:
                     type: array
                     maxItems: 64
                     items: { $ref: "#/components/schemas/Node" }
+                  truncated:
+                    type: boolean
+                    description: |
+                      True when the list is the 64 nearest ancestors and the caller reaches more above them. False for a
+                      list that ends at the folder's root, or at the first folder above that the caller does not reach.
         default: { $ref: "#/components/responses/Error" }
 
   /api/v1/nodes/{nod}/children:
