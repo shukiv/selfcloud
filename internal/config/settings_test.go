@@ -327,6 +327,9 @@ func TestChangeRefusesBadValues(t *testing.T) {
 		{"sharing.max_expiry", "1m"},
 		{"links.max_ttl", "169h"},
 		{"storage.min_free", "2TiB"},
+		// The database shares the data disk, so the API keeps room for its writes.
+		{"storage.min_free", "0"},
+		{"storage.min_free", "255MiB"},
 	} {
 		_, err := c.Change(map[string]string{tc.key: tc.value}, nil)
 		if err == nil {
@@ -341,6 +344,9 @@ func TestChangeRefusesBadValues(t *testing.T) {
 	if _, err := c.Change(map[string]string{"sharing.max_expiry": "0s", "versions.max_age": "0s", "versions.max_count": "0"}, nil); err != nil {
 		t.Errorf("zero for no limit was refused: %v", err)
 	}
+	if _, err := c.Change(map[string]string{"storage.min_free": "256MiB"}, nil); err != nil {
+		t.Errorf("storage.min_free at its floor was refused: %v", err)
+	}
 }
 
 // TestSessionLifetimesHaveFloorsAndCaps: a session lifetime set through the settings cannot be so short that people are
@@ -353,8 +359,9 @@ func TestSessionLifetimesHaveFloorsAndCaps(t *testing.T) {
 	}{
 		{"sessions.idle_timeout", "14m59s", "15m", "720h", "721h"},
 		{"sessions.max_age", "59m", "1h", "2160h", "2161h"},
-		{"sessions.admin_idle_timeout", "4m", "5m", "24h", "25h"},
-		{"sessions.admin_max_age", "59m", "1h", "720h", "721h"},
+		// An admin session can only be made shorter than decision 84's hardening: 12 hours idle, 7 days in all.
+		{"sessions.admin_idle_timeout", "4m", "5m", "12h", "12h1s"},
+		{"sessions.admin_max_age", "59m", "1h", "168h", "168h1s"},
 		{"users.verification_ttl", "14m", "15m", "720h", "721h"},
 		{"users.reset_ttl", "4m", "5m", "24h", "25h"},
 	} {

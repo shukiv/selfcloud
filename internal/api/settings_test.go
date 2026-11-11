@@ -291,7 +291,25 @@ func TestSettingsChangeThatCannotBeWrittenIsNotApplied(t *testing.T) {
 	}
 }
 
-// TestSettingsPatchBoundsItsShape:a change names at most 64 keys, each at most 128 bytes and named once, and a value
+// TestSettingsPatchRefusesValuesPastTheirBounds: an admin session longer than decision 84's 12 hours idle or 7 days in
+// all, and a storage.min_free under 256 MiB, are refused, each named.
+func TestSettingsPatchRefusesValuesPastTheirBounds(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	for key, value := range map[string]string{
+		"sessions.admin_idle_timeout": "13h",
+		"sessions.admin_max_age":      "169h",
+		"storage.min_free":            "0",
+	} {
+		e := wantError(t, patchSettings(t, s, admin, map[string]any{key: value}), 400, apierr.InvalidRequest)
+		if keys, _ := e.Details["keys"].([]any); e.Details["reason"] != "invalid_setting" || !slices.Equal(keys, []any{key}) {
+			t.Errorf("%s = %s: details = %v", key, value, e.Details)
+		}
+	}
+}
+
+// TestSettingsPatchBoundsItsShape: a change names at most 64 keys, each at most 128 bytes and named once, and a value
 // longer than any setting needs is refused without its text in the answer.
 func TestSettingsPatchBoundsItsShape(t *testing.T) {
 	t.Parallel()
