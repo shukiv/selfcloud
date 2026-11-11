@@ -473,7 +473,9 @@ func TestPlaylistAccountDeleteCascades(t *testing.T) {
 }
 
 // TestPlaylistReadCost measures a read of the largest playlist: 500 entries, each a file in a deep tree, read by a user
-// with a reach on the top folder. The bound is generous; the number is logged for the decision.
+// with a reach on the top folder. The bound is generous; the number is logged for the decision. The bound is real time,
+// so it is not held under the race detector, which slows the read many times over and failed it at 5.9 s on a loaded
+// machine; the entries are still checked there.
 func TestPlaylistReadCost(t *testing.T) {
 	if testing.Short() {
 		t.Skip("measures a large playlist")
@@ -498,7 +500,7 @@ func TestPlaylistReadCost(t *testing.T) {
 		t.Fatalf("read %d entries, first unavailable=%v", len(got.Entries), got.Entries[0].Unavailable)
 	}
 	t.Logf("GET of a %d-entry playlist (reach of each entry, in-process): %s", maxPlaylistEntries, took)
-	if took > 5*time.Second {
+	if took > 5*time.Second && !raceEnabled {
 		t.Errorf("GET of the largest playlist took %s, over the 5 s bound", took)
 	}
 }
