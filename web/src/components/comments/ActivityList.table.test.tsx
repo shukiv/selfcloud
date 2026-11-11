@@ -58,6 +58,14 @@ describe("the activity is one table in its panel (tl5, decision 138)", () => {
     expect(within(region).queryByRole("columnheader", { name: "Event" })).toBeNull();
   });
 
+  it("names a row by its time and its event, so a screen reader hears what happened", async () => {
+    renderList([entry]);
+    const row = await screen.findByTestId("activity-entry");
+    const name = (row.getAttribute("aria-label") ?? "").replace(/[⁦-⁩]/g, "");
+    expect(name).toContain("Ann commented on an item.");
+    expect(name).toMatch(/2026/);
+  });
+
   it("keeps the table's frame when nothing is recorded, and says so in its body", async () => {
     renderList([]);
     const region = await screen.findByRole("region", { name: "Activity" });

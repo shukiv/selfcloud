@@ -31,6 +31,7 @@ export default function ActivityList({ nodeID }: { nodeID: string }) {
   const items = (q.data?.pages ?? []).flatMap((p) => p.items);
   const youWord = t("comments.mine");
   const formerWord = t("comments.former");
+  const eventText = (e: ActivityEntry) => renderSentence(activitySentence(e, youWord, formerWord).sentence, (key, params) => translate(lang, key, params));
   const sentinel = useLoadMoreSentinel(q.hasNextPage && !q.isFetchNextPageError, q.isFetchingNextPage, () => void q.fetchNextPage());
 
   const columns: ListColumn<ActivityEntry>[] = [
@@ -48,7 +49,7 @@ export default function ActivityList({ nodeID }: { nodeID: string }) {
       key: "event",
       title: t("activity.colEvent"),
       secondary: true,
-      render: (e) => renderSentence(activitySentence(e, youWord, formerWord).sentence, (key, params) => translate(lang, key, params)),
+      render: eventText,
     },
   ];
 
@@ -82,7 +83,7 @@ export default function ActivityList({ nodeID }: { nodeID: string }) {
         <Listing<ActivityEntry>
           label={t("activity.tab")}
           items={items}
-          rowLabel={(e) => formatWhen(e.time, lang)}
+          rowLabel={(e) => `${formatWhen(e.time, lang)}: ${eventText(e)}`}
           rowTestID={() => "activity-entry"}
           columns={columns}
           phone
