@@ -63,10 +63,12 @@ type ConvertOptions struct {
 	Timeout        time.Duration
 	MaxSourceBytes int64
 	MaxOutputBytes int64
-	// MinFree is the free space the derived directory must keep after a write (storage.min_free).
-	MinFree uint64
-	Log     *slog.Logger
-	Now     func() time.Time
+	// MinFree is the free space the derived directory must keep after a write (storage.min_free). MinFreeNow, when set,
+	// gives it at each write instead, as for the thumbnail pool.
+	MinFree    uint64
+	MinFreeNow func() uint64
+	Log        *slog.Logger
+	Now        func() time.Time
 }
 
 // ConvertPool makes converted files on a fixed number of workers. It shares the cache, the budget and the rows with
@@ -411,7 +413,7 @@ func (p *ConvertPool) process(ctx context.Context, j job) {
 
 // finish moves a converted file into place and records it ready, under the same budget rule as a thumbnail.
 func (p *ConvertPool) finish(ctx context.Context, j job, tmp string, size int64, sha string) {
-	switch p.o.Cache.Install(ctx, j.accountID, j.derivedID, tmp, size, sha, p.o.MinFree) {
+	switch p.o.Cache.Install(ctx, j.accountID, j.derivedID, tmp, size, sha, minFreeOf(p.o.MinFree, p.o.MinFreeNow)) {
 	case installNoRoom:
 		p.failConvert(ctx, j, msgConvertDisk, classCounted)
 	case installDropped:

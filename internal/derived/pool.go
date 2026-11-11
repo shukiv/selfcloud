@@ -89,9 +89,20 @@ type Options struct {
 	AudioMaxSourceBytes int64
 	// MinFree is the free space the derived directory must keep after a write (storage.min_free).
 	MinFree uint64
-	Log     *slog.Logger
+	// MinFreeNow, when set, gives storage.min_free at each write in place of MinFree: the server's settings may change it
+	// while it runs (decision 139).
+	MinFreeNow func() uint64
+	Log        *slog.Logger
 	// Now is the clock. Nil means time.Now; tests set it.
 	Now func() time.Time
+}
+
+// minFreeOf returns the free space a write must leave: now's answer when it is set, else the fixed value.
+func minFreeOf(fixed uint64, now func() uint64) uint64 {
+	if now != nil {
+		return now()
+	}
+	return fixed
 }
 
 // Pool makes derived files on a fixed number of workers, one child process per file.
@@ -486,7 +497,7 @@ func (p *Pool) logRefusal(code int, j job) {
 
 // finish moves a finished file into place and records it ready, if the budget and the disk allow.
 func (p *Pool) finish(ctx context.Context, j job, tmp string, size int64, sha string) {
-	switch p.o.Cache.Install(ctx, j.accountID, j.derivedID, tmp, size, sha, p.o.MinFree) {
+	switch p.o.Cache.Install(ctx, j.accountID, j.derivedID, tmp, size, sha, minFreeOf(p.o.MinFree, p.o.MinFreeNow)) {
 	case installNoRoom:
 		p.transient(ctx, j, msgDisk)
 	case installDropped:

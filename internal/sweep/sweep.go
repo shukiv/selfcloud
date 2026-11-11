@@ -47,6 +47,9 @@ type Options struct {
 	// VersionsMaxCount and VersionsMaxAge are versions.max_count and versions.max_age. Zero means no limit.
 	VersionsMaxCount int
 	VersionsMaxAge   time.Duration
+	// RetentionNow, when set, gives the trash and version limits at the start of each pass, in place of TrashRetention,
+	// VersionsMaxCount and VersionsMaxAge: the server's settings may change them while it runs (decision 139).
+	RetentionNow func() Retention
 	// AuditRetention is audit.retention_days as a duration: an audit entry older than this is removed. Zero keeps every entry.
 	AuditRetention time.Duration
 	// ImportRetention is imports.job_retention_days as a duration: the record of a finished import older than this is
@@ -63,6 +66,14 @@ type Options struct {
 	// Zips holds the stored zip downloads (decision 35). Nil means there are none to sweep, as in tests.
 	Zips   *derived.ZipFiles
 	Logger *slog.Logger
+}
+
+// Retention is the trash and version limits one pass uses: trash.retention, versions.max_count and versions.max_age. A
+// zero trash retention means defaultTrashRetention; a zero count or age means no limit.
+type Retention struct {
+	Trash        time.Duration
+	VersionCount int
+	VersionAge   time.Duration
 }
 
 // permissionGrace is how long an expired permission keeps its row. A permission grants nothing once it
@@ -100,6 +111,7 @@ type Sweeper struct {
 	trashKeep    time.Duration
 	versionCount int
 	versionAge   time.Duration
+	retentionNow func() Retention
 	// auditRetention is how long an audit entry is kept; auditPruned is when the entries were last pruned (audit.go).
 	auditRetention time.Duration
 	// importRetention is how long the record of a finished import is kept (imports.job_retention_days, decision 92).
@@ -136,7 +148,8 @@ func New(o Options) *Sweeper {
 	}
 	return &Sweeper{st: o.Store, blobs: o.Blobs, grace: o.DeleteGrace, interval: o.Interval,
 		uploadExpiry: o.UploadExpiry, maxLifetime: o.UploadMaxLifetime, trashKeep: o.TrashRetention,
-		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, auditRetention: o.AuditRetention,
+		versionCount: o.VersionsMaxCount, versionAge: o.VersionsMaxAge, retentionNow: o.RetentionNow,
+		auditRetention:     o.AuditRetention,
 		importRetention:    o.ImportRetention,
 		importPausedExpiry: o.ImportPausedExpiry,
 		importEnder:        o.ImportEnder,
@@ -267,6 +280,18 @@ func (w *Sweeper) searchCheck(ctx context.Context, res *Result) error {
 		res.SearchFTSMismatch = true
 	}
 	return nil
+}
+
+// retention returns the trash and version limits for a pass: RetentionNow's when it is set, else the fixed ones.
+func (w *Sweeper) retention() Retention {
+	if w.retentionNow == nil {
+		return Retention{Trash: w.trashKeep, VersionCount: w.versionCount, VersionAge: w.versionAge}
+	}
+	r := w.retentionNow()
+	if r.Trash <= 0 {
+		r.Trash = defaultTrashRetention
+	}
+	return r
 }
 
 // Once makes one pass, judging expiry and grace against now.

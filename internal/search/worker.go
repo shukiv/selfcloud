@@ -46,6 +46,9 @@ type WorkerOptions struct {
 	// OfficeText is search.office_text: whether documents are sent to the converter at all (review S4). It is off by
 	// default: an operator who runs a converter for previews has not agreed to send every tenant's documents to it.
 	OfficeText bool
+	// OfficeTextNow, when set, gives search.office_text for each file in place of OfficeText: the server's settings may
+	// change it while it runs (decision 139). It is asked before the converter, so with it off no document is sent.
+	OfficeTextNow func() bool
 	// TextMax is search.text_max_bytes: the text kept per file. FullTextMax is search.fulltext_max_bytes: the largest
 	// source read, plain or converted.
 	TextMax, FullTextMax int64
@@ -100,6 +103,15 @@ const (
 	msgUnavailable = "the converter failed while it had the document"
 	msgTimeout     = "the conversion took longer than the time limit"
 )
+
+// officeText reports whether documents may be sent to the converter: OfficeTextNow's answer when it is set, else
+// OfficeText.
+func (w *Worker) officeText() bool {
+	if w.o.OfficeTextNow != nil {
+		return w.o.OfficeTextNow()
+	}
+	return w.o.OfficeText
+}
 
 // NewWorker returns a worker with its options checked. The limits must be positive.
 func NewWorker(o WorkerOptions) *Worker {
@@ -256,7 +268,7 @@ func (w *Worker) extract(ctx context.Context, j store.TextJob, res *store.TextRe
 			w.readPlain(f, j, res)
 		}
 	default:
-		if !w.o.OfficeText {
+		if !w.officeText() {
 			// Documents are not sent to a converter unless the operator has said so (review S4). No request is made.
 			skip(res, store.TextErrOfficeTextOff)
 			return false

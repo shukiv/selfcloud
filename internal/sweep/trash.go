@@ -12,9 +12,10 @@ import (
 
 // purgeTrash purges the explicit trash roots that have been in the trash past trash.retention. Each one
 // goes in its own transaction, with its usage and an audit entry under the system actor, so an operator
-// can see what the retention removed. The batch is bounded: what is left goes in a later pass.
+// can see what the retention removed. The batch is bounded: what is left goes in a later pass. The retention is read
+// at the start of the pass, so a change to the setting reaches the next pass.
 func (w *Sweeper) purgeTrash(ctx context.Context, now time.Time) (int, error) {
-	due, err := w.st.ExpiredTrash(ctx, now.Add(-w.trashKeep), trashBatch)
+	due, err := w.st.ExpiredTrash(ctx, now.Add(-w.retention().Trash), trashBatch)
 	if err != nil {
 		return 0, err
 	}
@@ -39,9 +40,10 @@ func (w *Sweeper) purgeTrash(ctx context.Context, now time.Time) (int, error) {
 // purgeTrashRoot purges one listed trash root if it is still due. The check runs inside the transaction,
 // against the row as it is then: a restore between the listing and this transaction takes the item out of
 // the trash, and a restore followed by a new trashing puts it back in with a fresh trashed_at, which is
-// not yet past the retention. Either way the item is not the sweep's to purge, and ErrNotFound says so.
+// not yet past the retention. Either way the item is not the sweep's to purge, and ErrNotFound says so. The retention is
+// read again here, so a retention raised since the listing keeps an item it no longer makes due.
 func (w *Sweeper) purgeTrashRoot(ctx context.Context, n *store.Node, now time.Time) error {
-	cutoff := now.Add(-w.trashKeep)
+	cutoff := now.Add(-w.retention().Trash)
 	return w.st.Write(ctx, func(tx *store.Tx) error {
 		cur, err := tx.Node(ctx, n.AccountID, n.ID)
 		if err != nil {
@@ -65,12 +67,13 @@ func (w *Sweeper) purgeTrashRoot(ctx context.Context, n *store.Node, now time.Ti
 // them, a bounded batch at a time. Each node's pruning is one transaction with one audit entry under the
 // system actor. Kept versions are never pruned.
 func (w *Sweeper) pruneVersions(ctx context.Context, now time.Time) (int, error) {
+	keep := w.retention()
 	var cutoff *time.Time
-	if w.versionAge > 0 {
-		c := now.Add(-w.versionAge)
+	if keep.VersionAge > 0 {
+		c := now.Add(-keep.VersionAge)
 		cutoff = &c
 	}
-	targets, err := w.st.NodesOverVersionLimits(ctx, w.versionCount, cutoff, versionBatch)
+	targets, err := w.st.NodesOverVersionLimits(ctx, keep.VersionCount, cutoff, versionBatch)
 	if err != nil {
 		return 0, err
 	}
@@ -90,7 +93,7 @@ func (w *Sweeper) pruneVersions(ctx context.Context, now time.Time) (int, error)
 			if err != nil {
 				return err
 			}
-			removed, bytes, err = tx.PruneVersions(ctx, t.AccountID, t.NodeID, w.versionCount, cutoff)
+			removed, bytes, err = tx.PruneVersions(ctx, t.AccountID, t.NodeID, keep.VersionCount, cutoff)
 			if err != nil || removed == 0 {
 				return err
 			}
