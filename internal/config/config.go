@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package config loads Selfcloud's configuration from defaults, an optional YAML file and
-// environment variables, in that order of precedence (environment wins).
+// environment variables, in that order of precedence (environment wins). A setting that neither the
+// file nor the environment writes may be set in the settings table, through the settings API; see
+// settings.go.
 //
 // Every setting has an environment variable named SELFCLOUD_ followed by its YAML path in upper
 // case, joined by underscores: upload.max_chunk_size is SELFCLOUD_UPLOAD_MAX_CHUNK_SIZE. Lists
@@ -9,6 +11,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding"
 	"errors"
 	"fmt"
@@ -91,6 +94,12 @@ type Config struct {
 	Admin     AdminConfig     `yaml:"admin"`
 	Mail      MailConfig      `yaml:"mail"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
+
+	// present names the keys the file or the environment writes, by YAML path, with where each comes from. Such a key is
+	// locked against the settings API (decision 139). Load records it; Defaults leaves it empty, so nothing is locked.
+	present map[string]Source
+	// stored holds the settings table's values this configuration applies, by YAML path, as their stored text.
+	stored map[string]string
 }
 
 // UsersConfig controls users, verification and password reset.
@@ -849,23 +858,30 @@ func Defaults() *Config {
 
 // Load builds the configuration: defaults, then the YAML file at path (if path is not empty),
 // then environment variables found through lookup (normally os.LookupEnv). The result is
-// validated.
+// validated. It records which keys the file and the environment write, which locks them against the settings API.
 func Load(path string, lookup func(string) (string, bool)) (*Config, error) {
 	cfg := Defaults()
+	cfg.present = map[string]Source{}
 	if path != "" {
-		f, err := os.Open(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("config: %w", err)
 		}
-		defer f.Close()
-		dec := yaml.NewDecoder(f)
+		dec := yaml.NewDecoder(bytes.NewReader(data))
 		dec.KnownFields(true)
 		if err := dec.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("config: %s: %w", path, err)
 		}
+		// The same bytes as a node tree say which keys the file writes. The decode above has checked them.
+		var root yaml.Node
+		if err := yaml.Unmarshal(data, &root); err != nil {
+			return nil, fmt.Errorf("config: %s: %w", path, err)
+		}
+		walkYAML(&root, "", 0, func(p string) { cfg.present[p] = SourceFile })
 	}
 	if lookup != nil {
-		if err := applyEnv(reflect.ValueOf(cfg).Elem(), EnvPrefix, lookup); err != nil {
+		if err := applyEnv(reflect.ValueOf(cfg).Elem(), EnvPrefix, "", lookup,
+			func(p string) { cfg.present[p] = SourceEnv }); err != nil {
 			return nil, fmt.Errorf("config: %w", err)
 		}
 	}
@@ -1194,8 +1210,9 @@ func ParsePrefixes(list []string) ([]netip.Prefix, error) {
 
 var textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
 
-// applyEnv walks the struct and sets each field whose environment variable is present.
-func applyEnv(v reflect.Value, prefix string, lookup func(string) (string, bool)) error {
+// applyEnv walks the struct and sets each field whose environment variable is present. path is the YAML path of v, and
+// seen is told the YAML path of each field it sets.
+func applyEnv(v reflect.Value, prefix, path string, lookup func(string) (string, bool), seen func(string)) error {
 	t := v.Type()
 	for i := range t.NumField() {
 		f := t.Field(i)
@@ -1204,9 +1221,10 @@ func applyEnv(v reflect.Value, prefix string, lookup func(string) (string, bool)
 			continue
 		}
 		name := prefix + "_" + strings.ToUpper(tag)
+		p := joinPath(path, tag)
 		fv := v.Field(i)
 		if fv.Kind() == reflect.Struct && !fv.Addr().Type().Implements(textUnmarshalerType) {
-			if err := applyEnv(fv, name, lookup); err != nil {
+			if err := applyEnv(fv, name, p, lookup, seen); err != nil {
 				return err
 			}
 			continue
@@ -1218,8 +1236,76 @@ func applyEnv(v reflect.Value, prefix string, lookup func(string) (string, bool)
 		if err := setFromString(fv, s); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
+		seen(p)
 	}
 	return nil
+}
+
+// joinPath adds key to the YAML path prefix.
+func joinPath(prefix, key string) string {
+	if prefix == "" {
+		return key
+	}
+	return prefix + "." + key
+}
+
+// maxYAMLDepth bounds the walk of a file's node tree, so an alias that refers to itself cannot loop.
+const maxYAMLDepth = 32
+
+// walkYAML tells seen the YAML path of each value the node n writes. A mapping is walked into, and a scalar or a sequence
+// is a value. An alias is followed, and a merge key (<<) adds the keys of the mappings it names at its own level.
+func walkYAML(n *yaml.Node, prefix string, depth int, seen func(string)) {
+	if n == nil || depth > maxYAMLDepth {
+		return
+	}
+	switch n.Kind {
+	case yaml.DocumentNode:
+		for _, c := range n.Content {
+			walkYAML(c, prefix, depth+1, seen)
+		}
+	case yaml.AliasNode:
+		walkYAML(n.Alias, prefix, depth+1, seen)
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k, v := n.Content[i], n.Content[i+1]
+			if k.Tag == "!!merge" {
+				walkMerge(v, prefix, depth+1, seen)
+				continue
+			}
+			p := joinPath(prefix, k.Value)
+			if r := resolveAlias(v); r != nil && r.Kind == yaml.MappingNode {
+				walkYAML(r, p, depth+1, seen)
+				continue
+			}
+			seen(p)
+		}
+	}
+}
+
+// walkMerge walks the mappings a merge key names: one mapping, or a sequence of them.
+func walkMerge(v *yaml.Node, prefix string, depth int, seen func(string)) {
+	v = resolveAlias(v)
+	if v == nil || depth > maxYAMLDepth {
+		return
+	}
+	if v.Kind == yaml.SequenceNode {
+		for _, c := range v.Content {
+			walkYAML(resolveAlias(c), prefix, depth+1, seen)
+		}
+		return
+	}
+	walkYAML(v, prefix, depth+1, seen)
+}
+
+// resolveAlias follows aliases to the node they name, at most maxYAMLDepth of them.
+func resolveAlias(n *yaml.Node) *yaml.Node {
+	for i := 0; n != nil && n.Kind == yaml.AliasNode; i++ {
+		if i == maxYAMLDepth {
+			return nil
+		}
+		n = n.Alias
+	}
+	return n
 }
 
 func setFromString(fv reflect.Value, s string) error {
