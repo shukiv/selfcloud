@@ -114,6 +114,9 @@ type APIError struct {
 	Message    string
 	RetryAfter time.Duration // the server's Retry-After, when it gave one
 	Reason     string        // details.reason, such as device_token; "" when the refusal gives none
+	// Details is the error's details object, such as the state an upload waits in. It is data for the command and never
+	// part of the message.
+	Details map[string]any
 }
 
 func (e *APIError) Error() string {
@@ -395,17 +398,16 @@ func decodeAPIError(resp *Response) *APIError {
 	e := &APIError{Status: resp.Status}
 	var env struct {
 		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-			Details struct {
-				Reason string `json:"reason"`
-			} `json:"details"`
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(resp.Body, &env) == nil {
 		e.Code = env.Error.Code
 		e.Message = env.Error.Message
-		e.Reason = env.Error.Details.Reason
+		e.Details = env.Error.Details
+		e.Reason, _ = env.Error.Details["reason"].(string)
 	}
 	switch {
 	case e.Message != "":
