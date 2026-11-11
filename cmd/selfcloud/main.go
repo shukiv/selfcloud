@@ -134,11 +134,26 @@ func openStore(ctx context.Context, cfg *config.Config, log *slog.Logger) (*stor
 		log.Warn("the data directory is on a network file system; uploads will be slower and "+
 			"less safe than on a local disk", "dir", cfg.DataDir, "fs", info.Name)
 	}
-	return store.Open(ctx, store.Options{
+	st, err := store.Open(ctx, store.Options{
 		Path:           cfg.Store.Path,
 		AllowNetworkFS: cfg.Store.AllowNetworkFS,
 		Logger:         log,
 	})
+	if err != nil {
+		return nil, err
+	}
+	// The settings an admin stored through the settings API apply to every command as they do to the server (decision
+	// 139), so an admin command that makes a link gives it the lifetime the settings say. A row that cannot apply is
+	// skipped and logged; the config file wins over it.
+	rows, err := st.Settings(ctx)
+	if err != nil {
+		st.Close()
+		return nil, fmt.Errorf("settings: %w", err)
+	}
+	cfg.ApplyStored(rows, func(key, reason string) {
+		log.Warn("a stored setting is not applied", "key", key, "reason", reason)
+	})
+	return st, nil
 }
 
 // newMailer returns the SMTP sender for the configuration, or nil when mail is not configured. The
