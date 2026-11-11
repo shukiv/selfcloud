@@ -270,7 +270,27 @@ func TestSettingsPatchRefusesWrongJSONTypes(t *testing.T) {
 		apierr.InvalidRequest)
 }
 
-// TestSettingsPatchBoundsItsShape: a change names at most 64 keys, each at most 128 bytes and named once, and a value
+// TestSettingsChangeThatCannotBeWrittenIsNotApplied: a change whose transaction fails answers an error, leaves no row
+// and swaps nothing, so the server never runs on a value with no row and no audit entry.
+func TestSettingsChangeThatCannotBeWrittenIsNotApplied(t *testing.T) {
+	t.Parallel()
+	s := newAuthServer(t, &mail.Recorder{})
+	admin := adminKey(t, s)
+	execOn(t, s, "CREATE TRIGGER refuse_settings_audit BEFORE INSERT ON audit_log "+
+		"WHEN NEW.action = 'installation.settings' BEGIN SELECT RAISE(ABORT, 'audit refused'); END")
+	wantStatus(t, patchSettings(t, s, admin, map[string]any{"upload.max_chunk_size": "8MiB"}), 500)
+	if v := getSettings(t, s, admin).get(t, "upload.max_chunk_size"); v.Value != "64MiB" || v.Source != "default" {
+		t.Errorf("upload.max_chunk_size after a failed change = %+v", v)
+	}
+	if info := decode[infoResponse](t, do(t, s.Handler(), "GET", "/api/v1/info")); info.Limits.MaxChunkSize != 64<<20 {
+		t.Errorf("/api/v1/info piece size after a failed change = %d", info.Limits.MaxChunkSize)
+	}
+	if rows, err := s.store.Settings(context.Background()); err != nil || len(rows) != 0 {
+		t.Errorf("rows after a failed change: %v, %v", rows, err)
+	}
+}
+
+// TestSettingsPatchBoundsItsShape:a change names at most 64 keys, each at most 128 bytes and named once, and a value
 // longer than any setting needs is refused without its text in the answer.
 func TestSettingsPatchBoundsItsShape(t *testing.T) {
 	t.Parallel()
