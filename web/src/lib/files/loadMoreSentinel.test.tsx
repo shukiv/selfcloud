@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The sentinel asks for the next page once each time its element comes into view, and never while a page loads (design 2.2, paging).
+// The sentinel asks for the next page once each time its element comes into view, and never while a page loads (the slice's design, not in this repository, section 2.2, paging).
 import { render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLoadMoreSentinel } from "./loadMoreSentinel";

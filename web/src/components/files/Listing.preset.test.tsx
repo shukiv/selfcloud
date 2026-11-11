@@ -106,7 +106,7 @@ describe("a preset row opens on a click, and Ctrl or Shift select", () => {
     expect(rowOf("Beta").getAttribute("aria-selected")).toBe("true");
   });
 
-  it("Enter on a focused row opens it (the keyboard path, design 2.2)", () => {
+  it("Enter on a focused row opens it (the keyboard path, the slice's design, not in this repository, section 2.2)", () => {
     const open = vi.fn();
     list({ selectable: true, onOpen: open });
     // Tab focuses the row, which the list then knows as its focused row, and Enter opens that one.

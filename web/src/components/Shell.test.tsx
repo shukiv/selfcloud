@@ -412,7 +412,7 @@ describe("Shell", () => {
 
     // With the hidden spaces shown off, a hide still reads the hidden list again. The drive lists name a
     // location from that list, and no list mounts again to read it, so without this read a hidden space's items lose its name.
-    it("hiding a space with the hidden spaces shown off reads the hidden list again, so the drive lists keep its name", async () => {
+    it("hiding a space with the hidden spaces shown off reads the hidden list again", async () => {
       signIn("member");
       folders.set([team("fld_a", "Team A")]);
       renderShell("/files");

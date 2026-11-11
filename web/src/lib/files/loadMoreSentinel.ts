@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-// useLoadMoreSentinel asks for the next page when the element it returns comes into view (design 2.2, paging), so a list
+// useLoadMoreSentinel asks for the next page when the element it returns comes into view (the slice's design, not in this repository, section 2.2, paging), so a list
 // grows as its end is reached, and the Load more button stays beside it for the person who asks for it. The element is
 // watched only while there is a next page (enabled), no page is loading (loading), and the last next page did not fail
 // (failed). So a page is asked for once, and again only after the load ends with the end still in view. A failed page is not

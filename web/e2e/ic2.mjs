@@ -271,7 +271,7 @@ export async function ic2Checks(h, { page, base, accountKey, teamA, dir, signIn,
         check(sideways <= 0, `${path} has no sideways scroll at 375 px in ${set.lang} (${sideways} px over)`);
         const uncaught = page.errors.slice(before).filter((e) => e.startsWith('uncaught') || e.startsWith('the page renderer crashed'));
         check(uncaught.length === 0, `${path} shows no uncaught error in ${set.lang} ${set.theme} (${uncaught.join(' | ') || 'none'})`);
-        // The list table's direction, and its body's background : right to left in Hebrew, and a body background in
+        // The list table's direction, and its body's background: right to left in Hebrew, and a body background in
         // dark that is darker than the light one (the first opaque background up the tree, as a luminance).
         const grid = await page.evaluate(`(() => { const t = document.querySelector('table'); if (!t) return null; const b = t.querySelector('tbody'); const bg = (el) => { for (let n = el; n; n = n.parentElement) { const c = getComputedStyle(n).backgroundColor; if (c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') { const m = c.match(/[\\d.]+/g).map(Number); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; } } return null; }; return { dir: getComputedStyle(t).direction, lum: b ? bg(b) : null }; })()`);
         check(grid !== null, `${path} draws its table in ${set.lang} (${JSON.stringify(grid)})`);
