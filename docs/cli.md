@@ -4,8 +4,9 @@
 they are described in the README. The remote ones call a server's HTTP API with a key, and they are described here.
 
 This document covers what exists now: the profiles, the connection rules, output and exit codes, and the commands
-`info`, `api spec`, `profile add|use|ls|rm` and the sign-in at a terminal (`login`, `logout`, `whoami`). Later groups
-(files, large files, sharing and the rest) are added to this document as they land.
+`info`, `api spec`, `profile add|use|ls|rm`, the sign-in at a terminal (`login`, `logout`, `whoami`), the file commands
+and the large files (`put`, `get`, `upload ls|cancel`). Later groups (sharing and the rest) are added to this document
+as they land.
 
 ## Profiles
 
@@ -139,7 +140,8 @@ The codes are the API's where the server answered. Otherwise the CLI uses one of
 | 6 | an upload expired on the server; the file must be sent again from the start; used by the file commands |
 | 7 | partial success: some of several targets were done and some failed; used by the commands that take several targets |
 
-Codes 5, 6 and 7 have no command that reaches them yet. Their mapping is fixed now.
+`get` exits 5 when the bytes do not match the server's SHA-256; `put` and `upload cancel` exit 6 for an expired upload
+(section "Large files"); the commands that take several targets exit 7.
 
 ## Commands
 
@@ -299,6 +301,96 @@ selfcloud mkdir --folder fld_… --parents /photos/2026
 selfcloud mv nod_… /archive --folder fld_…
 selfcloud rm nod_… --yes
 selfcloud trash ls --all
+```
+
+## Large files
+
+`put` and `get` move a file of any size the server takes (100 GB by default) in pieces, and go on after a cut
+connection from where it stopped. They use the same credential and naming as the file commands.
+
+| Command | What it does |
+|---|---|
+| `put LOCAL [--folder F] [DIR] [--name N] [--parents] [--replace \| --rename]` | sends a local file into the directory DIR (a path walked in `--folder`, default `/`, or a directory's node id), under its own name or `--name`; prints the new file's node |
+| `put --resume UPLOAD [--name N] [--replace \| --rename]` | goes on with an upload this client began |
+| `get NODE [DEST]`, `get --folder F PATH [DEST]` | reads a file into DEST: a directory, where it takes the server's name, or a new file's path; default the current directory |
+| `get SHARE-LINK [DEST] [--password-stdin]` | reads the file a share link names, with no sign-in |
+| `upload ls` | the uploads this client began and has not finished: their size, the bytes the server had taken when last asked, when they expire, and the local file |
+| `upload cancel UPLOAD` | ends an upload; the server drops what it holds |
+
+**Pieces.** `--piece-size` (or `SELFCLOUD_PIECE_SIZE`) sets the size of each piece of `put` and each range of `get`: a
+size such as `32MiB` or `100MB`, at least 1 MiB, 64 MiB by default, which fits under a proxy that caps a request at
+100 MB. A size above the server's limit (`upload.max_chunk_size`, which `info` prints as `max_chunk_size`) is refused
+(exit 2); the default is lowered to it. `--stall-timeout` (default `1m`) ends a piece or a range when no byte has moved
+for that long. `--timeout` does not apply to them, since a large piece on a slow link may take longer than any fixed
+limit; it applies to the other requests.
+
+**Repeats.** A piece or a range that fails with a cut connection, a stall, a server error (5xx), a `429`, or a file
+another request holds is tried again, after one second, doubling to at most 30 seconds, or after the server's
+`Retry-After` when it is 30 seconds or less. `put` first asks the server (`HEAD`) how much it holds and goes on from
+there, so no byte the server kept is sent twice, and no piece is sent at an offset the server has not confirmed. After
+five failures in a row with nothing gained, the command stops (exit 1) and keeps what it has: the error says how to go
+on.
+
+**put.** The upload is created with no body, then each piece is sent with the SHA-256 of its bytes
+(`Upload-Checksum`). The server drops a piece whose bytes do not match, and `put` sends it again. The local file must
+not change during the upload: its size and modification time are checked before each piece and before a resume, and a
+changed file stops the upload (exit 1 during it, 2 on a resume) rather than mix two versions. An empty file is complete
+when it is created. `--replace` replaces a file of the same name and keeps its old content as a version; `--rename`
+takes a free name; without them a name in use is a conflict. When the name is taken by another file while the upload
+runs, the bytes stay on the server and the upload waits for a name: `put` exits 3 and says to run
+`put --resume UPLOAD` with `--name`, `--rename` or `--replace`, which names it without sending anything again. Only the
+upload's id is taken from the server's `Location`: every request goes to the address the command was given, so the
+credential never goes to another host.
+
+**Records.** Each upload this client began is recorded in a file of its own under `transfers/uploads` in the profiles
+directory (`SELFCLOUD_PROFILES_DIR`, or `selfcloud` in the user's configuration directory), so `put --resume` and
+`upload ls` find it; a download is recorded under `transfers/downloads` until it is done. A record holds ids, paths,
+sizes, times and a download's file version, and no key, link or password. The directories are mode 0700 and the
+files 0600; a directory that others may read is refused with the `chmod` to run. A finished, cancelled or expired upload
+loses its record. `put --resume` goes on only on the server the upload began on.
+
+**Lifetime.** The server ends an upload a week after its creation however often it is written to
+(`upload.max_lifetime`, default `168h`), and one that has received no piece for a day (`upload.expiry`, default `24h`).
+A 100 GB file must therefore arrive within a week: about 165 kB/s on average, from start to end, pauses included. An
+expired upload is never tried again: `put` exits 6, names the local file, and says it must be sent again from the
+start, and its record is removed. `upload cancel` of an expired upload exits 6 too.
+
+**get.** The file is read in ranges into `NAME.part` beside the destination, each range with `If-Range` set to the
+file's version (its ETag), and the part file takes the name only when it is complete and checked. When the server gives
+the file's SHA-256, the bytes are checked against it; otherwise only the size is checked, and `get` says so. A
+mismatch removes the part file and exits 5. After a cut, the next range starts at the part file's size. When the file
+changes on the server during the download, the server sends the new version whole instead of a range, and `get` says
+so and starts again on it, at most three times; two versions are never mixed. A part file that a `get` of the same
+file left behind is continued by the next one, or started again when the file changed meanwhile; one that this client
+did not begin is refused (exit 2), or emptied and used with `--overwrite`. `get` prints `path`, `size`, `sha256` (of the bytes
+written) and `checked` (`sha256` or `size`).
+
+**Safe writes.** The name is the server's, so it is checked before anything is written: it must pass the API's name
+rules, be one plain name with no separator, not be a device name on any system (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`,
+`CONOUT$`, and `COM` or `LPT` with one digit, in any case and with any extension), and leave room for `.part` within
+255 bytes. A refused name exits 2,
+fetches nothing and writes nothing; give the destination a name of its own. Every write stays inside the destination
+directory, and a symbolic link at the file's name or the part file's name is never followed or replaced (exit 2). An
+existing file is replaced only with `--overwrite`, and only once the new bytes are complete and checked; a file that
+appears at the name during the download is kept, and so is the part file.
+
+**Share links.** `get 'https://host/s#SECRET'` reads the file a share link names, with no profile and no sign-in: the
+link names its own server, so `--url`, `--profile`, `--token-file` and `--folder` are refused with it, and no key of a
+profile or of `SELFCLOUD_TOKEN` is sent to that server. Quote the link in a shell. The link must be `https` (plain `http`
+only for a loopback address, or with `--insecure-http`), end in `/s` and carry its secret after `#`; anything else is
+refused without a request. A link with a password takes it from standard input with `--password-stdin`, never from a
+terminal, where it would be shown as it is typed; without it, the command exits 3 and says how to give it. The link's
+credential lasts 15 minutes and is renewed before it ends, so a long download goes on. A link to a directory, and a
+link that only takes uploads, are refused (exit 2). The link's secret, the password and the credential are never
+printed, logged or written to a record.
+
+```
+selfcloud put ./backup.tar --folder fld_… /archive --piece-size 32MiB
+selfcloud put --resume upl_…
+selfcloud upload ls
+selfcloud get nod_… ~/Downloads/
+selfcloud get --folder fld_… /archive/backup.tar ./restore.tar
+printf '%s\n' "$LINK_PASSWORD" | selfcloud get 'https://drive.example/s#…' --password-stdin
 ```
 
 ## Docker

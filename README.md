@@ -164,7 +164,9 @@ a clock difference larger than `--min-age` can make a fresh blob look old (decis
 
 `selfcloud info`, `selfcloud api spec` and `selfcloud profile add|use|ls|rm` call a server's API. Profiles keep a
 server's address and key in a private file. `selfcloud login` signs a terminal in as a person who approves it in the
-browser, with no password, and `logout` and `whoami` end and check that sign-in. See [docs/cli.md](docs/cli.md).
+browser, with no password, and `logout` and `whoami` end and check that sign-in. `selfcloud put` and `get` move very
+large files in checked pieces that resume after a cut connection, and `get` also reads a share link with no sign-in.
+See [docs/cli.md](docs/cli.md).
 
 ## Configuration
 
