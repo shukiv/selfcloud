@@ -12,21 +12,23 @@ import { setLanguage, setTheme, shot, sleep } from './media.mjs';
 
 const PAGES = [
   // wrapClass: the class the old element had, which owner.mjs waits for on Recent (`.empty`), kept on EmptyState's wrapper.
-  { key: 'starred', path: '/starred', text: 'Nothing is starred yet. Star a file or folder to find it here.', wrapClass: 'empty' },
-  { key: 'recent', path: '/recent', text: 'Nothing here yet. Files you open or change appear here.', wrapClass: 'empty' },
-  // The Trash title has no full stop: the drive lists' titles are short, and the words are the same.
-  { key: 'trash', path: '/trash', text: 'The trash is empty' },
+  // title is the table's empty title (no full stop: the owner's rule for empty titles, decisions 137 and 138) and text is its
+  // description, each read apart and compared exactly. The trash has a title and no description (text null).
+  { key: 'starred', path: '/starred', title: 'Nothing starred yet', text: 'Nothing is starred yet. Star a file or folder to find it here.', wrapClass: 'empty' },
+  { key: 'recent', path: '/recent', title: 'Recent is empty', text: 'Nothing here yet. Files you open or change appear here.', wrapClass: 'empty' },
+  { key: 'trash', path: '/trash', title: 'The trash is empty', text: null },
 ];
 const VERSIONS_TEXT = 'There are no earlier versions.';
 // The Hebrew words come from the catalogue itself: the text before the first placeholder of the Starred page's words.
 const he = JSON.parse(readFileSync(new URL('../src/i18n/he.json', import.meta.url), 'utf8'));
 const HE_STARRED = he['starred.empty'];
+const HE_STARRED_TITLE = JSON.parse(readFileSync(new URL('../src/i18n/drive/he.json', import.meta.url), 'utf8'))['drive.empty.starred'];
 
 const q = (v) => JSON.stringify(v);
 
 // emptyOf reads the first antd Empty in the scope: its words, and whether it sits in a role=status region.
 const emptyOf = (page, scope = 'main') =>
-  page.evaluate(`(() => { const root = document.querySelector(${q(scope)}) ?? document; const e = root.querySelector('.ant-empty'); if (!e) return null; return { text: e.querySelector('.ant-empty-description')?.textContent.trim() ?? null, status: !!e.closest('[role="status"]'), desc: e.querySelector('.empty-desc')?.textContent.trim() ?? null }; })()`);
+  page.evaluate(`(() => { const root = document.querySelector(${q(scope)}) ?? document; const e = root.querySelector('.ant-empty'); if (!e) return null; return { text: e.querySelector('.ant-empty-description')?.textContent.trim() ?? null, title: e.querySelector('.empty-title')?.textContent.trim() ?? null, desc: e.querySelector('.empty-desc')?.textContent.trim() ?? null, status: !!e.closest('[role="status"]') }; })()`);
 
 // sideways reads whether the page is wider than its window, which is a sideways scroll on a phone.
 const sideways = (page) => page.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth`);
@@ -50,11 +52,11 @@ export async function em1Checks(h, { page, base, accountKey, accountID, MEMBER, 
   // A page's empty state: its picture, its words and its status region, read after the picture is taken.
   const readPage = async (p, label, sidewaysToo) => {
     await navigateTo(page, p.path);
-    await page.waitFor(`document.body.innerText.includes(${q(p.text)})`, 15000);
+    await page.waitFor(`document.body.innerText.includes(${q(p.title)})`, 15000);
     await sleep(300);
     await snap(`em1-${p.key}-${label}.png`);
     const wrapClass = p.wrapClass ? await page.evaluate(`!!document.querySelector('.${p.wrapClass} .ant-empty')`) : null;
-    found.push({ what: `${p.key} (${label})`, text: p.text, status: true, empty: await emptyOf(page), sideways: sidewaysToo ? await sideways(page) : null, wrapClass });
+    found.push({ what: `${p.key} (${label})`, title: p.title, text: p.text, status: true, empty: await emptyOf(page), sideways: sidewaysToo ? await sideways(page) : null, wrapClass });
   };
 
   // The empty pages are read as a new member who has nothing: made and verified through the API here, and signed in on the page.
@@ -73,7 +75,7 @@ export async function em1Checks(h, { page, base, accountKey, accountID, MEMBER, 
   await signOut(page);
   await signIn(page, fresh);
   await navigateTo(page, '/trash');
-  await page.waitFor(`document.body.innerText.includes(${q(PAGES.find((p) => p.key === 'trash').text)})`, 15000);
+  await page.waitFor(`document.body.innerText.includes(${q(PAGES.find((p) => p.key === 'trash').title)})`, 15000);
 
   // Desktop: light, then dark. The theme is chosen at the desktop width.
   await setTheme(page, 'Light');
@@ -93,8 +95,8 @@ export async function em1Checks(h, { page, base, accountKey, accountID, MEMBER, 
 
   // Hebrew: the Starred page reads right to left, with its words from the Hebrew catalogue.
   await setLanguage(page, 'עברית');
-  await readPage({ key: 'starred-he', path: '/starred', text: HE_STARRED }, '1280-dark-he', false);
-  found.push({ what: 'starred in Hebrew (right to left)', text: HE_STARRED, status: true, empty: await emptyOf(page), sideways: null, rtl: await page.evaluate(`document.documentElement.dir`) });
+  await readPage({ key: 'starred-he', path: '/starred', title: HE_STARRED_TITLE, text: HE_STARRED }, '1280-dark-he', false);
+  found.push({ what: 'starred in Hebrew (right to left)', title: HE_STARRED_TITLE, text: HE_STARRED, status: true, empty: await emptyOf(page), sideways: null, rtl: await page.evaluate(`document.documentElement.dir`) });
   await setLanguage(page, 'English');
 
   // The compact case: a file with one version, whose Versions panel says there are no earlier versions.
@@ -150,9 +152,13 @@ export async function em1Checks(h, { page, base, accountKey, accountID, MEMBER, 
   for (const f of found) {
     if (!f.empty) check(false, `em1: ${f.what} shows antd's Empty (none on the page: ${JSON.stringify(f.empty ?? null)})`);
     if (f.name) check(f.empty.text.startsWith('This folder is empty.'), `em1: ${f.what} shows the heading and the hint in antd's Empty (${f.empty.text})`);
-    // A drive list's empty body holds a short title and then the description. The words the page gives are the
-    // description, read exactly; a page with no description (Trash) has its title as its words, read exactly too.
-    else check((f.empty.desc ?? f.empty.text) === f.text, `em1: ${f.what} shows antd's Empty with its words (${f.empty.desc ?? f.empty.text})`);
+    // A table's empty body is its title and the page's sentence as the description (decision 137), each exact; a page with no
+    // description shows none.
+    else if (f.title !== undefined) {
+      check(f.empty.title === f.title, `em1: ${f.what} shows its empty title exactly (${f.empty.title})`);
+      if (f.text === null) check(f.empty.desc === null, `em1: ${f.what} shows no description (${f.empty.desc})`);
+      else check(f.empty.desc === f.text, `em1: ${f.what} shows its description exactly (${f.empty.desc})`);
+    } else check(f.empty.text === f.text, `em1: ${f.what} shows antd's Empty with its words (${f.empty.text})`);
     if (f.status !== null) check(f.empty.status === true, `em1: ${f.what} keeps its status region`);
     if (f.sideways !== null) check(f.sideways === false, `em1: ${f.what} does not scroll sideways`);
     if (f.rtl !== undefined) check(f.rtl === 'rtl', `em1: ${f.what} is right to left (${f.rtl})`);
