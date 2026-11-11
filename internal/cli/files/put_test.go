@@ -460,6 +460,39 @@ func TestPutResumeRefusesAChangedLocalFile(t *testing.T) {
 	}
 }
 
+// TestPutStopsWhenTheLocalFileChangesDuringTheUpload: the local file is checked before each piece, so a file written
+// again while put runs, with its old size and a new time, stops the upload (exit 1, local_changed) before the next
+// piece, rather than send pieces of two versions.
+func TestPutStopsWhenTheLocalFileChangesDuringTheUpload(t *testing.T) {
+	cut := newCutter(false, -1, 3*mib/2)
+	l := newLive(t, nil, cut)
+	l.isolate()
+	noWait(t)
+	local := writeLocal(t, "moving.bin", randomBytes(t, 3*mib))
+	rewrite := randomBytes(t, 3*mib)
+	var once sync.Once
+	var hookErr error
+	cut.onCut = func(int) {
+		once.Do(func() {
+			if hookErr = os.WriteFile(local, rewrite, 0o600); hookErr == nil {
+				later := time.Now().Add(time.Minute)
+				hookErr = os.Chtimes(local, later, later)
+			}
+		})
+	}
+	res := l.run(Put, local, "--folder", l.folder, "--piece-size", "1MiB")
+	if hookErr != nil {
+		t.Fatal(hookErr)
+	}
+	l.wantCode(res, 1)
+	if !strings.Contains(res.stderr, "local_changed") {
+		t.Errorf("stderr %q does not say the local file changed", res.stderr)
+	}
+	if n := len(patches(l.rec.all())); n != 2 {
+		t.Errorf("%d pieces sent, want 2: the one taken and the one cut", n)
+	}
+}
+
 // TestPutResumeRefusesAnotherServer: an upload is resumed only on the server it was started on.
 func TestPutResumeRefusesAnotherServer(t *testing.T) {
 	cut := newCutter(false, 0, 3*mib/2)

@@ -480,11 +480,28 @@ func TestGetRefusesAStrayPartFile(t *testing.T) {
 	}
 }
 
-// TestGetStopsWhenTheFileKeepsChanging: a server that answers every range with the whole file says each time that the
-// file changed; get starts again three times, then stops (exit 1) and says why, rather than loop.
-func TestGetStopsWhenTheFileKeepsChanging(t *testing.T) {
+// getAt runs get against the server at url.
+func getAt(url string, args ...string) result {
+	var out, errOut bytes.Buffer
+	code := Get(append(append([]string{}, args...), "--url", url), &out, &errOut)
+	return result{code: code, stdout: out.String(), stderr: errOut.String()}
+}
+
+// writeNode answers a stat of a file: its name, size, version and SHA-256.
+func writeNode(w http.ResponseWriter, nodeID, name string, data []byte, etag string) {
+	doc := node(nodeID, name, "file")
+	doc["size"] = len(data)
+	doc["etag"] = etag
+	doc["sha256"] = sha(data)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = io.WriteString(w, jsonOf(doc))
+}
+
+// TestGetSaysWhenRangesAreIgnored: a server, or a proxy in front of it, that answers a range with the whole file of the
+// same version has not changed the file: get stops at once (exit 1) and says what happened, rather than start again.
+func TestGetSaysWhenRangesAreIgnored(t *testing.T) {
 	isolate(t, testAccountKey)
-	f := newFileServer(t, "moving.bin", bytes.Repeat([]byte("m"), 3000), "")
+	f := newFileServer(t, "ignored.bin", bytes.Repeat([]byte("m"), 3000), "")
 	whole := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/content") {
 			r.Header.Del("Range")
@@ -492,15 +509,49 @@ func TestGetStopsWhenTheFileKeepsChanging(t *testing.T) {
 		f.handle(w, r)
 	}))
 	t.Cleanup(whole.Close)
-	var out, errOut bytes.Buffer
-	code := Get([]string{f.nodeID, t.TempDir(), "--piece-size", "1MiB", "--url", whole.URL}, &out, &errOut)
-	res := result{code: code, stdout: out.String(), stderr: errOut.String()}
+	res := getAt(whole.URL, f.nodeID, t.TempDir(), "--piece-size", "1MiB")
+	wantCode(t, res, 1)
+	if !strings.Contains(res.stderr, "instead of a range") || strings.Contains(res.stderr, "changed") {
+		t.Errorf("stderr %q does not say that the range was ignored", res.stderr)
+	}
+	if n := f.contentCalls(); n != 1 {
+		t.Errorf("%d content requests, want 1", n)
+	}
+}
+
+// TestGetStopsWhenTheFileKeepsChanging: a file that is a new version at every range makes get start again three times,
+// then stop (exit 1) and say why, rather than loop.
+func TestGetStopsWhenTheFileKeepsChanging(t *testing.T) {
+	isolate(t, testAccountKey)
+	nodeID := id.Derive("nod", "cli6-moving")
+	data := bytes.Repeat([]byte("m"), 3000)
+	var mu sync.Mutex
+	version, contents := 0, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/api/v1/nodes/" + nodeID:
+			writeNode(w, nodeID, "moving.bin", data, fmt.Sprintf(`"v%d"`, version))
+		case "/api/v1/nodes/" + nodeID + "/content":
+			contents++
+			version++
+			w.Header().Set("ETag", fmt.Sprintf(`"v%d"`, version))
+			_, _ = w.Write(data)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	res := getAt(srv.URL, nodeID, t.TempDir(), "--piece-size", "1MiB")
 	wantCode(t, res, 1)
 	if !strings.Contains(res.stderr, "kept changing") {
 		t.Errorf("stderr %q does not say the file kept changing", res.stderr)
 	}
-	if n := f.contentCalls(); n != maxRestarts+1 {
-		t.Errorf("%d content requests, want %d", n, maxRestarts+1)
+	mu.Lock()
+	defer mu.Unlock()
+	if contents != maxRestarts+1 {
+		t.Errorf("%d content requests, want %d", contents, maxRestarts+1)
 	}
 }
 
