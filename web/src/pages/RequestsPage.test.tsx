@@ -200,6 +200,39 @@ describe("access requests", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Access requests" })));
   });
 
+  // A keyboard press leaves the focus on the button until its row leaves the list; then the focus has fallen to the body and is moved.
+  it("after a decision pressed from the keyboard the focus goes on from the button that had it", async () => {
+    let decided: string[] = [];
+    stubFetch(async (c: Call) => {
+      if (c.url === "/api/v1/access-requests") {
+        const all = [request("arq_1", "viewer", "Ann Lee"), request("arq_2", "editor", "Ben Ko")];
+        return { status: 200, body: { items: all.filter((r) => !decided.includes(r.id)) } };
+      }
+      if (c.url === "/api/v1/nodes/nod_item") return { status: 200, body: node("manager", false) };
+      if (c.url.startsWith("/api/v1/access-requests/") && c.url.endsWith("/deny")) {
+        await new Promise((r) => setTimeout(r, 30));
+        decided = [...decided, c.url.split("/")[4] as string];
+        return { status: 200, body: request("arq_1", "viewer", "Ann Lee") };
+      }
+      return fail(404, "not_found");
+    });
+    renderPage();
+    const deny = await screen.findByRole("button", { name: "Deny: Ann Lee" });
+    deny.focus();
+    fireEvent.click(deny);
+    await waitFor(() => expect(deny.getAttribute("aria-disabled")).toBe("true"));
+    expect(document.activeElement).toBe(deny);
+    await waitFor(() => expect(screen.queryByRole("row", { name: "Ann Lee" })).toBeNull());
+    const next = screen.getByRole("row", { name: "Ben Ko" });
+    await waitFor(() => expect(next.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement).not.toBe(next);
+    const last = screen.getByRole("button", { name: "Deny: Ben Ko" });
+    last.focus();
+    fireEvent.click(last);
+    await screen.findByText("Nothing to decide");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Access requests" })));
+  });
+
   it("after a decision the focus is not taken from a control the person moved to meanwhile", async () => {
     let decided = false;
     stubFetch(async (c: Call) => {
