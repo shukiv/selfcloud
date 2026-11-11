@@ -6,7 +6,7 @@ admin creates tenants (accounts), watches their usage, and manages other admins.
 
 ## Navigation
 
-Side navigation: **Tenants**, **Admins**, **Installation**. A small "Admin" badge next to the
+Side navigation: **Tenants**, **Admins**, **Settings**. A small "Admin" badge next to the
 product name, so an admin never mistakes this for a tenant's view.
 
 ## Tenants (`/admin/tenants`, the admin home)
@@ -66,16 +66,18 @@ tenant page opens.
   as above. Remove admin asks for confirmation; the API refuses removing the last admin, and the
   UI disables that action with the reason as its tooltip and helper text.
 
-## Installation (`/admin/installation`)
+## Settings (`/admin/settings`)
 
-- Read-only facts from `/api/v1/info`: version, upload piece size, largest file, public URL,
-  web UI on/off. Links to the OpenAPI spec and to `/readyz`.
+- Replaces the read-only Installation page (decision 143); `/admin/installation` goes to it.
+- A card for each section of settings, each with its own Save, Reset for a stored value, and a read-only mark for what the
+  server's config file writes. About holds the installation's facts (version, public URL, web UI on/off, piece size,
+  largest file, the config file's read-only values) and links to the OpenAPI spec and to `/readyz`.
 
 ## As built (k4)
 
 - The tenant list has no users column: the API gives no per-tenant user count yet.
 - Tenant search matches the name only, ASCII-only, as the sharing directory does.
 - The tenant page keeps its tab in the address (`?tab=`), so a tab survives a reload.
-- Installation facts are read-only: version, public URL, interface on or off, piece size, largest file, and links to
-  the OpenAPI spec and `/readyz`.
+- The installation's facts (version, public URL, interface on or off, piece size, largest file, and links to the OpenAPI
+  spec and `/readyz`) are in About on the Settings page, read-only.
 - Known gaps are in docs/design.md section 10 (Administration, k4).
