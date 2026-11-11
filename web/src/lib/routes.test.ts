@@ -22,7 +22,8 @@ describe('targetOf', () => {
     expect(targetOf('/admin')).toEqual({ area: 'admin', section: 'tenants', account: null });
     expect(targetOf('/admin/tenants')).toEqual({ area: 'admin', section: 'tenants', account: null });
     expect(targetOf('/admin/admins')).toEqual({ area: 'admin', section: 'admins', account: null });
-    expect(targetOf('/admin/installation')).toEqual({ area: 'admin', section: 'installation', account: null });
+    expect(targetOf('/admin/settings')).toEqual({ area: 'admin', section: 'settings', account: null });
+    expect(targetOf('/admin/settings/')).toEqual({ area: 'admin', section: 'settings', account: null });
     expect(targetOf('/admin/tenants/acc_123')).toEqual({ area: 'admin', section: 'tenant', account: 'acc_123' });
   });
 
@@ -31,6 +32,7 @@ describe('targetOf', () => {
     expect(targetOf('/admin/tenants/a b')).toBeNull();
     expect(targetOf('/admin/tenants/acc_1/extra')).toBeNull();
     expect(targetOf('/admin/nope')).toBeNull();
+    expect(targetOf('/admin/installation')).toBeNull();
     expect(targetOf('/files')).toBeNull();
   });
 });

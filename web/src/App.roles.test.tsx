@@ -31,7 +31,7 @@ vi.mock("./pages/manage/AuditPage", async () => (await import("./test/stubPage")
 vi.mock("./pages/admin/TenantsPage", async () => (await import("./test/stubPage")).stubPage("admin tenants"));
 vi.mock("./pages/admin/TenantPage", async () => (await import("./test/stubPage")).stubPage("admin tenant"));
 vi.mock("./pages/admin/AdminsPage", async () => (await import("./test/stubPage")).stubPage("admin admins"));
-vi.mock("./pages/admin/InstallationPage", async () => (await import("./test/stubPage")).stubPage("admin installation"));
+vi.mock("./pages/admin/SettingsPage", async () => (await import("./test/stubPage")).stubPage("admin settings"));
 
 import { Gate } from "./App";
 
@@ -104,7 +104,14 @@ describe("an installation admin reaches the admin pages and no drive page", () =
     expect((await reach("admin", "/admin/tenants")).text).toBe("stub admin tenants");
     expect((await reach("admin", "/admin/tenants/acc_1")).text).toBe("stub admin tenant");
     expect((await reach("admin", "/admin/admins")).text).toBe("stub admin admins");
-    expect((await reach("admin", "/admin/installation")).text).toBe("stub admin installation");
+    expect((await reach("admin", "/admin/settings")).text).toBe("stub admin settings");
+  });
+
+  it("the old Installation address opens Settings, reached with a replace", async () => {
+    const got = await reach("admin", "/admin/installation");
+    expect(got.address).toBe("/admin/settings");
+    expect(got.text).toBe("stub admin settings");
+    expect(got.action).toBe("REPLACE");
   });
 
   it.each(["/files", "/files/fld_a", "/n/nod_a", "/starred", "/recent", "/shared", "/requests", "/trash", "/storage"])(

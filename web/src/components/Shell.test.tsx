@@ -195,6 +195,15 @@ describe("Shell", () => {
     expect(names).not.toContain("My files");
   });
 
+  it("names the installation admin's last entry Settings, for /admin/settings", async () => {
+    signIn("admin");
+    renderShell("/admin/settings");
+    const nav = await openNav();
+    const names = within(nav).getAllByRole("menuitem").map((m) => m.textContent);
+    expect(names).toEqual(["Tenants", "Admins", "Settings"]);
+    expect(within(nav).getByRole("menuitem", { name: "Settings" }).className).toContain("ant-menu-item-selected");
+  });
+
   // Decision 68: the account is a round avatar with the first letter of the name; the name is its tooltip and its name.
   it("shows the first letter of the name in the account button, and the name in its tooltip and name", async () => {
     signIn("member");
