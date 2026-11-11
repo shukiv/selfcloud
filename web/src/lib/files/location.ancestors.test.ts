@@ -175,7 +175,10 @@ describe('the place a folder open shows does not change', () => {
 
 describe('the place of a share link and of a folder root', () => {
   it('for a directory under a share link: the link node is the top the visitor sees, with no parent, so it is the root of the place', async () => {
-    // A visitor of the link on b sees b with no parent (the server hides the link node's parent), and nothing above it.
+    // The server hides the parent of a link node from an anyone-link visitor, so the link node reads as a root with no parent.
+    // No anyone-link page calls locate(): the public browser reads its own path, and locate() is called only by the files
+    // page and the gallery, for a signed-in person. So this case pins how the place is built for a node with no parent; no
+    // page in this change reaches it with a share link.
     setTree(['nod_b', 'nod_c']);
     const linkNode = { ...(net.nodes.get('nod_b') as Record<string, unknown>), parent_id: null };
     net.nodes.set('nod_b', linkNode);
