@@ -325,7 +325,7 @@ func (s *Server) handleWOPIPutRelative(w http.ResponseWriter, r *http.Request) e
 		s.saveAsFail(w, r, err)
 		return nil
 	}
-	limit := int64(s.cfg.Office.MaxFileBytes)
+	limit := int64(s.settings().Office.MaxFileBytes)
 	if v := r.Header.Get("X-WOPI-Size"); v != "" {
 		size, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || size < 0 {

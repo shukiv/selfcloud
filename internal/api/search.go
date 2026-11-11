@@ -82,7 +82,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 	if err := callerCheck(p); err != nil {
 		return err
 	}
-	if !s.cfg.Search.Enabled {
+	if !s.settings().Search.Enabled {
 		return apierr.New(apierr.NotFound, "search is not turned on for this server")
 	}
 	// A signed-in user, an account key and a token of either are allowed: a key reaches every folder of its own account,

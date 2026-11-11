@@ -282,6 +282,25 @@ func (e *ChangeError) Keys() []string {
 	return slices.Compact(keys)
 }
 
+// CheckKeys refuses, as a *ChangeError, the keys that are not settings and the keys the settings API may not change,
+// each list sorted. It returns nil when every key may be changed.
+func (c *Config) CheckKeys(keys []string) error {
+	ce := &ChangeError{}
+	for _, k := range slices.Sorted(slices.Values(keys)) {
+		d, ok := lookupDef(k)
+		switch {
+		case !ok:
+			ce.Unknown = append(ce.Unknown, k)
+		case c.locked(d):
+			ce.Locked = append(ce.Locked, k)
+		}
+	}
+	if len(ce.Unknown) > 0 || len(ce.Locked) > 0 {
+		return ce
+	}
+	return nil
+}
+
 // Change returns a copy of c with the settings in set stored (each as its text) and those in reset removed from the
 // table, so they fall back to their defaults. The change is all or nothing: on any error c is unchanged, no copy is
 // returned, and the error is a *ChangeError that names every key it refuses.
@@ -293,19 +312,10 @@ func (c *Config) Change(set map[string]string, reset []string) (*Config, error) 
 		}
 	}
 	slices.Sort(changed)
+	if err := c.CheckKeys(changed); err != nil {
+		return nil, err
+	}
 	ce := &ChangeError{}
-	for _, k := range changed {
-		d, ok := lookupDef(k)
-		switch {
-		case !ok:
-			ce.Unknown = append(ce.Unknown, k)
-		case c.locked(d):
-			ce.Locked = append(ce.Locked, k)
-		}
-	}
-	if len(ce.Unknown) > 0 || len(ce.Locked) > 0 {
-		return nil, ce
-	}
 	rows := maps.Clone(c.stored)
 	if rows == nil {
 		rows = map[string]string{}

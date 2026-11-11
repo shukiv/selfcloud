@@ -83,8 +83,9 @@ func (s *Server) handleUploadOptions(w http.ResponseWriter, r *http.Request) err
 	h.Set("Tus-Version", tusVersion)
 	h.Set("Tus-Extension", tusExtensions)
 	h.Set("Tus-Checksum-Algorithm", "sha1,sha256")
-	h.Set("Tus-Max-Size", strconv.FormatInt(int64(s.cfg.Upload.MaxFileSize), 10))
-	h.Set(chunkHeader, strconv.FormatInt(int64(s.cfg.Upload.MaxChunkSize), 10))
+	lim := s.settings().Upload
+	h.Set("Tus-Max-Size", strconv.FormatInt(int64(lim.MaxFileSize), 10))
+	h.Set(chunkHeader, strconv.FormatInt(int64(lim.MaxChunkSize), 10))
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -392,10 +393,9 @@ func isUploadBody(r *http.Request) bool {
 	return mt == uploadBodyType
 }
 
-// checkPieceSize refuses a piece over upload.max_chunk_size, or one that would pass the declared
+// checkPieceSize refuses a piece over maxChunk (upload.max_chunk_size), or one that would pass the declared
 // length, before its body is read. An unknown length (-1) is checked while streaming.
-func (s *Server) checkPieceSize(contentLength, remaining int64) error {
-	maxChunk := int64(s.cfg.Upload.MaxChunkSize)
+func checkPieceSize(contentLength, remaining, maxChunk int64) error {
 	if contentLength > maxChunk {
 		return chunkTooLarge(maxChunk)
 	}
@@ -599,7 +599,7 @@ func (s *Server) diskUsable() (usable int64, ok bool, err error) {
 	if err != nil {
 		return 0, false, apierr.Wrap(apierr.Internal, "the free disk space could not be read", err)
 	}
-	return max(0, int64(free)-int64(s.cfg.Storage.MinFree)), true, nil
+	return max(0, int64(free)-int64(s.settings().Storage.MinFree)), true, nil
 }
 
 // checkDisk refuses uploads the disk cannot hold. mine is the unwritten bytes of the caller's
@@ -749,9 +749,8 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return apierr.New(apierr.InvalidRequest, "Upload-Length is required; deferred lengths are not supported")
 	}
-	if length > int64(s.cfg.Upload.MaxFileSize) {
-		return apierr.Newf(apierr.TooLarge, "a file may be at most %d bytes", s.cfg.Upload.MaxFileSize).
-			With("limit_bytes", int64(s.cfg.Upload.MaxFileSize))
+	if maxFile := int64(s.settings().Upload.MaxFileSize); length > maxFile {
+		return apierr.Newf(apierr.TooLarge, "a file may be at most %d bytes", maxFile).With("limit_bytes", maxFile)
 	}
 	meta, err := parseUploadMetadata(r.Header.Get("Upload-Metadata"))
 	if err != nil {
@@ -801,7 +800,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) erro
 		if off := r.Header.Get("Upload-Offset"); off != "" && off != "0" {
 			return apierr.New(apierr.InvalidRequest, "a creation with a body starts at Upload-Offset 0")
 		}
-		if err := s.checkPieceSize(r.ContentLength, length); err != nil {
+		if err := checkPieceSize(r.ContentLength, length, int64(s.settings().Upload.MaxChunkSize)); err != nil {
 			return err
 		}
 	}
@@ -989,8 +988,9 @@ func (s *Server) appendChunk(w http.ResponseWriter, r *http.Request, p *auth.Pri
 	ctx := r.Context()
 	start := up.DurableOffset
 	remaining := up.Length - start
-	maxChunk := int64(s.cfg.Upload.MaxChunkSize)
-	if err := s.checkPieceSize(r.ContentLength, remaining); err != nil {
+	// The piece size is read once, so the check and the cap below agree even if the settings change meanwhile.
+	maxChunk := int64(s.settings().Upload.MaxChunkSize)
+	if err := checkPieceSize(r.ContentLength, remaining, maxChunk); err != nil {
 		return err
 	}
 	chunkCap := min(maxChunk, remaining)

@@ -73,7 +73,7 @@ func (s *Server) signedInAsOther(r *http.Request) bool {
 
 // tenantAccessOff is the refusal of the three ways when admin.tenant_access is off.
 func (s *Server) tenantAccessGate() error {
-	if s.cfg.Admin.TenantAccess {
+	if s.settings().Admin.TenantAccess {
 		return nil
 	}
 	return apierr.New(apierr.Forbidden, "an installation admin may not sign in as a user, set its password or give a "+
@@ -456,7 +456,7 @@ func (s *Server) returnCookieName() string {
 func (s *Server) setReturnCookie(w http.ResponseWriter, value string, short bool) {
 	var maxAge int
 	if !short {
-		maxAge = int(s.cfg.Sessions.MaxAge.D().Seconds())
+		maxAge = int(s.settings().Sessions.MaxAge.D().Seconds())
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.returnCookieName(),

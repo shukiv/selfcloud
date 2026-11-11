@@ -19,6 +19,7 @@ import (
 	"github.com/shukiv/selfcloud/internal/config"
 	"github.com/shukiv/selfcloud/internal/mail"
 	"github.com/shukiv/selfcloud/internal/store"
+	"github.com/shukiv/selfcloud/internal/sweep"
 )
 
 // testSetting and testSettings are the answer of GET and PATCH /api/v1/settings, as a client reads it.
@@ -539,6 +540,39 @@ func TestSettingsOfficeTextOnReleasesSkippedDocuments(t *testing.T) {
 	wantStatus(t, patchSettings(t, fx.s, fx.admin, map[string]any{"search.office_text": true}), 200)
 	if r := rowOf(t, fx.s, doc.ID); r.State != "pending" {
 		t.Errorf("row after = %+v, want pending", r)
+	}
+}
+
+// TestSettingsRetentionReachesTheNextSweep: the housekeeping reads trash.retention and versions.max_count at each pass, so
+// a change reaches the next pass of the sweeper the server already runs.
+func TestSettingsRetentionReachesTheNextSweep(t *testing.T) {
+	t.Parallel()
+	fx := newSharingFixture(t)
+	admin := adminKey(t, fx.s)
+	ctx := context.Background()
+	gone := putNode(t, fx.s, fx.key, fx.fld.ID, "/gone.txt", "gone")
+	wantStatus(t, call(t, fx.s, "DELETE", "/api/v1/nodes/"+gone.ID, fx.key, nil), 204)
+	f := putNode(t, fx.s, fx.key, fx.fld.ID, "/kept.txt", "aa")
+	etag := f.ETag
+	for _, body := range []string{"bb", "cc", "dd"} {
+		etag = replaceContent(t, fx, f.ID, etag, body).ETag
+	}
+
+	sw := sweep.New(fx.s.sweepOptions())
+	later := store.Now().Add(36 * time.Hour)
+	res, err := sw.Once(ctx, later)
+	if err != nil || res.Purged != 0 || res.Versions != 0 {
+		t.Fatalf("a pass on the defaults = %+v, %v; want nothing purged or pruned", res, err)
+	}
+	wantStatus(t, patchSettings(t, fx.s, admin, map[string]any{"trash.retention": "24h", "versions.max_count": 1}), 200)
+	if res, err = sw.Once(ctx, later); err != nil {
+		t.Fatal(err)
+	}
+	if res.Purged != 1 || res.Versions != 2 {
+		t.Errorf("the next pass = %+v; want the trashed file purged and two versions pruned", res)
+	}
+	if got := len(versionsOf(t, fx, f.ID)); got != 2 {
+		t.Errorf("versions after the pass = %d, want the current and one", got)
 	}
 }
 

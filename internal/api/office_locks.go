@@ -83,7 +83,7 @@ func lockHolder(p *auth.Principal) string {
 // lockUntil is the expiry of a lock taken or refreshed at now: office.lock_minutes later, which Validate keeps at
 // the 30 minutes WOPI sets.
 func (s *Server) lockUntil(now time.Time) time.Time {
-	return now.Add(time.Duration(s.cfg.Office.LockMinutes) * time.Minute)
+	return now.Add(time.Duration(s.settings().Office.LockMinutes) * time.Minute)
 }
 
 // lockReader is what a live lock is read from: the store, or a write transaction.
@@ -402,7 +402,7 @@ func (s *Server) handleWOPIPutFile(w http.ResponseWriter, r *http.Request) error
 			}
 		}
 	}
-	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Office.MaxFileBytes), n.Size)
+	c, err := s.writeBlob(w, r, n.AccountID, int64(s.settings().Office.MaxFileBytes), n.Size)
 	if err != nil {
 		s.wopiFail(w, r, err)
 		return nil

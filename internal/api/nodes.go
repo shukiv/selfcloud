@@ -942,7 +942,7 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) error 
 	if err := s.checkFreeName(ctx, p, f, dirs, leaf, parents, ifNoneMatch != ""); err != nil {
 		return err
 	}
-	c, err := s.writeBlob(w, r, f.AccountID, int64(s.cfg.Upload.MaxSmallFileSize), 0)
+	c, err := s.writeBlob(w, r, f.AccountID, int64(s.settings().Upload.MaxSmallFileSize), 0)
 	if err != nil {
 		return err
 	}
@@ -1279,7 +1279,7 @@ func (s *Server) handlePutContent(w http.ResponseWriter, r *http.Request) error 
 	// check is here and not in replaceContent, which WOPI PutFile also calls, so an office save is unchanged.
 	hdr := r.Header.Get("Content-Type")
 	mustBeText, mt := putRule(n.Name, n.MimeType, hdr, mimeOf(hdr, n.Name))
-	c, err := s.writeBlob(w, r, n.AccountID, int64(s.cfg.Upload.MaxSmallFileSize), n.Size)
+	c, err := s.writeBlob(w, r, n.AccountID, int64(s.settings().Upload.MaxSmallFileSize), n.Size)
 	if err != nil {
 		return err
 	}

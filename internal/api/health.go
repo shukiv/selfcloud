@@ -48,11 +48,11 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) error {
 	check("database", s.store.Ping(ctx))
 	check("data_dir", probeWritable(s.cfg.DataDir))
 
-	free, err := fsutil.FreeBytes(s.cfg.DataDir)
+	free, err := s.freeBytes(s.cfg.DataDir)
 	switch {
 	case errors.Is(err, fsutil.ErrUnsupported):
 		checks["disk_free"] = "unknown"
-	case err == nil && free < uint64(s.cfg.Storage.MinFree):
+	case err == nil && free < uint64(s.settings().Storage.MinFree):
 		check("disk_free", errors.New("free disk is below storage.min_free"))
 	default:
 		check("disk_free", err)
@@ -133,6 +133,7 @@ type infoSidebar struct {
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) error {
+	set := s.settings()
 	writeJSON(w, http.StatusOK, infoResponse{
 		Name:              config.DefaultBrandName,
 		Version:           version.Version,
@@ -141,10 +142,10 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) error {
 		Brand:             s.brandInfo(),
 		PasswordMinLength: auth.MinPasswordLen,
 		Limits: infoLimits{
-			MaxFileSize:  int64(s.cfg.Upload.MaxFileSize),
-			MaxChunkSize: int64(s.cfg.Upload.MaxChunkSize),
+			MaxFileSize:  int64(set.Upload.MaxFileSize),
+			MaxChunkSize: int64(set.Upload.MaxChunkSize),
 		},
-		SharingMaxExpiryDays: maxExpiryDays(s.cfg.Sharing.MaxExpiry.D()),
+		SharingMaxExpiryDays: maxExpiryDays(set.Sharing.MaxExpiry.D()),
 		Features:             s.features(),
 	})
 	return nil

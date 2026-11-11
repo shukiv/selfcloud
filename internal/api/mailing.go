@@ -114,7 +114,7 @@ func (s *Server) checkVerificationMethod(r *http.Request, method string, t linkT
 // issueToken makes a token of the given purpose for u, inside tx. It voids the user's earlier
 // tokens of that purpose, so only the newest one works.
 func (s *Server) issueToken(ctx context.Context, tx *store.Tx, u *store.User, purpose string, now time.Time) (*issuedToken, error) {
-	ttl, tmpl := recovery.DefaultLifetime(s.cfg.Users, purpose)
+	ttl, tmpl := recovery.DefaultLifetime(s.settings().Users, purpose)
 	t, err := recovery.Issue(ctx, tx, u, purpose, ttl, tmpl, s.cfg.PublicURL, now)
 	if err != nil {
 		return nil, err

@@ -90,11 +90,15 @@ func (s *Server) authenticateSession(r *http.Request) (*auth.Principal, *store.S
 	}
 	// Turning admin.tenant_access off ends a running sign-in-as at once, not at its hour (decision 41). The row stays,
 	// so Go back, which does not pass through here, still restores the admin's session.
-	if sess.ImpersonatorID != "" && !s.cfg.Admin.TenantAccess {
+	if sess.ImpersonatorID != "" && !s.settings().Admin.TenantAccess {
 		return nil, nil, apierr.New(apierr.Unauthenticated, "the impersonation has ended; go back to the admin").
 			With("reason", reasonTenantAccessOff)
 	}
-	if !now.Before(sess.ExpiresAt) {
+	// The stored end is the one the session was last given. The session limits as they are now end it too, so a lower
+	// sessions.idle_timeout or max_age set through the settings takes effect at the next request (decision 139). A
+	// sign-in-as keeps its own hour.
+	if !now.Before(sess.ExpiresAt) || (sess.ImpersonatorID == "" &&
+		!now.Before(s.sessionExpiry(sess.CreatedAt, sess.LastSeenAt, sess.Short, sess.AccountID == ""))) {
 		return nil, nil, apierr.New(apierr.Unauthenticated, "the session has expired; sign in again")
 	}
 	u, err := s.store.User(ctx, sess.AccountID, sess.UserID)
@@ -175,15 +179,16 @@ func (s *Server) touchSession(ctx context.Context, sess *store.Session, now time
 // sessionExpiry returns when a session that began at created, and was last used at now, ends. A session the browser
 // did not keep (short) ends sessions.short_idle_timeout after its last use; a kept one, sessions.idle_timeout.
 func (s *Server) sessionExpiry(created, now time.Time, short, admin bool) time.Time {
-	idleFor := s.cfg.Sessions.IdleTimeout.D()
+	limits := s.settings().Sessions
+	idleFor := limits.IdleTimeout.D()
 	if short {
-		idleFor = s.cfg.Sessions.ShortIdle().D()
+		idleFor = limits.ShortIdle().D()
 	}
-	maxAge := s.cfg.Sessions.MaxAge.D()
+	maxAge := limits.MaxAge.D()
 	// An installation admin's session is shorter: admin_idle_timeout and admin_max_age (sec1, decision 84).
 	if admin {
-		idleFor = min(idleFor, s.cfg.Sessions.AdminIdleTimeout.D())
-		maxAge = min(maxAge, s.cfg.Sessions.AdminMaxAge.D())
+		idleFor = min(idleFor, limits.AdminIdleTimeout.D())
+		maxAge = min(maxAge, limits.AdminMaxAge.D())
 	}
 	idle := now.Add(idleFor)
 	if abs := created.Add(maxAge); abs.Before(idle) {

@@ -99,7 +99,7 @@ func (s *Server) trashItem(ctx context.Context, p *auth.Principal, n *store.Node
 	j := toNodeJSON(cur)
 	j.Role = role
 	return trashItemJSON{nodeJSON: j, TrashedAt: *cur.TrashedAt, TrashedBy: cur.TrashedBy,
-		OriginalParentID: cur.ParentID, PurgeAt: cur.TrashedAt.Add(s.cfg.Trash.Retention.D())}, true, nil
+		OriginalParentID: cur.ParentID, PurgeAt: cur.TrashedAt.Add(s.settings().Trash.Retention.D())}, true, nil
 }
 
 // handleListTrash lists the trash the caller may see, newest first. The page is cursor-paged. A page is

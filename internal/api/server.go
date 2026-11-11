@@ -48,6 +48,7 @@ const shutdownGrace = 5 * time.Second
 
 // Options configure a Server.
 type Options struct {
+	// Config is the configuration as loaded. New applies the settings table's rows to it, in place (decision 139).
 	Config *config.Config
 	Logger *slog.Logger
 	Store  *store.Store
@@ -58,12 +59,16 @@ type Options struct {
 
 // Server serves the HTTP API.
 type Server struct {
-	cfg   *config.Config
-	ui    *web.Handler // nil when ui.enabled is false
-	logo  *web.Logo    // nil when no ui.brand.logo_file is set
-	log   *slog.Logger
-	store *store.Store
-	blobs blob.Store
+	// cfg is the configuration the server started with. The settings the API changes are read through settings(), never
+	// from here (decision 139); snap holds that snapshot, and settingsMu lets one change at a time build on it.
+	cfg        *config.Config
+	snap       *atomic.Pointer[config.Config]
+	settingsMu sync.Mutex
+	ui         *web.Handler // nil when ui.enabled is false
+	logo       *web.Logo    // nil when no ui.brand.logo_file is set
+	log        *slog.Logger
+	store      *store.Store
+	blobs      blob.Store
 	// derivedPool makes thumbnails in child processes, and keeps their rows and files; see thumbnails.go.
 	derivedPool *derived.Pool
 	// conv is the Collabora conversion client and convertPool the pool that runs conversions; both are nil while
@@ -257,6 +262,18 @@ func New(opts Options) (*Server, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
+	// The settings table's rows apply before anything reads the configuration. A row that cannot apply is skipped and
+	// logged, never fatal: the config file can always set the key, and it wins.
+	rows, err := opts.Store.Settings(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("api: settings: %w", err)
+	}
+	opts.Config.ApplyStored(rows, func(key, reason string) {
+		log.Warn("a stored setting is not applied", "key", key, "reason", reason)
+	})
+	snap := new(atomic.Pointer[config.Config])
+	snap.Store(opts.Config)
+	minFree := func() uint64 { return uint64(snap.Load().Storage.MinFree) }
 	trusted, err := config.ParsePrefixes(opts.Config.TrustedProxies)
 	if err != nil {
 		return nil, fmt.Errorf("api: trusted_proxies: %w", err)
@@ -269,7 +286,7 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
-	dpool, err := newDerivedPool(opts.Config, opts.Store, blobs, log)
+	dpool, err := newDerivedPool(opts.Config, minFree, opts.Store, blobs, log)
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
@@ -343,6 +360,7 @@ func New(opts Options) (*Server, error) {
 		confirmBusy:   map[string]bool{},
 		sessionClock:  time.Now,
 		cfg:           cfg,
+		snap:          snap,
 		log:           log,
 		store:         opts.Store,
 		blobs:         blobs,
@@ -547,17 +565,18 @@ func New(opts Options) (*Server, error) {
 		s.convertPool = derived.NewConvertPool(derived.ConvertOptions{Store: opts.Store, Blobs: blobs,
 			Cache: s.derivedPool.Cache(), Conv: convertAdapter{s: s}, Workers: d.ConvertWorkers, Queue: d.ConvertQueue, PerAccount: d.ConvertAccountQueue,
 			Timeout: d.Timeout.D(), MaxSourceBytes: int64(d.MaxSourceBytes), MaxOutputBytes: int64(d.MaxConvertBytes),
-			MinFree: uint64(cfg.Storage.MinFree), Log: log})
+			MinFreeNow: minFree, Log: log})
 	}
-	// The content worker's converter is nil unless office is on and search.office_text is set (review S4): a document then
-	// gets a skipped row, and no request is made. Plain text still works.
+	// The content worker's converter is nil while office is off. With office on it has the converter, and asks
+	// search.office_text, from the settings, before each document (review S4, decision 139): while the setting is off a
+	// document gets a skipped row, and no request is made. Plain text works either way.
 	var textConv search.Converter
-	if cfg.Office.Enabled && cfg.Search.OfficeText {
+	if cfg.Office.Enabled {
 		textConv = s.conv
 	}
 	s.textWorker = search.NewWorker(search.WorkerOptions{Store: opts.Store, Blobs: blobs, Conv: textConv,
-		OfficeText: cfg.Search.OfficeText,
-		TextMax:    int64(cfg.Search.TextMaxBytes), FullTextMax: int64(cfg.Search.FullTextMaxBytes),
+		OfficeTextNow: func() bool { return s.settings().Search.OfficeText },
+		TextMax:       int64(cfg.Search.TextMaxBytes), FullTextMax: int64(cfg.Search.FullTextMaxBytes),
 		CapAccount: int64(cfg.Search.MaxTextPerAccount), CapTotal: int64(cfg.Search.MaxTextTotal), Log: log})
 	if cfg.UI.Enabled {
 		var officeURL string
@@ -666,6 +685,9 @@ func (s *Server) routes() []route {
 		{method: http.MethodPost, path: "/api/v1/admins", handle: s.handleCreateAdmin, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/admins", handle: s.handleListAdmins, auth: true, imp: impAllow},
 		{method: http.MethodDelete, path: "/api/v1/admins/{usr}", handle: s.handleDeleteAdmin, auth: true, imp: impRefuse},
+		// The installation's settings (decision 139): an installation admin by key or by its own session, never a sign-in-as.
+		{method: http.MethodGet, path: "/api/v1/settings", handle: s.handleGetSettings, auth: true, imp: impRefuse},
+		{method: http.MethodPatch, path: "/api/v1/settings", handle: s.handlePatchSettings, auth: true, imp: impRefuse},
 
 		{method: http.MethodPost, path: "/api/v1/accounts/{acc}/users", handle: s.handleCreateUser, auth: true, imp: impRefuse},
 		{method: http.MethodGet, path: "/api/v1/accounts/{acc}/users", handle: s.handleListUsers, auth: true, imp: impAllow},
@@ -963,6 +985,26 @@ func (s *Server) Run(ctx context.Context) error {
 	return s.Serve(ctx, ln, mln)
 }
 
+// sweepOptions are the housekeeping's options. The trash and version limits come from the settings at the start of each
+// pass, so a change reaches the next pass without a restart (decision 139).
+func (s *Server) sweepOptions() sweep.Options {
+	return sweep.Options{Store: s.store, Blobs: s.blobs, DeleteGrace: s.cfg.Blobs.DeleteGrace.D(),
+		TextMax: int64(s.cfg.Search.TextMaxBytes), CapAccount: int64(s.cfg.Search.MaxTextPerAccount),
+		CapTotal: int64(s.cfg.Search.MaxTextTotal),
+		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
+		ImportRetention:    time.Duration(s.cfg.Imports.JobRetentionDays) * 24 * time.Hour,
+		ImportPausedExpiry: time.Duration(s.cfg.Imports.PausedExpiryDays) * 24 * time.Hour,
+		ImportEnder:        s.endPoisonedImport,
+		UploadMaxLifetime:  s.cfg.Upload.MaxLifetime.D(),
+		RetentionNow: func() sweep.Retention {
+			c := s.settings()
+			return sweep.Retention{Trash: c.Trash.Retention.D(), VersionCount: c.Versions.MaxCount,
+				VersionAge: c.Versions.MaxAge.D()}
+		},
+		AuditRetention: time.Duration(s.cfg.Audit.RetentionDays) * 24 * time.Hour,
+		Derived:        s.derivedPool.Cache(), Zips: s.zipFiles, Logger: s.log}
+}
+
 // Serve serves the API on ln, and metrics on mln when it is not nil, until ctx is cancelled.
 //
 // On shutdown, readiness fails and new requests get 503 at once, while requests in flight get
@@ -1003,17 +1045,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	jobsDone := make(chan struct{})
 	go func() { defer close(jobsDone); s.jobs.Run(jobsCtx) }()
 	sweepDone := make(chan struct{})
-	sw := sweep.New(sweep.Options{Store: s.store, Blobs: s.blobs, DeleteGrace: s.cfg.Blobs.DeleteGrace.D(),
-		TextMax: int64(s.cfg.Search.TextMaxBytes), CapAccount: int64(s.cfg.Search.MaxTextPerAccount),
-		CapTotal: int64(s.cfg.Search.MaxTextTotal),
-		Interval: sweepInterval, UploadExpiry: s.cfg.Upload.Expiry.D(),
-		ImportRetention:    time.Duration(s.cfg.Imports.JobRetentionDays) * 24 * time.Hour,
-		ImportPausedExpiry: time.Duration(s.cfg.Imports.PausedExpiryDays) * 24 * time.Hour,
-		ImportEnder:        s.endPoisonedImport,
-		UploadMaxLifetime:  s.cfg.Upload.MaxLifetime.D(), TrashRetention: s.cfg.Trash.Retention.D(),
-		VersionsMaxCount: s.cfg.Versions.MaxCount, VersionsMaxAge: s.cfg.Versions.MaxAge.D(),
-		AuditRetention: time.Duration(s.cfg.Audit.RetentionDays) * 24 * time.Hour,
-		Derived:        s.derivedPool.Cache(), Zips: s.zipFiles, Logger: s.log})
+	sw := sweep.New(s.sweepOptions())
 	go func() { defer close(sweepDone); sw.Run(jobsCtx) }()
 	derivedDone := make(chan struct{})
 	go func() { defer close(derivedDone); s.derivedPool.Run(jobsCtx) }()
@@ -1027,7 +1059,7 @@ func (s *Server) Serve(ctx context.Context, ln, mln net.Listener) error {
 	textDone := make(chan struct{})
 	go func() {
 		defer close(textDone)
-		if s.cfg.Office.Enabled && s.cfg.Search.OfficeText {
+		if s.cfg.Office.Enabled && s.settings().Search.OfficeText {
 			// Documents skipped while office or office_text was off are converted now (decision 46).
 			if _, err := s.store.ReleaseTextSkipped(jobsCtx); err != nil && jobsCtx.Err() == nil {
 				s.log.Error("content search: cannot release the skipped documents", "error", err)

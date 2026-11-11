@@ -502,6 +502,6 @@ func (s *Server) handleShareInfo(w http.ResponseWriter, r *http.Request) error {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, dropInfo{Title: st.Link.Title, Message: st.Link.Message, AskName: st.Link.AskName,
-		ExpiresAt: *st.Link.ExpiresAt, MaxFileSize: int64(s.cfg.Upload.MaxFileSize)})
+		ExpiresAt: *st.Link.ExpiresAt, MaxFileSize: int64(s.settings().Upload.MaxFileSize)})
 	return nil
 }

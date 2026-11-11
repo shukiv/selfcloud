@@ -109,9 +109,9 @@ func (s *Server) handleOpenOffice(w http.ResponseWriter, r *http.Request) error 
 	if n.Kind != store.KindFile {
 		return apierr.New(apierr.InvalidRequest, "a folder cannot be opened in the editor")
 	}
-	if n.Size > int64(s.cfg.Office.MaxFileBytes) {
-		return apierr.Newf(apierr.TooLarge, "a file opened in the editor may be at most %d bytes", int64(s.cfg.Office.MaxFileBytes)).
-			With("limit_bytes", int64(s.cfg.Office.MaxFileBytes))
+	if limit := int64(s.settings().Office.MaxFileBytes); n.Size > limit {
+		return apierr.Newf(apierr.TooLarge, "a file opened in the editor may be at most %d bytes", limit).
+			With("limit_bytes", limit)
 	}
 	ctx := r.Context()
 	doc, err := s.office.Get(ctx)

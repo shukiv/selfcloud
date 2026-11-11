@@ -69,7 +69,7 @@ func importPrincipal(im *store.Import) (*auth.Principal, error) {
 func (s *Server) importCaps() imports.Caps {
 	a := s.cfg.Imports.Archive
 	return imports.Caps{MaxEntries: a.MaxEntries, MaxDepth: a.MaxDepth, MaxRatio: int64(a.MaxRatio),
-		MaxFile: int64(s.cfg.Upload.MaxFileSize), MaxTotal: int64(a.MaxTotalBytes), MaxPathBytes: int64(a.MaxPathBytes)}
+		MaxFile: int64(s.settings().Upload.MaxFileSize), MaxTotal: int64(a.MaxTotalBytes), MaxPathBytes: int64(a.MaxPathBytes)}
 }
 
 // importFaultAt is the fault point of a stage of an import, for the tests. Production never sets importFault.

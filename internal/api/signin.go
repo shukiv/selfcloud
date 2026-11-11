@@ -65,7 +65,7 @@ func (s *Server) newSession(r *http.Request, u *store.User, now time.Time, short
 func (s *Server) setSessionCookie(w http.ResponseWriter, value string, short bool) {
 	var maxAge int
 	if !short {
-		maxAge = int(s.cfg.Sessions.MaxAge.D().Seconds())
+		maxAge = int(s.settings().Sessions.MaxAge.D().Seconds())
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.sessionCookie,
@@ -809,7 +809,7 @@ func (s *Server) meOf(r *http.Request, u *store.User) (meResponse, error) {
 		out.Impersonation = &impersonationJSON{EndsAt: sess.CreatedAt.Add(impersonationTTL)}
 	}
 	if u.AccountID == "" && u.Role == store.RoleAdmin {
-		tenantAccess, mail := s.cfg.Admin.TenantAccess, s.mailer != nil
+		tenantAccess, mail := s.settings().Admin.TenantAccess, s.mailer != nil
 		out.TenantAccess, out.MailConfigured = &tenantAccess, &mail
 	}
 	if u.AccountID != "" {

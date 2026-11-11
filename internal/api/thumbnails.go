@@ -40,8 +40,9 @@ const thumbDispPrefix = "thumb_"
 const thumbBatch = 500
 
 // newDerivedPool builds the pool that makes derived files. Its files live under derived.dir, or
-// data_dir/derived. The server's own binary runs the decoder subcommand.
-func newDerivedPool(cfg *config.Config, st *store.Store, blobs blob.Store, log *slog.Logger) (*derived.Pool, error) {
+// data_dir/derived. The server's own binary runs the decoder subcommand. minFree gives storage.min_free at each write,
+// from the settings.
+func newDerivedPool(cfg *config.Config, minFree func() uint64, st *store.Store, blobs blob.Store, log *slog.Logger) (*derived.Pool, error) {
 	files, err := derived.NewFiles(cfg.DerivedDir())
 	if err != nil {
 		return nil, err
@@ -63,7 +64,7 @@ func newDerivedPool(cfg *config.Config, st *store.Store, blobs blob.Store, log *
 		Workers: d.Workers, Queue: d.Queue, Timeout: d.Timeout.D(), CPUSeconds: int64(d.CPUSeconds),
 		MemoryBytes: int64(d.MemoryBytes), MaxPixels: d.MaxPixels, MaxSourceBytes: int64(d.MaxSourceBytes),
 		AudioMaxSourceBytes: int64(d.AudioMaxSourceBytes),
-		MaxOutputBytes:      16 << 20, MinFree: uint64(cfg.Storage.MinFree), Log: log}), nil
+		MaxOutputBytes:      16 << 20, MinFreeNow: minFree, Log: log}), nil
 }
 
 // smallestThumb is the smallest configured thumbnail size: the default a request takes, and the one has_thumbnail
@@ -174,7 +175,7 @@ func (s *Server) serveThumbnail(w http.ResponseWriter, r *http.Request, n *store
 			return err
 		}
 		c := linkClaims{nod: n.ID, acc: n.AccountID, disp: d.Kind,
-			exp: time.Now().Add(min(s.cfg.Links.DefaultTTL.D(), life)).Unix()}
+			exp: time.Now().Add(min(s.settings().Links.DefaultTTL.D(), life)).Unix()}
 		w.Header().Set("Cache-Control", "private, no-cache")
 		w.Header().Set("Location", s.cfg.ContentURL+linkPrefix+s.links.sign(c, n.ContentTag))
 		w.WriteHeader(http.StatusSeeOther)

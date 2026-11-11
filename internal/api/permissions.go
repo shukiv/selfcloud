@@ -237,7 +237,7 @@ func (s *Server) checkExpiry(at *time.Time, now time.Time) error {
 	if !at.After(now) {
 		return apierr.New(apierr.InvalidRequest, "expires_at must be in the future")
 	}
-	if max := s.cfg.Sharing.MaxExpiry.D(); max > 0 && at.After(now.Add(max)) {
+	if max := s.settings().Sharing.MaxExpiry.D(); max > 0 && at.After(now.Add(max)) {
 		return apierr.Newf(apierr.InvalidRequest, "expires_at may be at most %d seconds from now", int64(max/time.Second)).
 			With("max_expiry_seconds", int64(max/time.Second))
 	}

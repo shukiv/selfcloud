@@ -291,7 +291,7 @@ func (s *Server) answerConverted(w http.ResponseWriter, r *http.Request, n *stor
 				return err
 			}
 			c := linkClaims{nod: n.ID, acc: n.AccountID, disp: previewDispPrefix + format,
-				exp: time.Now().Add(min(s.cfg.Links.DefaultTTL.D(), life)).Unix()}
+				exp: time.Now().Add(min(s.settings().Links.DefaultTTL.D(), life)).Unix()}
 			w.Header().Set("Cache-Control", "private, no-cache")
 			w.Header().Set("Location", s.cfg.ContentURL+linkPrefix+s.links.sign(c, n.ContentTag))
 			w.WriteHeader(http.StatusSeeOther)

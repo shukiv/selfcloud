@@ -385,7 +385,8 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) error 
 	}
 	// A link is a capability that no revocation reaches, so one made with a delegated token may not
 	// outlive the token: its longest life is what the token has left.
-	ttl, maxTTL := s.cfg.Links.DefaultTTL.D(), s.cfg.Links.MaxTTL.D()
+	lim := s.settings().Links
+	ttl, maxTTL := lim.DefaultTTL.D(), lim.MaxTTL.D()
 	life, err := signedLinkLife(r)
 	if err != nil {
 		return err

@@ -74,7 +74,7 @@ func (s *Server) keepVersionID(ctx context.Context, tx *store.Tx, cur *store.Nod
 	if err := tx.InsertVersion(ctx, v); err != nil {
 		return "", err
 	}
-	_, _, err := tx.PruneVersions(ctx, cur.AccountID, cur.ID, s.cfg.Versions.MaxCount, nil)
+	_, _, err := tx.PruneVersions(ctx, cur.AccountID, cur.ID, s.settings().Versions.MaxCount, nil)
 	return v.ID, err
 }
 

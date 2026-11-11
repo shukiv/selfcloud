@@ -214,7 +214,7 @@ const (
 // anyoneLimit is the longest an anyone link may run from now: 365 days, or sharing.max_expiry when that is lower.
 func (s *Server) anyoneLimit() time.Duration {
 	limit := anyoneLinkMax
-	if max := s.cfg.Sharing.MaxExpiry.D(); max > 0 && max < limit {
+	if max := s.settings().Sharing.MaxExpiry.D(); max > 0 && max < limit {
 		limit = max
 	}
 	return limit
