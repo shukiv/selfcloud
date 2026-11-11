@@ -620,26 +620,31 @@ func TestPictureSurvivesARestart(t *testing.T) {
 // server writes is logged and ignored; the server starts on the artwork.
 func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 	t.Parallel()
+	sum := sha256Hex([]byte(testLogoSVG))
+	stored := "image/svg+xml sha256:" + sum
 	for _, tc := range []struct {
 		label  string
 		spoil  func(t *testing.T, s *Server, path string)
 		reason string
+		// old is the audit's old value when DELETE clears the row; kept is what the brand folder holds after it.
+		old  string
+		kept []string
 	}{
 		{"changed", func(t *testing.T, s *Server, path string) {
 			if err := os.WriteFile(path, []byte(`<svg xmlns="http://www.w3.org/2000/svg"><title>other</title></svg>`), 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, "hash"},
+		}, "hash", stored, nil},
 		{"no longer an SVG", func(t *testing.T, s *Server, path string) {
 			if err := os.WriteFile(path, []byte("plain text"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, "not an SVG"},
+		}, "not an SVG", stored, nil},
 		{"missing", func(t *testing.T, s *Server, path string) {
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)
 			}
-		}, "no such file"},
+		}, "no such file", stored, nil},
 		{"a link to the same bytes", func(t *testing.T, s *Server, path string) {
 			elsewhere := filepath.Join(t.TempDir(), "same.svg")
 			if err := os.WriteFile(elsewhere, []byte(testLogoSVG), 0o600); err != nil {
@@ -651,14 +656,15 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 			if err := os.Symlink(elsewhere, path); err != nil {
 				t.Fatal(err)
 			}
-		}, "not a regular file"},
+		}, "not a regular file", stored, nil},
+		// No path is ever made from a row the server did not write, so the file the first upload left stays.
 		{"a row the server does not write", func(t *testing.T, s *Server, path string) {
 			if err := s.store.Write(context.Background(), func(tx *store.Tx) error {
 				return tx.SetSetting(context.Background(), "ui.brand.logo", "image/svg+xml sha256:../../etc/passwd")
 			}); err != nil {
 				t.Fatal(err)
 			}
-		}, "not a picture"},
+		}, "not a picture", "invalid", []string{"logo-" + sum + ".svg"}},
 	} {
 		dir := t.TempDir()
 		first := serverOn(t, configFrom(t, dir, "", nil), true)
@@ -675,9 +681,71 @@ func TestStoredPictureThatFailsIsIgnoredAtStart(t *testing.T) {
 		if logo := serveRaw(t, second, http.MethodGet, "/brand/logo"); !strings.Contains(logo.Body.String(), `aria-label="SelfCloud"`) {
 			t.Errorf("%s: /brand/logo is not the artwork", tc.label)
 		}
-		if p := pictureIn(t, getSettings(t, second, adminKey(t, second)), "ui.brand.logo"); p.State != "none" {
+		admin2 := adminKey(t, second)
+		if p := pictureIn(t, getSettings(t, second, admin2), "ui.brand.logo"); p.State != "none" {
 			t.Errorf("%s: logo = %+v", tc.label, p)
 		}
+
+		// DELETE clears what the start ignored: the row, audited, and the file the row names when the server wrote it, so
+		// the warning stops and the picture cannot come back. A second DELETE changes nothing.
+		before := len(settingsAudit(t, second))
+		wantStatus(t, call(t, second, http.MethodDelete, logoRoute, admin2, nil), 200)
+		if rows, err := second.store.Settings(context.Background()); err != nil || rows["ui.brand.logo"] != "" {
+			t.Errorf("%s: rows after DELETE = %v, %v", tc.label, rows, err)
+		}
+		entries := settingsAudit(t, second)
+		if len(entries) != before+1 {
+			t.Errorf("%s: DELETE wrote %d entries", tc.label, len(entries)-before)
+		}
+		want := mustJSON(t, map[string]any{"ui.brand.logo": map[string]any{"old": tc.old, "new": "none", "source": "default"}})
+		found := false
+		for _, e := range entries {
+			details, _ := json.Marshal(e.Details)
+			found = found || string(details) == want
+		}
+		if !found {
+			t.Errorf("%s: no entry %s", tc.label, want)
+		}
+		if names := brandFiles(t, second); !slices.Equal(names, tc.kept) {
+			t.Errorf("%s: brand folder after DELETE = %v, want %v", tc.label, names, tc.kept)
+		}
+		wantStatus(t, call(t, second, http.MethodDelete, logoRoute, admin2, nil), 200)
+		if n := len(settingsAudit(t, second)); n != before+1 {
+			t.Errorf("%s: a second DELETE wrote an entry: %d", tc.label, n-before)
+		}
+		var later bytes.Buffer
+		third := serverWithLog(t, configFrom(t, dir, "", nil), &later)
+		if strings.Contains(later.String(), "key=ui.brand.logo") {
+			t.Errorf("%s: the start after DELETE still warns:\n%s", tc.label, later.String())
+		}
+		if logo := serveRaw(t, third, http.MethodGet, "/brand/logo"); !strings.Contains(logo.Body.String(), `aria-label="SelfCloud"`) {
+			t.Errorf("%s: /brand/logo after DELETE is not the artwork", tc.label)
+		}
+	}
+}
+
+// TestUploadOverAnIgnoredPictureRemovesItsFile: an upload over a picture the start ignored replaces its row, audits the
+// row as the old value, and removes the file the row named.
+func TestUploadOverAnIgnoredPictureRemovesItsFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	first := serverOn(t, configFrom(t, dir, "", nil), true)
+	wantStatus(t, putPicture(t, first, adminKey(t, first), logoRoute, "image/svg+xml", []byte(testLogoSVG)), 200)
+	sum := sha256Hex([]byte(testLogoSVG))
+	if err := os.WriteFile(filepath.Join(dir, "brand", "logo-"+sum+".svg"), []byte("plain text"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second := serverWithLog(t, configFrom(t, dir, "", nil), &bytes.Buffer{})
+	admin := adminKey(t, second)
+	next := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><title>next</title></svg>`)
+	wantStatus(t, putPicture(t, second, admin, logoRoute, "image/svg+xml", next), 200)
+	if names := brandFiles(t, second); !slices.Equal(names, []string{"logo-" + sha256Hex(next) + ".svg"}) {
+		t.Errorf("brand folder = %v", names)
+	}
+	want := mustJSON(t, map[string]any{"ui.brand.logo": map[string]any{"old": "image/svg+xml sha256:" + sum,
+		"new": "image/svg+xml sha256:" + sha256Hex(next), "source": "settings"}})
+	if entries := settingsAudit(t, second); len(entries) == 0 || mustJSON(t, entries[0].Details) != want {
+		t.Errorf("newest entry, want %s", want)
 	}
 }
 
