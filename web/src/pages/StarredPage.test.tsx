@@ -172,12 +172,18 @@ describe("Starred", () => {
   // An observer whose end of list is always in view fires as soon as it is watched. After a failed next page the page must not
   // make a new one, or it would ask again with no delay; only Load more asks again.
   it("after a failed next page, nothing is asked for until Load more is clicked", async () => {
+    // The page makes a new observer each time its effect runs, so the cap is a count held here, shared by all of them. Past
+    // it nothing is delivered, so a page that asks again without end fails the counts below and does not loop for ever.
+    let fires = 0;
+    const MAX_FIRES = 5;
     class InViewObserver {
       private live = true;
       constructor(private readonly cb: (entries: { isIntersecting: boolean }[]) => void) {}
       observe() {
         queueMicrotask(() => {
-          if (this.live) this.cb([{ isIntersecting: true }]);
+          if (!this.live || fires >= MAX_FIRES) return;
+          fires++;
+          this.cb([{ isIntersecting: true }]);
         });
       }
       disconnect() {
@@ -205,6 +211,7 @@ describe("Starred", () => {
       await waitFor(() => expect(nextPages()).toBe(2));
       await new Promise((r) => setTimeout(r, 100));
       expect(nextPages()).toBe(2);
+      expect(fires).toBeLessThan(MAX_FIRES);
     } finally {
       vi.unstubAllGlobals();
     }
