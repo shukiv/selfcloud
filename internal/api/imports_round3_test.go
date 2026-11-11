@@ -32,14 +32,15 @@ func reservedOf(t *testing.T, fx *importFixture) int64 {
 	return usageOf(t, fx.s, fx.key, fx.acc.ID).ReservedBytes
 }
 
-// A member at quota cannot start an import upload of 2 GiB: the archive reserves its length like any upload (F1).
+// A member at quota cannot start an import upload of 2 MiB: the archive reserves its length like any upload (F1). The
+// length stays far below any test machine's free disk, so the disk check never answers before the quota check.
 func TestImportArchiveIsReservedAgainstQuota(t *testing.T) {
 	fx := newImportFixture(t)
 	wantStatus(t, call(t, fx.s, "PATCH", "/api/v1/accounts/"+fx.acc.ID, fx.admin,
 		map[string]any{"quota_bytes": 1 << 20}), http.StatusOK)
-	rec := fx.archiveUpload(t, 2<<30, "big.zip")
+	rec := fx.archiveUpload(t, 2<<20, "big.zip")
 	if rec.Code == http.StatusCreated || !strings.Contains(rec.Body.String(), "quota_exceeded") {
-		t.Fatalf("import upload of 2 GiB at a 1 MiB quota = %d %s, want quota_exceeded", rec.Code, rec.Body.String())
+		t.Fatalf("import upload of 2 MiB at a 1 MiB quota = %d %s, want quota_exceeded", rec.Code, rec.Body.String())
 	}
 }
 
