@@ -44,6 +44,10 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
   const [hover, setHover] = useState(false);
   const [keyboard, setKeyboard] = useState(false);
   const [pressedNow, setPressedNow] = useState(false);
+  // armed says the tooltip has been wanted once: from then on it is mounted. Until then no Tooltip is mounted, which is the cost
+  // each row of a listing paid for its icons (decision 128). The Tooltip anchors to an empty span beside the button, so the
+  // button is never moved: a moved button loses its focus and the references held to it.
+  const [armed, setArmed] = useState(false);
   const classes = ['icon-btn', pressed ? 'icon-btn--pressed' : '', className ?? ''].filter(Boolean).join(' ');
   const look: CSSProperties = {
     ...(danger ? { color: token.colorError } : {}),
@@ -70,28 +74,36 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
   );
   const open = !pressedNow && (hover || keyboard);
   return (
-    <Tooltip title={tip ?? label} open={open} getPopupContainer={popupHost}>
-      <span
-        className="icon-btn-wrap"
-        onPointerEnter={(e) => {
-          if (e.pointerType !== 'mouse') return;
-          setHover(true);
-          setPressedNow(false);
-        }}
-        onPointerLeave={(e) => {
-          if (e.pointerType !== 'mouse') return;
-          setHover(false);
-          setPressedNow(false);
-        }}
-        onFocus={() => setKeyboard(lastInputWasKey)}
-        onBlur={() => {
-          setKeyboard(false);
-          setPressedNow(false);
-        }}
-      >
-        {button}
-      </span>
-    </Tooltip>
+    <span
+      className="icon-btn-wrap"
+      onPointerDown={() => setArmed(true)}
+      onPointerEnter={(e) => {
+        if (e.pointerType !== 'mouse') return;
+        setArmed(true);
+        setHover(true);
+        setPressedNow(false);
+      }}
+      onPointerLeave={(e) => {
+        if (e.pointerType !== 'mouse') return;
+        setHover(false);
+        setPressedNow(false);
+      }}
+      onFocus={() => {
+        setArmed(true);
+        setKeyboard(lastInputWasKey);
+      }}
+      onBlur={() => {
+        setKeyboard(false);
+        setPressedNow(false);
+      }}
+    >
+      {button}
+      {armed && (
+        <Tooltip title={tip ?? label} open={open} getPopupContainer={popupHost}>
+          <span className="icon-btn-anchor" aria-hidden="true" />
+        </Tooltip>
+      )}
+    </span>
   );
 });
 

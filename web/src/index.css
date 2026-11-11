@@ -1593,6 +1593,13 @@ tr[data-drop-state="refused"] > td {
 .icon-btn-wrap {
   display: inline-flex;
   flex: none;
+  position: relative;
+}
+/* The empty span a tooltip is anchored to, drawn over the button and passing its pointer events (IconButton.tsx, decision 128). */
+.icon-btn-anchor {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 /* A disabled icon button passes its pointer events to its wrapper, which opens the tooltip (IconButton.tsx): a browser may not
    deliver them to a disabled control. An aria-disabled one (a busy row's icon, which keeps the focus; decision 114) does the
