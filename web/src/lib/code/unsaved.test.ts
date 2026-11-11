@@ -22,10 +22,10 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   sessionStorage.clear();
-  noteSignedIn();
+  noteSignedIn("usr_reset");
 });
 
-describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)", () => {
+describe("another tab's explicit sign-out (decision 133)", () => {
   it("clears every entry in this tab when another tab of the browser announces an explicit sign-out", async () => {
     const stop = watchSignOuts();
     const other = new BroadcastChannel(SIGNOUT_CHANNEL);
@@ -72,14 +72,14 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
     }
   });
 
-  it("a sign-in in another tab clears the flag here, so this tab keeps text again (N1)", async () => {
+  it("a sign-in in another tab clears the flag here, so this tab keeps text again", async () => {
     const stop = watchSignOuts();
     const other = new BroadcastChannel(SIGNOUT_CHANNEL);
     try {
       other.postMessage({ type: "signed-out" });
       await until(() => !keeps());
       expect(keepUnsaved("usr_1", NOD, rec)).toBe(false);
-      other.postMessage({ type: "signed-in" });
+      other.postMessage({ type: "signed-in", user: "usr_1" });
       await until(keeps);
       expect(keepUnsaved("usr_1", NOD, rec)).toBe(true);
     } finally {
@@ -88,21 +88,67 @@ describe("another tab's explicit sign-out (decision 133, review round 1 MED-4)",
     }
   });
 
-  it("a sign-in in this tab posts a sign-in message that carries no text (N1)", async () => {
+  it("a sign-in for another person drops this tab's text of the person before, and keeps the new person's text", async () => {
+    const stop = watchSignOuts();
+    const other = new BroadcastChannel(SIGNOUT_CHANNEL);
+    try {
+      keepUnsaved("usr_1", NOD, rec);
+      other.postMessage({ type: "signed-in", user: "usr_2" });
+      await until(() => readUnsaved("usr_1", NOD) === null);
+      expect(readUnsaved("usr_1", NOD)).toBeNull();
+      keepUnsaved("usr_2", OTHER_NOD, rec);
+      // A probe the watch ignores: the listener hearing it means the sign-in before it was delivered too.
+      const probe: unknown[] = [];
+      const listener = new BroadcastChannel(SIGNOUT_CHANNEL);
+      listener.onmessage = (e: MessageEvent) => probe.push(e.data);
+      try {
+        other.postMessage({ type: "signed-in", user: "usr_2" });
+        other.postMessage({ type: "probe" });
+        await until(() => probe.some((m) => (m as { type?: unknown }).type === "probe"));
+        expect(readUnsaved("usr_2", OTHER_NOD)).not.toBeNull();
+      } finally {
+        listener.close();
+      }
+    } finally {
+      stop();
+      other.close();
+    }
+  });
+
+  it("a sign-in for the same person keeps that person's text in this tab", async () => {
+    const stop = watchSignOuts();
+    const other = new BroadcastChannel(SIGNOUT_CHANNEL);
+    const probe: unknown[] = [];
+    const listener = new BroadcastChannel(SIGNOUT_CHANNEL);
+    listener.onmessage = (e: MessageEvent) => probe.push(e.data);
+    try {
+      keepUnsaved("usr_1", NOD, rec);
+      other.postMessage({ type: "signed-in", user: "usr_1" });
+      other.postMessage({ type: "probe" });
+      await until(() => probe.some((m) => (m as { type?: unknown }).type === "probe"));
+      expect(readUnsaved("usr_1", NOD)).not.toBeNull();
+    } finally {
+      listener.close();
+      stop();
+      other.close();
+    }
+  });
+
+  it("a sign-in in this tab posts a sign-in message that names the person and carries no text", async () => {
     const heard: unknown[] = [];
     const listener = new BroadcastChannel(SIGNOUT_CHANNEL);
     listener.onmessage = (e: MessageEvent) => heard.push(e.data);
     try {
       keepUnsaved("usr_1", NOD, rec);
-      noteSignedIn();
+      noteSignedIn("usr_1");
       await until(() => heard.length > 0);
-      expect(heard).toEqual([{ type: "signed-in" }]);
+      expect(heard).toEqual([{ type: "signed-in", user: "usr_1" }]);
     } finally {
       listener.close();
     }
   });
 
-  it("stopping the watch closes this tab's channel (N2)", () => {
+  it("stopping the watch closes this tab's channel", () => {
     const close = vi.spyOn(BroadcastChannel.prototype, "close");
     const stop = watchSignOuts();
     stop();
