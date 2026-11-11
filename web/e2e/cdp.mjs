@@ -47,6 +47,9 @@ export async function launchBrowser(binary, profileDir, { mouse = false, finger 
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-extensions',
+      // A small HTTP disk cache: the run's folder can sit on a small test disk, and the cache's file pages count against the test
+      // machine's memory limit too.
+      '--disk-cache-size=67108864',
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${profileDir}`,
       // The browser's own log and crash dumps are kept beside its profile (the run's folder), so a renderer that dies can be

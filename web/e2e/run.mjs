@@ -83,16 +83,33 @@ const BRAND = { name: 'E2E Drive', accent: E2E_ACCENT };
 const INVITEE = { email: 'dana@example.com', name: 'Dana Invited', password: 'correct horse battery staple' };
 const TENANT = { name: 'Acme Ltd', owner: { email: 'owen@example.com', name: 'Owen Owner' } };
 
-// cgroupMemory reads this process's cgroup (v2) memory figures for a crash report: current, peak and limit in MiB, and the
-// counts of limit hits and kills. A machine without them says so.
-async function cgroupMemory() {
-  const own = (await readFile('/proc/self/cgroup', 'utf8').catch(() => '')).match(/^0::(.*)$/m)?.[1];
+// cgroupMemory reads the cgroup (v2) memory figures of a process and of every cgroup above it, for a crash report: current,
+// peak, high and max in MiB, and the counts of throttles, limit hits and kills. The browser can run in a cgroup of its own (a
+// desktop session puts it in an app scope), so the figures are the browser's, read while it still runs. A machine without
+// them says so.
+async function cgroupMemory(pid) {
+  const of = async (who) => (await readFile(`/proc/${who}/cgroup`, 'utf8').catch(() => '')).match(/^0::(.*)$/m)?.[1];
+  // A sandbox with its own process numbers can hide the browser's entry; the run's own cgroup is then the best there is.
+  let own = await of(pid);
+  let note = '';
+  if (own === undefined) {
+    own = await of('self');
+    note = " (the browser's cgroup was not readable; these are the run's)";
+  }
   if (own === undefined) return 'no cgroup v2';
-  const base = join('/sys/fs/cgroup', own);
-  const read = (f) => readFile(join(base, f), 'utf8').then((s) => s.trim()).catch(() => '?');
   const mib = (v) => (/^\d+$/.test(v) ? `${Math.round(Number(v) / 2 ** 20)} MiB` : v);
-  const events = (await read('memory.events')).replace(/\n/g, ', ');
-  return `current ${mib(await read('memory.current'))}, peak ${mib(await read('memory.peak'))}, max ${mib(await read('memory.max'))}, events: ${events}`;
+  const lines = [];
+  for (let path = own; ; path = path.slice(0, path.lastIndexOf('/'))) {
+    const base = join('/sys/fs/cgroup', path);
+    const read = (f) => readFile(join(base, f), 'utf8').then((s) => s.trim()).catch(() => '?');
+    const events = (await read('memory.events')).replace(/\n/g, ', ');
+    lines.push(
+      `  ${path || '/'}: current ${mib(await read('memory.current'))}, peak ${mib(await read('memory.peak'))}, ` +
+        `high ${mib(await read('memory.high'))}, max ${mib(await read('memory.max'))}, events: ${events}`,
+    );
+    if (path === '' || path === '/') break;
+  }
+  return `${note}\n${lines.join('\n')}`;
 }
 
 const results = [];
@@ -1191,6 +1208,9 @@ async function main() {
   } finally {
     // The page as the failure left it, kept for CI (diag.mjs). Only a failed run keeps it.
     if (!passed) await saveFailure(page, 'run');
+    // A crash is explained with the browser's own memory figures, read before the browser is stopped and its cgroup goes.
+    const crashed = Boolean(crashWatch?.crashes.length || page?.errors?.some((e) => e.includes('renderer crashed')));
+    const crashMemory = crashed && browser ? await cgroupMemory(browser.pid) : '';
     sink.close();
     page?.close();
     browser?.kill();
@@ -1202,7 +1222,7 @@ async function main() {
     await fake.close();
     crashWatch?.close();
     let crashReport = '';
-    if (crashWatch?.crashes.length || page?.errors?.some((e) => e.includes('renderer crashed'))) {
+    if (crashed) {
       const profile = join(dir, 'chrome-profile');
       const log = await readFile(`${profile}.stderr.log`, 'utf8').catch(() => '');
       const dumps = await readdir(`${profile}.crashes`).catch(() => []);
@@ -1211,7 +1231,7 @@ async function main() {
         `browser stderr, last 40 lines:\n${log.trimEnd().split('\n').slice(-40).join('\n')}`,
         `browser crash dumps: ${dumps.join(' ') || 'none'}`,
         `free disk where the profile lives: ${await statfs(dir).then((s) => `${((s.bavail * s.bsize) / 2 ** 30).toFixed(2)} GiB`).catch((e) => e.code)}`,
-        `memory of this cgroup: ${await cgroupMemory()}`,
+        `memory of the browser's cgroup and those above it: ${crashMemory}`,
       ].join('\n');
     }
     if (process.env.SELFCLOUD_E2E_KEEP !== '1') {
