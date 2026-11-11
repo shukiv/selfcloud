@@ -19,6 +19,7 @@ cmd	reset-password	reset-password	cli1	local only (design 4.6)
 cmd	revoke-key	revoke-key	pre-cli1	local only (design 4.6)
 cmd	rewrap-secrets	rewrap-secrets	pre-cli1	local only (design 4.6)
 cmd	search-rebuild	search-rebuild	pre-cli1	local only (design 4.6)
+cmd	upload ls	upload ls	cli6	the records of the uploads this client began; no server call (design 3.8)
 cmd	users	users	cli1	local only (design 4.6)
 cmd	verify	verify	cli1	local only (design 4.6)
 fn	lib/api.ts:api	-	-	the request helper every call goes through; each caller has its own row
@@ -53,7 +54,7 @@ fn	lib/comments/api.ts:listViewers	-	-	live presence of other viewers: a browser
 fn	lib/comments/api.ts:resolveComment	-	cli11	planned, cli11
 fn	lib/files/api.ts:ancestors	-	-	browser only: the trail of parents the web reads when a folder opens (decision 132)
 fn	lib/files/api.ts:childrenPage	ls	cli5	built in cli5
-fn	lib/files/api.ts:commitUpload	-	cli6	planned, cli6
+fn	lib/files/api.ts:commitUpload	put	cli6	built in cli6
 fn	lib/files/api.ts:copyNode	cp	cli5	built in cli5
 fn	lib/files/api.ts:createDocument	-	cli11	planned, cli11
 fn	lib/files/api.ts:createShortcut	shortcut add	cli5	built in cli5
@@ -87,7 +88,7 @@ fn	lib/files/api.ts:updateVersion	-	cli11	planned, cli11
 fn	lib/files/convert.ts:watchPreview	-	-	HTTP HEAD, rendered preview for the browser viewer
 fn	lib/files/convertLive.ts:liveExportDeps	-	cli11	planned, cli11
 fn	lib/files/convertLive.ts:livePreviewDeps	-	-	the fetch the browser preview uses; its request is GET /api/v1/nodes/{nod}/preview, browser only
-fn	lib/files/ops.ts:startDownloadURL	-	cli6	planned, cli6
+fn	lib/files/ops.ts:startDownloadURL	get	cli6	built in cli6
 fn	lib/files/playlists.ts:createPlaylist	-	cli12	planned, cli12
 fn	lib/files/playlists.ts:deletePlaylist	-	cli12	planned, cli12
 fn	lib/files/playlists.ts:getPlaylist	-	cli12	planned, cli12
@@ -104,10 +105,10 @@ fn	lib/files/templates.ts:listTemplatesPage	-	cli11	planned, cli11
 fn	lib/files/templates.ts:setTemplatesFolder	-	cli11	planned, cli11
 fn	lib/files/thumbnail.ts:liveDeps	-	cli11	planned, cli11
 fn	lib/files/thumbnail.ts:watchThumbnail	-	cli11	planned, cli11
-fn	lib/files/tus.ts:createUpload	-	cli6	planned, cli6
-fn	lib/files/tus.ts:deleteUpload	-	cli6	planned, cli6
-fn	lib/files/tus.ts:headOffset	-	cli6	planned, cli6
-fn	lib/files/tus.ts:sendChunk	-	cli6	planned, cli6
+fn	lib/files/tus.ts:createUpload	put	cli6	built in cli6
+fn	lib/files/tus.ts:deleteUpload	upload cancel	cli6	built in cli6
+fn	lib/files/tus.ts:headOffset	put	cli6	built in cli6
+fn	lib/files/tus.ts:sendChunk	put	cli6	built in cli6
 fn	lib/files/zips.ts:zipStatus	-	cli12	planned, cli12
 fn	lib/impersonation.ts:adoptSession	-	-	browser session only; whoami reads GET /folders
 fn	lib/impersonation.ts:endImpersonation	-	-	browser sign-in flow; the CLI signs in with cli4, never with a password
@@ -173,9 +174,9 @@ fn	lib/sharing/api.ts:getSharingPolicy	-	cli9	planned, cli9
 fn	lib/sharing/api.ts:listAccessRequests	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:listPermissions	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:listShareLinks	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:openShareLink	-	cli6	planned, cli6
+fn	lib/sharing/api.ts:openShareLink	get	cli6	built in cli6
 fn	lib/sharing/api.ts:removePermission	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:renewShareLink	-	-	visitor credential refresh, used inside get <share-url>
+fn	lib/sharing/api.ts:renewShareLink	get	cli6	built in cli6
 fn	lib/sharing/api.ts:resetShareLink	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:searchDirectory	-	cli11	planned, cli11
 fn	lib/sharing/api.ts:setHidden	-	cli8	planned, cli8
@@ -188,10 +189,10 @@ fn	lib/sharing/api.ts:updateDropLink	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:updateNodeFlags	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:updateShareLink	-	cli7	planned, cli7
 fn	lib/sharing/api.ts:updateSpaceSettings	-	cli8	planned, cli8
-fn	lib/sharing/api.ts:visitorChildren	-	cli6	planned, cli6
-fn	lib/sharing/api.ts:visitorInfo	-	-	visitor credential read, used inside get <share-url>
+fn	lib/sharing/api.ts:visitorChildren	-	-	a visitor browsing a shared directory; get <share-url> takes a link to a file (decision 142)
+fn	lib/sharing/api.ts:visitorInfo	-	-	a drop link's page; get refuses a drop link, which takes uploads only (decision 142)
 fn	lib/sharing/api.ts:visitorLink	-	cli7	planned, cli7
-fn	lib/sharing/api.ts:visitorNode	-	cli6	planned, cli6
+fn	lib/sharing/api.ts:visitorNode	get	cli6	built in cli6
 fn	lib/stars.ts:clearRecent	-	cli11	planned, cli11
 fn	lib/stars.ts:listRecent	-	cli11	planned, cli11
 fn	lib/stars.ts:listSharedRecent	-	cli7	planned, cli7
@@ -233,7 +234,7 @@ route	DELETE /api/v1/settings/brand/icon	-	se4	planned, se4 (settings icon remov
 route	DELETE /api/v1/settings/brand/logo	-	se4	planned, se4 (settings logo remove)
 route	DELETE /api/v1/share-links/{shl}	-	cli7	planned, cli7
 route	DELETE /api/v1/trash/{nod}	trash rm	cli5	built in cli5
-route	DELETE /api/v1/uploads/{upl}	-	cli6	planned, cli6
+route	DELETE /api/v1/uploads/{upl}	upload cancel	cli6	built in cli6
 route	DELETE /api/v1/zips/{zip}	-	cli12	planned, cli12
 route	GET /api/v1/access-requests	-	cli7	planned, cli7
 route	GET /api/v1/accounts	-	cli9	planned, cli9
@@ -281,7 +282,7 @@ route	GET /api/v1/nodes/{nod}/activity	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/ancestors	-	-	browser only: the trail of parents the web reads when a folder opens (decision 132); the CLI reads a folder by its path or ID
 route	GET /api/v1/nodes/{nod}/children	ls	cli5	built in cli5
 route	GET /api/v1/nodes/{nod}/comments	-	cli11	planned, cli11
-route	GET /api/v1/nodes/{nod}/content	-	cli6	planned, cli6
+route	GET /api/v1/nodes/{nod}/content	get	cli6	built in cli6
 route	GET /api/v1/nodes/{nod}/exports/{drv}	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/labels	-	cli11	planned, cli11
 route	GET /api/v1/nodes/{nod}/people	-	cli11	planned, cli11
@@ -305,7 +306,7 @@ route	GET /api/v1/playlists/{pls}	-	cli12	planned, cli12
 route	GET /api/v1/recent	-	cli11	planned, cli11
 route	GET /api/v1/search	-	cli11	planned, cli11
 route	GET /api/v1/settings	-	se4	planned, se4 (settings get)
-route	GET /api/v1/share/info	-	-	visitor credential read, used inside get <share-url>
+route	GET /api/v1/share/info	-	-	a drop link's page, which answers only a drop link's visitor; get refuses a drop link (decision 142)
 route	GET /api/v1/shared	-	cli7	planned, cli7
 route	GET /api/v1/starred	-	cli11	planned, cli11
 route	GET /api/v1/templates	-	cli11	planned, cli11
@@ -319,12 +320,12 @@ route	GET /readyz	-	-	platform readiness probe, not a user action
 route	GET /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
 route	GET /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
 route	HEAD /api/v1/links/{token}	-	-	HTTP HEAD of a link
-route	HEAD /api/v1/nodes/{nod}/content	-	-	HTTP HEAD, used inside get
+route	HEAD /api/v1/nodes/{nod}/content	-	-	HTTP HEAD; get reads the file's size and version from the node instead
 route	HEAD /api/v1/nodes/{nod}/preview	-	-	HTTP HEAD, rendered preview for the browser viewer
 route	HEAD /api/v1/nodes/{nod}/tags	-	-	HTTP HEAD
 route	HEAD /api/v1/nodes/{nod}/thumbnail	-	-	HTTP HEAD, used inside thumb
 route	HEAD /api/v1/nodes/{nod}/versions/{ver}/content	-	-	HTTP HEAD, used inside version get
-route	HEAD /api/v1/uploads/{upl}	-	cli6	planned, cli6
+route	HEAD /api/v1/uploads/{upl}	put	cli6	built in cli6
 route	OPTIONS /api/v1/uploads	-	-	CORS preflight, meaningless outside a browser
 route	PATCH /api/v1/accounts/{acc}	-	cli9	planned, cli9
 route	PATCH /api/v1/accounts/{acc}/folders/{fld}	-	cli8	planned, cli8
@@ -343,7 +344,7 @@ route	PATCH /api/v1/notifications/settings	-	cli11	planned, cli11
 route	PATCH /api/v1/playlists/{pls}	-	cli12	planned, cli12
 route	PATCH /api/v1/settings	-	se4	planned, se4 (settings set and settings reset)
 route	PATCH /api/v1/share-links/{shl}	-	cli7	planned, cli7
-route	PATCH /api/v1/uploads/{upl}	-	cli6	planned, cli6
+route	PATCH /api/v1/uploads/{upl}	put	cli6	built in cli6
 route	POST /api/v1/access-requests/{arq}/approve	-	cli7	planned, cli7
 route	POST /api/v1/access-requests/{arq}/deny	-	cli7	planned, cli7
 route	POST /api/v1/accounts	-	cli9	planned, cli9
@@ -407,11 +408,11 @@ route	POST /api/v1/notifications/{ntf}/read	-	cli11	planned, cli11
 route	POST /api/v1/playlists	-	cli12	planned, cli12
 route	POST /api/v1/playlists/{pls}/entries	-	cli12	planned, cli12
 route	POST /api/v1/share-links/{shl}/reset	-	cli7	planned, cli7
-route	POST /api/v1/share/open	-	cli6	planned, cli6
-route	POST /api/v1/share/renew	-	-	visitor credential refresh, used inside get <share-url>
+route	POST /api/v1/share/open	get	cli6	built in cli6
+route	POST /api/v1/share/renew	get	cli6	built in cli6
 route	POST /api/v1/trash/empty	trash empty	cli5	built in cli5
-route	POST /api/v1/uploads	-	cli6	planned, cli6
-route	POST /api/v1/uploads/{upl}/commit	-	cli6	planned, cli6
+route	POST /api/v1/uploads	put	cli6	built in cli6
+route	POST /api/v1/uploads/{upl}/commit	put	cli6	built in cli6
 route	POST /api/v1/zips	-	cli12	planned, cli12
 route	POST /wopi/files/{nod}	-	-	WOPI protocol between Collabora and the server
 route	POST /wopi/files/{nod}/contents	-	-	WOPI protocol between Collabora and the server
@@ -421,7 +422,7 @@ route	PUT /api/v1/accounts/{acc}/imports/archive	-	cli10	planned, cli10
 route	PUT /api/v1/accounts/{acc}/quota-warning	-	cli9	planned, cli9
 route	PUT /api/v1/accounts/{acc}/templates	-	cli11	planned, cli11
 route	PUT /api/v1/folders/{fld}/hidden	-	cli8	planned, cli8
-route	PUT /api/v1/nodes/{nod}/content	-	cli6	planned, cli6
+route	PUT /api/v1/nodes/{nod}/content	-	-	the code editor's save of a small text file with If-Match (decision 113); put sends files by tus, and put --replace keeps the old content as a version (decision 142)
 route	PUT /api/v1/nodes/{nod}/labels/{lbf}	-	cli11	planned, cli11
 route	PUT /api/v1/nodes/{nod}/permissions/{subject}	-	cli7	planned, cli7
 route	PUT /api/v1/nodes/{nod}/resume	-	-	media playback position: a player feature

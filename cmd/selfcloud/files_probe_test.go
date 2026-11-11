@@ -5,9 +5,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
+	"net/http"
 	"net/http/httptest"
+	"os"
+	"path"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -173,6 +179,49 @@ var fileProbes = map[string]func(p *fileProbe) []string{
 		p.lock(nodeID)
 		return []string{nodeID}
 	},
+	"put": func(p *fileProbe) []string {
+		return []string{p.local("put.bin", "bytes for put"), "--folder", p.folder, "/"}
+	},
+	// get writes into a directory of its own, never the test's working directory.
+	"get": func(p *fileProbe) []string {
+		nodeID := valueOf(p.t, p.do("put", p.local("get.bin", "bytes for get"), "--folder", p.folder, "/"), "id=")
+		return []string{nodeID, p.t.TempDir()}
+	},
+	"upload cancel": func(p *fileProbe) []string { return []string{p.openUpload("cancel.bin", 10)} },
+}
+
+// local writes a local file called name with data, in a directory of its own, and returns its path.
+func (p *fileProbe) local(name, data string) string {
+	p.t.Helper()
+	path := filepath.Join(p.t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		p.t.Fatal(err)
+	}
+	return path
+}
+
+// openUpload begins an upload of size bytes called name in the probe folder, outside the recording and with no byte
+// sent, and returns its id.
+func (p *fileProbe) openUpload(name string, size int) string {
+	p.t.Helper()
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	req, err := http.NewRequest(http.MethodPost, p.url+"/api/v1/uploads", nil)
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("SELFCLOUD_TOKEN"))
+	req.Header.Set("Tus-Resumable", "1.0.0")
+	req.Header.Set("Upload-Length", strconv.Itoa(size))
+	req.Header.Set("Upload-Metadata", "folder "+b64(p.folder)+",name "+b64(name)+",on_conflict "+b64("fail"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		p.t.Fatalf("open an upload: %d", resp.StatusCode)
+	}
+	return path.Base(resp.Header.Get("Location"))
 }
 
 // idSegment matches a node, folder or other id in a path: a prefix, an underscore and 26 characters.
