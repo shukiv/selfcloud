@@ -146,7 +146,7 @@ export default function RequestsPage() {
 
   const failure = q.isError ? fileErrorText(q.error, lang) : null;
 
-  // The columns: the name cell is Who; Item and Message are a second line on a phone; Grant is the role's Select (its own
+  // The columns: the name cell is Who; Item, Asks and Message are a second line on a phone; Grant is the role's Select (its own
   // control, which stays on a phone); Approve and Deny are the row's icons, and the ⋮ menu on a phone.
   const columns: ListColumn<Row>[] = [
     {
@@ -172,6 +172,7 @@ export default function RequestsPage() {
       key: "asks",
       title: t("requests.colAsks"),
       sortKey: "asks",
+      secondary: true,
       render: (row) => <span style={{ color: "var(--ant-color-text-secondary)" }}>{t("requests.asks", { role: t(`role.${row.req.role}`) })}</span>,
     },
     {

@@ -126,7 +126,7 @@ describe("access requests are one table (tl5, decision 138)", () => {
     expect(order(region)).toEqual(["arq_2", "arq_1"]);
   });
 
-  it("on a phone, Item and Message are the second line, Grant stays a control, and Approve and Deny are in the ⋮ menu", async () => {
+  it("on a phone, Item, Asks and Message are the second line, Grant stays a control, and Approve and Deny are in the ⋮ menu", async () => {
     undoView();
     undoView = setViewport(PHONE);
     answer([zoe]);
@@ -134,7 +134,9 @@ describe("access requests are one table (tl5, decision 138)", () => {
     const row = await screen.findByRole("row", { name: "Zoe Ng" });
     const second = row.querySelector(".row-second")?.textContent ?? "";
     expect(second).toContain("Plans");
+    expect(second).toContain("Asks for Can view");
     expect(second).toContain("Please");
+    expect(within(row).queryByRole("cell", { name: "Asks for Can view" })).toBeNull();
     expect(within(row).getByRole("combobox")).toBeTruthy();
     expect(within(row).queryByRole("button", { name: "Approve: Zoe Ng" })).toBeNull();
     expect(within(row).getByRole("button", { name: "More actions for Zoe Ng" })).toBeTruthy();
