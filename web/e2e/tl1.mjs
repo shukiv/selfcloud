@@ -299,7 +299,11 @@ export async function tl1Checks(h, { page, base, adminKey, accountID, accountKey
     // 1. The tenants list at 375 pixels: a table with a name column, and no sideways scroll.
     await setWidth(page, 375);
     await navigateTo(page, '/admin/tenants');
-    await page.waitFor(`[...document.querySelectorAll('[role="region"] tbody tr')].length > 0 || !!document.querySelector('[role="region"] .ant-empty')`, 15000);
+    // The router shows the page a moment after the click, and the page before it can hold a table too: the wait is for this page.
+    await page.waitFor(
+      `location.pathname === '/admin/tenants' && !!document.getElementById('tenant-search') && ([...document.querySelectorAll('[role="region"] tbody tr')].length > 0 || !!document.querySelector('[role="region"] .ant-empty'))`,
+      15000,
+    );
     check(!(await sideways(page)), 'the tenants list at 375 px has no sideways scroll');
 
     // 2. The keyboard reaches the Name header with Tab from the search box (the box is focused by script, the rest is keys),
