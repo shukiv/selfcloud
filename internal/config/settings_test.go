@@ -470,8 +470,10 @@ func TestEverySettingNamesAField(t *testing.T) {
 	want := []string{"admin.tenant_access", "links.default_ttl", "links.max_ttl", "office.discovery_url", "office.enabled",
 		"office.lock_minutes", "office.max_file_bytes", "search.enabled", "search.office_text", "sessions.admin_idle_timeout",
 		"sessions.admin_max_age", "sessions.idle_timeout", "sessions.max_age", "sharing.max_expiry", "storage.min_free",
-		"trash.retention", "upload.max_chunk_size", "upload.max_file_size", "upload.max_small_file_size",
-		"users.reset_ttl", "users.verification_ttl", "versions.max_age", "versions.max_count"}
+		"trash.retention"}
+	want = append(want, brandKeys...)
+	want = append(want, "upload.max_chunk_size", "upload.max_file_size", "upload.max_small_file_size",
+		"users.reset_ttl", "users.verification_ttl", "versions.max_age", "versions.max_count")
 	if !slices.Equal(keys, want) {
 		t.Errorf("keys = %v\nwant   %v", keys, want)
 	}

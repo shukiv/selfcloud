@@ -42,9 +42,19 @@ type testFact struct {
 	Source string `json:"source"`
 }
 
+// testPicture is one uploaded picture's state in the settings answer (decision 141).
+type testPicture struct {
+	Key    string `json:"key"`
+	State  string `json:"state"`
+	Type   string `json:"type"`
+	SHA256 string `json:"sha256"`
+	Locked bool   `json:"locked"`
+}
+
 type testSettings struct {
 	Settings []testSetting `json:"settings"`
 	Facts    []testFact    `json:"facts"`
+	Pictures []testPicture `json:"pictures"`
 }
 
 func (ts testSettings) get(t *testing.T, key string) testSetting {
@@ -820,7 +830,7 @@ var snapshotFields = []string{
 	"Links.DefaultTTL", "Links.MaxTTL", "Trash.Retention", "Versions.MaxCount", "Versions.MaxAge",
 	"Sessions.IdleTimeout", "Sessions.MaxAge", "Sessions.AdminIdleTimeout", "Sessions.AdminMaxAge", "Sessions.ShortIdle",
 	"Users.VerificationTTL", "Users.ResetTTL", "Search.Enabled", "Search.OfficeText", "Office.LockMinutes",
-	"Office.MaxFileBytes", "Admin.TenantAccess",
+	"Office.MaxFileBytes", "Admin.TenantAccess", "UI.Brand.Name", "UI.Brand.Accent", "UI.Brand.Palette", "UI.Brand.Sidebar",
 }
 
 // TestEditableSettingsAreReadThroughTheSnapshot: no file of the server reads a setting the API changes from the
@@ -832,7 +842,9 @@ func TestEditableSettingsAreReadThroughTheSnapshot(t *testing.T) {
 		pats = append(pats, regexp.MustCompile(`\b(cfg|Config)\.`+regexp.QuoteMeta(f)+`\b`))
 	}
 	// A whole section passed on carries its editable fields with it. links is passed whole for its key files only.
-	pats = append(pats, regexp.MustCompile(`\b(cfg|Config)\.(Upload|Storage|Sharing|Trash|Versions|Sessions|Users|Search|Office|Admin)\s*([,)]|$)`))
+	pats = append(pats, regexp.MustCompile(`\b(cfg|Config)\.(Upload|Storage|Sharing|Trash|Versions|Sessions|Users|Search|Office|Admin|UI|UI\.Brand)\s*([,)]|$)`))
+	// The brand's methods read its settings too (decision 141).
+	pats = append(pats, regexp.MustCompile(`\b(cfg|Config)\.UI\.Brand\.[A-Z]\w*\(`))
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)

@@ -196,7 +196,7 @@ func TestEveryBrandTokenIsValidated(t *testing.T) {
 			b := Defaults().UI.Brand
 			setToken(&b, tok.prefix, value)
 			err := b.validate()
-			if err == nil || !strings.HasPrefix(err.Error(), tok.prefix+" ") {
+			if err == nil || !strings.HasPrefix(err.Error(), "ui.brand."+tok.prefix+" ") {
 				t.Errorf("%s = %q: accepted or wrong error %v", tok.prefix, value, err)
 			}
 		}
