@@ -5,17 +5,39 @@ package web
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 // The pictures an admin uploads go through the same checker as the config file's pictures (decision 141). These tests give
 // it bytes and a declared type, as the upload route does.
+
+// pngClaiming is a PNG signature and a header chunk that claims w by h pixels, padded with zeros to size bytes when size is
+// larger. Reading its size needs nothing more; decoding it fails.
+func pngClaiming(w, h, size int) []byte {
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:], uint32(w))
+	binary.BigEndian.PutUint32(ihdr[4:], uint32(h))
+	ihdr[8], ihdr[9] = 8, 6 // eight bits a channel, RGBA
+	out := append([]byte(nil), pngSignature...)
+	out = binary.BigEndian.AppendUint32(out, uint32(len(ihdr)))
+	chunk := append([]byte("IHDR"), ihdr...)
+	out = append(out, chunk...)
+	out = binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(chunk))
+	if size > len(out) {
+		out = append(out, make([]byte, size-len(out))...)
+	}
+	return out
+}
 
 // TestNewLogoChecksTheBytes: a logo is a PNG with the PNG signature or an SVG that has <svg, of at most 256 KiB, and its
 // declared type must be its content's. No refusal names a path.
@@ -32,6 +54,12 @@ func TestNewLogoChecksTheBytes(t *testing.T) {
 		{"over 256 KiB", append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, MaxLogoBytes)...), "image/png", "larger than 262144 bytes"},
 		{"a JPEG", []byte("\xff\xd8\xff"), "image/jpeg", "PNG or an SVG"},
 		{"empty", nil, "image/png", "not a PNG"},
+		// Every page that shows the logo has the browser decode it whole, so its size is read from its header first.
+		{"30000 pixels a side in 250 KiB", pngClaiming(30000, 30000, 250<<10), "image/png", "30000x30000"},
+		{"4097 pixels wide", pngClaiming(4097, 16, 0), "image/png", "at most 4096 on a side"},
+		{"4097 pixels high", pngClaiming(16, 4097, 0), "image/png", "at most 4096 on a side"},
+		{"over 4194304 pixels in all", pngClaiming(2049, 2048, 0), "image/png", "4194304 pixels in all"},
+		{"a signature and no header", append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...), "image/png", "not a readable PNG"},
 	} {
 		l, err := NewLogo(tc.data, tc.ct)
 		if err == nil {
@@ -51,7 +79,10 @@ func TestNewLogoChecksTheBytes(t *testing.T) {
 	}{
 		{pngBytes, "image/png"},
 		{[]byte(logoSVG), "image/svg+xml"},
-		{append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, MaxLogoBytes-8)...), "image/png"},
+		// At the caps exactly: 256 KiB, 4096 on a side, and 4194304 pixels in all, wide or square.
+		{pngClaiming(4096, 1024, MaxLogoBytes), "image/png"},
+		{pngClaiming(1024, 4096, 0), "image/png"},
+		{pngClaiming(2048, 2048, 0), "image/png"},
 	} {
 		l, err := NewLogo(tc.data, tc.ct)
 		if err != nil {
@@ -95,6 +126,45 @@ func TestNewIconChecksTheBytes(t *testing.T) {
 	}{{sq(512), "image/png"}, {sq(2048), "image/png"}, {[]byte(iconSVG), "image/svg+xml"}} {
 		if _, err := NewIcon(tc.data, tc.ct); err != nil {
 			t.Errorf("%s of %d bytes refused: %v", tc.ct, len(tc.data), err)
+		}
+	}
+}
+
+// TestLogoFileOverThePixelCapStillLoads: the logo file is not held to the uploaded logo's pixel cap, so an installation that
+// starts today still starts; it gets a warning that names the file's key and its size. A logo within the cap, an SVG and an
+// upload get none.
+func TestLogoFileOverThePixelCapStillLoads(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, data []byte) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	big, err := LoadLogo(write("big.png", pngClaiming(30000, 30000, 250<<10)))
+	if err != nil {
+		t.Fatalf("a logo file over the pixel cap is refused: %v", err)
+	}
+	if w := big.SizeWarning(); !strings.Contains(w, "ui.brand.logo_file") || !strings.Contains(w, "30000x30000") ||
+		!strings.Contains(w, "4096") || strings.Contains(w, dir) {
+		t.Errorf("warning = %q", w)
+	}
+	small, err := LoadLogo(write("small.png", logoPNG(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svg, err := LoadLogo(write("logo.svg", []byte(logoSVG)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, err := NewLogo(logoPNG(t), TypePNG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range []*Logo{small, svg, up, ArtworkLogo()} {
+		if w := l.SizeWarning(); w != "" {
+			t.Errorf("%s logo: warning %q", l.ContentType(), w)
 		}
 	}
 }

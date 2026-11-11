@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"hash/crc32"
 	"io"
 	"log/slog"
 	"maps"
@@ -42,6 +44,24 @@ const (
 func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// pngClaiming is a PNG signature and a header chunk that claims w by h pixels, padded with zeros to size bytes when size is
+// larger. Reading its size needs nothing more; decoding it fails.
+func pngClaiming(w, h, size int) []byte {
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:], uint32(w))
+	binary.BigEndian.PutUint32(ihdr[4:], uint32(h))
+	ihdr[8], ihdr[9] = 8, 6 // eight bits a channel, RGBA
+	out := []byte("\x89PNG\r\n\x1a\n")
+	out = binary.BigEndian.AppendUint32(out, uint32(len(ihdr)))
+	chunk := append([]byte("IHDR"), ihdr...)
+	out = append(out, chunk...)
+	out = binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(chunk))
+	if size > len(out) {
+		out = append(out, make([]byte, size-len(out))...)
+	}
+	return out
 }
 
 // putPicture sends a picture with a bearer credential and a declared type.
@@ -391,10 +411,17 @@ func TestPictureContentIsChecked(t *testing.T) {
 		{"an icon of 2049", iconRoute, "image/png", squarePNG(t, 2049, 2049), 400, apierr.InvalidRequest, "square PNG of 512 to 2048"},
 		{"an icon that claims 3000 and is cut short", iconRoute, "image/png", bomb, 400, apierr.InvalidRequest, "square PNG of 512 to 2048"},
 		{"an icon cut short", iconRoute, "image/png", squarePNG(t, 512, 512)[:900], 400, apierr.InvalidRequest, "cannot be decoded"},
+		// Each viewer's browser decodes the logo whole, so a small file that claims a huge picture is refused by its header.
+		{"a logo of 250 KiB that claims 30000 pixels a side", logoRoute, "image/png", pngClaiming(30000, 30000, 250<<10), 400,
+			apierr.InvalidRequest, "30000x30000"},
+		{"a logo of 4097 pixels wide", logoRoute, "image/png", pngClaiming(4097, 16, 0), 400, apierr.InvalidRequest, "at most 4096 on a side"},
 	} {
 		e := wantError(t, putPicture(t, s, admin, tc.route, tc.ct, tc.body), tc.status, tc.code)
 		if !strings.Contains(e.Message, tc.msg) {
 			t.Errorf("%s: %q does not say %q", tc.label, e.Message, tc.msg)
+		}
+		if tc.status == 400 && e.Details["reason"] != "invalid_picture" {
+			t.Errorf("%s: details %v", tc.label, e.Details)
 		}
 	}
 	if names := brandFiles(t, s); len(names) != 0 {
@@ -678,6 +705,33 @@ func TestStoredPictureUnderTheFileIsKept(t *testing.T) {
 	third := serverWithLog(t, configFrom(t, dir, "", nil), &bytes.Buffer{})
 	if logo := serveRaw(t, third, http.MethodGet, "/brand/logo"); logo.Body.String() != testLogoSVG {
 		t.Errorf("the upload did not come back: %.80s", logo.Body.String())
+	}
+}
+
+// TestLogoFileOverThePixelCapIsWarnedAtStart: a logo file larger than an upload may be still starts the server and is served
+// as it is, with one warning at start that names its key and its size and no path.
+func TestLogoFileOverThePixelCapIsWarnedAtStart(t *testing.T) {
+	t.Parallel()
+	big := pngClaiming(30000, 30000, 250<<10)
+	own := filepath.Join(t.TempDir(), "big-logo.png")
+	if err := os.WriteFile(own, big, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := configFrom(t, t.TempDir(), "ui:\n  brand:\n    logo_file: "+own+"\n", nil)
+	seedMigratedDB(t, cfg.Store.Path)
+	var logs bytes.Buffer
+	s := serverWithLog(t, cfg, &logs)
+	var warned []string
+	for _, line := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(line, "level=WARN") && strings.Contains(line, "30000x30000") {
+			warned = append(warned, line)
+		}
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], "ui.brand.logo_file") || strings.Contains(warned[0], own) {
+		t.Errorf("warnings about the logo's size = %q\nlog:\n%s", warned, logs.String())
+	}
+	if logo := serveRaw(t, s, http.MethodGet, "/brand/logo"); logo.Code != 200 || !bytes.Equal(logo.Body.Bytes(), big) {
+		t.Errorf("/brand/logo: %d, %d bytes", logo.Code, logo.Body.Len())
 	}
 }
 
