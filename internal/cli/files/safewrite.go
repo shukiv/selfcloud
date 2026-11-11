@@ -5,9 +5,11 @@ package files
 // Safe writes for downloads (design-cli 3.9). A download's name is the server's, and the server's name is untrusted, so
 // it is checked with the API's own name rules and then refused if it would not stay one plain file name on any
 // platform. Every write goes through an os.Root of the destination directory, so no name can leave it, even through a
-// link already there. The part file is created with O_EXCL; an existing one is reopened only when it is a regular file,
-// and only the file Lstat saw. The finished file takes its name by a hard link, which fails when the name exists, or by
-// a rename over a regular file with --overwrite. A symbolic link at either name is never followed or replaced.
+// link already there. The part file is created with O_EXCL and mode 0600; an existing one is reopened only when it is a
+// regular file with one link, owned by this user, and only the file Lstat saw. A part file is never emptied in place:
+// to start again it is removed and made anew. The finished file takes the mode a new file gets under the umask, and its
+// name by a hard link, which fails when the name exists, or by a rename over a regular file with --overwrite. A
+// symbolic link at either name is never followed or replaced.
 
 import (
 	"crypto/sha256"
@@ -18,7 +20,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/shukiv/selfcloud/internal/cli/client"
 	"github.com/shukiv/selfcloud/internal/cli/exitcode"
@@ -29,7 +33,46 @@ const (
 	partSuffix = ".part"
 	// maxLocalName is the longest file name most file systems hold, in bytes.
 	maxLocalName = 255
+	// partMode keeps the bytes of a download, which may come from a private link, to their owner until they are checked.
+	partMode = 0o600
+	// nameHint is how a person names the destination instead of taking the server's name.
+	nameHint = "give the destination a name of its own: selfcloud get FILE DIR/NAME"
 )
+
+// currentUID is the user a part file must belong to. Tests make it another, since they cannot chown.
+var currentUID = os.Geteuid
+
+// partProblem says why an existing part file must not be written: another user owns it, or it has another name (a hard
+// link), so writing it would change another file. "" when neither.
+func partProblem(fi fs.FileInfo) string {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	switch {
+	case !ok:
+		return "cannot be checked"
+	case int64(st.Uid) != int64(currentUID()):
+		return "belongs to another user"
+	case st.Nlink != 1:
+		return "has another name (a hard link), so writing it would change another file"
+	}
+	return ""
+}
+
+// newFileMode is the mode a new file gets: 0666 less the umask, read from /proc so the umask is not changed to learn it,
+// or 0644 when it cannot be read.
+func newFileMode() os.FileMode {
+	b, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0o644
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(line, "Umask:"); ok {
+			if m, err := strconv.ParseUint(strings.TrimSpace(v), 8, 32); err == nil {
+				return 0o666 &^ os.FileMode(m&0o777)
+			}
+		}
+	}
+	return 0o644
+}
 
 // reservedNames are names that some systems open as a device in any directory, whatever their extension. They are
 // refused on every platform, so the rule does not depend on the build.
@@ -56,12 +99,25 @@ func localName(name string) (string, error) {
 	}
 	stem, _, _ := strings.Cut(clean, ".")
 	if reservedNames[strings.ToUpper(strings.TrimRight(stem, " "))] {
-		return "", exitcode.Usagef("the file's name is not safe to write: it is a device name on some systems; " +
-			"give the destination a name of its own")
+		return "", exitcode.Usagef("the file's name is not safe to write: it is a device name on some systems")
 	}
 	if len(clean)+len(partSuffix) > maxLocalName {
-		return "", exitcode.Usagef("the file's name is too long to write beside its part file; give the destination " +
-			"a shorter name")
+		return "", exitcode.Usagef("the file's name is too long to write beside its part file")
+	}
+	return clean, nil
+}
+
+// serverName checks the server's name for a file written under it, when the person named no destination file: the
+// rules of localName, and no leading dot, since a hidden file, such as a shell's start-up file in the home directory, is
+// not one a download makes unasked. Each refusal says how to name the destination.
+func serverName(name string) (string, error) {
+	clean, err := localName(name)
+	if err != nil {
+		return "", withHint(err, nameHint)
+	}
+	if strings.HasPrefix(clean, ".") {
+		return "", exitcode.Usagef("the file's name on the server, %s, starts with a dot, so it would be a hidden "+
+			"file; %s", clean, nameHint)
 	}
 	return clean, nil
 }
@@ -113,25 +169,46 @@ type partFile struct {
 	sum  hash.Hash
 }
 
-// newPart makes the part file. O_EXCL refuses any name that exists, a symbolic link included, so nothing is followed.
+// newPart makes the part file, mode 0600. O_EXCL refuses any name that exists, a symbolic link included, so nothing is
+// followed.
 func newPart(root *os.Root, name string) (*partFile, error) {
 	part := name + partSuffix
-	f, err := root.OpenFile(part, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)
+	f, err := createPart(root, part)
+	if err != nil {
+		return nil, err
+	}
+	return &partFile{root: root, name: name, part: part, f: f, sum: sha256.New()}, nil
+}
+
+// createPart creates the part file with O_EXCL and mode 0600.
+func createPart(root *os.Root, part string) (*os.File, error) {
+	f, err := root.OpenFile(part, os.O_RDWR|os.O_CREATE|os.O_EXCL, partMode)
 	if errors.Is(err, fs.ErrExist) {
 		return nil, exitcode.Usagef("%s appeared at the destination; nothing was written", part)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot make the part file: %w", err)
 	}
-	return &partFile{root: root, name: name, part: part, f: f, sum: sha256.New()}, nil
+	return f, nil
+}
+
+// replacePart removes a part file this download will not continue and makes a new one in its place, so the old one's
+// bytes, and any other name it has, are left as they were. In a shared directory with the sticky bit, the removal of
+// another user's file fails, and nothing is written.
+func replacePart(root *os.Root, name string) (*partFile, error) {
+	part := name + partSuffix
+	if err := root.Remove(part); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("cannot remove %s to start again: %w", part, err)
+	}
+	return newPart(root, name)
 }
 
 // beforePartOpen runs between the look at a part file and its opening. Tests use it to put a link in its place.
 var beforePartOpen = func(part string) {}
 
-// oldPart reopens the part file to continue it. It must be a regular file, and the file opened must be the one Lstat
-// saw, so a link put in its place meanwhile is not followed. With hashBytes, the bytes it holds are hashed, so the
-// check at the end covers the whole file.
+// oldPart reopens the part file to continue it. It must be a regular file with one link, owned by this user, and the
+// file opened must be the one Lstat saw, so a link put in its place meanwhile is not followed. With hashBytes, the bytes
+// it holds are hashed, so the check at the end covers the whole file.
 func oldPart(root *os.Root, name string, hashBytes bool) (*partFile, error) {
 	part := name + partSuffix
 	fi, err := root.Lstat(part)
@@ -140,6 +217,9 @@ func oldPart(root *os.Root, name string, hashBytes bool) (*partFile, error) {
 	}
 	if !fi.Mode().IsRegular() {
 		return nil, exitcode.Usagef("%s is not a regular file, so it is not used", part)
+	}
+	if p := partProblem(fi); p != "" {
+		return nil, exitcode.Usagef("%s %s, so it is not used", part, p)
 	}
 	beforePartOpen(part)
 	f, err := root.OpenFile(part, os.O_RDWR, 0)
@@ -151,6 +231,10 @@ func oldPart(root *os.Root, name string, hashBytes bool) (*partFile, error) {
 		_ = f.Close()
 		return nil, exitcode.Usagef("%s changed while it was opened; nothing was written", part)
 	}
+	if p := partProblem(st); p != "" {
+		_ = f.Close()
+		return nil, exitcode.Usagef("%s %s, so it is not used", part, p)
+	}
 	pf := &partFile{root: root, name: name, part: part, f: f, size: st.Size(), sum: sha256.New()}
 	if hashBytes && pf.size > 0 {
 		if _, err := io.Copy(pf.sum, io.NewSectionReader(f, 0, pf.size)); err != nil {
@@ -161,12 +245,18 @@ func oldPart(root *os.Root, name string, hashBytes bool) (*partFile, error) {
 	return pf, nil
 }
 
-// reset empties the part file, to start again.
+// reset starts the part file again. It is never emptied in place: it is closed, removed and made anew with O_EXCL, so
+// whatever took its name meanwhile is refused rather than written.
 func (pf *partFile) reset() error {
-	if err := pf.f.Truncate(0); err != nil {
+	_ = pf.f.Close()
+	if err := pf.root.Remove(pf.part); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return &localWriteError{err}
 	}
-	pf.size = 0
+	f, err := createPart(pf.root, pf.part)
+	if err != nil {
+		return err
+	}
+	pf.f, pf.size = f, 0
 	pf.sum.Reset()
 	return nil
 }
@@ -215,10 +305,13 @@ func (pf *partFile) discard() {
 	_ = pf.root.Remove(pf.part)
 }
 
-// finish syncs the part file and gives it its name. Without overwrite the name is taken by a hard link, which fails if
-// the name exists, and the part file's name is removed; on a file system without hard links, a rename after a check.
-// With overwrite, a rename over the regular file there.
+// finish gives the part file the mode a new file gets, syncs it and gives it its name. Without overwrite the name is
+// taken by a hard link, which fails if the name exists, and the part file's name is removed; on a file system without
+// hard links, a rename after a check, which leaves a short window. With overwrite, a rename over the regular file there.
 func (pf *partFile) finish(overwrite bool) error {
+	if err := pf.f.Chmod(newFileMode()); err != nil {
+		return &localWriteError{err}
+	}
 	if err := pf.f.Sync(); err != nil {
 		return &localWriteError{err}
 	}

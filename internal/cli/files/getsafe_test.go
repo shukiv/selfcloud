@@ -214,6 +214,49 @@ func TestGetRestartsOnARangeOfAnotherVersion(t *testing.T) {
 	}
 }
 
+// TestGetStartsAgainInANewPartFile: when the file changes during a download, the part file is removed and made anew,
+// never emptied in place, so a name that another program gave the part file meanwhile keeps the bytes it had.
+func TestGetStartsAgainInANewPartFile(t *testing.T) {
+	isolate(t, testAccountKey)
+	nodeID := id.Derive("nod", "cli6-new-part")
+	v1, v2 := bytes.Repeat([]byte("1"), 3*mib/2), bytes.Repeat([]byte("2"), 3*mib/2)
+	dest, keep := t.TempDir(), filepath.Join(t.TempDir(), "kept")
+	var mu sync.Mutex
+	var linkErr error
+	cur, etag, contents := v1, `"v1"`, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/api/v1/nodes/" + nodeID:
+			writeNode(w, nodeID, "relinked.bin", cur, etag)
+		case "/api/v1/nodes/" + nodeID + "/content":
+			if contents++; contents == 2 {
+				linkErr = os.Link(filepath.Join(dest, "relinked.bin.part"), keep)
+				cur, etag = v2, `"v2"`
+			}
+			w.Header().Set("ETag", etag)
+			http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(cur))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	res := getAt(srv.URL, nodeID, dest, "--piece-size", "1MiB")
+	mu.Lock()
+	defer mu.Unlock()
+	if linkErr != nil {
+		t.Fatal(linkErr)
+	}
+	wantCode(t, res, 0)
+	if b, _ := os.ReadFile(keep); !bytes.Equal(b, v1[:mib]) {
+		t.Errorf("the other name of the old part file holds %d bytes, not the %d it had", len(b), mib)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dest, "relinked.bin")); !bytes.Equal(b, v2) {
+		t.Error("the result is not the new version")
+	}
+}
+
 // TestGetRefusesARangeItDidNotAskFor: a 206 whose Content-Range is not the range asked for is not written, even when its
 // bytes happen to be right: get stops (exit 1) and names no file.
 func TestGetRefusesARangeItDidNotAskFor(t *testing.T) {

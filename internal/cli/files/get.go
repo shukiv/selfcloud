@@ -40,7 +40,7 @@ func Get(args []string, stdout, stderr io.Writer) int {
 	var overwrite, passwordStdin bool
 	set.StringVar(&folder, "folder", "", "the `id` (fld_...) of the folder a path is walked from")
 	set.BoolVar(&overwrite, "overwrite", false, "replace a regular file at the destination, once the download is "+
-		"complete and checked")
+		"complete and checked; a part file this download cannot continue is replaced by a new one")
 	set.BoolVar(&passwordStdin, "password-stdin", false, "read a share link's password from standard input, which must "+
 		"not be a terminal")
 	pos, code, ok := parse(set, &g, args, stdout, stderr)
@@ -254,7 +254,7 @@ func download(ctx context.Context, src source, nodeID string, dst localDest, o d
 	}
 	name := dst.name
 	if name == "" {
-		if name, err = localName(v.Name); err != nil {
+		if name, err = serverName(v.Name); err != nil {
 			return gotFile{}, err
 		}
 		if err := checkFinal(dst.root, name, o.overwrite); err != nil {
@@ -311,20 +311,15 @@ type downloader struct {
 	noted    bool
 }
 
-// startPart makes the part file, or continues the one this client began for the same file. A part file of another
-// download, or of none, is not continued: it is refused, or emptied with --overwrite. One that is not a regular file is
-// always refused.
+// startPart makes the part file, or continues the one this client began for the same file. A part file that is not
+// this client's for the same file, that another user owns, or that has another name (a hard link) is not continued: it
+// is refused, or, with --overwrite, removed and made anew, so its bytes and its other names are left as they were. One
+// that is not a regular file is always refused.
 func (d *downloader) startPart(root *os.Root, name string) (*partFile, error) {
 	part := name + partSuffix
 	fi, err := root.Lstat(part)
 	if errors.Is(err, os.ErrNotExist) {
-		pf, err := newPart(root, name)
-		if err != nil {
-			return nil, err
-		}
-		d.pf = pf
-		d.saveRecord()
-		return pf, nil
+		return d.freshPart(newPart(root, name))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the destination: %w", err)
@@ -333,22 +328,17 @@ func (d *downloader) startPart(root *os.Root, name string) (*partFile, error) {
 		return nil, exitcode.Usagef("%s is at the destination and is not a regular file, so it is not used", part)
 	}
 	rec, rerr := loadDownloadRecord(d.partPath)
-	if rerr != nil || rec.Server != d.src.server() || rec.Node != d.nodeID {
-		if !d.o.overwrite {
-			return nil, exitcode.Usagef("%s is at the destination, and no download of this file by this client began "+
-				"it; move it away, or pass --overwrite to start again over it", part)
+	ours := rerr == nil && rec.Server == d.src.server() && rec.Node == d.nodeID
+	if problem := partProblem(fi); !ours || problem != "" {
+		switch {
+		case d.o.overwrite:
+			return d.freshPart(replacePart(root, name))
+		case problem != "":
+			return nil, exitcode.Usagef("%s is at the destination and %s; move it away, or pass --overwrite to "+
+				"replace it with a new part file", part, problem)
 		}
-		pf, err := oldPart(root, name, false)
-		if err != nil {
-			return nil, err
-		}
-		d.pf = pf
-		if err := pf.reset(); err != nil {
-			pf.close()
-			return nil, err
-		}
-		d.saveRecord()
-		return pf, nil
+		return nil, exitcode.Usagef("%s is at the destination, and no download of this file by this client began "+
+			"it; move it away, or pass --overwrite to replace it with a new part file", part)
 	}
 	pf, err := oldPart(root, name, true)
 	if err != nil {
@@ -369,6 +359,16 @@ func (d *downloader) startPart(root *os.Root, name string) (*partFile, error) {
 		pf.close()
 		return nil, err
 	}
+	d.saveRecord()
+	return pf, nil
+}
+
+// freshPart takes a new part file and records it.
+func (d *downloader) freshPart(pf *partFile, err error) (*partFile, error) {
+	if err != nil {
+		return nil, err
+	}
+	d.pf = pf
 	d.saveRecord()
 	return pf, nil
 }
@@ -466,6 +466,12 @@ func (d *downloader) fetchRange(ctx context.Context) (changed bool, err error) {
 	switch resp.Status {
 	case http.StatusPartialContent:
 	case http.StatusOK:
+		// The whole file of the version asked for is a range that was ignored, not a change, and starting again would
+		// meet the same answer.
+		if resp.Header.Get("ETag") == d.ver.etag {
+			return false, errors.New("the server, or a proxy in front of it, sent the whole file instead of a range; " +
+				"get needs the Range and If-Range headers to reach the server")
+		}
 		return true, nil
 	default:
 		return false, fmt.Errorf("the server answered %d to a range", resp.Status)
