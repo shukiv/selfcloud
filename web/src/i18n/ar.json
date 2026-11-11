@@ -120,6 +120,7 @@
   "role.manager": "مدير",
   "files.crumbs": "الموقع",
   "files.crumbs.more": "أماكن أخرى",
+  "files.crumbs.above": "مجلدات أخرى في الأعلى",
   "files.loading": "جارٍ تحميل المجلد",
   "files.loadMore": "تحميل المزيد",
   "files.retry": "إعادة المحاولة",

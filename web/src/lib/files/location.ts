@@ -15,8 +15,12 @@ export interface Here {
   dirRole: Role;
   trail: Node[];
   rootReachable: boolean;
+  // truncated says the directory is more than 64 levels down and the caller reaches more folders above the trail (decision
+  // 140). trail is then the 64 nearest ancestors, topmost first, and the root is not known: rootReachable is false, and
+  // folderName and path are null, so nothing that needs the root (its crumb, a path from it) is guessed.
+  truncated: boolean;
   // reach is, when the root cannot be reached (the person was given a folder below it), the folders the person can reach down to
-  // the directory shown, topmost first, the directory last. It is empty when the root is reachable.
+  // the directory shown, topmost first, the directory last. It is empty when the root is reachable, and when the trail is truncated.
   reach: Node[];
   // spaceNoDownload is the team space's no-download rule for viewers. It binds the browser's own downloads.
   spaceNoDownload: boolean;
@@ -59,6 +63,7 @@ export async function locate(
       dirRole: listed?.role ?? 'viewer',
       trail: [],
       rootReachable: true,
+      truncated: false,
       reach: [],
       spaceNoDownload: listed?.no_download_for_viewers ?? false,
       path: '/',
@@ -68,11 +73,14 @@ export async function locate(
 
   // The directory and its reachable ancestors come in two answers read at once (perf-1 3.2, decision 132): the chain
   // is the server's walk, which stops at the first folder the caller does not reach.
-  const [dir, chain] = await Promise.all([statOrNull(dirID), ancestorsOrNull(dirID)]);
-  if (!dir || dir.kind !== 'dir' || dir.folder_id !== folder || chain === null) return null;
-  const rootReachable = chain.length > 0 && chain[0].parent_id === null;
-  // The chain's first node is the folder root when it is reachable; the rest is the trail below it.
-  const trail = rootReachable ? chain.slice(1) : [];
+  const [dir, found] = await Promise.all([statOrNull(dirID), ancestorsOrNull(dirID)]);
+  if (!dir || dir.kind !== 'dir' || dir.folder_id !== folder || found === null) return null;
+  const chain = found.ancestors;
+  // A truncated chain is the 64 nearest ancestors: its first node has a parent, and it is not the root (decision 140).
+  const truncated = found.truncated;
+  const rootReachable = !truncated && chain.length > 0 && chain[0].parent_id === null;
+  // The chain's first node is the folder root when it is reachable; the rest is the trail below it. A truncated chain is all trail.
+  const trail = rootReachable ? chain.slice(1) : truncated ? chain : [];
   const path = rootReachable ? [...trail.map((n) => n.name), dir.name].join('/') : null;
   return {
     folder,
@@ -82,7 +90,8 @@ export async function locate(
     dirRole: dir.role ?? 'viewer',
     trail,
     rootReachable,
-    reach: rootReachable ? [] : [...chain, dir],
+    truncated,
+    reach: rootReachable || truncated ? [] : [...chain, dir],
     spaceNoDownload: listed?.no_download_for_viewers ?? false,
     path: path === null ? null : `/${path}`,
   };

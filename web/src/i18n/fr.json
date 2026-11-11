@@ -120,6 +120,7 @@
   "role.manager": "Gestionnaire",
   "files.crumbs": "Emplacement",
   "files.crumbs.more": "Autres emplacements",
+  "files.crumbs.above": "Autres dossiers au-dessus",
   "files.loading": "Chargement du dossier",
   "files.loadMore": "Charger la suite",
   "files.retry": "Réessayer",

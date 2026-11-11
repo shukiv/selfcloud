@@ -120,6 +120,7 @@
   "role.manager": "Gestor",
   "files.crumbs": "Localização",
   "files.crumbs.more": "Mais locais",
+  "files.crumbs.above": "Mais pastas acima",
   "files.loading": "A carregar a pasta",
   "files.loadMore": "Carregar mais",
   "files.retry": "Tentar novamente",

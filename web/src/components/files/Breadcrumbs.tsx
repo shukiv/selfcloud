@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Breadcrumb } from "antd";
+import { Breadcrumb, Tooltip } from "antd";
 import { ChevronRight } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useT } from "../../lib/i18n";
@@ -35,6 +35,23 @@ export default function Breadcrumbs({ crumbs }: { crumbs: Crumb<Place>[] }) {
   const { t } = useT();
   const items = crumbs.map((crumb, i) => {
     const last = i === crumbs.length - 1;
+    if (crumb.kind === "above") {
+      // The mark for the folders above a trail cut at the 64 nearest (decision 140). It leads nowhere and takes no drop: the
+      // folders it stands for are not known here. A screen reader reads its name; the dots are for the eye, with the name as
+      // a tooltip.
+      const name = t("files.crumbs.above");
+      return {
+        key: "above",
+        title: (
+          <Tooltip title={name}>
+            <span data-testid="crumbs-above">
+              <span aria-hidden="true">…</span>
+              <span className="sr-only">{name}</span>
+            </span>
+          </Tooltip>
+        ),
+      };
+    }
     if (crumb.kind === "gap") {
       return {
         key: `gap-${i}`,

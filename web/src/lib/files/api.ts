@@ -76,16 +76,23 @@ export async function statOrNull(nod: string): Promise<Node | null> {
   }
 }
 
-// ancestors reads the folders above a node the caller reaches, topmost first and the parent last, in one answer
-// (decision 132). The server stops at the first folder the caller does not reach, so nothing above it is returned.
-export async function ancestors(nod: string): Promise<Node[]> {
+// Ancestors is the folders above a node the caller reaches, topmost first and the parent last. truncated says they are the
+// 64 nearest, and the caller reaches more above them, so the first is not the folder's root (decision 140).
+export interface Ancestors {
+  ancestors: Node[];
+  truncated: boolean;
+}
+
+// ancestors reads them in one answer (decision 132). The server stops at the first folder the caller does not reach, so
+// nothing above it is returned. An answer with no truncated field reads as not truncated.
+export async function ancestors(nod: string): Promise<Ancestors> {
   needSession();
-  const out = await api<{ ancestors: Node[] }>('GET', `/api/v1/nodes/${nod}/ancestors`);
-  return out.ancestors;
+  const out = await api<{ ancestors: Node[]; truncated?: boolean }>('GET', `/api/v1/nodes/${nod}/ancestors`);
+  return { ancestors: out.ancestors, truncated: out.truncated === true };
 }
 
 // ancestorsOrNull reads them, or null when the caller cannot reach the node (not_found). Other errors throw.
-export async function ancestorsOrNull(nod: string): Promise<Node[] | null> {
+export async function ancestorsOrNull(nod: string): Promise<Ancestors | null> {
   try {
     return await ancestors(nod);
   } catch (err) {

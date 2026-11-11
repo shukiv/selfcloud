@@ -120,6 +120,7 @@
   "role.manager": "Управляющий",
   "files.crumbs": "Путь",
   "files.crumbs.more": "Другие места",
+  "files.crumbs.above": "Выше есть другие папки",
   "files.loading": "Загрузка папки",
   "files.loadMore": "Загрузить ещё",
   "files.retry": "Повторить",

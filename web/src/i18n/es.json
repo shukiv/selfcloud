@@ -120,6 +120,7 @@
   "role.manager": "Gestor",
   "files.crumbs": "Ubicación",
   "files.crumbs.more": "Más lugares",
+  "files.crumbs.above": "Más carpetas arriba",
   "files.loading": "Cargando la carpeta",
   "files.loadMore": "Cargar más",
   "files.retry": "Intentar de nuevo",

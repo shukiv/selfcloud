@@ -120,6 +120,7 @@
   "role.manager": "מנהל",
   "files.crumbs": "מיקום",
   "files.crumbs.more": "מקומות נוספים",
+  "files.crumbs.above": "תיקיות נוספות למעלה",
   "files.loading": "טוענים את התיקייה",
   "files.loadMore": "טענו עוד",
   "files.retry": "נסו שוב",

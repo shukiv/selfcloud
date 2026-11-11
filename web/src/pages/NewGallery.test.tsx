@@ -57,6 +57,7 @@ function here(role: string, dirID: string | null): Here {
     dirRole: role as Here["dirRole"],
     trail: [],
     rootReachable: true,
+    truncated: false,
     reach: [],
     spaceNoDownload: false,
     path: dirID ? "/Projects" : "/",

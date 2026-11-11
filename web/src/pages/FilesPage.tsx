@@ -61,7 +61,7 @@ import { useNewDocument } from "../lib/files/documents";
 import { useSidebarDocked } from "../lib/sidebarDocked";
 import { refreshMyStorage } from "../lib/storage/api";
 import { parseFilesPath, filesURL, type FilesRoute } from "../lib/files/route";
-import { trimCrumbs, type Crumb } from "../lib/files/breadcrumbs";
+import { trailCrumbs, type Crumb } from "../lib/files/breadcrumbs";
 import { nextSort, type SortDir, type SortKey } from "../lib/files/sort";
 import { clickSelect, moveFocus, selectAll, EMPTY, type Selection } from "../lib/files/selection";
 import { isTextField, keyAction } from "../lib/files/keys";
@@ -292,11 +292,17 @@ function chainTo(chain: string[], dir: string | null): string[] {
   return at >= 0 ? chain.slice(0, at + 1) : [...chain, dir];
 }
 
-// ancestry is the folders from a listing's top down to the folder shown, itself included: the trail below the space's root, or the
-// reachable folders above the shown one when the root is not reachable, then the folder shown. (The tree's own chain leaves the folder
-// shown out when the root is not reachable; a drop's check needs it in.)
+// ancestry is the folders from a listing's top down to the folder shown, itself included: the trail below the space's root (or the 64
+// nearest folders of a truncated trail, decision 140), or the reachable folders above the shown one when the root is not reachable, then
+// the folder shown. (The tree's own chain leaves the folder shown out when the root is not reachable; a drop's check needs it in.)
 function ancestry(here: Here): string[] {
-  return [...(here.rootReachable ? here.trail : here.reach).map((n) => n.id), ...(here.dir ? [here.dir.id] : [])];
+  return [...(here.rootReachable || here.truncated ? here.trail : here.reach).map((n) => n.id), ...(here.dir ? [here.dir.id] : [])];
+}
+
+// aboveTop is the folder above the topmost one of ancestry: the space's root (null), or, for a truncated trail, the parent of its
+// topmost folder, which the server said the caller reaches (decision 140). The space's root is not known to be above it then.
+function aboveTop(here: Here): string | null {
+  return here.truncated && here.trail.length > 0 ? here.trail[0].parent_id : null;
 }
 
 // parentBranches is the folder-tree branch each item is in, for a change that moved items out of or into those folders.
@@ -305,11 +311,12 @@ function parentBranches(nodes: Node[]): Branch[] {
 }
 
 // leaveAfterTrash says where the page goes when items went to the Trash and the place shown is one of them or is below one: the
-// parent of the topmost trashed folder in the chain (null, the space's root, when that is the top). undefined: the page stays.
-function leaveAfterTrash(chain: string[], trashed: string[]): string | null | undefined {
+// parent of the topmost trashed folder in the chain (top, the folder above the chain, when that is the chain's first). undefined: the
+// page stays.
+function leaveAfterTrash(chain: string[], trashed: string[], top: string | null): string | null | undefined {
   const at = chain.findIndex((id) => trashed.includes(id));
   if (at < 0) return undefined;
-  return at === 0 ? null : chain[at - 1];
+  return at === 0 ? top : chain[at - 1];
 }
 
 function dialogOpen(): boolean {
@@ -474,8 +481,10 @@ export default function FilesPage() {
   const personalID = place?.kind === "ready" ? place.personalID : null;
   // The sidebar's folder tree reads the place shown (treePlace). It is written each time the place changes, and it is kept
   // when the page is left, so the tree still knows a space's top folder on the other pages.
-  const treeChain = here ? (here.rootReachable ? [...here.trail.map((n) => n.id), ...(here.dir ? [here.dir.id] : [])] : here.reach.map((n) => n.id)) : [];
-  const treeTop = here && !here.rootReachable && here.reach.length > 0 ? { id: here.reach[0].id, name: here.reach[0].name, role: here.reach[0].role } : undefined;
+  // A truncated trail (decision 140) is given as a chain below the space's root, with no top folder: a top folder would take the
+  // space's own row in the tree. The tree opens the way as far as its rows go, from the space's root, and marks the nearest one.
+  const treeChain = here ? (here.rootReachable || here.truncated ? [...here.trail.map((n) => n.id), ...(here.dir ? [here.dir.id] : [])] : here.reach.map((n) => n.id)) : [];
+  const treeTop = here && !here.rootReachable && !here.truncated && here.reach.length > 0 ? { id: here.reach[0].id, name: here.reach[0].name, role: here.reach[0].role } : undefined;
   const treeKeyText = here ? [here.folder, ...treeChain, treeTop?.id ?? ""].join("|") : "";
   useEffect(() => {
     if (!here) return;
@@ -802,12 +811,9 @@ export default function FilesPage() {
   const crumbs = useMemo<Crumb<Place>[]>(() => {
     if (!here) return [];
     const rootLabel = here.folder === personalID ? t("nav.files") : (here.folderName ?? t("nav.files"));
-    const out: Place[] = [];
     // Each place on the way takes a drop, with the caller's role there: the same role a paste into it would need.
-    if (here.rootReachable) out.push({ key: `root-${here.folder}`, label: rootLabel, href: filesURL(here.folder, null), drop: { folder: here.folder, dir: null, role: here.folderRole } });
-    for (const n of here.trail) out.push({ key: n.id, label: n.name, href: filesURL(here.folder, n.id), drop: { folder: here.folder, dir: n.id, role: n.role } });
-    if (here.dir) out.push({ key: here.dir.id, label: here.dir.name, href: filesURL(here.folder, here.dir.id), drop: { folder: here.folder, dir: here.dir.id, role: here.dir.role } });
-    return trimCrumbs(out, 4);
+    const root: Place = { key: `root-${here.folder}`, label: rootLabel, href: filesURL(here.folder, null), drop: { folder: here.folder, dir: null, role: here.folderRole } };
+    return trailCrumbs<Place>(here, root, (n) => ({ key: n.id, label: n.name, href: filesURL(here.folder, n.id), drop: { folder: here.folder, dir: n.id, role: n.role } }));
   }, [here, personalID, t]);
 
   // current is the selection with positions in the list as it is now.
@@ -1298,6 +1304,7 @@ export default function FilesPage() {
     const changed = sessionChanged();
     // The folders the place shown is in, top down, read before the delete (for leaveAfterTrash).
     const chain = here ? ancestry(here) : [];
+    const top = here ? aboveTop(here) : null;
     const done: Node[] = [];
     let failed = 0;
     for (const n of nodes) {
@@ -1333,7 +1340,7 @@ export default function FilesPage() {
     await reload(parentBranches(done));
     // A folder the place is in went to the Trash, so the page cannot stay in it: it goes to the parent of the topmost one (decision 104).
     // The trashed place's entry is replaced, so Back does not lead to it.
-    const leave = leaveAfterTrash(chain, done.map((n) => n.id));
+    const leave = leaveAfterTrash(chain, done.map((n) => n.id), top);
     if (leave !== undefined && here) go(filesURL(here.folder, leave), { replace: true });
   }
 
