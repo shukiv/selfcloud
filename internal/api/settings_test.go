@@ -478,6 +478,19 @@ func TestSettingsLiveSessionLifetimes(t *testing.T) {
 	wantError(t, callSession(t, s, bob, "GET", "/api/v1/me", nil), 401, apierr.Unauthenticated)
 }
 
+// TestSettingsSignInAsKeepsItsOwnHour: a lower idle timeout does not end a sign-in-as, which keeps the hour it was given.
+func TestSettingsSignInAsKeepsItsOwnHour(t *testing.T) {
+	t.Parallel()
+	fx := newImpFix(t, true)
+	t0 := time.Now()
+	clock := t0
+	fx.s.sessionClock = func() time.Time { return clock }
+	imp, _ := fx.signedInAsMember(t)
+	clock = t0.Add(16 * time.Minute)
+	wantStatus(t, patchSettings(t, fx.s, fx.admin, map[string]any{"sessions.idle_timeout": "15m"}), 200)
+	wantStatus(t, callSession(t, fx.s, imp, "GET", "/api/v1/me", nil), 200)
+}
+
 // TestSettingsTenantAccessOffTakesEffectAtOnce: turning admin.tenant_access off refuses the next sign-in-as and ends the
 // running one at its next request.
 func TestSettingsTenantAccessOffTakesEffectAtOnce(t *testing.T) {
